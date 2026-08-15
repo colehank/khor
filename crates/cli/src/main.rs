@@ -1,6 +1,6 @@
 //! The `khor` CLI: the library's first consumer. Every verb is one node
 //! call — anything the GUI will do must be reachable from here first
-//! (docs/KHOR.md: CLI 与 GUI 等价).
+//! (docs/KHOR.md: CLI equals GUI).
 //!
 //! State words print as their stable keys until the catalog lands; the
 //! keys are the wire truth, the catalog is wording.

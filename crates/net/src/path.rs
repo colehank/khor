@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(
             kind_of(&[path(true, true, 61), path(false, false, 30)]),
             PathKind::Relay,
-            "有直连候选 ≠ 走直连"
+            "a direct candidate is not the same as taking it"
         );
         // Upgrade done: direct selected, relay kept as fallback.
         assert_eq!(

@@ -112,10 +112,10 @@ mod tests {
     #[test]
     fn channel_names_are_whitelisted() {
         for ok in ["turing", "mac-mini.local", "a_b-1.2"] {
-            assert!(valid_channel(ok), "{ok} 该放行");
+            assert!(valid_channel(ok), "{ok} should pass");
         }
         for bad in ["", ".", "..", "a/b", "a b", "a;rm -rf /", "a$(x)", "a\nb"] {
-            assert!(!valid_channel(bad), "{bad:?} 该挡住");
+            assert!(!valid_channel(bad), "{bad:?} should be blocked");
         }
         // Invalid names return None — never "cleaned" here, because two
         // devices cleaning differently would split the channel.
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn a_clean_machine_name_is_the_channel_name_unchanged() {
         for n in ["turing", "mac-mini", "gpu.01", "aliyun_2", "A1"] {
-            assert_eq!(channel_of_machine(n).as_deref(), Some(n), "{n} 该原样通过");
+            assert_eq!(channel_of_machine(n).as_deref(), Some(n), "{n} should pass unchanged");
         }
         // `.local` stripped: one machine self-reports both spellings
         // depending on the entry point.
@@ -146,17 +146,17 @@ mod tests {
     /// green too.
     #[test]
     fn a_cleaned_name_never_collides_with_a_clean_one() {
-        let dirty = channel_of_machine("a b").expect("该算得出来");
-        let clean = channel_of_machine("a-b").expect("该算得出来");
-        assert_eq!(clean, "a-b", "干净的必须原样(对照组:不是所有名字都加后缀)");
-        assert_ne!(dirty, clean, "清洗过的不许撞上真名,实测 {dirty} vs {clean}");
-        assert!(dirty.starts_with("a-b-"), "清洗过的该带指纹,实测 {dirty}");
+        let dirty = channel_of_machine("a b").expect("should compute");
+        let clean = channel_of_machine("a-b").expect("should compute");
+        assert_eq!(clean, "a-b", "a clean name must pass unchanged (control: not every name gets a suffix)");
+        assert_ne!(dirty, clean, "a cleaned name must not collide with a real one, got {dirty} vs {clean}");
+        assert!(dirty.starts_with("a-b-"), "a cleaned name should carry a fingerprint, got {dirty}");
 
         // Two different originals with the same cleaned stem stay apart —
         // the fingerprint hashes the original.
         let x = channel_of_machine("a b").unwrap();
         let y = channel_of_machine("a/b").unwrap();
-        assert_ne!(x, y, "原名不同就不许同名,实测 {x} vs {y}");
+        assert_ne!(x, y, "different originals must not share a channel, got {x} vs {y}");
     }
 
     /// Same original, same answer, every time.
@@ -165,9 +165,9 @@ mod tests {
         for n in ["张三的电脑", "turing", "a b", "服务器-01"] {
             let a = channel_of_machine(n);
             let b = channel_of_machine(n);
-            assert_eq!(a, b, "{n} 算两次该一样");
+            assert_eq!(a, b, "{n} must compute the same twice");
             if let Some(c) = a {
-                assert!(valid_channel(&c), "{n} → {c} 必须是合法频道名");
+                assert!(valid_channel(&c), "{n} → {c} must be a valid channel name");
             }
         }
     }
@@ -176,18 +176,18 @@ mod tests {
     /// usable gets `None`, not an invented name.
     #[test]
     fn a_non_ascii_machine_name_still_gets_a_channel() {
-        let c = channel_of_machine("张三的电脑").expect("该算得出一个名字");
+        let c = channel_of_machine("张三的电脑").expect("should yield a name");
         assert!(valid_channel(&c), "{c}");
         assert!(!c.is_empty());
         // Mixed names keep their readable part — people `ls` these dirs.
-        let m = channel_of_machine("张三的 MacBook").expect("该算得出来");
-        assert!(m.contains("MacBook"), "可读的那一截该留着,实测 {m}");
+        let m = channel_of_machine("张三的 MacBook").expect("should compute");
+        assert!(m.contains("MacBook"), "the readable part should survive, got {m}");
 
         assert_eq!(channel_of_machine(""), None);
         assert_eq!(channel_of_machine("   "), None);
         // Not None: zero legal chars still yields placeholder +
         // fingerprint, which is deterministic.
-        let all_bad = channel_of_machine("。、·").expect("该有个兜底名");
+        let all_bad = channel_of_machine("。、·").expect("should get a fallback name");
         assert!(valid_channel(&all_bad), "{all_bad}");
     }
 
@@ -197,13 +197,13 @@ mod tests {
     #[test]
     fn a_very_long_machine_name_is_bounded_without_colliding() {
         for long in ["机器".repeat(200), "a".repeat(200)] {
-            let c = channel_of_machine(&long).expect("超长也该算得出一个名字");
-            assert!(valid_channel(&c), "长度 {} : {c}", c.len());
+            let c = channel_of_machine(&long).expect("overlong should still yield a name");
+            assert!(valid_channel(&c), "len {} : {c}", c.len());
         }
         // Identical first 128 chars, one differing tail char: two
         // channels.
         let a = channel_of_machine(&format!("{}X", "a".repeat(150))).unwrap();
         let b = channel_of_machine(&format!("{}Y", "a".repeat(150))).unwrap();
-        assert_ne!(a, b, "只差最后一个字的两台机器不许并成一场:{a} vs {b}");
+        assert_ne!(a, b, "one differing char must not merge two machines: {a} vs {b}");
     }
 }

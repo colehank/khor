@@ -50,14 +50,14 @@ mod tests {
         // protocol change and must land here first, consciously.
         assert!(
             bytes.windows(4).any(|w| w == b"Sync"),
-            "帧里该有 op 名"
+            "the frame must carry the op name"
         );
         let back: Request = decode(&bytes).unwrap();
         match back {
             Request::Sync { doc, have, changes } => {
                 assert_eq!((doc.as_str(), have.as_str(), changes.as_str()), ("devices", "aGF2ZQ", ""));
             }
-            other => panic!("解错了: {other:?}"),
+            other => panic!("decoded wrong: {other:?}"),
         }
     }
 }

@@ -110,8 +110,8 @@ mod tests {
             token: "deadbeef".into(),
         };
         assert_eq!(Ticket::decode(&t.encode().unwrap()).unwrap(), t);
-        // Garbage is refused with the word 票, not a panic.
-        let e = Ticket::decode("不是票").unwrap_err().to_string();
+        // Garbage is refused with the ticket wording, not a panic.
+        let e = Ticket::decode("not-a-ticket").unwrap_err().to_string();
         assert!(e.contains("配对票"), "{e}");
     }
 }

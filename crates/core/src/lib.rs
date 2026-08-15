@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A device's identity: its public key (docs/NET.md 身份与配对).
+/// A device's identity: its public key (docs/NET.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub [u8; 32]);
 
@@ -39,7 +39,7 @@ pub mod kind {
 pub struct Millis(pub u64);
 
 /// The six state words. There is no seventh: unreachable is a freshness
-/// axis, not a state (docs/SESSION.md 离线一节).
+/// axis, not a state (docs/SESSION.md, the offline section).
 ///
 /// Crosses the wire as its `key()` string, never as a variant index —
 /// indices renumber when variants reorder.
@@ -70,7 +70,7 @@ impl State {
     ];
 
     /// Wire and catalog key. The UI looks display words up by this;
-    /// nothing user-facing is spelled in code (docs/UX.md 文案).
+    /// nothing user-facing is spelled in code (docs/UX.md).
     pub const fn key(self) -> &'static str {
         match self {
             State::Busy => "busy",
@@ -132,7 +132,7 @@ pub struct Event {
     pub payload: Vec<u8>,
 }
 
-/// The five answers the list renders (docs/SESSION.md 五问).
+/// The five answers the list renders (docs/SESSION.md).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     pub id: SessionId,
@@ -154,7 +154,7 @@ mod tests {
         Session {
             id: SessionId("dev0/demo/1".to_owned()),
             kind: Kind(kind.to_owned()),
-            title: "构建 khor".to_owned(),
+            title: "build khor".to_owned(),
             home: DeviceId([7; 32]),
             state: StateStamp { state: State::Busy, at: Millis(1) },
             unread: 3,
@@ -166,7 +166,7 @@ mod tests {
         let bytes = rmp_serde::to_vec(&a_session("holodeck")).unwrap();
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(row.kind.0, "holodeck");
-        assert_eq!(row.title, "构建 khor");
+        assert_eq!(row.title, "build khor");
         assert_eq!(row.state.state, State::Busy);
         assert_eq!(row.unread, 3);
     }

@@ -48,15 +48,15 @@ fn five_peers_converge_after_random_partitions() {
 
     let first = render(&docs[0]);
     for (i, d) in docs.iter().enumerate() {
-        assert_eq!(render(d), first, "第 {i} 个节点和第 0 个不一样");
+        assert_eq!(render(d), first, "node {i} differs from node 0");
     }
-    assert_eq!(docs[0].messages().len(), 40, "一条都不该丢");
+    assert_eq!(docs[0].messages().len(), 40, "not one line may be lost");
 
     // Control: an unsynced doc must differ, or "all equal" may just
     // mean render() returns the same string for everything.
     let lonely = ChatDoc::new(99).unwrap();
-    lonely.tell(&me("nobody"), "自言自语").unwrap();
-    assert_ne!(render(&lonely), first, "没同步过的不该和大家一样");
+    lonely.tell(&me("nobody"), "talking to itself").unwrap();
+    assert_ne!(render(&lonely), first, "the unsynced one must not match the rest");
 }
 
 /// Merging the same block twice equals once — reconnects, replays,
@@ -64,14 +64,14 @@ fn five_peers_converge_after_random_partitions() {
 #[test]
 fn merging_the_same_block_twice_changes_nothing() {
     let a = ChatDoc::new(1).unwrap();
-    a.tell(&me("a"), "一句").unwrap();
+    a.tell(&me("a"), "a line").unwrap();
     let block = a.snapshot().unwrap();
 
     let b = ChatDoc::new(2).unwrap();
     b.merge(&block).unwrap();
     let once = render(&b);
     b.merge(&block).unwrap();
-    assert_eq!(render(&b), once, "第二遍不该改变任何东西");
+    assert_eq!(render(&b), once, "the second pass must change nothing");
 }
 
 /// A message with a 200MB attachment syncs as metadata only — the
@@ -100,12 +100,12 @@ fn a_huge_attachment_only_costs_its_metadata() {
     let snap = a.snapshot().unwrap();
     assert!(
         delta.len() < 1024,
-        "增量该在 1KB 以内,实测 {} 字节",
+        "the delta should stay under 1KB, got {} bytes",
         delta.len()
     );
     assert!(
         delta.len() * 10 < snap.len(),
-        "增量至少比全量小一个数量级,否则「增量」名不副实(增量 {} / 全量 {})",
+        "a delta must be an order smaller than a snapshot, or it is no delta ({} vs {})",
         delta.len(),
         snap.len()
     );
@@ -118,9 +118,9 @@ fn a_huge_attachment_only_costs_its_metadata() {
 #[test]
 fn a_dumb_node_that_only_holds_bytes_gives_the_same_result() {
     let a = ChatDoc::new(1).unwrap();
-    a.tell(&me("mac"), "从 Mac 发的").unwrap();
+    a.tell(&me("mac"), "from the mac").unwrap();
     let c = ChatDoc::new(3).unwrap();
-    c.tell(&me("phone"), "从手机发的").unwrap();
+    c.tell(&me("phone"), "from the phone").unwrap();
 
     let empty = Default::default();
     let fa = a.changes_since(&empty).unwrap();
@@ -141,8 +141,8 @@ fn a_dumb_node_that_only_holds_bytes_gives_the_same_result() {
     direct.merge(&fa).unwrap();
     direct.merge(&fc).unwrap();
 
-    assert_eq!(render(&viafile), render(&direct), "走文件和直连必须一样");
-    assert_eq!(viafile.messages().len(), 2, "两边的消息都得在");
+    assert_eq!(render(&viafile), render(&direct), "via file and direct must be identical");
+    assert_eq!(viafile.messages().len(), 2, "messages from both sides must be there");
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -153,20 +153,20 @@ fn a_dumb_node_that_only_holds_bytes_gives_the_same_result() {
 #[test]
 fn undo_only_takes_back_my_own_message() {
     let mut a = ChatDoc::new(1).unwrap();
-    a.tell(&me("me"), "我说的第一句").unwrap();
+    a.tell(&me("me"), "my first line").unwrap();
 
     let b = ChatDoc::new(2).unwrap();
     b.merge(&a.snapshot().unwrap()).unwrap();
-    b.tell(&me("peer"), "别人说的一句").unwrap();
+    b.tell(&me("peer"), "a line from someone else").unwrap();
     a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
 
     assert_eq!(a.messages().len(), 2);
-    assert!(a.can_undo(), "撤销栈里该有东西");
-    assert!(a.undo().unwrap(), "undo 该真的执行");
+    assert!(a.can_undo(), "the undo stack should hold something");
+    assert!(a.undo().unwrap(), "undo should really run");
 
     let left = render(&a);
-    assert!(left.contains("别人说的一句"), "别人那条必须还在:\n{left}");
-    assert!(!left.contains("我说的第一句"), "我自己那条该没了:\n{left}");
+    assert!(left.contains("a line from someone else"), "the other's line must remain:\n{left}");
+    assert!(!left.contains("my first line"), "my own line should be gone:\n{left}");
 }
 
 /// Retraction is a soft delete: the slot stays, marked. Hard removal
@@ -174,15 +174,15 @@ fn undo_only_takes_back_my_own_message() {
 #[test]
 fn retracting_keeps_the_slot() {
     let d = ChatDoc::new(1).unwrap();
-    d.tell(&me("a"), "第一句").unwrap();
-    let id = d.tell(&me("a"), "说错了").unwrap();
-    d.tell(&me("a"), "第三句").unwrap();
+    d.tell(&me("a"), "first").unwrap();
+    let id = d.tell(&me("a"), "a mistake").unwrap();
+    d.tell(&me("a"), "third").unwrap();
 
     d.retract(&id).unwrap();
     let msgs = d.messages();
-    assert_eq!(msgs.len(), 3, "位置要留着,不是抠掉");
-    assert!(msgs[1].retracted, "中间那条该标着撤回");
-    assert!(!msgs[0].retracted && !msgs[2].retracted, "别的不许被带上");
+    assert_eq!(msgs.len(), 3, "the slot stays, not carved out");
+    assert!(msgs[1].retracted, "the middle one should be flagged retracted");
+    assert!(!msgs[0].retracted && !msgs[2].retracted, "the others must not be dragged along");
 }
 
 /// One device edits while another retracts; both must survive. This
@@ -192,12 +192,12 @@ fn retracting_keeps_the_slot() {
 #[test]
 fn a_concurrent_edit_and_retract_both_survive() {
     let a = ChatDoc::new(1).unwrap();
-    let id = a.tell(&me("a"), "原话").unwrap();
+    let id = a.tell(&me("a"), "the original").unwrap();
 
     let b = ChatDoc::new(2).unwrap();
     b.merge(&a.snapshot().unwrap()).unwrap();
 
-    a.edit(&id, "改过的话").unwrap();
+    a.edit(&id, "the edited text").unwrap();
     b.retract(&id).unwrap();
 
     a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
@@ -205,15 +205,15 @@ fn a_concurrent_edit_and_retract_both_survive() {
 
     for (who, d) in [("a", &a), ("b", &b)] {
         let m = &d.messages()[0];
-        assert!(m.retracted, "{who}:撤回该留住");
-        assert!(m.edited, "{who}:编辑该留住");
+        assert!(m.retracted, "{who}: the retract must survive");
+        assert!(m.edited, "{who}: the edit must survive");
         assert_eq!(
             m.body,
-            MsgBody::Text("改过的话".into()),
-            "{who}:正文该是改过的那句"
+            MsgBody::Text("the edited text".into()),
+            "{who}: the body should be the edited text"
         );
     }
-    assert_eq!(render(&a), render(&b), "两台最终必须一样");
+    assert_eq!(render(&a), render(&b), "both machines must end identical");
 }
 
 /// An unreadable kind lands in `Unknown`, not `Text`: a missing arm
@@ -242,7 +242,7 @@ fn an_unknown_kind_does_not_land_in_text() {
     assert_eq!(
         msgs[0].body,
         MsgBody::Unknown("voice".into()),
-        "不认识的种类要明说,不许落进 Text"
+        "an unknown kind must say so, never fall into Text"
     );
 
     // And forwarding must not strip it: an old build relaying still
@@ -254,7 +254,7 @@ fn an_unknown_kind_does_not_land_in_text() {
     let dumped = format!("{:?}", c.raw().get_deep_value());
     assert!(
         dumped.contains("seconds"),
-        "经过一个不认识它的版本之后,那个键还得在:\n{dumped}"
+        "after a version that does not know the key, it must remain:\n{dumped}"
     );
 }
 
@@ -268,8 +268,8 @@ fn an_unknown_kind_does_not_land_in_text() {
 fn sharing_one_peer_between_two_writers_silently_loses_a_message() {
     let a = ChatDoc::new(1).unwrap();
     let b = ChatDoc::new(1).unwrap(); // deliberately violates the contract
-    a.tell(&me("a"), "甲说的").unwrap();
-    b.tell(&me("b"), "乙说的").unwrap();
+    a.tell(&me("a"), "from side a").unwrap();
+    b.tell(&me("b"), "from side b").unwrap();
 
     let merged = ChatDoc::new(2).unwrap();
     merged.merge(&a.snapshot().unwrap()).unwrap();
@@ -280,6 +280,6 @@ fn sharing_one_peer_between_two_writers_silently_loses_a_message() {
     assert_eq!(
         merged.messages().len(),
         1,
-        "共用 peer 时会丢一句——这条测试守的是这个事实,不是这个行为:\n{text}"
+        "a shared peer loses a line — this test guards the fact, not the behaviour:\n{text}"
     );
 }

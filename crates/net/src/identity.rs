@@ -1,7 +1,7 @@
 //! The machine's identity key: load and persist.
 //!
 //! This key is the credential other devices' pairing records trust — the
-//! public key is the machine id (docs/NET.md 身份与配对). Two
+//! public key is the machine id (docs/NET.md). Two
 //! consequences: a leak lets anyone impersonate this machine, so the
 //! file must be 0600 and a looser mode refuses to start; regenerating
 //! makes this a *different* machine — every paired device loses it, and
@@ -91,9 +91,9 @@ mod tests {
         load_or_create(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         let err = load_or_create(&path).unwrap_err().to_string();
-        assert!(err.contains("权限过于开放"), "实际:{err}");
+        assert!(err.contains("权限过于开放"), "got: {err}");
         // The error must say how to fix it, not just "no".
-        assert!(err.contains("chmod 600"), "实际:{err}");
+        assert!(err.contains("chmod 600"), "got: {err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

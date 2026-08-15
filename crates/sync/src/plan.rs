@@ -139,10 +139,10 @@ mod tests {
         let p = plan(&mine, &theirs);
         assert!(
             p.pull.is_empty(),
-            "压实掉的块不许被拉回来,否则压实成了一个永远做不完的动作:{:?}",
+            "compacted blocks must never be re-pulled, or compaction never finishes: {:?}",
             p.pull
         );
-        assert_eq!(p.push, vec!["snap-00000002.loro"], "我的快照该推过去");
+        assert_eq!(p.push, vec!["snap-00000002.loro"], "my snapshot should be pushed");
     }
 
     /// Push must honour the far side's ledger: merged means they have
@@ -153,7 +153,7 @@ mod tests {
         let theirs = Side::new(Vec::<String>::new(), vec!["u-a.loro".to_string()]);
         assert!(
             plan(&mine, &theirs).push.is_empty(),
-            "对面合过的不该再推"
+            "what the far side merged must not be pushed again"
         );
         // Control: never-met must be pushed to, or a push-nothing
         // implementation stays green.
@@ -168,7 +168,7 @@ mod tests {
         l.insert("u-b.loro");
         l.insert("u-a.loro");
         let text = l.render();
-        assert_eq!(text, "u-a.loro\nu-b.loro\n", "有序,一行一个");
+        assert_eq!(text, "u-a.loro\nu-b.loro\n", "sorted, one per line");
         let back = Ledger::parse(&text);
         assert_eq!(back.len(), 2);
         assert!(back.has("u-a.loro") && back.has("u-b.loro"));

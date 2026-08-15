@@ -288,23 +288,23 @@ mod tests {
     fn a_peer_pulls_first_then_pushes() {
         let dir = tmpdir("wire-round");
         let mut mine = open_channel(&dir, 0x51).unwrap();
-        mine.doc.tell(&me("我"), "这边说的").unwrap();
+        mine.doc.tell(&me("a"), "from this side").unwrap();
         mine.store.flush(&mine.doc).unwrap();
 
         let mut far = Far::new("wire-round-far", 0x52);
-        far.doc.tell(&me("远"), "那边说的").unwrap();
+        far.doc.tell(&me("b"), "from that side").unwrap();
 
         let mut peer = Peer::new();
         let r1 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert_eq!(r1.pushed, 0, "第一趟不许推(还不知道对方到哪儿)");
-        assert!(r1.pulled > 0, "第一趟该把对方那句拉回来");
-        assert_eq!(r1.items, 2, "我这边现在两条");
-        assert_eq!(far.doc.items(), 1, "对方还没收到我这句");
+        assert_eq!(r1.pushed, 0, "round one must not push (far version unknown yet)");
+        assert!(r1.pulled > 0, "round one should pull the far line");
+        assert_eq!(r1.items, 2, "two on my side now");
+        assert_eq!(far.doc.items(), 1, "the far side has not got mine yet");
 
         let r2 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert!(r2.pushed > 0, "第二趟该把我那句推过去");
-        assert_eq!(far.doc.items(), 2, "对方收到了");
-        assert_eq!(render(&mine.doc), render(&far.doc), "两边逐字相同");
+        assert!(r2.pushed > 0, "round two should push mine");
+        assert_eq!(far.doc.items(), 2, "the far side got it");
+        assert_eq!(render(&mine.doc), render(&far.doc), "both sides verbatim identical");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -319,7 +319,7 @@ mod tests {
     fn a_settled_pair_moves_nothing() {
         let dir = tmpdir("wire-idle");
         let mut mine = open_channel(&dir, 0x61).unwrap();
-        mine.doc.tell(&me("我"), "一句").unwrap();
+        mine.doc.tell(&me("a"), "a line").unwrap();
         let mut far = Far::new("wire-idle-far", 0x62);
 
         let mut peer = Peer::new();
@@ -327,7 +327,7 @@ mod tests {
             peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         }
         let r = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert_eq!((r.pushed, r.pulled), (0, 0), "稳态下两个方向都空,实测 {r:?}");
+        assert_eq!((r.pushed, r.pulled), (0, 0), "steady state moves nothing either way, got {r:?}");
         assert_eq!(r.items, 1);
 
         let _ = fs::remove_dir_all(&dir);
@@ -345,7 +345,7 @@ mod tests {
         let dir = tmpdir("wire-amnesia");
         let mut mine = open_channel(&dir, 0x71).unwrap();
         for i in 0..30 {
-            mine.doc.tell(&me("我"), &format!("第 {i} 句")).unwrap();
+            mine.doc.tell(&me("a"), &format!("line {i}")).unwrap();
         }
         let mut far = Far::new("wire-amnesia-far", 0x72);
 
@@ -353,30 +353,30 @@ mod tests {
         let mut good = Peer::new();
         good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         let push = good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert!(push.pushed > 0, "第二趟该把 30 句推过去");
+        assert!(push.pushed > 0, "round two should push the 30 lines");
 
         // Say one more; the rememberer delivers in one round.
-        mine.doc.tell(&me("我"), "新的一句").unwrap();
+        mine.doc.tell(&me("a"), "a new line").unwrap();
         let one = good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert!(one.pushed > 0, "记得对方到哪儿,所以这一趟直接推");
-        assert_eq!(far.doc.items(), 31, "一趟就送到了");
+        assert!(one.pushed > 0, "the far version is remembered, so this round pushes at once");
+        assert_eq!(far.doc.items(), 31, "delivered in one round");
 
         // A fresh restart: same one new line — same length as the last,
         // so a byte difference can't be misread as anything but round
         // count.
-        mine.doc.tell(&me("我"), "再来一句").unwrap();
+        mine.doc.tell(&me("a"), "more lines").unwrap();
         let mut fresh = Peer::new();
         let a = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert_eq!(a.pushed, 0, "刚重启的第一趟是纯拉");
-        assert_eq!(far.doc.items(), 31, "所以这一趟对方还没收到");
+        assert_eq!(a.pushed, 0, "the first round after a restart is pull-only");
+        assert_eq!(far.doc.items(), 31, "so the far side has not got it this round");
         let b = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert!(b.pushed > 0);
-        assert_eq!(far.doc.items(), 32, "第二趟才到");
+        assert_eq!(far.doc.items(), 32, "it lands on round two");
 
         // Same byte count — the factual half of "not bytes".
         assert_eq!(
             one.pushed, b.pushed,
-            "记得与忘了推的是同一段字节({} vs {}),差的只有趟数",
+            "remembered or not, the same bytes move ({} vs {}); only the round count differs",
             one.pushed, b.pushed
         );
         assert_eq!(render(&mine.doc), render(&far.doc));
@@ -397,8 +397,8 @@ mod tests {
             vec![0u8; MAX_BYTES + 1],
         );
         let e = merge_b64(&doc, &huge).unwrap_err();
-        assert!(e.contains("超过"), "错话里得说清超了限:{e}");
-        assert!(e.contains("ssh"), "还得指一条能走的路:{e}");
+        assert!(e.contains("超过"), "the error must say the cap was exceeded: {e}");
+        assert!(e.contains("ssh"), "and it must point at a viable route: {e}");
 
         // Control: the same path under the cap must pass this gate —
         // without it, a reject-everything implementation is green above.
@@ -409,7 +409,7 @@ mod tests {
         let e2 = merge_b64(&doc, &ok).unwrap_err();
         assert!(
             !e2.contains("超过"),
-            "16 字节不该撞上限(它会因为不是合法增量而失败,那是另一回事):{e2}"
+            "16 bytes must not hit the cap (it fails as an invalid delta, a different matter): {e2}"
         );
     }
 
@@ -418,14 +418,14 @@ mod tests {
     #[test]
     fn the_version_vector_is_not_capped() {
         let doc = ChatDoc::new(0x91).unwrap();
-        doc.tell(&me("我"), "一句").unwrap();
+        doc.tell(&me("a"), "a line").unwrap();
         let v = version_b64(&doc);
         assert!(!v.is_empty());
         // Empty = from the beginning, not an error — a freshly paired
         // device.
         assert!(changes_since_b64(&doc, "").is_ok());
         // Bad base64 must read as "not base64", not "sync broken".
-        let e = changes_since_b64(&doc, "这不是 base64!!").unwrap_err();
+        let e = changes_since_b64(&doc, "not base64!!").unwrap_err();
         assert!(e.contains("base64"), "{e}");
     }
 }

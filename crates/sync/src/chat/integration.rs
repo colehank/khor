@@ -57,22 +57,22 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
     let dir_b = tmpdir("mach-b");
 
     let mut a = open_channel(&dir_a, 0xA).unwrap();
-    a.doc.tell(&me("mac"), "从 Mac 发的").unwrap();
+    a.doc.tell(&me("mac"), "from the mac").unwrap();
     a.store.flush(&a.doc).unwrap();
     let (pull, push) = sync_with_dumb(&mut a.store, &a.doc, &dumb);
-    assert_eq!((pull, push), (0, 1), "A 该推一块上去,没有可拉的");
+    assert_eq!((pull, push), (0, 1), "A should push one block, nothing to pull");
 
     let mut b = open_channel(&dir_b, 0xB).unwrap();
     let (pull, _) = sync_with_dumb(&mut b.store, &b.doc, &dumb);
-    assert_eq!(pull, 1, "B 该从哑节点拉到 A 那一块");
-    b.doc.tell(&me("phone"), "从手机发的").unwrap();
+    assert_eq!(pull, 1, "B should pull A's block off the dumb node");
+    b.doc.tell(&me("phone"), "from the phone").unwrap();
     b.store.flush(&b.doc).unwrap();
     sync_with_dumb(&mut b.store, &b.doc, &dumb);
 
     sync_with_dumb(&mut a.store, &a.doc, &dumb);
 
-    assert_eq!(render(&a.doc), render(&b.doc), "两台最终必须一样");
-    assert_eq!(a.doc.messages().len(), 2, "两句都得在");
+    assert_eq!(render(&a.doc), render(&b.doc), "both machines must end identical");
+    assert_eq!(a.doc.messages().len(), 2, "both lines must be there");
 
     // Idempotence: another round moves nothing.
     assert_eq!(sync_with_dumb(&mut a.store, &a.doc, &dumb), (0, 0));
@@ -94,7 +94,7 @@ fn compacting_survives_the_next_sync() {
     let mut m = open_channel(&dir, 0xC).unwrap();
 
     for i in 0..5 {
-        m.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();
+        m.doc.tell(&me("a"), &format!("line {i}")).unwrap();
         m.store.flush(&m.doc).unwrap();
     }
     sync_with_dumb(&mut m.store, &m.doc, &dumb); // all five uploaded
@@ -106,11 +106,11 @@ fn compacting_survives_the_next_sync() {
         .flatten()
         .filter(|e| e.file_name().to_string_lossy().ends_with(".loro"))
         .count();
-    assert_eq!(left, 1, "压实后本地只剩快照,实测 {left}");
+    assert_eq!(left, 1, "after compaction only the snapshot remains, got {left}");
 
     let (pull, _) = sync_with_dumb(&mut m.store, &m.doc, &dumb);
-    assert_eq!(pull, 0, "压实掉的五块一块都不许拉回来");
-    assert_eq!(render(&m.doc), want, "内容一个字不许变");
+    assert_eq!(pull, 0, "none of the five compacted blocks may be re-pulled");
+    assert_eq!(render(&m.doc), want, "the content must not change by a byte");
 
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(&dumb.0);

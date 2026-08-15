@@ -15,21 +15,21 @@ fn flush_writes_only_what_is_not_on_disk_yet() {
     let dir = tmpdir("flush");
     let mut st = open_channel(&dir, 1).unwrap();
     for i in 0..50 {
-        st.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();
+        st.doc.tell(&me("a"), &format!("line {i}")).unwrap();
     }
-    let first = st.store.flush(&st.doc).unwrap().expect("该写出一个块");
+    let first = st.store.flush(&st.doc).unwrap().expect("should write a block");
     let big = fs::metadata(&first).unwrap().len();
 
-    st.doc.tell(&me("a"), "又一句").unwrap();
-    let second = st.store.flush(&st.doc).unwrap().expect("该再写一个块");
+    st.doc.tell(&me("a"), "another line").unwrap();
+    let second = st.store.flush(&st.doc).unwrap().expect("should write another block");
     let small = fs::metadata(&second).unwrap().len();
 
     assert!(
         small * 5 < big,
-        "第二块该只装那一句(第一块 {big} 字节,第二块 {small} 字节)"
+        "the second block should hold only that line (first {big} B, second {small} B)"
     );
     // No new content, no file — not even an empty one.
-    assert!(st.store.flush(&st.doc).unwrap().is_none(), "没有新东西不该写文件");
+    assert!(st.store.flush(&st.doc).unwrap().is_none(), "nothing new must write no file");
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -38,13 +38,13 @@ fn flush_writes_only_what_is_not_on_disk_yet() {
 fn what_is_flushed_comes_back() {
     let dir = tmpdir("roundtrip");
     let mut st = open_channel(&dir, 1).unwrap();
-    st.doc.tell(&me("a"), "一").unwrap();
-    st.doc.tell(&me("a"), "二").unwrap();
+    st.doc.tell(&me("a"), "one").unwrap();
+    st.doc.tell(&me("a"), "two").unwrap();
     st.store.flush(&st.doc).unwrap();
     let want = render(&st.doc);
 
     let back = open_channel(&dir, 1).unwrap();
-    assert!(back.broken.is_empty(), "不该有坏块");
+    assert!(back.broken.is_empty(), "no block should be broken");
     assert_eq!(render(&back.doc), want);
     let _ = fs::remove_dir_all(&dir);
 }
@@ -55,13 +55,13 @@ fn what_is_flushed_comes_back() {
 fn one_broken_block_does_not_kill_the_channel() {
     let dir = tmpdir("broken");
     let mut st = open_channel(&dir, 1).unwrap();
-    st.doc.tell(&me("a"), "好的那句").unwrap();
+    st.doc.tell(&me("a"), "the good line").unwrap();
     st.store.flush(&st.doc).unwrap();
     fs::write(dir.join("u-000000000000ffff-00000000.loro"), b"not a loro block").unwrap();
 
     let back = open_channel(&dir, 1).unwrap();
-    assert_eq!(back.broken.len(), 1, "坏块要被数出来,不能静默吞掉");
-    assert_eq!(back.doc.messages().len(), 1, "好的那句还得在");
+    assert_eq!(back.broken.len(), 1, "broken blocks must be counted, not swallowed");
+    assert_eq!(back.doc.messages().len(), 1, "the good line must remain");
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -71,7 +71,7 @@ fn compacting_keeps_every_word() {
     let dir = tmpdir("compact");
     let mut st = open_channel(&dir, 1).unwrap();
     for i in 0..20 {
-        st.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();
+        st.doc.tell(&me("a"), &format!("line {i}")).unwrap();
         st.store.flush(&st.doc).unwrap();
     }
     let want = render(&st.doc);
@@ -85,14 +85,14 @@ fn compacting_keeps_every_word() {
             .count()
     };
     let before = count_blocks(&dir);
-    assert!(before >= 20, "压实前该有一堆块,实测 {before}");
+    assert!(before >= 20, "before compaction there should be a pile of blocks, got {before}");
 
     st.store.compact(&st.doc).unwrap();
     let after = count_blocks(&dir);
-    assert_eq!(after, 1, "压实后只该剩那个快照,实测 {after}");
+    assert_eq!(after, 1, "after compaction only the snapshot should remain, got {after}");
 
     let back = open_channel(&dir, 1).unwrap();
-    assert_eq!(render(&back.doc), want, "压实不许丢任何一句");
+    assert_eq!(render(&back.doc), want, "compaction must not lose a line");
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -106,17 +106,17 @@ fn two_writers_on_the_same_device_do_not_collide() {
     let mut one = open_channel(&dir, 0xA1).unwrap();
     let mut two = open_channel(&dir, 0xA2).unwrap();
 
-    one.doc.tell(&me("a"), "来自进程一").unwrap();
+    one.doc.tell(&me("a"), "from process one").unwrap();
     let p1 = one.store.flush(&one.doc).unwrap().unwrap();
-    two.doc.tell(&me("a"), "来自进程二").unwrap();
+    two.doc.tell(&me("a"), "from process two").unwrap();
     let p2 = two.store.flush(&two.doc).unwrap().unwrap();
 
-    assert_ne!(p1, p2, "两个块不许同名");
+    assert_ne!(p1, p2, "the two blocks must not share a name");
     let back = open_channel(&dir, 0xA3).unwrap();
     let text = render(&back.doc);
     assert!(
-        text.contains("来自进程一") && text.contains("来自进程二"),
-        "两句都得在:\n{text}"
+        text.contains("from process one") && text.contains("from process two"),
+        "both lines must be there:\n{text}"
     );
     let _ = fs::remove_dir_all(&dir);
 }
@@ -131,26 +131,26 @@ fn what_lands_on_disk_is_readable_only_by_me() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tmpdir("perms").join("doc");
-    let mut l = open_channel(&dir, 7).expect("空文档要开得起来");
+    let mut l = open_channel(&dir, 7).expect("an empty doc must open");
     l.doc
-        .tell(&Sender { id: "a".into(), name: "A".into() }, "一句话")
-        .expect("说不出话");
-    l.store.flush(&l.doc).expect("落不了盘");
+        .tell(&Sender { id: "a".into(), name: "A".into() }, "a line")
+        .expect("tell failed");
+    l.store.flush(&l.doc).expect("flush failed");
 
     let mode = |p: &std::path::Path| {
-        std::fs::metadata(p).expect("读不到属性").permissions().mode() & 0o777
+        std::fs::metadata(p).expect("no metadata").permissions().mode() & 0o777
     };
-    assert_eq!(mode(&dir), 0o700, "文档目录不许让别人 cd 进来");
+    assert_eq!(mode(&dir), 0o700, "the doc dir must not let others cd in");
 
     let mut n = 0;
-    for e in std::fs::read_dir(&dir).expect("列不了目录") {
-        let p = e.expect("读不到条目").path();
-        assert_eq!(mode(&p), 0o600, "{} 不该让别人读得到", p.display());
+    for e in std::fs::read_dir(&dir).expect("cannot list the dir") {
+        let p = e.expect("cannot read the entry").path();
+        assert_eq!(mode(&p), 0o600, "{} must not be readable by others", p.display());
         n += 1;
     }
     // Prove the round wrote anything at all: a write-nothing
     // implementation idles through the loop above and every assertion
     // passes. At least two files: one block plus the ledger.
-    assert!(n >= 2, "这一趟该写出块和账本,实测只有 {n} 个文件");
+    assert!(n >= 2, "this pass should write block and ledger, got only {n} files");
     let _ = fs::remove_dir_all(dir.parent().unwrap());
 }
