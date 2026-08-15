@@ -58,7 +58,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .expect("sync must not hang")
         .unwrap();
     let rows = b.sessions().unwrap();
-    let row = rows.iter().find(|s| s.id == tid).expect("the summary should make a row");
+    let row = &rows.iter().find(|v| v.session.id == tid).expect("the summary should make a row").session;
     assert_eq!(row.state.state, State::Blocked, "no approval yet = 待批");
     assert_eq!(row.title, "big.bin");
     let files_dir = rb.join(".khor").join("chat").join("beta").join("files");
@@ -85,16 +85,16 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     assert_eq!(fs::read(payload_path(&dir, f)).unwrap(), payload, "bytes must be verbatim");
 
     let rows = b.sessions().unwrap();
-    let row = rows.iter().find(|s| s.id == tid).unwrap();
+    let row = &rows.iter().find(|v| v.session.id == tid).unwrap().session;
     assert_eq!((row.state.state, row.unread), (State::Done, 1), "landed = 完成/未读");
     b.seen(&tid).unwrap();
     let rows = b.sessions().unwrap();
-    let row = rows.iter().find(|s| s.id == tid).unwrap();
+    let row = &rows.iter().find(|v| v.session.id == tid).unwrap().session;
     assert_eq!((row.state.state, row.unread), (State::Idle, 0), "looked at = 空闲");
 
     // The sender's row rides its served slices to the same word.
     let a_rows = a.sessions().unwrap();
-    let a_row = a_rows.iter().find(|s| s.id == tid).expect("the sender should have a row");
+    let a_row = &a_rows.iter().find(|v| v.session.id == tid).expect("the sender should have a row").session;
     assert_eq!(a_row.state.state, State::Done, "the final slice served = 完成 on the sender");
 
     // Resume: plant a partial of the first 100k — the second pull moves
@@ -158,9 +158,9 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .sessions()
         .unwrap()
         .into_iter()
-        .find(|s| s.title == "ghost.bin")
+        .find(|v| v.session.title == "ghost.bin")
         .expect("the ghost summary should make a row");
-    let err = timeout(Duration::from_secs(60), b.accept(&ghost.id))
+    let err = timeout(Duration::from_secs(60), b.accept(&ghost.session.id))
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();

@@ -89,9 +89,10 @@ impl Node {
                 incoming = ep.accept() => {
                     let Some(incoming) = incoming else { break };
                     let n = node.clone();
+                    let e = ep.clone();
                     tokio::spawn(async move {
                         if let Ok(conn) = incoming.await {
-                            let _ = n.handle(conn).await;
+                            let _ = n.handle(conn, &e).await;
                         }
                     });
                 }
@@ -106,7 +107,16 @@ impl Node {
                     }
                 }
                 _ = ticker.tick() => {
-                    let _ = node.sync_with_all(&ep).await;
+                    // Off the accept loop: an unreachable device stalls a
+                    // visit for DIAL_TIMEOUT, and a serve that goes deaf
+                    // for that long fails everyone else. Skip when the
+                    // previous pump still runs instead of piling up.
+                    let n = node.clone();
+                    let e = ep.clone();
+                    tokio::spawn(async move {
+                        let Ok(_g) = n.sync_gate.try_lock() else { return };
+                        let _ = n.sync_with_all(&e).await;
+                    });
                 }
             }
         }
@@ -151,7 +161,10 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::SyncNow => ipc::Reply::Synced { outcomes: self.sync_with_all(ep).await },
+            ipc::Op::SyncNow => {
+                let _g = self.sync_gate.lock().await;
+                ipc::Reply::Synced { outcomes: self.sync_with_all(ep).await }
+            }
             ipc::Op::Accept { session } => {
                 match self.accept_with(ep, &crate::SessionId(session)).await {
                     Ok(moved) => ipc::Reply::Accepted { moved },
@@ -183,7 +196,7 @@ impl Node {
         )
     }
 
-    async fn handle(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
+    async fn handle(&self, conn: iroh::endpoint::Connection, ep: &iroh::Endpoint) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             let bytes = recv
@@ -191,7 +204,7 @@ impl Node {
                 .await
                 .map_err(|e| format!("读不完请求: {e}"))?;
             let resp = match proto::decode::<Request>(&bytes) {
-                Ok(req) => self.dispatch(&remote, req),
+                Ok(req) => self.dispatch(&remote, req, ep).await,
                 Err(e) => Response::Refused { why: e },
             };
             send.write_all(&proto::encode(&resp)?)
@@ -202,14 +215,19 @@ impl Node {
         Ok(())
     }
 
-    fn dispatch(&self, remote: &str, req: Request) -> Response {
-        match self.dispatch_inner(remote, req) {
+    async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint) -> Response {
+        match self.dispatch_inner(remote, req, ep).await {
             Ok(resp) => resp,
             Err(why) => Response::Refused { why },
         }
     }
 
-    fn dispatch_inner(&self, remote: &str, req: Request) -> Result<Response, String> {
+    async fn dispatch_inner(
+        &self,
+        remote: &str,
+        req: Request,
+        ep: &iroh::Endpoint,
+    ) -> Result<Response, String> {
         match req {
             Request::Pair { token, name, addrs } => {
                 let path = self.invite_path(&token)?;
@@ -257,6 +275,24 @@ impl Node {
                     return Err("这台设备不在设备表里,先配对".into());
                 }
                 self.serve_slice(&digest, offset)
+            }
+            Request::Sessions => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err("这台设备不在设备表里,先配对".into());
+                }
+                Ok(Response::SessionRows { rows: self.reportable_rows()? })
+            }
+            Request::Act { session, action } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err("这台设备不在设备表里,先配对".into());
+                }
+                match action.as_str() {
+                    "accept" => {
+                        let moved = self.accept_local(ep, &crate::SessionId(session)).await?;
+                        Ok(Response::Acted { moved })
+                    }
+                    other => Err(format!("不认识的动作: {other}")),
+                }
             }
         }
     }
@@ -308,15 +344,51 @@ impl Node {
         outcome
     }
 
-    /// The pull itself, on an endpoint the caller owns and outlives.
+    /// Accept on an endpoint the caller owns: pulls locally when this
+    /// machine is the recipient, otherwise routes the action to the
+    /// recipient's serve — 动作从哪台设备发都行 (docs/SESSION.md).
     async fn accept_with(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
+        let Some(msg_id) = id.0.strip_prefix("transfer/") else {
+            return Err(format!("没有这个传输: {}", id.0));
+        };
+        let (channel, _) = self.find_transfer(msg_id)?;
+        if channel == self.name() {
+            return self.accept_local(ep, id).await;
+        }
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| format!("收文件的机器不在设备表里: {channel}"))?;
+        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
+            .map_err(|e| e.to_string())?;
+        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
+            .await
+            .map_err(|_| format!("连不上 {channel}(超时)——收下由那台机器执行,它得在线"))?
+            .map_err(|e| format!("连不上 {channel}: {e}"))?;
+        let resp = request(
+            &conn,
+            &Request::Act { session: id.0.clone(), action: "accept".into() },
+        )
+        .await?;
+        match resp {
+            Response::Acted { moved } => Ok(moved),
+            Response::Refused { why } => Err(why),
+            other => Err(format!("对面答非所问: {other:?}")),
+        }
+    }
+
+    /// The pull itself, only ever on the recipient machine. Never
+    /// re-routes an incoming Act — what lands wrong is refused, or two
+    /// serves could bounce one forever.
+    async fn accept_local(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
         use crate::transfer::{partial_path, payload_path, pulling_marker};
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(format!("没有这个传输: {}", id.0));
         };
         let (channel, m) = self.find_transfer(msg_id)?;
         if channel != self.name() {
-            return Err(format!("这份文件是发给 {channel} 的,在那台机器上收"));
+            return Err(format!("这份文件是发给 {channel} 的,这台机器不该收"));
         }
         let crate::MsgBody::Files(files) = &m.body else {
             return Err(format!("没有这个传输: {}", id.0));
@@ -500,6 +572,12 @@ impl Node {
     }
 
     async fn sync_device(&self, ep: &iroh::Endpoint, d: &DeviceInfo) -> Result<String, String> {
+        // A device that never reported a road (one-shot pairings) cannot
+        // be dialed, only dial us — probing it burns a full DIAL_TIMEOUT
+        // per pump for nothing.
+        if d.addrs.is_empty() {
+            return Err("它没报过任何地址,等它自己来同步".into());
+        }
         let addr = endpoint::dial_addr(&d.id, &d.addrs, self.relays()).map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
@@ -520,6 +598,13 @@ impl Node {
                 .ok_or_else(|| format!("频道名不合法: {ch:?}"))?;
             let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
             moved += self.rounds(&conn, &format!("chat/{ch}"), &mut loaded).await?;
+        }
+        // Remember what the far side reports about its own sessions:
+        // when it goes unreachable, its last word plus the report's age
+        // is all the UI may honestly show. Best effort — a failure here
+        // only means older information.
+        if let Ok(Response::SessionRows { rows }) = request(&conn, &Request::Sessions).await {
+            let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
         }
         Ok(if moved == 0 { "无事,已是同步的".into() } else { format!("搬了 {moved} 字节") })
     }
@@ -607,7 +692,7 @@ fn fresh_hex() -> Result<String, String> {
 
 /// Owner-only from the first byte: the hand-off cookie in endpoint.json
 /// is a capability, and create-then-chmod would leave a readable window.
-fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let _ = fs::remove_file(path);
     let mut opts = fs::OpenOptions::new();

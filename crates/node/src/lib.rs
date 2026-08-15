@@ -17,6 +17,7 @@ pub use khor_core::{Session, SessionId};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -29,6 +30,18 @@ use khor_sync::store::{load, Loaded};
 
 use crate::chat::ChatKind;
 use crate::transfer::TransferKind;
+
+/// One row plus where it came from. Local rows carry no source; a row
+/// learned from another device's report carries that device's name and
+/// the report's age — the offline axis (docs/SESSION.md 离线不是第七个
+/// 词): an unreachable device keeps its last word, aging visibly, and
+/// "don't know" is never painted as a concrete word.
+#[derive(Debug, Clone)]
+pub struct SessionView {
+    pub session: Session,
+    /// `(device name, report age in ms)` for reported rows.
+    pub source: Option<(String, u64)>,
+}
 
 /// What subscribers receive. `watch()` is the one feed both faces
 /// consume: the GUI repaints rows from it, the CLI prints from it —
@@ -61,6 +74,10 @@ pub struct Node {
     chat: ChatKind,
     transfer: TransferKind,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
+    /// Serializes sync pumps within one process: two concurrent pumps
+    /// share block stores and could collide on sequence numbers. The
+    /// ticker skips when busy; an explicit sync waits its turn.
+    pub(crate) sync_gate: tokio::sync::Mutex<()>,
 }
 
 impl Node {
@@ -97,6 +114,7 @@ impl Node {
             chat,
             transfer,
             subscribers: Arc::new(Mutex::new(Vec::new())),
+            sync_gate: tokio::sync::Mutex::new(()),
         };
         node.register_self()?;
         Ok(node)
@@ -208,18 +226,95 @@ impl Node {
     }
 
     /// The list: one row per session, each answering the five questions.
-    pub fn sessions(&self) -> Result<Vec<Session>, String> {
+    /// Local rows first; then rows other devices reported that this one
+    /// cannot derive itself, freshest report winning a duplicate id.
+    pub fn sessions(&self) -> Result<Vec<SessionView>, String> {
+        let mut views: Vec<SessionView> = Vec::new();
+        let seen = self.seen_loaded()?;
+        for d in self.devices()? {
+            let wm = seen.doc.watermark(&format!("chat/{}", d.name));
+            views.push(SessionView {
+                session: self.chat.row(&d.name, device_id_from_hex(&d.id)?, wm)?,
+                source: None,
+            });
+        }
+        for row in self.reportable_rows()? {
+            views.push(SessionView { session: row, source: None });
+        }
+        let mut have: std::collections::BTreeSet<String> =
+            views.iter().map(|v| v.session.id.0.clone()).collect();
+        let mut reported = self.cached_peer_rows();
+        reported.sort_by_key(|(_, age, _)| *age);
+        for (name, age, row) in reported {
+            if have.insert(row.id.0.clone()) {
+                views.push(SessionView { session: row, source: Some((name, age)) });
+            }
+        }
+        Ok(views)
+    }
+
+    /// The rows only this device can derive: its transfer faces (live
+    /// kinds later). Chat rows are excluded — every device derives those
+    /// from the CRDT itself. This is also what `Request::Sessions`
+    /// answers with.
+    pub(crate) fn reportable_rows(&self) -> Result<Vec<Session>, String> {
         let seen = self.seen_loaded()?;
         let mut rows = Vec::new();
         for d in self.devices()? {
-            let wm = seen.doc.watermark(&format!("chat/{}", d.name));
-            rows.push(self.chat.row(&d.name, device_id_from_hex(&d.id)?, wm)?);
             let dir = channel_dir(&self.root, &d.name)
                 .ok_or_else(|| format!("频道名不合法: {:?}", d.name))?;
             let msgs = self.chat.log(&d.name)?.messages;
             rows.extend(self.transfer.rows(&d.name, &dir, &msgs, |sid| seen.doc.watermark(sid)));
         }
         Ok(rows)
+    }
+
+    // ── what other devices last reported (docs/SESSION.md 离线) ──
+
+    fn peers_dir(&self) -> PathBuf {
+        self.root.join(".khor").join("peers")
+    }
+
+    /// Remembers a device's reported rows, stamped with now — age at
+    /// read time is the "多久没联系上" the UI shows.
+    pub(crate) fn cache_peer_rows(
+        &self,
+        device_id: &str,
+        name: &str,
+        rows: &[Session],
+    ) -> Result<(), String> {
+        if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(format!("这不是一个机器 id: {device_id:?}"));
+        }
+        fs::create_dir_all(self.peers_dir()).map_err(|e| format!("建不了 peers 目录: {e}"))?;
+        let report = PeerReport { at_ms: now_ms(), name: name.to_owned(), rows: rows.to_vec() };
+        link::write_private(
+            &self.peers_dir().join(device_id),
+            &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
+        )
+    }
+
+    /// Every cached report, flattened to (reporter, age, row). Unreadable
+    /// caches are skipped — a stale or missing report only means older
+    /// information, never an error.
+    fn cached_peer_rows(&self) -> Vec<(String, u64, Session)> {
+        let mut out = Vec::new();
+        let Ok(rd) = fs::read_dir(self.peers_dir()) else {
+            return out;
+        };
+        for e in rd.flatten() {
+            let Ok(text) = fs::read_to_string(e.path()) else {
+                continue;
+            };
+            let Ok(report) = serde_json::from_str::<PeerReport>(&text) else {
+                continue;
+            };
+            let age = now_ms().saturating_sub(report.at_ms);
+            for row in report.rows {
+                out.push((report.name.clone(), age, row));
+            }
+        }
+        out
     }
 
     /// Offers a file to a machine's window: the summary (name, size,
@@ -374,6 +469,21 @@ impl Node {
             .unwrap()
             .retain(|tx| tx.send(event.clone()).is_ok());
     }
+}
+
+/// One device's last session report, as cached on disk.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PeerReport {
+    at_ms: u64,
+    name: String,
+    rows: Vec<Session>,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// hex → the 32 key bytes. The table stores ids as hex; iroh wants bytes.

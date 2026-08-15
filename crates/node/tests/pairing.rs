@@ -97,8 +97,8 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // telling implies looking — so once the seen watermark syncs, nothing
     // counts as unread on any device.
     let rows = b.sessions().unwrap();
-    let alpha_row = rows.iter().find(|s| s.title == "alpha").expect("there should be an alpha row");
-    assert_eq!(alpha_row.unread, 0, "own words never count as unread, on any device");
+    let alpha_row = rows.iter().find(|v| v.session.title == "alpha").expect("there should be an alpha row");
+    assert_eq!(alpha_row.session.unread, 0, "own words never count as unread, on any device");
 
     // A line nobody here typed (an agent's, say): lands as a raw block in
     // beta's copy of alpha's window, with no seen state riding along.
@@ -111,8 +111,8 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         std::fs::write(dir.join("u-00000000000000fa-00000000.loro"), &block).unwrap();
     }
     let rows = b.sessions().unwrap();
-    let row_b = rows.iter().find(|s| s.title == "alpha").unwrap();
-    assert!(row_b.unread > 0, "the outside line should count as unread on beta");
+    let row_b = rows.iter().find(|v| v.session.title == "alpha").unwrap();
+    assert!(row_b.session.unread > 0, "the outside line should count as unread on beta");
 
     // It syncs over and is unread on alpha too (control for the clear).
     timeout(Duration::from_secs(20), b.sync_now())
@@ -120,19 +120,19 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .expect("sync must not hang")
         .unwrap();
     let rows = a.sessions().unwrap();
-    let row_a = rows.iter().find(|s| s.title == "alpha").unwrap();
-    assert!(row_a.unread > 0, "the outside line should be unread on alpha too");
+    let row_a = rows.iter().find(|v| v.session.title == "alpha").unwrap();
+    assert!(row_a.session.unread > 0, "the outside line should be unread on alpha too");
 
     // Seen is a decision that travels: beta looks, and alpha's badge
     // clears without anyone touching alpha.
-    b.seen(&row_b.id).unwrap();
+    b.seen(&row_b.session.id).unwrap();
     timeout(Duration::from_secs(20), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
     let rows = a.sessions().unwrap();
-    let row_a = rows.iter().find(|s| s.title == "alpha").unwrap();
-    assert_eq!(row_a.unread, 0, "seen on beta must clear on alpha");
+    let row_a = rows.iter().find(|v| v.session.title == "alpha").unwrap();
+    assert_eq!(row_a.session.unread, 0, "seen on beta must clear on alpha");
 
     // ── control groups ──────────────────────────────────────────────
     // A burned token pairs nobody: gamma replays beta's ticket.

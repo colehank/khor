@@ -21,7 +21,7 @@ fn notes_to_self_are_seen_the_moment_they_are_told() {
 
     let rows = n.sessions().unwrap();
     assert_eq!(rows.len(), 1);
-    let row = &rows[0];
+    let row = &rows[0].session;
     assert_eq!(row.title, n.name());
     assert_eq!(row.home, n.device());
     assert_eq!(row.unread, 0, "own words never count as unread");
@@ -49,12 +49,12 @@ fn a_foreign_block_raises_unread_and_seen_clears_it() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("u-000000000000f0f0-00000000.loro"), &block).unwrap();
 
-    let row = &n.sessions().unwrap()[0];
+    let row = &n.sessions().unwrap()[0].session;
     assert_eq!(row.unread, 1, "the far line should count as unread");
     assert_eq!(row.state.state, State::Done);
 
     n.seen(&row.id).unwrap();
-    let row = &n.sessions().unwrap()[0];
+    let row = &n.sessions().unwrap()[0].session;
     assert_eq!(row.unread, 0);
     assert_eq!(row.state.state, State::Idle);
     let _ = fs::remove_dir_all(&r);
@@ -89,12 +89,12 @@ fn closing_a_chat_deletes_its_files_but_not_the_history() {
     fs::create_dir_all(&files).unwrap();
     fs::write(files.join("payload.bin"), b"received bytes").unwrap();
 
-    let id = n.sessions().unwrap()[0].id.clone();
+    let id = n.sessions().unwrap()[0].session.id.clone();
     n.close(&id).unwrap();
     assert!(!files.exists(), "received payloads should be gone");
     let log = n.log(n.name().to_owned().as_str()).unwrap();
     assert_eq!(log.messages.len(), 1, "the history must survive close");
-    let row = &n.sessions().unwrap()[0];
+    let row = &n.sessions().unwrap()[0].session;
     assert_eq!((row.unread, row.state.state), (0, State::Idle));
     let _ = fs::remove_dir_all(&r);
 }

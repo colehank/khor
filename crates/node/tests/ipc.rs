@@ -78,7 +78,7 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .expect("routed sync must not hang")
         .unwrap();
     let rows = b.sessions().unwrap();
-    let row = rows.iter().find(|s| s.id == tid).expect("the summary should make a row");
+    let row = &rows.iter().find(|v| v.session.id == tid).expect("the summary should make a row").session;
     assert_eq!(row.state.state, State::Blocked);
     let moved = timeout(Duration::from_secs(60), b.accept(&tid))
         .await

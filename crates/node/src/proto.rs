@@ -22,6 +22,14 @@ pub enum Request {
     /// serves bytes only after the far user approved the pull — the
     /// approval IS this request arriving (docs/SESSION.md 传输).
     Fetch { digest: String, offset: u64 },
+    /// The rows only the asked device can derive (its transfer faces;
+    /// live kinds later). Chat rows are excluded — every device derives
+    /// those from the CRDT itself, and duplicates would collide.
+    Sessions,
+    /// Run an action on a session this device executes for. Handlers
+    /// never re-route an incoming Act — what is not theirs to run is
+    /// refused, or two serves could bounce one forever.
+    Act { session: String, action: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +43,9 @@ pub enum Response {
     /// One slice. `total` rides on every slice so the fetcher can show
     /// progress without a separate stat round; end = offset + len == total.
     Slice { total: u64, bytes: serde_bytes::ByteBuf },
+    SessionRows { rows: Vec<khor_core::Session> },
+    /// An Act ran to completion; for accept, bytes moved.
+    Acted { moved: u64 },
 }
 
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {

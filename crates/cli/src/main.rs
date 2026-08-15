@@ -61,8 +61,17 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         "sessions" => {
             let n = node()?;
-            for s in n.sessions()? {
-                println!("{}\t{}\t未读 {}\t{}", s.id.0, s.state.state.key(), s.unread, s.title);
+            for v in n.sessions()? {
+                let s = &v.session;
+                let src = match &v.source {
+                    // A fresh report reads like local truth; only age
+                    // worth knowing gets printed (docs/SESSION.md 离线).
+                    Some((name, age)) if *age >= 30_000 => {
+                        format!("\t{name} {}没联系上", human_age(*age))
+                    }
+                    _ => String::new(),
+                };
+                println!("{}\t{}\t未读 {}\t{}{}", s.id.0, s.state.state.key(), s.unread, s.title, src);
             }
             Ok(())
         }
@@ -153,6 +162,19 @@ fn run(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!("不认识的动词: {other}\n{USAGE}")),
+    }
+}
+
+fn human_age(ms: u64) -> String {
+    let s = ms / 1000;
+    if s < 120 {
+        format!("{s} 秒")
+    } else if s < 7200 {
+        format!("{} 分钟", s / 60)
+    } else if s < 172_800 {
+        format!("{} 小时", s / 3600)
+    } else {
+        format!("{} 天", s / 86_400)
     }
 }
 
