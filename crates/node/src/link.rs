@@ -33,6 +33,8 @@ struct EndpointFile {
     addrs: Vec<String>,
     pid: u32,
     #[serde(default)]
+    relays: Vec<String>,
+    #[serde(default)]
     ipc_port: u16,
     #[serde(default)]
     ipc_cookie: String,
@@ -45,16 +47,19 @@ impl Node {
     /// the live endpoint and the hand-off port.
     pub async fn serve(self) -> Result<(), String> {
         let ep = std::sync::Arc::new(
-            endpoint::bind(self.secret_key().clone())
+            endpoint::bind(self.secret_key().clone(), self.relays())
                 .await
                 .map_err(|e| e.to_string())?,
         );
         let addrs = endpoint::local_addrs(&ep);
         // Own dialing hints go into the table so the snapshot handed to a
-        // pairing device already says how to reach us.
+        // pairing device already says how to reach us — relay roads
+        // included, or a peer behind a hostile network has no way in.
         {
+            let mut roads = addrs.clone();
+            roads.extend(self.relays().iter().cloned());
             let loaded = self.devices_loaded()?;
-            loaded.doc.upsert(self.device_str(), self.name(), &addrs)?;
+            loaded.doc.upsert(self.device_str(), self.name(), &roads)?;
             let mut store = loaded.store;
             store.flush(&loaded.doc)?;
         }
@@ -66,6 +71,7 @@ impl Node {
             id: self.device_str().to_owned(),
             addrs,
             pid: std::process::id(),
+            relays: self.relays().to_vec(),
             ipc_port: handoffs.local_addr().map_err(|e| e.to_string())?.port(),
             ipc_cookie: cookie.clone(),
         };
@@ -138,7 +144,9 @@ impl Node {
             ipc::Op::Pair { ticket } => {
                 // Routed pairing reports the serve's own addresses: they
                 // outlive this exchange, unlike a one-shot endpoint's.
-                match self.pair_with(ep, &ticket, endpoint::local_addrs(ep)).await {
+                let mut roads = endpoint::local_addrs(ep);
+                roads.extend(self.relays().iter().cloned());
+                match self.pair_with(ep, &ticket, roads).await {
                     Ok(name) => ipc::Reply::Paired { name },
                     Err(why) => ipc::Reply::Refused { why },
                 }
@@ -292,7 +300,7 @@ impl Node {
                 other => Err(format!("serve 答非所问: {other:?}")),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.accept_with(&ep, id).await;
@@ -323,7 +331,8 @@ impl Node {
         fs::create_dir_all(dir.join("files")).map_err(|e| format!("建不了 files 目录: {e}"))?;
 
         let outcome = async {
-            let addr = endpoint::dial_addr(&home.id, &home.addrs, &[]).map_err(|e| e.to_string())?;
+            let addr = endpoint::dial_addr(&home.id, &home.addrs, self.relays())
+                .map_err(|e| e.to_string())?;
             let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
                 .await
                 .map_err(|_| "连不上出让方(超时)".to_string())?
@@ -373,7 +382,7 @@ impl Node {
             id: self.device_str().to_owned(),
             name: self.name().to_owned(),
             direct: file.addrs,
-            relays: vec![],
+            relays: file.relays,
             token,
         }
         .encode()
@@ -400,7 +409,7 @@ impl Node {
                 other => Err(format!("serve 答非所问: {other:?}")),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
         // A one-shot endpoint's addresses die with it — better none than
@@ -421,7 +430,11 @@ impl Node {
         report_addrs: Vec<String>,
     ) -> Result<String, String> {
         let t = Ticket::decode(ticket).map_err(|e| e.to_string())?;
-        let addr = endpoint::dial_addr(&t.id, &t.direct, &t.relays).map_err(|e| e.to_string())?;
+        // Own relays join the ticket's: the issuer may sit behind a relay
+        // it did not think to advertise.
+        let mut relays = t.relays.clone();
+        relays.extend(self.relays().iter().cloned());
+        let addr = endpoint::dial_addr(&t.id, &t.direct, &relays).map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
             .map_err(|_| "连不上出票的那台机器(超时)".to_string())?
@@ -462,7 +475,7 @@ impl Node {
                 other => Err(format!("serve 答非所问: {other:?}")),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.sync_with_all(&ep).await;
@@ -487,7 +500,7 @@ impl Node {
     }
 
     async fn sync_device(&self, ep: &iroh::Endpoint, d: &DeviceInfo) -> Result<String, String> {
-        let addr = endpoint::dial_addr(&d.id, &d.addrs, &[]).map_err(|e| e.to_string())?;
+        let addr = endpoint::dial_addr(&d.id, &d.addrs, self.relays()).map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
             .map_err(|_| "连不上(超时)".to_string())?

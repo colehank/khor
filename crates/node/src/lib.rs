@@ -55,6 +55,9 @@ pub struct Node {
     name: String,
     /// This process's writer peer, shared by every doc it writes.
     peer: u64,
+    /// Relay roads this machine binds with and offers to others: the
+    /// Khor tier plus `KHOR_RELAY` (docs/NET.md 中继).
+    relays: Vec<String>,
     chat: ChatKind,
     transfer: TransferKind,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
@@ -90,6 +93,7 @@ impl Node {
             device_str,
             name,
             peer: ChatDoc::fresh_peer(),
+            relays: khor_net::endpoint::configured_relays(),
             chat,
             transfer,
             subscribers: Arc::new(Mutex::new(Vec::new())),
@@ -147,6 +151,10 @@ impl Node {
 
     pub(crate) fn secret_key(&self) -> &iroh::SecretKey {
         &self.key
+    }
+
+    pub(crate) fn relays(&self) -> &[String] {
+        &self.relays
     }
 
     pub(crate) fn devices_loaded(&self) -> Result<Loaded<DeviceDoc>, String> {
