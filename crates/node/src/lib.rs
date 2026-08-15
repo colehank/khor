@@ -1,27 +1,33 @@
 //! One device's node: identity, the session surface (docs/SESSION.md),
-//! and the live link to the rest of the network (docs/NET.md). The kind
-//! trait gets extracted into core when the second kind lands — an
-//! interface frozen against one implementor is guesswork.
+//! and the live link to the rest of the network (docs/NET.md).
+//!
+//! No kind trait yet, on purpose: the second kind (transfer) derives its
+//! rows from the chat document rather than owning state, so the two
+//! kinds share only "produce rows" — a trait cut from that would freeze
+//! an accident. Extraction waits for the first kind that is not derived
+//! from chat (shell/tui, which own live processes).
 
 pub mod chat;
 pub mod link;
 pub mod proto;
+pub mod transfer;
 
 pub use khor_core::{Session, SessionId};
-pub use khor_sync::chat::{Message, MsgBody};
+pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use khor_core::{DeviceId, Event};
-use khor_sync::chat::{channel_of_machine, ChatDoc, Sender};
+use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
 use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
 
 use crate::chat::ChatKind;
+use crate::transfer::TransferKind;
 
 /// What subscribers receive. `watch()` is the one feed both faces
 /// consume: the GUI repaints rows from it, the CLI prints from it —
@@ -49,6 +55,7 @@ pub struct Node {
     /// This process's writer peer, shared by every doc it writes.
     peer: u64,
     chat: ChatKind,
+    transfer: TransferKind,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
 }
 
@@ -74,6 +81,7 @@ impl Node {
             root.clone(),
             Sender { id: device_str.clone(), name: name.clone() },
         );
+        let transfer = TransferKind::new(root.clone(), device_str.clone(), name.clone());
         let node = Node {
             root,
             key,
@@ -82,6 +90,7 @@ impl Node {
             name,
             peer: ChatDoc::fresh_peer(),
             chat,
+            transfer,
             subscribers: Arc::new(Mutex::new(Vec::new())),
         };
         node.register_self()?;
@@ -196,8 +205,58 @@ impl Node {
         for d in self.devices()? {
             let wm = seen.doc.watermark(&format!("chat/{}", d.name));
             rows.push(self.chat.row(&d.name, device_id_from_hex(&d.id)?, wm)?);
+            let dir = channel_dir(&self.root, &d.name)
+                .ok_or_else(|| format!("频道名不合法: {:?}", d.name))?;
+            let msgs = self.chat.log(&d.name)?.messages;
+            rows.extend(self.transfer.rows(&d.name, &dir, &msgs, |sid| seen.doc.watermark(sid)));
         }
         Ok(rows)
+    }
+
+    /// Offers a file to a machine's window: the summary (name, size,
+    /// digest) travels the CRDT to everyone; the bytes wait here for the
+    /// far side's approval. Returns the transfer session id.
+    pub fn send(&self, machine: &str, path: &Path) -> Result<SessionId, String> {
+        let (channel, home) = self.resolve(machine)?;
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .ok_or_else(|| format!("这不是一个文件路径: {}", path.display()))?;
+        let (digest, size) = transfer::digest_file(path)?;
+        let f = FileRef { name: name.clone(), size: size as i64, digest: digest.clone() };
+        let told = self.chat.send_files(&channel, home, &[f])?;
+        transfer::save_offer(
+            &self.root,
+            &digest,
+            &transfer::Offer {
+                path: path
+                    .canonicalize()
+                    .map_err(|e| format!("定不下这个路径: {e}"))?,
+                name,
+                size,
+                started: false,
+                done: false,
+            },
+        )?;
+        self.mark_seen(&told.row.id, told.at)?;
+        self.emit(NodeEvent::Event(told.event));
+        self.emit(NodeEvent::Row(told.row));
+        Ok(TransferKind::session_id(&told.msg_id))
+    }
+
+    /// The file message behind `transfer/<msg_id>`, with its channel.
+    pub(crate) fn find_transfer(&self, msg_id: &str) -> Result<(String, Message), String> {
+        for d in self.devices()? {
+            let log = self.chat.log(&d.name)?;
+            if let Some(m) = log
+                .messages
+                .into_iter()
+                .find(|m| m.id == msg_id && matches!(m.body, MsgBody::Files(_)))
+            {
+                return Ok((d.name, m));
+            }
+        }
+        Err(format!("没有这个传输: transfer/{msg_id}"))
     }
 
     /// Subscribes to everything that happens. Events push; the returned
@@ -229,19 +288,72 @@ impl Node {
     /// Marks a session seen; unread drops to zero — here and, once the
     /// watermark syncs, on every device.
     pub fn seen(&self, id: &SessionId) -> Result<(), String> {
-        let (channel, home) = self.channel_of_session(id)?;
-        let (last_at, row) = self.chat.seen(&channel, home)?;
-        self.mark_seen(id, last_at)?;
-        self.emit(NodeEvent::Row(row));
-        Ok(())
+        if id.0.starts_with("chat/") {
+            let (channel, home) = self.channel_of_session(id)?;
+            let (last_at, row) = self.chat.seen(&channel, home)?;
+            self.mark_seen(id, last_at)?;
+            self.emit(NodeEvent::Row(row));
+            return Ok(());
+        }
+        if let Some(msg_id) = id.0.strip_prefix("transfer/") {
+            let (channel, m) = self.find_transfer(msg_id)?;
+            let dir = channel_dir(&self.root, &channel)
+                .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
+            // What "looked at" covers here is the landed payload; before
+            // it lands there is nothing unread to clear (待批 clears by
+            // answering, not by looking — docs/UX.md 角标).
+            let MsgBody::Files(files) = &m.body else {
+                return Err(format!("没有这个传输: {}", id.0));
+            };
+            let at = files
+                .iter()
+                .filter_map(|f| transfer::mtime_ms(&transfer::payload_path(&dir, f)))
+                .max()
+                .unwrap_or(0);
+            self.mark_seen(id, at)?;
+            self.emit_transfer_row(&channel, &m)?;
+            return Ok(());
+        }
+        Err(format!("没有这个 session: {}", id.0))
     }
 
-    /// Closes a session. For a device chat this deletes the history and
-    /// the files it received (docs/SESSION.md).
+    /// Closes a session. A device chat deletes the payloads it received;
+    /// a transfer deletes just its own payload (the summary stays in the
+    /// CRDT — the row falls back to 待批 and can be pulled again).
     pub fn close(&self, id: &SessionId) -> Result<(), String> {
-        let (channel, _) = self.channel_of_session(id)?;
-        self.chat.close(&channel)?;
-        self.emit(NodeEvent::Closed(id.clone()));
+        if id.0.starts_with("chat/") {
+            let (channel, _) = self.channel_of_session(id)?;
+            self.chat.close(&channel)?;
+            self.emit(NodeEvent::Closed(id.clone()));
+            return Ok(());
+        }
+        if let Some(msg_id) = id.0.strip_prefix("transfer/") {
+            let (channel, m) = self.find_transfer(msg_id)?;
+            let dir = channel_dir(&self.root, &channel)
+                .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
+            let MsgBody::Files(files) = &m.body else {
+                return Err(format!("没有这个传输: {}", id.0));
+            };
+            for f in files {
+                self.transfer.close(&dir, f)?;
+            }
+            self.emit_transfer_row(&channel, &m)?;
+            return Ok(());
+        }
+        Err(format!("没有这个 session: {}", id.0))
+    }
+
+    /// Recomputes one transfer's row and pushes it to watchers.
+    fn emit_transfer_row(&self, channel: &str, m: &Message) -> Result<(), String> {
+        let dir = channel_dir(&self.root, channel)
+            .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
+        let seen = self.seen_loaded()?;
+        let rows = self
+            .transfer
+            .rows(channel, &dir, std::slice::from_ref(m), |sid| seen.doc.watermark(sid));
+        if let Some(row) = rows.into_iter().next() {
+            self.emit(NodeEvent::Row(row));
+        }
         Ok(())
     }
 
@@ -256,7 +368,7 @@ impl Node {
 }
 
 /// hex → the 32 key bytes. The table stores ids as hex; iroh wants bytes.
-fn device_id_from_hex(s: &str) -> Result<DeviceId, String> {
+pub(crate) fn device_id_from_hex(s: &str) -> Result<DeviceId, String> {
     let s = s.trim();
     if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(format!("这不是一个机器 id: {s:?}"));

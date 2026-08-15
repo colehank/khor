@@ -15,3 +15,5 @@ getrandom.workspace = true
 iroh.workspace = true
 tokio.workspace = true
 gethostname.workspace = true
+serde_bytes.workspace = true
+blake3.workspace = true

@@ -81,9 +81,31 @@ impl ChatKind {
     }
 
     pub fn tell(&self, channel: &str, home: DeviceId, text: &str) -> Result<Told, String> {
+        self.push(channel, home, |doc| doc.tell(&self.me, text), serde_json::json!({ "text": text, "from": self.me.name }))
+    }
+
+    /// Sends file summaries — names, sizes, digests. The bytes never
+    /// enter the document; they travel a transfer after approval.
+    pub fn send_files(
+        &self,
+        channel: &str,
+        home: DeviceId,
+        files: &[khor_sync::chat::FileRef],
+    ) -> Result<Told, String> {
+        let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+        self.push(channel, home, |doc| doc.send_files(&self.me, files), serde_json::json!({ "files": names, "from": self.me.name }))
+    }
+
+    fn push(
+        &self,
+        channel: &str,
+        home: DeviceId,
+        write: impl FnOnce(&ChatDoc) -> Result<String, String>,
+        payload: serde_json::Value,
+    ) -> Result<Told, String> {
         let loaded = self.load(channel)?;
         let mut store = loaded.store;
-        let msg_id = loaded.doc.tell(&self.me, text)?;
+        let msg_id = write(&loaded.doc)?;
         store.flush(&loaded.doc)?;
         let msgs = loaded.doc.messages();
         // The watermark is this message's own `at` — not the list max: a
@@ -98,11 +120,7 @@ impl ChatKind {
             session: row.id.clone(),
             seq: msgs.len() as u64,
             at: row.state.at,
-            payload: serde_json::to_vec(&serde_json::json!({
-                "text": text,
-                "from": self.me.name,
-            }))
-            .map_err(|e| e.to_string())?,
+            payload: serde_json::to_vec(&payload).map_err(|e| e.to_string())?,
         };
         Ok(Told { msg_id, at, row, event })
     }

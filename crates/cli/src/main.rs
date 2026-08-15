@@ -13,6 +13,8 @@ const USAGE: &str = "\
   devices               网里的设备
   sessions              session 列表
   tell <机器> <话...>    给机器的窗口留言
+  send <机器> <文件>     把文件给那台机器(摘要先到,对方许可后才传)
+  accept <传输号>        许可并收下全量(在收文件的那台机器上跑)
   log <机器>            看那个窗口的消息
   seen <session>        标已读
   close <session>       关掉(删收下的文件;历史全网有,不删)
@@ -73,6 +75,22 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             let id = node()?.tell(machine, &text.join(" "))?;
             println!("{id}");
+            Ok(())
+        }
+        "send" => {
+            let [machine, path] = rest else {
+                return Err(USAGE.into());
+            };
+            let id = node()?.send(machine, std::path::Path::new(path))?;
+            println!("摘要已发,等对方许可。传输号: {}", id.0);
+            Ok(())
+        }
+        "accept" => {
+            let [id] = rest else {
+                return Err(USAGE.into());
+            };
+            let moved = rt()?.block_on(node()?.accept(&SessionId(id.clone())))?;
+            println!("收下了,这一趟拉了 {moved} 字节");
             Ok(())
         }
         "log" => {

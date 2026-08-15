@@ -8,12 +8,20 @@ use serde::{Deserialize, Serialize};
 /// (`khor_sync::wire::MAX_BYTES` base64'd) with headroom.
 pub const MAX_FRAME: usize = 512 * 1024;
 
+/// One payload slice per request: stays under [`MAX_FRAME`] and makes
+/// resume-by-offset free. Room is left for the msgpack envelope.
+pub const SLICE: u64 = 256 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     /// Join: burn the one-time token, record me, hand me the network.
     Pair { token: String, name: String, addrs: Vec<String> },
     /// One sync exchange over a named doc: `devices`, or `chat/<channel>`.
     Sync { doc: String, have: String, changes: String },
+    /// One slice of an offered payload, content-addressed. The offerer
+    /// serves bytes only after the far user approved the pull — the
+    /// approval IS this request arriving (docs/SESSION.md 传输).
+    Fetch { digest: String, offset: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +32,9 @@ pub enum Response {
     Paired { name: String, devices: String },
     Synced { version: String, changes: String, items: u64 },
     Refused { why: String },
+    /// One slice. `total` rides on every slice so the fetcher can show
+    /// progress without a separate stat round; end = offset + len == total.
+    Slice { total: u64, bytes: serde_bytes::ByteBuf },
 }
 
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {

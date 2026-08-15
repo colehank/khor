@@ -149,7 +149,106 @@ impl Node {
                     items: reply.items as u64,
                 })
             }
+            Request::Fetch { digest, offset } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err("这台设备不在设备表里,先配对".into());
+                }
+                self.serve_slice(&digest, offset)
+            }
         }
+    }
+
+    /// One slice of an offered payload. The offer's recorded size is the
+    /// contract: a file that changed size since the offer is refused, not
+    /// silently served (the digest would fail far away, much later).
+    fn serve_slice(&self, digest: &str, offset: u64) -> Result<Response, String> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut offer = crate::transfer::load_offer(self.root(), digest)?
+            .ok_or("没有这份文件的记录,可能出让方换了机器或删了它")?;
+        let meta = fs::metadata(&offer.path)
+            .map_err(|e| format!("出让的文件读不到了({}): {e}", offer.path.display()))?;
+        if meta.len() != offer.size {
+            return Err("出让的文件被动过(大小变了),让对方重新发一次".into());
+        }
+        if offset > offer.size {
+            return Err(format!("起点越界: {offset} > {}", offer.size));
+        }
+        let mut f = fs::File::open(&offer.path)
+            .map_err(|e| format!("出让的文件打不开: {e}"))?;
+        f.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+        let want = (offer.size - offset).min(proto::SLICE) as usize;
+        let mut buf = vec![0u8; want];
+        f.read_exact(&mut buf).map_err(|e| format!("读不完这一片: {e}"))?;
+        offer.started = true;
+        offer.done = offset + want as u64 >= offer.size;
+        crate::transfer::save_offer(self.root(), digest, &offer)?;
+        Ok(Response::Slice { total: offer.size, bytes: serde_bytes::ByteBuf::from(buf) })
+    }
+
+    /// Approves a transfer and pulls its payload from home. Resumes from
+    /// an existing partial; verifies the blake3 digest before the payload
+    /// gets its real name. Returns bytes actually moved this run.
+    pub async fn accept(&self, id: &crate::SessionId) -> Result<u64, String> {
+        use crate::transfer::{partial_path, payload_path, pulling_marker};
+        let Some(msg_id) = id.0.strip_prefix("transfer/") else {
+            return Err(format!("没有这个传输: {}", id.0));
+        };
+        self.refuse_if_serving()?;
+        let (channel, m) = self.find_transfer(msg_id)?;
+        if channel != self.name() {
+            return Err(format!("这份文件是发给 {channel} 的,在那台机器上收"));
+        }
+        let crate::MsgBody::Files(files) = &m.body else {
+            return Err(format!("没有这个传输: {}", id.0));
+        };
+        let home = self
+            .devices_loaded()?
+            .doc
+            .get(&m.from.id)
+            .ok_or("出让方已不在设备表里")?;
+        let dir = chat::channel_dir(self.root(), &channel)
+            .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
+        fs::create_dir_all(dir.join("files")).map_err(|e| format!("建不了 files 目录: {e}"))?;
+
+        let ep = endpoint::bind(self.secret_key().clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = async {
+            let addr = endpoint::dial_addr(&home.id, &home.addrs, &[]).map_err(|e| e.to_string())?;
+            let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
+                .await
+                .map_err(|_| "连不上出让方(超时)".to_string())?
+                .map_err(|e| format!("连不上出让方: {e}"))?;
+            let mut moved = 0u64;
+            for f in files {
+                if payload_path(&dir, f).exists() {
+                    continue;
+                }
+                let marker = pulling_marker(&dir, f);
+                fs::write(&marker, format!("{}", std::process::id()))
+                    .map_err(|e| format!("记不了拉取标记: {e}"))?;
+                let pulled = pull_one(&conn, &dir, f).await;
+                let _ = fs::remove_file(&marker);
+                match pulled {
+                    Ok(n) => moved += n,
+                    Err(e) => {
+                        // A digest mismatch poisons the partial; a broken
+                        // link leaves it — it is the resume point.
+                        if e.contains("校验") {
+                            let _ = fs::remove_file(partial_path(&dir, f));
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            Ok(moved)
+        }
+        .await;
+        ep.close().await;
+        if outcome.is_ok() {
+            self.emit_transfer_row(&channel, &m)?;
+        }
+        outcome
     }
 
     /// Creates a one-time pairing ticket. Needs `khor serve` running —
@@ -387,7 +486,73 @@ async fn request(
     proto::decode(&bytes)
 }
 
-fn pid_alive(pid: u32) -> bool {
+/// Pulls one payload into its partial, slice by slice, and promotes it to
+/// its real name only after the digest checks out. Returns bytes moved
+/// this run — a resumed pull moves only the missing tail.
+async fn pull_one(
+    conn: &iroh::endpoint::Connection,
+    dir: &std::path::Path,
+    f: &khor_sync::chat::FileRef,
+) -> Result<u64, String> {
+    use std::io::{Read, Write};
+
+    use crate::transfer::{partial_path, payload_path};
+    let partial = partial_path(dir, f);
+    // Resume: the final digest must cover the bytes already on disk, so
+    // they run through the hasher before any new slice does.
+    let mut hasher = blake3::Hasher::new();
+    let mut offset = 0u64;
+    if let Ok(mut existing) = fs::File::open(&partial) {
+        let mut buf = vec![0u8; 1 << 20];
+        loop {
+            let n = existing.read(&mut buf).map_err(|e| format!("读不了断点: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            offset += n as u64;
+        }
+    }
+    let mut out = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&partial)
+        .map_err(|e| format!("开不了断点文件: {e}"))?;
+    let expect = f.size.max(0) as u64;
+    let mut moved = 0u64;
+    while offset < expect {
+        let resp = request(conn, &Request::Fetch { digest: f.digest.clone(), offset }).await?;
+        let (total, bytes) = match resp {
+            Response::Slice { total, bytes } => (total, bytes),
+            Response::Refused { why } => return Err(why),
+            other => return Err(format!("对面答非所问: {other:?}")),
+        };
+        if total != expect {
+            return Err(format!("对面报的大小和摘要里的对不上({total} vs {expect})"));
+        }
+        if bytes.is_empty() {
+            return Err("对面送了个空片".into());
+        }
+        out.write_all(&bytes).map_err(|e| format!("写不下这一片: {e}"))?;
+        hasher.update(&bytes);
+        offset += bytes.len() as u64;
+        moved += bytes.len() as u64;
+    }
+    out.sync_all().map_err(|e| format!("落不了盘: {e}"))?;
+    drop(out);
+    let got = hasher.finalize().to_hex().to_string();
+    if got != f.digest {
+        return Err(format!(
+            "内容校验对不上(拉到的 {}… ≠ 摘要说的 {}…)",
+            &got[..8],
+            f.digest.chars().take(8).collect::<String>()
+        ));
+    }
+    fs::rename(&partial, payload_path(dir, f)).map_err(|e| format!("改不了名: {e}"))?;
+    Ok(moved)
+}
+
+pub(crate) fn pid_alive(pid: u32) -> bool {
     std::process::Command::new("kill")
         .arg("-0")
         .arg(pid.to_string())
