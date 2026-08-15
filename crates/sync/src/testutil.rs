@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::doc::{ChatDoc, Sender};
+use crate::chat::{ChatDoc, Sender};
 
 pub(crate) fn me(n: &str) -> Sender {
     Sender {

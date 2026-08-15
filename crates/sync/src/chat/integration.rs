@@ -5,10 +5,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use super::doc::ChatDoc;
-use super::plan::{plan, Side};
-use super::store::ChatStore;
-use super::testutil::{me, render, tmpdir};
+use crate::chat::{open_channel, ChatDoc};
+use crate::plan::{plan, Side};
+use crate::store::BlockStore;
+use crate::testutil::{me, render, tmpdir};
 
 /// A dumb node: a directory holding blocks. It merges nothing.
 struct Dumb(PathBuf);
@@ -37,7 +37,7 @@ impl Dumb {
 }
 
 /// One sync round: plan → move → done. Returns (pulled, pushed) counts.
-fn sync_with_dumb(st: &mut ChatStore, doc: &ChatDoc, dumb: &Dumb) -> (usize, usize) {
+fn sync_with_dumb(st: &mut BlockStore, doc: &ChatDoc, dumb: &Dumb) -> (usize, usize) {
     let p = plan(&st.side().unwrap(), &dumb.side());
     for n in &p.pull {
         st.absorb(doc, n, &dumb.get(n)).unwrap();
@@ -56,13 +56,13 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
     let dir_a = tmpdir("mach-a");
     let dir_b = tmpdir("mach-b");
 
-    let mut a = ChatStore::load(&dir_a, 0xA).unwrap();
+    let mut a = open_channel(&dir_a, 0xA).unwrap();
     a.doc.tell(&me("mac"), "从 Mac 发的").unwrap();
     a.store.flush(&a.doc).unwrap();
     let (pull, push) = sync_with_dumb(&mut a.store, &a.doc, &dumb);
     assert_eq!((pull, push), (0, 1), "A 该推一块上去,没有可拉的");
 
-    let mut b = ChatStore::load(&dir_b, 0xB).unwrap();
+    let mut b = open_channel(&dir_b, 0xB).unwrap();
     let (pull, _) = sync_with_dumb(&mut b.store, &b.doc, &dumb);
     assert_eq!(pull, 1, "B 该从哑节点拉到 A 那一块");
     b.doc.tell(&me("phone"), "从手机发的").unwrap();
@@ -91,7 +91,7 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
 fn compacting_survives_the_next_sync() {
     let dumb = Dumb::new("dumb-compact");
     let dir = tmpdir("mach-compact");
-    let mut m = ChatStore::load(&dir, 0xC).unwrap();
+    let mut m = open_channel(&dir, 0xC).unwrap();
 
     for i in 0..5 {
         m.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();

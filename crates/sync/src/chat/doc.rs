@@ -267,6 +267,36 @@ impl ChatDoc {
     }
 }
 
+impl crate::store::Doc for ChatDoc {
+    fn open(peer: u64) -> Result<Self, String> {
+        ChatDoc::new(peer)
+    }
+
+    fn peer_id(&self) -> u64 {
+        self.inner.peer_id()
+    }
+
+    fn version(&self) -> VersionVector {
+        ChatDoc::version(self)
+    }
+
+    fn changes_since(&self, theirs: &VersionVector) -> Result<Vec<u8>, String> {
+        ChatDoc::changes_since(self, theirs)
+    }
+
+    fn snapshot(&self) -> Result<Vec<u8>, String> {
+        ChatDoc::snapshot(self)
+    }
+
+    fn merge(&self, bytes: &[u8]) -> Result<(), String> {
+        ChatDoc::merge(self, bytes)
+    }
+
+    fn items(&self) -> usize {
+        self.messages().len()
+    }
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

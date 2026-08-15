@@ -1,20 +1,16 @@
-//! Persistence: a stack of append-only block files anyone can read or write.
+//! Persistence for CRDT documents: a stack of append-only block files
+//! anyone can read or write.
 //!
 //! ```text
-//! ~/.khor/chat/<channel>/
+//! <dir>/
 //!     u-<author:016x>-<seq:08x>.loro   ← increment block, immutable once written
 //!     snap-<seq:08x>.loro              ← compaction product (see `compact`)
 //! ```
 //!
-//! One file per batch, author in the name: two devices writing the same
+//! One file per batch, author in the name: two writers on the same
 //! directory never conflict at the filesystem level (the Maildir answer).
 //! Loro increments merge in any order, so "immutable files + merge them
 //! all" is the entire consistency story.
-//!
-//! The path is fixed rather than `config_dir()`: the writer is often on
-//! another machine (sftp) and cannot know the remote OS's config dir.
-//! Two path schemes would eventually disagree, and the symptom would be
-//! two chat histories on one machine, each blind to the other.
 
 use std::fs;
 use std::io::Write;
@@ -22,11 +18,7 @@ use std::path::{Path, PathBuf};
 
 use loro::VersionVector;
 
-use super::doc::ChatDoc;
-use super::plan::{Ledger, Side};
-
-/// Location relative to the home directory. Fixed — see module head.
-pub const REL_DIR: &str = ".khor/chat";
+use crate::plan::{Ledger, Side};
 
 /// Block file extension.
 const EXT: &str = "loro";
@@ -35,84 +27,24 @@ const EXT: &str = "loro";
 /// as a block nor synced to the far side — each machine keeps its own.
 const LEDGER: &str = ".merged";
 
-/// Channel names travel through a remote shell (ssh/sftp path building),
-/// so this whitelist blocks command injection, not just bad filenames.
-/// `.` passes because channel names are usually machine names.
-pub fn valid_channel(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 128
-        && name != "."
-        && name != ".."
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+/// What the block store and the wire need from a CRDT document. One
+/// implementation per replicated table (chat, devices, …).
+pub trait Doc: Sized {
+    fn open(peer: u64) -> Result<Self, String>;
+    fn peer_id(&self) -> u64;
+    fn version(&self) -> VersionVector;
+    /// What this doc has beyond `theirs` — the transferable unit: a wire
+    /// frame or a file, both work.
+    fn changes_since(&self, theirs: &VersionVector) -> Result<Vec<u8>, String>;
+    fn snapshot(&self) -> Result<Vec<u8>, String>;
+    /// Idempotent: the same bytes twice equal once.
+    fn merge(&self, bytes: &[u8]) -> Result<(), String>;
+    /// Item count for humans (messages, devices, …).
+    fn items(&self) -> usize;
 }
 
-/// A channel's directory; `None` for invalid names. Never "clean" a name
-/// here: two devices cleaning differently would split one channel into
-/// two directories. Cleaning has exactly one implementation,
-/// [`channel_of_machine`].
-pub fn channel_dir(home: &Path, channel: &str) -> Option<PathBuf> {
-    valid_channel(channel).then(|| home.join(REL_DIR).join(channel))
-}
-
-/// The channel name of a machine. One machine, one channel: every device
-/// writes into the same window, so a third machine joins the same
-/// conversation instead of spawning pairwise ones.
-///
-/// `name` must be the machine's **self-reported** hostname — not a
-/// user-editable display name, not an ssh alias. Two devices naming one
-/// machine differently means two directories that never converge, with
-/// no error anywhere.
-///
-/// Cleaning: clean names pass through unchanged; a changed name gets a
-/// fingerprint of the **original** appended. So a cleaned name can never
-/// collide with a real one (`a b` → `a-b-<fp>`, distinct from a machine
-/// truly named `a-b`), and two originals that clean to the same stem stay
-/// apart. Pure function — two machines must compute the same result.
-/// `None` when nothing usable remains: report that, don't invent a name
-/// someone else could also get.
-pub fn channel_of_machine(name: &str) -> Option<String> {
-    let name = name.trim().trim_end_matches(".local");
-    if name.is_empty() {
-        return None;
-    }
-    if valid_channel(name) {
-        return Some(name.to_string());
-    }
-    // Replace per char, then collapse runs of `-`: a mostly-CJK name
-    // should not become a row of dashes.
-    let mut cleaned = String::new();
-    for c in name.chars() {
-        let ok = c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.';
-        if ok {
-            cleaned.push(c);
-        } else if !cleaned.ends_with('-') {
-            cleaned.push('-');
-        }
-    }
-    let cleaned = cleaned.trim_matches(['-', '.']).to_string();
-    let stem: String = cleaned.chars().take(40).collect();
-    let stem = stem.trim_end_matches(['-', '.']);
-    // The fingerprint hashes the original, not the cleaned form: that is
-    // what keeps two different originals with identical stems apart.
-    let out = format!("{}-{}", if stem.is_empty() { "m" } else { stem }, fingerprint(name));
-    valid_channel(&out).then_some(out)
-}
-
-/// FNV-1a. This needs determinism across machines, not collision
-/// resistance — no hash crate.
-fn fingerprint(s: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.as_bytes() {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{:08x}", (h ^ (h >> 32)) as u32)
-}
-
-/// One channel's stack on disk.
-pub struct ChatStore {
+/// One document's stack on disk.
+pub struct BlockStore {
     dir: PathBuf,
     /// Versions already on disk. `flush` writes only what came after —
     /// without this every flush rewrites all history, and "append-only"
@@ -124,50 +56,50 @@ pub struct ChatStore {
 }
 
 /// What `load` returns.
-pub struct Loaded {
-    pub store: ChatStore,
-    pub doc: ChatDoc,
+pub struct Loaded<D> {
+    pub store: BlockStore,
+    pub doc: D,
     /// Files that would not read. Counted, not swallowed: a bad block is
-    /// a missing slice of conversation and the UI must be able to say so;
-    /// one bad block must not kill the channel either.
+    /// a missing slice of data the UI must be able to mention; one bad
+    /// block must not kill the whole document either.
     pub broken: Vec<PathBuf>,
 }
 
-impl ChatStore {
-    /// Reads a channel back from disk. No directory = empty conversation,
-    /// not an error.
-    pub fn load(dir: &Path, peer: u64) -> Result<Loaded, String> {
-        let doc = ChatDoc::new(peer)?;
-        let mut broken = Vec::new();
-        let mut ledger = read_ledger(dir);
+/// Reads a document back from disk. No directory = empty document, not
+/// an error.
+pub fn load<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+    let doc = D::open(peer)?;
+    let mut broken = Vec::new();
+    let mut ledger = read_ledger(dir);
 
-        for p in blocks(dir)? {
-            match fs::read(&p) {
-                Ok(bytes) => {
-                    if doc.merge(&bytes).is_err() {
-                        broken.push(p);
-                    } else if let Some(n) = file_name(&p) {
-                        ledger.insert(n);
-                    }
+    for p in blocks(dir)? {
+        match fs::read(&p) {
+            Ok(bytes) => {
+                if doc.merge(&bytes).is_err() {
+                    broken.push(p);
+                } else if let Some(n) = file_name(&p) {
+                    ledger.insert(n);
                 }
-                Err(_) => broken.push(p),
             }
+            Err(_) => broken.push(p),
         }
-        let on_disk = doc.version();
-        let mut store = ChatStore {
-            dir: dir.to_path_buf(),
-            on_disk,
-            ledger,
-        };
-        // Only write the ledger if the directory exists: an empty channel
-        // should leave nothing on disk.
-        if dir.exists() {
-            store.save_ledger()?;
-        }
-        Ok(Loaded { store, doc, broken })
     }
+    let on_disk = doc.version();
+    let mut store = BlockStore {
+        dir: dir.to_path_buf(),
+        on_disk,
+        ledger,
+    };
+    // Only write the ledger if the directory exists: an empty document
+    // should leave nothing on disk.
+    if dir.exists() {
+        store.save_ledger()?;
+    }
+    Ok(Loaded { store, doc, broken })
+}
 
-    /// My side of the books, for [`super::plan::plan`].
+impl BlockStore {
+    /// My side of the books, for [`crate::plan::plan`].
     pub fn side(&self) -> Result<Side, String> {
         Ok(Side::new(
             blocks(&self.dir)?
@@ -181,8 +113,8 @@ impl ChatStore {
     /// Takes in a block pulled from the far side: merge, write, then
     /// ledger — in that order. Reversed, a mid-way failure marks a block
     /// merged that never was; it is never pulled again and a slice of
-    /// conversation goes permanently missing, with no error anywhere.
-    pub fn absorb(&mut self, doc: &ChatDoc, name: &str, bytes: &[u8]) -> Result<(), String> {
+    /// data goes permanently missing, with no error anywhere.
+    pub fn absorb<D: Doc>(&mut self, doc: &D, name: &str, bytes: &[u8]) -> Result<(), String> {
         doc.merge(bytes)?;
         make_dir(&self.dir)?;
         write_atomic(&self.dir.join(name), bytes)?;
@@ -208,7 +140,7 @@ impl ChatStore {
     /// `delta.is_empty()`: loro exports a non-empty header block even with
     /// zero new ops, and judging by emptiness piles up thousands of
     /// "empty" files while everything appears to work.
-    pub fn flush(&mut self, doc: &ChatDoc) -> Result<Option<PathBuf>, String> {
+    pub fn flush<D: Doc>(&mut self, doc: &D) -> Result<Option<PathBuf>, String> {
         let now = doc.version();
         if now == self.on_disk {
             return Ok(None);
@@ -220,8 +152,8 @@ impl ChatStore {
         make_dir(&self.dir)?;
         let path = self.dir.join(format!(
             "u-{:016x}-{:08x}.{EXT}",
-            doc.raw().peer_id(),
-            self.next_seq(doc.raw().peer_id())?
+            doc.peer_id(),
+            self.next_seq(doc.peer_id())?
         ));
         write_atomic(&path, &delta)?;
         // Own blocks enter the ledger too: the far side may push one right
@@ -260,20 +192,16 @@ impl ChatStore {
 
     /// Compaction: write current state as one snapshot block, then delete
     /// the increments it covers. Write-then-delete, never reversed — a
-    /// crash in between must cost a few spare KB, not the whole
-    /// conversation. The ledger keeps every line, or the next sync would
-    /// pull the compacted blocks right back, every time.
-    ///
-    /// This does not trim history: other devices syncing afterwards still
-    /// receive it all (the snapshot carries it). Shallow snapshots are a
-    /// different feature with product implications of their own.
-    pub fn compact(&mut self, doc: &ChatDoc) -> Result<PathBuf, String> {
+    /// crash in between must cost a few spare KB, not the whole document.
+    /// The ledger keeps every line, or the next sync would pull the
+    /// compacted blocks right back, every time.
+    pub fn compact<D: Doc>(&mut self, doc: &D) -> Result<PathBuf, String> {
         make_dir(&self.dir)?;
         let old = blocks(&self.dir)?;
         let snap = doc.snapshot()?;
         let path = self
             .dir
-            .join(format!("snap-{:08x}.{EXT}", self.next_seq(doc.raw().peer_id())?));
+            .join(format!("snap-{:08x}.{EXT}", self.next_seq(doc.peer_id())?));
         write_atomic(&path, &snap)?;
         for p in old {
             let _ = fs::remove_file(p);
@@ -296,7 +224,7 @@ impl ChatStore {
 /// and failures reproduce.
 fn blocks(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let Ok(rd) = fs::read_dir(dir) else {
-        return Ok(Vec::new()); // no directory = empty conversation
+        return Ok(Vec::new()); // no directory = empty document
     };
     let mut out: Vec<PathBuf> = rd
         .flatten()
@@ -308,9 +236,9 @@ fn blocks(dir: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Blocks get copied to other machines and their mode travels along. A
-/// block is the document itself — the bytes reconstruct the whole
-/// conversation — so the create() default (644 under common umask) leaks
-/// it on any shared-home machine. "Not plaintext" is no protection.
+/// block is the document itself — the bytes reconstruct all of it — so
+/// the create() default (644 under common umask) leaks it on any
+/// shared-home machine. "Not plaintext" is no protection.
 #[cfg(unix)]
 const OWNER_ONLY_FILE: u32 = 0o600;
 /// Directories likewise: 755 lets anyone cd in and list.
@@ -363,12 +291,11 @@ fn file_name(p: &Path) -> Option<String> {
 
 fn read_ledger(dir: &Path) -> Ledger {
     // Unreadable = empty ledger, not an error: the cost is one idempotent
-    // re-pull, while erroring here would brick a fresh channel.
+    // re-pull, while erroring here would brick a fresh document.
     fs::read_to_string(dir.join(LEDGER))
         .map(|t| Ledger::parse(&t))
         .unwrap_or_default()
 }
-
 
 #[cfg(test)]
 mod tests;

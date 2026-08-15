@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::chat::testutil::{me, render, tmpdir};
+use crate::testutil::{me, render, tmpdir};
 
 /// Reproducible pseudo-random — no rand: these tests must replay the
 /// same exchange order across runs, or a red light cannot be

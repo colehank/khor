@@ -9,7 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use khor_core::{kind, DeviceId, Event, Kind, Millis, Session, SessionId, State, StateStamp};
-use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, ChatStore, Message, Sender};
+use khor_sync::chat::{channel_dir, channel_of_machine, open_channel, ChatDoc, Message, Sender};
+use khor_sync::store::Loaded;
 
 /// One channel's readout.
 pub struct ChannelLog {
@@ -70,8 +71,8 @@ impl ChatKind {
         Err(format!("没有这个 session: {}(有的是 {})", id.0, want.0))
     }
 
-    fn load(&self) -> Result<khor_sync::chat::Loaded, String> {
-        ChatStore::load(&self.dir, self.peer)
+    fn load(&self) -> Result<Loaded<ChatDoc>, String> {
+        open_channel(&self.dir, self.peer)
     }
 
     fn row_from(&self, doc: &ChatDoc) -> Session {

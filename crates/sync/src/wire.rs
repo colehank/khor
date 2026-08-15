@@ -1,6 +1,6 @@
 //! Encoding for the live path: version vectors and increments as strings
-//! a request/response frame can carry. When to send, to whom, and how to
-//! retry live elsewhere.
+//! a request/response frame can carry, for any [`Doc`]. When to send, to
+//! whom, and how to retry live elsewhere.
 //!
 //! This is also the loro type boundary: callers get `String`s and never
 //! import loro, so a loro version bump cannot leak into the wire shape.
@@ -12,7 +12,7 @@
 use base64::Engine;
 use loro::VersionVector;
 
-use super::doc::ChatDoc;
+use crate::store::{BlockStore, Doc};
 
 /// Raw bytes (pre-base64) one sync may carry per direction. The control
 /// stream is serial — a huge frame blocks keys and events queued behind
@@ -28,7 +28,7 @@ const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::gen
 /// Not capped by [`MAX_BYTES`]: it grows with peers ever used (tens of KB
 /// at worst) and refusing it kills the whole path — the cap is for
 /// content, not metadata.
-pub fn version_b64(doc: &ChatDoc) -> String {
+pub fn version_b64<D: Doc>(doc: &D) -> String {
     B64.encode(doc.version().encode())
 }
 
@@ -40,7 +40,7 @@ pub fn version_b64(doc: &ChatDoc) -> String {
 /// version-vector inclusion — loro exports a non-empty header block even
 /// with zero new ops, so an emptiness check would keep the wire forever
 /// "moving" and idempotence tests forever green for the wrong reason.
-pub fn changes_since_b64(doc: &ChatDoc, theirs: &str) -> Result<String, String> {
+pub fn changes_since_b64<D: Doc>(doc: &D, theirs: &str) -> Result<String, String> {
     let vv = decode_version(theirs)?;
     if vv.includes_vv(&doc.version()) {
         return Ok(String::new());
@@ -52,7 +52,7 @@ pub fn changes_since_b64(doc: &ChatDoc, theirs: &str) -> Result<String, String> 
 
 /// Merges what the far side sent. Empty = nothing for me, not an error.
 /// Idempotent: the same segment twice equals once.
-pub fn merge_b64(doc: &ChatDoc, changes: &str) -> Result<(), String> {
+pub fn merge_b64<D: Doc>(doc: &D, changes: &str) -> Result<(), String> {
     if changes.is_empty() {
         return Ok(());
     }
@@ -83,8 +83,8 @@ pub struct Reply {
     pub version: String,
     /// The segment I lack.
     pub changes: String,
-    /// Far side's message count after merging. For humans.
-    pub messages: usize,
+    /// Far side's item count after merging. For humans.
+    pub items: usize,
 }
 
 /// One round's outcome, for logs and acceptance: "synced but nothing
@@ -96,8 +96,8 @@ pub struct Round {
     pub pushed: usize,
     /// Raw bytes pulled.
     pub pulled: usize,
-    /// My message count after merging.
-    pub messages: usize,
+    /// My item count after merging.
+    pub items: usize,
 }
 
 /// Sync state toward one far side. Memory-only, deliberately: losing it
@@ -129,7 +129,7 @@ impl Peer {
     /// version, which we don't have yet. Cost: my words arrive one round
     /// late, bounded at one; pushing everything instead can hit
     /// [`MAX_BYTES`], unbounded.
-    pub fn outgoing(&self, doc: &ChatDoc) -> Result<Outgoing, String> {
+    pub fn outgoing<D: Doc>(&self, doc: &D) -> Result<Outgoing, String> {
         Ok(Outgoing {
             have: version_b64(doc),
             // An empty `their` means "from the beginning" to
@@ -151,10 +151,10 @@ impl Peer {
     /// untouched and the next round recomputes from the last known good
     /// version; recording first would mark bytes delivered that a failed
     /// flush lost, and they would never be pushed again.
-    pub fn absorb(
+    pub fn absorb<D: Doc>(
         &mut self,
-        store: &mut super::store::ChatStore,
-        doc: &ChatDoc,
+        store: &mut BlockStore,
+        doc: &D,
         sent: &Outgoing,
         reply: Reply,
     ) -> Result<Round, String> {
@@ -164,7 +164,7 @@ impl Peer {
         Ok(Round {
             pushed: raw_len(&sent.changes),
             pulled: raw_len(&reply.changes),
-            messages: doc.messages().len(),
+            items: doc.items(),
         })
     }
 
@@ -172,10 +172,10 @@ impl Peer {
     /// transports. Async drivers use the two methods directly — `send` is
     /// a sync closure, an await cannot enter it. Extracted so the
     /// sequence exists once instead of being copied into every driver.
-    pub fn round<F>(
+    pub fn round<D: Doc, F>(
         &mut self,
-        store: &mut super::store::ChatStore,
-        doc: &ChatDoc,
+        store: &mut BlockStore,
+        doc: &D,
         send: F,
     ) -> Result<Round, String>
     where
@@ -185,6 +185,28 @@ impl Peer {
         let reply = send(&out.have, &out.changes)?;
         self.absorb(store, doc, &out, reply)
     }
+}
+
+/// The far side of one sync exchange: given the caller's version and
+/// changes, compute what they lack **first**, then merge what they sent.
+/// This is the one answering order every server dispatch must use; it
+/// lives here so drivers are readers of the order, not re-implementors.
+/// The store flushes right after the merge — same reason as
+/// [`Peer::absorb`].
+pub fn answer<D: Doc>(
+    store: &mut BlockStore,
+    doc: &D,
+    have: &str,
+    changes: &str,
+) -> Result<Reply, String> {
+    let out = changes_since_b64(doc, have)?;
+    merge_b64(doc, changes)?;
+    store.flush(doc)?;
+    Ok(Reply {
+        version: version_b64(doc),
+        changes: out,
+        items: doc.items(),
+    })
 }
 
 /// The two strings one round sends.
@@ -230,32 +252,32 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::chat::store::ChatStore;
-    use crate::chat::testutil::{me, render, tmpdir};
+    use crate::chat::{open_channel, ChatDoc};
+    use crate::testutil::{me, render, tmpdir};
 
-    /// An in-memory far side. It follows the answering order the real
-    /// driver must use — compute the outgoing segment first, then merge
-    /// the incoming one — and stays short so it is a second reader of
-    /// that order, not a second implementation.
+    /// An in-memory far side riding [`answer`] — the same order the real
+    /// server dispatch uses.
     struct Far {
         doc: ChatDoc,
+        store: BlockStore,
+        dir: std::path::PathBuf,
     }
 
     impl Far {
-        fn new(peer: u64) -> Self {
-            Self {
-                doc: ChatDoc::new(peer).unwrap(),
-            }
+        fn new(tag: &str, peer: u64) -> Self {
+            let dir = tmpdir(tag);
+            let loaded = open_channel(&dir, peer).unwrap();
+            Self { doc: loaded.doc, store: loaded.store, dir }
         }
 
-        fn answer(&self, have: &str, changes: &str) -> Result<Reply, String> {
-            let out = changes_since_b64(&self.doc, have)?;
-            merge_b64(&self.doc, changes)?;
-            Ok(Reply {
-                version: version_b64(&self.doc),
-                changes: out,
-                messages: self.doc.messages().len(),
-            })
+        fn answer(&mut self, have: &str, changes: &str) -> Result<Reply, String> {
+            answer(&mut self.store, &self.doc, have, changes)
+        }
+    }
+
+    impl Drop for Far {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.dir);
         }
     }
 
@@ -265,23 +287,23 @@ mod tests {
     #[test]
     fn a_peer_pulls_first_then_pushes() {
         let dir = tmpdir("wire-round");
-        let mut mine = ChatStore::load(&dir, 0x51).unwrap();
+        let mut mine = open_channel(&dir, 0x51).unwrap();
         mine.doc.tell(&me("我"), "这边说的").unwrap();
         mine.store.flush(&mine.doc).unwrap();
 
-        let far = Far::new(0x52);
+        let mut far = Far::new("wire-round-far", 0x52);
         far.doc.tell(&me("远"), "那边说的").unwrap();
 
         let mut peer = Peer::new();
         let r1 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert_eq!(r1.pushed, 0, "第一趟不许推(还不知道对方到哪儿)");
         assert!(r1.pulled > 0, "第一趟该把对方那句拉回来");
-        assert_eq!(r1.messages, 2, "我这边现在两条");
-        assert_eq!(far.doc.messages().len(), 1, "对方还没收到我这句");
+        assert_eq!(r1.items, 2, "我这边现在两条");
+        assert_eq!(far.doc.items(), 1, "对方还没收到我这句");
 
         let r2 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert!(r2.pushed > 0, "第二趟该把我那句推过去");
-        assert_eq!(far.doc.messages().len(), 2, "对方收到了");
+        assert_eq!(far.doc.items(), 2, "对方收到了");
         assert_eq!(render(&mine.doc), render(&far.doc), "两边逐字相同");
 
         let _ = fs::remove_dir_all(&dir);
@@ -296,9 +318,9 @@ mod tests {
     #[test]
     fn a_settled_pair_moves_nothing() {
         let dir = tmpdir("wire-idle");
-        let mut mine = ChatStore::load(&dir, 0x61).unwrap();
+        let mut mine = open_channel(&dir, 0x61).unwrap();
         mine.doc.tell(&me("我"), "一句").unwrap();
-        let far = Far::new(0x62);
+        let mut far = Far::new("wire-idle-far", 0x62);
 
         let mut peer = Peer::new();
         for _ in 0..3 {
@@ -306,7 +328,7 @@ mod tests {
         }
         let r = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert_eq!((r.pushed, r.pulled), (0, 0), "稳态下两个方向都空,实测 {r:?}");
-        assert_eq!(r.messages, 1);
+        assert_eq!(r.items, 1);
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -321,11 +343,11 @@ mod tests {
     #[test]
     fn remembering_saves_a_round_trip_not_bytes() {
         let dir = tmpdir("wire-amnesia");
-        let mut mine = ChatStore::load(&dir, 0x71).unwrap();
+        let mut mine = open_channel(&dir, 0x71).unwrap();
         for i in 0..30 {
             mine.doc.tell(&me("我"), &format!("第 {i} 句")).unwrap();
         }
-        let far = Far::new(0x72);
+        let mut far = Far::new("wire-amnesia-far", 0x72);
 
         // The one who remembers: pushes on round two, zero after.
         let mut good = Peer::new();
@@ -337,7 +359,7 @@ mod tests {
         mine.doc.tell(&me("我"), "新的一句").unwrap();
         let one = good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert!(one.pushed > 0, "记得对方到哪儿,所以这一趟直接推");
-        assert_eq!(far.doc.messages().len(), 31, "一趟就送到了");
+        assert_eq!(far.doc.items(), 31, "一趟就送到了");
 
         // A fresh restart: same one new line — same length as the last,
         // so a byte difference can't be misread as anything but round
@@ -346,10 +368,10 @@ mod tests {
         let mut fresh = Peer::new();
         let a = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert_eq!(a.pushed, 0, "刚重启的第一趟是纯拉");
-        assert_eq!(far.doc.messages().len(), 31, "所以这一趟对方还没收到");
+        assert_eq!(far.doc.items(), 31, "所以这一趟对方还没收到");
         let b = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert!(b.pushed > 0);
-        assert_eq!(far.doc.messages().len(), 32, "第二趟才到");
+        assert_eq!(far.doc.items(), 32, "第二趟才到");
 
         // Same byte count — the factual half of "not bytes".
         assert_eq!(
