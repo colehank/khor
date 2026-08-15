@@ -1,0 +1,13 @@
+[package]
+name = "khor-net"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+iroh.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
