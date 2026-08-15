@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/net", "crates/sync", "crates/node", "crates/cli"]
+members = ["crates/core", "crates/catalog", "crates/net", "crates/sync", "crates/node", "crates/cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,6 +8,7 @@ edition = "2024"
 
 [workspace.dependencies]
 khor-core = { path = "crates/core" }
+khor-catalog = { path = "crates/catalog" }
 khor-net = { path = "crates/net" }
 khor-sync = { path = "crates/sync" }
 khor-node = { path = "crates/node" }

@@ -1,0 +1,11 @@
+[package]
+name = "khor-catalog"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[build-dependencies]
+toml = "0.8"
+
+[dev-dependencies]
+khor-core.workspace = true

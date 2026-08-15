@@ -1,0 +1,221 @@
+# The one wording file (docs/UX.md 文案): every user-facing word lives
+# here and only here. Keys are stable and travel the wire; words are
+# looked up at the last moment. {0}/{1} are positional arguments.
+# Within a section, two keys may not share one text — refusing by name
+# needs names that differ (enforced at build time).
+
+[state]
+busy = "忙碌"
+blocked = "待批"
+done = "完成"
+errored = "中断"
+failed = "失败"
+idle = "空闲"
+
+[cli]
+usage = """
+用法: khor <动词>
+  id                    本机身份
+  devices               网里的设备
+  sessions              session 列表
+  tell <机器> <话...>    给机器的窗口留言
+  send <机器> <文件>     把文件给那台机器(摘要先到,对方许可后才传)
+  accept <传输号>        许可并收下全量(在收文件的那台机器上跑)
+  log <机器>            看那个窗口的消息
+  run [--tui] [--title 名] -- <命令...>
+                        临时 session:跟着这个终端活,全程网里可见
+  open [-d] [--tui] [--title 名] [-- 命令]
+                        持久 session:终端关了还在,能重连(默认接上;-d 只开)
+  attach <session>      接上一个持久 session(Ctrl-\\ 断开)
+  state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
+  seen <session>        标已读
+  close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
+  serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
+  invite                出一张一次性配对票(要求 serve 在跑)
+  pair <票>             凭票入网
+  sync                  立即和全网各同步一趟"""
+this-machine = "(本机)"
+name-separator = "、"
+unread = "未读 {0}"
+unreachable-for = "{0}没联系上"
+age-seconds = "{0} 秒"
+age-minutes = "{0} 分钟"
+age-hours = "{0} 小时"
+age-days = "{0} 天"
+summary-sent = "摘要已发,等对方许可。传输号: {0}"
+pulled = "收下了,这一趟拉了 {0} 字节"
+broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
+serve-banner = "khor serve: {0} 在听,配对与同步都归它"
+paired-ok = "配上了: {0}。它认识的机器现在都在你的设备表里"
+nothing-to-sync = "网里只有本机,没得同步"
+sync-failed-line = "{0}: 没同步上——{1}"
+attached = "接上了: {0}(Ctrl-\\ 断开,session 不会跟着走)"
+detached = "已断开,session 还在: khor attach {0}"
+session-settled = "session 收场了: {0}"
+link-dropped = "连接断了,session 好像还在({0}): khor attach {1}"
+session-closed = "session 关了"
+retracted = "[已撤回]"
+file-chip = "[文件 {0} {1}B]"
+unknown-body = "[这一版还读不出这条:{0}]"
+
+[msg]
+# ── cli ──
+runtime-wont-start = "起不了运行时: {0}"
+which-session = "不知道汇报给哪个 session:设 KHOR_SESSION 或用 --session"
+not-a-state-word = "不是六词之一: {0}"
+unknown-verb = "不认识的动词: {0}"
+attach-needs-tty = "attach 要在终端里跑"
+attach-windows-later = "这一版还接不上(Windows 的 attach 挂账)"
+no-termios = "拿不到终端参数"
+no-raw-mode = "终端切不进原始模式"
+hook-payload-unreadable = "读不了钩子载荷: {0}"
+
+# ── identity / tickets (net) ──
+identity-unreadable = "读身份文件失败"
+cant-make-dir-for = "创建目录失败: {0}"
+cant-write-file = "写入失败: {0}"
+cant-set-permissions = "设置文件权限失败"
+identity-too-open = "身份文件权限过于开放({0}),别人能读走它冒充这台机器。\n  修:chmod 600 {1}"
+identity-corrupt = "身份文件损坏(应为 32 字节),删掉它会重新生成——\n  注意重新生成等于换一台机器,已配对的设备需要重新配对:{0}"
+not-a-machine-id-short = "这不是一个机器 id"
+not-a-ticket-base64 = "这不是一张配对票(base64 解不开)"
+not-a-ticket-content = "这不是一张配对票(内容对不上)"
+
+# ── document store and wire (sync) ──
+cant-read = "读不了 {0}: {1}"
+cant-make-dir = "建不了目录: {0}"
+cant-write = "写不了 {0}: {1}"
+cant-finish-write = "写不完: {0}"
+cant-sync-disk = "落不了盘: {0}"
+cant-rename = "改不了名: {0}"
+outbound-too-big = "要发出去的这一段有 {0} KiB,超过配对通道单帧上限 {1} KiB。控制流是串行的,这条路只运增量——整段历史请走 ssh 那条(按文件搬,没有单帧上限)"
+inbound-too-big = "收到的这一段有 {0} KiB,超过配对通道单帧上限 {1} KiB。控制流是串行的,这条路只运增量——整段历史请走 ssh 那条(按文件搬,没有单帧上限)"
+delta-not-base64 = "这段增量不是 base64: {0}"
+version-not-base64 = "这个版本号不是 base64: {0}"
+version-undecodable = "解不出版本号: {0}"
+cant-set-peer = "设不上 peer id: {0}"
+cant-export-changes = "导不出增量: {0}"
+cant-export-snapshot = "导不出快照: {0}"
+cant-merge = "合不进来: {0}"
+cant-append = "加不进去: {0}"
+no-such-message = "没有这条: {0}"
+
+# ── frames (node) ──
+cant-encode-frame = "编不出帧: {0}"
+cant-decode-frame = "解不出帧: {0}"
+
+# ── local hand-off (node) ──
+serve-unreachable = "递不到 serve: {0}"
+handoff-failed = "递不过去: {0}"
+cant-close-stream = "收不了尾: {0}"
+no-reply-from-serve = "读不到 serve 的答复: {0}"
+cant-open-handoff-port = "开不了递话口: {0}"
+handoff-unreadable = "读不完递话: {0}"
+handoff-wrong-cookie = "递话的暗号对不上,重读 endpoint.json 再来"
+cant-reply = "答不回去: {0}"
+serve-no-handoff-port = "khor serve 在跑(pid {0})但没开递话口,把它升级或先停掉"
+serve-handoff-failed = "khor serve 在跑(pid {0})但递不过去: {1}"
+endpoint-file-garbled = "endpoint.json 读不懂: {0}"
+
+# ── the wire between machines (node) ──
+request-unreadable = "读不完请求: {0}"
+cant-write-reply = "写不出应答: {0}"
+bad-invite = "配对码不对,或已经被用过了"
+cant-burn-invite = "销不掉配对码: {0}"
+not-paired = "这台设备不在设备表里,先配对"
+unknown-doc = "不认识这种 doc: {0}"
+unknown-action = "不认识的动作: {0}"
+serve-non-answer = "serve 答非所问: {0}"
+peer-non-answer = "对面答非所问: {0}"
+far-table-not-base64 = "对面的设备表不是 base64: {0}"
+no-roads-reported = "它没报过任何地址,等它自己来同步"
+nothing-to-move = "无事,已是同步的"
+moved-bytes = "搬了 {0} 字节"
+no-entropy = "取不到随机数: {0}"
+cant-open-stream = "开不了流: {0}"
+cant-send = "发不出去: {0}"
+no-answer = "读不到应答: {0}"
+serve-not-running-for-invite = "khor serve 没在跑——先在这台机器起 khor serve,票里要带它的地址"
+cant-make-invites-dir = "建不了邀请目录: {0}"
+cant-save-invite = "存不了配对码: {0}"
+cant-reach-named = "连不上 {0}: {1}"
+cant-reach-plain = "连不上: {0}"
+dial-timed-out = "连不上(超时)"
+inviter-unreachable-timeout = "连不上出票的那台机器(超时)"
+inviter-unreachable = "连不上出票的那台机器: {0}"
+
+# ── transfers (node) ──
+not-a-digest = "这不是一个内容摘要: {0}"
+cant-make-transfers-dir = "建不了传输目录: {0}"
+cant-record-offer = "记不了这份文件: {0}"
+offer-garbled = "传输记录读不懂: {0}"
+cant-finish-reading = "读不完 {0}: {1}"
+offer-lost = "没有这份文件的记录,可能出让方换了机器或删了它"
+offered-file-unreadable = "出让的文件读不到了({0}): {1}"
+offered-file-changed = "出让的文件被动过(大小变了),让对方重新发一次"
+offset-out-of-range = "起点越界: {0} > {1}"
+offered-file-wont-open = "出让的文件打不开: {0}"
+cant-read-slice = "读不完这一片: {0}"
+recipient-not-in-table = "收文件的机器不在设备表里: {0}"
+recipient-unreachable-timeout = "连不上 {0}(超时)——收下由那台机器执行,它得在线"
+offerer-unreachable-timeout = "连不上出让方(超时)"
+offerer-unreachable = "连不上出让方: {0}"
+offerer-left-table = "出让方已不在设备表里"
+cant-make-files-dir = "建不了 files 目录: {0}"
+cant-mark-pulling = "记不了拉取标记: {0}"
+cant-read-partial = "读不了断点: {0}"
+cant-open-partial = "开不了断点文件: {0}"
+size-mismatch = "对面报的大小和摘要里的对不上({0} vs {1})"
+empty-slice = "对面送了个空片"
+cant-write-slice = "写不下这一片: {0}"
+digest-mismatch = "内容校验对不上(拉到的 {0}… ≠ 摘要说的 {1}…)"
+no-such-transfer = "没有这个传输: {0}"
+wrong-recipient = "这份文件是发给 {0} 的,这台机器不该收"
+not-a-file-path = "这不是一个文件路径: {0}"
+cant-canonicalize = "定不下这个路径: {0}"
+
+# ── the session surface (node) ──
+name-not-pathable = "这个名字进不了路径: {0}"
+machine-name-not-pathable = "这个机器名进不了路径: {0}"
+no-such-machine = "机器不存在: {0}。网里现在有: {1}"
+no-such-session = "没有这个 session: {0}"
+no-such-session-because = "没有这个 session: {0}({1})"
+not-a-machine-id = "这不是一个机器 id: {0}"
+cant-make-peers-dir = "建不了 peers 目录: {0}"
+bad-channel-name = "频道名不合法: {0}"
+cant-delete = "删不掉: {0}"
+remote-close-not-yet = "这个 session 的 home 是 {0},远程关还没有,去那台关"
+
+# ── the live kind (node) ──
+not-a-session-id = "这不是一个 session 号: {0}"
+session-already-exists = "这个 session 已经在了: {0}"
+cant-make-session-dir = "建不了 session 目录: {0}"
+failed-is-not-reportable = "失败不由汇报定,由退出码定"
+session-over = "这个 session 已经收场了: {0}"
+cant-read-session-meta = "读不了 session 记录: {0}"
+session-meta-garbled = "session 记录读不懂: {0}"
+cant-read-session-state = "读不了 session 状态: {0}"
+session-state-garbled = "session 状态读不懂: {0}"
+cant-place = "放不下 {0}: {1}"
+wont-start = "起不来 {0}: {1}"
+cant-await-child = "等不到它结束: {0}"
+hook-payload-garbled = "钩子载荷读不懂: {0}"
+hook-payload-no-session = "钩子载荷里没有 session_id"
+
+# ── the persistent host (node) ──
+no-host = "这个 session 没有宿主(临时的,或宿主还没起来)"
+host-file-garbled = "宿主记录读不懂: {0}"
+no-frame = "读不到帧: {0}"
+frame-too-big = "帧超限: {0}"
+half-a-frame = "帧读了一半: {0}"
+cant-find-self = "找不到自己的可执行文件: {0}"
+host-wont-start = "宿主起不来: {0}"
+host-never-ready = "宿主没在 5 秒内就位"
+host-gone = "宿主没了——session 可能已收场,看 khor sessions"
+cant-open-pty = "开不了 PTY: {0}"
+child-has-no-pid = "孩子没有 pid"
+cant-read-pty = "读不了 PTY: {0}"
+cant-write-pty = "写不了 PTY: {0}"
+cant-listen-loopback = "听不了本机口: {0}"
+wrong-cookie = "暗号不对"
+host-child-wait = "等不到孩子结束: {0}"
