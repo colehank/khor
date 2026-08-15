@@ -1,0 +1,8 @@
+[package]
+name = "khor-sync"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+loro.workspace = true
+base64.workspace = true
