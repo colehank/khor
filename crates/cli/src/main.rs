@@ -18,7 +18,7 @@ const USAGE: &str = "\
   log <机器>            看那个窗口的消息
   seen <session>        标已读
   close <session>       关掉(删收下的文件;历史全网有,不删)
-  serve                 常驻:应答别人、每 5 秒同步全网
+  serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   sync                  立即和全网各同步一趟";

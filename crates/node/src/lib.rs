@@ -8,6 +8,7 @@
 //! from chat (shell/tui, which own live processes).
 
 pub mod chat;
+pub mod ipc;
 pub mod link;
 pub mod proto;
 pub mod transfer;

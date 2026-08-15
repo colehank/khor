@@ -15,7 +15,7 @@ use khor_sync::store::Doc;
 use khor_sync::{chat, wire};
 
 use crate::proto::{self, Request, Response, MAX_FRAME};
-use crate::Node;
+use crate::{ipc, Node};
 
 /// How often the serve loop syncs with everyone.
 const SYNC_EVERY: Duration = Duration::from_secs(5);
@@ -25,22 +25,30 @@ const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
-/// What one-shot CLI verbs need to know about the live endpoint.
+/// What one-shot CLI verbs need to know about the live endpoint. The
+/// cookie makes it a key to the hand-off port — owner-only on disk.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct EndpointFile {
     id: String,
     addrs: Vec<String>,
     pid: u32,
+    #[serde(default)]
+    ipc_port: u16,
+    #[serde(default)]
+    ipc_cookie: String,
 }
 
 impl Node {
-    /// Runs this device's listening half: answers connections, syncs with
-    /// every known device every few seconds. Writes `endpoint.json` so
-    /// one-shot verbs (`invite`) can see the live endpoint.
+    /// Runs this device's listening half: answers connections, executes
+    /// handed-off one-shot verbs, syncs with every known device every few
+    /// seconds. Writes `endpoint.json` so one-shot verbs can find both
+    /// the live endpoint and the hand-off port.
     pub async fn serve(self) -> Result<(), String> {
-        let ep = endpoint::bind(self.secret_key().clone())
-            .await
-            .map_err(|e| e.to_string())?;
+        let ep = std::sync::Arc::new(
+            endpoint::bind(self.secret_key().clone())
+                .await
+                .map_err(|e| e.to_string())?,
+        );
         let addrs = endpoint::local_addrs(&ep);
         // Own dialing hints go into the table so the snapshot handed to a
         // pairing device already says how to reach us.
@@ -50,12 +58,21 @@ impl Node {
             let mut store = loaded.store;
             store.flush(&loaded.doc)?;
         }
-        let file = EndpointFile { id: self.device_str().to_owned(), addrs, pid: std::process::id() };
-        fs::write(
-            self.root().join(".khor").join("endpoint.json"),
-            serde_json::to_vec(&file).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| format!("写不了 endpoint.json: {e}"))?;
+        let handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| format!("开不了递话口: {e}"))?;
+        let cookie = fresh_hex()?;
+        let file = EndpointFile {
+            id: self.device_str().to_owned(),
+            addrs,
+            pid: std::process::id(),
+            ipc_port: handoffs.local_addr().map_err(|e| e.to_string())?.port(),
+            ipc_cookie: cookie.clone(),
+        };
+        write_private(
+            &self.root().join(".khor").join("endpoint.json"),
+            &serde_json::to_vec(&file).map_err(|e| e.to_string())?,
+        )?;
 
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
@@ -72,12 +89,90 @@ impl Node {
                         }
                     });
                 }
+                accepted = handoffs.accept() => {
+                    if let Ok((stream, _)) = accepted {
+                        let n = node.clone();
+                        let e = ep.clone();
+                        let c = cookie.clone();
+                        tokio::spawn(async move {
+                            let _ = n.handle_handoff(stream, &e, &c).await;
+                        });
+                    }
+                }
                 _ = ticker.tick() => {
                     let _ = node.sync_with_all(&ep).await;
                 }
             }
         }
         Ok(())
+    }
+
+    async fn handle_handoff(
+        &self,
+        mut stream: tokio::net::TcpStream,
+        ep: &iroh::Endpoint,
+        cookie: &str,
+    ) -> Result<(), String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut bytes = Vec::new();
+        (&mut stream)
+            .take(MAX_FRAME as u64)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|e| format!("读不完递话: {e}"))?;
+        let reply = match proto::decode::<ipc::Handoff>(&bytes) {
+            Ok(h) if h.cookie == cookie => self.run_handoff(ep, h.op).await,
+            Ok(_) => ipc::Reply::Refused { why: "递话的暗号对不上,重读 endpoint.json 再来".into() },
+            Err(e) => ipc::Reply::Refused { why: e },
+        };
+        stream
+            .write_all(&proto::encode(&reply)?)
+            .await
+            .map_err(|e| format!("答不回去: {e}"))?;
+        stream.shutdown().await.map_err(|e| format!("收不了尾: {e}"))?;
+        Ok(())
+    }
+
+    async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+        match op {
+            ipc::Op::Pair { ticket } => {
+                // Routed pairing reports the serve's own addresses: they
+                // outlive this exchange, unlike a one-shot endpoint's.
+                match self.pair_with(ep, &ticket, endpoint::local_addrs(ep)).await {
+                    Ok(name) => ipc::Reply::Paired { name },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::SyncNow => ipc::Reply::Synced { outcomes: self.sync_with_all(ep).await },
+            ipc::Op::Accept { session } => {
+                match self.accept_with(ep, &crate::SessionId(session)).await {
+                    Ok(moved) => ipc::Reply::Accepted { moved },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+        }
+    }
+
+    /// Routes an op to the resident serve when one holds this key.
+    /// `None` = no live serve, take the direct path. `Some(Err)` = a
+    /// serve is alive but unreachable — never fall back then: the key is
+    /// taken and a second endpoint would knock both off.
+    async fn via_serve(&self, op: ipc::Op) -> Option<Result<ipc::Reply, String>> {
+        let f = match self.endpoint_file() {
+            Ok(Some(f)) => f,
+            _ => return None,
+        };
+        if f.ipc_port == 0 {
+            return Some(Err(format!(
+                "khor serve 在跑(pid {})但没开递话口,把它升级或先停掉",
+                f.pid
+            )));
+        }
+        Some(
+            ipc::call(f.ipc_port, &f.ipc_cookie, op)
+                .await
+                .map_err(|e| format!("khor serve 在跑(pid {})但递不过去: {e}", f.pid)),
+        )
     }
 
     async fn handle(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
@@ -187,13 +282,30 @@ impl Node {
 
     /// Approves a transfer and pulls its payload from home. Resumes from
     /// an existing partial; verifies the blake3 digest before the payload
-    /// gets its real name. Returns bytes actually moved this run.
+    /// gets its real name. Returns bytes actually moved this run. Routed
+    /// through the resident serve when one holds the key.
     pub async fn accept(&self, id: &crate::SessionId) -> Result<u64, String> {
+        if let Some(reply) = self.via_serve(ipc::Op::Accept { session: id.0.clone() }).await {
+            return match reply? {
+                ipc::Reply::Accepted { moved } => Ok(moved),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(format!("serve 答非所问: {other:?}")),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.accept_with(&ep, id).await;
+        ep.close().await;
+        outcome
+    }
+
+    /// The pull itself, on an endpoint the caller owns and outlives.
+    async fn accept_with(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
         use crate::transfer::{partial_path, payload_path, pulling_marker};
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(format!("没有这个传输: {}", id.0));
         };
-        self.refuse_if_serving()?;
         let (channel, m) = self.find_transfer(msg_id)?;
         if channel != self.name() {
             return Err(format!("这份文件是发给 {channel} 的,在那台机器上收"));
@@ -210,9 +322,6 @@ impl Node {
             .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
         fs::create_dir_all(dir.join("files")).map_err(|e| format!("建不了 files 目录: {e}"))?;
 
-        let ep = endpoint::bind(self.secret_key().clone())
-            .await
-            .map_err(|e| e.to_string())?;
         let outcome = async {
             let addr = endpoint::dial_addr(&home.id, &home.addrs, &[]).map_err(|e| e.to_string())?;
             let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
@@ -244,7 +353,6 @@ impl Node {
             Ok(moved)
         }
         .await;
-        ep.close().await;
         if outcome.is_ok() {
             self.emit_transfer_row(&channel, &m)?;
         }
@@ -257,9 +365,7 @@ impl Node {
         let file = self.endpoint_file()?.ok_or(
             "khor serve 没在跑——先在这台机器起 khor serve,票里要带它的地址",
         )?;
-        let mut raw = [0u8; 16];
-        getrandom::fill(&mut raw).map_err(|e| format!("取不到随机数: {e}"))?;
-        let token: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+        let token = fresh_hex()?;
         let dir = self.root().join(".khor").join("invites");
         fs::create_dir_all(&dir).map_err(|e| format!("建不了邀请目录: {e}"))?;
         fs::write(self.invite_path(&token)?, b"").map_err(|e| format!("存不了配对码: {e}"))?;
@@ -284,13 +390,37 @@ impl Node {
 
     /// Accepts a ticket: dial the issuer, burn the token, merge its
     /// device table. When this returns, **both** tables know both
-    /// machines — pairing has no direction (docs/NET.md).
+    /// machines — pairing has no direction (docs/NET.md). Routed through
+    /// the resident serve when one holds the key.
     pub async fn pair(&self, ticket: &str) -> Result<String, String> {
-        let t = Ticket::decode(ticket).map_err(|e| e.to_string())?;
-        self.refuse_if_serving()?;
+        if let Some(reply) = self.via_serve(ipc::Op::Pair { ticket: ticket.to_owned() }).await {
+            return match reply? {
+                ipc::Reply::Paired { name } => Ok(name),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(format!("serve 答非所问: {other:?}")),
+            };
+        }
         let ep = endpoint::bind(self.secret_key().clone())
             .await
             .map_err(|e| e.to_string())?;
+        // A one-shot endpoint's addresses die with it — better none than
+        // stale; the far side learns real ones through table sync.
+        let outcome = self.pair_with(&ep, ticket, vec![]).await;
+        // Close before returning on every path: a dropped-but-unclosed
+        // endpoint leaves the far side's stream wait dangling until QUIC
+        // times out.
+        ep.close().await;
+        outcome
+    }
+
+    /// The pairing itself, on an endpoint the caller owns and outlives.
+    async fn pair_with(
+        &self,
+        ep: &iroh::Endpoint,
+        ticket: &str,
+        report_addrs: Vec<String>,
+    ) -> Result<String, String> {
+        let t = Ticket::decode(ticket).map_err(|e| e.to_string())?;
         let addr = endpoint::dial_addr(&t.id, &t.direct, &t.relays).map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
@@ -301,17 +431,12 @@ impl Node {
             &Request::Pair {
                 token: t.token,
                 name: self.name().to_owned(),
-                // Not serving, so any address we report dies with this
-                // process — better none than stale.
-                addrs: vec![],
+                addrs: report_addrs,
             },
         )
         .await?;
-        // Close before returning on every path: a dropped-but-unclosed
-        // endpoint leaves the far side's stream wait dangling until QUIC
-        // times out.
-        let outcome = match resp {
-            Response::Paired { name, devices } => (|| {
+        match resp {
+            Response::Paired { name, devices } => {
                 let bytes = B64
                     .decode(devices)
                     .map_err(|e| format!("对面的设备表不是 base64: {e}"))?;
@@ -320,18 +445,23 @@ impl Node {
                 let mut store = loaded.store;
                 store.flush(&loaded.doc)?;
                 Ok(name)
-            })(),
+            }
             Response::Refused { why } => Err(why),
             other => Err(format!("对面答非所问: {other:?}")),
-        };
-        ep.close().await;
-        outcome
+        }
     }
 
     /// One sync visit to every known device, now. Returns per-device
     /// outcomes — "moved nothing" and "failed" wear different faces.
+    /// Routed through the resident serve when one holds the key.
     pub async fn sync_now(&self) -> Result<Vec<(String, Result<String, String>)>, String> {
-        self.refuse_if_serving()?;
+        if let Some(reply) = self.via_serve(ipc::Op::SyncNow).await {
+            return match reply? {
+                ipc::Reply::Synced { outcomes } => Ok(outcomes),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(format!("serve 答非所问: {other:?}")),
+            };
+        }
         let ep = endpoint::bind(self.secret_key().clone())
             .await
             .map_err(|e| e.to_string())?;
@@ -453,18 +583,31 @@ impl Node {
         }
     }
 
-    /// One live endpoint per key: dialing while `khor serve` holds the
-    /// key would knock both off (learned in production).
-    fn refuse_if_serving(&self) -> Result<(), String> {
-        match self.endpoint_file()? {
-            Some(f) if f.pid != std::process::id() => Err(format!(
-                "khor serve 正在跑(pid {}),它每 {} 秒同步一次;同一把钥匙同时只能有一个端点",
-                f.pid,
-                SYNC_EVERY.as_secs()
-            )),
-            _ => Ok(()),
-        }
+}
+
+/// 16 random bytes as hex — invite tokens and hand-off cookies.
+fn fresh_hex() -> Result<String, String> {
+    let mut raw = [0u8; 16];
+    getrandom::fill(&mut raw).map_err(|e| format!("取不到随机数: {e}"))?;
+    Ok(raw.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Owner-only from the first byte: the hand-off cookie in endpoint.json
+/// is a capability, and create-then-chmod would leave a readable window.
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let _ = fs::remove_file(path);
+    let mut opts = fs::OpenOptions::new();
+    opts.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
     }
+    let mut f = opts
+        .open(path)
+        .map_err(|e| format!("写不了 {}: {e}", path.display()))?;
+    f.write_all(bytes).map_err(|e| format!("写不完: {e}"))
 }
 
 async fn request(
