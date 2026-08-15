@@ -125,12 +125,15 @@ impl ChatKind {
         Ok((max_at, self.row_from(channel, home, &loaded.doc, max_at)))
     }
 
-    /// Deletes the conversation and everything it received
-    /// (docs/SESSION.md: closing a device chat deletes its files too).
+    /// Deletes what the conversation received — the `files/` payloads —
+    /// and nothing else. The history blocks stay: they replicate
+    /// network-wide, so a local delete would only be pulled right back on
+    /// the next sync. Slimming history is an explicit cleanup, not close
+    /// (docs/SESSION.md 动作, docs/NET.md 同步).
     pub fn close(&self, channel: &str) -> Result<(), String> {
-        let dir = self.dir(channel)?;
-        if dir.exists() {
-            fs::remove_dir_all(&dir).map_err(|e| format!("删不掉: {e}"))?;
+        let files = self.dir(channel)?.join("files");
+        if files.exists() {
+            fs::remove_dir_all(&files).map_err(|e| format!("删不掉: {e}"))?;
         }
         Ok(())
     }

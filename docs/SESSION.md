@@ -49,4 +49,5 @@ CRDT kind 灰一半：历史照读、还能写，送达等 home 回来——
 通用三个：open、close、seen。
 kind 专属（resize、send_keys、续传…）走 kind 命名空间，不进通用面。
 动作从哪台设备发都行，送到 home 执行；seen 例外——它是已读状态，走 CRDT。
-close 的收尾由 kind 定：删对设备的对话，连它收下的文件一起删。
+close 的收尾由 kind 定：对设备的对话删它收下的文件；
+全网复制的历史不随 close 消失，瘦身走清理（NET.md 同步一节）。

@@ -77,18 +77,23 @@ fn watch_receives_what_tell_emits() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// Close deletes received payloads, never history: the history is
+/// network-replicated and a local delete would be pulled right back.
 #[test]
-fn closing_a_chat_deletes_its_files() {
+fn closing_a_chat_deletes_its_files_but_not_the_history() {
     let r = root("close");
     let n = Node::open(r.clone()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "to be deleted").unwrap();
+    n.tell(n.name().to_owned().as_str(), "the line that stays").unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
-    assert!(dir.exists());
+    let files = dir.join("files");
+    fs::create_dir_all(&files).unwrap();
+    fs::write(files.join("payload.bin"), b"received bytes").unwrap();
 
     let id = n.sessions().unwrap()[0].id.clone();
     n.close(&id).unwrap();
-    assert!(!dir.exists(), "history and received files should be gone together");
-    // The channel itself persists as an empty conversation.
+    assert!(!files.exists(), "received payloads should be gone");
+    let log = n.log(n.name().to_owned().as_str()).unwrap();
+    assert_eq!(log.messages.len(), 1, "the history must survive close");
     let row = &n.sessions().unwrap()[0];
     assert_eq!((row.unread, row.state.state), (0, State::Idle));
     let _ = fs::remove_dir_all(&r);
