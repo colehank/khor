@@ -9,7 +9,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use loro::{ExportMode, LoroDoc, LoroList, LoroMap, LoroValue, UndoManager, VersionVector};
+use loro::{LoroDoc, LoroList, LoroMap, LoroValue, UndoManager, VersionVector};
+
+use crate::glue;
 
 /// The one place this list is named.
 const MSGS: &str = "msgs";
@@ -81,10 +83,7 @@ impl ChatDoc {
     /// Cost: every peer ever used adds one entry to the version vector.
     /// Accepted — a few KB of metadata versus lost data.
     pub fn new(peer: u64) -> Result<Self, String> {
-        let inner = LoroDoc::new();
-        inner
-            .set_peer_id(peer)
-            .map_err(|e| format!("设不上 peer id: {e}"))?;
+        let inner = glue::with_peer(peer)?;
         let undo = UndoManager::new(&inner);
         Ok(Self {
             inner,
@@ -244,27 +243,17 @@ impl ChatDoc {
     /// What I have beyond `theirs`. These bytes are the transferable unit:
     /// a stream frame or a file on disk, both work.
     pub fn changes_since(&self, theirs: &VersionVector) -> Result<Vec<u8>, String> {
-        self.inner
-            .export(ExportMode::updates(theirs))
-            .map_err(|e| format!("导不出增量: {e}"))
+        glue::changes_since(&self.inner, theirs)
     }
 
     /// Full state. Used only for the first flush and compaction.
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
-        self.inner
-            .export(ExportMode::Snapshot)
-            .map_err(|e| format!("导不出快照: {e}"))
+        glue::snapshot(&self.inner)
     }
 
     /// Merges bytes in. Idempotent: the same bytes twice equal once.
     pub fn merge(&self, bytes: &[u8]) -> Result<(), String> {
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        self.inner
-            .import(bytes)
-            .map(|_| ())
-            .map_err(|e| format!("合不进来: {e}"))
+        glue::merge(&self.inner, bytes)
     }
 }
 

@@ -1,4 +1,4 @@
-//! Real-connection acceptance (docs/NET.md 验收): two nodes on one
+//! Real-connection acceptance (docs/NET.md): two nodes on one
 //! machine, real UDP, plus the control groups — what must not connect
 //! really doesn't. Every await is under a timeout: a control that hangs
 //! proves nothing.
@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use khor_node::Node;
+use khor_sync::chat::{channel_dir, ChatDoc, Sender};
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -24,7 +25,7 @@ async fn wait_for_endpoint_file(root: &PathBuf) {
         }
     })
     .await
-    .expect("serve 该在 10 秒内写出 endpoint.json");
+    .expect("serve should write endpoint.json within 10s");
 }
 
 #[tokio::test]
@@ -44,24 +45,25 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let peer_name = timeout(Duration::from_secs(15), b.pair(&ticket))
         .await
-        .expect("配对不该挂住")
+        .expect("pairing must not hang")
         .unwrap();
     assert_eq!(peer_name, "alpha");
 
-    // 配对没有方向:双方设备表里都有对方,只有一边记了就是没配完。
+    // Pairing has no direction: both tables hold both machines; one
+    // side alone means pairing is incomplete.
     let b_names: Vec<String> = b.devices().unwrap().into_iter().map(|d| d.name).collect();
-    assert_eq!(b_names, vec!["alpha", "beta"], "beta 的表该有双方");
+    assert_eq!(b_names, vec!["alpha", "beta"], "beta's table should hold both");
     let a_names: Vec<String> = a.devices().unwrap().into_iter().map(|d| d.name).collect();
-    assert_eq!(a_names, vec!["alpha", "beta"], "alpha 的表该有双方");
+    assert_eq!(a_names, vec!["alpha", "beta"], "alpha's table should hold both");
 
     // beta writes into alpha's window and pushes; alpha's serve merges.
-    b.tell("alpha", "从 beta 来的").unwrap();
+    b.tell("alpha", "from beta").unwrap();
     let outcomes = timeout(Duration::from_secs(20), b.sync_now())
         .await
-        .expect("同步不该挂住")
+        .expect("sync must not hang")
         .unwrap();
-    let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("该有 alpha 一项");
-    verdict.as_ref().expect("对 alpha 的同步该成功");
+    let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("there should be an alpha entry");
+    verdict.as_ref().expect("the sync to alpha should succeed");
 
     let a_log = a.log("alpha").unwrap();
     let texts: Vec<String> = a_log
@@ -70,15 +72,15 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .map(|m| format!("{:?}", m.body))
         .collect();
     assert!(
-        texts.iter().any(|t| t.contains("从 beta 来的")),
-        "alpha 侧该收到 beta 那句:{texts:?}"
+        texts.iter().any(|t| t.contains("from beta")),
+        "alpha should receive beta's line: {texts:?}"
     );
 
     // The other direction: alpha notes to self, beta pulls it.
-    a.tell("alpha", "从 alpha 回的").unwrap();
+    a.tell("alpha", "back from alpha").unwrap();
     timeout(Duration::from_secs(20), b.sync_now())
         .await
-        .expect("同步不该挂住")
+        .expect("sync must not hang")
         .unwrap();
     let b_log = b.log("alpha").unwrap();
     let texts: Vec<String> = b_log
@@ -87,25 +89,61 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .map(|m| format!("{:?}", m.body))
         .collect();
     assert!(
-        texts.iter().any(|t| t.contains("从 alpha 回的")),
-        "beta 侧该拉到 alpha 那句:{texts:?}"
+        texts.iter().any(|t| t.contains("back from alpha")),
+        "beta should pull alpha's line: {texts:?}"
     );
 
-    // beta's row for alpha's window: unseen foreign words = Done/unread.
+    // Everything in the window so far was typed by this one person, and
+    // telling implies looking — so once the seen watermark syncs, nothing
+    // counts as unread on any device.
     let rows = b.sessions().unwrap();
-    let alpha_row = rows.iter().find(|s| s.title == "alpha").expect("该有 alpha 行");
-    assert!(alpha_row.unread > 0, "alpha 那句在 beta 侧该算未读");
+    let alpha_row = rows.iter().find(|s| s.title == "alpha").expect("there should be an alpha row");
+    assert_eq!(alpha_row.unread, 0, "own words never count as unread, on any device");
 
-    // ── 对照组 ──────────────────────────────────────────────
+    // A line nobody here typed (an agent's, say): lands as a raw block in
+    // beta's copy of alpha's window, with no seen state riding along.
+    {
+        let far = ChatDoc::new(0xFA).unwrap();
+        far.tell(&Sender { id: "dev-far".into(), name: "far".into() }, "an outside line")
+            .unwrap();
+        let block = far.changes_since(&Default::default()).unwrap();
+        let dir = channel_dir(&rb, "alpha").unwrap();
+        std::fs::write(dir.join("u-00000000000000fa-00000000.loro"), &block).unwrap();
+    }
+    let rows = b.sessions().unwrap();
+    let row_b = rows.iter().find(|s| s.title == "alpha").unwrap();
+    assert!(row_b.unread > 0, "the outside line should count as unread on beta");
+
+    // It syncs over and is unread on alpha too (control for the clear).
+    timeout(Duration::from_secs(20), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let rows = a.sessions().unwrap();
+    let row_a = rows.iter().find(|s| s.title == "alpha").unwrap();
+    assert!(row_a.unread > 0, "the outside line should be unread on alpha too");
+
+    // Seen is a decision that travels: beta looks, and alpha's badge
+    // clears without anyone touching alpha.
+    b.seen(&row_b.id).unwrap();
+    timeout(Duration::from_secs(20), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let rows = a.sessions().unwrap();
+    let row_a = rows.iter().find(|s| s.title == "alpha").unwrap();
+    assert_eq!(row_a.unread, 0, "seen on beta must clear on alpha");
+
+    // ── control groups ──────────────────────────────────────────────
     // A burned token pairs nobody: gamma replays beta's ticket.
     let rc = root("c");
     let c = Node::open_as(rc.clone(), "gamma").unwrap();
     let err = timeout(Duration::from_secs(15), c.pair(&ticket))
         .await
-        .expect("被拒也不该挂住")
+        .expect("refusal must not hang either")
         .unwrap_err();
-    assert!(err.contains("配对码"), "重放该被指名拒绝:{err}");
-    assert_eq!(c.devices().unwrap().len(), 1, "gamma 的表里只该有它自己");
+    assert!(err.contains("配对码"), "a replay must be refused by name: {err}");
+    assert_eq!(c.devices().unwrap().len(), 1, "gamma's table should hold only itself");
 
     // An unpaired device syncs nothing — even knowing the address.
     // gamma copies alpha's entry into its own table by hand…
@@ -121,11 +159,11 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // …and the far side still refuses by name.
     let outcomes = timeout(Duration::from_secs(20), c.sync_now())
         .await
-        .expect("被拒也不该挂住")
+        .expect("refusal must not hang either")
         .unwrap();
-    let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("该有 alpha 一项");
+    let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("there should be an alpha entry");
     let err = verdict.as_ref().unwrap_err();
-    assert!(err.contains("先配对"), "没配对的同步该被指名拒绝:{err}");
+    assert!(err.contains("先配对"), "an unpaired sync must be refused by name: {err}");
 
     serve.abort();
     for r in [&ra, &rb, &rc] {

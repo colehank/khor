@@ -132,6 +132,9 @@ impl Node {
                 let reply = if doc == "devices" {
                     let mut loaded = self.devices_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "seen" {
+                    let mut loaded = self.seen_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
                         .ok_or_else(|| format!("频道名不合法: {ch:?}"))?;
@@ -265,6 +268,10 @@ impl Node {
         {
             let mut loaded = self.devices_loaded()?;
             moved += self.rounds(&conn, "devices", &mut loaded).await?;
+        }
+        {
+            let mut loaded = self.seen_loaded()?;
+            moved += self.rounds(&conn, "seen", &mut loaded).await?;
         }
         for ch in self.known_channels()? {
             let dir = chat::channel_dir(self.root(), &ch)

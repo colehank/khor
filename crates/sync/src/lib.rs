@@ -1,5 +1,5 @@
 //! Decision-class data that replicates across the whole network
-//! (docs/NET.md 同步): CRDT documents, their on-disk block stores, and
+//! (docs/NET.md): CRDT documents, their on-disk block stores, and
 //! the two transports that move them.
 //!
 //! Why document CRDTs (loro) and not a live sync protocol: the network
@@ -9,7 +9,9 @@
 
 pub mod chat;
 pub mod devices;
+mod glue;
 pub mod plan;
+pub mod seen;
 pub mod store;
 pub mod wire;
 

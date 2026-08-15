@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
+use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
 
 use crate::chat::ChatKind;
@@ -142,6 +143,21 @@ impl Node {
         load(&devices_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn seen_loaded(&self) -> Result<Loaded<SeenDoc>, String> {
+        load(&seen_dir(&self.root), self.peer)
+    }
+
+    /// Raises a session's seen watermark and persists it. The watermark
+    /// travels the network (docs/NET.md): clear here, clear
+    /// everywhere on the next sync.
+    fn mark_seen(&self, session: &SessionId, at: i64) -> Result<(), String> {
+        let loaded = self.seen_loaded()?;
+        loaded.doc.mark(&session.0, at)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(())
+    }
+
     /// Everyone in the network, this machine included.
     pub fn devices(&self) -> Result<Vec<DeviceInfo>, String> {
         Ok(self.devices_loaded()?.doc.all())
@@ -175,9 +191,11 @@ impl Node {
 
     /// The list: one row per session, each answering the five questions.
     pub fn sessions(&self) -> Result<Vec<Session>, String> {
+        let seen = self.seen_loaded()?;
         let mut rows = Vec::new();
         for d in self.devices()? {
-            rows.push(self.chat.row(&d.name, device_id_from_hex(&d.id)?)?);
+            let wm = seen.doc.watermark(&format!("chat/{}", d.name));
+            rows.push(self.chat.row(&d.name, device_id_from_hex(&d.id)?, wm)?);
         }
         Ok(rows)
     }
@@ -193,10 +211,13 @@ impl Node {
     /// Tells a machine's window a line. Returns the message id.
     pub fn tell(&self, machine: &str, text: &str) -> Result<String, String> {
         let (channel, home) = self.resolve(machine)?;
-        let (id, row, event) = self.chat.tell(&channel, home, text)?;
-        self.emit(NodeEvent::Event(event));
-        self.emit(NodeEvent::Row(row));
-        Ok(id)
+        let told = self.chat.tell(&channel, home, text)?;
+        // Telling implies looking: own words never count as unread — on
+        // any device, once the watermark syncs.
+        self.mark_seen(&told.row.id, told.at)?;
+        self.emit(NodeEvent::Event(told.event));
+        self.emit(NodeEvent::Row(told.row));
+        Ok(told.msg_id)
     }
 
     /// A channel's readout, oldest first.
@@ -205,16 +226,18 @@ impl Node {
         self.chat.log(&channel)
     }
 
-    /// Marks a session seen; unread drops to zero.
+    /// Marks a session seen; unread drops to zero — here and, once the
+    /// watermark syncs, on every device.
     pub fn seen(&self, id: &SessionId) -> Result<(), String> {
         let (channel, home) = self.channel_of_session(id)?;
-        let row = self.chat.seen(&channel, home)?;
+        let (last_at, row) = self.chat.seen(&channel, home)?;
+        self.mark_seen(id, last_at)?;
         self.emit(NodeEvent::Row(row));
         Ok(())
     }
 
     /// Closes a session. For a device chat this deletes the history and
-    /// the files it received (docs/SESSION.md 动作).
+    /// the files it received (docs/SESSION.md).
     pub fn close(&self, id: &SessionId) -> Result<(), String> {
         let (channel, _) = self.channel_of_session(id)?;
         self.chat.close(&channel)?;

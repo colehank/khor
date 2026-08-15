@@ -1,4 +1,4 @@
-//! The device table: who is in the network (docs/NET.md 身份与配对).
+//! The device table: who is in the network (docs/NET.md).
 //! One CRDT map, replicated everywhere — joining any one device reveals
 //! the whole network.
 //!
@@ -9,8 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
-use loro::{ExportMode, LoroDoc, LoroMap, LoroValue, VersionVector};
+use loro::{LoroDoc, LoroMap, LoroValue, VersionVector};
 
+use crate::glue;
 use crate::store::Doc;
 
 /// Location relative to the home directory (same reasoning as
@@ -40,11 +41,7 @@ pub struct DeviceDoc {
 
 impl DeviceDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        let inner = LoroDoc::new();
-        inner
-            .set_peer_id(peer)
-            .map_err(|e| format!("设不上 peer id: {e}"))?;
-        Ok(Self { inner })
+        Ok(Self { inner: glue::with_peer(peer)? })
     }
 
     fn map(&self) -> LoroMap {
@@ -125,25 +122,15 @@ impl Doc for DeviceDoc {
     }
 
     fn changes_since(&self, theirs: &VersionVector) -> Result<Vec<u8>, String> {
-        self.inner
-            .export(ExportMode::updates(theirs))
-            .map_err(|e| format!("导不出增量: {e}"))
+        glue::changes_since(&self.inner, theirs)
     }
 
     fn snapshot(&self) -> Result<Vec<u8>, String> {
-        self.inner
-            .export(ExportMode::Snapshot)
-            .map_err(|e| format!("导不出快照: {e}"))
+        glue::snapshot(&self.inner)
     }
 
     fn merge(&self, bytes: &[u8]) -> Result<(), String> {
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        self.inner
-            .import(bytes)
-            .map(|_| ())
-            .map_err(|e| format!("合不进来: {e}"))
+        glue::merge(&self.inner, bytes)
     }
 
     fn items(&self) -> usize {
@@ -170,7 +157,7 @@ mod tests {
     fn a_device_round_trips_with_name_and_addrs() {
         let d = DeviceDoc::new(1).unwrap();
         d.upsert("aa11", "turing", &["10.0.0.2:11204".into()]).unwrap();
-        let got = d.get("aa11").expect("该在");
+        let got = d.get("aa11").expect("should be there");
         assert_eq!(got.name, "turing");
         assert_eq!(got.addrs, vec!["10.0.0.2:11204".to_string()]);
         assert_eq!(d.by_name("turing").unwrap().id, "aa11");
@@ -191,7 +178,7 @@ mod tests {
 
         for (who, d) in [("a", &a), ("b", &b)] {
             let names: Vec<String> = d.all().into_iter().map(|x| x.name).collect();
-            assert_eq!(names, vec!["mac", "phone"], "{who} 该看到全网");
+            assert_eq!(names, vec!["mac", "phone"], "{who} should see the whole network");
         }
     }
 
@@ -213,8 +200,8 @@ mod tests {
 
         for (who, d) in [("a", &a), ("b", &b)] {
             let got = d.get("aa").unwrap();
-            assert_eq!(got.name, "new-name", "{who}: 改名该留住");
-            assert_eq!(got.addrs, vec!["1.2.3.4:5".to_string()], "{who}: 地址该留住");
+            assert_eq!(got.name, "new-name", "{who}: the rename must survive");
+            assert_eq!(got.addrs, vec!["1.2.3.4:5".to_string()], "{who}: the address must survive");
         }
     }
 
@@ -226,6 +213,6 @@ mod tests {
         d.upsert("aa", "mac", &["1.1.1.1:1".into()]).unwrap();
         let before = d.version();
         d.upsert("aa", "mac", &["1.1.1.1:1".into()]).unwrap();
-        assert_eq!(d.version(), before, "没变化就不该有新操作");
+        assert_eq!(d.version(), before, "no change must mean no new ops");
     }
 }

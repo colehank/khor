@@ -1,6 +1,8 @@
 //! The device-chat kind: a machine's window, ridden on the chat CRDT.
 //! Which machines exist — and therefore which channels — is the device
 //! table's business; this type takes resolved (channel, home) pairs.
+//! Read state lives in the seen CRDT the node owns; this type takes the
+//! watermark and answers with rows.
 
 use std::fs;
 use std::path::PathBuf;
@@ -15,6 +17,15 @@ pub struct ChannelLog {
     /// Blocks that would not read — a missing slice of conversation the
     /// caller must be able to mention.
     pub broken: usize,
+}
+
+/// What `tell` did. `at` is the new message's timestamp — the caller
+/// persists it as the seen watermark (telling implies looking).
+pub struct Told {
+    pub msg_id: String,
+    pub at: i64,
+    pub row: Session,
+    pub event: Event,
 }
 
 pub struct ChatKind {
@@ -46,17 +57,16 @@ impl ChatKind {
         SessionId(format!("chat/{channel}"))
     }
 
-    fn row_from(&self, channel: &str, home: DeviceId, doc: &ChatDoc) -> Session {
+    fn row_from(&self, channel: &str, home: DeviceId, doc: &ChatDoc, watermark: i64) -> Session {
         let msgs = doc.messages();
-        let total = msgs.len() as u64;
-        let unread = total.saturating_sub(self.seen_count(channel));
+        let unread = msgs.iter().filter(|m| m.at > watermark).count() as u64;
         let at = msgs.last().map(|m| m.at.max(0) as u64).unwrap_or(0);
         Session {
             id: Self::session_id(channel),
             kind: Kind(kind::CHAT.to_owned()),
             title: channel.to_owned(),
             home,
-            // docs/SESSION.md 对话·对设备: unseen content = Done, seen =
+            // docs/SESSION.md device chat: unseen content = Done, seen =
             // Idle; the first four words are unreachable (no process).
             state: StateStamp {
                 state: if unread > 0 { State::Done } else { State::Idle },
@@ -66,28 +76,27 @@ impl ChatKind {
         }
     }
 
-    pub fn row(&self, channel: &str, home: DeviceId) -> Result<Session, String> {
-        Ok(self.row_from(channel, home, &self.load(channel)?.doc))
+    pub fn row(&self, channel: &str, home: DeviceId, watermark: i64) -> Result<Session, String> {
+        Ok(self.row_from(channel, home, &self.load(channel)?.doc, watermark))
     }
 
-    pub fn tell(
-        &self,
-        channel: &str,
-        home: DeviceId,
-        text: &str,
-    ) -> Result<(String, Session, Event), String> {
+    pub fn tell(&self, channel: &str, home: DeviceId, text: &str) -> Result<Told, String> {
         let loaded = self.load(channel)?;
         let mut store = loaded.store;
         let msg_id = loaded.doc.tell(&self.me, text)?;
         store.flush(&loaded.doc)?;
-        let total = loaded.doc.messages().len() as u64;
-        // Telling implies looking at the channel: own words never count
-        // as unread.
-        self.write_seen(channel, total)?;
-        let row = self.row_from(channel, home, &loaded.doc);
+        let msgs = loaded.doc.messages();
+        // The watermark is this message's own `at` — not the list max: a
+        // merged-in line stamped ahead of us must not get auto-seen.
+        let at = msgs
+            .iter()
+            .find(|m| m.id == msg_id)
+            .map(|m| m.at)
+            .unwrap_or(0);
+        let row = self.row_from(channel, home, &loaded.doc, at);
         let event = Event {
             session: row.id.clone(),
-            seq: total,
+            seq: msgs.len() as u64,
             at: row.state.at,
             payload: serde_json::to_vec(&serde_json::json!({
                 "text": text,
@@ -95,7 +104,7 @@ impl ChatKind {
             }))
             .map_err(|e| e.to_string())?,
         };
-        Ok((msg_id, row, event))
+        Ok(Told { msg_id, at, row, event })
     }
 
     pub fn log(&self, channel: &str) -> Result<ChannelLog, String> {
@@ -106,45 +115,23 @@ impl ChatKind {
         })
     }
 
-    pub fn seen(&self, channel: &str, home: DeviceId) -> Result<Session, String> {
+    /// A seen row plus the watermark that makes it so: the max `at` on
+    /// the senders' clocks — never the local clock (a sender running
+    /// ahead would stay unread after being looked at), and never the
+    /// list-order last (a concurrent merge can land mid-list).
+    pub fn seen(&self, channel: &str, home: DeviceId) -> Result<(i64, Session), String> {
         let loaded = self.load(channel)?;
-        self.write_seen(channel, loaded.doc.messages().len() as u64)?;
-        Ok(self.row_from(channel, home, &loaded.doc))
+        let max_at = loaded.doc.messages().iter().map(|m| m.at).max().unwrap_or(0);
+        Ok((max_at, self.row_from(channel, home, &loaded.doc, max_at)))
     }
 
-    /// Deletes the conversation and everything it received — docs的判词:
-    /// 删对设备的对话,连它收下的文件一起删。
+    /// Deletes the conversation and everything it received
+    /// (docs/SESSION.md: closing a device chat deletes its files too).
     pub fn close(&self, channel: &str) -> Result<(), String> {
         let dir = self.dir(channel)?;
         if dir.exists() {
             fs::remove_dir_all(&dir).map_err(|e| format!("删不掉: {e}"))?;
         }
         Ok(())
-    }
-
-    // The seen marker is a machine-local dotfile in the channel dir: no
-    // `.loro` extension, so it never syncs (same trick as the merge
-    // ledger). Cross-device clearing arrives with the read-state CRDT;
-    // until then unread clears only where you cleared it.
-    fn seen_path(&self, channel: &str) -> Result<PathBuf, String> {
-        Ok(self.dir(channel)?.join(".seen"))
-    }
-
-    fn seen_count(&self, channel: &str) -> u64 {
-        self.seen_path(channel)
-            .ok()
-            .and_then(|p| fs::read_to_string(p).ok())
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0)
-    }
-
-    fn write_seen(&self, channel: &str, n: u64) -> Result<(), String> {
-        // An empty channel leaves nothing on disk; tell() creates the dir
-        // via flush before this runs.
-        if !self.dir(channel)?.exists() {
-            return Ok(());
-        }
-        fs::write(self.seen_path(channel)?, format!("{n}\n"))
-            .map_err(|e| format!("记不了已读: {e}"))
     }
 }
