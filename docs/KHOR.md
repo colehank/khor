@@ -44,4 +44,5 @@ UI 用 shadcn/ui，参考 Apple。没有技术壁垒，体验就是壁垒。
 | [SESSION.md](SESSION.md) | session 原语：五问、六词映射、开放 kind、离线语义 |
 | [NET.md](NET.md) | 网：身份、配对、中继三档、同步什么与冲突规则 |
 | [UX.md](UX.md) | 界面判据：姿势、状态呈现、语料库、设置纪律 |
+| [HOOKS.md](HOOKS.md) | 进程接入：钩子怎么交状态词、Claude Code 怎么挂 |
 | [AGENT.md](AGENT.md) | Khor 智能体：权限两档、执行位置、账户 |
