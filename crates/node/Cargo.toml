@@ -17,3 +17,6 @@ tokio.workspace = true
 gethostname.workspace = true
 serde_bytes.workspace = true
 blake3.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

@@ -1,19 +1,20 @@
 //! One device's node: identity, the session surface (docs/SESSION.md),
 //! and the live link to the rest of the network (docs/NET.md).
 //!
-//! No kind trait yet, on purpose: the second kind (transfer) derives its
-//! rows from the chat document rather than owning state, so the two
-//! kinds share only "produce rows" — a trait cut from that would freeze
-//! an accident. Extraction waits for the first kind that is not derived
-//! from chat (shell/tui, which own live processes).
+//! The kind trait ([`KindSurface`]) was cut only when the third kind
+//! (live) arrived — the first two shared nothing but "produce rows",
+//! and a trait cut from that would have frozen an accident. What three
+//! real implementations actually share: produce rows, claim an id,
+//! answer what "looked at now" means, and close.
 
 pub mod chat;
 pub mod ipc;
 pub mod link;
+pub mod live;
 pub mod proto;
 pub mod transfer;
 
-pub use khor_core::{Session, SessionId};
+pub use khor_core::{kind, Session, SessionId, State};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
@@ -29,7 +30,24 @@ use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
 
 use crate::chat::ChatKind;
+use crate::live::LiveKind;
 use crate::transfer::TransferKind;
+
+/// One kind's contribution to the session surface. Methods take the node
+/// because every kind leans on shared context (the device table, the
+/// seen watermarks) without owning it.
+pub(crate) trait KindSurface {
+    /// Whether this id is this kind's to act on, on this device.
+    fn claims(&self, node: &Node, id: &SessionId) -> bool;
+    /// The rows this kind derives on this device.
+    fn rows(&self, node: &Node) -> Result<Vec<Session>, String>;
+    /// Whether the rows travel as peer reports (only home can derive
+    /// them) or every device derives its own (CRDT kinds).
+    fn reportable(&self) -> bool;
+    /// The watermark "looked at now" sets for this id.
+    fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String>;
+    fn close(&self, node: &Node, id: &SessionId) -> Result<(), String>;
+}
 
 /// One row plus where it came from. Local rows carry no source; a row
 /// learned from another device's report carries that device's name and
@@ -73,6 +91,7 @@ pub struct Node {
     relays: Vec<String>,
     chat: ChatKind,
     transfer: TransferKind,
+    live: LiveKind,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
     /// Serializes sync pumps within one process: two concurrent pumps
     /// share block stores and could collide on sequence numbers. The
@@ -103,6 +122,7 @@ impl Node {
             Sender { id: device_str.clone(), name: name.clone() },
         );
         let transfer = TransferKind::new(root.clone(), device_str.clone(), name.clone());
+        let live = LiveKind::new(root.clone(), device);
         let node = Node {
             root,
             key,
@@ -113,6 +133,7 @@ impl Node {
             relays: khor_net::endpoint::configured_relays(),
             chat,
             transfer,
+            live,
             subscribers: Arc::new(Mutex::new(Vec::new())),
             sync_gate: tokio::sync::Mutex::new(()),
         };
@@ -217,7 +238,7 @@ impl Node {
         }
     }
 
-    fn channel_of_session(&self, id: &SessionId) -> Result<(String, DeviceId), String> {
+    pub(crate) fn channel_of_session(&self, id: &SessionId) -> Result<(String, DeviceId), String> {
         let Some(ch) = id.0.strip_prefix("chat/") else {
             return Err(format!("没有这个 session: {}", id.0));
         };
@@ -225,21 +246,19 @@ impl Node {
             .map_err(|e| format!("没有这个 session: {}({e})", id.0))
     }
 
+    fn kinds(&self) -> [&dyn KindSurface; 3] {
+        [&self.chat, &self.transfer, &self.live]
+    }
+
     /// The list: one row per session, each answering the five questions.
     /// Local rows first; then rows other devices reported that this one
     /// cannot derive itself, freshest report winning a duplicate id.
     pub fn sessions(&self) -> Result<Vec<SessionView>, String> {
         let mut views: Vec<SessionView> = Vec::new();
-        let seen = self.seen_loaded()?;
-        for d in self.devices()? {
-            let wm = seen.doc.watermark(&format!("chat/{}", d.name));
-            views.push(SessionView {
-                session: self.chat.row(&d.name, device_id_from_hex(&d.id)?, wm)?,
-                source: None,
-            });
-        }
-        for row in self.reportable_rows()? {
-            views.push(SessionView { session: row, source: None });
+        for k in self.kinds() {
+            for row in k.rows(self)? {
+                views.push(SessionView { session: row, source: None });
+            }
         }
         let mut have: std::collections::BTreeSet<String> =
             views.iter().map(|v| v.session.id.0.clone()).collect();
@@ -253,18 +272,15 @@ impl Node {
         Ok(views)
     }
 
-    /// The rows only this device can derive: its transfer faces (live
-    /// kinds later). Chat rows are excluded — every device derives those
-    /// from the CRDT itself. This is also what `Request::Sessions`
-    /// answers with.
+    /// The rows only this device can derive — what `Request::Sessions`
+    /// answers with. Chat rows are excluded: every device derives those
+    /// from the CRDT itself.
     pub(crate) fn reportable_rows(&self) -> Result<Vec<Session>, String> {
-        let seen = self.seen_loaded()?;
         let mut rows = Vec::new();
-        for d in self.devices()? {
-            let dir = channel_dir(&self.root, &d.name)
-                .ok_or_else(|| format!("频道名不合法: {:?}", d.name))?;
-            let msgs = self.chat.log(&d.name)?.messages;
-            rows.extend(self.transfer.rows(&d.name, &dir, &msgs, |sid| seen.doc.watermark(sid)));
+        for k in self.kinds() {
+            if k.reportable() {
+                rows.extend(k.rows(self)?);
+            }
         }
         Ok(rows)
     }
@@ -390,73 +406,94 @@ impl Node {
     }
 
     /// Marks a session seen; unread drops to zero — here and, once the
-    /// watermark syncs, on every device.
+    /// watermark syncs, on every device. Seen is the one action every
+    /// kind answers the same way: the kind names the watermark, the node
+    /// persists it and repaints the row.
     pub fn seen(&self, id: &SessionId) -> Result<(), String> {
-        if id.0.starts_with("chat/") {
-            let (channel, home) = self.channel_of_session(id)?;
-            let (last_at, row) = self.chat.seen(&channel, home)?;
-            self.mark_seen(id, last_at)?;
-            self.emit(NodeEvent::Row(row));
-            return Ok(());
-        }
-        if let Some(msg_id) = id.0.strip_prefix("transfer/") {
-            let (channel, m) = self.find_transfer(msg_id)?;
-            let dir = channel_dir(&self.root, &channel)
-                .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
-            // What "looked at" covers here is the landed payload; before
-            // it lands there is nothing unread to clear (待批 clears by
-            // answering, not by looking — docs/UX.md 角标).
-            let MsgBody::Files(files) = &m.body else {
-                return Err(format!("没有这个传输: {}", id.0));
-            };
-            let at = files
-                .iter()
-                .filter_map(|f| transfer::mtime_ms(&transfer::payload_path(&dir, f)))
-                .max()
-                .unwrap_or(0);
-            self.mark_seen(id, at)?;
-            self.emit_transfer_row(&channel, &m)?;
-            return Ok(());
-        }
-        Err(format!("没有这个 session: {}", id.0))
-    }
-
-    /// Closes a session. A device chat deletes the payloads it received;
-    /// a transfer deletes just its own payload (the summary stays in the
-    /// CRDT — the row falls back to 待批 and can be pulled again).
-    pub fn close(&self, id: &SessionId) -> Result<(), String> {
-        if id.0.starts_with("chat/") {
-            let (channel, _) = self.channel_of_session(id)?;
-            self.chat.close(&channel)?;
-            self.emit(NodeEvent::Closed(id.clone()));
-            return Ok(());
-        }
-        if let Some(msg_id) = id.0.strip_prefix("transfer/") {
-            let (channel, m) = self.find_transfer(msg_id)?;
-            let dir = channel_dir(&self.root, &channel)
-                .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
-            let MsgBody::Files(files) = &m.body else {
-                return Err(format!("没有这个传输: {}", id.0));
-            };
-            for f in files {
-                self.transfer.close(&dir, f)?;
+        for k in self.kinds() {
+            if !k.claims(self, id) {
+                continue;
             }
-            self.emit_transfer_row(&channel, &m)?;
+            let at = k.seen_at(self, id)?;
+            self.mark_seen(id, at)?;
+            if let Some(row) = k.rows(self)?.into_iter().find(|r| r.id == *id) {
+                self.emit(NodeEvent::Row(row));
+            }
             return Ok(());
+        }
+        // A row another device reported: its stamp is the watermark, and
+        // the mark replicates — the home's own row clears on next sync.
+        if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
+            return self.mark_seen(id, v.session.state.at.0 as i64);
         }
         Err(format!("没有这个 session: {}", id.0))
     }
 
-    /// Recomputes one transfer's row and pushes it to watchers.
-    fn emit_transfer_row(&self, channel: &str, m: &Message) -> Result<(), String> {
-        let dir = channel_dir(&self.root, channel)
-            .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
-        let seen = self.seen_loaded()?;
-        let rows = self
-            .transfer
-            .rows(channel, &dir, std::slice::from_ref(m), |sid| seen.doc.watermark(sid));
-        if let Some(row) = rows.into_iter().next() {
-            self.emit(NodeEvent::Row(row));
+    /// Closes a session — the wind-down is the kind's (docs/SESSION.md
+    /// 动作): a device chat deletes payloads it received, a transfer
+    /// deletes just its own payload, a live session is terminated and
+    /// forgotten.
+    pub fn close(&self, id: &SessionId) -> Result<(), String> {
+        for k in self.kinds() {
+            if !k.claims(self, id) {
+                continue;
+            }
+            k.close(self, id)?;
+            match k.rows(self)?.into_iter().find(|r| r.id == *id) {
+                // Some kinds keep a row after close (a transfer's summary
+                // stays in the CRDT; the row falls back to 待批).
+                Some(row) => self.emit(NodeEvent::Row(row)),
+                None => self.emit(NodeEvent::Closed(id.clone())),
+            }
+            return Ok(());
+        }
+        if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
+            if let Some((name, _)) = v.source {
+                return Err(format!("这个 session 的 home 是 {name},远程关还没有,去那台关"));
+            }
+        }
+        Err(format!("没有这个 session: {}", id.0))
+    }
+
+    // ── the live kind's doors (临时 sessions and hooks) ─────
+
+    /// Opens a 临时 live session — it lives and dies with the process
+    /// `run_ephemeral` runs. The persistent host (`open`) is a coming
+    /// batch.
+    pub fn open_ephemeral(&self, kind: &str, title: &str) -> Result<SessionId, String> {
+        let leaf: String = link::fresh_hex()?.chars().take(8).collect();
+        let id = SessionId(format!("{kind}/{leaf}"));
+        self.live.register(&id, kind, title, None)?;
+        Ok(id)
+    }
+
+    /// Runs the command as the session's process, blocking until it
+    /// ends. Returns the exit code, which is also the row's ending.
+    pub fn run_ephemeral(&self, id: &SessionId, cmd: &[String]) -> Result<i32, String> {
+        live::run_wrapped(&self.live, id, cmd)
+    }
+
+    /// A process reporting its own word — the hook door. 失败 is refused
+    /// by the kind: it derives from the exit code, never from a claim.
+    pub fn report_state(&self, id: &SessionId, word: khor_core::State) -> Result<(), String> {
+        self.live.report(id, word)
+    }
+
+    /// One Claude Code hook payload in, the mapped session move out.
+    pub fn claude_hook(&self, payload: &str) -> Result<live::Hooked, String> {
+        live::claude_hook(&self.live, payload)
+    }
+
+    /// Re-derives one session's row and pushes it to watchers.
+    pub(crate) fn emit_row_of(&self, id: &SessionId) -> Result<(), String> {
+        for k in self.kinds() {
+            if !k.claims(self, id) {
+                continue;
+            }
+            if let Some(row) = k.rows(self)?.into_iter().find(|r| r.id == *id) {
+                self.emit(NodeEvent::Row(row));
+            }
+            return Ok(());
         }
         Ok(())
     }
@@ -468,6 +505,126 @@ impl Node {
             .lock()
             .unwrap()
             .retain(|tx| tx.send(event.clone()).is_ok());
+    }
+}
+
+// ── how each kind answers the surface ───────────────────────
+
+impl KindSurface for ChatKind {
+    fn claims(&self, node: &Node, id: &SessionId) -> bool {
+        node.channel_of_session(id).is_ok()
+    }
+
+    fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
+        let seen = node.seen_loaded()?;
+        let mut out = Vec::new();
+        for d in node.devices()? {
+            let wm = seen.doc.watermark(&format!("chat/{}", d.name));
+            out.push(self.row(&d.name, device_id_from_hex(&d.id)?, wm)?);
+        }
+        Ok(out)
+    }
+
+    /// Chat rows never travel as reports: the document replicates, so
+    /// every device derives its own.
+    fn reportable(&self) -> bool {
+        false
+    }
+
+    /// The max on the senders' clocks — never the local clock (a sender
+    /// running ahead would stay unread after being looked at), never the
+    /// list-order last (a concurrent merge can land mid-list).
+    fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String> {
+        let (channel, _) = node.channel_of_session(id)?;
+        Ok(self.log(&channel)?.messages.iter().map(|m| m.at).max().unwrap_or(0))
+    }
+
+    fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
+        let (channel, _) = node.channel_of_session(id)?;
+        self.close_channel(&channel)
+    }
+}
+
+impl KindSurface for TransferKind {
+    fn claims(&self, _node: &Node, id: &SessionId) -> bool {
+        id.0.starts_with("transfer/")
+    }
+
+    fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
+        let seen = node.seen_loaded()?;
+        let mut out = Vec::new();
+        for d in node.devices()? {
+            let dir = channel_dir(node.root(), &d.name)
+                .ok_or_else(|| format!("频道名不合法: {:?}", d.name))?;
+            let msgs = node.chat.log(&d.name)?.messages;
+            out.extend(self.rows(&d.name, &dir, &msgs, |sid| seen.doc.watermark(sid)));
+        }
+        Ok(out)
+    }
+
+    fn reportable(&self) -> bool {
+        true
+    }
+
+    /// What "looked at" covers is the landed payload; before it lands
+    /// there is nothing unread to clear (待批 clears by answering, not
+    /// by looking — docs/UX.md 角标).
+    fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String> {
+        let (files, dir) = self.files_of(node, id)?;
+        Ok(files
+            .iter()
+            .filter_map(|f| transfer::mtime_ms(&transfer::payload_path(&dir, f)))
+            .max()
+            .unwrap_or(0))
+    }
+
+    fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
+        let (files, dir) = self.files_of(node, id)?;
+        for f in &files {
+            self.close_payload(&dir, f)?;
+        }
+        Ok(())
+    }
+}
+
+impl TransferKind {
+    /// The file refs and channel dir behind `transfer/<msg_id>`.
+    fn files_of(&self, node: &Node, id: &SessionId) -> Result<(Vec<FileRef>, PathBuf), String> {
+        let Some(msg_id) = id.0.strip_prefix("transfer/") else {
+            return Err(format!("没有这个传输: {}", id.0));
+        };
+        let (channel, m) = node.find_transfer(msg_id)?;
+        let dir = channel_dir(node.root(), &channel)
+            .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
+        let MsgBody::Files(files) = m.body else {
+            return Err(format!("没有这个传输: {}", id.0));
+        };
+        Ok((files, dir))
+    }
+}
+
+impl KindSurface for LiveKind {
+    fn claims(&self, _node: &Node, id: &SessionId) -> bool {
+        self.claims(id)
+    }
+
+    fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
+        let seen = node.seen_loaded()?;
+        Ok(self.rows(|sid| seen.doc.watermark(sid)))
+    }
+
+    /// Live state never syncs (docs/NET.md) — only home can derive these
+    /// rows, so they travel as reports.
+    fn reportable(&self) -> bool {
+        true
+    }
+
+    fn seen_at(&self, _node: &Node, id: &SessionId) -> Result<i64, String> {
+        self.stamp(id)
+    }
+
+    fn close(&self, _node: &Node, id: &SessionId) -> Result<(), String> {
+        self.close_session(id)
     }
 }
 

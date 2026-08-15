@@ -26,4 +26,7 @@ iroh = "1.0"
 anyhow = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
+# The live kind's wrapper needs real job control (tcsetpgrp): the child
+# must own the terminal so Ctrl-C reaches it and not the record-keeper.
+libc = "0.2"
 tracing = "0.1"

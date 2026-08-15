@@ -9,10 +9,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use khor_core::State;
-use khor_net::endpoint::{self, ALPN};
-use khor_node::proto::{self, Request, Response, MAX_FRAME};
+use khor_node::proto::{Request, Response};
 use khor_node::Node;
 use tokio::time::timeout;
+
+mod util;
+use util::raw_request;
 
 fn root(tag: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("khor-act-{tag}-{}", std::process::id()));
@@ -30,29 +32,6 @@ async fn wait_for_endpoint_file(root: &PathBuf) {
     })
     .await
     .expect("serve should write endpoint.json within 10s");
-}
-
-/// A bare wire request from an arbitrary key — the shape a hostile or
-/// merely confused client would send.
-async fn raw_request(
-    secret: iroh::SecretKey,
-    target_id: &str,
-    target_addrs: &[String],
-    req: &Request,
-) -> Result<Response, String> {
-    let ep = endpoint::bind(secret, &[]).await.map_err(|e| e.to_string())?;
-    let addr = endpoint::dial_addr(target_id, target_addrs, &[]).map_err(|e| e.to_string())?;
-    let conn = timeout(Duration::from_secs(10), ep.connect(addr, ALPN))
-        .await
-        .map_err(|_| "dial timed out".to_string())?
-        .map_err(|e| e.to_string())?;
-    let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    send.write_all(&proto::encode(req)?).await.map_err(|e| e.to_string())?;
-    send.finish().map_err(|e| e.to_string())?;
-    let bytes = recv.read_to_end(MAX_FRAME).await.map_err(|e| e.to_string())?;
-    let resp = proto::decode(&bytes)?;
-    ep.close().await;
-    Ok(resp)
 }
 
 #[tokio::test]

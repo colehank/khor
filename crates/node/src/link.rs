@@ -435,7 +435,7 @@ impl Node {
         }
         .await;
         if outcome.is_ok() {
-            self.emit_transfer_row(&channel, &m)?;
+            self.emit_row_of(&crate::transfer::TransferKind::session_id(&m.id))?;
         }
         outcome
     }
@@ -683,8 +683,9 @@ impl Node {
 
 }
 
-/// 16 random bytes as hex — invite tokens and hand-off cookies.
-fn fresh_hex() -> Result<String, String> {
+/// 16 random bytes as hex — invite tokens, hand-off cookies, session
+/// leaves.
+pub(crate) fn fresh_hex() -> Result<String, String> {
     let mut raw = [0u8; 16];
     getrandom::fill(&mut raw).map_err(|e| format!("取不到随机数: {e}"))?;
     Ok(raw.iter().map(|b| format!("{b:02x}")).collect())

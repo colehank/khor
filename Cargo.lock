@@ -1897,6 +1897,7 @@ dependencies = [
  "khor-core",
  "khor-net",
  "khor-sync",
+ "libc",
  "rmp-serde",
  "serde",
  "serde_bytes",

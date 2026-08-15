@@ -133,22 +133,12 @@ impl ChatKind {
         })
     }
 
-    /// A seen row plus the watermark that makes it so: the max `at` on
-    /// the senders' clocks — never the local clock (a sender running
-    /// ahead would stay unread after being looked at), and never the
-    /// list-order last (a concurrent merge can land mid-list).
-    pub fn seen(&self, channel: &str, home: DeviceId) -> Result<(i64, Session), String> {
-        let loaded = self.load(channel)?;
-        let max_at = loaded.doc.messages().iter().map(|m| m.at).max().unwrap_or(0);
-        Ok((max_at, self.row_from(channel, home, &loaded.doc, max_at)))
-    }
-
     /// Deletes what the conversation received — the `files/` payloads —
     /// and nothing else. The history blocks stay: they replicate
     /// network-wide, so a local delete would only be pulled right back on
     /// the next sync. Slimming history is an explicit cleanup, not close
     /// (docs/SESSION.md 动作, docs/NET.md 同步).
-    pub fn close(&self, channel: &str) -> Result<(), String> {
+    pub fn close_channel(&self, channel: &str) -> Result<(), String> {
         let files = self.dir(channel)?.join("files");
         if files.exists() {
             fs::remove_dir_all(&files).map_err(|e| format!("删不掉: {e}"))?;

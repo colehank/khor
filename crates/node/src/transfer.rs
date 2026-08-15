@@ -211,7 +211,7 @@ impl TransferKind {
     /// Deletes this transfer's received payload (verified and partial
     /// both). The summary stays in the CRDT — the row falls back to 待批
     /// and the payload can be pulled again.
-    pub fn close(&self, channel_dir: &Path, f: &FileRef) -> Result<(), String> {
+    pub fn close_payload(&self, channel_dir: &Path, f: &FileRef) -> Result<(), String> {
         for p in [
             payload_path(channel_dir, f),
             partial_path(channel_dir, f),
