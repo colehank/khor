@@ -18,6 +18,9 @@ const USAGE: &str = "\
   log <机器>            看那个窗口的消息
   run [--tui] [--title 名] -- <命令...>
                         临时 session:跟着这个终端活,全程网里可见
+  open [-d] [--tui] [--title 名] [-- 命令]
+                        持久 session:终端关了还在,能重连(默认接上;-d 只开)
+  attach <session>      接上一个持久 session(Ctrl-\\ 断开)
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
@@ -151,6 +154,73 @@ fn run(args: &[String]) -> Result<(), String> {
             let code = n.run_ephemeral(&id, &cmd)?;
             std::process::exit(code);
         }
+        "open" => {
+            let mut tui = false;
+            let mut detached = false;
+            let mut title: Option<String> = None;
+            let mut cmd: Vec<String> = Vec::new();
+            let mut it = rest.iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--tui" if cmd.is_empty() => tui = true,
+                    "-d" if cmd.is_empty() => detached = true,
+                    "--title" if cmd.is_empty() => {
+                        title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                    }
+                    "--" if cmd.is_empty() => {}
+                    _ => cmd.push(a.clone()),
+                }
+            }
+            if cmd.is_empty() {
+                cmd = vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())];
+            }
+            let n = node()?;
+            let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
+            let title = title.unwrap_or_else(|| {
+                std::path::Path::new(&cmd[0])
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| cmd[0].clone())
+            });
+            let size = tty_size().unwrap_or((80, 24));
+            let id = n.open_persistent(kind, &title, &cmd, size)?;
+            eprintln!("session: {}", id.0);
+            if detached {
+                println!("{}", id.0);
+                return Ok(());
+            }
+            attach_verb(&n, &id)
+        }
+        "attach" => {
+            let [sid] = rest else {
+                return Err(USAGE.into());
+            };
+            attach_verb(&node()?, &SessionId(sid.clone()))
+        }
+        // Internal: the detached host process `open` spawns. Not in the
+        // usage text on purpose — nobody types this.
+        "_host" => {
+            let (head, cmd) = match rest.iter().position(|a| a == "--") {
+                Some(i) => (&rest[..i], &rest[i + 1..]),
+                None => return Err(USAGE.into()),
+            };
+            let [sid, cols, rows] = head else {
+                return Err(USAGE.into());
+            };
+            if cmd.is_empty() {
+                return Err(USAGE.into());
+            }
+            let size = (
+                cols.parse::<u16>().map_err(|_| USAGE.to_string())?,
+                rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
+            );
+            khor_node::host::host_main(
+                Node::root_from_env(),
+                SessionId(sid.clone()),
+                size,
+                cmd.to_vec(),
+            )
+        }
         "state" => {
             let n = node()?;
             match rest {
@@ -226,6 +296,160 @@ fn run(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!("不认识的动词: {other}\n{USAGE}")),
+    }
+}
+
+/// Raw passthrough to a hosted session: keystrokes and size changes go
+/// out framed, PTY bytes come back raw. Ctrl-\ detaches; the session
+/// stays. One writer thread frames everything so ops never interleave.
+#[cfg(unix)]
+fn attach_verb(n: &Node, id: &SessionId) -> Result<(), String> {
+    use khor_node::host::{connect, write_frame, ClientOp};
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let dir = n
+        .session_dir(id)
+        .ok_or_else(|| format!("没有这个 session: {}", id.0))?;
+    // isatty decides whether this is a terminal; the size is separate —
+    // a pty freshly made by script(1) or a GUI reports 0×0, which is a
+    // default-worthy size, not a disqualification.
+    if unsafe { libc::isatty(0) } != 1 {
+        return Err("attach 要在终端里跑".into());
+    }
+    let (cols, rows) = tty_size().unwrap_or((80, 24));
+    let mut stream = connect(&dir, cols, rows)?;
+    eprintln!("接上了: {}(Ctrl-\\ 断开,session 不会跟着走)", id.0);
+
+    let saved = raw_on()?;
+    let detached = std::sync::Arc::new(AtomicBool::new(false));
+    let (tx, rx) = std::sync::mpsc::channel::<ClientOp>();
+    {
+        let mut w = stream.try_clone().map_err(|e| e.to_string())?;
+        std::thread::spawn(move || {
+            for op in rx {
+                if write_frame(&mut w, &op).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    {
+        let tx = tx.clone();
+        let detached = detached.clone();
+        let s = stream.try_clone().map_err(|e| e.to_string())?;
+        std::thread::spawn(move || {
+            let mut stdin = std::io::stdin();
+            let mut buf = [0u8; 1024];
+            loop {
+                let Ok(nread) = stdin.read(&mut buf) else { break };
+                if nread == 0 {
+                    break;
+                }
+                let chunk = &buf[..nread];
+                if let Some(pos) = chunk.iter().position(|&b| b == 0x1c) {
+                    if pos > 0 {
+                        let _ = tx.send(ClientOp::Input(chunk[..pos].to_vec()));
+                    }
+                    detached.store(true, Ordering::SeqCst);
+                    let _ = s.shutdown(std::net::Shutdown::Both);
+                    break;
+                }
+                if tx.send(ClientOp::Input(chunk.to_vec())).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    {
+        std::thread::spawn(move || {
+            let mut last = (cols, rows);
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let Some(now) = tty_size() else { continue };
+                if now != last {
+                    last = now;
+                    if tx.send(ClientOp::Resize { cols: now.0, rows: now.1 }).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    let mut out = std::io::stdout();
+    let mut buf = [0u8; 8192];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(nread) => {
+                if out.write_all(&buf[..nread]).and_then(|()| out.flush()).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    raw_off(&saved);
+    if detached.load(Ordering::SeqCst) {
+        eprintln!("已断开,session 还在: khor attach {}", id.0);
+    } else {
+        // The stream ended on the host's side — say what the row says.
+        match n.sessions().ok().and_then(|v| v.into_iter().find(|v| v.session.id == *id)) {
+            Some(v) => match v.session.state.state.key() {
+                "done" | "failed" | "idle" => {
+                    eprintln!("session 收场了: {}", v.session.state.state.key())
+                }
+                w => eprintln!("连接断了,session 好像还在({w}): khor attach {}", id.0),
+            },
+            None => eprintln!("session 关了"),
+        }
+    }
+    // The stdin thread may still be blocked on read(2); leaving is how
+    // this process lets go of it.
+    std::process::exit(0);
+}
+
+#[cfg(not(unix))]
+fn attach_verb(_n: &Node, _id: &SessionId) -> Result<(), String> {
+    Err("这一版还接不上(Windows 的 attach 挂账)".into())
+}
+
+#[cfg(unix)]
+fn tty_size() -> Option<(u16, u16)> {
+    unsafe {
+        let mut ws: libc::winsize = std::mem::zeroed();
+        if libc::ioctl(1, libc::TIOCGWINSZ, &mut ws) == 0 && ws.ws_col > 0 {
+            Some((ws.ws_col, ws.ws_row))
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn tty_size() -> Option<(u16, u16)> {
+    None
+}
+
+#[cfg(unix)]
+fn raw_on() -> Result<libc::termios, String> {
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(0, &mut t) != 0 {
+            return Err("拿不到终端参数".into());
+        }
+        let saved = t;
+        libc::cfmakeraw(&mut t);
+        if libc::tcsetattr(0, libc::TCSANOW, &t) != 0 {
+            return Err("终端切不进原始模式".into());
+        }
+        Ok(saved)
+    }
+}
+
+#[cfg(unix)]
+fn raw_off(saved: &libc::termios) {
+    unsafe {
+        libc::tcsetattr(0, libc::TCSANOW, saved);
     }
 }
 

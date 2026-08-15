@@ -8,6 +8,7 @@
 //! answer what "looked at now" means, and close.
 
 pub mod chat;
+pub mod host;
 pub mod ipc;
 pub mod link;
 pub mod live;
@@ -471,6 +472,32 @@ impl Node {
     /// ends. Returns the exit code, which is also the row's ending.
     pub fn run_ephemeral(&self, id: &SessionId, cmd: &[String]) -> Result<i32, String> {
         live::run_wrapped(&self.live, id, cmd)
+    }
+
+    /// Opens a 持久 session: registers it and hands it to a detached
+    /// host that owns the PTY (docs/SESSION.md 寿命). Returns once the
+    /// host is reachable; attaching is the caller's move.
+    pub fn open_persistent(
+        &self,
+        kind: &str,
+        title: &str,
+        cmd: &[String],
+        size: (u16, u16),
+    ) -> Result<SessionId, String> {
+        let leaf: String = link::fresh_hex()?.chars().take(8).collect();
+        let id = SessionId(format!("{kind}/{leaf}"));
+        self.live.register(&id, kind, title, None)?;
+        let dir = self
+            .live
+            .dir_of(&id)
+            .ok_or_else(|| format!("这不是一个 session 号: {}", id.0))?;
+        host::spawn_host(&dir, &id, cmd, size)?;
+        Ok(id)
+    }
+
+    /// The registry dir behind a live session id, for attach clients.
+    pub fn session_dir(&self, id: &SessionId) -> Option<PathBuf> {
+        self.live.dir_of(id).filter(|d| d.exists())
     }
 
     /// A process reporting its own word — the hook door. 失败 is refused

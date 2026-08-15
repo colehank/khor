@@ -61,6 +61,7 @@ pub fn clean_leaf(raw: &str) -> String {
     if cleaned.is_empty() { "x".into() } else { cleaned }
 }
 
+#[derive(Clone)]
 pub struct LiveKind {
     root: PathBuf,
     device: DeviceId,
@@ -87,6 +88,11 @@ impl LiveKind {
     /// Whether this id names a session in the local registry.
     pub fn claims(&self, id: &SessionId) -> bool {
         self.dir(id).is_some_and(|d| d.join("meta.json").exists())
+    }
+
+    /// The registry dir a valid id would use (whether or not it exists).
+    pub fn dir_of(&self, id: &SessionId) -> Option<PathBuf> {
+        self.dir(id)
     }
 
     /// Registers a session. Refuses an id already taken — a hook
@@ -166,10 +172,32 @@ impl LiveKind {
     /// settled row leaves the list.
     pub fn close_session(&self, id: &SessionId) -> Result<(), String> {
         let dir = self.existing_dir(id)?;
-        let (meta, state) = read_pair(&dir)?;
-        if state.exit.is_none() && pid_says_alive(&meta) {
-            if let Some(pid) = meta.pid {
-                terminate(pid);
+        if let Ok(hf) = crate::host::read_host_file(&dir) {
+            // A hosted session dies by its child's process group; the
+            // host sees the exit and leaves on its own. Anything on the
+            // tty that dodged the group gets SIGHUP when the host drops
+            // the PTY master. The host pid is the belt on top.
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
+            }
+            #[cfg(not(unix))]
+            terminate(hf.child_pid);
+            for _ in 0..20 {
+                if !crate::link::pid_alive(hf.host_pid) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            if crate::link::pid_alive(hf.host_pid) {
+                terminate(hf.host_pid);
+            }
+        } else {
+            let (meta, state) = read_pair(&dir)?;
+            if state.exit.is_none() && pid_says_alive(&meta) {
+                if let Some(pid) = meta.pid {
+                    terminate(pid);
+                }
             }
         }
         fs::remove_dir_all(&dir).map_err(|e| format!("删不掉: {e}"))

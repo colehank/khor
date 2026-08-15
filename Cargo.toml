@@ -29,4 +29,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net",
 # The live kind's wrapper needs real job control (tcsetpgrp): the child
 # must own the terminal so Ctrl-C reaches it and not the record-keeper.
 libc = "0.2"
+# PTY allocation for the persistent host, one API on every desktop OS
+# (openpty on POSIX, ConPTY on Windows). Compiled in — the product
+# expects no user-installed dependency, tmux included (docs/SESSION.md).
+portable-pty = "0.9"
 tracing = "0.1"
