@@ -32,9 +32,12 @@ settings 的每个事件都指同一条命令,词由 khor 从载荷里判
 一条判进映射时定过的界:**Notification 只有要许可的那种才是待批**。
 「等你说下一句」永不进待批——那个角标归不了零,等于没有角标(SESSION.md)。
 
-两种跑法:
+三种跑法:
 
-- `khor run --tui -- claude`:一个 session、可靠 pid、真退出码。
+- `khor open --tui -- claude`:持久——终端关了它还在,`khor attach` 接回来,
+  哪台设备都看得到词。宿主设 `KHOR_SESSION`,钩子的词落进同一个 session。
+- `khor run --tui -- claude`:临时——一个 session、可靠 pid、真退出码,
+  跟着这个终端活。
 - 直接在自己终端里跑:钩子自注册 `tui/<claude 的 session id>`,没有 pid
   ——被硬杀的 claude 会停在最后一个词上(词的时间戳还在老去,看得出来),
   close 清掉;观察 session 的 pid 探测挂账。
