@@ -1,15 +1,12 @@
 //! The device-chat kind: a machine's window, ridden on the chat CRDT.
-//!
-//! This batch the device table holds only this machine, so the only
-//! reachable channel is our own (notes to self). Foreign machines join
-//! when pairing lands; telling one now is refused by name, not
-//! silently written into a channel nobody serves.
+//! Which machines exist — and therefore which channels — is the device
+//! table's business; this type takes resolved (channel, home) pairs.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use khor_core::{kind, DeviceId, Event, Kind, Millis, Session, SessionId, State, StateStamp};
-use khor_sync::chat::{channel_dir, channel_of_machine, open_channel, ChatDoc, Message, Sender};
+use khor_sync::chat::{channel_dir, open_channel, ChatDoc, Message, Sender};
 use khor_sync::store::Loaded;
 
 /// One channel's readout.
@@ -21,70 +18,44 @@ pub struct ChannelLog {
 }
 
 pub struct ChatKind {
-    /// Our own channel's directory.
-    dir: PathBuf,
-    device: DeviceId,
+    root: PathBuf,
     me: Sender,
-    /// Own channel name.
-    own: String,
     /// This process's writer peer (one per live writer — see
     /// `ChatDoc::new`).
     peer: u64,
 }
 
 impl ChatKind {
-    pub fn new(root: &Path, device: DeviceId, device_str: String, own: String) -> ChatKind {
-        let dir = channel_dir(root, &own)
-            .expect("channel_of_machine output always passes the whitelist");
+    pub fn new(root: PathBuf, me: Sender) -> ChatKind {
         ChatKind {
-            dir,
-            device,
-            me: Sender { id: device_str, name: own.clone() },
-            own,
+            root,
+            me,
             peer: ChatDoc::fresh_peer(),
         }
     }
 
-    fn session_id(&self) -> SessionId {
-        SessionId(format!("chat/{}", self.own))
+    fn dir(&self, channel: &str) -> Result<PathBuf, String> {
+        channel_dir(&self.root, channel).ok_or_else(|| format!("频道名不合法: {channel:?}"))
     }
 
-    /// Refuses names that resolve to no known device, listing what
-    /// exists — "not found" alone sends people guessing.
-    fn resolve(&self, machine: &str) -> Result<(), String> {
-        let ch = channel_of_machine(machine)
-            .ok_or_else(|| format!("这个机器名进不了路径: {machine:?}"))?;
-        if ch == self.own {
-            return Ok(());
-        }
-        Err(format!(
-            "机器不存在: {machine}。设备表这一批只有本机({}),配对落地后才有别的",
-            self.own
-        ))
+    fn load(&self, channel: &str) -> Result<Loaded<ChatDoc>, String> {
+        open_channel(&self.dir(channel)?, self.peer)
     }
 
-    fn check(&self, id: &SessionId) -> Result<(), String> {
-        let want = self.session_id();
-        if *id == want {
-            return Ok(());
-        }
-        Err(format!("没有这个 session: {}(有的是 {})", id.0, want.0))
+    fn session_id(channel: &str) -> SessionId {
+        SessionId(format!("chat/{channel}"))
     }
 
-    fn load(&self) -> Result<Loaded<ChatDoc>, String> {
-        open_channel(&self.dir, self.peer)
-    }
-
-    fn row_from(&self, doc: &ChatDoc) -> Session {
+    fn row_from(&self, channel: &str, home: DeviceId, doc: &ChatDoc) -> Session {
         let msgs = doc.messages();
         let total = msgs.len() as u64;
-        let unread = total.saturating_sub(self.seen_count());
+        let unread = total.saturating_sub(self.seen_count(channel));
         let at = msgs.last().map(|m| m.at.max(0) as u64).unwrap_or(0);
         Session {
-            id: self.session_id(),
+            id: Self::session_id(channel),
             kind: Kind(kind::CHAT.to_owned()),
-            title: self.own.clone(),
-            home: self.device,
+            title: channel.to_owned(),
+            home,
             // docs/SESSION.md 对话·对设备: unseen content = Done, seen =
             // Idle; the first four words are unreachable (no process).
             state: StateStamp {
@@ -95,21 +66,25 @@ impl ChatKind {
         }
     }
 
-    pub fn sessions(&self) -> Result<Vec<Session>, String> {
-        Ok(vec![self.row_from(&self.load()?.doc)])
+    pub fn row(&self, channel: &str, home: DeviceId) -> Result<Session, String> {
+        Ok(self.row_from(channel, home, &self.load(channel)?.doc))
     }
 
-    pub fn tell(&self, machine: &str, text: &str) -> Result<(String, Session, Event), String> {
-        self.resolve(machine)?;
-        let loaded = self.load()?;
+    pub fn tell(
+        &self,
+        channel: &str,
+        home: DeviceId,
+        text: &str,
+    ) -> Result<(String, Session, Event), String> {
+        let loaded = self.load(channel)?;
         let mut store = loaded.store;
         let msg_id = loaded.doc.tell(&self.me, text)?;
         store.flush(&loaded.doc)?;
         let total = loaded.doc.messages().len() as u64;
         // Telling implies looking at the channel: own words never count
         // as unread.
-        self.write_seen(total)?;
-        let row = self.row_from(&loaded.doc);
+        self.write_seen(channel, total)?;
+        let row = self.row_from(channel, home, &loaded.doc);
         let event = Event {
             session: row.id.clone(),
             seq: total,
@@ -123,28 +98,26 @@ impl ChatKind {
         Ok((msg_id, row, event))
     }
 
-    pub fn log(&self, machine: &str) -> Result<ChannelLog, String> {
-        self.resolve(machine)?;
-        let loaded = self.load()?;
+    pub fn log(&self, channel: &str) -> Result<ChannelLog, String> {
+        let loaded = self.load(channel)?;
         Ok(ChannelLog {
             messages: loaded.doc.messages(),
             broken: loaded.broken.len(),
         })
     }
 
-    pub fn seen(&self, id: &SessionId) -> Result<Session, String> {
-        self.check(id)?;
-        let loaded = self.load()?;
-        self.write_seen(loaded.doc.messages().len() as u64)?;
-        Ok(self.row_from(&loaded.doc))
+    pub fn seen(&self, channel: &str, home: DeviceId) -> Result<Session, String> {
+        let loaded = self.load(channel)?;
+        self.write_seen(channel, loaded.doc.messages().len() as u64)?;
+        Ok(self.row_from(channel, home, &loaded.doc))
     }
 
     /// Deletes the conversation and everything it received — docs的判词:
     /// 删对设备的对话,连它收下的文件一起删。
-    pub fn close(&self, id: &SessionId) -> Result<(), String> {
-        self.check(id)?;
-        if self.dir.exists() {
-            fs::remove_dir_all(&self.dir).map_err(|e| format!("删不掉: {e}"))?;
+    pub fn close(&self, channel: &str) -> Result<(), String> {
+        let dir = self.dir(channel)?;
+        if dir.exists() {
+            fs::remove_dir_all(&dir).map_err(|e| format!("删不掉: {e}"))?;
         }
         Ok(())
     }
@@ -153,23 +126,25 @@ impl ChatKind {
     // `.loro` extension, so it never syncs (same trick as the merge
     // ledger). Cross-device clearing arrives with the read-state CRDT;
     // until then unread clears only where you cleared it.
-    fn seen_path(&self) -> PathBuf {
-        self.dir.join(".seen")
+    fn seen_path(&self, channel: &str) -> Result<PathBuf, String> {
+        Ok(self.dir(channel)?.join(".seen"))
     }
 
-    fn seen_count(&self) -> u64 {
-        fs::read_to_string(self.seen_path())
+    fn seen_count(&self, channel: &str) -> u64 {
+        self.seen_path(channel)
             .ok()
+            .and_then(|p| fs::read_to_string(p).ok())
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0)
     }
 
-    fn write_seen(&self, n: u64) -> Result<(), String> {
+    fn write_seen(&self, channel: &str, n: u64) -> Result<(), String> {
         // An empty channel leaves nothing on disk; tell() creates the dir
         // via flush before this runs.
-        if !self.dir.exists() {
+        if !self.dir(channel)?.exists() {
             return Ok(());
         }
-        fs::write(self.seen_path(), format!("{n}\n")).map_err(|e| format!("记不了已读: {e}"))
+        fs::write(self.seen_path(channel)?, format!("{n}\n"))
+            .map_err(|e| format!("记不了已读: {e}"))
     }
 }

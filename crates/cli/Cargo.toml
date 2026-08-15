@@ -9,3 +9,4 @@ path = "src/main.rs"
 
 [dependencies]
 khor-node.workspace = true
+tokio.workspace = true

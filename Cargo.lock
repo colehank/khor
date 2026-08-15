@@ -1861,6 +1861,7 @@ name = "khor-cli"
 version = "0.1.0"
 dependencies = [
  "khor-node",
+ "tokio",
 ]
 
 [[package]]
@@ -1877,6 +1878,7 @@ name = "khor-net"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "iroh",
  "serde",
  "serde_json",
@@ -1887,11 +1889,17 @@ dependencies = [
 name = "khor-node"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "gethostname",
+ "getrandom 0.3.4",
+ "iroh",
  "khor-core",
  "khor-net",
  "khor-sync",
+ "rmp-serde",
+ "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1900,6 +1908,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "loro",
+ "serde_json",
 ]
 
 [[package]]

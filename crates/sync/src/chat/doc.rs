@@ -107,7 +107,8 @@ impl ChatDoc {
         (u64::from(std::process::id()) << 40) ^ nanos
     }
 
-    /// The raw document, for `store` only.
+    /// The raw document, for tests that hand-craft future messages.
+    #[cfg(test)]
     pub(crate) fn raw(&self) -> &LoroDoc {
         &self.inner
     }

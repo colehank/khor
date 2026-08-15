@@ -10,11 +10,16 @@ use khor_node::{MsgBody, Node, SessionId};
 const USAGE: &str = "\
 用法: khor <动词>
   id                    本机身份
+  devices               网里的设备
   sessions              session 列表
   tell <机器> <话...>    给机器的窗口留言
   log <机器>            看那个窗口的消息
   seen <session>        标已读
-  close <session>       关掉(对话连历史与收下的文件一起删)";
+  close <session>       关掉(对话连历史与收下的文件一起删)
+  serve                 常驻:应答别人、每 5 秒同步全网
+  invite                出一张一次性配对票(要求 serve 在跑)
+  pair <票>             凭票入网
+  sync                  立即和全网各同步一趟";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -28,6 +33,13 @@ fn node() -> Result<Node, String> {
     Node::open(Node::root_from_env())
 }
 
+fn rt() -> Result<tokio::runtime::Runtime, String> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("起不了运行时: {e}"))
+}
+
 fn run(args: &[String]) -> Result<(), String> {
     let verb = args.first().map(String::as_str).unwrap_or("help");
     let rest = &args[args.len().min(1)..];
@@ -35,6 +47,14 @@ fn run(args: &[String]) -> Result<(), String> {
         "id" => {
             let n = node()?;
             println!("{}  {}", n.device_str(), n.name());
+            Ok(())
+        }
+        "devices" => {
+            let n = node()?;
+            for d in n.devices()? {
+                let here = if d.name == n.name() { "(本机)" } else { "" };
+                println!("{}\t{}…{here}", d.name, &d.id[..16]);
+            }
             Ok(())
         }
         "sessions" => {
@@ -79,6 +99,36 @@ fn run(args: &[String]) -> Result<(), String> {
                 return Err(USAGE.into());
             };
             node()?.close(&SessionId(id.clone()))
+        }
+        "serve" => {
+            let n = node()?;
+            eprintln!("khor serve: {} 在听,配对与同步都归它", n.name());
+            rt()?.block_on(n.serve())
+        }
+        "invite" => {
+            println!("{}", node()?.invite()?);
+            Ok(())
+        }
+        "pair" => {
+            let [ticket] = rest else {
+                return Err(USAGE.into());
+            };
+            let name = rt()?.block_on(node()?.pair(ticket))?;
+            println!("配上了: {name}。它认识的机器现在都在你的设备表里");
+            Ok(())
+        }
+        "sync" => {
+            let outcomes = rt()?.block_on(node()?.sync_now())?;
+            if outcomes.is_empty() {
+                println!("网里只有本机,没得同步");
+            }
+            for (name, verdict) in outcomes {
+                match verdict {
+                    Ok(what) => println!("{name}: {what}"),
+                    Err(e) => println!("{name}: 没同步上——{e}"),
+                }
+            }
+            Ok(())
         }
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
