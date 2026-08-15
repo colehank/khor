@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+khor-core = { path = "crates/core" }
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+rmp-serde = "1"
+# Document CRDT, not a live protocol: increments are bytes that can land as
+# files, so dumb nodes (ssh-only, no process) can carry them.
+loro = "1.13"
+base64 = "0.22"
+iroh = "1.0"
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
+tracing = "0.1"
