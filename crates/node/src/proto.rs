@@ -49,11 +49,11 @@ pub enum Response {
 }
 
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
-    rmp_serde::to_vec(t).map_err(|e| format!("编不出帧: {e}"))
+    rmp_serde::to_vec(t).map_err(khor_catalog::msg::cant_encode_frame)
 }
 
 pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
-    rmp_serde::from_slice(bytes).map_err(|e| format!("解不出帧: {e}"))
+    rmp_serde::from_slice(bytes).map_err(khor_catalog::msg::cant_decode_frame)
 }
 
 #[cfg(test)]

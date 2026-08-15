@@ -9,6 +9,7 @@
 //! carries a cookie that lives in the owner-only endpoint.json beside
 //! the port.
 
+use khor_catalog::msg;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -39,21 +40,21 @@ pub enum Reply {
 pub async fn call(port: u16, cookie: &str, op: Op) -> Result<Reply, String> {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .map_err(|e| format!("递不到 serve: {e}"))?;
+        .map_err(msg::serve_unreachable)?;
     let frame = proto::encode(&Handoff { cookie: cookie.to_owned(), op })?;
     stream
         .write_all(&frame)
         .await
-        .map_err(|e| format!("递不过去: {e}"))?;
+        .map_err(msg::handoff_failed)?;
     stream
         .shutdown()
         .await
-        .map_err(|e| format!("收不了尾: {e}"))?;
+        .map_err(msg::cant_close_stream)?;
     let mut bytes = Vec::new();
     (&mut stream)
         .take(MAX_FRAME as u64)
         .read_to_end(&mut bytes)
         .await
-        .map_err(|e| format!("读不到 serve 的答复: {e}"))?;
+        .map_err(msg::no_reply_from_serve)?;
     proto::decode(&bytes)
 }

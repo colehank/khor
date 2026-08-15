@@ -9,6 +9,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use khor_catalog::msg;
 use loro::{LoroDoc, LoroList, LoroMap, LoroValue, UndoManager, VersionVector};
 
 use crate::glue;
@@ -167,7 +168,7 @@ impl ChatDoc {
         fill(&m)?;
         self.msgs()
             .push_container(m)
-            .map_err(|e| format!("加不进去: {e}"))?;
+            .map_err(msg::cant_append)?;
         self.inner.commit();
         Ok(id)
     }
@@ -175,7 +176,7 @@ impl ChatDoc {
     /// Edits a message's body. Rewrites only the `text` key — a whole-map
     /// rewrite would overwrite a concurrent retract from another device.
     pub fn edit(&self, id: &str, text: &str) -> Result<(), String> {
-        let m = self.find(id).ok_or_else(|| format!("没有这条: {id}"))?;
+        let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
         m.insert("text", text).map_err(|e| e.to_string())?;
         m.insert("edited", true).map_err(|e| e.to_string())?;
         self.inner.commit();
@@ -188,7 +189,7 @@ impl ChatDoc {
     /// "delete for me" — that would be a machine-local hide list, a
     /// different verb.
     pub fn retract(&self, id: &str) -> Result<(), String> {
-        let m = self.find(id).ok_or_else(|| format!("没有这条: {id}"))?;
+        let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
         m.insert("retracted", true).map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())

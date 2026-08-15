@@ -148,7 +148,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     .expect("a refused act must not hang")
     .unwrap();
     match resp {
-        Response::Refused { why } => assert!(why.contains("不认识的动作"), "{why}"),
+        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::unknown_action("detonate")),
         other => panic!("an unknown action must be refused, got {other:?}"),
     }
 
@@ -166,7 +166,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     .expect("a refused act must not hang")
     .unwrap();
     match resp {
-        Response::Refused { why } => assert!(why.contains("先配对"), "{why}"),
+        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::NOT_PAIRED),
         other => panic!("an unpaired act must be refused, got {other:?}"),
     }
 

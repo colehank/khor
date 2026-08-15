@@ -119,7 +119,11 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .await
         .expect("a failing accept must not hang either")
         .unwrap_err();
-    assert!(err.contains("校验"), "wrong bytes must fail the digest: {err}");
+    let probe = khor_catalog::msg::digest_mismatch('\u{0}', '\u{0}');
+    assert!(
+        err.contains(probe.split('\u{0}').next().unwrap()),
+        "wrong bytes must fail the digest: {err}"
+    );
     assert!(!partial_path(&dir, f).exists(), "the poisoned partial must be discarded");
     let moved = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
@@ -140,7 +144,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
-    assert!(err.contains("被动过"), "a tampered source must be refused by name: {err}");
+    assert_eq!(err, khor_catalog::msg::OFFERED_FILE_CHANGED, "a tampered source is refused by name");
 
     // A digest the offerer never recorded is refused by name: a ghost
     // summary lands in beta's copy as a raw block, claiming alpha as home.
@@ -164,7 +168,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
-    assert!(err.contains("记录"), "an unrecorded digest must be refused by name: {err}");
+    assert_eq!(err, khor_catalog::msg::OFFER_LOST, "an unrecorded digest is refused by name");
 
     serve.abort();
     for r in [&ra, &rb] {

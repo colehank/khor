@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+use khor_catalog::msg;
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
@@ -117,7 +118,7 @@ impl Node {
         let device = DeviceId(*public.as_bytes());
         let device_str = public.to_string();
         let name = channel_of_machine(name)
-            .ok_or_else(|| format!("这个名字进不了路径: {name:?}"))?;
+            .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
         let chat = ChatKind::new(
             root.clone(),
             Sender { id: device_str.clone(), name: name.clone() },
@@ -225,26 +226,23 @@ impl Node {
     /// table has — "not found" alone sends people guessing.
     fn resolve(&self, machine: &str) -> Result<(String, DeviceId), String> {
         let ch = channel_of_machine(machine)
-            .ok_or_else(|| format!("这个机器名进不了路径: {machine:?}"))?;
+            .ok_or_else(|| msg::machine_name_not_pathable(format_args!("{machine:?}")))?;
         let all = self.devices()?;
         match all.iter().find(|d| d.name == ch) {
             Some(d) => Ok((ch, device_id_from_hex(&d.id)?)),
             None => {
                 let names: Vec<&str> = all.iter().map(|d| d.name.as_str()).collect();
-                Err(format!(
-                    "机器不存在: {machine}。网里现在有: {}",
-                    names.join("、")
-                ))
+                Err(msg::no_such_machine(machine, names.join(khor_catalog::cli::NAME_SEPARATOR)))
             }
         }
     }
 
     pub(crate) fn channel_of_session(&self, id: &SessionId) -> Result<(String, DeviceId), String> {
         let Some(ch) = id.0.strip_prefix("chat/") else {
-            return Err(format!("没有这个 session: {}", id.0));
+            return Err(msg::no_such_session(&id.0));
         };
         self.resolve(ch)
-            .map_err(|e| format!("没有这个 session: {}({e})", id.0))
+            .map_err(|e| msg::no_such_session_because(&id.0, e))
     }
 
     fn kinds(&self) -> [&dyn KindSurface; 3] {
@@ -301,9 +299,9 @@ impl Node {
         rows: &[Session],
     ) -> Result<(), String> {
         if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(format!("这不是一个机器 id: {device_id:?}"));
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
-        fs::create_dir_all(self.peers_dir()).map_err(|e| format!("建不了 peers 目录: {e}"))?;
+        fs::create_dir_all(self.peers_dir()).map_err(msg::cant_make_peers_dir)?;
         let report = PeerReport { at_ms: now_ms(), name: name.to_owned(), rows: rows.to_vec() };
         link::write_private(
             &self.peers_dir().join(device_id),
@@ -342,7 +340,7 @@ impl Node {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .ok_or_else(|| format!("这不是一个文件路径: {}", path.display()))?;
+            .ok_or_else(|| msg::not_a_file_path(path.display()))?;
         let (digest, size) = transfer::digest_file(path)?;
         let f = FileRef { name: name.clone(), size: size as i64, digest: digest.clone() };
         let told = self.chat.send_files(&channel, home, &[f])?;
@@ -352,7 +350,7 @@ impl Node {
             &transfer::Offer {
                 path: path
                     .canonicalize()
-                    .map_err(|e| format!("定不下这个路径: {e}"))?,
+                    .map_err(msg::cant_canonicalize)?,
                 name,
                 size,
                 started: false,
@@ -377,7 +375,7 @@ impl Node {
                 return Ok((d.name, m));
             }
         }
-        Err(format!("没有这个传输: transfer/{msg_id}"))
+        Err(msg::no_such_transfer(format_args!("transfer/{msg_id}")))
     }
 
     /// Subscribes to everything that happens. Events push; the returned
@@ -427,7 +425,7 @@ impl Node {
         if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
             return self.mark_seen(id, v.session.state.at.0 as i64);
         }
-        Err(format!("没有这个 session: {}", id.0))
+        Err(msg::no_such_session(&id.0))
     }
 
     /// Closes a session — the wind-down is the kind's (docs/SESSION.md
@@ -450,10 +448,10 @@ impl Node {
         }
         if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
             if let Some((name, _)) = v.source {
-                return Err(format!("这个 session 的 home 是 {name},远程关还没有,去那台关"));
+                return Err(msg::remote_close_not_yet(name));
             }
         }
-        Err(format!("没有这个 session: {}", id.0))
+        Err(msg::no_such_session(&id.0))
     }
 
     // ── the live kind's doors (临时 sessions and hooks) ─────
@@ -490,7 +488,7 @@ impl Node {
         let dir = self
             .live
             .dir_of(&id)
-            .ok_or_else(|| format!("这不是一个 session 号: {}", id.0))?;
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         host::spawn_host(&dir, &id, cmd, size)?;
         Ok(id)
     }
@@ -582,7 +580,7 @@ impl KindSurface for TransferKind {
         let mut out = Vec::new();
         for d in node.devices()? {
             let dir = channel_dir(node.root(), &d.name)
-                .ok_or_else(|| format!("频道名不合法: {:?}", d.name))?;
+                .ok_or_else(|| msg::bad_channel_name(format_args!("{:?}", d.name)))?;
             let msgs = node.chat.log(&d.name)?.messages;
             out.extend(self.rows(&d.name, &dir, &msgs, |sid| seen.doc.watermark(sid)));
         }
@@ -618,13 +616,13 @@ impl TransferKind {
     /// The file refs and channel dir behind `transfer/<msg_id>`.
     fn files_of(&self, node: &Node, id: &SessionId) -> Result<(Vec<FileRef>, PathBuf), String> {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
-            return Err(format!("没有这个传输: {}", id.0));
+            return Err(msg::no_such_transfer(&id.0));
         };
         let (channel, m) = node.find_transfer(msg_id)?;
         let dir = channel_dir(node.root(), &channel)
-            .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
+            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
         let MsgBody::Files(files) = m.body else {
-            return Err(format!("没有这个传输: {}", id.0));
+            return Err(msg::no_such_transfer(&id.0));
         };
         Ok((files, dir))
     }
@@ -674,7 +672,7 @@ fn now_ms() -> u64 {
 pub(crate) fn device_id_from_hex(s: &str) -> Result<DeviceId, String> {
     let s = s.trim();
     if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(format!("这不是一个机器 id: {s:?}"));
+        return Err(msg::not_a_machine_id(format_args!("{s:?}")));
     }
     let mut out = [0u8; 32];
     for (i, chunk) in s.as_bytes().chunks(2).enumerate() {

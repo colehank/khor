@@ -1,6 +1,7 @@
 //! Binding, dialing, and the pairing ticket.
 
 use anyhow::{Context, Result};
+use khor_catalog::msg;
 
 /// One protocol, one ALPN. Version bumps mean a new string.
 pub const ALPN: &[u8] = b"khor/0";
@@ -66,7 +67,7 @@ pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<ir
 /// they come from tickets and stored hints, and one typo must not kill
 /// the dial.
 pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<iroh::EndpointAddr> {
-    let id: iroh::EndpointId = id_hex.parse().context("这不是一个机器 id")?;
+    let id: iroh::EndpointId = id_hex.parse().context(msg::NOT_A_MACHINE_ID_SHORT)?;
     let mut addr = iroh::EndpointAddr::new(id);
     for road in direct.iter().chain(relays) {
         if let Ok(sock) = road.parse::<std::net::SocketAddr>() {
@@ -134,8 +135,8 @@ impl Ticket {
         use base64::Engine;
         let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(text.trim())
-            .context("这不是一张配对票(base64 解不开)")?;
-        serde_json::from_slice(&bytes).context("这不是一张配对票(内容对不上)")
+            .context(msg::NOT_A_TICKET_BASE64)?;
+        serde_json::from_slice(&bytes).context(msg::NOT_A_TICKET_CONTENT)
     }
 }
 
@@ -180,7 +181,12 @@ mod tests {
         };
         assert_eq!(Ticket::decode(&t.encode().unwrap()).unwrap(), t);
         // Garbage is refused with the ticket wording, not a panic.
+        // "not-a-ticket" happens to be valid url-safe base64, so it dies
+        // at the content gate; either refusal is the ticket wording.
         let e = Ticket::decode("not-a-ticket").unwrap_err().to_string();
-        assert!(e.contains("配对票"), "{e}");
+        assert!(
+            e.contains(msg::NOT_A_TICKET_CONTENT) || e.contains(msg::NOT_A_TICKET_BASE64),
+            "{e}"
+        );
     }
 }

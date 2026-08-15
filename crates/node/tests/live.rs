@@ -113,7 +113,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
 
     // Remote close is not a thing yet — refused by name, pointing home.
     let err = b.close(&id).unwrap_err();
-    assert!(err.contains("alpha"), "remote close should name the home: {err}");
+    assert_eq!(err, khor_catalog::msg::remote_close_not_yet("alpha"), "remote close points home");
 
     // The missing-ending rule: the agent dies, nobody records an exit,
     // the row turns 失败 — and the far side sees it.
@@ -158,7 +158,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     .unwrap();
     match resp {
         Response::Refused { why } => {
-            assert!(why.contains("传输"), "accept on a live session must be refused: {why}")
+            assert_eq!(why, khor_catalog::msg::no_such_transfer(&id.0), "accept stays off live sessions")
         }
         other => panic!("Act on a live session must be refused, got {other:?}"),
     }

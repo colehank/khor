@@ -93,7 +93,7 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
 
     // The shell reaches its prompt: no foreground job = 空闲.
     wait_until("the prompt to read as idle", 15, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains("idle"))
+        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("idle")))
     });
 
     // Attach over the socket: type into the pty, see the output.
@@ -104,10 +104,10 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     // A foreground job flips the face to 忙碌 and back.
     host::write_frame(&mut s, &ClientOp::Input(b"sleep 3\n".to_vec())).unwrap();
     wait_until("the sleep to read as busy", 10, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains("busy"))
+        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("busy")))
     });
     wait_until("the prompt to read as idle again", 10, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains("idle"))
+        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("idle")))
     });
 
     // A late attacher gets the past from the replay ring without asking.
@@ -123,13 +123,13 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     )
     .unwrap();
     let w: host::Welcome = host::read_frame(&mut bad).unwrap();
-    assert!(!w.ok && w.why.contains("暗号"), "{}", w.why);
+    assert!(!w.ok && w.why == khor_catalog::msg::WRONG_COOKIE, "{}", w.why);
 
     // The ending is recorded even with nobody attached: exit 7 = 失败,
     // the row stays (sinks), the host leaves.
     host::write_frame(&mut s, &ClientOp::Input(b"exit 7\n".to_vec())).unwrap();
     wait_until("the ending to read as failed", 10, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains("failed"))
+        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("failed")))
     });
     wait_until("the host to leave", 10, || !pid_alive(hf.host_pid));
     assert!(dir.exists(), "a settled row stays listed until closed");

@@ -19,6 +19,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use khor_catalog::msg;
 use khor_core::{DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
 
 /// What a live session is. `pid` is the process whose death means the
@@ -104,11 +105,11 @@ impl LiveKind {
         title: &str,
         pid: Option<u32>,
     ) -> Result<(), String> {
-        let dir = self.dir(id).ok_or_else(|| format!("这不是一个 session 号: {}", id.0))?;
+        let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if dir.join("meta.json").exists() {
-            return Err(format!("这个 session 已经在了: {}", id.0));
+            return Err(msg::session_already_exists(&id.0));
         }
-        fs::create_dir_all(&dir).map_err(|e| format!("建不了 session 目录: {e}"))?;
+        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
         let meta = Meta {
             kind: kind.to_owned(),
             title: title.to_owned(),
@@ -140,12 +141,12 @@ impl LiveKind {
     /// exit-derived, and a session that already ended stays ended.
     pub fn report(&self, id: &SessionId, word: State) -> Result<(), String> {
         if word == State::Failed {
-            return Err("失败不由汇报定,由退出码定".into());
+            return Err(msg::FAILED_IS_NOT_REPORTABLE.into());
         }
         let dir = self.existing_dir(id)?;
         let (meta, state) = read_pair(&dir)?;
         if state.exit.is_some() || !pid_says_alive(&meta) {
-            return Err(format!("这个 session 已经收场了: {}", id.0));
+            return Err(msg::session_over(&id.0));
         }
         self.write_state(&dir, word, None)
     }
@@ -200,7 +201,7 @@ impl LiveKind {
                 }
             }
         }
-        fs::remove_dir_all(&dir).map_err(|e| format!("删不掉: {e}"))
+        fs::remove_dir_all(&dir).map_err(msg::cant_delete)
     }
 
     /// Every registered session as a row. Unreadable entries are skipped:
@@ -235,9 +236,9 @@ impl LiveKind {
     }
 
     fn existing_dir(&self, id: &SessionId) -> Result<PathBuf, String> {
-        let dir = self.dir(id).ok_or_else(|| format!("这不是一个 session 号: {}", id.0))?;
+        let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if !dir.join("meta.json").exists() {
-            return Err(format!("没有这个 session: {}", id.0));
+            return Err(msg::no_such_session(&id.0));
         }
         Ok(dir)
     }
@@ -295,14 +296,14 @@ fn pid_says_alive(meta: &Meta) -> bool {
 }
 
 fn read_meta(dir: &Path) -> Result<Meta, String> {
-    let text = fs::read_to_string(dir.join("meta.json")).map_err(|e| format!("读不了 session 记录: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("session 记录读不懂: {e}"))
+    let text = fs::read_to_string(dir.join("meta.json")).map_err(msg::cant_read_session_meta)?;
+    serde_json::from_str(&text).map_err(msg::session_meta_garbled)
 }
 
 fn read_pair(dir: &Path) -> Result<(Meta, LiveState), String> {
     let meta = read_meta(dir)?;
-    let text = fs::read_to_string(dir.join("state.json")).map_err(|e| format!("读不了 session 状态: {e}"))?;
-    let state = serde_json::from_str(&text).map_err(|e| format!("session 状态读不懂: {e}"))?;
+    let text = fs::read_to_string(dir.join("state.json")).map_err(msg::cant_read_session_state)?;
+    let state = serde_json::from_str(&text).map_err(msg::session_state_garbled)?;
     Ok((meta, state))
 }
 
@@ -310,8 +311,8 @@ fn read_pair(dir: &Path) -> Result<(Meta, LiveState), String> {
 /// rows) and writers (hooks) never meet a half-written file.
 fn write_whole(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
-    fs::write(&tmp, bytes).map_err(|e| format!("写不了 {}: {e}", path.display()))?;
-    fs::rename(&tmp, path).map_err(|e| format!("放不下 {}: {e}", path.display()))
+    fs::write(&tmp, bytes).map_err(|e| msg::cant_write(path.display(), e))?;
+    fs::rename(&tmp, path).map_err(|e| msg::cant_place(path.display(), e))
 }
 
 fn terminate(pid: u32) {
@@ -357,7 +358,7 @@ pub fn run_wrapped(live: &LiveKind, id: &SessionId, cmd: &[String]) -> Result<i3
         c.process_group(0);
     }
 
-    let mut child = c.spawn().map_err(|e| format!("起不来 {}: {e}", cmd[0]))?;
+    let mut child = c.spawn().map_err(|e| msg::wont_start(&cmd[0], e))?;
     live.set_pid(id, child.id())?;
 
     #[cfg(unix)]
@@ -372,7 +373,7 @@ pub fn run_wrapped(live: &LiveKind, id: &SessionId, cmd: &[String]) -> Result<i3
         }
     }
 
-    let status = child.wait().map_err(|e| format!("等不到它结束: {e}"))?;
+    let status = child.wait().map_err(msg::cant_await_child)?;
 
     #[cfg(unix)]
     if on_tty {
@@ -422,7 +423,7 @@ pub enum Hooked {
 /// "等你说下一句" is exactly what 待批 must never mean (docs/SESSION.md).
 pub fn claude_hook(live: &LiveKind, payload: &str) -> Result<Hooked, String> {
     let v: serde_json::Value =
-        serde_json::from_str(payload).map_err(|e| format!("钩子载荷读不懂: {e}"))?;
+        serde_json::from_str(payload).map_err(msg::hook_payload_garbled)?;
     let event = v["hook_event_name"].as_str().unwrap_or("");
 
     let id = match std::env::var("KHOR_SESSION") {
@@ -430,7 +431,7 @@ pub fn claude_hook(live: &LiveKind, payload: &str) -> Result<Hooked, String> {
         _ => {
             let raw = v["session_id"].as_str().unwrap_or("");
             if raw.is_empty() {
-                return Err("钩子载荷里没有 session_id".into());
+                return Err(msg::HOOK_PAYLOAD_NO_SESSION.into());
             }
             let title = v["cwd"]
                 .as_str()
@@ -558,7 +559,7 @@ mod tests {
         let row = &k.rows(|_| 0)[0];
         assert_eq!(row.state.state, State::Failed);
         assert!(
-            k.report(&id, State::Busy).unwrap_err().contains("收场"),
+            k.report(&id, State::Busy).unwrap_err() == msg::session_over(&id.0),
             "a dead session refuses reports by name"
         );
 
@@ -588,9 +589,9 @@ mod tests {
 
         let id = sid("tui/ok1");
         k.register(&id, "tui", "x", None).unwrap();
-        assert!(k.report(&id, State::Failed).unwrap_err().contains("退出码"));
+        assert_eq!(k.report(&id, State::Failed).unwrap_err(), msg::FAILED_IS_NOT_REPORTABLE);
         k.record_exit(&id, 0).unwrap();
-        assert!(k.report(&id, State::Busy).unwrap_err().contains("收场"));
+        assert_eq!(k.report(&id, State::Busy).unwrap_err(), msg::session_over(&id.0));
         k.record_exit(&id, 7).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(row.state.state, State::Idle, "the first recorded ending wins");

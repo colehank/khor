@@ -13,6 +13,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use khor_catalog::msg;
 use khor_core::{kind, DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
 use khor_sync::chat::{FileRef, Message, MsgBody};
 
@@ -39,19 +40,19 @@ pub fn offers_dir(root: &Path) -> PathBuf {
 /// The digest lands in a filename; only lowercase blake3 hex survives.
 pub fn offer_path(root: &Path, digest: &str) -> Result<PathBuf, String> {
     if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(format!("这不是一个内容摘要: {digest:?}"));
+        return Err(msg::not_a_digest(format_args!("{digest:?}")));
     }
     Ok(offers_dir(root).join(digest))
 }
 
 pub fn save_offer(root: &Path, digest: &str, offer: &Offer) -> Result<(), String> {
     let dir = offers_dir(root);
-    fs::create_dir_all(&dir).map_err(|e| format!("建不了传输目录: {e}"))?;
+    fs::create_dir_all(&dir).map_err(msg::cant_make_transfers_dir)?;
     fs::write(
         offer_path(root, digest)?,
         serde_json::to_vec(offer).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| format!("记不了这份文件: {e}"))
+    .map_err(msg::cant_record_offer)
 }
 
 pub fn load_offer(root: &Path, digest: &str) -> Result<Option<Offer>, String> {
@@ -60,18 +61,18 @@ pub fn load_offer(root: &Path, digest: &str) -> Result<Option<Offer>, String> {
     };
     serde_json::from_str(&text)
         .map(Some)
-        .map_err(|e| format!("传输记录读不懂: {e}"))
+        .map_err(msg::offer_garbled)
 }
 
 /// Streaming blake3 over the file. Returns (hex digest, size).
 pub fn digest_file(path: &Path) -> Result<(String, u64), String> {
     use std::io::Read;
-    let mut f = fs::File::open(path).map_err(|e| format!("读不了 {}: {e}", path.display()))?;
+    let mut f = fs::File::open(path).map_err(|e| msg::cant_read(path.display(), e))?;
     let mut hasher = blake3::Hasher::new();
     let mut buf = vec![0u8; 1 << 20];
     let mut size = 0u64;
     loop {
-        let n = f.read(&mut buf).map_err(|e| format!("读不完 {}: {e}", path.display()))?;
+        let n = f.read(&mut buf).map_err(|e| msg::cant_finish_reading(path.display(), e))?;
         if n == 0 {
             break;
         }
@@ -218,7 +219,7 @@ impl TransferKind {
             pulling_marker(channel_dir, f),
         ] {
             if p.exists() {
-                fs::remove_file(&p).map_err(|e| format!("删不掉: {e}"))?;
+                fs::remove_file(&p).map_err(msg::cant_delete)?;
             }
         }
         Ok(())

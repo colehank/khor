@@ -104,7 +104,8 @@ fn telling_an_unknown_machine_is_refused_by_name() {
     let r = root("unknown");
     let n = Node::open(r.clone()).unwrap();
     let e = n.tell("no-such-box", "hi").unwrap_err();
-    assert!(e.contains("机器不存在"), "{e}");
+    let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
+    assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
     assert!(e.contains(n.name()), "the error should name existing machines: {e}");
     let _ = fs::remove_dir_all(&r);
 }

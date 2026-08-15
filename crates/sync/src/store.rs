@@ -16,6 +16,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use khor_catalog::msg;
 use loro::VersionVector;
 
 use crate::plan::{Ledger, Side};
@@ -126,7 +127,7 @@ impl BlockStore {
 
     /// Reads a block to push to the far side.
     pub fn read_block(&self, name: &str) -> Result<Vec<u8>, String> {
-        fs::read(self.dir.join(name)).map_err(|e| format!("读不了 {name}: {e}"))
+        fs::read(self.dir.join(name)).map_err(|e| msg::cant_read(name, e))
     }
 
     fn save_ledger(&mut self) -> Result<(), String> {
@@ -256,11 +257,11 @@ fn make_dir(dir: &Path) -> Result<(), String> {
             .mode(OWNER_ONLY_DIR)
             .create(dir)
             .or_else(|e| {
-                if dir.is_dir() { Ok(()) } else { Err(format!("建不了目录: {e}")) }
+                if dir.is_dir() { Ok(()) } else { Err(msg::cant_make_dir(e)) }
             });
     }
     #[cfg(not(unix))]
-    fs::create_dir_all(dir).map_err(|e| format!("建不了目录: {e}"))
+    fs::create_dir_all(dir).map_err(msg::cant_make_dir)
 }
 
 /// tmp + sync + rename: readers see a whole block or none. The sync
@@ -278,11 +279,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         }
         let mut f = opts
             .open(&tmp)
-            .map_err(|e| format!("写不了 {}: {e}", tmp.display()))?;
-        f.write_all(bytes).map_err(|e| format!("写不完: {e}"))?;
-        f.sync_all().map_err(|e| format!("落不了盘: {e}"))?;
+            .map_err(|e| msg::cant_write(tmp.display(), e))?;
+        f.write_all(bytes).map_err(msg::cant_finish_write)?;
+        f.sync_all().map_err(msg::cant_sync_disk)?;
     }
-    fs::rename(&tmp, path).map_err(|e| format!("改不了名: {e}"))
+    fs::rename(&tmp, path).map_err(msg::cant_rename)
 }
 
 fn file_name(p: &Path) -> Option<String> {

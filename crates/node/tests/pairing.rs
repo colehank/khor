@@ -142,7 +142,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .await
         .expect("refusal must not hang either")
         .unwrap_err();
-    assert!(err.contains("配对码"), "a replay must be refused by name: {err}");
+    assert_eq!(err, khor_catalog::msg::BAD_INVITE, "a replay is refused by name");
     assert_eq!(c.devices().unwrap().len(), 1, "gamma's table should hold only itself");
 
     // An unpaired device syncs nothing — even knowing the address.
@@ -163,7 +163,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .unwrap();
     let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("there should be an alpha entry");
     let err = verdict.as_ref().unwrap_err();
-    assert!(err.contains("先配对"), "an unpaired sync must be refused by name: {err}");
+    assert_eq!(err, khor_catalog::msg::NOT_PAIRED, "an unpaired sync is refused by name");
 
     serve.abort();
     for r in [&ra, &rb, &rc] {

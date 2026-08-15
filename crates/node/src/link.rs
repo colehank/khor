@@ -9,6 +9,7 @@ use std::fs;
 use std::time::Duration;
 
 use base64::Engine;
+use khor_catalog::msg;
 use khor_net::endpoint::{self, Ticket, ALPN};
 use khor_sync::devices::DeviceInfo;
 use khor_sync::store::Doc;
@@ -65,7 +66,7 @@ impl Node {
         }
         let handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
-            .map_err(|e| format!("开不了递话口: {e}"))?;
+            .map_err(msg::cant_open_handoff_port)?;
         let cookie = fresh_hex()?;
         let file = EndpointFile {
             id: self.device_str().to_owned(),
@@ -135,17 +136,17 @@ impl Node {
             .take(MAX_FRAME as u64)
             .read_to_end(&mut bytes)
             .await
-            .map_err(|e| format!("读不完递话: {e}"))?;
+            .map_err(msg::handoff_unreadable)?;
         let reply = match proto::decode::<ipc::Handoff>(&bytes) {
             Ok(h) if h.cookie == cookie => self.run_handoff(ep, h.op).await,
-            Ok(_) => ipc::Reply::Refused { why: "递话的暗号对不上,重读 endpoint.json 再来".into() },
+            Ok(_) => ipc::Reply::Refused { why: msg::HANDOFF_WRONG_COOKIE.into() },
             Err(e) => ipc::Reply::Refused { why: e },
         };
         stream
             .write_all(&proto::encode(&reply)?)
             .await
-            .map_err(|e| format!("答不回去: {e}"))?;
-        stream.shutdown().await.map_err(|e| format!("收不了尾: {e}"))?;
+            .map_err(msg::cant_reply)?;
+        stream.shutdown().await.map_err(msg::cant_close_stream)?;
         Ok(())
     }
 
@@ -184,15 +185,12 @@ impl Node {
             _ => return None,
         };
         if f.ipc_port == 0 {
-            return Some(Err(format!(
-                "khor serve 在跑(pid {})但没开递话口,把它升级或先停掉",
-                f.pid
-            )));
+            return Some(Err(msg::serve_no_handoff_port(f.pid)));
         }
         Some(
             ipc::call(f.ipc_port, &f.ipc_cookie, op)
                 .await
-                .map_err(|e| format!("khor serve 在跑(pid {})但递不过去: {e}", f.pid)),
+                .map_err(|e| msg::serve_handoff_failed(f.pid, e)),
         )
     }
 
@@ -202,15 +200,15 @@ impl Node {
             let bytes = recv
                 .read_to_end(MAX_FRAME)
                 .await
-                .map_err(|e| format!("读不完请求: {e}"))?;
+                .map_err(msg::request_unreadable)?;
             let resp = match proto::decode::<Request>(&bytes) {
                 Ok(req) => self.dispatch(&remote, req, ep).await,
                 Err(e) => Response::Refused { why: e },
             };
             send.write_all(&proto::encode(&resp)?)
                 .await
-                .map_err(|e| format!("写不出应答: {e}"))?;
-            send.finish().map_err(|e| format!("收不了尾: {e}"))?;
+                .map_err(msg::cant_write_reply)?;
+            send.finish().map_err(msg::cant_close_stream)?;
         }
         Ok(())
     }
@@ -232,11 +230,11 @@ impl Node {
             Request::Pair { token, name, addrs } => {
                 let path = self.invite_path(&token)?;
                 if !path.exists() {
-                    return Err("配对码不对,或已经被用过了".into());
+                    return Err(msg::BAD_INVITE.into());
                 }
                 // Burn before use: a token that pairs twice is a door
                 // that never closes.
-                fs::remove_file(&path).map_err(|e| format!("销不掉配对码: {e}"))?;
+                fs::remove_file(&path).map_err(msg::cant_burn_invite)?;
                 let loaded = self.devices_loaded()?;
                 loaded.doc.upsert(remote, &name, &addrs)?;
                 let mut store = loaded.store;
@@ -248,7 +246,7 @@ impl Node {
             }
             Request::Sync { doc, have, changes } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err("这台设备不在设备表里,先配对".into());
+                    return Err(msg::NOT_PAIRED.into());
                 }
                 let reply = if doc == "devices" {
                     let mut loaded = self.devices_loaded()?;
@@ -258,11 +256,11 @@ impl Node {
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
-                        .ok_or_else(|| format!("频道名不合法: {ch:?}"))?;
+                        .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
                     let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else {
-                    return Err(format!("不认识这种 doc: {doc}"));
+                    return Err(msg::unknown_doc(doc));
                 };
                 Ok(Response::Synced {
                     version: reply.version,
@@ -272,26 +270,26 @@ impl Node {
             }
             Request::Fetch { digest, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err("这台设备不在设备表里,先配对".into());
+                    return Err(msg::NOT_PAIRED.into());
                 }
                 self.serve_slice(&digest, offset)
             }
             Request::Sessions => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err("这台设备不在设备表里,先配对".into());
+                    return Err(msg::NOT_PAIRED.into());
                 }
                 Ok(Response::SessionRows { rows: self.reportable_rows()? })
             }
             Request::Act { session, action } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err("这台设备不在设备表里,先配对".into());
+                    return Err(msg::NOT_PAIRED.into());
                 }
                 match action.as_str() {
                     "accept" => {
                         let moved = self.accept_local(ep, &crate::SessionId(session)).await?;
                         Ok(Response::Acted { moved })
                     }
-                    other => Err(format!("不认识的动作: {other}")),
+                    other => Err(msg::unknown_action(other)),
                 }
             }
         }
@@ -303,21 +301,21 @@ impl Node {
     fn serve_slice(&self, digest: &str, offset: u64) -> Result<Response, String> {
         use std::io::{Read, Seek, SeekFrom};
         let mut offer = crate::transfer::load_offer(self.root(), digest)?
-            .ok_or("没有这份文件的记录,可能出让方换了机器或删了它")?;
+            .ok_or(msg::OFFER_LOST)?;
         let meta = fs::metadata(&offer.path)
-            .map_err(|e| format!("出让的文件读不到了({}): {e}", offer.path.display()))?;
+            .map_err(|e| msg::offered_file_unreadable(offer.path.display(), e))?;
         if meta.len() != offer.size {
-            return Err("出让的文件被动过(大小变了),让对方重新发一次".into());
+            return Err(msg::OFFERED_FILE_CHANGED.into());
         }
         if offset > offer.size {
-            return Err(format!("起点越界: {offset} > {}", offer.size));
+            return Err(msg::offset_out_of_range(offset, offer.size));
         }
         let mut f = fs::File::open(&offer.path)
-            .map_err(|e| format!("出让的文件打不开: {e}"))?;
+            .map_err(msg::offered_file_wont_open)?;
         f.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
         let want = (offer.size - offset).min(proto::SLICE) as usize;
         let mut buf = vec![0u8; want];
-        f.read_exact(&mut buf).map_err(|e| format!("读不完这一片: {e}"))?;
+        f.read_exact(&mut buf).map_err(msg::cant_read_slice)?;
         offer.started = true;
         offer.done = offset + want as u64 >= offer.size;
         crate::transfer::save_offer(self.root(), digest, &offer)?;
@@ -333,7 +331,7 @@ impl Node {
             return match reply? {
                 ipc::Reply::Accepted { moved } => Ok(moved),
                 ipc::Reply::Refused { why } => Err(why),
-                other => Err(format!("serve 答非所问: {other:?}")),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
@@ -349,7 +347,7 @@ impl Node {
     /// recipient's serve — 动作从哪台设备发都行 (docs/SESSION.md).
     async fn accept_with(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
-            return Err(format!("没有这个传输: {}", id.0));
+            return Err(msg::no_such_transfer(&id.0));
         };
         let (channel, _) = self.find_transfer(msg_id)?;
         if channel == self.name() {
@@ -359,13 +357,13 @@ impl Node {
             .devices_loaded()?
             .doc
             .by_name(&channel)
-            .ok_or_else(|| format!("收文件的机器不在设备表里: {channel}"))?;
+            .ok_or_else(|| msg::recipient_not_in_table(&channel))?;
         let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
             .map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| format!("连不上 {channel}(超时)——收下由那台机器执行,它得在线"))?
-            .map_err(|e| format!("连不上 {channel}: {e}"))?;
+            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|e| msg::cant_reach_named(&channel, e))?;
         let resp = request(
             &conn,
             &Request::Act { session: id.0.clone(), action: "accept".into() },
@@ -374,7 +372,7 @@ impl Node {
         match resp {
             Response::Acted { moved } => Ok(moved),
             Response::Refused { why } => Err(why),
-            other => Err(format!("对面答非所问: {other:?}")),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
 
@@ -382,33 +380,33 @@ impl Node {
     /// re-routes an incoming Act — what lands wrong is refused, or two
     /// serves could bounce one forever.
     async fn accept_local(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
-        use crate::transfer::{partial_path, payload_path, pulling_marker};
+        use crate::transfer::{payload_path, pulling_marker};
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
-            return Err(format!("没有这个传输: {}", id.0));
+            return Err(msg::no_such_transfer(&id.0));
         };
         let (channel, m) = self.find_transfer(msg_id)?;
         if channel != self.name() {
-            return Err(format!("这份文件是发给 {channel} 的,这台机器不该收"));
+            return Err(msg::wrong_recipient(&channel));
         }
         let crate::MsgBody::Files(files) = &m.body else {
-            return Err(format!("没有这个传输: {}", id.0));
+            return Err(msg::no_such_transfer(&id.0));
         };
         let home = self
             .devices_loaded()?
             .doc
             .get(&m.from.id)
-            .ok_or("出让方已不在设备表里")?;
+            .ok_or(msg::OFFERER_LEFT_TABLE)?;
         let dir = chat::channel_dir(self.root(), &channel)
-            .ok_or_else(|| format!("频道名不合法: {channel:?}"))?;
-        fs::create_dir_all(dir.join("files")).map_err(|e| format!("建不了 files 目录: {e}"))?;
+            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
+        fs::create_dir_all(dir.join("files")).map_err(msg::cant_make_files_dir)?;
 
         let outcome = async {
             let addr = endpoint::dial_addr(&home.id, &home.addrs, self.relays())
                 .map_err(|e| e.to_string())?;
             let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
                 .await
-                .map_err(|_| "连不上出让方(超时)".to_string())?
-                .map_err(|e| format!("连不上出让方: {e}"))?;
+                .map_err(|_| msg::OFFERER_UNREACHABLE_TIMEOUT.to_string())?
+                .map_err(msg::offerer_unreachable)?;
             let mut moved = 0u64;
             for f in files {
                 if payload_path(&dir, f).exists() {
@@ -416,20 +414,10 @@ impl Node {
                 }
                 let marker = pulling_marker(&dir, f);
                 fs::write(&marker, format!("{}", std::process::id()))
-                    .map_err(|e| format!("记不了拉取标记: {e}"))?;
+                    .map_err(msg::cant_mark_pulling)?;
                 let pulled = pull_one(&conn, &dir, f).await;
                 let _ = fs::remove_file(&marker);
-                match pulled {
-                    Ok(n) => moved += n,
-                    Err(e) => {
-                        // A digest mismatch poisons the partial; a broken
-                        // link leaves it — it is the resume point.
-                        if e.contains("校验") {
-                            let _ = fs::remove_file(partial_path(&dir, f));
-                        }
-                        return Err(e);
-                    }
-                }
+                moved += pulled?;
             }
             Ok(moved)
         }
@@ -444,12 +432,12 @@ impl Node {
     /// the ticket carries the live endpoint's addresses.
     pub fn invite(&self) -> Result<String, String> {
         let file = self.endpoint_file()?.ok_or(
-            "khor serve 没在跑——先在这台机器起 khor serve,票里要带它的地址",
+            msg::SERVE_NOT_RUNNING_FOR_INVITE,
         )?;
         let token = fresh_hex()?;
         let dir = self.root().join(".khor").join("invites");
-        fs::create_dir_all(&dir).map_err(|e| format!("建不了邀请目录: {e}"))?;
-        fs::write(self.invite_path(&token)?, b"").map_err(|e| format!("存不了配对码: {e}"))?;
+        fs::create_dir_all(&dir).map_err(msg::cant_make_invites_dir)?;
+        fs::write(self.invite_path(&token)?, b"").map_err(msg::cant_save_invite)?;
         Ticket {
             id: self.device_str().to_owned(),
             name: self.name().to_owned(),
@@ -464,7 +452,7 @@ impl Node {
     fn invite_path(&self, token: &str) -> Result<std::path::PathBuf, String> {
         // The token lands in a filename; only our own hex survives.
         if token.is_empty() || token.len() > 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("配对码不对,或已经被用过了".into());
+            return Err(msg::BAD_INVITE.into());
         }
         Ok(self.root().join(".khor").join("invites").join(token))
     }
@@ -478,7 +466,7 @@ impl Node {
             return match reply? {
                 ipc::Reply::Paired { name } => Ok(name),
                 ipc::Reply::Refused { why } => Err(why),
-                other => Err(format!("serve 答非所问: {other:?}")),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
@@ -509,8 +497,8 @@ impl Node {
         let addr = endpoint::dial_addr(&t.id, &t.direct, &relays).map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| "连不上出票的那台机器(超时)".to_string())?
-            .map_err(|e| format!("连不上出票的那台机器: {e}"))?;
+            .map_err(|_| msg::INVITER_UNREACHABLE_TIMEOUT.to_string())?
+            .map_err(msg::inviter_unreachable)?;
         let resp = request(
             &conn,
             &Request::Pair {
@@ -524,7 +512,7 @@ impl Node {
             Response::Paired { name, devices } => {
                 let bytes = B64
                     .decode(devices)
-                    .map_err(|e| format!("对面的设备表不是 base64: {e}"))?;
+                    .map_err(msg::far_table_not_base64)?;
                 let loaded = self.devices_loaded()?;
                 loaded.doc.merge(&bytes)?;
                 let mut store = loaded.store;
@@ -532,7 +520,7 @@ impl Node {
                 Ok(name)
             }
             Response::Refused { why } => Err(why),
-            other => Err(format!("对面答非所问: {other:?}")),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
 
@@ -544,7 +532,7 @@ impl Node {
             return match reply? {
                 ipc::Reply::Synced { outcomes } => Ok(outcomes),
                 ipc::Reply::Refused { why } => Err(why),
-                other => Err(format!("serve 答非所问: {other:?}")),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
@@ -576,13 +564,13 @@ impl Node {
         // be dialed, only dial us — probing it burns a full DIAL_TIMEOUT
         // per pump for nothing.
         if d.addrs.is_empty() {
-            return Err("它没报过任何地址,等它自己来同步".into());
+            return Err(msg::NO_ROADS_REPORTED.into());
         }
         let addr = endpoint::dial_addr(&d.id, &d.addrs, self.relays()).map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| "连不上(超时)".to_string())?
-            .map_err(|e| format!("连不上: {e}"))?;
+            .map_err(|_| msg::DIAL_TIMED_OUT.to_string())?
+            .map_err(msg::cant_reach_plain)?;
 
         let mut moved = 0usize;
         {
@@ -595,7 +583,7 @@ impl Node {
         }
         for ch in self.known_channels()? {
             let dir = chat::channel_dir(self.root(), &ch)
-                .ok_or_else(|| format!("频道名不合法: {ch:?}"))?;
+                .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
             let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
             moved += self.rounds(&conn, &format!("chat/{ch}"), &mut loaded).await?;
         }
@@ -606,7 +594,7 @@ impl Node {
         if let Ok(Response::SessionRows { rows }) = request(&conn, &Request::Sessions).await {
             let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
         }
-        Ok(if moved == 0 { "无事,已是同步的".into() } else { format!("搬了 {moved} 字节") })
+        Ok(if moved == 0 { msg::NOTHING_TO_MOVE.into() } else { msg::moved_bytes(moved) })
     }
 
     /// Two wire rounds: the first is pull-only by design, the second
@@ -637,7 +625,7 @@ impl Node {
                     items: items as usize,
                 },
                 Response::Refused { why } => return Err(why),
-                other => return Err(format!("对面答非所问: {other:?}")),
+                other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
             let round = peer.absorb(&mut loaded.store, &loaded.doc, &out, reply)?;
             moved += round.pushed + round.pulled;
@@ -673,7 +661,7 @@ impl Node {
             return Ok(None);
         };
         let file: EndpointFile =
-            serde_json::from_str(&text).map_err(|e| format!("endpoint.json 读不懂: {e}"))?;
+            serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
         if pid_alive(file.pid) {
             Ok(Some(file))
         } else {
@@ -687,7 +675,7 @@ impl Node {
 /// leaves.
 pub(crate) fn fresh_hex() -> Result<String, String> {
     let mut raw = [0u8; 16];
-    getrandom::fill(&mut raw).map_err(|e| format!("取不到随机数: {e}"))?;
+    getrandom::fill(&mut raw).map_err(msg::no_entropy)?;
     Ok(raw.iter().map(|b| format!("{b:02x}")).collect())
 }
 
@@ -705,8 +693,8 @@ pub(crate) fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), 
     }
     let mut f = opts
         .open(path)
-        .map_err(|e| format!("写不了 {}: {e}", path.display()))?;
-    f.write_all(bytes).map_err(|e| format!("写不完: {e}"))
+        .map_err(|e| msg::cant_write(path.display(), e))?;
+    f.write_all(bytes).map_err(msg::cant_finish_write)
 }
 
 async fn request(
@@ -716,15 +704,15 @@ async fn request(
     let (mut send, mut recv) = conn
         .open_bi()
         .await
-        .map_err(|e| format!("开不了流: {e}"))?;
+        .map_err(msg::cant_open_stream)?;
     send.write_all(&proto::encode(req)?)
         .await
-        .map_err(|e| format!("发不出去: {e}"))?;
-    send.finish().map_err(|e| format!("收不了尾: {e}"))?;
+        .map_err(msg::cant_send)?;
+    send.finish().map_err(msg::cant_close_stream)?;
     let bytes = recv
         .read_to_end(MAX_FRAME)
         .await
-        .map_err(|e| format!("读不到应答: {e}"))?;
+        .map_err(msg::no_answer)?;
     proto::decode(&bytes)
 }
 
@@ -747,7 +735,7 @@ async fn pull_one(
     if let Ok(mut existing) = fs::File::open(&partial) {
         let mut buf = vec![0u8; 1 << 20];
         loop {
-            let n = existing.read(&mut buf).map_err(|e| format!("读不了断点: {e}"))?;
+            let n = existing.read(&mut buf).map_err(msg::cant_read_partial)?;
             if n == 0 {
                 break;
             }
@@ -759,7 +747,7 @@ async fn pull_one(
         .create(true)
         .append(true)
         .open(&partial)
-        .map_err(|e| format!("开不了断点文件: {e}"))?;
+        .map_err(msg::cant_open_partial)?;
     let expect = f.size.max(0) as u64;
     let mut moved = 0u64;
     while offset < expect {
@@ -767,30 +755,33 @@ async fn pull_one(
         let (total, bytes) = match resp {
             Response::Slice { total, bytes } => (total, bytes),
             Response::Refused { why } => return Err(why),
-            other => return Err(format!("对面答非所问: {other:?}")),
+            other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
         };
         if total != expect {
-            return Err(format!("对面报的大小和摘要里的对不上({total} vs {expect})"));
+            return Err(msg::size_mismatch(total, expect));
         }
         if bytes.is_empty() {
-            return Err("对面送了个空片".into());
+            return Err(msg::EMPTY_SLICE.into());
         }
-        out.write_all(&bytes).map_err(|e| format!("写不下这一片: {e}"))?;
+        out.write_all(&bytes).map_err(msg::cant_write_slice)?;
         hasher.update(&bytes);
         offset += bytes.len() as u64;
         moved += bytes.len() as u64;
     }
-    out.sync_all().map_err(|e| format!("落不了盘: {e}"))?;
+    out.sync_all().map_err(msg::cant_sync_disk)?;
     drop(out);
     let got = hasher.finalize().to_hex().to_string();
     if got != f.digest {
-        return Err(format!(
-            "内容校验对不上(拉到的 {}… ≠ 摘要说的 {}…)",
+        // A mismatch poisons the partial — deleted here, at the only
+        // place that knows. Any other failure leaves it: it is the
+        // resume point.
+        let _ = fs::remove_file(&partial);
+        return Err(msg::digest_mismatch(
             &got[..8],
-            f.digest.chars().take(8).collect::<String>()
+            f.digest.chars().take(8).collect::<String>(),
         ));
     }
-    fs::rename(&partial, payload_path(dir, f)).map_err(|e| format!("改不了名: {e}"))?;
+    fs::rename(&partial, payload_path(dir, f)).map_err(msg::cant_rename)?;
     Ok(moved)
 }
 

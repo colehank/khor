@@ -31,7 +31,7 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
     assert!(stderr.contains("session: shell/"), "the id goes to stderr: {stderr}");
     let text = listed(&home);
     assert!(
-        text.lines().any(|l| l.contains("shell/") && l.contains("failed")),
+        text.lines().any(|l| l.contains("shell/") && l.contains(khor_catalog::state::word("failed"))),
         "a non-zero ending must list as failed:\n{text}"
     );
 
@@ -43,12 +43,15 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
         .lines()
         .find(|l| l.contains("quick"))
         .expect("the clean run should be listed");
-    assert!(row.contains("done") && row.contains("未读 1"), "{row}");
+    assert!(
+        row.contains(khor_catalog::state::word("done")) && row.contains(&khor_catalog::cli::unread(1)),
+        "{row}"
+    );
     let id = row.split('\t').next().unwrap().to_owned();
     assert!(khor(&home).args(["seen", &id]).status().unwrap().success());
     let text = listed(&home);
     assert!(
-        text.lines().any(|l| l.contains("quick") && l.contains("idle")),
+        text.lines().any(|l| l.contains("quick") && l.contains(khor_catalog::state::word("idle"))),
         "looked at = 空闲:\n{text}"
     );
 
@@ -72,13 +75,13 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
     feed("UserPromptSubmit");
     let text = listed(&home);
     assert!(
-        text.lines().any(|l| l.contains("tui/cafe1234") && l.contains("busy") && l.contains("proj")),
+        text.lines().any(|l| l.contains("tui/cafe1234") && l.contains(khor_catalog::state::word("busy")) && l.contains("proj")),
         "the observed agent should list busy:\n{text}"
     );
     feed("Stop");
     let text = listed(&home);
     assert!(
-        text.lines().any(|l| l.contains("tui/cafe1234") && l.contains("done")),
+        text.lines().any(|l| l.contains("tui/cafe1234") && l.contains(khor_catalog::state::word("done"))),
         "the turn's end should list done:\n{text}"
     );
 
@@ -86,7 +89,7 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
     // with no session to report to is too.
     let out = khor(&home).args(["state", "sleepy", "--session", "tui/cafe1234"]).output().unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("六词"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains(&khor_catalog::msg::not_a_state_word("sleepy")));
     let out = khor(&home).args(["state", "busy"]).output().unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("KHOR_SESSION"));

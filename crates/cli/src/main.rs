@@ -2,32 +2,12 @@
 //! call — anything the GUI will do must be reachable from here first
 //! (docs/KHOR.md: CLI equals GUI).
 //!
-//! State words print as their stable keys until the catalog lands; the
-//! keys are the wire truth, the catalog is wording.
+//! Stable keys are the wire truth; every word a person reads comes from
+//! the catalog at print time (docs/UX.md 文案).
 
+use khor_catalog::cli::USAGE;
+use khor_catalog::{cli, msg, state};
 use khor_node::{MsgBody, Node, SessionId};
-
-const USAGE: &str = "\
-用法: khor <动词>
-  id                    本机身份
-  devices               网里的设备
-  sessions              session 列表
-  tell <机器> <话...>    给机器的窗口留言
-  send <机器> <文件>     把文件给那台机器(摘要先到,对方许可后才传)
-  accept <传输号>        许可并收下全量(在收文件的那台机器上跑)
-  log <机器>            看那个窗口的消息
-  run [--tui] [--title 名] -- <命令...>
-                        临时 session:跟着这个终端活,全程网里可见
-  open [-d] [--tui] [--title 名] [-- 命令]
-                        持久 session:终端关了还在,能重连(默认接上;-d 只开)
-  attach <session>      接上一个持久 session(Ctrl-\\ 断开)
-  state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
-  seen <session>        标已读
-  close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
-  serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
-  invite                出一张一次性配对票(要求 serve 在跑)
-  pair <票>             凭票入网
-  sync                  立即和全网各同步一趟";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -45,7 +25,7 @@ fn rt() -> Result<tokio::runtime::Runtime, String> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|e| format!("起不了运行时: {e}"))
+        .map_err(msg::runtime_wont_start)
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -60,7 +40,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "devices" => {
             let n = node()?;
             for d in n.devices()? {
-                let here = if d.name == n.name() { "(本机)" } else { "" };
+                let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
                 println!("{}\t{}…{here}", d.name, &d.id[..16]);
             }
             Ok(())
@@ -73,11 +53,18 @@ fn run(args: &[String]) -> Result<(), String> {
                     // A fresh report reads like local truth; only age
                     // worth knowing gets printed (docs/SESSION.md 离线).
                     Some((name, age)) if *age >= 30_000 => {
-                        format!("\t{name} {}没联系上", human_age(*age))
+                        format!("\t{name} {}", cli::unreachable_for(human_age(*age)))
                     }
                     _ => String::new(),
                 };
-                println!("{}\t{}\t未读 {}\t{}{}", s.id.0, s.state.state.key(), s.unread, s.title, src);
+                println!(
+                    "{}\t{}\t{}\t{}{}",
+                    s.id.0,
+                    state::word(s.state.state.key()),
+                    cli::unread(s.unread),
+                    s.title,
+                    src
+                );
             }
             Ok(())
         }
@@ -97,7 +84,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 return Err(USAGE.into());
             };
             let id = node()?.send(machine, std::path::Path::new(path))?;
-            println!("摘要已发,等对方许可。传输号: {}", id.0);
+            println!("{}", cli::summary_sent(&id.0));
             Ok(())
         }
         "accept" => {
@@ -105,7 +92,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 return Err(USAGE.into());
             };
             let moved = rt()?.block_on(node()?.accept(&SessionId(id.clone())))?;
-            println!("收下了,这一趟拉了 {moved} 字节");
+            println!("{}", cli::pulled(moved));
             Ok(())
         }
         "log" => {
@@ -114,7 +101,7 @@ fn run(args: &[String]) -> Result<(), String> {
             };
             let log = node()?.log(machine)?;
             if log.broken > 0 {
-                eprintln!("有 {} 个块读不出来,这段对话缺了一截", log.broken);
+                eprintln!("{}", cli::broken_blocks(log.broken));
             }
             for m in log.messages {
                 println!("{}: {}", m.from.name, render(&m));
@@ -229,22 +216,21 @@ fn run(args: &[String]) -> Result<(), String> {
                     let mut payload = String::new();
                     std::io::stdin()
                         .read_to_string(&mut payload)
-                        .map_err(|e| format!("读不了钩子载荷: {e}"))?;
+                        .map_err(msg::hook_payload_unreadable)?;
                     n.claude_hook(&payload)?;
                     Ok(())
                 }
                 [word] => {
-                    let sid = std::env::var("KHOR_SESSION").map_err(|_| {
-                        "不知道汇报给哪个 session:设 KHOR_SESSION 或用 --session".to_string()
-                    })?;
-                    let state = khor_node::State::try_from(word.clone())
-                        .map_err(|_| format!("不是六词之一: {word}"))?;
-                    n.report_state(&SessionId(sid), state)
+                    let sid = std::env::var("KHOR_SESSION")
+                        .map_err(|_| msg::WHICH_SESSION.to_string())?;
+                    let word = khor_node::State::try_from(word.clone())
+                        .map_err(|_| msg::not_a_state_word(word))?;
+                    n.report_state(&SessionId(sid), word)
                 }
                 [word, flag, sid] if flag == "--session" => {
-                    let state = khor_node::State::try_from(word.clone())
-                        .map_err(|_| format!("不是六词之一: {word}"))?;
-                    n.report_state(&SessionId(sid.clone()), state)
+                    let word = khor_node::State::try_from(word.clone())
+                        .map_err(|_| msg::not_a_state_word(word))?;
+                    n.report_state(&SessionId(sid.clone()), word)
                 }
                 _ => Err(USAGE.into()),
             }
@@ -263,7 +249,7 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         "serve" => {
             let n = node()?;
-            eprintln!("khor serve: {} 在听,配对与同步都归它", n.name());
+            eprintln!("{}", cli::serve_banner(n.name()));
             rt()?.block_on(n.serve())
         }
         "invite" => {
@@ -275,18 +261,18 @@ fn run(args: &[String]) -> Result<(), String> {
                 return Err(USAGE.into());
             };
             let name = rt()?.block_on(node()?.pair(ticket))?;
-            println!("配上了: {name}。它认识的机器现在都在你的设备表里");
+            println!("{}", cli::paired_ok(name));
             Ok(())
         }
         "sync" => {
             let outcomes = rt()?.block_on(node()?.sync_now())?;
             if outcomes.is_empty() {
-                println!("网里只有本机,没得同步");
+                println!("{}", cli::NOTHING_TO_SYNC);
             }
             for (name, verdict) in outcomes {
                 match verdict {
                     Ok(what) => println!("{name}: {what}"),
-                    Err(e) => println!("{name}: 没同步上——{e}"),
+                    Err(e) => println!("{}", cli::sync_failed_line(name, e)),
                 }
             }
             Ok(())
@@ -295,7 +281,7 @@ fn run(args: &[String]) -> Result<(), String> {
             println!("{USAGE}");
             Ok(())
         }
-        other => Err(format!("不认识的动词: {other}\n{USAGE}")),
+        other => Err(format!("{}\n{USAGE}", msg::unknown_verb(other))),
     }
 }
 
@@ -310,16 +296,16 @@ fn attach_verb(n: &Node, id: &SessionId) -> Result<(), String> {
 
     let dir = n
         .session_dir(id)
-        .ok_or_else(|| format!("没有这个 session: {}", id.0))?;
+        .ok_or_else(|| msg::no_such_session(&id.0))?;
     // isatty decides whether this is a terminal; the size is separate —
     // a pty freshly made by script(1) or a GUI reports 0×0, which is a
     // default-worthy size, not a disqualification.
     if unsafe { libc::isatty(0) } != 1 {
-        return Err("attach 要在终端里跑".into());
+        return Err(msg::ATTACH_NEEDS_TTY.into());
     }
     let (cols, rows) = tty_size().unwrap_or((80, 24));
     let mut stream = connect(&dir, cols, rows)?;
-    eprintln!("接上了: {}(Ctrl-\\ 断开,session 不会跟着走)", id.0);
+    eprintln!("{}", cli::attached(&id.0));
 
     let saved = raw_on()?;
     let detached = std::sync::Arc::new(AtomicBool::new(false));
@@ -390,17 +376,17 @@ fn attach_verb(n: &Node, id: &SessionId) -> Result<(), String> {
     }
     raw_off(&saved);
     if detached.load(Ordering::SeqCst) {
-        eprintln!("已断开,session 还在: khor attach {}", id.0);
+        eprintln!("{}", cli::detached(&id.0));
     } else {
         // The stream ended on the host's side — say what the row says.
         match n.sessions().ok().and_then(|v| v.into_iter().find(|v| v.session.id == *id)) {
             Some(v) => match v.session.state.state.key() {
-                "done" | "failed" | "idle" => {
-                    eprintln!("session 收场了: {}", v.session.state.state.key())
+                key @ ("done" | "failed" | "idle") => {
+                    eprintln!("{}", cli::session_settled(state::word(key)))
                 }
-                w => eprintln!("连接断了,session 好像还在({w}): khor attach {}", id.0),
+                key => eprintln!("{}", cli::link_dropped(state::word(key), &id.0)),
             },
-            None => eprintln!("session 关了"),
+            None => eprintln!("{}", cli::SESSION_CLOSED),
         }
     }
     // The stdin thread may still be blocked on read(2); leaving is how
@@ -410,7 +396,7 @@ fn attach_verb(n: &Node, id: &SessionId) -> Result<(), String> {
 
 #[cfg(not(unix))]
 fn attach_verb(_n: &Node, _id: &SessionId) -> Result<(), String> {
-    Err("这一版还接不上(Windows 的 attach 挂账)".into())
+    Err(msg::ATTACH_WINDOWS_LATER.into())
 }
 
 #[cfg(unix)]
@@ -435,12 +421,12 @@ fn raw_on() -> Result<libc::termios, String> {
     unsafe {
         let mut t: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(0, &mut t) != 0 {
-            return Err("拿不到终端参数".into());
+            return Err(msg::NO_TERMIOS.into());
         }
         let saved = t;
         libc::cfmakeraw(&mut t);
         if libc::tcsetattr(0, libc::TCSANOW, &t) != 0 {
-            return Err("终端切不进原始模式".into());
+            return Err(msg::NO_RAW_MODE.into());
         }
         Ok(saved)
     }
@@ -456,27 +442,27 @@ fn raw_off(saved: &libc::termios) {
 fn human_age(ms: u64) -> String {
     let s = ms / 1000;
     if s < 120 {
-        format!("{s} 秒")
+        cli::age_seconds(s)
     } else if s < 7200 {
-        format!("{} 分钟", s / 60)
+        cli::age_minutes(s / 60)
     } else if s < 172_800 {
-        format!("{} 小时", s / 3600)
+        cli::age_hours(s / 3600)
     } else {
-        format!("{} 天", s / 86_400)
+        cli::age_days(s / 86_400)
     }
 }
 
 fn render(m: &khor_node::Message) -> String {
     if m.retracted {
-        return "[已撤回]".into();
+        return cli::RETRACTED.into();
     }
     match &m.body {
         MsgBody::Text(t) => t.clone(),
         MsgBody::Files(fs) => fs
             .iter()
-            .map(|f| format!("[文件 {} {}B]", f.name, f.size))
+            .map(|f| cli::file_chip(&f.name, f.size))
             .collect::<Vec<_>>()
             .join(" "),
-        MsgBody::Unknown(k) => format!("[这一版还读不出这条:{k}]"),
+        MsgBody::Unknown(k) => cli::unknown_body(k),
     }
 }

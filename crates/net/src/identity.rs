@@ -10,23 +10,21 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use khor_catalog::msg;
 
 /// Loads the identity, or generates one and writes it 0600.
 pub fn load_or_create(path: &Path) -> Result<iroh::SecretKey> {
     if path.exists() {
         check_private_permissions(path)?;
-        let raw = std::fs::read(path).context("读身份文件失败")?;
-        let bytes: [u8; 32] = raw.as_slice().try_into().map_err(|_| {
-            anyhow::anyhow!(
-                "身份文件损坏(应为 32 字节),删掉它会重新生成——\n  \
-                 注意重新生成等于换一台机器,已配对的设备需要重新配对:{}",
-                path.display()
-            )
-        })?;
+        let raw = std::fs::read(path).context(msg::IDENTITY_UNREADABLE)?;
+        let bytes: [u8; 32] = raw
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!(msg::identity_corrupt(path.display())))?;
         return Ok(iroh::SecretKey::from_bytes(&bytes));
     }
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("创建目录失败: {}", dir.display()))?;
+        std::fs::create_dir_all(dir).with_context(|| msg::cant_make_dir_for(dir.display()))?;
     }
     let key = iroh::SecretKey::generate();
     write_private(path, &key.to_bytes())?;
@@ -35,12 +33,12 @@ pub fn load_or_create(path: &Path) -> Result<iroh::SecretKey> {
 
 /// Writes a file readable by the owner only.
 fn write_private(path: &Path, data: &[u8]) -> Result<()> {
-    std::fs::write(path, data).with_context(|| format!("写入失败: {}", path.display()))?;
+    std::fs::write(path, data).with_context(|| msg::cant_write_file(path.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .context("设置文件权限失败")?;
+            .context(msg::CANT_SET_PERMISSIONS)?;
     }
     Ok(())
 }
@@ -54,9 +52,7 @@ fn check_private_permissions(path: &Path) -> Result<()> {
         let mode = std::fs::metadata(path)?.permissions().mode() & 0o777;
         anyhow::ensure!(
             mode & 0o077 == 0,
-            "身份文件权限过于开放({:o}),别人能读走它冒充这台机器。\n  修:chmod 600 {}",
-            mode,
-            path.display()
+            msg::identity_too_open(format_args!("{mode:o}"), path.display())
         );
     }
     #[cfg(not(unix))]
@@ -91,7 +87,10 @@ mod tests {
         load_or_create(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         let err = load_or_create(&path).unwrap_err().to_string();
-        assert!(err.contains("权限过于开放"), "got: {err}");
+        // The message is parameterized; its prefix up to the first
+        // argument is the stable part to assert on.
+        let probe = msg::identity_too_open('\u{0}', '\u{0}');
+        assert!(err.contains(probe.split('\u{0}').next().unwrap()), "got: {err}");
         // The error must say how to fix it, not just "no".
         assert!(err.contains("chmod 600"), "got: {err}");
         let _ = std::fs::remove_dir_all(&dir);

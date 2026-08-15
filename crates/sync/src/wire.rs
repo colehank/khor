@@ -10,6 +10,7 @@
 //! output, versus +33% for base64.
 
 use base64::Engine;
+use khor_catalog::msg;
 use loro::VersionVector;
 
 use crate::store::{BlockStore, Doc};
@@ -46,7 +47,9 @@ pub fn changes_since_b64<D: Doc>(doc: &D, theirs: &str) -> Result<String, String
         return Ok(String::new());
     }
     let bytes = doc.changes_since(&vv)?;
-    guard(bytes.len(), "要发出去的")?;
+    if bytes.len() > MAX_BYTES {
+        return Err(msg::outbound_too_big(bytes.len() / 1024, MAX_BYTES / 1024));
+    }
     Ok(B64.encode(bytes))
 }
 
@@ -58,8 +61,10 @@ pub fn merge_b64<D: Doc>(doc: &D, changes: &str) -> Result<(), String> {
     }
     let bytes = B64
         .decode(changes)
-        .map_err(|e| format!("这段增量不是 base64: {e}"))?;
-    guard(bytes.len(), "收到的")?;
+        .map_err(msg::delta_not_base64)?;
+    if bytes.len() > MAX_BYTES {
+        return Err(msg::inbound_too_big(bytes.len() / 1024, MAX_BYTES / 1024));
+    }
     doc.merge(&bytes)
 }
 
@@ -70,8 +75,8 @@ fn decode_version(b64: &str) -> Result<VersionVector, String> {
     }
     let bytes = B64
         .decode(b64)
-        .map_err(|e| format!("这个版本号不是 base64: {e}"))?;
-    VersionVector::decode(&bytes).map_err(|e| format!("解不出版本号: {e}"))
+        .map_err(msg::version_not_base64)?;
+    VersionVector::decode(&bytes).map_err(msg::version_undecodable)
 }
 
 /// Reply fields, defined here so no caller re-parses JSON and quietly
@@ -235,17 +240,6 @@ fn raw_len(b64: &str) -> usize {
 
 /// The over-limit error, naming both numbers: "too big" alone doesn't
 /// tell a near miss from 10×, and the next step differs.
-fn guard(len: usize, which: &str) -> Result<(), String> {
-    if len <= MAX_BYTES {
-        return Ok(());
-    }
-    Err(format!(
-        "{which}这一段有 {} KiB,超过配对通道单帧上限 {} KiB。\
-         控制流是串行的,这条路只运增量——整段历史请走 ssh 那条(按文件搬,没有单帧上限)",
-        len / 1024,
-        MAX_BYTES / 1024
-    ))
-}
 
 #[cfg(test)]
 mod tests {
@@ -397,7 +391,8 @@ mod tests {
             vec![0u8; MAX_BYTES + 1],
         );
         let e = merge_b64(&doc, &huge).unwrap_err();
-        assert!(e.contains("超过"), "the error must say the cap was exceeded: {e}");
+        let cap = khor_catalog::msg::inbound_too_big((MAX_BYTES + 1) / 1024, MAX_BYTES / 1024);
+        assert_eq!(e, cap, "the error must say the cap was exceeded");
         assert!(e.contains("ssh"), "and it must point at a viable route: {e}");
 
         // Control: the same path under the cap must pass this gate —
@@ -407,9 +402,10 @@ mod tests {
             vec![0u8; 16],
         );
         let e2 = merge_b64(&doc, &ok).unwrap_err();
-        assert!(
-            !e2.contains("超过"),
-            "16 bytes must not hit the cap (it fails as an invalid delta, a different matter): {e2}"
+        let small_cap = khor_catalog::msg::inbound_too_big(16 / 1024, MAX_BYTES / 1024);
+        assert_ne!(
+            e2, small_cap,
+            "16 bytes must not hit the cap (it fails as an invalid delta, a different matter)"
         );
     }
 

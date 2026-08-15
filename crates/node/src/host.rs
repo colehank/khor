@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use khor_catalog::msg;
 use khor_core::{SessionId, State};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
@@ -73,26 +74,26 @@ pub fn host_file_path(dir: &Path) -> PathBuf {
 
 pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {
     let text = std::fs::read_to_string(host_file_path(dir))
-        .map_err(|_| "这个 session 没有宿主(临时的,或宿主还没起来)".to_string())?;
-    serde_json::from_str(&text).map_err(|e| format!("宿主记录读不懂: {e}"))
+        .map_err(|_| msg::NO_HOST.to_string())?;
+    serde_json::from_str(&text).map_err(msg::host_file_garbled)
 }
 
 pub fn write_frame<T: Serialize>(s: &mut (impl Write + ?Sized), t: &T) -> Result<(), String> {
     let bytes = proto::encode(t)?;
     s.write_all(&(bytes.len() as u32).to_be_bytes())
         .and_then(|()| s.write_all(&bytes))
-        .map_err(|e| format!("递不过去: {e}"))
+        .map_err(msg::handoff_failed)
 }
 
 pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<T, String> {
     let mut len = [0u8; 4];
-    s.read_exact(&mut len).map_err(|e| format!("读不到帧: {e}"))?;
+    s.read_exact(&mut len).map_err(msg::no_frame)?;
     let len = u32::from_be_bytes(len) as usize;
     if len > MAX_OP {
-        return Err(format!("帧超限: {len}"));
+        return Err(msg::frame_too_big(len));
     }
     let mut bytes = vec![0u8; len];
-    s.read_exact(&mut bytes).map_err(|e| format!("帧读了一半: {e}"))?;
+    s.read_exact(&mut bytes).map_err(msg::half_a_frame)?;
     proto::decode(&bytes)
 }
 
@@ -107,7 +108,7 @@ pub fn spawn_host(
     cmd: &[String],
     (cols, rows): (u16, u16),
 ) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| format!("找不到自己的可执行文件: {e}"))?;
+    let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
     let mut c = std::process::Command::new(exe);
     c.arg("_host")
         .arg(&id.0)
@@ -126,7 +127,7 @@ pub fn spawn_host(
             Ok(())
         });
     }
-    c.spawn().map_err(|e| format!("宿主起不来: {e}"))?;
+    c.spawn().map_err(msg::host_wont_start)?;
     let marker = host_file_path(dir);
     for _ in 0..100 {
         if marker.exists() {
@@ -134,7 +135,7 @@ pub fn spawn_host(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    Err("宿主没在 5 秒内就位".into())
+    Err(msg::HOST_NEVER_READY.into())
 }
 
 /// Connects and completes the handshake; on return the stream carries
@@ -142,7 +143,7 @@ pub fn spawn_host(
 pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
     let hf = read_host_file(dir)?;
     let mut s = TcpStream::connect(("127.0.0.1", hf.port))
-        .map_err(|_| "宿主没了——session 可能已收场,看 khor sessions".to_string())?;
+        .map_err(|_| msg::HOST_GONE.to_string())?;
     write_frame(&mut s, &Hello { cookie: hf.cookie, cols, rows })?;
     let w: Welcome = read_frame(&mut s)?;
     if !w.ok {
@@ -166,13 +167,13 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
-    let dir = live.dir_of(&id).ok_or_else(|| format!("这不是一个 session 号: {}", id.0))?;
+    let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
     let kind = id.0.split('/').next().unwrap_or("").to_owned();
     live.set_pid(&id, std::process::id())?;
 
     let pty = native_pty_system()
         .openpty(PtySize { rows: size.1, cols: size.0, pixel_width: 0, pixel_height: 0 })
-        .map_err(|e| format!("开不了 PTY: {e}"))?;
+        .map_err(msg::cant_open_pty)?;
     let mut builder = CommandBuilder::new(&cmd[0]);
     builder.args(&cmd[1..]);
     builder.env("KHOR_SESSION", &id.0);
@@ -182,21 +183,21 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let mut child = pty
         .slave
         .spawn_command(builder)
-        .map_err(|e| format!("起不来 {}: {e}", cmd[0]))?;
+        .map_err(|e| msg::wont_start(&cmd[0], e))?;
     drop(pty.slave);
-    let child_pid = child.process_id().ok_or("孩子没有 pid")?;
+    let child_pid = child.process_id().ok_or(msg::CHILD_HAS_NO_PID)?;
     let master = Arc::new(Mutex::new(pty.master));
     let mut reader = master
         .lock()
         .unwrap()
         .try_clone_reader()
-        .map_err(|e| format!("读不了 PTY: {e}"))?;
+        .map_err(msg::cant_read_pty)?;
     let writer = Arc::new(Mutex::new(
-        master.lock().unwrap().take_writer().map_err(|e| format!("写不了 PTY: {e}"))?,
+        master.lock().unwrap().take_writer().map_err(msg::cant_write_pty)?,
     ));
 
     let listener =
-        TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("听不了本机口: {e}"))?;
+        TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let cookie = crate::link::fresh_hex()?;
     crate::link::write_private(
@@ -281,7 +282,7 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                     continue;
                 };
                 if hello.cookie != cookie {
-                    let _ = write_frame(&mut conn, &Welcome { ok: false, why: "暗号不对".into() });
+                    let _ = write_frame(&mut conn, &Welcome { ok: false, why: msg::WRONG_COOKIE.into() });
                     continue;
                 }
                 let _ = master.lock().unwrap().resize(PtySize {
@@ -332,7 +333,7 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
 
     // The ending — recorded even if nobody is watching; leniency on the
     // writes because `close` may have removed the dir already.
-    let status = child.wait().map_err(|e| format!("等不到孩子结束: {e}"))?;
+    let status = child.wait().map_err(msg::host_child_wait)?;
     let _ = live.record_exit(&id, status.exit_code() as i32);
     for _ in 0..20 {
         if output_done.load(Ordering::SeqCst) {

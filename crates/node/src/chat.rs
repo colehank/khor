@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use khor_catalog::msg;
 use khor_core::{kind, DeviceId, Event, Kind, Millis, Session, SessionId, State, StateStamp};
 use khor_sync::chat::{channel_dir, open_channel, ChatDoc, Message, Sender};
 use khor_sync::store::Loaded;
@@ -46,7 +47,7 @@ impl ChatKind {
     }
 
     fn dir(&self, channel: &str) -> Result<PathBuf, String> {
-        channel_dir(&self.root, channel).ok_or_else(|| format!("频道名不合法: {channel:?}"))
+        channel_dir(&self.root, channel).ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))
     }
 
     fn load(&self, channel: &str) -> Result<Loaded<ChatDoc>, String> {
@@ -141,7 +142,7 @@ impl ChatKind {
     pub fn close_channel(&self, channel: &str) -> Result<(), String> {
         let files = self.dir(channel)?.join("files");
         if files.exists() {
-            fs::remove_dir_all(&files).map_err(|e| format!("删不掉: {e}"))?;
+            fs::remove_dir_all(&files).map_err(msg::cant_delete)?;
         }
         Ok(())
     }
