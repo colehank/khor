@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/net", "crates/sync"]
+members = ["crates/core", "crates/net", "crates/sync", "crates/node", "crates/cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,6 +8,10 @@ edition = "2024"
 
 [workspace.dependencies]
 khor-core = { path = "crates/core" }
+khor-net = { path = "crates/net" }
+khor-sync = { path = "crates/sync" }
+khor-node = { path = "crates/node" }
+gethostname = "1"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 serde_json = "1"

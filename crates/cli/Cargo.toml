@@ -1,0 +1,11 @@
+[package]
+name = "khor-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "khor"
+path = "src/main.rs"
+
+[dependencies]
+khor-node.workspace = true
