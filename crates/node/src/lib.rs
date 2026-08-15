@@ -98,9 +98,9 @@ impl Node {
         rx
     }
 
-    /// Says a line into a machine's channel. Returns the message id.
-    pub fn say(&self, machine: &str, text: &str) -> Result<String, String> {
-        let (id, row, event) = self.chat.say(machine, text)?;
+    /// Tells a machine's window a line. Returns the message id.
+    pub fn tell(&self, machine: &str, text: &str) -> Result<String, String> {
+        let (id, row, event) = self.chat.tell(machine, text)?;
         self.emit(NodeEvent::Event(event));
         self.emit(NodeEvent::Row(row));
         Ok(id)

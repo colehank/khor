@@ -57,7 +57,7 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
     let dir_b = tmpdir("mach-b");
 
     let mut a = ChatStore::load(&dir_a, 0xA).unwrap();
-    a.doc.say(&me("mac"), "从 Mac 发的").unwrap();
+    a.doc.tell(&me("mac"), "从 Mac 发的").unwrap();
     a.store.flush(&a.doc).unwrap();
     let (pull, push) = sync_with_dumb(&mut a.store, &a.doc, &dumb);
     assert_eq!((pull, push), (0, 1), "A 该推一块上去,没有可拉的");
@@ -65,7 +65,7 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
     let mut b = ChatStore::load(&dir_b, 0xB).unwrap();
     let (pull, _) = sync_with_dumb(&mut b.store, &b.doc, &dumb);
     assert_eq!(pull, 1, "B 该从哑节点拉到 A 那一块");
-    b.doc.say(&me("phone"), "从手机发的").unwrap();
+    b.doc.tell(&me("phone"), "从手机发的").unwrap();
     b.store.flush(&b.doc).unwrap();
     sync_with_dumb(&mut b.store, &b.doc, &dumb);
 
@@ -94,7 +94,7 @@ fn compacting_survives_the_next_sync() {
     let mut m = ChatStore::load(&dir, 0xC).unwrap();
 
     for i in 0..5 {
-        m.doc.say(&me("a"), &format!("第 {i} 句")).unwrap();
+        m.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();
         m.store.flush(&m.doc).unwrap();
     }
     sync_with_dumb(&mut m.store, &m.doc, &dumb); // all five uploaded

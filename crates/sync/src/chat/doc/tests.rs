@@ -27,7 +27,7 @@ fn five_peers_converge_after_random_partitions() {
 
     for round in 0..40 {
         let a = rng.upto(5);
-        docs[a].say(&me(&format!("p{a}")), &format!("第 {round} 句")).unwrap();
+        docs[a].tell(&me(&format!("p{a}")), &format!("第 {round} 句")).unwrap();
         let (x, y) = (rng.upto(5), rng.upto(5));
         if x != y {
             let up = docs[x].changes_since(&docs[y].version()).unwrap();
@@ -55,7 +55,7 @@ fn five_peers_converge_after_random_partitions() {
     // Control: an unsynced doc must differ, or "all equal" may just
     // mean render() returns the same string for everything.
     let lonely = ChatDoc::new(99).unwrap();
-    lonely.say(&me("nobody"), "自言自语").unwrap();
+    lonely.tell(&me("nobody"), "自言自语").unwrap();
     assert_ne!(render(&lonely), first, "没同步过的不该和大家一样");
 }
 
@@ -64,7 +64,7 @@ fn five_peers_converge_after_random_partitions() {
 #[test]
 fn merging_the_same_block_twice_changes_nothing() {
     let a = ChatDoc::new(1).unwrap();
-    a.say(&me("a"), "一句").unwrap();
+    a.tell(&me("a"), "一句").unwrap();
     let block = a.snapshot().unwrap();
 
     let b = ChatDoc::new(2).unwrap();
@@ -80,7 +80,7 @@ fn merging_the_same_block_twice_changes_nothing() {
 fn a_huge_attachment_only_costs_its_metadata() {
     let a = ChatDoc::new(1).unwrap();
     for i in 0..200 {
-        a.say(&me("a"), &format!("一句普通的话,第 {i} 条")).unwrap();
+        a.tell(&me("a"), &format!("一句普通的话,第 {i} 条")).unwrap();
     }
     let b = ChatDoc::new(2).unwrap();
     b.merge(&a.snapshot().unwrap()).unwrap();
@@ -118,9 +118,9 @@ fn a_huge_attachment_only_costs_its_metadata() {
 #[test]
 fn a_dumb_node_that_only_holds_bytes_gives_the_same_result() {
     let a = ChatDoc::new(1).unwrap();
-    a.say(&me("mac"), "从 Mac 发的").unwrap();
+    a.tell(&me("mac"), "从 Mac 发的").unwrap();
     let c = ChatDoc::new(3).unwrap();
-    c.say(&me("phone"), "从手机发的").unwrap();
+    c.tell(&me("phone"), "从手机发的").unwrap();
 
     let empty = Default::default();
     let fa = a.changes_since(&empty).unwrap();
@@ -153,11 +153,11 @@ fn a_dumb_node_that_only_holds_bytes_gives_the_same_result() {
 #[test]
 fn undo_only_takes_back_my_own_message() {
     let mut a = ChatDoc::new(1).unwrap();
-    a.say(&me("me"), "我说的第一句").unwrap();
+    a.tell(&me("me"), "我说的第一句").unwrap();
 
     let b = ChatDoc::new(2).unwrap();
     b.merge(&a.snapshot().unwrap()).unwrap();
-    b.say(&me("peer"), "别人说的一句").unwrap();
+    b.tell(&me("peer"), "别人说的一句").unwrap();
     a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
 
     assert_eq!(a.messages().len(), 2);
@@ -174,9 +174,9 @@ fn undo_only_takes_back_my_own_message() {
 #[test]
 fn retracting_keeps_the_slot() {
     let d = ChatDoc::new(1).unwrap();
-    d.say(&me("a"), "第一句").unwrap();
-    let id = d.say(&me("a"), "说错了").unwrap();
-    d.say(&me("a"), "第三句").unwrap();
+    d.tell(&me("a"), "第一句").unwrap();
+    let id = d.tell(&me("a"), "说错了").unwrap();
+    d.tell(&me("a"), "第三句").unwrap();
 
     d.retract(&id).unwrap();
     let msgs = d.messages();
@@ -192,7 +192,7 @@ fn retracting_keeps_the_slot() {
 #[test]
 fn a_concurrent_edit_and_retract_both_survive() {
     let a = ChatDoc::new(1).unwrap();
-    let id = a.say(&me("a"), "原话").unwrap();
+    let id = a.tell(&me("a"), "原话").unwrap();
 
     let b = ChatDoc::new(2).unwrap();
     b.merge(&a.snapshot().unwrap()).unwrap();
@@ -268,8 +268,8 @@ fn an_unknown_kind_does_not_land_in_text() {
 fn sharing_one_peer_between_two_writers_silently_loses_a_message() {
     let a = ChatDoc::new(1).unwrap();
     let b = ChatDoc::new(1).unwrap(); // deliberately violates the contract
-    a.say(&me("a"), "甲说的").unwrap();
-    b.say(&me("b"), "乙说的").unwrap();
+    a.tell(&me("a"), "甲说的").unwrap();
+    b.tell(&me("b"), "乙说的").unwrap();
 
     let merged = ChatDoc::new(2).unwrap();
     merged.merge(&a.snapshot().unwrap()).unwrap();

@@ -11,7 +11,7 @@ const USAGE: &str = "\
 用法: khor <动词>
   id                    本机身份
   sessions              session 列表
-  say <机器> <话...>    给机器的窗口留言
+  tell <机器> <话...>    给机器的窗口留言
   log <机器>            看那个窗口的消息
   seen <session>        标已读
   close <session>       关掉(对话连历史与收下的文件一起删)";
@@ -44,14 +44,14 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
-        "say" => {
+        "tell" => {
             let [machine, text @ ..] = rest else {
                 return Err(USAGE.into());
             };
             if text.is_empty() {
                 return Err(USAGE.into());
             }
-            let id = node()?.say(machine, &text.join(" "))?;
+            let id = node()?.tell(machine, &text.join(" "))?;
             println!("{id}");
             Ok(())
         }

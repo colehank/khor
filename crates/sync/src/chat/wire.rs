@@ -266,11 +266,11 @@ mod tests {
     fn a_peer_pulls_first_then_pushes() {
         let dir = tmpdir("wire-round");
         let mut mine = ChatStore::load(&dir, 0x51).unwrap();
-        mine.doc.say(&me("我"), "这边说的").unwrap();
+        mine.doc.tell(&me("我"), "这边说的").unwrap();
         mine.store.flush(&mine.doc).unwrap();
 
         let far = Far::new(0x52);
-        far.doc.say(&me("远"), "那边说的").unwrap();
+        far.doc.tell(&me("远"), "那边说的").unwrap();
 
         let mut peer = Peer::new();
         let r1 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
@@ -297,7 +297,7 @@ mod tests {
     fn a_settled_pair_moves_nothing() {
         let dir = tmpdir("wire-idle");
         let mut mine = ChatStore::load(&dir, 0x61).unwrap();
-        mine.doc.say(&me("我"), "一句").unwrap();
+        mine.doc.tell(&me("我"), "一句").unwrap();
         let far = Far::new(0x62);
 
         let mut peer = Peer::new();
@@ -323,7 +323,7 @@ mod tests {
         let dir = tmpdir("wire-amnesia");
         let mut mine = ChatStore::load(&dir, 0x71).unwrap();
         for i in 0..30 {
-            mine.doc.say(&me("我"), &format!("第 {i} 句")).unwrap();
+            mine.doc.tell(&me("我"), &format!("第 {i} 句")).unwrap();
         }
         let far = Far::new(0x72);
 
@@ -334,7 +334,7 @@ mod tests {
         assert!(push.pushed > 0, "第二趟该把 30 句推过去");
 
         // Say one more; the rememberer delivers in one round.
-        mine.doc.say(&me("我"), "新的一句").unwrap();
+        mine.doc.tell(&me("我"), "新的一句").unwrap();
         let one = good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert!(one.pushed > 0, "记得对方到哪儿,所以这一趟直接推");
         assert_eq!(far.doc.messages().len(), 31, "一趟就送到了");
@@ -342,7 +342,7 @@ mod tests {
         // A fresh restart: same one new line — same length as the last,
         // so a byte difference can't be misread as anything but round
         // count.
-        mine.doc.say(&me("我"), "再来一句").unwrap();
+        mine.doc.tell(&me("我"), "再来一句").unwrap();
         let mut fresh = Peer::new();
         let a = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
         assert_eq!(a.pushed, 0, "刚重启的第一趟是纯拉");
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn the_version_vector_is_not_capped() {
         let doc = ChatDoc::new(0x91).unwrap();
-        doc.say(&me("我"), "一句").unwrap();
+        doc.tell(&me("我"), "一句").unwrap();
         let v = version_b64(&doc);
         assert!(!v.is_empty());
         // Empty = from the beginning, not an error — a freshly paired

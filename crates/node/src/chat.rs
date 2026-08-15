@@ -2,7 +2,7 @@
 //!
 //! This batch the device table holds only this machine, so the only
 //! reachable channel is our own (notes to self). Foreign machines join
-//! when pairing lands; saying to one now is refused by name, not
+//! when pairing lands; telling one now is refused by name, not
 //! silently written into a channel nobody serves.
 
 use std::fs;
@@ -98,14 +98,14 @@ impl ChatKind {
         Ok(vec![self.row_from(&self.load()?.doc)])
     }
 
-    pub fn say(&self, machine: &str, text: &str) -> Result<(String, Session, Event), String> {
+    pub fn tell(&self, machine: &str, text: &str) -> Result<(String, Session, Event), String> {
         self.resolve(machine)?;
         let loaded = self.load()?;
         let mut store = loaded.store;
-        let msg_id = loaded.doc.say(&self.me, text)?;
+        let msg_id = loaded.doc.tell(&self.me, text)?;
         store.flush(&loaded.doc)?;
         let total = loaded.doc.messages().len() as u64;
-        // Saying implies looking at the channel: own words never count
+        // Telling implies looking at the channel: own words never count
         // as unread.
         self.write_seen(total)?;
         let row = self.row_from(&loaded.doc);
@@ -164,7 +164,7 @@ impl ChatKind {
     }
 
     fn write_seen(&self, n: u64) -> Result<(), String> {
-        // An empty channel leaves nothing on disk; say() creates the dir
+        // An empty channel leaves nothing on disk; tell() creates the dir
         // via flush before this runs.
         if !self.dir.exists() {
             return Ok(());

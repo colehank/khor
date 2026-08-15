@@ -12,12 +12,12 @@ fn flush_writes_only_what_is_not_on_disk_yet() {
     let dir = tmpdir("flush");
     let mut st = ChatStore::load(&dir, 1).unwrap();
     for i in 0..50 {
-        st.doc.say(&me("a"), &format!("第 {i} 句")).unwrap();
+        st.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();
     }
     let first = st.store.flush(&st.doc).unwrap().expect("该写出一个块");
     let big = fs::metadata(&first).unwrap().len();
 
-    st.doc.say(&me("a"), "又一句").unwrap();
+    st.doc.tell(&me("a"), "又一句").unwrap();
     let second = st.store.flush(&st.doc).unwrap().expect("该再写一个块");
     let small = fs::metadata(&second).unwrap().len();
 
@@ -35,8 +35,8 @@ fn flush_writes_only_what_is_not_on_disk_yet() {
 fn what_is_flushed_comes_back() {
     let dir = tmpdir("roundtrip");
     let mut st = ChatStore::load(&dir, 1).unwrap();
-    st.doc.say(&me("a"), "一").unwrap();
-    st.doc.say(&me("a"), "二").unwrap();
+    st.doc.tell(&me("a"), "一").unwrap();
+    st.doc.tell(&me("a"), "二").unwrap();
     st.store.flush(&st.doc).unwrap();
     let want = render(&st.doc);
 
@@ -53,7 +53,7 @@ fn what_is_flushed_comes_back() {
 fn one_broken_block_does_not_kill_the_channel() {
     let dir = tmpdir("broken");
     let mut st = ChatStore::load(&dir, 1).unwrap();
-    st.doc.say(&me("a"), "好的那句").unwrap();
+    st.doc.tell(&me("a"), "好的那句").unwrap();
     st.store.flush(&st.doc).unwrap();
     fs::write(dir.join("u-000000000000ffff-00000000.loro"), b"not a loro block").unwrap();
 
@@ -69,7 +69,7 @@ fn compacting_keeps_every_word() {
     let dir = tmpdir("compact");
     let mut st = ChatStore::load(&dir, 1).unwrap();
     for i in 0..20 {
-        st.doc.say(&me("a"), &format!("第 {i} 句")).unwrap();
+        st.doc.tell(&me("a"), &format!("第 {i} 句")).unwrap();
         st.store.flush(&st.doc).unwrap();
     }
     let want = render(&st.doc);
@@ -106,9 +106,9 @@ fn two_writers_on_the_same_device_do_not_collide() {
     let mut one = ChatStore::load(&dir, 0xA1).unwrap();
     let mut two = ChatStore::load(&dir, 0xA2).unwrap();
 
-    one.doc.say(&me("a"), "来自进程一").unwrap();
+    one.doc.tell(&me("a"), "来自进程一").unwrap();
     let p1 = one.store.flush(&one.doc).unwrap().unwrap();
-    two.doc.say(&me("a"), "来自进程二").unwrap();
+    two.doc.tell(&me("a"), "来自进程二").unwrap();
     let p2 = two.store.flush(&two.doc).unwrap().unwrap();
 
     assert_ne!(p1, p2, "两个块不许同名");
@@ -235,7 +235,7 @@ fn what_lands_on_disk_is_readable_only_by_me() {
     let dir = channel_dir(&home, "turing").expect("频道名该是合法的");
     let mut l = ChatStore::load(&dir, 7).expect("空频道要开得起来");
     l.doc
-        .say(&Sender { id: "a".into(), name: "A".into() }, "一句话")
+        .tell(&Sender { id: "a".into(), name: "A".into() }, "一句话")
         .expect("说不出话");
     l.store.flush(&l.doc).expect("落不了盘");
 

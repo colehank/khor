@@ -125,8 +125,8 @@ impl ChatDoc {
         format!("{:016x}-{:x}-{:x}", self.inner.peer_id(), at, s)
     }
 
-    /// Says a line. Returns the message id.
-    pub fn say(&self, from: &Sender, text: &str) -> Result<String, String> {
+    /// Tells the conversation a line. Returns the message id.
+    pub fn tell(&self, from: &Sender, text: &str) -> Result<String, String> {
         self.push(from, "text", |m| {
             m.insert("text", text).map_err(|e| e.to_string())
         })

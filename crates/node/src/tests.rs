@@ -14,10 +14,10 @@ fn root(tag: &str) -> PathBuf {
 }
 
 #[test]
-fn notes_to_self_are_seen_the_moment_they_are_said() {
-    let r = root("say");
+fn notes_to_self_are_seen_the_moment_they_are_told() {
+    let r = root("tell");
     let n = Node::open(r.clone()).unwrap();
-    n.say(n.name().to_owned().as_str(), "记给自己的一句").unwrap();
+    n.tell(n.name().to_owned().as_str(), "记给自己的一句").unwrap();
 
     let rows = n.sessions().unwrap();
     assert_eq!(rows.len(), 1);
@@ -42,7 +42,7 @@ fn a_foreign_block_raises_unread_and_seen_clears_it() {
     let n = Node::open(r.clone()).unwrap();
 
     let far = ChatDoc::new(0xF0F0).unwrap();
-    far.say(&Sender { id: "dev-far".into(), name: "far".into() }, "从远端来的")
+    far.tell(&Sender { id: "dev-far".into(), name: "far".into() }, "从远端来的")
         .unwrap();
     let block = far.changes_since(&Default::default()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
@@ -61,11 +61,11 @@ fn a_foreign_block_raises_unread_and_seen_clears_it() {
 }
 
 #[test]
-fn watch_receives_what_say_emits() {
+fn watch_receives_what_tell_emits() {
     let r = root("watch");
     let n = Node::open(r.clone()).unwrap();
     let rx = n.watch();
-    n.say(n.name().to_owned().as_str(), "推一条").unwrap();
+    n.tell(n.name().to_owned().as_str(), "推一条").unwrap();
 
     let first = rx.try_recv().expect("该有事件");
     let second = rx.try_recv().expect("该有行更新");
@@ -81,7 +81,7 @@ fn watch_receives_what_say_emits() {
 fn closing_a_chat_deletes_its_files() {
     let r = root("close");
     let n = Node::open(r.clone()).unwrap();
-    n.say(n.name().to_owned().as_str(), "要被删的").unwrap();
+    n.tell(n.name().to_owned().as_str(), "要被删的").unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     assert!(dir.exists());
 
@@ -95,10 +95,10 @@ fn closing_a_chat_deletes_its_files() {
 }
 
 #[test]
-fn saying_to_an_unknown_machine_is_refused_by_name() {
+fn telling_an_unknown_machine_is_refused_by_name() {
     let r = root("unknown");
     let n = Node::open(r.clone()).unwrap();
-    let e = n.say("no-such-box", "hi").unwrap_err();
+    let e = n.tell("no-such-box", "hi").unwrap_err();
     assert!(e.contains("机器不存在"), "{e}");
     assert!(e.contains(n.name()), "错话该报出有的机器:{e}");
     let _ = fs::remove_dir_all(&r);
