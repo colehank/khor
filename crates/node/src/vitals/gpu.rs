@@ -40,6 +40,27 @@
 //! here directly. Its AMD backend reads the same sysfs file the note in
 //! docs/handoff describes, which is why not adopting it costs nothing
 //! when that lands.
+//!
+//! # What is here, and what is deliberately not
+//!
+//! | platform | how | verified |
+//! |---|---|---|
+//! | macOS | IOKit registry, in process | on this machine, against `ioreg` |
+//! | Linux + NVIDIA | NVML, loaded at run time | **no** — see `nvidia.rs` |
+//! | Linux + AMD | — | not written |
+//! | Windows | — | not written |
+//!
+//! **AMD is not written because there is no AMD card to run it on.** The
+//! route is known and small (`/sys/class/drm/card*/device/gpu_busy_percent`
+//! is a plain file read, no library at all), and it was checked for on
+//! both Linux machines in the fleet on 2026-08-17: neither has the file,
+//! because neither has an AMD GPU. Writing it would mean shipping a
+//! reader that has never seen its own hardware — and unlike the NVIDIA
+//! one, there is no machine on which that could be fixed later this week.
+//! **Trigger: a machine with an AMD GPU.** Until then a khor on an AMD
+//! Linux box reports no GPU, which is the same answer it gives for
+//! Windows and for a Mac whose driver went quiet — an absence, never a
+//! neighbouring value.
 
 use khor_core::Gpu;
 
