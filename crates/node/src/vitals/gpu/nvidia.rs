@@ -51,12 +51,34 @@
 //!
 //! **What that run should find on turing**, recorded now so the
 //! comparison is against a prediction rather than against whatever comes
-//! out: `cards == 2`, and a memory total near 48 GiB (two cards of
-//! 24564 MiB). At the time of the survey both cards read 0% utilisation
-//! while holding 21811 and 22189 MiB — which is worth keeping as the
-//! reason [`Gpu::mem`] exists at all: **the utilisation said idle and the
-//! memory said there is no room**, and only one of those two would have
-//! told somebody why their job will not start.
+//! out:
+//!
+//! - `cards == 2` — **a hard prediction**, it does not drift;
+//! - memory **total ≈ 48 GiB** (two cards of 24564 MiB) — also hard, it
+//!   is a property of the cards;
+//! - memory **used ≈ 43 GiB** — *not* hard: that is what the two cards
+//!   were holding during the survey (21811 and 22189 MiB), and somebody
+//!   else's job owns it. A run that finds a different `used` has found
+//!   nothing wrong; a run that finds a different `total` or `cards` has.
+//!
+//! (All three in GiB, the base the CLI and the card both print in:
+//! 44000 MiB of 49128 MiB.)
+//!
+//! At the time of the survey both cards read **0% utilisation while
+//! holding 43 GiB**, which is worth keeping as the reason [`Gpu::mem`]
+//! exists at all: **the utilisation said idle and the memory said there
+//! is no room**, and only one of those two would have told somebody why
+//! their job will not start.
+//!
+//! # Only what NVML states, and nothing derived from it
+//!
+//! Every figure below is reported as the library gives it. There is no
+//! arithmetic here beyond summing across cards, and in particular `used`
+//! is **read**, not computed from `total - free` — the note at that line
+//! says why the disk reading's opposite choice does not transfer. The
+//! rule matters most for code that cannot be run: **a derivation is a
+//! claim, and an unverified claim about hardware nobody here can see is
+//! exactly the thing that should not ship.**
 
 use std::sync::OnceLock;
 
@@ -104,17 +126,35 @@ pub(super) fn sample() -> Option<Gpu> {
         // short. The count and the memory then always describe the same
         // set of cards.
         match card.memory_info() {
-            Ok(info) => {
+            // **The same rule the utilisation follows one line up**, in
+            // the shape memory takes: a figure that is not a possible
+            // reading is evidence the wrong thing was read, so the card
+            // is dropped rather than squeezed into shape (`super::across`
+            // does exactly this for percentages, and it does it for both
+            // platforms because it is shared). `used` above `total` is
+            // that case here — a bar cannot be more than full, and
+            // clamping it would hide the same class of mistake a clamp
+            // once hid on the macOS side.
+            Ok(info) if info.used <= info.total => {
                 if let Some((used, total)) = memory.as_mut() {
-                    // Used derived from free, not read as its own figure
-                    // — the discipline the disk reading follows next
-                    // door. The two halves then always sum to the total,
-                    // which is what a bar can actually draw.
-                    *used += info.total.saturating_sub(info.free);
+                    // **Both figures as NVML reports them.** The disk
+                    // reading next door derives `used` from what is free,
+                    // and copying that here would be the wrong lesson: it
+                    // does that because APFS reports three numbers that do
+                    // not add up (purgeable space belongs to no column),
+                    // so *somebody* has to decide what counts as used.
+                    // NVML states `used` outright. Recomputing it would be
+                    // khor overruling the driver about its own memory —
+                    // and on a card holding back ECC or reserved regions
+                    // the two genuinely differ.
+                    //
+                    // **The dividing line is whether the source answers
+                    // the question**, not which arithmetic looks tidier.
+                    *used += info.used;
                     *total += info.total;
                 }
             }
-            Err(_) => memory = None,
+            _ => memory = None,
         }
     }
 
