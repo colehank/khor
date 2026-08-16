@@ -22,7 +22,9 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   return invoke<T>(cmd, args);
 }
 
-export const fetchSessions = () => call<SessionRow[]>("sessions");
+/** `by` is a `khor_node::list::Arrange` key — the backend arranges and
+    groups; this layer passes the choice through and paints the answer. */
+export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });
 export const fetchDevices = () => call<DeviceRow[]>("devices");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });

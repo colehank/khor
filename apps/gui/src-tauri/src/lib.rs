@@ -5,9 +5,12 @@
 use khor_gui_core::{DeviceRow, SessionRow};
 use khor_node::Node;
 
+/// `by` is the arrangement key (`khor_node::list::Arrange`). The window
+/// passes the one the user last chose; it is that screen's own state,
+/// not something the network holds an opinion about.
 #[tauri::command]
-fn sessions() -> Result<Vec<SessionRow>, String> {
-    khor_gui_core::list_sessions(&Node::root_from_env())
+fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
+    khor_gui_core::list_sessions(&Node::root_from_env(), &by)
 }
 
 #[tauri::command]

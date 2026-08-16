@@ -12,6 +12,7 @@ pub mod chat;
 pub mod host;
 pub mod ipc;
 pub mod link;
+pub mod list;
 pub mod live;
 pub mod proto;
 pub mod transfer;
@@ -403,6 +404,24 @@ impl Node {
         // Stable: within each group the order above survives untouched.
         views.sort_by_key(|v| !v.pinned);
         Ok(views)
+    }
+
+    /// The list, arranged the way this mode arranges it — the call both
+    /// faces make, so `khor sessions --by state` and the app's state
+    /// view are the same order by construction, not by agreement.
+    ///
+    /// Machine names come from the device table here, once, rather than
+    /// being looked up per row.
+    pub fn sessions_arranged(&self, mode: list::Arrange) -> Result<Vec<list::Arranged>, String> {
+        let by_id: std::collections::BTreeMap<String, String> = self
+            .devices()?
+            .into_iter()
+            .map(|d| (d.id, d.name))
+            .collect();
+        let views = self.sessions()?;
+        Ok(list::arrange(views, mode, &|home: &DeviceId| {
+            by_id.get(&home.hex()).cloned()
+        }))
     }
 
     /// Pins or unpins a session, for everyone.

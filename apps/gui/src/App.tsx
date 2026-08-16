@@ -53,6 +53,45 @@ type Sheet = "tell" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
 
+/**
+ * How to arrange the session list. The keys are the node's
+ * (`khor_node::list::Arrange`) and the CLI's `--by` values — spelled
+ * once there, echoed here, so the two faces cannot drift into different
+ * vocabularies for one setting.
+ */
+const ARRANGE = [
+  { key: "recent", label: gui.by_recent },
+  { key: "category", label: gui.by_category },
+  { key: "device", label: gui.by_device },
+  { key: "state", label: gui.by_state },
+] as const;
+
+/** WeChat's opening: the thing you touched last is the thing you want. */
+const ARRANGE_DEFAULT = "recent";
+const ARRANGE_KEY = "khor.sessions.arrange";
+
+/**
+ * The chosen arrangement, remembered on this device.
+ *
+ * **Local on purpose, unlike a pin.** A pin is a property of the session
+ * it is stuck to, so it travels the network; how one screen sorts is
+ * that screen's posture, and a phone held in a queue does not want the
+ * desktop's answer (docs/handoff 置顶与分类 — the same split that keeps
+ * collapse state local).
+ *
+ * An unreadable or unknown stored value falls back to the default rather
+ * than being passed on: the backend refuses a mode it does not know, so
+ * a stale key would leave the list empty with an error nobody asked for.
+ */
+function storedArrange(): string {
+  try {
+    const saved = window.localStorage.getItem(ARRANGE_KEY);
+    return ARRANGE.some((a) => a.key === saved) ? saved! : ARRANGE_DEFAULT;
+  } catch {
+    return ARRANGE_DEFAULT;
+  }
+}
+
 const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
   { key: "sessions", name: gui.sessions_tab, glyph: <IconSessions /> },
   { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
@@ -136,12 +175,13 @@ export default function App() {
   // list on arrival.
   const [queries, setQueries] = useState<Record<Landing, string>>(NO_QUERIES);
   const [words, setWords] = useState<string[]>([]);
+  const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
   const [sheet, setSheet] = useState<Sheet>(null);
 
   useEffect(() => {
     let live = true;
     const tick = () => {
-      Promise.all([fetchSessions(), fetchDevices()])
+      Promise.all([fetchSessions(arrangeBy), fetchDevices()])
         .then(([s, d]) => {
           if (!live) return;
           setRows(s);
@@ -156,7 +196,9 @@ export default function App() {
       live = false;
       clearInterval(t);
     };
-  }, []);
+    // Re-subscribed when the arrangement changes: the new order comes
+    // from the node, so switching modes is a fetch, never a re-sort.
+  }, [arrangeBy]);
 
   const onSelect = useCallback((row: SessionRow) => {
     setSelected(row.id);
@@ -178,10 +220,10 @@ export default function App() {
   // locally would mean the screen briefly shows an order the library
   // never produced (and permanently shows it if the call fails).
   const refresh = useCallback(async () => {
-    const [s, d] = await Promise.all([fetchSessions(), fetchDevices()]);
+    const [s, d] = await Promise.all([fetchSessions(arrangeBy), fetchDevices()]);
     setRows(s);
     setDevices(d);
-  }, []);
+  }, [arrangeBy]);
 
   // A failed pin currently shows as nothing happening, which is what
   // "I missed the button" also looks like (docs/UX.md: 做了但没变化 and
@@ -222,6 +264,17 @@ export default function App() {
     for (const w of words) if (!keys.includes(w)) keys.push(w);
     return keys.map((key) => ({ key, label: word(key) }));
   }, [rows, words]);
+
+  const chooseArrange = useCallback((key: string) => {
+    setArrangeBy(key);
+    // Kept even if storage refuses (private mode, quota): the choice
+    // still applies to this session, it just will not outlive it.
+    try {
+      window.localStorage.setItem(ARRANGE_KEY, key);
+    } catch {
+      /* the list still arranges; only the memory of it is lost */
+    }
+  }, []);
 
   const toggleWord = useCallback(
     (key: string) =>
@@ -302,6 +355,16 @@ export default function App() {
         filter={
           sessions
             ? { options: wordOptions, chosen: words, onToggle: toggleWord }
+            : undefined
+        }
+        arrange={
+          sessions
+            ? {
+                label: gui.arrange,
+                options: ARRANGE.map((a) => ({ key: a.key, label: a.label })),
+                chosen: arrangeBy,
+                onChoose: chooseArrange,
+              }
             : undefined
         }
         actionsLabel={gui.new_item}

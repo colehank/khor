@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use khor_node::list::Arrange;
 use khor_node::{Avatar, Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
@@ -39,6 +40,13 @@ pub struct SessionRow {
     /// picking a neighbour — **never inferred from the title here or
     /// there** (that is the whole reason it travels on the row).
     pub category: Option<String>,
+    /// The group this row landed in, as `khor_node::list` keys them
+    /// (`pin`, `cat:…`, `dev:…`, `state:…`, or empty when the mode does
+    /// not group). The frontend starts a heading where this changes
+    /// between neighbouring rows — **it never works out the grouping
+    /// itself**, and the prefix tells it whether the rest is a word to
+    /// look up or a name to print.
+    pub group: String,
     /// The face of the machine this session lives on — derived here,
     /// never in the frontend (`khor_core::avatar`). `None` only when the
     /// home device is not in this table at all, and then the row draws a
@@ -71,14 +79,24 @@ fn open(root: &Path) -> Result<Node, String> {
     Node::open(root.to_path_buf())
 }
 
-pub fn list_sessions(root: &Path) -> Result<Vec<SessionRow>, String> {
+/// The list, arranged. `by` is a `khor_node::list::Arrange` key; an
+/// unknown one is refused by name rather than quietly falling back to
+/// the default — a typo'd preference would otherwise look like the
+/// setting silently not working.
+pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
+    let mode = Arrange::from_key(by).ok_or_else(|| {
+        let all: Vec<&str> = Arrange::ALL.iter().map(|a| a.key()).collect();
+        khor_catalog::msg::not_a_way_to_arrange(by, all.join(khor_catalog::cli::NAME_SEPARATOR))
+    })?;
     let n = open(root)?;
     // Derived once per list, not once per row: a face is a pure function
     // of (id, reported style), and one machine owns many rows.
     let faces = faces_by_id(&n)?;
-    Ok(n.sessions()?
+    Ok(n.sessions_arranged(mode)?
         .into_iter()
-        .map(|v| SessionRow {
+        .map(|a| {
+            let (v, group) = (a.view, a.group);
+            SessionRow {
             face: faces.get(&v.session.home.hex()).cloned(),
             id: v.session.id.0,
             kind: v.session.kind.0,
@@ -89,6 +107,8 @@ pub fn list_sessions(root: &Path) -> Result<Vec<SessionRow>, String> {
             source: v.source.map(|(device, age_ms)| SourceTag { device, age_ms }),
             pinned: v.pinned,
             category: v.session.category,
+            group,
+        }
         })
         .collect())
 }

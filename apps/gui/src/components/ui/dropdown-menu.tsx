@@ -1,9 +1,10 @@
 // shadcn/ui dropdown-menu (new-york) over Radix. Departures from stock:
 // imports name the individual `@radix-ui/react-*` package; the tick in a
 // checkbox item is our own `IconCheck` rather than the stock one (one
-// family per screen — see components/icons.tsx); motion rides our tokens; and
-// the parts this app has no use for yet (radio group, submenus, shortcut)
-// are left out rather than vendored unused.
+// family per screen — see components/icons.tsx); motion rides our tokens;
+// the radio item's mark is a dot of our own rather than a second icon
+// family's circle; and the parts this app has no use for yet (submenus,
+// shortcut) are left out rather than vendored unused.
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 
@@ -84,6 +85,40 @@ function DropdownMenuCheckboxItem({
   );
 }
 
+const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
+
+/**
+ * One of several mutually exclusive choices.
+ *
+ * **The mark is a dot, not the tick a checkbox item uses.** Sitting in
+ * the same menu, the two kinds have to look different or there is no way
+ * to tell that picking one of these drops the previous choice while
+ * ticking a word does not.
+ */
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        className,
+      )}
+      {...props}
+    >
+      <span className="pointer-events-none absolute left-2 flex size-4 items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <span className="block size-2 rounded-full bg-current" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  );
+}
+
 function DropdownMenuLabel({
   className,
   ...props
@@ -117,5 +152,7 @@ export {
   DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
 };

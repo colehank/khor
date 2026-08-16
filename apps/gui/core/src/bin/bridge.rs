@@ -94,7 +94,7 @@ fn handle(
             .ok_or_else(|| format!("missing bool arg: {name}"))
     };
     match cmd {
-        "sessions" => to_json(&khor_gui_core::list_sessions(root)?),
+        "sessions" => to_json(&khor_gui_core::list_sessions(root, &arg("by")?)?),
         "devices" => to_json(&khor_gui_core::list_devices(root)?),
         "seen" => {
             khor_gui_core::seen(root, &arg("id")?)?;

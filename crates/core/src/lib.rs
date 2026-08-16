@@ -99,6 +99,39 @@ impl State {
         State::Idle,
     ];
 
+    /// Where this word sits when a list is grouped by state: **who is
+    /// waiting for you**, most first.
+    ///
+    /// Not the declaration order, and not severity. A failed session is
+    /// over and asks nothing of anyone; a blocked one cannot move at all
+    /// until you answer, which is why it leads even though nothing is
+    /// wrong with it.
+    ///
+    /// 失败 lands last because 失败沉底 is already this codebase's rule
+    /// (docs/UX.md 角标, and `live.rs` says "sinks in the list" twice):
+    /// it stays on the list, it never holds the badge, and it does not
+    /// push past sessions that are still going.
+    ///
+    /// **One order, defined here.** Any face that grouped by state would
+    /// otherwise have to enumerate the six words itself, and a second
+    /// enumeration is how a seventh word gets invented (docs/UX.md
+    /// 状态呈现).
+    pub const fn rank(self) -> u8 {
+        match self {
+            // An action is stuck; nothing proceeds until you allow it.
+            State::Blocked => 0,
+            // Broken but alive: it is waiting on whether to carry on.
+            State::Errored => 1,
+            // The turn ended; waiting to be read.
+            State::Done => 2,
+            // Working — the one word that explicitly does not need you.
+            State::Busy => 3,
+            State::Idle => 4,
+            // Over, and 沉底.
+            State::Failed => 5,
+        }
+    }
+
     /// Wire and catalog key. The UI looks display words up by this;
     /// nothing user-facing is spelled in code (docs/UX.md).
     pub const fn key(self) -> &'static str {
@@ -222,6 +255,24 @@ mod tests {
         assert_eq!(row.title, "build khor");
         assert_eq!(row.state.state, State::Busy);
         assert_eq!(row.unread, 3);
+    }
+
+    /// The ranking is a total order over exactly the six — no ties, no
+    /// gaps — and it leads with 待批 and ends with 失败. Stated as the
+    /// full list rather than as "every word has a rank", because the
+    /// property version is blind to an implementation that returns the
+    /// same number for everything.
+    #[test]
+    fn the_ranking_runs_from_who_needs_you_to_what_is_over() {
+        let mut words = State::ALL;
+        words.sort_by_key(|s| s.rank());
+        assert_eq!(
+            words.map(|s| s.key()),
+            ["blocked", "errored", "done", "busy", "idle", "failed"],
+        );
+        let mut ranks: Vec<u8> = State::ALL.iter().map(|s| s.rank()).collect();
+        ranks.sort_unstable();
+        assert_eq!(ranks, vec![0, 1, 2, 3, 4, 5], "a rank each, none shared");
     }
 
     #[test]

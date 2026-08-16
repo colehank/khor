@@ -12,12 +12,25 @@ errored = "中断"
 failed = "失败"
 idle = "空闲"
 
+# Whose session a row is (khor_core::Session::category). **Vendor names
+# are deliberately absent**: `claude` and `codex` are proper nouns, and
+# `word()` echoes what it does not know, so echoing them is the
+# translation. Only the two Khor produces itself, plus the honest gap,
+# need a word here.
+[category]
+khor = "Khor"
+shell = "命令"
+# A row nobody could place. Not "其他" — that reads like a category the
+# row belongs to, and the whole point is that we could not tell.
+unknown = "认不出的"
+
 [cli]
 usage = """
 用法: khor <动词>
   id                    本机身份
   devices               网里的设备
-  sessions              session 列表
+  sessions [--by recent|category|device|state]
+                        session 列表(默认最近);换一种排布,置顶永远在最上
   tell <机器> <话...>    给机器的窗口留言
   send <机器> <文件>     把文件给那台机器(摘要先到,对方许可后才传)
   accept <传输号>        许可并收下全量(在收文件的那台机器上跑)
@@ -41,6 +54,13 @@ this-machine = "(本机)"
 # top, and "on top" alone is not readable: without a mark, a row leading
 # the list looks like the most recent one.
 pinned-mark = "(置顶)"
+# A group heading in a grouped listing. The rule marks it as a heading
+# rather than a row, which matters in a list where every other line is
+# tab-separated data.
+group-header = "── {0}"
+# The heading pinned rows sit under. Same fact as pinned-mark, said as a
+# heading rather than as a tag on one row.
+group-pinned = "置顶"
 name-separator = "、"
 unread = "未读 {0}"
 unreachable-for = "{0}没联系上"
@@ -74,6 +94,7 @@ runtime-wont-start = "起不了运行时: {0}"
 which-session = "不知道汇报给哪个 session:设 KHOR_SESSION 或用 --session"
 not-a-state-word = "不是六词之一: {0}"
 unknown-verb = "不认识的动词: {0}"
+not-a-way-to-arrange = "不是一种排布: {0}。有: {1}"
 attach-needs-tty = "attach 要在终端里跑"
 attach-windows-later = "这一版还接不上(Windows 的 attach 挂账)"
 no-termios = "拿不到终端参数"
@@ -258,6 +279,15 @@ search-sessions = "搜索会话"
 # is a build error by design (one text, one name).
 search-devices = "搜索设备"
 filter = "筛选"
+# How the list is laid out. One heading and four choices, sharing the
+# filter's menu because both answer "what am I looking at" — the
+# difference is that ticking words removes rows and this rearranges
+# them, so the choices are exclusive where the words are not.
+arrange = "排布"
+by-recent = "按最近"
+by-category = "按类别"
+by-device = "按设备"
+by-state = "按状态"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.

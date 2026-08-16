@@ -19,6 +19,10 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -29,6 +33,10 @@ export type FilterOption = { key: string; label: string };
 
 export type PaneAction = { key: string; label: string; onSelect: () => void };
 
+/** One way of laying the list out; `key` is the backend's arrangement
+    key, never a word this layer invented. */
+export type ArrangeOption = { key: string; label: string };
+
 export function PaneBar({
   searchLabel,
   query,
@@ -37,6 +45,7 @@ export function PaneBar({
   actions,
   actionsLabel,
   filterLabel,
+  arrange,
 }: {
   /** Names the search box and stands in as its placeholder. */
   searchLabel: string;
@@ -50,6 +59,19 @@ export function PaneBar({
    */
   filter?: { options: FilterOption[]; chosen: string[]; onToggle: (key: string) => void };
   filterLabel?: string;
+  /**
+   * How the list is laid out. Shares the filter's menu because both
+   * answer "what am I looking at", and sits above the words with a rule
+   * between them: these are exclusive (picking one drops the last),
+   * the words are not, and the two marks differ so that reads off the
+   * screen rather than having to be learned.
+   */
+  arrange?: {
+    label: string;
+    options: ArrangeOption[];
+    chosen: string;
+    onChoose: (key: string) => void;
+  };
   /**
    * What "+" opens. Only things that work today go in here: a menu item
    * that greys out or does nothing teaches people not to open the menu.
@@ -90,6 +112,26 @@ export function PaneBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {arrange && (
+              <>
+                <DropdownMenuLabel>{arrange.label}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={arrange.chosen} onValueChange={arrange.onChoose}>
+                  {arrange.options.map((o) => (
+                    <DropdownMenuRadioItem
+                      key={o.key}
+                      value={o.key}
+                      data-arrange-option={o.key}
+                      // Same reason the word items stay open: choosing
+                      // one is rarely the end of the thought.
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      {o.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+              </>
+            )}
             {filter.options.map((o) => (
               <DropdownMenuCheckboxItem
                 key={o.key}

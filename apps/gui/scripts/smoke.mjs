@@ -46,14 +46,20 @@
 //      than two colors, every row carries the control, and machines
 //      pin the same way — with the order always read back off the
 //      node, never checked against one this script worked out;
-//  16. the back button exists only on the narrow face (after proving
+//  16. arranging: the default is 最近 and prints no headings, each
+//      other mode groups by its own thing and nothing else, the state
+//      mode's group order equals the one the CLI prints (read off both
+//      faces, spelled by neither), a pin leads in all four modes, and
+//      the choice outlives a reload — it is this screen's posture, kept
+//      on this device, unlike a pin;
+//  17. the back button exists only on the narrow face (after proving
 //      the detail header renders at all — negative assertions must
 //      first prove the probe is alive), and the mark is not in the
 //      narrow rail;
-//  17. the pin is painted and works on the narrow face with the
+//  18. the pin is painted and works on the narrow face with the
 //      pointer parked away — a hover-only row action is missing on a
 //      phone and looks fine in every mouse-driven screenshot;
-//  18. zero pageerror throughout.
+//  19. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -721,7 +727,9 @@ try {
   //     grew relative to the same line before, which is also the proof
   //     that the CLI says *something* rather than only reordering.
   await until("beta's CLI to lead with the pinned row", 10_000, () => {
-    const rowsOut = cli(envB, "sessions").split("\n").filter(Boolean);
+    // Data rows only: a grouped listing starts with a heading, and a
+    // heading is the one line with no tabs in it.
+    const rowsOut = cli(envB, "sessions").split("\n").filter((l) => l.includes("\t"));
     return rowsOut[0]?.startsWith(`${target}\t`);
   });
   const markedLine = cliLineOf(envB, target);
@@ -774,9 +782,15 @@ try {
     const now = await sessionIds();
     return now[0] !== target;
   });
-  if (cliLineOf(envB, target) !== plainLine) {
-    throw new Error(`unpinning left the CLI line changed: ${cliLineOf(envB, target)}`);
-  }
+  // Waited for rather than read once: the app's order and a fresh CLI
+  // process are two observers of one write, and they do not have to
+  // land in the same millisecond. If it never returns to what it was,
+  // this still fails — with both strings in the message.
+  await until("beta's CLI line to go back to what it was", 10_000, () => {
+    const now = cliLineOf(envB, target);
+    if (now === plainLine) return true;
+    throw new Error(`before ${JSON.stringify(plainLine)} / now ${JSON.stringify(now)}`);
+  });
   cli(envA, "unpin", "tui/cafe1");
   await until("alpha's unpin to reach beta's app", 40_000, async () =>
     (await page.locator('[data-row="tui/cafe1"]').getAttribute("data-pinned")) === "false",
@@ -799,7 +813,136 @@ try {
   await page.locator('[data-device="gamma"] [data-row-pin]').click();
   await until("gamma to go back", 10_000, async () => (await deviceNames())[0] !== "gamma");
 
-  // 16) faces of the shell: wide has a detail header but no back;
+  // 16) arranging the list: four modes, and the order is always the
+  //     node's. The state mode is checked against the CLI's own output
+  //     rather than against an order this script worked out — neither
+  //     side spells a state word here, they are read off both faces and
+  //     compared.
+  await openLanding("sessions");
+  await until("rows on the session list", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
+  if ((await page.locator("[data-row][data-pinned=true]").count()) !== 0) {
+    throw new Error("a row is still pinned from the section above — the default check is void");
+  }
+  // Put the agent back to work first. The seen loop above settled every
+  // row to one word, and one word is one group — "grouped by state"
+  // would pass on a single heading while proving nothing about grouping
+  // at all.
+  feedHook(envA, "UserPromptSubmit");
+  await until(
+    "alpha's row to be busy again in beta's app",
+    40_000,
+    async () => (await page.locator('[data-row="tui/cafe1"]').getAttribute("data-word")) === "busy",
+    1_000,
+  );
+  const wordsHere = [
+    ...new Set(await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.word))),
+  ];
+  if (wordsHere.length < 2) {
+    throw new Error(`every row wears ${wordsHere[0]} — grouping by state cannot be told from a no-op`);
+  }
+  const groupKeys = () =>
+    page.locator("[data-group]").evaluateAll((els) => els.map((e) => e.dataset.group));
+  const groupTexts = () =>
+    page.locator("[data-group]").evaluateAll((els) => els.map((e) => e.innerText.trim()));
+  const openMenu = async () => {
+    if ((await menu.count()) === 0) await page.locator("[data-pane-filter]").click();
+    await until("the filter menu", 5_000, async () => (await menu.count()) === 1);
+  };
+  const closeMenu = async () => {
+    await page.keyboard.press("Escape");
+    await until("the filter menu to close", 5_000, async () => (await menu.count()) === 0);
+  };
+  const chosenArrange = () =>
+    page.locator("[data-arrange-option][data-state=checked]").getAttribute("data-arrange-option");
+  const chooseArrange = async (key) => {
+    await openMenu();
+    await page.locator(`[data-arrange-option="${key}"]`).click();
+    await closeMenu();
+  };
+
+  //     a. the default, with this run having chosen nothing: recent,
+  //     and no headings at all — the one mode that does not group.
+  await openMenu();
+  const byDefault = await chosenArrange();
+  await closeMenu();
+  if (byDefault !== "recent") throw new Error(`the default arrangement is ${byDefault}`);
+  if ((await groupKeys()).length !== 0) {
+    throw new Error(`recent should print no headings, saw ${await groupKeys()}`);
+  }
+
+  //     b. every other mode groups by its own thing and by nothing
+  //     else. The prefixes are the node's (khor_node::list), which is
+  //     what lets a heading be a word or a machine name without the
+  //     frontend guessing which.
+  for (const [mode, prefix] of [
+    ["category", "cat:"],
+    ["device", "dev:"],
+    ["state", "state:"],
+  ]) {
+    await chooseArrange(mode);
+    await until(`${mode} headings`, 15_000, async () => (await groupKeys()).length >= 2);
+    const keys = await groupKeys();
+    if (!keys.every((k) => k.startsWith(prefix))) {
+      throw new Error(`${mode} produced headings that are not its own: ${keys}`);
+    }
+  }
+
+  //     c. the state mode's group order is the node's ranking — proven
+  //     by reading the same order out of the CLI's own listing. The CLI
+  //     order is taken from its *rows* (second column), so this does not
+  //     depend on how a heading is punctuated there.
+  await chooseArrange("state");
+  await until("the state grouping to settle", 15_000, async () => (await groupKeys()).length >= 2);
+  const guiStateOrder = await groupTexts();
+  const cliStateOrder = [
+    ...new Set(
+      cli(envB, "sessions", "--by", "state")
+        .split("\n")
+        .filter((l) => l.includes("\t"))
+        .map((l) => l.split("\t")[1]),
+    ),
+  ];
+  if (guiStateOrder.join("|") !== cliStateOrder.join("|")) {
+    throw new Error(
+      `the two faces disagree on the state order: GUI [${guiStateOrder}] vs CLI [${cliStateOrder}]`,
+    );
+  }
+
+  //     d. **a pin is not a mode**: it leads in all four. The row picked
+  //     is not the one already on top, so nothing but the pin could put
+  //     it there.
+  const arrangeIds = () =>
+    page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  const pinTarget = (await arrangeIds())[2];
+  await page.locator(`[data-row="${pinTarget}"] [data-row-pin]`).click();
+  for (const mode of ["recent", "category", "device", "state"]) {
+    await chooseArrange(mode);
+    await until(`${pinTarget} leading in ${mode}`, 15_000, async () => {
+      const now = await arrangeIds();
+      return now[0] === pinTarget;
+    });
+  }
+  await page.locator(`[data-row="${pinTarget}"] [data-row-pin]`).click();
+  await until("the pin to come off again", 10_000, async () =>
+    (await page.locator("[data-row][data-pinned=true]").count()) === 0,
+  );
+
+  //     e. the choice outlives a reload. It is this screen's posture and
+  //     is kept on this device — unlike a pin, which travels the network
+  //     because it belongs to the session rather than to the screen.
+  await chooseArrange("device");
+  await page.reload();
+  await until("rows after the reload", 20_000, async () => (await page.locator("[data-row]").count()) > 1);
+  await openMenu();
+  const afterReload = await chosenArrange();
+  await closeMenu();
+  if (afterReload !== "device") {
+    throw new Error(`the arrangement did not survive a reload: ${afterReload}`);
+  }
+  // Leave it as it was found, so the sections below see the default.
+  await chooseArrange("recent");
+
+  // 17) faces of the shell: wide has a detail header but no back;
   //     narrow, after entering a detail, has the back button.
   await openLanding("sessions");
   await until("rows on the session list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
@@ -864,7 +1007,7 @@ try {
   await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
   await until("the narrow row to go back", 10_000, async () => (await narrowIds())[0] !== narrowTarget);
 
-  // 18) the page never threw.
+  // 19) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {

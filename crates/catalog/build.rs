@@ -13,7 +13,7 @@ fn main() {
     let doc: toml::Table = text.parse().expect("zh.toml must parse");
     let mut rs = String::from("// Generated from zh.toml by build.rs - do not edit.\n");
     let mut ts = String::from("// Generated from zh.toml by khor-catalog - do not edit.\n");
-    for section in ["state", "cli", "msg", "gui"] {
+    for section in ["state", "category", "cli", "msg", "gui"] {
         let table = doc[section].as_table().expect("each section must be a table");
         let mut texts: BTreeMap<&str, &str> = BTreeMap::new();
         for (k, v) in table {
@@ -64,9 +64,12 @@ fn gen_rust(rs: &mut String, section: &str, table: &toml::Table) {
             .unwrap();
         }
     }
-    if section == "state" {
-        // key -> word; unknown keys echo back. An old client meeting a
-        // new kind's word must render something, never panic.
+    // key -> word; unknown keys echo back. An old client meeting a new
+    // kind's word must render something, never panic — and for
+    // categories the echo is load-bearing rather than a safety net:
+    // vendor names (`claude`, `codex`) are proper nouns with no entry
+    // here on purpose, so echoing them *is* the translation.
+    if section == "state" || section == "category" {
         write!(rs, "    pub fn word(key: &str) -> &str {{ match key {{ ").unwrap();
         for (k, v) in table {
             write!(rs, "{:?} => {:?}, ", k, v.as_str().unwrap()).unwrap();

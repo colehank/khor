@@ -1,10 +1,12 @@
+import { Fragment } from "react";
+
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago, word } from "@/words";
+import { ago, groupLabel, word } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -57,14 +59,28 @@ export function SessionsList({
   }
   return (
     <div>
-      {shown.map((r) => (
-        // The row is a strip holding two controls, not a button itself:
-        // the pin cannot be nested inside the button that opens the row,
-        // because a button inside a button is not a thing the DOM has.
-        // The strip was cut one batch before the pin arrived, so no
-        // anchor in here had to move when it did.
-        <div
-          key={r.id}
+      {shown.map((r, i) => (
+        <Fragment key={r.id}>
+          {/* A heading starts where the group changes between
+              neighbouring rows. The rows arrive grouped, so this notices
+              a boundary rather than deciding one — and it means the
+              empty group (the mode that does not group) prints no
+              headings at all, with no special case. */}
+          {r.group !== "" && r.group !== shown[i - 1]?.group && (
+            <div
+              data-group={r.group}
+              className="px-4 pt-3 pb-1 text-xs text-muted-foreground"
+            >
+              {groupLabel(r.group)}
+            </div>
+          )}
+          {/* The row is a strip holding two controls, not a button
+              itself: the pin cannot be nested inside the button that
+              opens the row, because a button inside a button is not a
+              thing the DOM has. The strip was cut one batch before the
+              pin arrived, so no anchor in here had to move when it
+              did. */}
+          <div
           data-row={r.id}
           data-word={r.word}
           data-pinned={r.pinned}
@@ -125,6 +141,7 @@ export function SessionsList({
             <IconPin pinned={r.pinned} />
           </Button>
         </div>
+        </Fragment>
       ))}
     </div>
   );

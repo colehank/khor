@@ -6,8 +6,8 @@
 //! the catalog at print time (docs/UX.md 文案).
 
 use khor_catalog::cli::USAGE;
-use khor_catalog::{cli, msg, state};
-use khor_node::{MsgBody, Node, SessionId};
+use khor_catalog::{category, cli, msg, state};
+use khor_node::{list, MsgBody, Node, SessionId};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -47,8 +47,26 @@ fn run(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         "sessions" => {
+            let mode = match rest {
+                [] => list::Arrange::Recent,
+                [flag, key] if flag == "--by" => list::Arrange::from_key(key).ok_or_else(|| {
+                    let all: Vec<&str> =
+                        list::Arrange::ALL.iter().map(|a| a.key()).collect();
+                    msg::not_a_way_to_arrange(key, all.join(cli::NAME_SEPARATOR))
+                })?,
+                _ => return Err(USAGE.into()),
+            };
             let n = node()?;
-            for v in n.sessions()? {
+            // The heading is printed when the group changes, which is
+            // also why the node returns rows already grouped: this loop
+            // owns no comparison, it only notices the boundary.
+            let mut current: Option<String> = None;
+            for a in n.sessions_arranged(mode)? {
+                if !a.group.is_empty() && current.as_deref() != Some(a.group.as_str()) {
+                    println!("{}", cli::group_header(group_word(&a.group)));
+                    current = Some(a.group.clone());
+                }
+                let v = a.view;
                 let s = &v.session;
                 let src = match &v.source {
                     // A fresh report reads like local truth; only age
@@ -461,6 +479,29 @@ fn raw_off(saved: &libc::termios) {
     unsafe {
         libc::tcsetattr(0, libc::TCSANOW, saved);
     }
+}
+
+/// A group key as a person reads it.
+///
+/// The prefix says which kind of thing the rest is, so this dispatches
+/// instead of guessing (`khor_node::list` module head): a state key and
+/// a category key get looked up, a machine name is printed as it is.
+/// Without the prefixes a machine called `busy` would come out 忙碌.
+fn group_word(group: &str) -> String {
+    if group == list::GROUP_PINNED {
+        return cli::GROUP_PINNED.to_owned();
+    }
+    if let Some(key) = group.strip_prefix(list::GROUP_STATE) {
+        return state::word(key).to_owned();
+    }
+    if let Some(name) = group.strip_prefix(list::GROUP_CATEGORY) {
+        // The empty category is the row nobody could place; every other
+        // name echoes if the catalog has no entry, which is how vendor
+        // names come through as themselves.
+        let key = if name.is_empty() { "unknown" } else { name };
+        return category::word(key).to_owned();
+    }
+    group.strip_prefix(list::GROUP_DEVICE).unwrap_or(group).to_owned()
 }
 
 fn human_age(ms: u64) -> String {
