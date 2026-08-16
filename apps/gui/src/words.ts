@@ -1,10 +1,29 @@
 // Wording helpers on top of the generated catalog. The display word is
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
-import { category, cli, state } from "./gen/catalog";
+import { avatar, category, cli, state } from "./gen/catalog";
 
 export function word(key: string): string {
   return (state as Record<string, string>)[key] ?? key;
+}
+
+/**
+ * The word for one face option — a factory palette's id, a variant key
+ * or a shape key, exactly as the node sent it.
+ *
+ * Unknown keys echo, same as above. It should never fire: a Rust gate
+ * (`every_face_option_has_a_word_and_every_word_names_an_option`) walks
+ * both directions across this section. The echo is what a *newer* node
+ * talking to an older screen falls back to — a palette named `okabe` on
+ * a button is ugly, a button with no name at all is unusable.
+ */
+export function faceWord(key: string): string {
+  // Guarded on the type rather than cast through, because this section
+  // is not all plain words: `axis-palette-slot` takes an argument, so a
+  // straight lookup can hand back a function, and a function rendered
+  // into JSX is a blank where a name belongs.
+  const found: unknown = (avatar as Record<string, unknown>)[key];
+  return typeof found === "string" ? found : key;
 }
 
 /**

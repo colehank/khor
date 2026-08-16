@@ -3,8 +3,9 @@
 // real backend behind an HTTP skin, never a hand-written mock.
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
+import type { FaceChoices } from "./gen/bindings/FaceChoices";
 
-export type { SessionRow, DeviceRow };
+export type { SessionRow, DeviceRow, FaceChoices };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
@@ -34,5 +35,15 @@ export const tell = (machine: string, text: string) => call<null>("tell", { mach
 // another device would flip the wrong way.
 export const pinSession = (id: string, on: boolean) => call<null>("pin_session", { id, on });
 export const pinDevice = (machine: string, on: boolean) => call<null>("pin_device", { machine, on });
+/** What this machine wears and every option painted as it would look —
+    derived by the node, one call for the whole screen. */
+export const fetchFaceChoices = () => call<FaceChoices>("face_choices");
+/** Changes the axes it is given; an axis left out stays where it is. The
+    same call `khor face` makes, with the same shape of arguments. */
+export const restyle = (change: {
+  colors?: string[];
+  variant?: string;
+  shape?: string;
+}) => call<null>("restyle", change);
 export const invite = () => call<string>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });

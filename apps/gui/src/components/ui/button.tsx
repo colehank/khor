@@ -24,6 +24,22 @@ const buttonVariants = cva(
         sm: "h-ctl-sm rounded-md px-3 text-xs",
         lg: "h-ctl-lg rounded-md px-8",
         icon: "h-ctl-md w-ctl-md",
+        // Sized by what is inside it — for a button that stacks a mark
+        // over a word, where the three fixed heights are all too short.
+        //
+        // **It has to be a size here rather than an `h-auto` from the
+        // caller**, and that is measured, not preference: `cn()` cannot
+        // take `h-ctl-md` off, because tailwind-merge does not read
+        // `ctl-md` as a height and so keeps *both* classes. The one that
+        // wins is then whichever the stylesheet emits last. Measured on
+        // the settings screen: computed height 30px against a
+        // scrollHeight of 40, which on a wrapping row laid one row's
+        // words underneath the next row's marks.
+        //
+        // The same trap is waiting for any caller trying to override a
+        // `ctl-*` or `rail`/`list`/`avatar` sized utility through
+        // `className`; it only shows when something inside overflows.
+        auto: "h-auto",
       },
     },
     defaultVariants: {

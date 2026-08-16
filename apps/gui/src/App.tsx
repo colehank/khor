@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { DevicesList } from "@/views/DevicesList";
+import { FaceSettings } from "@/views/FaceSettings";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
 import { TellDialog } from "@/views/TellDialog";
@@ -223,6 +224,11 @@ export default function App() {
   const [words, setWords] = useState<Record<Landing, string[]>>(storedWordsAll);
   const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
   const [sheet, setSheet] = useState<Sheet>(null);
+  // Settings sit behind the rail's last glyph, one level down and not on
+  // any first screen (docs/UX.md 设置: 升成了也藏深). Its own state
+  // rather than another `Sheet`: those three are the "+" menu's, and
+  // this one does not belong to any pane.
+  const [settings, setSettings] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -423,7 +429,7 @@ export default function App() {
         </RailItem>
       ))}
       {!narrow && <span className="flex-1" />}
-      <RailItem label={gui.settings} narrow={narrow}>
+      <RailItem label={gui.settings} narrow={narrow} onClick={() => setSettings(true)}>
         <IconMore />
       </RailItem>
       {/* This machine, at the foot of the rail. Same derivation as its
@@ -517,6 +523,18 @@ export default function App() {
       />
       <InviteDialog open={sheet === "invite"} onOpenChange={(o) => setSheet(o ? "invite" : null)} />
       <JoinDialog open={sheet === "join"} onOpenChange={(o) => setSheet(o ? "join" : null)} />
+      {/* A restyle repaints this machine everywhere at once, because
+          `refresh` fetches rows and devices together and every face on
+          screen — the rail's, the device row's, each session row's —
+          is painted from that one answer. There is no path by which
+          two of them could be showing different styles. */}
+      <FaceSettings
+        open={settings}
+        onOpenChange={setSettings}
+        onChanged={() => {
+          refresh().catch(() => {});
+        }}
+      />
     </>
   );
 

@@ -65,13 +65,26 @@
 //  20. a ticked filter outlives a reload and is remembered per pane —
 //      the preference rule the arrangement already followed, and the
 //      one place that used to break it;
-//  21. a pin that does not take says so on the button that was pressed:
+//  21. the settings screen: three axes of options, every one of them a
+//      face the node derived and this app only painted; the marked
+//      option on each axis paints what the machine already wears;
+//      picking another palette repaints this machine in every place it
+//      appears at once and leaves none showing the old one; beam's own
+//      canvas really arrives; a hand-picked color belongs to no factory
+//      set so none of them is marked; `khor face` agrees about what was
+//      picked; a chosen face still ignores the theme; it outlives a
+//      reload;
+//  22. a machine restyled from its own terminal reaches this screen —
+//      alpha changes itself with `khor face` and beta's list follows,
+//      both before states established first, with this machine's own
+//      face as the control since nobody else may move it;
+//  23. a pin that does not take says so on the button that was pressed:
 //      a real failure through the real path (the backend is taken away,
 //      the button is clicked the way a person clicks it), the face
 //      provably absent on the successful press just before, the colour
 //      measured against a probe wearing the token, and exactly one
 //      button wearing it;
-//  22. zero pageerror throughout.
+//  24. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -157,8 +170,13 @@ function cli(env, ...args) {
   }
   throw new Error(`khor ${args.join(" ")} failed 5x: ${last?.stderr || last}`);
 }
-function feedHook(env, event, extra = "") {
-  const payload = `{"session_id":"cafe1","cwd":"/tmp/proj","hook_event_name":"${event}"${extra}}`;
+// `sid` is a parameter because two homes need rows that are their own:
+// a session id is the key the whole network agrees on, so feeding the
+// same one into two machines would put one id on two rows with two
+// different homes, and every assertion about "which machine is this
+// row's" would then be measuring an accident.
+function feedHook(env, event, extra = "", sid = "cafe1") {
+  const payload = `{"session_id":"${sid}","cwd":"/tmp/proj","hook_event_name":"${event}"${extra}}`;
   execFileSync(KHOR, ["state", "--hook"], { env, input: payload, timeout: 15_000 });
 }
 async function until(what, ms, f, step = 400) {
@@ -1102,7 +1120,211 @@ try {
   await tickWord(keptWord);
   await until("every row back", 10_000, async () => (await page.locator("[data-row]").count()) > keptRows);
 
-  // 21) a pin that does not take says so, on the button that was
+  // 21) the settings screen: what this machine wears, and changing it.
+  //
+  //     Every swatch there is a face **the node derived** and this app
+  //     only painted, so the assertions are about the same picture
+  //     turning up in two places — never about a picture looking a
+  //     particular way, which is the one thing no test here can judge.
+  //
+  //     A session of beta's own first. Beta's other rows all belong to
+  //     alpha (a chat channel is homed on the machine it talks to, and
+  //     the agent row is alpha's report), so without this the sessions
+  //     pane carries no face of beta's at all and "it moved everywhere"
+  //     would be measuring the rail twice.
+  feedHook(envB, "SessionStart", "", "beef2");
+  feedHook(envB, "UserPromptSubmit", "", "beef2");
+  await openLanding("sessions");
+  await until("beta's own row", 15_000, async () =>
+    (await page.locator('[data-row="tui/beef2"]').count()) === 1,
+  );
+
+  // The rail's last glyph is the one that opens no landing — and there
+  // being exactly one such glyph is itself the check that this is still
+  // the settings one and not something added beside it.
+  const settingsGlyph = page.locator("[data-rail-item]:not([data-landing])");
+  if ((await settingsGlyph.count()) !== 1) {
+    throw new Error("probe dead: the rail does not have exactly one glyph that opens no landing");
+  }
+  await settingsGlyph.click();
+  const sheet = page.locator("[data-face-settings]");
+  await until("the settings sheet", 10_000, async () => (await sheet.count()) === 1);
+
+  //     a. three axes, and every option on all of them painted by the
+  //     real brush. Stated positively for the same reason the row faces
+  //     are: a face that failed to derive renders no <svg> at all, so
+  //     counting them *is* "nothing fell back to a placeholder".
+  const axisNames = await sheet
+    .locator("[data-face-axis]")
+    .evaluateAll((els) => els.map((e) => e.dataset.faceAxis));
+  if (axisNames.join(",") !== "palette,variant,shape") {
+    throw new Error(`the settings screen offers ${JSON.stringify(axisNames)}`);
+  }
+  const optionCount = await sheet.locator("[data-face-option]").count();
+  const optionFaces = await sheet.locator("[data-face-option] [data-face] svg").count();
+  if (optionCount < 6 || optionFaces !== optionCount) {
+    throw new Error(`options with a painted face: ${optionFaces} of ${optionCount}`);
+  }
+
+  //     b. one option marked per axis, and **all three paint the face
+  //     this machine is already wearing**. That follows from the
+  //     design — a marked option is the current value on its axis, and
+  //     every option is derived with the other two left alone — which
+  //     is exactly why it is worth asserting: one line catches a swatch
+  //     derived from the wrong style, a mark on the wrong option, and a
+  //     second painter.
+  // The same locator item 10 proved is this machine's face at the foot
+  // of the rail — reused rather than re-derived, so what moves below is
+  // the picture that test already tied to beta's own row.
+  const markedFaces = async () =>
+    sheet
+      .locator("[data-face-option][data-on=true] [data-face]")
+      .evaluateAll((els) => els.map((e) => e.innerHTML.replace(/av-blur-[^"')\s]+/g, "BLUR")));
+  let worn = await faceOf(railFace);
+  const marked = await markedFaces();
+  if (marked.length !== 3) throw new Error(`${marked.length} options are marked; one per axis`);
+  if (marked.some((m) => m !== worn)) {
+    throw new Error("a marked option is not the face this machine is wearing");
+  }
+
+  //     c. picking another palette moves this machine's face
+  //     **everywhere it appears**, in one go.
+  //
+  //     Counted rather than named: this script does not work out which
+  //     rows are beta's, it counts how many places wore that face
+  //     before and requires the same number to wear the new one after,
+  //     and none to be left wearing the old. Scoped to #root so the
+  //     sheet's own swatches — which change too — stay out of it.
+  const wearing = async (want) =>
+    (await page.locator("#root [data-face]").evaluateAll((els) => els.map((e) => e.innerHTML)))
+      .filter((h) => h.replace(/av-blur-[^"')\s]+/g, "BLUR") === want).length;
+  const places = await wearing(worn);
+  if (places < 2) {
+    throw new Error(`this machine's face is in ${places} place(s); the premise is more than one`);
+  }
+  const otherPalette = (
+    await sheet
+      .locator('[data-face-axis="palette"] [data-face-option]')
+      .evaluateAll((els) => els.filter((e) => e.dataset.on !== "true").map((e) => e.dataset.faceOption))
+  )[0];
+  if (!otherPalette) throw new Error("probe dead: every palette is already the chosen one");
+  await sheet.locator(`[data-face-option="${otherPalette}"][data-axis="palette"]`).click();
+  await until("this machine repainted everywhere", 15_000, async () => {
+    const now = await faceOf(railFace);
+    return now !== worn && (await wearing(now)) === places;
+  });
+  const wasWorn = worn;
+  worn = await faceOf(railFace);
+  if ((await wearing(wasWorn)) !== 0) throw new Error("somewhere is still painting the old face");
+
+  //     d. a variant reaches the canvas the core ships. beam's canvas
+  //     is 36 where the other two are 80, so switching to it and back
+  //     is a change no styling could fake and no cache could survive.
+  const canvasOf = () => railFace.locator("svg").getAttribute("viewBox");
+  const wideCanvas = await canvasOf();
+  await sheet.locator('[data-face-option="beam"][data-axis="variant"]').click();
+  await until("beam's own canvas", 15_000, async () => (await canvasOf()) === "0 0 36 36");
+  await sheet.locator('[data-face-option="marble"][data-axis="variant"]').click();
+  await until("back off beam's canvas", 15_000, async () => (await canvasOf()) === wideCanvas);
+
+  //     e. a hand-picked color belongs to no factory set, so **no**
+  //     palette is marked — two marks, not three. A nearest match would
+  //     light a button nobody pressed, and pressing that lit button
+  //     would then look like a control that does nothing.
+  //
+  //     Driven by setting the well and dispatching what a commit
+  //     dispatches: the picker itself is an OS window Playwright cannot
+  //     open, so this is the closest the real path gets. The listener
+  //     under test reads the element, not the event.
+  worn = await faceOf(railFace);
+  await sheet.locator("[data-color-slot]").first().evaluate((el) => {
+    el.value = "#123456";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await until("the hand-picked color everywhere", 15_000, async () => {
+    const now = await faceOf(railFace);
+    return now !== worn && (await wearing(now)) === places;
+  });
+  const afterHand = await markedFaces();
+  if (afterHand.length !== 2) {
+    throw new Error(`${afterHand.length} options marked after a hand-picked color; no palette is one`);
+  }
+
+  //     f. the CLI says the same thing — so the change went through the
+  //     library and not just through this screen. Read structurally:
+  //     the marked lines are the ones carrying a third field, and the
+  //     words themselves belong to the catalog, not to this script.
+  await sheet.locator(`[data-face-option="${otherPalette}"][data-axis="palette"]`).click();
+  await until("the factory palette back", 15_000, async () => (await markedFaces()).length === 3);
+  //     …and the three marked options still paint what this machine
+  //     wears. Re-asserted here and not only at the top, because up
+  //     there the machine wore the factory style and every axis sat on
+  //     its default — an option derived from the defaults instead of
+  //     from the current style would have looked exactly the same.
+  const nowWorn = await faceOf(railFace);
+  if ((await markedFaces()).some((m) => m !== nowWorn)) {
+    throw new Error("after a change, a marked option is not the face this machine is wearing");
+  }
+  const cliMarks = cli(envB, "face")
+    .split("\n")
+    .filter((l) => l.split("\t").length === 3);
+  if (cliMarks.length !== 3) throw new Error(`khor face marks ${cliMarks.length} options; one per axis`);
+  if (!cliMarks.some((l) => l.startsWith(`${otherPalette}\t`))) {
+    throw new Error(`khor face does not agree that ${otherPalette} is what this machine wears`);
+  }
+
+  //     g. flipping the theme still moves nothing inside the face — now
+  //     under a style somebody chose rather than the factory one. The
+  //     ground proves the flip took, the way it does above.
+  const chosen = await faceOf(railFace);
+  const groundOf = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.emulateMedia({ colorScheme: "light" });
+  const lightGround = await groundOf();
+  const lightChosen = await faceOf(railFace);
+  await page.emulateMedia({ colorScheme: "dark" });
+  if ((await groundOf()) === lightGround) throw new Error("probe dead: the theme flip changed no ground");
+  if ((await faceOf(railFace)) !== lightChosen) throw new Error("a chosen face followed the theme");
+  await page.emulateMedia({ colorScheme: null });
+
+  //     h. and it outlives a reload — the choice lives in the node, not
+  //     on this screen.
+  await page.keyboard.press("Escape");
+  await until("the sheet closed", 10_000, async () => (await sheet.count()) === 0);
+  await page.reload();
+  await until("rows after the reload", 20_000, async () => (await page.locator("[data-row]").count()) > 0);
+  if ((await faceOf(railFace)) !== chosen) throw new Error("the chosen face did not survive a reload");
+
+  // 22) a machine restyled from its own terminal reaches this screen.
+  //
+  //     The direction that carries "only a machine may say what it
+  //     looks like": alpha changes its own style with `khor face`, and
+  //     beta's screen follows — which can only happen through the
+  //     device table and the sync pump. The before state is established
+  //     on both sides first (beta is provably painting something else,
+  //     and alpha's palette provably changed), and the control comes
+  //     after: beta's own face did not move, because nobody else may
+  //     move it.
+  await openLanding("devices");
+  const alphaFace = page.locator('[data-device="alpha"] [data-face]');
+  const betaFace = page.locator('[data-device="beta"] [data-face]');
+  await until("both machines on the list", 10_000, async () => (await alphaFace.count()) === 1);
+  const alphaWas = await faceOf(alphaFace);
+  const betaWas = await faceOf(betaFace);
+  const alphaColorsBefore = cli(envA, "face").split("\n")[1];
+  cli(envA, "face", "--palette", "monokai", "--variant", "bauhaus");
+  const alphaColorsAfter = cli(envA, "face").split("\n")[1];
+  if (alphaColorsBefore === alphaColorsAfter) {
+    throw new Error("probe dead: alpha's own palette did not change");
+  }
+  await until("alpha's new face on beta's screen", 40_000, async () =>
+    (await faceOf(alphaFace)) !== alphaWas,
+  );
+  if ((await faceOf(betaFace)) !== betaWas) {
+    throw new Error("alpha restyling itself repainted this machine");
+  }
+
+  // 23) a pin that does not take says so, on the button that was
   //     pressed.
   //
   //     **A real failure, through the real path.** The backend is taken
@@ -1176,7 +1398,7 @@ try {
     .evaluateAll((els) => els.filter((e) => e.dataset.pinFailed === "true").length);
   if (others !== 1) throw new Error(`${others} buttons wear the failure face; exactly one was pressed`);
 
-  // 22) the page never threw.
+  // 24) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {
