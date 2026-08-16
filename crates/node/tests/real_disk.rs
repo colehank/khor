@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use khor_node::adaptor::{claude::Claude, Adaptor, Procs};
+use khor_node::adaptor::{claude::Claude, id_for, tmux::Tmux, Adaptor, Discovery, Procs};
 
 fn real_home() -> PathBuf {
     std::env::home_dir().expect("a home directory")
@@ -100,7 +100,7 @@ fn khor_can_read_every_live_claude_on_this_machine() {
     );
     for row in &sweep.rows {
         // Titles only — the row's own contents are the user's business.
-        println!("  {} {:?}", row.id().0, row.word);
+        println!("  {} {:?}", id_for(&row.vendor_session_id).0, row.word);
     }
     assert!(
         !sweep.rows.is_empty(),
@@ -110,4 +110,76 @@ fn khor_can_read_every_live_claude_on_this_machine() {
         sweep.unmapped, 0,
         "a live claude session khor could not read — the vendor's format moved"
     );
+}
+
+/// khor can read this machine's own tmux, and everything it reports
+/// either becomes a row or is already one.
+///
+/// **Read-only, and deliberately so**: this looks at the user's default
+/// server, where their real work is, so it runs `list-panes` and nothing
+/// else. It never creates or kills a session — the automatic tests do
+/// that, on servers of their own (`adaptor::tmux`'s `Server`).
+///
+/// What it is for is the half a closed test cannot reach: the duplicate
+/// rule against real agents. Fixtures can prove khor drops a session
+/// holding a process khor was told about; only this can prove it drops
+/// the ones actually running here.
+#[test]
+#[ignore]
+fn khor_can_read_this_machines_tmux_and_lists_nothing_twice() {
+    let procs = Procs::snapshot();
+    let listing = Tmux::default_server().sweep(&procs);
+    println!(
+        "tmux sessions seen: {}, unreadable: {}, processes: {}",
+        listing.rows.len(),
+        listing.unmapped,
+        procs.len()
+    );
+    assert!(
+        !listing.rows.is_empty(),
+        "no tmux sessions on this machine — every assertion below would pass vacuously"
+    );
+    assert_eq!(
+        listing.unmapped, 0,
+        "a tmux session khor could not describe — either tmux's output moved or a pane is gone"
+    );
+
+    // Now the same question the session list asks: which of these hold
+    // something a vendor adaptor already named?
+    let found = Discovery::at(&real_home())
+        .with_tmux(Tmux::default_server())
+        .with_procs(procs.clone())
+        .sweep();
+    let claimed: Vec<u32> =
+        found.rows.iter().flat_map(|f| f.sighting.pids.iter().copied()).collect();
+    println!(
+        "agent rows: {}, live processes they account for: {}",
+        found.rows.len(),
+        claimed.len()
+    );
+    assert!(
+        !claimed.is_empty(),
+        "no running agent on this machine — the drop below would prove nothing"
+    );
+
+    let mut kept = 0;
+    let mut dropped = 0;
+    for m in &found.multiplexed {
+        let inside: Vec<u32> =
+            m.holds.iter().copied().filter(|p| claimed.contains(p)).collect();
+        if inside.is_empty() {
+            kept += 1;
+            println!("  row   {} {:?}", m.found.id().0, m.found.sighting.word);
+        } else {
+            dropped += 1;
+            println!("  drop  {} — holds {inside:?}, already listed", m.found.id().0);
+        }
+    }
+    assert!(
+        dropped > 0,
+        "not one tmux session on this machine holds a listed agent, yet {} agents are \
+         running — the join is not working, or they are all outside tmux",
+        claimed.len()
+    );
+    println!("kept {kept}, dropped {dropped}");
 }

@@ -67,7 +67,12 @@ unreachable-for = "{0}没联系上"
 # Said only when the number is non-zero. Zero rows and zero unreadable is
 # an idle machine; zero rows and a non-zero count is khor being out of
 # date, and nothing but this line tells the two apart.
-adaptor-behind = "有 {0} 个正在跑的智能体 session 读不出来,khor 认不得它落盘的格式"
+#
+# Neither "智能体" nor "落盘" any more: the count also covers a tmux
+# session khor could not describe, and tmux is not an agent and is not
+# read off disk — it is asked. A machine with **no** tmux is not counted
+# here at all, because zero rows is then the truth (adaptor::tmux).
+adaptor-behind = "有 {0} 个正在跑的 session 读不出来,khor 认不得它给的格式"
 age-seconds = "{0} 秒"
 age-minutes = "{0} 分钟"
 age-hours = "{0} 小时"

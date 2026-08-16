@@ -299,19 +299,37 @@ impl LiveKind {
     ///
     /// Unreadable entries are skipped: a half-written registry dir is a
     /// moment, not an error.
+    ///
+    /// **A multiplexer session is a row only if nothing inside it is one
+    /// already** (`crate::adaptor::Multiplexed`). This is the same
+    /// judgement as the merge above wearing a different key: there, two
+    /// sources named one session with one id; here, one tmux session
+    /// holds a claude that claude itself named, and the two ids have
+    /// nothing in common — the only thing they share is a running
+    /// process. So the test is on pids, and it is asked here rather than
+    /// inside the sweep because **the registry's own pids count too**: a
+    /// `khor run -- claude` started in a tmux pane is that pane's
+    /// session, and khor already lists it.
     pub fn rows(&self, watermark: impl Fn(&str) -> i64) -> Vec<Session> {
         let registered = self.registry_rows(&watermark);
         let mut out: Vec<Session> = registered.iter().map(|(row, _)| row.clone()).collect();
         let unpinned: Vec<&SessionId> = registered
             .iter()
-            .filter(|(_, has_pid)| !has_pid)
+            .filter(|(_, pid)| pid.is_none())
             .map(|(row, _)| &row.id)
             .collect();
+        // Everything on this list that is a running process. A pid on
+        // record for a process that has already died costs nothing here:
+        // what it is compared against is built from the live process
+        // table, so a dead number can never match.
+        let mut claimed: Vec<u32> = registered.iter().filter_map(|(_, pid)| *pid).collect();
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
+        claimed.extend(sweep.rows.iter().flat_map(|f| f.sighting.pids.iter().copied()));
         for found in sweep.rows {
+            let id = found.id();
+            let kind = found.kind;
             let sighting = found.sighting;
-            let id = sighting.id();
             if let Some(seat) = out.iter().position(|r| r.id == id) {
                 // The registered row wins, but it may have been registered
                 // by something that could not name the vendor (a bare
@@ -332,7 +350,7 @@ impl LiveKind {
                 settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
             out.push(Session {
                 id,
-                kind: Kind(khor_core::kind::TUI.to_owned()),
+                kind: Kind(kind.to_owned()),
                 title: sighting.title,
                 home: self.device,
                 state: StateStamp {
@@ -343,12 +361,38 @@ impl LiveKind {
                 category: Some(found.category.to_owned()),
             });
         }
+        for held in sweep.multiplexed {
+            if held.holds.iter().any(|p| claimed.contains(p)) {
+                continue;
+            }
+            let id = held.found.id();
+            if out.iter().any(|r| r.id == id) {
+                continue;
+            }
+            let sighting = held.found.sighting;
+            out.push(Session {
+                id,
+                kind: Kind(held.found.kind.to_owned()),
+                title: sighting.title,
+                home: self.device,
+                state: StateStamp {
+                    state: sighting.word,
+                    at: Millis(sighting.at_ms.max(0) as u64),
+                },
+                // A multiplexer cannot say 完成, so there is nothing here
+                // that could be unread (docs/UX.md 角标可归零).
+                unread: 0,
+                category: Some(held.found.category.to_owned()),
+            });
+        }
         out
     }
 
-    /// Registry rows, each with whether a pid is on record for it —
-    /// which is what decides whether anyone can pronounce it dead.
-    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<(Session, bool)> {
+    /// Registry rows, each with the pid on record for it. Whether there
+    /// is one decides whether anyone can pronounce the session dead;
+    /// which one it is decides whether a multiplexer session is already
+    /// on this list (see [`LiveKind::rows`]).
+    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<(Session, Option<u32>)> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else {
             return out;
@@ -375,7 +419,7 @@ impl LiveKind {
                     unread,
                     category: meta.category.clone(),
                 },
-                meta.pid.is_some(),
+                meta.pid,
             ));
         }
         out
@@ -714,7 +758,7 @@ mod tests {
         let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
         let procs = Procs::of([(
             4001,
-            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None },
+            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: None },
         )]);
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
@@ -784,7 +828,7 @@ mod tests {
         let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
         let procs = Procs::of([(
             4001,
-            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None },
+            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: None },
         )]);
         let k = LiveKind::new(root.clone(), DeviceId([9; 32]))
             .discovering(Arc::new(Discovery::at(&vendors).with_procs(procs)));
@@ -801,6 +845,129 @@ mod tests {
             Some("claude"),
             "the sweep read claude's own files, so it can place what the registry could not"
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// **One running claude in a tmux pane is one row, and it is
+    /// claude's.**
+    ///
+    /// The two sources have nothing in common to merge on: claude's id
+    /// comes from its own session uuid, tmux's from a server-local
+    /// number, and neither has ever heard of the other. All they share
+    /// is a process — so that is what is compared, through parentage,
+    /// because the agent is a *grandchild* of the pane and any test on
+    /// the pane pid alone would miss it.
+    ///
+    /// The control group is the same tmux session with nothing listed
+    /// inside it: it becomes a row. Without that half, an implementation
+    /// that simply never emitted tmux rows would pass.
+    #[test]
+    fn a_tmux_session_holding_a_listed_agent_is_not_a_second_row() {
+        use crate::adaptor::{tmux::Tmux, Discovery, Proc, Procs};
+
+        let root = tmp("tmux-dedup");
+        let vendors =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let shell = |pid: u32, parent: u32| {
+            (pid, Proc { name: "-zsh".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: Some(parent) })
+        };
+        // Pane 3001 has the fixture's claude (pid 4001) under it; pane
+        // 3002 has nothing but its own shell.
+        let procs = Procs::of([
+            shell(3001, 1),
+            shell(3002, 1),
+            (
+                4001,
+                Proc {
+                    name: "claude".into(),
+                    started_ms: 1_700_000_000_000,
+                    cwd: None,
+                    ppid: Some(3001),
+                },
+            ),
+        ]);
+        let holding = crate::adaptor::tmux::fake_tmux(
+            "holding",
+            "$7|1786245338|1786245400|3001|0|zsh|with-claude\n",
+        );
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors)
+                .with_procs(procs.clone())
+                .with_tmux(Tmux::at_binary(&holding)),
+        ));
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "one running process is one row");
+        assert_eq!(rows[0].id.0, "tui/11111111-1111-4111-8111");
+        assert_eq!(rows[0].category.as_deref(), Some("claude"), "and it is claude's, not a shell");
+
+        // The control: the same session, holding nothing anyone listed.
+        let empty = crate::adaptor::tmux::fake_tmux(
+            "empty-pane",
+            "$7|1786245338|1786245400|3002|0|zsh|just-a-shell\n",
+        );
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors)
+                .with_procs(procs)
+                .with_tmux(Tmux::at_binary(&empty)),
+        ));
+        let mut rows = k.rows(|_| 0);
+        rows.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        assert_eq!(rows.len(), 2, "a bare tmux session is a row of its own");
+        assert_eq!(rows[0].id.0, "shell/1786245338-7");
+        assert_eq!(rows[0].title, "just-a-shell");
+        assert_eq!(rows[0].category.as_deref(), Some(khor_core::category::SHELL));
+        assert_eq!(rows[0].state.state, State::Idle);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The same rule against the **registry**: `khor run` started inside
+    /// a tmux pane is already a row, so the pane is not a second one.
+    ///
+    /// Separate from the sweep case above because the two claims arrive
+    /// from different places — one from a vendor's files, one from
+    /// khor's own directory — and an implementation that only consulted
+    /// the sweep would pass the other test and fail here.
+    #[test]
+    fn a_tmux_session_holding_a_khor_session_is_not_a_second_row() {
+        use crate::adaptor::{tmux::Tmux, Discovery, Proc, Procs};
+
+        let root = tmp("tmux-registry");
+        let k_root = root.clone();
+        let me = std::process::id();
+        let procs = Procs::of([
+            (
+                3001,
+                Proc {
+                    name: "-zsh".into(),
+                    started_ms: 1_700_000_000_000,
+                    cwd: None,
+                    ppid: Some(1),
+                },
+            ),
+            (
+                me,
+                Proc {
+                    name: "khor".into(),
+                    started_ms: 1_700_000_000_000,
+                    cwd: None,
+                    ppid: Some(3001),
+                },
+            ),
+        ]);
+        let fake = crate::adaptor::tmux::fake_tmux(
+            "registry",
+            "$7|1786245338|1786245400|3001|0|zsh|running-khor\n",
+        );
+        let k = LiveKind::new(k_root, DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&fake)),
+        ));
+        // The registry's row, its pid a child of the pane.
+        let id = sid("shell/run1");
+        k.register(&id, "shell", "build", Some(me), None).unwrap();
+
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "the command khor started is the row; the pane is not a second");
+        assert_eq!(rows[0].id, id);
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -854,7 +1021,7 @@ mod tests {
         let alive = Arc::new(
             Discovery::at(&vendors).with_procs(Procs::of([(
                 8001,
-                crate::adaptor::Proc { name: "claude".into(), started_ms: at - 1000, cwd: None },
+                crate::adaptor::Proc { name: "claude".into(), started_ms: at - 1000, cwd: None, ppid: None },
             )])),
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(alive);

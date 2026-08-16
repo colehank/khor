@@ -180,7 +180,7 @@ impl Adaptor for Codex {
         }
         let rollouts = self.rollouts();
         let mut taken: Vec<&Path> = Vec::new();
-        for (_, proc) in live {
+        for (pid, proc) in live {
             let Some((rollout, meta)) = self.rollout_of(proc, &rollouts, &taken) else {
                 // A codex is running and khor cannot say which session
                 // it is: an old-format transcript, a layout change, or a
@@ -201,6 +201,12 @@ impl Adaptor for Codex {
                 title: title_of(meta.cwd.as_deref()),
                 word,
                 at_ms,
+                // Always known here, and always alive: this adaptor
+                // starts from the process table, so there is no row it
+                // could produce for a process that has gone. One each —
+                // codex has no resume that leaves two processes on one
+                // session the way claude's does.
+                pids: vec![pid],
             });
         }
         sweep
@@ -309,6 +315,7 @@ mod tests {
             name: PROCESS_NAME.into(),
             started_ms,
             cwd: cwd.map(PathBuf::from),
+            ppid: None,
         }
     }
 

@@ -49,6 +49,7 @@ use khor_core::{SessionId, State};
 
 pub mod claude;
 pub mod codex;
+pub mod tmux;
 
 /// How long a crashed session stays in the list.
 ///
@@ -84,13 +85,26 @@ pub struct Sighting {
     pub word: State,
     /// When the word became true, by the vendor's own clock.
     pub at_ms: i64,
-}
-
-impl Sighting {
-    /// The khor session id this sighting lands on.
-    pub fn id(&self) -> SessionId {
-        id_for(&self.vendor_session_id)
-    }
+    /// Every **live** process this row accounts for.
+    ///
+    /// Not used to paint the row — liveness was already decided by the
+    /// time a sighting exists. It is here so that a second source
+    /// looking at the same machine can tell it is looking at a process
+    /// somebody already listed: [`tmux`] reports whole multiplexer
+    /// sessions, and one holding a claude nobody would want listed twice
+    /// (docs/SESSION.md 同源去重).
+    ///
+    /// **Usually one, and the exception is the reason this is a list.**
+    /// `claude -r` resumes a session into a second process while the
+    /// first still runs: two processes, one session, one row — and the
+    /// row has to account for *both*, or the tmux session holding the
+    /// one that lost the merge shows up as a shell nobody could name.
+    /// Found by running the check against this machine, where exactly
+    /// that had happened (2026-08-16).
+    ///
+    /// Empty for a crashed row: the pid its file names is gone, so
+    /// nothing running can be inside it.
+    pub pids: Vec<u32>,
 }
 
 /// What one sweep of one vendor found.
@@ -116,25 +130,67 @@ pub struct Sweep {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
     pub category: &'static str,
+    /// What shape of session this is (`khor_core::kind`). A vendor's is
+    /// an agent TUI; a bare multiplexer session is a shell. Carried here
+    /// rather than derived at the row, because the only party that knows
+    /// is the one that recognised it.
+    pub kind: &'static str,
     pub sighting: Sighting,
+}
+
+impl Found {
+    /// The khor session id this row lands on.
+    ///
+    /// The one spelling. A vendor's rows come out `tui/…`, which is
+    /// exactly what [`id_for`] mints for the hook path — that agreement
+    /// is what keeps a hooked-and-discovered session to one row, and it
+    /// holds here because a vendor's [`Found::kind`] is
+    /// `khor_core::kind::TUI`.
+    pub fn id(&self) -> SessionId {
+        SessionId(format!(
+            "{}/{}",
+            self.kind,
+            crate::live::clean_leaf(&self.sighting.vendor_session_id)
+        ))
+    }
+}
+
+/// A session found by something that **holds other processes** rather
+/// than being one: a terminal multiplexer's session (see [`tmux`]).
+///
+/// It is kept apart from [`Findings::rows`] until one question is
+/// answered — is anything inside it already a row? A tmux session
+/// running claude is claude's row, and listing it twice would make one
+/// running process look like two. The pids it holds travel with it so
+/// that the answer is a set intersection wherever it is asked, rather
+/// than a second walk of the process table (`crate::live::LiveKind::rows`
+/// asks, because the registry's own pids count too).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Multiplexed {
+    pub found: Found,
+    /// Every live pid inside this session — its panes and everything
+    /// descended from them.
+    pub holds: Vec<u32>,
 }
 
 /// What one sweep of every vendor found, each row already attributed.
 #[derive(Debug, Default, Clone)]
 pub struct Findings {
     pub rows: Vec<Found>,
+    /// Multiplexer sessions, still to be checked against what else is
+    /// listed. See [`Multiplexed`].
+    pub multiplexed: Vec<Multiplexed>,
     /// Summed across vendors; see [`Sweep::unmapped`].
     pub unmapped: usize,
 }
 
 impl Findings {
     fn absorb(&mut self, vendor: &'static str, other: Sweep) {
-        self.rows.extend(
-            other
-                .rows
-                .into_iter()
-                .map(|sighting| Found { category: vendor, sighting }),
-        );
+        self.rows.extend(other.rows.into_iter().map(|sighting| Found {
+            category: vendor,
+            kind: khor_core::kind::TUI,
+            sighting,
+        }));
         self.unmapped += other.unmapped;
     }
 }
@@ -179,6 +235,12 @@ pub struct Proc {
     /// Process start, ms since the epoch.
     pub started_ms: i64,
     pub cwd: Option<PathBuf>,
+    /// Who started it. The only way to ask "is this process running
+    /// **inside** that one" — which is how a multiplexer session and the
+    /// agent in it are recognised as one thing (see [`Multiplexed`]).
+    /// Reading the command line instead would be the guess
+    /// [`crate::live::LiveKind::register`] refuses for the same reason.
+    pub ppid: Option<u32>,
 }
 
 /// A snapshot of the process table.
@@ -259,6 +321,7 @@ impl Procs {
                         name: p.name().to_string_lossy().to_string(),
                         started_ms: (p.start_time() as i64).saturating_mul(1000),
                         cwd: None,
+                        ppid: p.parent().map(sysinfo::Pid::as_u32),
                     },
                 )
             })
@@ -311,6 +374,41 @@ impl Procs {
         ((p.started_ms - started_ms).abs() <= START_TOLERANCE_MS).then_some(p)
     }
 
+    /// One process by pid, whether or not anyone vouches for its age.
+    pub fn get(&self, pid: u32) -> Option<&Proc> {
+        self.by_pid.get(&pid)
+    }
+
+    /// `roots` plus everything descended from them, in this snapshot.
+    ///
+    /// Walked downward from a children index rather than upward from
+    /// every pid: a wedged parentage cycle (a pid whose chain loops)
+    /// would spin an upward walk forever, and the process table is
+    /// something khor reads, not something it controls. Downward, each
+    /// pid is visited at most once because it is marked before it is
+    /// expanded, so a cycle costs nothing.
+    pub fn subtree(&self, roots: &[u32]) -> Vec<u32> {
+        let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+        for (pid, p) in &self.by_pid {
+            if let Some(parent) = p.ppid {
+                children.entry(parent).or_default().push(*pid);
+            }
+        }
+        let mut out: Vec<u32> = Vec::new();
+        let mut queue: Vec<u32> = roots.to_vec();
+        while let Some(pid) = queue.pop() {
+            if out.contains(&pid) {
+                continue;
+            }
+            out.push(pid);
+            if let Some(kids) = children.get(&pid) {
+                queue.extend(kids);
+            }
+        }
+        out.sort_unstable();
+        out
+    }
+
     /// Every running process with exactly this name. Exact, not a
     /// substring: this machine runs both `codex` and
     /// `codex-code-mode-host`, and only one of them is an agent session.
@@ -328,6 +426,10 @@ impl Procs {
 /// Every vendor khor can read, rooted at one pretend-home.
 pub struct Discovery {
     adaptors: Vec<Box<dyn Adaptor>>,
+    /// The terminal multiplexer, when this node is allowed to ask one.
+    /// `None` everywhere a root path is the whole world — see
+    /// [`Discovery::at`].
+    tmux: Option<tmux::Tmux>,
     /// A fixed process table. `None` means "ask the OS", which is
     /// production; a test that pins it here has a closed world, since
     /// the root is already a parameter.
@@ -339,12 +441,19 @@ impl Discovery {
     /// every registry test stays closed and reading the machine's real
     /// vendor directories is an explicit decision made in one place.
     pub fn empty() -> Discovery {
-        Discovery { adaptors: Vec::new(), procs: None }
+        Discovery { adaptors: Vec::new(), tmux: None, procs: None }
     }
 
     /// Sweeps against this process table instead of the OS.
     pub fn with_procs(mut self, procs: Procs) -> Discovery {
         self.procs = Some(procs);
+        self
+    }
+
+    /// Also ask this multiplexer. Explicit because a server is not
+    /// something a root path can redirect (see [`Discovery::at`]).
+    pub fn with_tmux(mut self, tmux: tmux::Tmux) -> Discovery {
+        self.tmux = Some(tmux);
         self
     }
     /// Adaptors reading the vendor directories under `home`.
@@ -353,12 +462,22 @@ impl Discovery {
     /// test of this module can be closed: the graveyard control group
     /// and the crash rule both need a tree nobody's real agent is
     /// writing to.
+    ///
+    /// **No multiplexer here, and that is the same rule.** A tmux server
+    /// is reached through a socket, not through this home, so a fixture
+    /// tree cannot redirect it — a test built on `at()` that swept the
+    /// machine's tmux would be answering with whatever the user happens
+    /// to have open. Production adds it in [`Discovery::for_root`]; a
+    /// test that wants one names its own server ([`with_tmux`]).
+    ///
+    /// [`with_tmux`]: Discovery::with_tmux
     pub fn at(home: &Path) -> Discovery {
         Discovery {
             adaptors: vec![
                 Box::new(claude::Claude::at(home.join(".claude"))),
                 Box::new(codex::Codex::at(home.join(".codex"))),
             ],
+            tmux: None,
             procs: None,
         }
     }
@@ -378,11 +497,25 @@ impl Discovery {
     /// rooted elsewhere still reads the real agent files — the flagship
     /// verification runs exactly that way — and how a fixture tree can be
     /// driven through the CLI end to end rather than only from Rust.
+    /// **The multiplexer follows the same rule, and needs it stated
+    /// separately.** A tmux server is reached through a socket, so
+    /// pointing khor at a different root does not point it at a
+    /// different tmux — every test that opens a node under a temp
+    /// directory would otherwise sweep the user's real sessions and
+    /// answer with whatever they happen to have open. So it is asked
+    /// only when this node *is* the real home's node, which is the same
+    /// sentence as above with "the real user's agents" replaced by "the
+    /// real user's terminals".
     pub fn for_root(root: &Path) -> Discovery {
         let home = std::env::var_os("KHOR_VENDOR_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| root.to_path_buf());
-        Discovery::at(&home)
+        let discovery = Discovery::at(&home);
+        if is_real_home(&home) {
+            discovery.with_tmux(tmux::Tmux::default_server())
+        } else {
+            discovery
+        }
     }
 
     /// One sweep of every vendor.
@@ -402,8 +535,28 @@ impl Discovery {
         for a in &self.adaptors {
             all.absorb(a.vendor(), a.sweep(procs));
         }
+        if let Some(t) = &self.tmux {
+            let listing = t.sweep(procs);
+            all.multiplexed = listing.rows;
+            all.unmapped += listing.unmapped;
+        }
         all
     }
+}
+
+/// Whether this path is the account's own home directory.
+///
+/// Compared after canonicalising, because `$HOME` and a path someone
+/// typed can name one directory in two spellings (a symlinked home, a
+/// trailing slash) — and getting that wrong in the false direction is
+/// the loud failure, not the quiet one: khor would simply not list the
+/// user's terminals.
+fn is_real_home(path: &Path) -> bool {
+    let Some(home) = std::env::home_dir() else {
+        return false;
+    };
+    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    real(path) == real(&home)
 }
 
 /// Reads a whole file, or nothing. Every adaptor reads vendor files that
@@ -418,7 +571,7 @@ mod tests {
     use super::*;
 
     fn proc_at(name: &str, started_ms: i64) -> Proc {
-        Proc { name: name.into(), started_ms, cwd: None }
+        Proc { name: name.into(), started_ms, cwd: None, ppid: None }
     }
 
     /// The id both paths mint must be the same string, or one session
@@ -474,13 +627,22 @@ mod tests {
 
         // One live process per vendor, each vouching for its own fixture.
         let procs = Procs::of([
-            (4001, Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None }),
+            (
+                4001,
+                Proc {
+                    name: "claude".into(),
+                    started_ms: 1_700_000_000_000,
+                    cwd: None,
+                    ppid: None,
+                },
+            ),
             (
                 700,
                 Proc {
                     name: codex::PROCESS_NAME.into(),
                     started_ms: 1_786_024_158_000,
                     cwd: Some(PathBuf::from("/w/alpha")),
+                    ppid: None,
                 },
             ),
         ]);

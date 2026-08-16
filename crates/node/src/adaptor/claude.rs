@@ -181,6 +181,7 @@ impl Adaptor for Claude {
                 }
             };
             let title = file.title();
+            let pid = file.pid;
             seen.push((
                 file.session_id.clone(),
                 at_ms,
@@ -189,6 +190,11 @@ impl Adaptor for Claude {
                     title,
                     word,
                     at_ms,
+                    // Only while it is running. A crashed session's file
+                    // still names its pid, but that number belongs to
+                    // nobody now, and claiming it would let a dead
+                    // claude hide the tmux session it used to sit in.
+                    pids: if word == State::Failed { vec![] } else { vec![pid] },
                 },
             ));
         }
@@ -199,14 +205,19 @@ impl Adaptor for Claude {
         // one of them two days stale. They are one session and one row,
         // and the freshest word is the true one.
         seen.sort_by(|a, b| b.1.cmp(&a.1));
-        let mut kept: Vec<String> = Vec::new();
+        let mut kept: Vec<(String, Sighting)> = Vec::new();
         for (session_id, _, sighting) in seen {
-            if kept.contains(&session_id) {
-                continue;
+            match kept.iter_mut().find(|(sid, _)| *sid == session_id) {
+                // The row is the fresher file's, but it stands for both
+                // processes. Dropping the older pid here would leave a
+                // live claude that nothing on the list accounts for, and
+                // the tmux session around it would then appear as a
+                // shell of its own (`Sighting::pids`).
+                Some((_, first)) => first.pids.extend(sighting.pids),
+                None => kept.push((session_id, sighting)),
             }
-            kept.push(session_id);
-            sweep.rows.push(sighting);
         }
+        sweep.rows = kept.into_iter().map(|(_, s)| s).collect();
         sweep
     }
 }
@@ -306,11 +317,15 @@ mod tests {
     }
 
     fn proc_of(started_ms: i64) -> Proc {
-        Proc { name: "claude".into(), started_ms, cwd: None }
+        Proc { name: "claude".into(), started_ms, cwd: None, ppid: None }
     }
 
     fn word_at(sweep: &Sweep, id: &str) -> Option<State> {
-        sweep.rows.iter().find(|r| r.id().0 == id).map(|r| r.word)
+        sweep
+            .rows
+            .iter()
+            .find(|r| id_for(&r.vendor_session_id).0 == id)
+            .map(|r| r.word)
     }
 
     /// Every status word the fixture tree spells, mapped. The narrowing
@@ -432,7 +447,10 @@ mod tests {
         let sweep = Claude::at(dir.join(".claude")).sweep(&Procs::default());
         assert_eq!(sweep.rows.len(), 1, "the week-old crash is history, not a row");
         assert_eq!(sweep.rows[0].word, State::Failed);
-        assert_eq!(sweep.rows[0].id().0, "tui/66666666-6666-4666-8666");
+        assert_eq!(
+            id_for(&sweep.rows[0].vendor_session_id).0,
+            "tui/66666666-6666-4666-8666"
+        );
 
         // The control: with the process table vouching for them, the
         // same two files are ordinary live rows — which proves the
@@ -506,5 +524,17 @@ mod tests {
         assert_eq!(sweep.rows[0].title, "resumed-now", "the freshest file wins");
         assert_eq!(sweep.rows[0].word, State::Busy);
         assert_eq!(sweep.unmapped, 0);
+        // **Both processes, not just the winner's.** Found on this
+        // machine: a claude resumed into a second process left the first
+        // one accounted for by nothing, so the tmux session around it
+        // turned up as a shell row of its own — one running agent shown
+        // twice, once under its own name and once as furniture.
+        let mut pids = sweep.rows[0].pids.clone();
+        pids.sort_unstable();
+        assert_eq!(
+            pids,
+            vec![5001, 5002],
+            "the surviving row stands for every live process of that session"
+        );
     }
 }

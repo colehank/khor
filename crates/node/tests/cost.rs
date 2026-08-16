@@ -8,11 +8,20 @@
 //! one the recorded numbers came from.
 //!
 //! ```text
-//! cargo test -p khor-node --test cost -- --ignored --nocapture
+//! cargo test -p khor-node --test cost -- --ignored --nocapture --test-threads=1
 //! ```
 //!
+//! **`--test-threads=1` is not tidiness.** The scan counter these tests
+//! read (`adaptor::snapshots_taken`) is one number for the whole
+//! process, so a test measuring "scans per list" while another is
+//! snapshotting beside it measures both. Run in parallel on 2026-08-16
+//! that came out as 21 scans over 12 calls; serially, 12 — and 21 would
+//! have read as "the list scans twice", which is the exact wrong
+//! conclusion the ledger already recorded once from guessing.
+//!
 //! The recorded numbers live where the decision they support lives:
-//! `khor_node::adaptor::Procs::snapshot`.
+//! `khor_node::adaptor::Procs::snapshot`, and
+//! `khor_node::adaptor::tmux` for the multiplexer call.
 
 use std::time::Instant;
 
@@ -122,4 +131,46 @@ fn what_one_poll_of_the_session_list_costs() {
     );
 
     let _ = std::fs::remove_dir_all(&home);
+}
+
+/// What asking the machine's tmux costs, per list.
+///
+/// Separate from the two above because it is **not** included in them:
+/// `Node::open_as` under a temp home is not the real home's node, so it
+/// never talks to tmux (`adaptor::Discovery::for_root`). A reader adding
+/// up what one production poll costs has to add this one in.
+///
+/// It is also the only cost here that is a **subprocess**: a fork, an
+/// exec, and a round trip to a server over a unix socket, where
+/// everything else is a syscall. That is why it gets its own number
+/// rather than being assumed small.
+#[test]
+#[ignore]
+fn what_asking_tmux_costs() {
+    use khor_node::adaptor::tmux::Tmux;
+
+    let procs = Procs::snapshot();
+    let tmux = Tmux::default_server();
+    let first = tmux.sweep(&procs);
+    println!("tmux sessions on this machine: {}", first.rows.len());
+    if first.rows.is_empty() {
+        println!("(no tmux server here — the numbers below would be the empty path)");
+    }
+
+    let mut runs: Vec<f64> = (0..12)
+        .map(|_| {
+            ms(|| {
+                tmux.sweep(&procs);
+            })
+        })
+        .collect();
+    runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = runs[runs.len() / 2];
+    println!(
+        "one list-panes            : min {:.1} / median {median:.1} / max {:.1} ms  (n={})",
+        runs[0],
+        runs[runs.len() - 1],
+        runs.len()
+    );
+    println!("at one call per 5s poll   : {:.3}% of a core", median / 5000.0 * 100.0);
 }
