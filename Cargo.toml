@@ -58,4 +58,19 @@ portable-pty = "0.9"
 # `component` are three more platform surfaces khor never asks about, and
 # `component` alone drags in the whole objc2 IOKit stack on macOS.
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
+# GPU use on macOS, read out of IOKit's registry in-process.
+# `ioreg -r -d 1 -c IOAccelerator` is these two calls with a printer on
+# the end, and khor makes the calls instead: a gauge refreshed every few
+# seconds does not justify spawning a process to read it, and the other
+# route — `powermetrics` — wants root. Between them they carry
+# core-foundation-sys, mach2 and libc, all of which were already here.
+io-kit-sys = "0.5"
+core-foundation = "0.10"
+# GPU use on Linux with NVIDIA hardware. NVML is loaded at run time with
+# `libloading`, so khor links against nothing: on a machine with no
+# driver the load fails and the field stays absent, which is the same
+# answer khor gives for a machine with no GPU at all. **A vendor's own
+# shared library is not an external command** — the thing khor promises
+# not to need is something the user had to install.
+nvml-wrapper = "0.12"
 tracing = "0.1"

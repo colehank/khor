@@ -10,6 +10,8 @@ use std::sync::{Mutex, OnceLock};
 
 use khor_core::{Fill, Vitals};
 
+mod gpu;
+
 /// Everything a reading is taken from, kept alive between calls.
 ///
 /// # Why it outlives the call at all
@@ -97,12 +99,18 @@ pub fn sample(home: &Path) -> Vitals {
     // the list. Keeping it would report a disk that is not there, which
     // is worse than reporting none.
     s.disks.refresh(true);
-    Vitals {
-        cpu_pct: s.sys.global_cpu_usage(),
-        cores: s.sys.cpus().len() as u32,
-        mem: Fill { used: s.sys.used_memory(), total: s.sys.total_memory() },
-        disk: disk_under(&s.disks, home),
-    }
+    let cpu_pct = s.sys.global_cpu_usage();
+    let cores = s.sys.cpus().len() as u32;
+    let mem = Fill { used: s.sys.used_memory(), total: s.sys.total_memory() };
+    let disk = disk_under(&s.disks, home);
+    // **Released before the GPU is asked**, and the ordering is the
+    // whole reason these are locals rather than fields written inline.
+    // The GPU keeps nothing between readings, so it has no use for the
+    // `Sampler` — and holding the lock across a call into a vendor
+    // driver would make every other sampler in the process wait behind
+    // it for nothing.
+    drop(s);
+    Vitals { cpu_pct, cores, mem, disk, gpu: gpu::sample() }
 }
 
 /// The filesystem a path sits on: the mounted disk whose mount point is

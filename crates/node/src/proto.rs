@@ -141,6 +141,7 @@ mod tests {
             cores: 10,
             mem: khor_core::Fill { used: 3, total: 4 },
             disk: Some(khor_core::Fill { used: 5, total: 6 }),
+            gpu: Some(khor_core::Gpu { util_pct: 12.0, cards: 1, mem: None }),
         };
         let bytes = encode(&Response::Vitals { vitals: sent }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

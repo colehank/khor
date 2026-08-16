@@ -23,3 +23,13 @@ sysinfo.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+# The GPU reading is the one part of vitals with no cross-platform API
+# behind it, so each platform brings its own and no other platform pays
+# for it (crates/node/src/vitals/gpu.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+io-kit-sys.workspace = true
+core-foundation.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nvml-wrapper.workspace = true

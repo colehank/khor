@@ -210,20 +210,12 @@ pub struct Fill {
 /// current-looking number (docs/SESSION.md 离线不是第七个词 — the same
 /// two axes, applied to a machine instead of a session).
 ///
-/// **There is no GPU field yet, and its absence is a capability gap
-/// rather than a data one.** `sysinfo` — the process table khor already
-/// carries — has no GPU API at all: the only occurrences of the word in
-/// its source are a macOS thermal sensor key and unrelated FFI. A field
-/// that is structurally always empty is worse than no field, because it
-/// reads as a machine that failed to report rather than a khor that
-/// cannot ask.
-///
-/// It is coming in its own batch, through per-platform in-process APIs
-/// rather than by shelling out (IOKit's IORegistry on macOS, the
-/// vendor's own library on Linux) — khor expects nothing installed. The
-/// rule it lands under is the one above, unchanged: **a reading that
-/// cannot be taken leaves no field**, because an invented gauge is worse
-/// than a missing one.
+/// **The GPU arrives as an absent-able field rather than an always-present
+/// one**, and [`Gpu`] says why. `sysinfo` — the process table khor already
+/// carries — has no GPU API at all (the only occurrences of the word in its
+/// source are a macOS thermal sensor key and unrelated FFI), so the reading
+/// is taken per platform through in-process APIs rather than by shelling
+/// out: khor expects nothing installed, `nvidia-smi` included.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Vitals {
     /// Whole-machine CPU use, 0–100.
@@ -247,6 +239,58 @@ pub struct Vitals {
     /// still decodes here (`a_vitals_frame_from_an_older_peer_...`).
     #[serde(default)]
     pub disk: Option<Fill>,
+    /// The graphics hardware, when khor can find out — see [`Gpu`].
+    ///
+    /// Wire: at the tail with a serde default, the same discipline the
+    /// disk followed one field earlier.
+    #[serde(default)]
+    pub gpu: Option<Gpu>,
+}
+
+/// What the graphics hardware is doing.
+///
+/// **A machine khor cannot ask carries no `Gpu` at all**, which is why
+/// [`Vitals::gpu`] is an option rather than a struct full of zeroes. The
+/// two read completely differently to whoever is looking: a gauge sitting
+/// at 0% is a statement about the hardware, and khor being unable to ask
+/// is a statement about khor. Painting the first when the second is true
+/// is the same mistake the disk field is shaped to avoid — an invented
+/// ring is worse than a missing one — and it is
+/// docs/SESSION.md 认不出就不落词 applied to a reading rather than a word.
+///
+/// **Nothing here is read by running a command.** macOS goes through
+/// IOKit's registry and Linux through the vendor's own shared library, so
+/// a machine without `nvidia-smi` on its PATH is not a machine khor is
+/// blind to — and, the direction that actually bites, a machine that has
+/// it is not one where khor spawns a process every five seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Gpu {
+    /// Use across all the cards, 0–100.
+    ///
+    /// The same shape as [`Vitals::cpu_pct`] and averaged the same way, so
+    /// a machine with one card pinned and one idle reads 50 — exactly as a
+    /// machine with half its cores pinned does. That flattening is
+    /// inherited on purpose rather than solved here: a per-card breakdown
+    /// is a different screen, and this one answers "how busy is that
+    /// machine".
+    pub util_pct: f32,
+    /// How many cards that percentage is spread over, the counterpart of
+    /// [`Vitals::cores`].
+    pub cards: u32,
+    /// Video memory, **summed** across the cards.
+    ///
+    /// Summed, unlike the disk, and the difference is not an
+    /// inconsistency: a machine has many filesystems serving different
+    /// purposes and exactly one of them fills up as khor works, whereas
+    /// the cards are one pool of the same thing. That is the reason
+    /// [`Vitals::cores`] is a total too.
+    ///
+    /// `None` where there is no such number to report rather than where it
+    /// happens to be zero. Unified-memory machines are the case that
+    /// exists today: Apple Silicon's GPU spends the memory already
+    /// reported in [`Vitals::mem`], and giving it its own bar would put
+    /// the same bytes on the screen twice under two names.
+    pub mem: Option<Fill>,
 }
 
 /// The uniform event envelope. Payload bytes are kind-namespaced; this
@@ -448,10 +492,53 @@ mod tests {
             cores: 8,
             mem: Fill { used: 1, total: 2 },
             disk: Some(Fill { used: 5, total: 9 }),
+            gpu: None,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x94, "four fields today");
+        assert_eq!(bytes[0], 0x95, "five fields today");
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
+    }
+
+    /// **Over the wire from a peer that predates the GPU**: four fields
+    /// arrive and this end reads them, rather than dropping the whole
+    /// reading because a fifth is missing.
+    ///
+    /// Hand-built as a four-tuple, and the byte assertion comes first for
+    /// the reason it always does here: encoding today's `Vitals` and
+    /// decoding it back would pass whatever the struct looked like.
+    #[test]
+    fn a_vitals_frame_from_an_older_peer_decodes_with_no_gpu() {
+        let old = (7.5f32, 4u32, Fill { used: 2, total: 16 }, Some(Fill { used: 5, total: 9 }));
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x94, "the sample must be a four-field frame, or it proves nothing");
+
+        let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(v.gpu, None, "an older peer said nothing about a GPU");
+        assert_eq!(v.cpu_pct, 7.5, "…and the rest of the reading survived");
+        assert_eq!(v.disk, Some(Fill { used: 5, total: 9 }));
+    }
+
+    /// The GPU is on the wire when there is one, and it survives whole —
+    /// the half that would still pass if `gpu` were dropped from the
+    /// struct is the test above, so this one exists to deny it that.
+    ///
+    /// **Both shapes of `Gpu::mem` are sent**, because the interesting one
+    /// is the absent case and a round trip that only ever carried `Some`
+    /// would not notice a `None` turning into `0 / 0` on the way.
+    #[test]
+    fn a_vitals_frame_carries_the_gpu_when_there_is_one() {
+        for mem in [Some(Fill { used: 3, total: 24 }), None] {
+            let v = Vitals {
+                cpu_pct: 3.0,
+                cores: 8,
+                mem: Fill { used: 1, total: 2 },
+                disk: None,
+                gpu: Some(Gpu { util_pct: 48.0, cards: 2, mem }),
+            };
+            let bytes = rmp_serde::to_vec(&v).unwrap();
+            assert_eq!(bytes[0], 0x95, "five fields today");
+            assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
+        }
     }
 
     #[test]
