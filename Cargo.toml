@@ -26,7 +26,12 @@ getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 blake3 = "1"
-serde_json = "1"
+# `preserve_order` because khor edits a file it does not own: claude's
+# settings.json. Without it a `Value` round trip is a BTreeMap, and
+# adding one hook would silently re-alphabetise fourteen top-level keys
+# of somebody's configuration — a diff that is all khor's and says
+# nothing khor meant.
+serde_json = { version = "1", features = ["preserve_order"] }
 rmp-serde = "1"
 # Document CRDT, not a live protocol: increments are bytes that can land as
 # files, so dumb nodes (ssh-only, no process) can carry them.

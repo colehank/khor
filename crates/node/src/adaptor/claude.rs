@@ -32,6 +32,7 @@
 
 use std::path::{Path, PathBuf};
 
+use khor_catalog::msg;
 use khor_core::{SessionId, State};
 
 use super::{id_for, read_text, Adaptor, Procs, Sighting, Sweep, CRASH_GRACE_MS};
@@ -303,6 +304,244 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
     }
 }
 
+// ── installing the hook (docs/HOOKS.md) ─────────────────────
+
+/// The events khor asks claude to tell it about, and why exactly these.
+///
+/// Each maps to a word in [`hook`], and the set is the smallest one that
+/// covers the walk: a session appears (`SessionStart`), a turn begins
+/// (`UserPromptSubmit`), an approval is asked for (`Notification`), a
+/// turn ends (`Stop` — **the only source of 完成 anywhere in khor**),
+/// the session ends (`SessionEnd`).
+///
+/// Asking for more would not make the row better and would make claude
+/// run khor more often; asking for fewer loses a word. `Stop` is the one
+/// that makes installing worth doing at all.
+pub const HOOK_EVENTS: [&str; 5] =
+    ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd"];
+
+/// The tail every khor hook command ends with, and the marker that says
+/// an entry in someone's settings file is khor's.
+///
+/// Recognising khor's own entry by **the verb it invokes** rather than
+/// by the path in front of it is what makes installing idempotent
+/// across a khor that moved: the path is the part allowed to change.
+const HOOK_VERB: &str = " state --hook";
+
+/// Where claude keeps the settings a hook goes into.
+pub fn settings_path(vendor_home: &Path) -> PathBuf {
+    vendor_home.join(".claude").join("settings.json")
+}
+
+/// What khor is on record as, for one event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Installed {
+    /// Nothing of khor's under this event.
+    Missing,
+    /// A khor hook, but not this khor — the binary moved or a second
+    /// install is on this machine. Carries the recorded command, because
+    /// "it is installed" and "it is installed and points somewhere else"
+    /// must not read the same.
+    Elsewhere(String),
+    /// This binary.
+    Here,
+}
+
+/// What `khor hooks` found.
+#[derive(Debug, Clone)]
+pub struct HookReport {
+    pub path: PathBuf,
+    /// Whether the settings file exists at all. A machine where claude
+    /// has never run has none, and that is not a problem to report —
+    /// installing creates it.
+    pub settings_exist: bool,
+    pub events: Vec<(&'static str, Installed)>,
+}
+
+/// What one install did, per event. Three lists rather than one count:
+/// **"installed twice equals installed once" is only visible if the
+/// second run can say it changed nothing.**
+#[derive(Debug, Default, Clone)]
+pub struct HookInstall {
+    pub path: PathBuf,
+    pub added: Vec<&'static str>,
+    /// Khor was already here under another path and now points at this
+    /// binary.
+    pub repointed: Vec<&'static str>,
+    pub unchanged: Vec<&'static str>,
+}
+
+/// The command claude should run: this binary, then khor's hook verb.
+///
+/// **An absolute path, not `khor`.** A hook is run by claude, which may
+/// have been started from a GUI with a PATH that has nothing of the
+/// user's shell in it — the same trap `super::tmux::CANDIDATES` guards
+/// against, arriving from the other direction. The cost is that a khor
+/// which later moves leaves a hook pointing at nothing, and that is why
+/// [`hooks_report`] says so out loud instead of only saying "installed".
+///
+/// Single quotes because the path is going into a shell command line and
+/// may hold spaces; `'` inside it is escaped the only way POSIX allows.
+pub fn hook_command() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
+    Ok(format!("{}{HOOK_VERB}", shell_quoted(&exe.to_string_lossy())))
+}
+
+fn shell_quoted(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Whether this settings entry is a khor hook.
+fn is_khors(command: &str) -> bool {
+    command.ends_with(HOOK_VERB)
+}
+
+/// Reads claude's settings and says, per event, what khor is on record
+/// as. Never writes.
+pub fn hooks_report(vendor_home: &Path) -> Result<HookReport, String> {
+    let path = settings_path(vendor_home);
+    let ours = hook_command()?;
+    let settings = read_settings(&path)?;
+    let events = HOOK_EVENTS
+        .iter()
+        .map(|event| {
+            let found = recorded_command(settings.as_ref(), event);
+            let state = match found {
+                None => Installed::Missing,
+                Some(c) if c == ours => Installed::Here,
+                Some(c) => Installed::Elsewhere(c),
+            };
+            (*event, state)
+        })
+        .collect();
+    Ok(HookReport { path, settings_exist: settings.is_some(), events })
+}
+
+/// Adds khor's hooks to claude's settings, leaving everything else in
+/// that file exactly as it was.
+///
+/// **Merge, never replace.** The file belongs to the user and usually
+/// already holds their own hooks — on this machine, mandala's, under
+/// eight events. So this reaches only into `hooks.<event>`, appends one
+/// group of its own, and touches no other key, no other event, and no
+/// other group under the same event.
+///
+/// Idempotent by the same reach: an event that already names khor is
+/// left alone, or has just its path corrected if this binary is not the
+/// one recorded.
+///
+/// Refuses rather than repairs a file it cannot parse. A settings file
+/// with a syntax error is one the user is in the middle of editing, or
+/// one khor has misunderstood; overwriting it with khor's idea of what
+/// it contained would destroy the only copy.
+pub fn install_hooks(vendor_home: &Path) -> Result<HookInstall, String> {
+    let path = settings_path(vendor_home);
+    let ours = hook_command()?;
+    let mut settings = read_settings(&path)?.unwrap_or_else(|| serde_json::json!({}));
+    let mut out = HookInstall { path: path.clone(), ..Default::default() };
+
+    let root = settings
+        .as_object_mut()
+        .ok_or_else(|| msg::settings_not_an_object(path.display()))?;
+    let hooks = root
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| msg::settings_hooks_not_an_object(path.display()))?;
+
+    for event in HOOK_EVENTS {
+        let groups = hooks
+            .entry(event)
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .ok_or_else(|| msg::settings_event_not_a_list(path.display(), event))?;
+        match khors_command_mut(groups) {
+            Some(slot) if *slot == ours => out.unchanged.push(event),
+            Some(slot) => {
+                *slot = serde_json::Value::String(ours.clone());
+                out.repointed.push(event);
+            }
+            None => {
+                groups.push(serde_json::json!({
+                    "hooks": [{ "type": "command", "command": ours }]
+                }));
+                out.added.push(event);
+            }
+        }
+    }
+
+    let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    write_keeping_mode(&path, format!("{text}\n").as_bytes())?;
+    Ok(out)
+}
+
+/// `None` when the file is absent, which is a normal state and not an
+/// error — claude has simply never been configured here.
+fn read_settings(path: &Path) -> Result<Option<serde_json::Value>, String> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(None);
+    };
+    if text.trim().is_empty() {
+        return Ok(Some(serde_json::json!({})));
+    }
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|e| msg::settings_garbled(path.display(), e))
+}
+
+/// khor's recorded command under one event, read-only.
+fn recorded_command(settings: Option<&serde_json::Value>, event: &str) -> Option<String> {
+    settings?["hooks"][event]
+        .as_array()?
+        .iter()
+        .flat_map(|g| g["hooks"].as_array().into_iter().flatten())
+        .filter_map(|h| h["command"].as_str())
+        .find(|c| is_khors(c))
+        .map(str::to_owned)
+}
+
+/// The same lookup, but handing back the slot so a moved khor can be
+/// corrected in place rather than appended beside itself.
+fn khors_command_mut(groups: &mut [serde_json::Value]) -> Option<&mut serde_json::Value> {
+    for g in groups {
+        let Some(entries) = g.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            continue;
+        };
+        for e in entries {
+            let Some(slot) = e.get_mut("command") else { continue };
+            if slot.as_str().is_some_and(is_khors) {
+                return Some(slot);
+            }
+        }
+    }
+    None
+}
+
+/// Whole-file write via tmp+rename, **keeping the mode the file already
+/// had**. This is not khor's file: turning someone's 644 settings into
+/// khor's idea of a private file is a change they did not ask for and
+/// would not see.
+///
+/// The temp name carries the pid, which is the rule `khor_sync::store`
+/// had to learn the hard way — a fixed `.tmp` beside a shared path is
+/// two writers racing to rename the same name.
+fn write_keeping_mode(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(msg::cant_make_dir_for)?;
+    }
+    let tmp = path.with_extension(format!("khor-tmp.{}", std::process::id()));
+    std::fs::write(&tmp, bytes).map_err(|e| msg::cant_write(tmp.display(), e))?;
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata(path) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(
+            &tmp,
+            std::fs::Permissions::from_mode(meta.permissions().mode()),
+        );
+    }
+    std::fs::rename(&tmp, path).map_err(|e| msg::cant_place(path.display(), e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,6 +745,290 @@ mod tests {
         hook(&k, &payload("SessionEnd", "")).unwrap();
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Idle, "a clean end is idle");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ── installing the hook ─────────────────────────────────
+
+    /// A home of this test's own. **Every hook test runs against one**,
+    /// and none of them can reach `~/.claude`: the path is a parameter
+    /// all the way down (`super::vendor_home`), so there is no
+    /// configuration this suite could touch by accident.
+    fn hook_home(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("khor-hooks-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        dir
+    }
+
+    /// A settings file shaped like a real one: other top-level keys,
+    /// somebody else's hooks, under events khor also wants.
+    ///
+    /// **Literal text, not `json!`, and the keys are deliberately not in
+    /// alphabetical order.** Both halves are load-bearing: a fixture
+    /// built as a `Value` would be ordered by the same machinery the
+    /// order assertion is checking, so it would agree with any output
+    /// however it was sorted — and alphabetical keys would agree with a
+    /// sorting one by accident.
+    const USED_SETTINGS: &str = r#"{
+  "env": {
+    "SOME_VAR": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.mandala/hook-report.sh\" running"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh /opt/audit.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.mandala/hook-report.sh\" done"
+          }
+        ]
+      }
+    ]
+  },
+  "model": "some-model"
+}
+"#;
+
+    /// Top-level key names in the order they appear **in the text**.
+    ///
+    /// Read off the file rather than off a parsed `Value`, because the
+    /// parse is exactly what is under test: a `Value` whose map sorts
+    /// would report a sorted order for both sides and agree with itself.
+    /// Two-space indent is what `to_string_pretty` writes and what the
+    /// fixture above is written in, so a top-level key is a line
+    /// starting with exactly two spaces and a quote.
+    fn top_level_keys(text: &str) -> Vec<String> {
+        text.lines()
+            .filter_map(|l| l.strip_prefix("  \""))
+            .filter_map(|l| l.split_once("\":"))
+            .map(|(k, _)| k.to_owned())
+            .collect()
+    }
+
+    /// Every `(path, value)` leaf of a JSON tree, so that "nothing that
+    /// was here changed" can be asserted rather than eyeballed.
+    fn leaves(v: &serde_json::Value, at: String, out: &mut Vec<(String, String)>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                for (k, x) in m {
+                    leaves(x, format!("{at}.{k}"), out);
+                }
+            }
+            serde_json::Value::Array(a) => {
+                for (i, x) in a.iter().enumerate() {
+                    leaves(x, format!("{at}[{i}]"), out);
+                }
+            }
+            other => out.push((at, other.to_string())),
+        }
+    }
+
+    fn leaf_set(v: &serde_json::Value) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        leaves(v, String::new(), &mut out);
+        out.sort();
+        out
+    }
+
+    fn read_json(path: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// A machine where claude was never configured: installing writes
+    /// the file, and every event khor needs is on it afterwards.
+    #[test]
+    fn installing_where_there_is_no_settings_file_writes_one() {
+        let home = hook_home("fresh");
+        let before = hooks_report(&home).unwrap();
+        assert!(!before.settings_exist, "control: nothing there yet");
+        assert!(
+            before.events.iter().all(|(_, s)| *s == Installed::Missing),
+            "and khor is in none of it"
+        );
+
+        let done = install_hooks(&home).unwrap();
+        assert_eq!(done.added.len(), HOOK_EVENTS.len());
+        assert!(done.repointed.is_empty() && done.unchanged.is_empty());
+
+        let after = hooks_report(&home).unwrap();
+        assert!(after.settings_exist);
+        assert!(
+            after.events.iter().all(|(_, s)| *s == Installed::Here),
+            "every event khor asked for now names this binary"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// **Installed twice is installed once**, asserted on the bytes.
+    ///
+    /// Comparing the file text rather than counting entries is the point:
+    /// an implementation that appended a second identical group every
+    /// run would still report five events installed and would still pass
+    /// a "khor is present" check.
+    #[test]
+    fn installing_twice_changes_nothing_the_second_time() {
+        let home = hook_home("twice");
+        install_hooks(&home).unwrap();
+        let once = std::fs::read_to_string(settings_path(&home)).unwrap();
+
+        let again = install_hooks(&home).unwrap();
+        let twice = std::fs::read_to_string(settings_path(&home)).unwrap();
+        assert_eq!(once, twice, "byte for byte");
+        assert!(again.added.is_empty() && again.repointed.is_empty());
+        assert_eq!(
+            again.unchanged.len(),
+            HOOK_EVENTS.len(),
+            "and it says so, which is the only way a person can tell"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// **Only additions.** Somebody else's hooks, under the same events,
+    /// beside other settings: everything that was there is still there,
+    /// unchanged, in the same order.
+    #[test]
+    fn installing_beside_someone_elses_hooks_only_adds() {
+        let home = hook_home("merge");
+        std::fs::write(settings_path(&home), USED_SETTINGS).unwrap();
+        let original: serde_json::Value = serde_json::from_str(USED_SETTINGS).unwrap();
+        let keys_before = top_level_keys(USED_SETTINGS);
+        assert_eq!(
+            keys_before,
+            vec!["env", "permissions", "hooks", "model"],
+            "the probe reads the order off the text, and this order is not alphabetical \
+             — a sorting implementation has something to disagree with"
+        );
+
+        install_hooks(&home).unwrap();
+        let written = std::fs::read_to_string(settings_path(&home)).unwrap();
+        let after = read_json(&settings_path(&home));
+
+        // Nothing that existed is gone or different.
+        let before_leaves = leaf_set(&original);
+        let after_leaves = leaf_set(&after);
+        let lost: Vec<&(String, String)> =
+            before_leaves.iter().filter(|l| !after_leaves.contains(l)).collect();
+        assert!(lost.is_empty(), "install changed or dropped: {lost:?}");
+
+        // Including the order of the file's own keys — the reason
+        // serde_json is built with `preserve_order` (Cargo.toml).
+        assert_eq!(
+            top_level_keys(&written),
+            keys_before,
+            "khor must not re-order someone's settings"
+        );
+
+        // Their hook is still the first thing under the events they had.
+        assert_eq!(
+            after["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
+            original["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+        );
+        // Khor arrived beside it, not on top of it.
+        assert_eq!(after["hooks"]["UserPromptSubmit"].as_array().unwrap().len(), 2);
+        assert!(
+            hooks_report(&home).unwrap().events.iter().all(|(_, s)| *s == Installed::Here)
+        );
+        // An event khor never asked for is untouched, matcher and all.
+        assert_eq!(after["hooks"]["PreToolUse"], original["hooks"]["PreToolUse"]);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A khor that moved is corrected where it stands, not added a
+    /// second time — and `hooks` says which of the two it is looking at
+    /// before the fix, because "installed" and "installed elsewhere"
+    /// have different answers.
+    #[test]
+    fn a_khor_that_moved_is_repointed_not_duplicated() {
+        let home = hook_home("moved");
+        let stale = "'/somewhere/old/khor' state --hook";
+        std::fs::write(
+            settings_path(&home),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": stale }] }] }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let before = hooks_report(&home).unwrap();
+        let stop = before.events.iter().find(|(e, _)| *e == "Stop").unwrap();
+        assert_eq!(
+            stop.1,
+            Installed::Elsewhere(stale.to_owned()),
+            "not Here, and not Missing — a person needs to see which"
+        );
+
+        let done = install_hooks(&home).unwrap();
+        assert_eq!(done.repointed, vec!["Stop"]);
+        let after = read_json(&settings_path(&home));
+        assert_eq!(
+            after["hooks"]["Stop"].as_array().unwrap().len(),
+            1,
+            "corrected in place; a second entry would fire khor twice a turn"
+        );
+        assert_eq!(after["hooks"]["Stop"][0]["hooks"][0]["command"], hook_command().unwrap());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A settings file khor cannot parse is refused **and left alone**.
+    /// It is the user's only copy, and khor's idea of what it contained
+    /// is not a repair.
+    #[test]
+    fn a_settings_file_it_cannot_read_is_refused_and_not_touched() {
+        let home = hook_home("garbled");
+        let broken = "{ \"hooks\": { \"Stop\": [ } ";
+        std::fs::write(settings_path(&home), broken).unwrap();
+
+        assert!(install_hooks(&home).is_err());
+        assert!(hooks_report(&home).is_err());
+        assert_eq!(
+            std::fs::read_to_string(settings_path(&home)).unwrap(),
+            broken,
+            "still exactly as the user left it"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The hook command names this binary by absolute path and ends with
+    /// khor's own verb — the marker that makes an install idempotent
+    /// across a move, and the reason a PATH-less claude can still run it.
+    #[test]
+    fn the_hook_command_is_this_binary_and_khors_own_verb() {
+        let cmd = hook_command().unwrap();
+        assert!(cmd.ends_with(HOOK_VERB), "{cmd}");
+        assert!(is_khors(&cmd));
+        assert!(cmd.starts_with('\''), "quoted, because a path may hold spaces: {cmd}");
+        let exe = std::env::current_exe().unwrap();
+        assert!(cmd.contains(&exe.to_string_lossy().to_string()));
+        assert!(!is_khors("sh \"$HOME/.mandala/hook-report.sh\" running"));
+        assert_eq!(shell_quoted("/a b/kh'or"), "'/a b/kh'\\''or'");
     }
 
     /// `claude -r` resumes a session into a new process while the old

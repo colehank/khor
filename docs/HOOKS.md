@@ -60,17 +60,45 @@ codex 的转写给得出完成,**给不出待批**(它落盘里根本没有审�
 装钩子是可选的:不装也看得见会话(读盘),装了词更准——**`Stop` 事件是
 「完成」的唯一来源**,不装的话一轮跑完只会显示成空闲。
 
-settings 的每个事件都指同一条命令,词由 khor 从载荷里判
-(映射收在 `khor state --hook` 的实现里,这页不抄第二遍):
+### 装法:`khor hooks install`
+
+```
+khor hooks           # 装没装、装的是哪个 khor
+khor hooks install   # 装上
+```
+
+**不用手抄 json**(以前要,这段是改口)。判据都在
+`crates/node/src/adaptor/claude.rs` 的安装那一节,这页只记别处没有的:
+
+- **合并,不是覆盖。** settings.json 是用户自己的文件,里头通常已经有别人的
+  钩子(这台机器上就有 mandala 的,盖着八个事件)。install 只往
+  `hooks.<事件>` 里追加自己那一组,别的键、别的事件、同一事件下别人的组
+  一律不碰——连**键的顺序**都不动(`serde_json` 因此开着 `preserve_order`)。
+- **装两遍 = 装一遍**,而且它**说得出来**:第二遍打印「本来就有,没动」。
+  一个人没法自己去核对文件,所以幂等必须是屏幕上看得见的话。
+- **写的是这个 khor 的绝对路径**,不是 `khor`。钩子是 claude 起的,而
+  claude 可能是从 GUI 起来的、PATH 里没有用户 shell 的那些目录。代价是
+  khor 换了地方之后那条路径就指空了——所以 `khor hooks` 会**分开说**
+  「装好了」和「装的是另一个 khor」,而不是把两者都念成「装了」。
+- **读不懂的 settings.json 一律拒绝,绝不修**。那是用户唯一的一份,khor
+  对它内容的猜测不是修复。
+- **装在哪跟着 khor 自己的 home 走**(`adaptor::vendor_home`,和读盘发现
+  同一个函数)。读和写必须同一个答案,否则 `khor hooks install` 配的是一个
+  claude、列表看的是另一个——**而两边都不会报错**。
+  `KHOR_HOME` / `KHOR_VENDOR_HOME` 因此也是它的验收姿势:全套验证跑在隔离
+  目录上,一次都没碰过真的 `~/.claude`。
+
+装完的样子(每个事件都指同一条命令,词由 khor 从载荷里判;映射收在
+`khor state --hook` 的实现里,这页不抄第二遍):
 
 ```json
 {
   "hooks": {
-    "SessionStart":     [{"hooks": [{"type": "command", "command": "khor state --hook"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "khor state --hook"}]}],
-    "Notification":     [{"hooks": [{"type": "command", "command": "khor state --hook"}]}],
-    "Stop":             [{"hooks": [{"type": "command", "command": "khor state --hook"}]}],
-    "SessionEnd":       [{"hooks": [{"type": "command", "command": "khor state --hook"}]}]
+    "SessionStart":     [{"hooks": [{"type": "command", "command": "'/path/to/khor' state --hook"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "'/path/to/khor' state --hook"}]}],
+    "Notification":     [{"hooks": [{"type": "command", "command": "'/path/to/khor' state --hook"}]}],
+    "Stop":             [{"hooks": [{"type": "command", "command": "'/path/to/khor' state --hook"}]}],
+    "SessionEnd":       [{"hooks": [{"type": "command", "command": "'/path/to/khor' state --hook"}]}]
   }
 }
 ```

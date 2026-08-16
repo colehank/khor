@@ -706,6 +706,22 @@ impl Node {
         self.live.unreadable_sessions()
     }
 
+    /// What claude's settings say about khor's hooks. Reads only.
+    ///
+    /// Rooted the same way discovery is (`adaptor::vendor_home`), which
+    /// is what makes this safe to run: a node opened on a temp home
+    /// looks at that home's `.claude`, never the user's. The whole
+    /// verification for this feature is made of that.
+    pub fn hooks_report(&self) -> Result<adaptor::claude::HookReport, String> {
+        adaptor::claude::hooks_report(&adaptor::vendor_home(&self.root))
+    }
+
+    /// Adds khor's hooks to claude's settings, leaving the rest of that
+    /// file alone. See `adaptor::claude::install_hooks`.
+    pub fn install_hooks(&self) -> Result<adaptor::claude::HookInstall, String> {
+        adaptor::claude::install_hooks(&adaptor::vendor_home(&self.root))
+    }
+
     /// Re-derives one session's row and pushes it to watchers.
     pub(crate) fn emit_row_of(&self, id: &SessionId) -> Result<(), String> {
         for k in self.kinds() {

@@ -507,9 +507,7 @@ impl Discovery {
     /// sentence as above with "the real user's agents" replaced by "the
     /// real user's terminals".
     pub fn for_root(root: &Path) -> Discovery {
-        let home = std::env::var_os("KHOR_VENDOR_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| root.to_path_buf());
+        let home = vendor_home(root);
         let discovery = Discovery::at(&home);
         if is_real_home(&home) {
             discovery.with_tmux(tmux::Tmux::default_server())
@@ -542,6 +540,20 @@ impl Discovery {
         }
         all
     }
+}
+
+/// Where this node's vendors live: khor's own root, unless
+/// `KHOR_VENDOR_HOME` says otherwise.
+///
+/// One function because reading and **writing** must agree. Discovery
+/// reads `<here>/.claude/sessions`; `claude::install_hooks` writes
+/// `<here>/.claude/settings.json`. If those two ever answered
+/// differently, `khor hooks install` would configure one claude while
+/// the list watched another — and both would look fine.
+pub fn vendor_home(root: &Path) -> PathBuf {
+    std::env::var_os("KHOR_VENDOR_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.to_path_buf())
 }
 
 /// Whether this path is the account's own home directory.

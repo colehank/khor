@@ -46,6 +46,7 @@ usage = """
   unpin [-m] <session|机器> 取消置顶
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
+  hooks [install]       看钩子装没装;install 装上(只加自己那几条,装两遍=装一遍)
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   sync                  立即和全网各同步一趟"""
@@ -81,6 +82,30 @@ summary-sent = "摘要已发,等对方许可。传输号: {0}"
 pulled = "收下了,这一趟拉了 {0} 字节"
 broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
 serve-banner = "khor serve: {0} 在听,配对与同步都归它"
+# `khor hooks`. The file is named on every run, installing or not: khor
+# is writing into something the user owns, and "which file" is the first
+# thing they need to be able to check.
+hooks-file = "钩子写在: {0}"
+hook-here = "装好了"
+hook-missing = "没装"
+# Not the same as 没装: khor is in that settings file, pointing at a khor
+# somewhere else. Reading the two the same way would make a moved binary
+# look like a working install.
+hook-elsewhere = "装的是另一个 khor: {0}"
+# Said only when something is missing. Names what installing buys,
+# because "your hooks are incomplete" without that is a chore with no
+# reason attached.
+hooks-worth-installing = "装上钩子才有「完成」这一档(读盘给不出): khor hooks install"
+hooks-added = "装上了: {0}"
+hooks-repointed = "改指到这个 khor: {0}"
+# The line that makes idempotence visible. Without it a second install
+# looks exactly like a first one, and "装两遍=装一遍" is a claim the user
+# cannot check.
+hooks-already = "本来就有,没动: {0}"
+# Advice, not a mechanism: what claude does with a settings file while it
+# is running is claude's business, and the reliable move is stated
+# instead of guessed at.
+hooks-restart-claude = "已经在跑的 claude 要重开才一定读得到"
 paired-ok = "配上了: {0}。它认识的机器现在都在你的设备表里"
 nothing-to-sync = "网里只有本机,没得同步"
 sync-failed-line = "{0}: 没同步上——{1}"
@@ -241,6 +266,14 @@ wont-start = "起不来 {0}: {1}"
 cant-await-child = "等不到它结束: {0}"
 hook-payload-garbled = "钩子载荷读不懂: {0}"
 hook-payload-no-session = "钩子载荷里没有 session_id"
+
+# ── installing the hook (node) ──
+# Refusals, never repairs: these all mean "this is not the file khor
+# thinks it is", and khor is editing something the user owns.
+settings-garbled = "{0} 读不懂,没有动它: {1}"
+settings-not-an-object = "{0} 不是一个 JSON 对象,没有动它"
+settings-hooks-not-an-object = "{0} 里的 hooks 不是一个对象,没有动它"
+settings-event-not-a-list = "{0} 里 hooks.{1} 不是一个列表,没有动它"
 
 # ── the persistent host (node) ──
 no-host = "这个 session 没有宿主(临时的,或宿主还没起来)"

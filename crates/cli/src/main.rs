@@ -294,6 +294,59 @@ fn run(args: &[String]) -> Result<(), String> {
             eprintln!("{}", cli::serve_banner(n.name()));
             rt()?.block_on(n.serve())
         }
+        // Two shapes, one verb: asking is the default because it is the
+        // safe one, and installing has to be typed. `khor hooks` alone
+        // is also how somebody checks what `install` just did — a write
+        // nobody can verify afterwards is a write on trust.
+        "hooks" => {
+            let n = node()?;
+            match rest {
+                [] => {
+                    let report = n.hooks_report()?;
+                    println!("{}", cli::hooks_file(report.path.display()));
+                    let mut incomplete = false;
+                    for (event, state) in &report.events {
+                        let said = match state {
+                            khor_node::adaptor::claude::Installed::Here => {
+                                cli::HOOK_HERE.to_owned()
+                            }
+                            khor_node::adaptor::claude::Installed::Missing => {
+                                incomplete = true;
+                                cli::HOOK_MISSING.to_owned()
+                            }
+                            khor_node::adaptor::claude::Installed::Elsewhere(cmd) => {
+                                incomplete = true;
+                                cli::hook_elsewhere(cmd)
+                            }
+                        };
+                        println!("{event}\t{said}");
+                    }
+                    if incomplete {
+                        println!("{}", cli::HOOKS_WORTH_INSTALLING);
+                    }
+                    Ok(())
+                }
+                [word] if word == "install" => {
+                    let done = n.install_hooks()?;
+                    println!("{}", cli::hooks_file(done.path.display()));
+                    let list = |v: &[&str]| v.join(cli::NAME_SEPARATOR);
+                    if !done.added.is_empty() {
+                        println!("{}", cli::hooks_added(list(&done.added)));
+                    }
+                    if !done.repointed.is_empty() {
+                        println!("{}", cli::hooks_repointed(list(&done.repointed)));
+                    }
+                    if !done.unchanged.is_empty() {
+                        println!("{}", cli::hooks_already(list(&done.unchanged)));
+                    }
+                    if !done.added.is_empty() || !done.repointed.is_empty() {
+                        println!("{}", cli::HOOKS_RESTART_CLAUDE);
+                    }
+                    Ok(())
+                }
+                _ => Err(USAGE.into()),
+            }
+        }
         "invite" => {
             println!("{}", node()?.invite()?);
             Ok(())
