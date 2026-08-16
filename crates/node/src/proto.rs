@@ -30,6 +30,21 @@ pub enum Request {
     /// never re-route an incoming Act — what is not theirs to run is
     /// refused, or two serves could bounce one forever.
     Act { session: String, action: String },
+    /// What that machine has spent, by day and by vendor
+    /// (`khor_core::Usage`).
+    ///
+    /// An op rather than a replicated document, for a reason the vitals
+    /// op does not share: this is **derived from files khor only reads**,
+    /// so it is re-derivable at any moment on the machine that has them
+    /// and meaningless to copy anywhere else. What the asker keeps is a
+    /// cache with the moment it arrived, so an unreachable machine shows
+    /// its last answer and how old it is rather than a current-looking
+    /// number.
+    ///
+    /// A khor that predates it answers [`Response::Refused`] — the name
+    /// is on the wire, so an unknown op is a refusal and never a misread
+    /// neighbour.
+    Usage,
     /// What that machine is doing right now (CPU, memory, disk).
     ///
     /// An op rather than a field in the device document, because a
@@ -56,6 +71,8 @@ pub enum Response {
     Acted { moved: u64 },
     /// One reading, taken when this frame was built.
     Vitals { vitals: khor_core::Vitals },
+    /// What that machine has spent. See [`Request::Usage`].
+    Usage { usage: khor_core::Usage },
 }
 
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
@@ -104,6 +121,12 @@ mod tests {
     /// The older peer is spelled out here as its own enum rather than
     /// mimicked, because a decoder built from today's type would be
     /// testing today's type against itself.
+    ///
+    /// **Both ops added since are checked**, not just the newest: the
+    /// enum below is the one khor shipped before either existed, so
+    /// `Vitals` proves the rule held once and `Usage` proves it still
+    /// holds — and an op added without touching this test would be the
+    /// one nobody checked.
     #[test]
     fn an_op_an_older_peer_never_heard_of_is_refused_not_mistaken() {
         #[derive(Debug, Deserialize)]
@@ -115,13 +138,15 @@ mod tests {
             Act { session: String, action: String },
         }
 
-        let bytes = encode(&Request::Vitals).unwrap();
-        assert!(
-            bytes.windows(6).any(|w| w == b"Vitals"),
-            "the op name must be on the wire, or this proves nothing about names"
-        );
-        let refused = decode::<OlderRequest>(&bytes);
-        assert!(refused.is_err(), "an older peer read it as {refused:?}");
+        for (op, name) in [(Request::Vitals, &b"Vitals"[..]), (Request::Usage, &b"Usage"[..])] {
+            let bytes = encode(&op).unwrap();
+            assert!(
+                bytes.windows(name.len()).any(|w| w == name),
+                "the op name must be on the wire, or this proves nothing about names"
+            );
+            let refused = decode::<OlderRequest>(&bytes);
+            assert!(refused.is_err(), "an older peer read {op:?} as {refused:?}");
+        }
 
         // …and the same peer's own ops still decode here, so the
         // assertion above is about the new name and not about the two
@@ -129,6 +154,35 @@ mod tests {
         let theirs = encode(&Request::Sessions).unwrap();
         assert!(matches!(decode::<Request>(&theirs), Ok(Request::Sessions)));
         assert!(matches!(decode::<OlderRequest>(&theirs), Ok(OlderRequest::Sessions)));
+    }
+
+    /// A spending answer survives the round trip whole, **including the
+    /// count of what could not be read**.
+    ///
+    /// That field is the one most easily lost on the way: an answer whose
+    /// rows all arrive looks complete, and the only thing saying otherwise
+    /// is a number that is usually zero. So the frame carrying a non-zero
+    /// one is sent here on purpose.
+    #[test]
+    fn a_spending_answer_crosses_inside_its_response() {
+        let sent = khor_core::Usage {
+            days: vec![khor_core::UsageDay {
+                day: "2026-08-17".to_owned(),
+                category: "claude".to_owned(),
+                tokens: khor_core::Tokens {
+                    input: 1,
+                    cached_input: 2,
+                    cache_write: 3,
+                    output: 4,
+                },
+            }],
+            unreadable: 5,
+        };
+        let bytes = encode(&Response::Usage { usage: sent.clone() }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::Usage { usage } => assert_eq!(usage, sent),
+            other => panic!("decoded wrong: {other:?}"),
+        }
     }
 
     /// A reading survives the round trip whole. The frame is a response,

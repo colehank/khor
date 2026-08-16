@@ -312,6 +312,38 @@ impl Meters {
     }
 }
 
+/// Today, where this machine stands.
+///
+/// **The same zone that cut the days**, which is the whole reason the
+/// window below is computed here rather than by whoever is drawing one: a
+/// face that worked out "today" its own way would eventually disagree
+/// with the rows it is filtering, and the disagreement would only show up
+/// around midnight.
+fn today() -> jiff::civil::Date {
+    jiff::Timestamp::now().to_zoned(jiff::tz::TimeZone::system()).date()
+}
+
+/// The earliest day a window of `days` ending today takes in.
+///
+/// `days = 1` is today alone; `days = 0` is not a window anybody can mean
+/// and callers refuse it before getting here, so it is treated as one day
+/// rather than given a meaning of its own.
+///
+/// **No upper end.** A machine east of here cuts its days where it
+/// stands, so its "today" can be this machine's tomorrow — and a window
+/// that stopped at today would hide real spending from a real machine
+/// (`khor_core::UsageDay` says why every machine's day is its own).
+///
+/// Comparing a **peer's** day against a window cut here is off by at most
+/// a day at the boundary, since that peer cut its days where *it* stands.
+/// That is the cost of every machine's day being its own
+/// (`khor_core::UsageDay`), and it is the smaller of the two errors
+/// available.
+pub fn window_start(days: usize) -> String {
+    let back = jiff::Span::new().days(days.saturating_sub(1).min(36_500) as i64);
+    today().saturating_sub(back).to_string()
+}
+
 // ── reading the files ───────────────────────────────────────
 
 /// Every `.jsonl` under `root`, at any depth, sorted.

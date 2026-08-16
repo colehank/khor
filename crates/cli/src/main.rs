@@ -7,7 +7,9 @@
 
 use khor_catalog::cli::USAGE;
 use khor_catalog::{avatar, category, cli, msg, state};
-use khor_node::{list, AvatarStyle, FaceShape, MsgBody, Node, SessionId, Variant, PRESETS};
+use khor_node::{
+    list, AvatarStyle, FaceShape, MsgBody, Node, SessionId, Tokens, UsageDay, Variant, PRESETS,
+};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -50,6 +52,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "id", run: id },
     Verb { word: "face", run: face },
     Verb { word: "devices", run: devices },
+    Verb { word: "usage", run: usage },
     Verb { word: "sessions", run: sessions },
     Verb { word: "tell", run: tell },
     Verb { word: "send", run: send },
@@ -216,6 +219,106 @@ fn bytes(n: u64) -> String {
     }
     if u == 0 {
         format!("{n}{}", UNITS[0])
+    } else {
+        format!("{v:.1}{}", UNITS[u])
+    }
+}
+
+/// What each machine in the network has spent, most recent day first.
+///
+/// **Every machine, not just this one**, because that is the question
+/// somebody with three machines is actually asking — and the answers for
+/// the others come from the last time they were reached, wearing their
+/// age. A machine khor has never got an answer out of says so rather than
+/// showing nothing, which would read as a machine that spent nothing.
+///
+/// The window is a count of days rather than a date range: "the last
+/// week" is what a person asks, and a range is a second thing to get
+/// right on the way to it. **It is calendar days and not rows**: seven
+/// days in which nothing was spent is an answer, and a version that
+/// printed the seven most recent days *with* spending would answer a
+/// month-old question while claiming to answer this week's.
+fn usage(rest: &[String]) -> Result<(), String> {
+    let days = match rest {
+        [] => USAGE_DAYS,
+        // Zero days is refused rather than answered with nothing: it is
+        // not a question, and an empty listing would read as a machine
+        // that has spent nothing.
+        [flag, n] if flag == "--days" => match n.parse::<usize>() {
+            Ok(n) if n > 0 => n,
+            _ => return Err(USAGE.into()),
+        },
+        _ => return Err(USAGE.into()),
+    };
+    let n = node()?;
+    for d in n.devices()? {
+        let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
+        println!("{}{here}", d.name);
+        let Some((usage, age)) = n.usage_of(&d.id) else {
+            println!("\t{}", cli::USAGE_NEVER);
+            continue;
+        };
+        // Newest first here, and oldest first on the wire. The order a
+        // list is *read* in is this screen's business; the order it
+        // arrives in is the library's one answer (`khor_node::usage`),
+        // and a face reversing it is not a second sort — it is the same
+        // sort, looked at from the other end.
+        //
+        // The dates are `YYYY-MM-DD`, so the window is a string
+        // comparison. That is not a shortcut that happens to work: it is
+        // the format being chosen so that the order a person reads and
+        // the order a machine sorts are the same order.
+        let from = khor_node::usage::window_start(days);
+        let recent: Vec<&UsageDay> =
+            usage.days.iter().rev().filter(|d| d.day >= from).collect();
+        if recent.is_empty() {
+            println!("\t{}", cli::USAGE_NONE);
+        }
+        for row in recent {
+            println!("\t{}\t{}\t{}", row.day, row.category, tokens_line(&row.tokens));
+        }
+        if usage.unreadable > 0 {
+            println!("\t{}", cli::usage_unreadable(usage.unreadable));
+        }
+        if age > 0 {
+            println!("\t{}", cli::usage_taken(human_age(age)));
+        }
+    }
+    Ok(())
+}
+
+/// How far back `khor usage` looks when nobody said. A week is the span
+/// somebody has an opinion about; a month of rows is a table nobody
+/// reads, and one day cannot show a trend.
+const USAGE_DAYS: usize = 7;
+
+/// One day's four numbers. **No total** — the reason is on
+/// `khor_core::Tokens`, and it is that a sum here would be almost
+/// entirely cache reads.
+fn tokens_line(t: &Tokens) -> String {
+    [
+        cli::tokens_input(count(t.input)),
+        cli::tokens_output(count(t.output)),
+        cli::tokens_cached(count(t.cached_input)),
+        cli::tokens_cache_write(count(t.cache_write)),
+    ]
+    .join("  ")
+}
+
+/// A count as a person reads it: 1000-based, because tokens are counted,
+/// not stored. **Not the same function as `bytes` one screen up**, and
+/// the difference is the base: 1024 is a property of memory, and a
+/// thousand tokens is a thousand tokens.
+fn count(n: u64) -> String {
+    const UNITS: [&str; 4] = ["", "k", "M", "G"];
+    let mut v = n as f64;
+    let mut u = 0;
+    while v >= 1000.0 && u + 1 < UNITS.len() {
+        v /= 1000.0;
+        u += 1;
+    }
+    if u == 0 {
+        format!("{n}")
     } else {
         format!("{v:.1}{}", UNITS[u])
     }

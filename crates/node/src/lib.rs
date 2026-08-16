@@ -22,7 +22,7 @@ pub mod vitals;
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
 };
-pub use khor_core::{kind, Fill, Session, SessionId, State, Vitals};
+pub use khor_core::{kind, Fill, Session, SessionId, State, Tokens, Usage, UsageDay, Vitals};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
@@ -108,10 +108,11 @@ pub struct Node {
     transfer: TransferKind,
     live: LiveKind,
     /// What the agents on this machine have spent. Held on the node
-    /// rather than built per call, because it keeps the cache that makes
-    /// asking affordable at all (`usage::Meters::tally` has the
-    /// measurement).
-    usage: usage::Meters,
+    /// rather than built per call, because it keeps the bookkeeping that
+    /// makes a second reading cheap (`usage::Meters::tally` has the
+    /// measurement). Shared rather than owned so the async side can move
+    /// a reading onto a blocking thread without leaving the cache behind.
+    usage: Arc<usage::Meters>,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
     /// Serializes sync pumps within one process: two concurrent pumps
     /// share block stores and could collide on sequence numbers. The
@@ -151,7 +152,7 @@ impl Node {
         // hooks: a node opened on a temp home reads that home's agents,
         // never the real user's. Every verification of this feature is
         // made of that.
-        let usage = usage::Meters::at(&adaptor::vendor_home(&root));
+        let usage = Arc::new(usage::Meters::at(&adaptor::vendor_home(&root)));
         let node = Node {
             root,
             key,
@@ -629,6 +630,55 @@ impl Node {
         Some((report.vitals, now_ms().saturating_sub(report.at_ms)))
     }
 
+    // ── what machines have spent (usage) ──────────────────────
+
+    fn usage_dir(&self) -> PathBuf {
+        self.root.join(".khor").join("usage")
+    }
+
+    /// Remembers a machine's spending answer, stamped with now.
+    ///
+    /// **Its own file, beside vitals rather than inside it**, and for the
+    /// reason the vitals record gives about the rows: the two are
+    /// fetched by requests that fail independently and age
+    /// independently, so one record would have a lost round erase the
+    /// other's last known answer and one shared timestamp would dress a
+    /// stale answer in a fresh one's age.
+    pub(crate) fn cache_peer_usage(
+        &self,
+        device_id: &str,
+        u: &khor_core::Usage,
+    ) -> Result<(), String> {
+        if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
+        }
+        fs::create_dir_all(self.usage_dir()).map_err(msg::cant_make_usage_dir)?;
+        let report = UsageReport { at_ms: now_ms(), usage: u.clone() };
+        link::write_private(
+            &self.usage_dir().join(device_id),
+            &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
+        )
+    }
+
+    /// What a machine has spent, and how old that answer is.
+    ///
+    /// **This machine answers by reading, everyone else from cache**, and
+    /// the age is what tells them apart at the far end: zero means the
+    /// answer was worked out to answer this call. A machine nobody has
+    /// heard from yet is `None` — a third state, distinct from an old
+    /// answer, because "not asked yet" and "asked an hour ago" are
+    /// different things to be told (docs/SESSION.md 离线).
+    ///
+    /// **Blocking for this machine.** See [`Node::usage`].
+    pub fn usage_of(&self, device_id: &str) -> Option<(khor_core::Usage, u64)> {
+        if device_id == self.device_str() {
+            return Some((self.usage(), 0));
+        }
+        let text = fs::read_to_string(self.usage_dir().join(device_id)).ok()?;
+        let report: UsageReport = serde_json::from_str(&text).ok()?;
+        Some((report.usage, now_ms().saturating_sub(report.at_ms)))
+    }
+
     /// Offers a file to a machine's window: the summary (name, size,
     /// digest) travels the CRDT to everyone; the bytes wait here for the
     /// far side's approval. Returns the transfer session id.
@@ -844,6 +894,15 @@ impl Node {
         self.usage.tally()
     }
 
+    /// The meters themselves, so a caller that must not block the
+    /// reactor can move the reading onto a blocking thread. The
+    /// bookkeeping that makes a second pass cheap lives in there, so
+    /// handing out a clone of the registry would hand out a cold one —
+    /// this shares the same instance.
+    pub(crate) fn usage_meters(&self) -> Arc<usage::Meters> {
+        self.usage.clone()
+    }
+
     /// Live agent sessions the last sweep could see but could not read
     /// — a vendor changed a file layout khor is reading (docs/HOOKS.md
     /// 适配器过时). Zero rows and a zero count is an idle machine; zero
@@ -1037,6 +1096,12 @@ struct PeerReport {
 struct VitalsReport {
     at_ms: u64,
     vitals: khor_core::Vitals,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct UsageReport {
+    at_ms: u64,
+    usage: khor_core::Usage,
 }
 
 fn now_ms() -> u64 {

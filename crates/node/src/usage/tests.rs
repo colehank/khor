@@ -531,3 +531,32 @@ fn codex_line(out: u64, running: u64) -> String {
         r#"{{"timestamp":"2026-08-17T06:00:00Z","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":{running}}},"last_token_usage":{{"input_tokens":0,"cached_input_tokens":0,"output_tokens":{out},"reasoning_output_tokens":0,"total_tokens":{out}}}}}}}}}"#
     )
 }
+
+/// **A window of N days reaches back N-1 days from today**, and one day
+/// is today alone.
+///
+/// The span is measured back out with a different operation than the one
+/// that produced it (a date difference, not a subtraction), so an
+/// implementation that got the arithmetic wrong in one direction does not
+/// get to agree with itself. And the endpoints are asserted as
+/// relationships rather than against a literal date, which would go red
+/// tomorrow.
+#[test]
+fn a_window_of_n_days_reaches_back_n_minus_one() {
+    let today = super::today();
+    assert_eq!(window_start(1), today.to_string(), "one day is today alone");
+    for days in [2usize, 7, 30] {
+        let start: jiff::civil::Date = window_start(days).parse().unwrap();
+        let span = today.since(start).unwrap();
+        assert_eq!(
+            span.get_days(),
+            days as i32 - 1,
+            "a window of {days} days starts {} days back",
+            days - 1
+        );
+        assert!(start < today, "a window of more than one day starts before today");
+    }
+    // Zero is not a window; it is treated as one day rather than given a
+    // meaning of its own, and the caller refuses it before getting here.
+    assert_eq!(window_start(0), window_start(1));
+}

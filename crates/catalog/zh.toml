@@ -88,6 +88,7 @@ usage = """
   face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
                         本机的脸;不带参数看现在是什么、有哪些可选
   devices               网里的设备
+  usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
   sessions [--by recent|category|device|state]
                         session 列表(默认最近);换一种排布,置顶永远在最上
   tell <机器> <话...>    给机器的窗口留言
@@ -174,6 +175,37 @@ vitals-taken = "{0}前的读数"
 # Never reached since this khor started. Not the same as an old reading,
 # and not 「0%」 either — those send a person to look at different things.
 vitals-never = "还没问到"
+# Tokens spent, one day at a time (khor_core::Tokens). **Four numbers and
+# no total**, because on this machine the cached reads outnumber the
+# output five hundred to one: a sum would be almost entirely cache and
+# would move with how often a conversation was resumed rather than with
+# how much work was done.
+#
+# 「缓存」 is the vendors' own billing vocabulary, printed on their own
+# dashboards — it is the domain, not khor's implementation, so it is not
+# the 「不解释实现」 rule being broken. What the two cache words are for is
+# the question 「输入」 raises on its own: why is it so small.
+tokens-input = "输入 {0}"
+tokens-cached = "读缓存 {0}"
+tokens-cache-write = "写缓存 {0}"
+tokens-output = "输出 {0}"
+# Said when a machine has spent nothing in the window being shown. Not an
+# empty listing: a machine that answered 「nothing」 and a machine that was
+# never asked are different things, and only one of them is news.
+usage-none = "这几天没花"
+# Never reached since this khor started — the same third state the
+# readings have, and the same reason it needs its own word. It cannot
+# borrow the readings' 「还没问到」 either: same fact, different question,
+# and the catalog refuses two names for one text by design.
+usage-never = "还没问到这台的账"
+# How old the answer is, said on every one that is not this machine's
+# own. Without it a stale answer reads as the present.
+usage-taken = "{0}前的账"
+# Records khor found and could not read. Said only when non-zero: a
+# vendor reshaped a file khor reads, and the totals above are therefore
+# missing something. Zero and silence mean the same thing; a non-zero
+# count and silence do not.
+usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
 summary-sent = "摘要已发,等对方许可。传输号: {0}"
 pulled = "收下了,这一趟拉了 {0} 字节"
 broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
@@ -358,6 +390,7 @@ no-such-session-because = "没有这个 session: {0}({1})"
 not-a-machine-id = "这不是一个机器 id: {0}"
 cant-make-peers-dir = "建不了 peers 目录: {0}"
 cant-make-vitals-dir = "建不了 vitals 目录: {0}"
+cant-make-usage-dir = "建不了 usage 目录: {0}"
 bad-channel-name = "频道名不合法: {0}"
 cant-delete = "删不掉: {0}"
 remote-close-not-yet = "这个 session 的 home 是 {0},远程关还没有,去那台关"

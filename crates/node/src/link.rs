@@ -358,6 +358,28 @@ impl Node {
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Vitals { vitals })
             }
+            Request::Usage => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // **Off the reactor, for the reason vitals is** — the
+                // rule this codebase settled on is "how long does it
+                // block", not "is it dialling" (docs/handoff 坑节). A
+                // first pass over this machine's transcripts is eighteen
+                // seconds (`crate::usage::Meters::tally`), which would
+                // stall the QUIC connection this very reply travels on.
+                //
+                // Cheap after that: measured at 0.11 s when something was
+                // appended and under 10 ms when nothing was, so a peer
+                // asking on every sync round costs this machine a couple
+                // of percent of one core rather than a repeat of the
+                // eighteen.
+                let usage = self.usage_meters();
+                let usage = tokio::task::spawn_blocking(move || usage.tally())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Usage { usage })
+            }
             Request::Act { session, action } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -735,6 +757,17 @@ impl Node {
         // that has no such op simply has no reading here.
         if let Ok(Response::Vitals { vitals }) = request(&conn, &Request::Vitals).await {
             let _ = self.cache_peer_vitals(&d.id, &vitals);
+        }
+        // And what it has spent, on the same visit and kept in its own
+        // record for the same reason. **Asked every round like the two
+        // above, which is affordable because the answering side keeps its
+        // answer**: a peer that has written nothing since the last round
+        // replies from a cache it validated with one directory walk
+        // (`crate::usage::Meters::tally` has the figures). Best effort —
+        // a peer running a khor with no such op simply has no spending
+        // here, which reads as "never asked" rather than as zero.
+        if let Ok(Response::Usage { usage }) = request(&conn, &Request::Usage).await {
+            let _ = self.cache_peer_usage(&d.id, &usage);
         }
         Ok(if moved == 0 { msg::NOTHING_TO_MOVE.into() } else { msg::moved_bytes(moved) })
     }
