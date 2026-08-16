@@ -126,6 +126,13 @@ function run(cmd, args, env, name) {
 // open on every call here. Before this, the race surfaced as whichever
 // assertion happened to be running, which reads like that feature
 // breaking rather than like the known race it is.
+//
+// **So this file no longer guards that race.** At the rate measured
+// before the fix (17 of 40), five attempts all failing is ~1%, so a
+// regression here would come back green. What guards it is the cargo
+// test `opening_one_home_from_many_places_at_once_never_fails`, which
+// went 90-of-96 red the moment the shared temp name came back. Do not
+// read a green smoke run as evidence about that.
 function cli(env, ...args) {
   let last;
   for (let i = 0; i < 5; i++) {

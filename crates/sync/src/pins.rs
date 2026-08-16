@@ -19,6 +19,36 @@
 //! nobody can say what a row in that table pins. One kind of landing,
 //! one table, one key.
 //!
+//! # The bet this key makes, and how strong it actually is
+//!
+//! One table for the whole network, keyed by a **bare** session id — no
+//! machine in the key — so it only holds if session ids are unique
+//! network-wide. They are not equally unique, and the weakest one is
+//! worth knowing before anyone tightens the wrong end:
+//!
+//! - `transfer/<peer:016x>-<ms:x>-<seq:x>` — rides the loro peer id,
+//!   which is globally unique. Strong.
+//! - `tui/<vendor session id>` — a vendor's own uuid, cleaned and capped
+//!   at 24 chars, which still carries ~80 bits of it. Strong.
+//! - `chat/<machine name>` — **names, not ids**. Two machines calling
+//!   themselves the same thing already share one chat channel, by
+//!   design; a shared pin is downstream of that, not a new problem.
+//! - `<kind>/<8 hex>` for what khor starts itself (`khor run`,
+//!   `khor open`) — **32 bits, and no machine in it**. This is the
+//!   weak one: two machines each starting sessions can collide.
+//!
+//! What a collision costs is small and visible: a pin is one bool, so
+//! the far machine shows an unrelated row pinned. Nothing is corrupted
+//! and the user can unpin it. **The fix, when it is worth making, is in
+//! how those ids are minted — not in this key.** Putting a machine into
+//! the key would break the case this table exists for: pinning a row
+//! whose home is someone else, and pinning a `chat/` row that every
+//! device derives for itself and no single machine owns.
+//!
+//! **This bet is not new here.** [`crate::seen`] is keyed exactly the
+//! same way and has been since it landed; pinning is the second thing
+//! staked on it, and the first time it was written down. On the ledger.
+//!
 //! # Why [`PinDoc::set`] is not monotonic, unlike [`crate::seen`]
 //!
 //! Seen refuses a lower watermark, because a badge that bounces back to

@@ -65,7 +65,12 @@ export function SessionsList({
               neighbouring rows. The rows arrive grouped, so this notices
               a boundary rather than deciding one — and it means the
               empty group (the mode that does not group) prints no
-              headings at all, with no special case. */}
+              headings at all, with no special case.
+              **An empty group cannot be drawn here**, and not by luck: a
+              heading only exists because a row carried it, so there is
+              no path that renders a group with nothing under it. A
+              heading over nothing is worse than no heading — it is a
+              handle that does not move (mandala's FilesPane). */}
           {r.group !== "" && r.group !== shown[i - 1]?.group && (
             <div
               data-group={r.group}
