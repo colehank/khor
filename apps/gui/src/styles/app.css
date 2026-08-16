@@ -1,233 +1,18 @@
-/* Shell layout. Every number is a token — the px gate enforces it.
- * No media queries here: "narrow" is a data attribute set from the one
- * breakpoint in ui/layout.ts; a @media copy would be a second source. */
-
-* {
-  margin: 0;
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-}
-
-body {
-  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: var(--fs-md);
-  color: var(--ink);
-  background: var(--bg);
-  -webkit-font-smoothing: antialiased;
-}
-
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-/* ── the shell: rail | list | detail, one column when narrow ── */
-
-.app {
-  display: grid;
-  height: 100%;
-  grid-template-columns: var(--rail-w) var(--list-w) 1fr;
-}
-
-.app[data-narrow="true"] {
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr auto;
-}
-
-/* ── rail: vertical when wide, bottom bar when narrow ── */
-
-.rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-3) 0;
-  border-right: var(--hairline) solid var(--sep);
-  user-select: none;
-}
-
-.app[data-narrow="true"] .rail {
-  flex-direction: row;
-  justify-content: space-around;
-  border-right: none;
-  border-top: var(--hairline) solid var(--sep);
-  padding: var(--sp-1) 0;
-}
-
-.rail-spacer {
-  flex: 1;
-}
-
-.app[data-narrow="true"] .rail-spacer {
-  display: none;
-}
-
-.rail-item {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: calc(var(--sp-1) / 2);
-  width: calc(var(--rail-w) - var(--sp-2));
-  padding: var(--sp-2) 0;
-  border-radius: var(--r-md);
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-  cursor: default;
-}
-
-.rail-item:hover {
-  background: var(--hover);
-}
-
-/* The rail glyphs render at their own size, not the label's em — the
-   stroke width was chosen against this rendered size (Icons.tsx). */
-.rail-item > svg {
-  width: var(--icon-rail);
-  height: var(--icon-rail);
-}
-
-.rail-item.on {
-  color: var(--accent);
-}
+/* Only what utilities cannot say: keyframes, the two-density icon rule,
+ * and reduced-motion guards. Layout and looks live as utilities in the
+ * components, on the theme in tokens.css. */
 
 /* Two densities, one color (mandala's rail discipline): the solid piece
    fills at sixty percent so body and line read as depths, not colors;
    selection pushes it solid. */
-.rail-item svg [data-body] {
+[data-rail-item] svg [data-body] {
   fill: currentColor;
   fill-opacity: 0.6;
   transition: fill-opacity var(--dur-180) var(--ease-out);
 }
 
-.rail-item.on svg [data-body] {
+[data-rail-item][data-on="true"] svg [data-body] {
   fill-opacity: 1;
-}
-
-.rail-badge {
-  position: absolute;
-  top: var(--sp-1);
-  right: var(--sp-1);
-  min-width: var(--sp-4);
-  height: var(--sp-4);
-  padding: 0 var(--sp-1);
-  border-radius: var(--r-lg);
-  background: var(--badge);
-  color: var(--badge-ink);
-  font-size: var(--fs-xs);
-  line-height: var(--sp-4);
-  text-align: center;
-}
-
-/* ── the list column ── */
-
-.list {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-right: var(--hairline) solid var(--sep);
-  overflow: hidden;
-}
-
-.app[data-narrow="true"] .list {
-  border-right: none;
-}
-
-.list-header {
-  display: flex;
-  align-items: center;
-  height: var(--ctl-lg);
-  padding: 0 var(--sp-4);
-  font-weight: 600;
-  font-size: var(--fs-lg);
-  flex: none;
-  user-select: none;
-}
-
-.list-body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  width: 100%;
-  text-align: left;
-  padding: var(--sp-2) var(--sp-4);
-  cursor: default;
-}
-
-.row:hover {
-  background: var(--hover);
-}
-
-.row.on {
-  background: var(--selected);
-}
-
-.avatar-blank {
-  width: var(--avatar);
-  height: var(--avatar);
-  border-radius: 50%;
-  background: var(--sep);
-  flex: none;
-}
-
-.row-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.row-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-sub {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.row-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--sp-1);
-  flex: none;
-  font-size: var(--fs-xs);
-  color: var(--ink-2);
-}
-
-.unread {
-  min-width: var(--sp-4);
-  padding: 0 var(--sp-1);
-  border-radius: var(--r-lg);
-  background: var(--badge);
-  color: var(--badge-ink);
-  text-align: center;
-  line-height: var(--sp-4);
-}
-
-.notice {
-  padding: var(--sp-4);
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
 }
 
 /* Busy takes no hue — it breathes (mandala's state doctrine). */
@@ -241,59 +26,12 @@ button {
   }
 }
 
-.row[data-word="busy"] .word {
+[data-word="busy"] [data-word-text] {
   animation: breath calc(var(--dur-420) * 6) var(--ease-move) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .row[data-word="busy"] .word {
+  [data-word="busy"] [data-word-text] {
     animation: none;
   }
-}
-
-/* ── the detail pane ── */
-
-.detail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: var(--ctl-lg);
-  padding: 0 var(--sp-3);
-  border-bottom: var(--hairline) solid var(--sep);
-  flex: none;
-}
-
-.detail-title {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.detail-body {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-
-.back-btn {
-  display: grid;
-  place-items: center;
-  height: var(--ctl-md);
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-sm);
-  color: var(--accent);
-}
-
-.back-btn:hover {
-  background: var(--hover);
 }

@@ -6,6 +6,8 @@
 
 import { useId, type ReactNode } from "react";
 
+import { cn } from "@/lib/utils";
+
 // Stroke widths are ratios in disguise: the number only means anything
 // divided by its canvas. 24-canvas rail glyphs use 1.4; 16-canvas marks
 // use 1.5 (optically compensated — thinner would vanish at 1x).
@@ -15,10 +17,13 @@ export const STROKE = { rail: 1.4, sm: 1.5 } as const;
 // widened to 3, leaving a (3 - 1.4) / 2 = 0.8 gap on each side.
 const CUT = 3;
 
+type IconProps = { className?: string };
+
 function RailGlyph({
+  className,
   cut,
   children,
-}: {
+}: IconProps & {
   cut?: ReactNode;
   children: ReactNode | ((cutId: string) => ReactNode);
 }) {
@@ -26,8 +31,7 @@ function RailGlyph({
   const cutId = `railcut-${uid}`;
   return (
     <svg
-      width="1.5em"
-      height="1.5em"
+      className={cn("size-icon-rail", className)}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -56,9 +60,12 @@ const BUBBLE_BACK =
   "M11.6 9H17.7A2.8 2.8 0 0 1 20.5 11.8V15A2.8 2.8 0 0 1 17.7 17.8V20.4L15.1 17.8H11.6A2.8 2.8 0 0 1 8.8 15V11.8A2.8 2.8 0 0 1 11.6 9Z";
 
 /** Sessions = two offset bubbles: a conversation, not a message. */
-export function IconSessions() {
+export function IconSessions({ className }: IconProps) {
   return (
-    <RailGlyph cut={<path d={BUBBLE_FRONT} fill="black" stroke="black" strokeWidth={CUT} />}>
+    <RailGlyph
+      className={className}
+      cut={<path d={BUBBLE_FRONT} fill="black" stroke="black" strokeWidth={CUT} />}
+    >
       {(cutId) => (
         <>
           <path mask={`url(#${cutId})`} d={BUBBLE_BACK} />
@@ -70,9 +77,10 @@ export function IconSessions() {
 }
 
 /** Devices = a rack: two drawers, each with a punched-through lamp. */
-export function IconDevices() {
+export function IconDevices({ className }: IconProps) {
   return (
     <RailGlyph
+      className={className}
       cut={
         <>
           <circle cx="7.2" cy="7.8" r="1.15" fill="black" />
@@ -91,9 +99,9 @@ export function IconDevices() {
 }
 
 /** More = three dots; lighter than the formed glyphs on purpose. */
-export function IconMore() {
+export function IconMore({ className }: IconProps) {
   return (
-    <RailGlyph>
+    <RailGlyph className={className}>
       <circle cx="5.4" cy="12" r="1.55" fill="currentColor" stroke="none" />
       <circle cx="12" cy="12" r="1.55" fill="currentColor" stroke="none" />
       <circle cx="18.6" cy="12" r="1.55" fill="currentColor" stroke="none" />
@@ -102,11 +110,10 @@ export function IconMore() {
 }
 
 /** Back chevron, 16-canvas mark. */
-export function IconBack() {
+export function IconBack({ className }: IconProps) {
   return (
     <svg
-      width="1.2em"
-      height="1.2em"
+      className={cn("size-4", className)}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

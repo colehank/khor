@@ -1,8 +1,8 @@
-import type { SessionRow } from "../api";
-import { gui } from "../gen/catalog";
-import { UiButton } from "../ui/Button";
-import { IconBack } from "../ui/Icons";
-import { word } from "../words";
+import type { SessionRow } from "@/api";
+import { IconBack } from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { gui } from "@/gen/catalog";
+import { word } from "@/words";
 
 // Per-kind faces (chat stream, transfer card, terminal) land with their
 // own batches; until then the pane states the row's facts and nothing
@@ -17,19 +17,19 @@ export function DetailPane({
   onBack: () => void;
 }) {
   return (
-    <section className="detail">
-      <header className="detail-header">
+    <section className="flex h-full min-w-0 flex-col">
+      <header data-detail-header className="flex h-ctl-lg flex-none items-center gap-2 border-b px-3">
         {/* The back button exists only on the narrow face: there the
             list is genuinely off-screen, so "back" has somewhere to go.
             Wide keeps the list on screen — nothing to go back from. */}
         {narrow && (
-          <UiButton className="back-btn" label={gui.back} onClick={onBack}>
+          <Button variant="ghost" size="icon" aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
-          </UiButton>
+          </Button>
         )}
-        <span className="detail-title">{row ? row.title || row.id : ""}</span>
+        <span className="truncate font-semibold">{row ? row.title || row.id : ""}</span>
       </header>
-      <div className="detail-body">
+      <div className="grid flex-1 place-items-center text-center text-sm text-muted-foreground">
         {row ? (
           <div>
             <div style={{ color: `var(--state-${row.word})` }}>{word(row.word)}</div>

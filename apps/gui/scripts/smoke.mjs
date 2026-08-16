@@ -97,7 +97,7 @@ try {
   const row = page.locator('[data-word]', { hasText: "proj" });
   await until("the alpha row in beta's GUI", 30_000, async () => (await row.count()) === 1);
   if ((await row.getAttribute("data-word")) !== "busy") throw new Error("row should be busy");
-  const guiWord = (await row.locator(".word").innerText()).trim();
+  const guiWord = (await row.locator("[data-word-text]").innerText()).trim();
   if (!(await row.innerText()).includes("alpha")) throw new Error("reported row must show its source");
 
   // 2) two faces, one wording: the CLI line for the same row carries
@@ -112,15 +112,15 @@ try {
   //    seen; the loop closes: badge clears here, alpha turns idle there.
   feedHook(envA, "Stop");
   await until("done + unread badge", 30_000, async () =>
-    (await row.getAttribute("data-word")) === "done" && (await row.locator(".unread").count()) === 1,
+    (await row.getAttribute("data-word")) === "done" && (await row.locator("[data-unread]").count()) === 1,
   );
   await row.click();
   await until("beta's row to settle idle, badge gone", 30_000, async () =>
-    (await row.getAttribute("data-word")) === "idle" && (await row.locator(".unread").count()) === 0,
+    (await row.getAttribute("data-word")) === "idle" && (await row.locator("[data-unread]").count()) === 0,
   );
   // The loop's far end: alpha's own CLI now prints the same idle word
   // the GUI shows — the watermark travelled, and the wording matches.
-  const idleGuiWord = (await row.locator(".word").innerText()).trim();
+  const idleGuiWord = (await row.locator("[data-word-text]").innerText()).trim();
   await until("alpha to read the seen watermark", 30_000, () => {
     const line = cli(envA, "sessions").split("\n").find((l) => l.includes("tui/cafe1"));
     return Boolean(line && line.includes(idleGuiWord));
@@ -128,14 +128,14 @@ try {
 
   // 4) faces: wide has a detail header but no back; narrow, after
   //    entering a detail, has the back button.
-  if ((await page.locator(".detail-header").count()) !== 1) throw new Error("probe dead: no detail header");
-  if ((await page.locator(".back-btn").count()) !== 0) throw new Error("back button on the wide face");
+  if ((await page.locator("[data-detail-header]").count()) !== 1) throw new Error("probe dead: no detail header");
+  if ((await page.locator("[data-back]").count()) !== 0) throw new Error("back button on the wide face");
   // Shrinking mid-detail keeps the detail up (Telegram's behavior) —
   // and there, with the list genuinely off-screen, back exists.
   await page.setViewportSize({ width: 390, height: 720 });
-  await until("narrow detail with back", 10_000, async () => (await page.locator(".back-btn").count()) === 1);
-  await page.locator(".back-btn").click();
-  await until("back to the narrow list", 10_000, async () => (await page.locator(".list").count()) === 1);
+  await until("narrow detail with back", 10_000, async () => (await page.locator("[data-back]").count()) === 1);
+  await page.locator("[data-back]").click();
+  await until("back to the narrow list", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
 
   // 5) the page never threw.

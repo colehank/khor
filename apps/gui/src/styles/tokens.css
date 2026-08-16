@@ -1,47 +1,64 @@
-/* The one table every screen draws from. Pages never invent a number:
- * heights come in exactly three sizes, spacing from one scale, every
- * color has a name. The px gate (scripts/check-px.mjs) makes this a
- * build error, not a review comment.
+/* The one table every screen draws from — shadcn/ui's standard variable
+ * scheme carrying mandala's palette (tokens repo, styles.css): warm
+ * paper / warm near-black, the liquid-green brand family, and its state
+ * doctrine — busy takes no hue (it breathes), green belongs to done,
+ * blocked is the app's only cold color, red sinks with failed.
  *
- * The palette is mandala's (tokens repo, styles.css): warm near-black /
- * warm paper, the liquid-green brand family (--lq1/2/3), and its state
- * doctrine — busy takes no hue (it breathes instead), green belongs to
- * done ("go collect"), blocked is the app's only cold color, red sinks
- * with failed. Same states, same colors, across product generations. */
+ * Pages never invent a number: utilities come from this theme, and the
+ * px gate (scripts/check-px.mjs) turns a stray pixel literal into a
+ * build error. Dark follows the system — no toggle (docs/UX.md 设置). */
 
 @import "tailwindcss";
 
 :root {
-  /* ── type ─────────────────────────────────────────── */
-  --fs-xs: 11px;
-  --fs-sm: 12.5px;
-  --fs-md: 14px;
-  --fs-lg: 17px;
+  /* ── shadcn scheme, mandala light values ─────────── */
+  --background: #f4f4ef;
+  --foreground: rgba(26, 26, 20, 0.94);
+  --card: #fcfcfa;
+  --card-foreground: rgba(26, 26, 20, 0.94);
+  --popover: #fcfcfa;
+  --popover-foreground: rgba(26, 26, 20, 0.94);
+  --primary: #93b04d;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(26, 26, 20, 0.06);
+  --secondary-foreground: rgba(26, 26, 20, 0.78);
+  --muted: rgba(26, 26, 20, 0.06);
+  --muted-foreground: rgba(26, 26, 20, 0.62);
+  --accent: rgba(147, 176, 77, 0.16);
+  --accent-foreground: rgba(26, 26, 20, 0.94);
+  --destructive: #b23a2e;
+  --destructive-foreground: #ffffff;
+  --border: rgba(26, 26, 20, 0.1);
+  --input: rgba(26, 26, 20, 0.1);
+  --ring: #93b04d;
+  --radius: 10px;
+
+  /* ── the liquid family — the brand's greens ───────── */
+  --lq1: #d5e595;
+  --lq2: #bcd47b;
+  --lq3: #93b04d;
+
+  /* ── the six words (mandala's doctrine) ───────────── */
+  --state-busy: var(--muted-foreground); /* no hue; it breathes */
+  --state-blocked: #016f82;              /* the only cold color */
+  --state-done: #546f1c;                 /* green = go collect */
+  --state-errored: #8a6212;
+  --state-failed: #b23a2e;               /* red sinks, no badge */
+  --state-idle: rgba(26, 26, 20, 0.45);
+
+  --badge: #b23a2e;
+  --badge-foreground: #ffffff;
 
   /* ── control heights: three, no fourth ────────────── */
   --ctl-sm: 24px;
   --ctl-md: 30px;
   --ctl-lg: 40px;
 
-  /* ── radii ────────────────────────────────────────── */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-
-  /* ── spacing scale ────────────────────────────────── */
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 24px;
-  --sp-6: 32px;
-
   /* ── layout ───────────────────────────────────────── */
   --rail-w: 56px;
   --list-w: 288px;
   --avatar: 32px;
   --icon-rail: 26px;
-  --hairline: 1px;
 
   /* ── motion (mandala's tokens, verbatim) ──────────── */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -50,55 +67,35 @@
   --dur-180: 180ms;
   --dur-240: 240ms;
   --dur-420: 420ms;
-
-  /* ── surfaces & ink (light: warm paper) ───────────── */
-  --bg: #f4f4ef;
-  --surface: #fcfcfa;
-  --ink: rgba(26, 26, 20, 0.94);
-  --ink-2: rgba(26, 26, 20, 0.78);
-  --ink-3: rgba(26, 26, 20, 0.62);
-  --sep: rgba(26, 26, 20, 0.1);
-  --hover: rgba(26, 26, 20, 0.06);
-  --selected: rgba(147, 176, 77, 0.16);
-
-  /* the liquid family — the brand's greens */
-  --lq1: #d5e595;
-  --lq2: #bcd47b;
-  --lq3: #93b04d;
-  --accent: var(--lq3);
-  --accent-ink: #ffffff;
-
-  /* ── the six words (mandala's doctrine) ───────────── */
-  --state-busy: var(--ink-3);            /* no hue; it breathes */
-  --state-blocked: #016f82;              /* the only cold color */
-  --state-done: #546f1c;                 /* green = go collect */
-  --state-errored: #8a6212;
-  --state-failed: #b23a2e;               /* red sinks, no badge */
-  --state-idle: rgba(26, 26, 20, 0.45);
-
-  --badge: #b23a2e;
-  --badge-ink: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* dark: warm near-black, ink as alpha over warm white */
-    --bg: #0f0f0e;
-    --surface: #191917;
-    --ink: rgba(238, 238, 231, 0.96);
-    --ink-2: rgba(238, 238, 231, 0.72);
-    --ink-3: rgba(238, 238, 231, 0.55);
-    --sep: rgba(238, 238, 231, 0.08);
-    --hover: rgba(244, 244, 239, 0.07);
-    --selected: rgba(183, 207, 117, 0.14);
+    --background: #0f0f0e;
+    --foreground: rgba(238, 238, 231, 0.96);
+    --card: #191917;
+    --card-foreground: rgba(238, 238, 231, 0.96);
+    --popover: #191917;
+    --popover-foreground: rgba(238, 238, 231, 0.96);
+    --primary: #b7cf75;
+    --primary-foreground: #1a1a14;
+    --secondary: rgba(244, 244, 239, 0.07);
+    --secondary-foreground: rgba(238, 238, 231, 0.72);
+    --muted: rgba(244, 244, 239, 0.07);
+    --muted-foreground: rgba(238, 238, 231, 0.55);
+    --accent: rgba(183, 207, 117, 0.14);
+    --accent-foreground: rgba(238, 238, 231, 0.96);
+    --destructive: #d4756b;
+    --destructive-foreground: #1a1a14;
+    --border: rgba(238, 238, 231, 0.08);
+    --input: rgba(238, 238, 231, 0.08);
+    --ring: #b7cf75;
 
     --lq1: #f2f6cb;
     --lq2: #dce9a6;
     --lq3: #b7cf75;
-    --accent: var(--lq3);
-    --accent-ink: #1a1a14;
 
-    --state-busy: var(--ink-3);
+    --state-busy: var(--muted-foreground);
     --state-blocked: #01aac6;
     --state-done: #cfe08a;
     --state-errored: #e3c06b;
@@ -106,6 +103,77 @@
     --state-idle: rgba(238, 238, 231, 0.4);
 
     --badge: #d4756b;
-    --badge-ink: #1a1a14;
+    --badge-foreground: #1a1a14;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-state-busy: var(--state-busy);
+  --color-state-blocked: var(--state-blocked);
+  --color-state-done: var(--state-done);
+  --color-state-errored: var(--state-errored);
+  --color-state-failed: var(--state-failed);
+  --color-state-idle: var(--state-idle);
+  --color-badge: var(--badge);
+  --color-badge-foreground: var(--badge-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* named sizes → utilities (h-ctl-md, w-rail, size-avatar…) */
+  --spacing-ctl-sm: var(--ctl-sm);
+  --spacing-ctl-md: var(--ctl-md);
+  --spacing-ctl-lg: var(--ctl-lg);
+  --spacing-rail: var(--rail-w);
+  --spacing-list: var(--list-w);
+  --spacing-avatar: var(--avatar);
+  --spacing-icon-rail: var(--icon-rail);
+
+  /* mandala-adjacent type scale */
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-lg: 17px;
+
+  --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    -webkit-font-smoothing: antialiased;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
   }
 }

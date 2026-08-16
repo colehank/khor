@@ -7,10 +7,17 @@ import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const ALLOW = [/^src\/styles\/tokens\.css$/, /^src\/ui\//, /^src\/gen\//];
-// px inside a value, or a tailwind arbitrary value like h-[38px]
+// tokens own the numbers; shadcn ui/ components are vendored; gen/ is
+// machine output; the one breakpoint lives in use-narrow.
+const ALLOW = [
+  /^src\/styles\/tokens\.css$/,
+  /^src\/components\/ui\//,
+  /^src\/gen\//,
+  /^src\/hooks\/use-narrow\.ts$/,
+];
+// px inside a value, or a tailwind arbitrary value carrying px
 const PX = /\b\d+(\.\d+)?px\b/;
-const ARBITRARY = /\[[^\]\s]*\d[^\]\s]*\]/;
+const ARBITRARY = /\[[^\]]*\d+(\.\d+)?px[^\]]*\]/;
 
 const offenders = [];
 walk(join(root, "src"));
