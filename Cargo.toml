@@ -52,5 +52,10 @@ portable-pty = "0.9"
 # two things a vendor's files cannot answer: whether the process behind a
 # session is still running, and — for vendors that write no pid anywhere
 # — which sessions exist at all (crates/node/src/adaptor).
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+#
+# `disk` on top of `system` because vitals report how full a machine is
+# (crates/node/src/vitals.rs). Still not `default`: `network`, `user` and
+# `component` are three more platform surfaces khor never asks about, and
+# `component` alone drags in the whole objc2 IOKit stack on macOS.
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 tracing = "0.1"

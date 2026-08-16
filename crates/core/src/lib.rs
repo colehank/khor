@@ -182,6 +182,67 @@ pub struct StateStamp {
     pub at: Millis,
 }
 
+/// How full one thing is: bytes in use out of bytes there are.
+///
+/// Both halves travel, never the percentage alone — "78%" and "78% of
+/// 2 TB" are two different sentences, and the one worth reading is the
+/// second. Whoever paints it divides; nobody downstream has to guess at
+/// a denominator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Fill {
+    /// `number` on the TS side, as everywhere else here: serde_json sends
+    /// a number, and 2^53 bytes is eight petabytes.
+    #[ts(type = "number")]
+    pub used: u64,
+    #[ts(type = "number")]
+    pub total: u64,
+}
+
+/// What a machine is doing right now: the other half of docs/KHOR.md's
+/// core promise, beside the sessions.
+///
+/// **Asked for, never replicated.** A reading is true for seconds, so
+/// putting it in the device CRDT would mean every machine's every sample
+/// landing on every disk forever to answer a question whose only
+/// interesting answer is the present one. It crosses on its own op and is
+/// cached with the moment it was taken, so a machine that cannot be
+/// reached shows its last reading and how old it is, never a
+/// current-looking number (docs/SESSION.md 离线不是第七个词 — the same
+/// two axes, applied to a machine instead of a session).
+///
+/// **There is no GPU field, and that is a capability gap rather than a
+/// data one.** `sysinfo` — the process table khor already carries — has
+/// no GPU API at all: the only occurrences of the word in its source are
+/// a macOS thermal sensor key and unrelated FFI. A field that is
+/// structurally always empty is worse than no field, because it reads as
+/// a machine that failed to report rather than a khor that cannot ask.
+/// Adding it means adding a dependency or shelling out per platform, and
+/// that is its own decision.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Vitals {
+    /// Whole-machine CPU use, 0–100.
+    ///
+    /// A **rate**, not a level: work done between two readings over the
+    /// time between them. So it is always "over some window", and which
+    /// window is a choice the sampler makes rather than a property of the
+    /// machine — `khor_node::vitals` picks one and shows the measurements
+    /// behind the pick.
+    pub cpu_pct: f32,
+    /// How many cores that percentage is spread over.
+    pub cores: u32,
+    pub mem: Fill,
+    /// The filesystem khor's home sits on. `None` when no mount point
+    /// contains it: a machine with no answer here paints nothing rather
+    /// than `0 / 0`, which reads as an empty disk (docs/SESSION.md
+    /// 认不出就不落词 — a landing that cannot be reached becomes its
+    /// neighbour unless it is allowed to be absent).
+    ///
+    /// Wire: at the tail with a serde default, so a khor that predates it
+    /// still decodes here (`a_vitals_frame_from_an_older_peer_...`).
+    #[serde(default)]
+    pub disk: Option<Fill>,
+}
+
 /// The uniform event envelope. Payload bytes are kind-namespaced; this
 /// crate never looks inside. Whether events replicate (CRDT) or are
 /// fetched from home is a kind property, not an envelope field.
@@ -350,6 +411,41 @@ mod tests {
         assert_eq!(row.category, None, "an older peer said nothing about category");
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
         assert_eq!(row.unread, 3);
+    }
+
+    /// **Over the wire from an older peer**: a machine whose khor predates
+    /// the disk reading sends three fields, and this end must read the two
+    /// it did send rather than dropping the whole answer.
+    ///
+    /// Built by hand as a three-tuple, and the first assertion is that the
+    /// bytes really are a three-array — without it this could be encoding
+    /// today's struct and proving nothing.
+    #[test]
+    fn a_vitals_frame_from_an_older_peer_decodes_with_no_disk() {
+        let old = (12.5f32, 10u32, Fill { used: 8, total: 32 });
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x93, "the sample must be a three-field frame, or it proves nothing");
+
+        let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(v.disk, None, "an older peer said nothing about a disk");
+        assert_eq!(v.cpu_pct, 12.5, "…and the rest of the reading survived");
+        assert_eq!((v.cores, v.mem.used, v.mem.total), (10, 8, 32));
+    }
+
+    /// The tail field is on the wire when it *is* known — the other half
+    /// of the test above, which alone would also pass if `disk` were
+    /// dropped from the struct entirely.
+    #[test]
+    fn a_vitals_frame_carries_the_disk_when_there_is_one() {
+        let v = Vitals {
+            cpu_pct: 3.0,
+            cores: 8,
+            mem: Fill { used: 1, total: 2 },
+            disk: Some(Fill { used: 5, total: 9 }),
+        };
+        let bytes = rmp_serde::to_vec(&v).unwrap();
+        assert_eq!(bytes[0], 0x94, "four fields today");
+        assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 
     #[test]

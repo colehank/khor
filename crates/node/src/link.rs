@@ -321,6 +321,27 @@ impl Node {
                 }
                 Ok(Response::SessionRows { rows: self.reportable_rows()? })
             }
+            Request::Vitals => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Taken here, now — the answer is only ever about the
+                // moment the asker gets it (`khor_core::Vitals`).
+                //
+                // **Off the reactor**, because sampling blocks: measured
+                // at 1.9 s the first time in a process (the disk list
+                // costs 1.2 s once) and ~215 ms after. Called inline it
+                // stalled the QUIC connection this very reply travels on,
+                // and the two real-connection avatar tests timed out at
+                // twenty seconds — the same shape as the ledger's
+                // "serve 里任何会等 DIAL_TIMEOUT 的事不能内联在 select
+                // 循环", arriving through a sleep instead of a dial.
+                let root = self.root().to_path_buf();
+                let vitals = tokio::task::spawn_blocking(move || crate::vitals::sample(&root))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Vitals { vitals })
+            }
             Request::Act { session, action } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -688,6 +709,16 @@ impl Node {
         // only means older information.
         if let Ok(Response::SessionRows { rows }) = request(&conn, &Request::Sessions).await {
             let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
+        }
+        // And what it is doing right now, on the same visit. Kept apart
+        // from the rows above rather than folded into one record: the two
+        // requests fail independently, so one round losing vitals would
+        // wipe a reading the rows knew nothing about, and one shared
+        // timestamp would make a stale reading look as fresh as the rows
+        // beside it. Best effort, same as the rows — a peer running a khor
+        // that has no such op simply has no reading here.
+        if let Ok(Response::Vitals { vitals }) = request(&conn, &Request::Vitals).await {
+            let _ = self.cache_peer_vitals(&d.id, &vitals);
         }
         Ok(if moved == 0 { msg::NOTHING_TO_MOVE.into() } else { msg::moved_bytes(moved) })
     }

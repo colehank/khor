@@ -16,11 +16,12 @@ pub mod list;
 pub mod live;
 pub mod proto;
 pub mod transfer;
+pub mod vitals;
 
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
 };
-pub use khor_core::{kind, Session, SessionId, State};
+pub use khor_core::{kind, Fill, Session, SessionId, State, Vitals};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
@@ -570,6 +571,52 @@ impl Node {
         out
     }
 
+    // ── what machines last reported about themselves (vitals) ──
+
+    fn vitals_dir(&self) -> PathBuf {
+        self.root.join(".khor").join("vitals")
+    }
+
+    /// Remembers a machine's reading, stamped with now.
+    ///
+    /// **Its own file, not a field on the row report.** Rows and vitals
+    /// are fetched by two requests that fail independently, and they age
+    /// independently too — a shared record would have one round's failure
+    /// erase the other's last known answer, and a shared timestamp would
+    /// dress a stale reading in the rows' freshness.
+    pub(crate) fn cache_peer_vitals(
+        &self,
+        device_id: &str,
+        v: &khor_core::Vitals,
+    ) -> Result<(), String> {
+        if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
+        }
+        fs::create_dir_all(self.vitals_dir()).map_err(msg::cant_make_vitals_dir)?;
+        let report = VitalsReport { at_ms: now_ms(), vitals: *v };
+        link::write_private(
+            &self.vitals_dir().join(device_id),
+            &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
+        )
+    }
+
+    /// What a machine last said about itself, and how old that is.
+    ///
+    /// **This machine answers by sampling, everyone else from cache**, and
+    /// the age is what tells them apart at the far end: zero means the
+    /// reading was taken to answer this call. A machine nobody has heard
+    /// from yet is `None` — a third state, distinct from an old reading,
+    /// because "not asked yet" and "asked an hour ago" are different
+    /// things to be told (docs/SESSION.md 离线).
+    pub fn vitals_of(&self, device_id: &str) -> Option<(khor_core::Vitals, u64)> {
+        if device_id == self.device_str() {
+            return Some((vitals::sample(&self.root), 0));
+        }
+        let text = fs::read_to_string(self.vitals_dir().join(device_id)).ok()?;
+        let report: VitalsReport = serde_json::from_str(&text).ok()?;
+        Some((report.vitals, now_ms().saturating_sub(report.at_ms)))
+    }
+
     /// Offers a file to a machine's window: the summary (name, size,
     /// digest) travels the CRDT to everyone; the bytes wait here for the
     /// far side's approval. Returns the transfer session id.
@@ -947,6 +994,14 @@ struct PeerReport {
     at_ms: u64,
     name: String,
     rows: Vec<Session>,
+}
+
+/// One device's last reading, as cached on disk. Separate from
+/// [`PeerReport`] on purpose — [`Node::cache_peer_vitals`] says why.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct VitalsReport {
+    at_ms: u64,
+    vitals: khor_core::Vitals,
 }
 
 fn now_ms() -> u64 {

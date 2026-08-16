@@ -159,9 +159,54 @@ fn devices(_rest: &[String]) -> Result<(), String> {
     for d in n.devices()? {
         let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
         let pin = if d.pinned { cli::PINNED_MARK } else { "" };
-        println!("{}\t{}…{here}{pin}", d.name, &d.id[..16]);
+        println!("{}\t{}…{here}{pin}\t{}", d.name, &d.id[..16], vitals_line(&n, &d.id));
     }
     Ok(())
+}
+
+/// One machine's readings on one line — the CLI half of the machine card,
+/// here first because anything the app shows has to be reachable from a
+/// terminal (docs/KHOR.md: CLI equals GUI).
+fn vitals_line(n: &Node, device_id: &str) -> String {
+    let Some((v, age)) = n.vitals_of(device_id) else {
+        return cli::VITALS_NEVER.to_owned();
+    };
+    let mut parts = vec![
+        cli::vitals_cpu(format_args!("{:.0}", v.cpu_pct), v.cores),
+        cli::vitals_mem(bytes(v.mem.used), bytes(v.mem.total)),
+        match v.disk {
+            Some(d) => cli::vitals_disk(bytes(d.used), bytes(d.total)),
+            None => cli::VITALS_DISK_UNKNOWN.to_owned(),
+        },
+    ];
+    // Said for every reading that was not taken just now — which is every
+    // machine but this one, and this one only while it is answering.
+    if age > 0 {
+        parts.push(cli::vitals_taken(human_age(age)));
+    }
+    parts.join("  ")
+}
+
+/// Bytes as a person reads them: 1024-based, one decimal, no space.
+///
+/// **This is painting, not judgment**, which is why the app has its own
+/// copy rather than the number arriving pre-formatted. The wire carries
+/// bytes; nothing downstream depends on these two producing the same
+/// characters, and a library that returned strings would be deciding what
+/// a screen it cannot see has room for.
+fn bytes(n: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "K", "M", "G", "T"];
+    let mut v = n as f64;
+    let mut u = 0;
+    while v >= 1024.0 && u + 1 < UNITS.len() {
+        v /= 1024.0;
+        u += 1;
+    }
+    if u == 0 {
+        format!("{n}{}", UNITS[0])
+    } else {
+        format!("{v:.1}{}", UNITS[u])
+    }
 }
 
 fn sessions(rest: &[String]) -> Result<(), String> {

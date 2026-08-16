@@ -30,6 +30,14 @@ pub enum Request {
     /// never re-route an incoming Act — what is not theirs to run is
     /// refused, or two serves could bounce one forever.
     Act { session: String, action: String },
+    /// What that machine is doing right now (CPU, memory, disk).
+    ///
+    /// An op rather than a field in the device document, because a
+    /// reading is true for seconds — see `khor_core::Vitals`. A khor that
+    /// predates it answers [`Response::Refused`] (the name is on the
+    /// wire, so an unknown op is a refusal and not a misread neighbour),
+    /// which the asking side treats as "no vitals" and nothing else.
+    Vitals,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +54,8 @@ pub enum Response {
     SessionRows { rows: Vec<khor_core::Session> },
     /// An Act ran to completion; for accept, bytes moved.
     Acted { moved: u64 },
+    /// One reading, taken when this frame was built.
+    Vitals { vitals: khor_core::Vitals },
 }
 
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
@@ -79,6 +89,62 @@ mod tests {
             Request::Sync { doc, have, changes } => {
                 assert_eq!((doc.as_str(), have.as_str(), changes.as_str()), ("devices", "aGF2ZQ", ""));
             }
+            other => panic!("decoded wrong: {other:?}"),
+        }
+    }
+
+    /// **A new op must be unreadable to an older peer, not readable as a
+    /// different one.** That is the whole safety of adding one: the op
+    /// name travels, so a khor that never heard of `Vitals` fails to
+    /// decode and answers `Refused`, which the caller ignores. Were ops
+    /// numbered instead, appending would be safe and inserting would
+    /// silently turn one op into its neighbour — the failure this asserts
+    /// cannot happen.
+    ///
+    /// The older peer is spelled out here as its own enum rather than
+    /// mimicked, because a decoder built from today's type would be
+    /// testing today's type against itself.
+    #[test]
+    fn an_op_an_older_peer_never_heard_of_is_refused_not_mistaken() {
+        #[derive(Debug, Deserialize)]
+        enum OlderRequest {
+            Pair { token: String, name: String, addrs: Vec<String> },
+            Sync { doc: String, have: String, changes: String },
+            Fetch { digest: String, offset: u64 },
+            Sessions,
+            Act { session: String, action: String },
+        }
+
+        let bytes = encode(&Request::Vitals).unwrap();
+        assert!(
+            bytes.windows(6).any(|w| w == b"Vitals"),
+            "the op name must be on the wire, or this proves nothing about names"
+        );
+        let refused = decode::<OlderRequest>(&bytes);
+        assert!(refused.is_err(), "an older peer read it as {refused:?}");
+
+        // …and the same peer's own ops still decode here, so the
+        // assertion above is about the new name and not about the two
+        // enums having drifted apart in some other way.
+        let theirs = encode(&Request::Sessions).unwrap();
+        assert!(matches!(decode::<Request>(&theirs), Ok(Request::Sessions)));
+        assert!(matches!(decode::<OlderRequest>(&theirs), Ok(OlderRequest::Sessions)));
+    }
+
+    /// A reading survives the round trip whole. The frame is a response,
+    /// so the guard against reordering `Vitals`' own fields lives with
+    /// the struct (`khor_core`); what this covers is the envelope.
+    #[test]
+    fn a_reading_crosses_inside_its_response() {
+        let sent = khor_core::Vitals {
+            cpu_pct: 42.5,
+            cores: 10,
+            mem: khor_core::Fill { used: 3, total: 4 },
+            disk: Some(khor_core::Fill { used: 5, total: 6 }),
+        };
+        let bytes = encode(&Response::Vitals { vitals: sent }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::Vitals { vitals } => assert_eq!(vitals, sent),
             other => panic!("decoded wrong: {other:?}"),
         }
     }

@@ -141,6 +141,25 @@ age-seconds = "{0} 秒"
 age-minutes = "{0} 分钟"
 age-hours = "{0} 小时"
 age-days = "{0} 天"
+# A machine's readings (khor_core::Vitals). Each unit prints its own
+# denominator: 「78%」 and 「78% / 12 核」 are two different sentences, and
+# only the second one can be acted on.
+vitals-cpu = "CPU {0}% / {1} 核"
+vitals-mem = "内存 {0} / {1}"
+vitals-disk = "磁盘 {0} / {1}"
+# The disk khor's home sits on could not be identified. It gets a word
+# rather than being left out, because a missing line and a machine that
+# could not answer read the same otherwise — and 「0 / 0」 would read as
+# an empty disk (docs/SESSION.md 认不出就不落词).
+vitals-disk-unknown = "磁盘 说不上"
+# How old the reading is. **Printed on every reading that is not this
+# machine's own**, because a number with no age is read as the present:
+# a machine that has been off since yesterday would otherwise show
+# yesterday's CPU as if it were now (docs/SESSION.md 离线).
+vitals-taken = "{0}前的读数"
+# Never reached since this khor started. Not the same as an old reading,
+# and not 「0%」 either — those send a person to look at different things.
+vitals-never = "还没问到"
 summary-sent = "摘要已发,等对方许可。传输号: {0}"
 pulled = "收下了,这一趟拉了 {0} 字节"
 broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
@@ -317,6 +336,7 @@ no-such-session = "没有这个 session: {0}"
 no-such-session-because = "没有这个 session: {0}({1})"
 not-a-machine-id = "这不是一个机器 id: {0}"
 cant-make-peers-dir = "建不了 peers 目录: {0}"
+cant-make-vitals-dir = "建不了 vitals 目录: {0}"
 bad-channel-name = "频道名不合法: {0}"
 cant-delete = "删不掉: {0}"
 remote-close-not-yet = "这个 session 的 home 是 {0},远程关还没有,去那台关"

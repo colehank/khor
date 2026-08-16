@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use khor_node::list::Arrange;
-use khor_node::{Avatar, AvatarStyle, FaceShape, Node, SessionId, Variant, PRESETS};
+use khor_node::{Avatar, AvatarStyle, FaceShape, Node, SessionId, Variant, Vitals, PRESETS};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -73,6 +73,28 @@ pub struct DeviceRow {
     /// Pinned, network-wide. Same rule as `SessionRow::pinned`: a mark to
     /// paint, never an ordering to redo.
     pub pinned: bool,
+    /// What that machine is doing, and how long ago it said so. `None`
+    /// when it has never been reached — see [`VitalsReading`].
+    pub vitals: Option<VitalsReading>,
+}
+
+/// A machine's reading plus its age — the two axes docs/SESSION.md keeps
+/// apart, here for a machine instead of a session.
+///
+/// **The age is not decoration and it is not optional.** A number with no
+/// age is read as the present, so a machine that has been off since
+/// yesterday would show yesterday's CPU as if it were now. `age_ms` is
+/// zero exactly when the reading was taken to answer this call, which is
+/// the case for this machine and no other.
+///
+/// The row carries `None` when the machine has never answered at all.
+/// That is a third state on purpose: "not asked yet" and "asked an hour
+/// ago" send a person to look at different things.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct VitalsReading {
+    pub vitals: Vitals,
+    #[ts(type = "number")]
+    pub age_ms: u64,
 }
 
 /// One option on the variant or shape axis, already painted.
@@ -229,6 +251,12 @@ pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
             me: d.id == me,
             face: n.face_of(&d),
             pinned: d.pinned,
+            // Sampled for this machine, read from the last visit for
+            // every other. Which one it was is readable from `age_ms`
+            // alone, so no second field says it twice.
+            vitals: n
+                .vitals_of(&d.id)
+                .map(|(vitals, age_ms)| VitalsReading { vitals, age_ms }),
             id: d.id,
             name: d.name,
         })
