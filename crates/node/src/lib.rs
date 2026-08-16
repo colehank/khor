@@ -204,10 +204,17 @@ impl Node {
     /// This machine's avatar style, or the factory default.
     ///
     /// Unreadable and unparseable both fall back to the default rather
-    /// than erroring: the settings screen that writes this file is a
-    /// later batch, so today the common case *is* "no file", and a face
-    /// is style, never identity — falling back cannot make anyone
-    /// misread which machine they are looking at.
+    /// than erroring: "no file" is the ordinary state of a machine
+    /// nobody has restyled, and a face is style, never identity — a
+    /// fallback here cannot make anyone misread *which* machine they
+    /// are looking at.
+    ///
+    /// A bad file falls back **whole**, never slot by slot — the reason
+    /// is on `Palette`'s `Deserialize`, and it is the same one there and
+    /// here: half a chosen style and half a default is a face nobody
+    /// picked. `Node::restyle` validates before it writes, so the only
+    /// way to reach that path is somebody editing `.khor/avatar.json` by
+    /// hand.
     pub fn avatar_style(&self) -> AvatarStyle {
         fs::read_to_string(self.avatar_prefs_path())
             .ok()
@@ -300,9 +307,17 @@ impl Node {
     /// **Unparseable reports get the same treatment**, which is a
     /// narrower rule than mandala's — there, a bad report fell back to
     /// the *viewer's* preference so that a broken report never read as
-    /// "it just looks like that". Khor has no per-viewer machine style
-    /// to fall back to until the settings batch lands; when it does,
-    /// this is the line to revisit.
+    /// "it just looks like that".
+    ///
+    /// **This line used to say "revisit when the settings batch lands".
+    /// It landed (`Node::restyle`), and the answer is that nothing
+    /// changes here** — the settings screen sets what *this* machine
+    /// wears, which is the one style this machine may write. There still
+    /// is no per-viewer style for somebody *else's* machine, so there is
+    /// still nothing else to fall back to, and inventing one would undo
+    /// the paragraph above it. Reaching mandala's rule would mean
+    /// deciding that a viewer may dress other machines, which is a
+    /// different feature and a worse one.
     pub fn face_of(&self, device: &DeviceInfo) -> Option<Avatar> {
         let seed = AvatarSeed::from_id_hex(&device.id)?;
         let style = device

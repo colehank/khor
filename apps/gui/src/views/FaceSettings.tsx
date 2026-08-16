@@ -182,9 +182,14 @@ export function FaceSettings({
     [],
   );
 
-  // Read on opening, not on mounting: this machine's style can have been
-  // changed from a terminal since the last look, and the screen that
-  // shows what you are wearing must not show a remembered answer.
+  // Read on every opening, not once on mounting: this machine's style
+  // can have been changed from a terminal since the last look.
+  //
+  // **The last answer is kept while the new one is fetched** — measured
+  // at 9ms on the first open of a session and 0 after, so clearing it
+  // would buy a flash of empty box in exchange for nothing. Acting on a
+  // stale option is harmless here: a press sends the colors or the key
+  // it is showing, so what you clicked is what you get either way.
   useEffect(() => {
     if (!open) return;
     setError(null);

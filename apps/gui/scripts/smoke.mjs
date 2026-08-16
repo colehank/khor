@@ -1149,6 +1149,16 @@ try {
   await settingsGlyph.click();
   const sheet = page.locator("[data-face-settings]");
   await until("the settings sheet", 10_000, async () => (await sheet.count()) === 1);
+  // The sheet's frame mounts before its answer arrives — it asks the
+  // node when it opens, and paints nothing but its title until then. So
+  // wait for the options, not for the box: waiting on the box read the
+  // empty frame and reported "the settings screen offers []", which
+  // reads like the screen being broken rather than like arriving early.
+  // (It passed on three runs before it failed on the fourth, which is
+  // the whole signature of waiting for the wrong thing.)
+  await until("the options to arrive", 10_000, async () =>
+    (await sheet.locator("[data-face-option]").count()) > 0,
+  );
 
   //     a. three axes, and every option on all of them painted by the
   //     real brush. Stated positively for the same reason the row faces

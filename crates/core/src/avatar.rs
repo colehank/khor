@@ -194,8 +194,8 @@ pub const BEAM_CANVAS: f64 = 36.0;
 /// not be assumed equal without measuring.
 pub const BLUR: f64 = 7.0;
 
-/// How many slots a palette has. **Five**, one per color picker in the
-/// (later) settings screen.
+/// How many slots a palette has. **Five**, one per color well on the
+/// settings screen (`views/FaceSettings.tsx`).
 ///
 /// Why this number: the previous design was "one ink + three papers" =
 /// 4, of which one was pinned to the first vein, leaving 3 that varied.
@@ -404,8 +404,10 @@ pub const DEFAULT_PRESET: &str = "mandala";
 ///
 /// `id` is what gets stored in a device's self-reported style (changing
 /// it discards what users picked). **There is no display name here**:
-/// user-visible words live in the catalog (docs/UX.md 文案), and the
-/// settings screen that needs those names is a later batch.
+/// user-visible words live in the catalog (docs/UX.md 文案), under
+/// `[avatar]`, keyed by this same `id`. A gate walks that section in
+/// both directions, so adding a row here without a word goes red — and
+/// so does a word left behind by a row that goes away.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Preset {
     pub id: &'static str,
