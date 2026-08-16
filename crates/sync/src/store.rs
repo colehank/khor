@@ -15,6 +15,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use khor_catalog::msg;
 use loro::VersionVector;
@@ -267,8 +268,37 @@ fn make_dir(dir: &Path) -> Result<(), String> {
 /// tmp + sync + rename: readers see a whole block or none. The sync
 /// matters — without it the rename can reach disk before the content, and
 /// a crash leaves a right-sized block full of zeros that reads fine.
+///
+/// **The temp name carries the writer, not just the target**, or two
+/// writers rename each other's work in progress away. One device
+/// runs several khor processes at once (a resident serve, the app's
+/// backend, a CLI verb) and they all open the same home, so they write
+/// the same ledger. With one temp name per target the sequence is: both
+/// create it, both write it, the first renames it into place, and the
+/// second's rename finds nothing there — surfacing as "cannot rename: No
+/// such file or directory" from whichever verb happened to be running,
+/// never as a message about writers colliding. Measured before this
+/// line changed: **17 of 40** GUI pin requests failed that way while a
+/// CLI loop opened the same home; the pin silently did nothing.
+///
+/// Threads of one process need it too (the app's backend and its
+/// embedded serve are two threads on one pid), hence the counter beside
+/// the pid.
+///
+/// This is the rule block files already follow — author in the name, the
+/// module head's Maildir answer — which had simply never reached the
+/// temp files.
+///
+/// A process dying mid-write now leaves its temp behind instead of
+/// overwriting one. That is a small orphan, not a corrupt document:
+/// temps do not carry the block extension, so nothing reads one back.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("tmp");
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let tmp = path.with_extension(format!(
+        "tmp.{}.{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     {
         let mut opts = fs::OpenOptions::new();
         opts.create(true).write(true).truncate(true);

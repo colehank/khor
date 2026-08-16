@@ -121,6 +121,62 @@ fn two_writers_on_the_same_device_do_not_collide() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// **Opening the same home from several places at once must not fail.**
+///
+/// One device runs a resident serve, the app's backend and a CLI verb at
+/// the same time, and every open saves the ledger — a whole-file write.
+/// While the temp file was named after its target instead of its writer,
+/// the first writer's rename took the file and the second's rename found
+/// nothing there, so an open failed with "cannot rename". It surfaced as
+/// whatever verb happened to be running: measured at **17 of 40** GUI
+/// pin requests failing, silently, while a CLI loop opened the same
+/// home.
+///
+/// The neighbour above (`two_writers_on_the_same_device_do_not_collide`)
+/// does not cover this: it flushes the two writers **in turn**, so each
+/// temp is renamed away before the next one exists. Only overlapping in
+/// time reaches it.
+#[test]
+fn opening_one_home_from_many_places_at_once_never_fails() {
+    let dir = tmpdir("tmprace");
+    // The directory has to exist for the ledger to be saved at all.
+    let mut seed = open_channel(&dir, 0xC0).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+
+    let failures: Vec<String> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let dir = dir.clone();
+                s.spawn(move || {
+                    let mut errs = Vec::new();
+                    for _ in 0..12 {
+                        match open_channel(&dir, 0xD0 + i) {
+                            Ok(mut st) => {
+                                st.doc.tell(&me("a"), "concurrent").unwrap();
+                                if let Err(e) = st.store.flush(&st.doc) {
+                                    errs.push(e);
+                                }
+                            }
+                            Err(e) => errs.push(e),
+                        }
+                    }
+                    errs
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+
+    assert!(
+        failures.is_empty(),
+        "{} of 96 concurrent opens failed: {:?}",
+        failures.len(),
+        &failures[..failures.len().min(3)]
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// What lands on disk is readable only by me. Blocks get copied to other
 /// machines and the mode travels; a block is the document itself, so
 /// "not plaintext" protects nothing. This measures the mode bits, not
