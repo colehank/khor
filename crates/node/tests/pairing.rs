@@ -170,3 +170,105 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         let _ = std::fs::remove_dir_all(r);
     }
 }
+
+/// **A ticket found later is not a key.** Real connection, real refusal,
+/// and the refusal says *expired* rather than *wrong code* — the two
+/// have different fixes and reading them as one sends people hunting for
+/// a paste error they did not make.
+///
+/// The control group is a second ticket minted the same second, taken by
+/// the same machine over the same link: pairing itself still works, so
+/// the refusal above came from the age of the ticket and not from
+/// anything else being wrong.
+///
+/// The ticket is aged by rewriting the issuer's own record of when it
+/// was minted, not by waiting fifteen minutes and not by reaching around
+/// the check: the dial, the request, the refusal and the word all go
+/// through the path a real expired ticket would.
+#[tokio::test]
+async fn a_ticket_older_than_its_window_is_refused_as_expired() {
+    let ra = root("exp-a");
+    let rb = root("exp-b");
+
+    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+
+    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let stale = a.invite().unwrap();
+    let token = khor_net::endpoint::Ticket::decode(&stale).unwrap().token;
+    let record = ra.join(".khor").join("invites").join(&token);
+    assert!(record.exists(), "control: the issuer keeps a record to age");
+
+    // One millisecond past the window, on the clock that decides.
+    let minted = now_ms() - khor_node::link::INVITE_WINDOW_MS - 1;
+    std::fs::write(&record, minted.to_string()).unwrap();
+
+    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let err = timeout(Duration::from_secs(15), b.pair(&stale))
+        .await
+        .expect("a refusal must not hang")
+        .unwrap_err();
+    assert_eq!(
+        err,
+        khor_catalog::msg::invite_expired(khor_node::link::INVITE_WINDOW_MS / 60_000),
+        "expired is its own word"
+    );
+    assert_ne!(err, khor_catalog::msg::BAD_INVITE, "and not the wrong-code one");
+    assert_eq!(b.devices().unwrap().len(), 1, "beta's table should hold only itself");
+    assert!(!record.exists(), "an expired ticket is dropped, not left to be re-refused");
+
+    // The control: a fresh ticket, same machines, same link.
+    let fresh = a.invite().unwrap();
+    let name = timeout(Duration::from_secs(15), b.pair(&fresh))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+    assert_eq!(name, "alpha");
+    assert_eq!(b.devices().unwrap().len(), 2, "the fresh one really did pair");
+
+    serve.abort();
+    for r in [&ra, &rb] {
+        let _ = std::fs::remove_dir_all(r);
+    }
+}
+
+/// Minting sweeps what can never be used again — the whole of the
+/// cleanup story, run where somebody is already thinking about invites.
+#[test]
+fn minting_a_ticket_sweeps_the_ones_that_expired() {
+    let ra = root("sweep");
+    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let dir = ra.join(".khor").join("invites");
+    std::fs::create_dir_all(&dir).unwrap();
+    let old = dir.join("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let empty = dir.join("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    std::fs::write(&old, (now_ms() - khor_node::link::INVITE_WINDOW_MS - 1).to_string()).unwrap();
+    // What a khor from before this rule left behind: no mint instant at
+    // all. "I cannot tell how old this is" has one safe reading.
+    std::fs::write(&empty, b"").unwrap();
+
+    // Minting needs a live endpoint file; without one it refuses before
+    // sweeping, which is the wrong thing to be testing here.
+    std::fs::create_dir_all(ra.join(".khor")).unwrap();
+    std::fs::write(
+        ra.join(".khor").join("endpoint.json"),
+        serde_json::json!({ "id": "aa", "addrs": [], "pid": 1 }).to_string(),
+    )
+    .unwrap();
+
+    let ticket = server.invite().unwrap();
+    let minted = khor_net::endpoint::Ticket::decode(&ticket).unwrap().token;
+    assert!(!old.exists(), "an expired ticket is swept");
+    assert!(!empty.exists(), "and so is one whose age cannot be read");
+    assert!(dir.join(&minted).exists(), "while the new one stays");
+
+    let _ = std::fs::remove_dir_all(&ra);
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}

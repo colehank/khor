@@ -348,7 +348,14 @@ fn run(args: &[String]) -> Result<(), String> {
             }
         }
         "invite" => {
+            // The ticket goes to stdout so it can be piped; how long it
+            // lasts goes to stderr, because a window nobody is told
+            // about is a refusal nobody can explain later.
             println!("{}", node()?.invite()?);
+            eprintln!(
+                "{}",
+                cli::invite_window(khor_node::link::INVITE_WINDOW_MS / 60_000)
+            );
             Ok(())
         }
         "pair" => {

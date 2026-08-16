@@ -23,6 +23,32 @@ const SYNC_EVERY: Duration = Duration::from_secs(5);
 /// Per-device budget for one sync visit; the far side may simply be off.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a pairing ticket can be used after it is minted.
+///
+/// A ticket used to be one-time only in the sense that it burned on use;
+/// **nothing stopped one found later from being used at all**, and a
+/// pairing ticket is a key to the whole mesh. So there are two bounds
+/// and the number sits between them:
+///
+/// - **Long enough to carry a ticket from one machine to another**,
+///   including being interrupted on the way: mint it at the desk, pick
+///   up the phone, get distracted, finish. Anything under a couple of
+///   minutes would make ordinary setup fail and teach people to re-mint
+///   in a hurry rather than read what they are pasting.
+/// - **Short enough that a ticket found later is already dead** — in a
+///   chat log, a screenshot, a shell history, a note from this morning.
+///   The ledger's bar was "not still alive half a day later"; a quarter
+///   of an hour is well inside it.
+///
+/// Fifteen minutes. Re-minting costs one command on a machine the person
+/// is already sitting at, which is why the cost of being too short is
+/// small and the cost of being too long is a key nobody revoked.
+///
+/// **Enforced on the issuer's side only** (`Node::invite_is_fresh`), so
+/// this is one clock's arithmetic and not two — the accepting machine's
+/// clock never enters into it.
+pub const INVITE_WINDOW_MS: i64 = 15 * 60 * 1000;
+
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
@@ -232,6 +258,18 @@ impl Node {
                 if !path.exists() {
                     return Err(msg::BAD_INVITE.into());
                 }
+                // **Expired is its own answer, not "wrong code".** The
+                // two have different fixes: a wrong or spent code means
+                // check what you pasted, an expired one means ask for
+                // another. Reading them as one word sends people to look
+                // for a mistake they did not make (docs/UX.md 失败要说
+                // 清是哪一种).
+                if !Self::invite_is_fresh(&path) {
+                    // It can never be used again, so it goes now rather
+                    // than waiting for the next mint to sweep it.
+                    let _ = fs::remove_file(&path);
+                    return Err(msg::invite_expired(INVITE_WINDOW_MS / 60_000));
+                }
                 // Burn before use: a token that pairs twice is a door
                 // that never closes.
                 fs::remove_file(&path).map_err(msg::cant_burn_invite)?;
@@ -433,6 +471,12 @@ impl Node {
 
     /// Creates a one-time pairing ticket. Needs `khor serve` running —
     /// the ticket carries the live endpoint's addresses.
+    ///
+    /// The ticket is also **one-time in time**: see [`INVITE_WINDOW_MS`].
+    /// Minting sweeps the expired ones first, which is the whole of the
+    /// cleanup story — khor has no timer to hang a sweep on, and the one
+    /// moment somebody is certainly thinking about invites is the moment
+    /// they ask for one.
     pub fn invite(&self) -> Result<String, String> {
         let file = self.endpoint_file()?.ok_or(
             msg::SERVE_NOT_RUNNING_FOR_INVITE,
@@ -440,7 +484,14 @@ impl Node {
         let token = fresh_hex()?;
         let dir = self.root().join(".khor").join("invites");
         fs::create_dir_all(&dir).map_err(msg::cant_make_invites_dir)?;
-        fs::write(self.invite_path(&token)?, b"").map_err(msg::cant_save_invite)?;
+        self.sweep_expired_invites(&dir);
+        // The file **is** the mint instant. It used to be empty, and the
+        // window is enforced from what is written here rather than from
+        // anything in the ticket: one clock decides, and it is the
+        // issuer's, so there is no skew between two machines to reason
+        // about and nothing the holder of a ticket can edit.
+        fs::write(self.invite_path(&token)?, crate::live::now_ms().to_string())
+            .map_err(msg::cant_save_invite)?;
         Ticket {
             id: self.device_str().to_owned(),
             name: self.name().to_owned(),
@@ -458,6 +509,40 @@ impl Node {
             return Err(msg::BAD_INVITE.into());
         }
         Ok(self.root().join(".khor").join("invites").join(token))
+    }
+
+    /// Whether a token file is still inside its window.
+    ///
+    /// **An unreadable mint instant is expired**, and that covers the
+    /// only compatibility case there is: a ticket minted by a khor from
+    /// before this rule wrote an empty file, and "I cannot tell when
+    /// this was minted" has exactly one safe reading. The cost is that
+    /// upgrading invalidates a ticket in flight, and the fix is to type
+    /// `khor invite` again.
+    fn invite_is_fresh(path: &std::path::Path) -> bool {
+        let Ok(text) = fs::read_to_string(path) else {
+            return false;
+        };
+        let Ok(minted) = text.trim().parse::<i64>() else {
+            return false;
+        };
+        crate::live::now_ms().saturating_sub(minted) <= INVITE_WINDOW_MS
+    }
+
+    /// Deletes every ticket that can no longer be used.
+    ///
+    /// Best effort on purpose: a file that will not go away is a ticket
+    /// that is already refused, so failing here costs a stale byte, not
+    /// a door left open. Nothing is reported, because nobody asked about
+    /// old tickets — they asked for a new one.
+    fn sweep_expired_invites(&self, dir: &std::path::Path) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.is_file() && !Self::invite_is_fresh(&path) {
+                let _ = fs::remove_file(&path);
+            }
+        }
     }
 
     /// Accepts a ticket: dial the issuer, burn the token, merge its

@@ -106,6 +106,10 @@ hooks-already = "本来就有,没动: {0}"
 # is running is claude's business, and the reliable move is stated
 # instead of guessed at.
 hooks-restart-claude = "已经在跑的 claude 要重开才一定读得到"
+# Said on stderr when a ticket is minted: the ticket itself goes to
+# stdout so it can be piped, and the window is something the person has
+# to know without it landing in whatever they paste.
+invite-window = "这张票 {0} 分钟内有效,过了就再出一张"
 paired-ok = "配上了: {0}。它认识的机器现在都在你的设备表里"
 nothing-to-sync = "网里只有本机,没得同步"
 sync-failed-line = "{0}: 没同步上——{1}"
@@ -182,6 +186,13 @@ endpoint-file-garbled = "endpoint.json 读不懂: {0}"
 request-unreadable = "读不完请求: {0}"
 cant-write-reply = "写不出应答: {0}"
 bad-invite = "配对码不对,或已经被用过了"
+# A separate word from the one above, because the two have different
+# fixes: a wrong or spent code means look at what you pasted, an expired
+# one means ask for another. One word for both would send people hunting
+# for a mistake they did not make. {0} is the window in minutes, taken
+# from the constant that enforces it, so the sentence cannot drift from
+# the rule.
+invite-expired = "这张票过期了(出票后 {0} 分钟内有效),让那台机器再出一张: khor invite"
 cant-burn-invite = "销不掉配对码: {0}"
 not-paired = "这台设备不在设备表里,先配对"
 unknown-doc = "不认识这种 doc: {0}"
