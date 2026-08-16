@@ -78,8 +78,11 @@ fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
     khor_gui_core::uninstall_hooks(&Node::root_from_env())
 }
 
+/// Answers with the ticket **and** the window it is good for: the window
+/// belongs to the library that enforces it, not to the dialog that
+/// prints it (`khor_gui_core::Ticket`).
 #[tauri::command]
-fn invite() -> Result<String, String> {
+fn invite() -> Result<khor_gui_core::Ticket, String> {
     khor_gui_core::invite(&Node::root_from_env())
 }
 

@@ -339,12 +339,33 @@ pub fn uninstall_hooks(root: &Path) -> Result<HooksState, String> {
     hooks_state_of(&n)
 }
 
+/// A freshly minted ticket, and how long it is good for.
+///
+/// **The window travels with the ticket instead of being written into
+/// the screen that shows it.** A dialog holding its own `15` would be a
+/// second copy of a number only `khor_node::link::INVITE_WINDOW_MS`
+/// enforces, and the day that constant moves the app would go on
+/// promising the old one — a sentence nobody can catch by reading either
+/// file alone, since neither would be wrong on its own.
+///
+/// Minutes, because that is the unit the words for it use
+/// (`invite-window` on this side, `invite-expired` on the refusal), and
+/// the conversion happens once in the library.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct Ticket {
+    pub token: String,
+    pub minutes: u32,
+}
+
 /// Issues a one-time pairing ticket. It carries the live endpoint's
 /// addresses, so it needs a resident serve — and both skins embed one
 /// (the bridge and the app each start `serve` on their own thread), so
 /// the GUI can issue a real ticket without a terminal.
-pub fn invite(root: &Path) -> Result<String, String> {
-    open(root)?.invite()
+pub fn invite(root: &Path) -> Result<Ticket, String> {
+    Ok(Ticket {
+        token: open(root)?.invite()?,
+        minutes: khor_node::link::invite_window_minutes(),
+    })
 }
 
 /// Joins with someone's ticket. Async because `Node::pair` dials — and

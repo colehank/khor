@@ -5,8 +5,9 @@ import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
+import type { Ticket } from "./gen/bindings/Ticket";
 
-export type { SessionRow, DeviceRow, FaceChoices, HooksState };
+export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
@@ -54,5 +55,8 @@ export const restyle = (change: {
 export const fetchHooks = () => call<HooksState>("hooks_state");
 export const installHooks = () => call<HooksState>("install_hooks");
 export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
-export const invite = () => call<string>("invite");
+/** The ticket and how long it lasts. The window comes from the library
+    that enforces it — a `15` written into the dialog would be a second
+    copy of a number only `link::INVITE_WINDOW_MS` decides. */
+export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });

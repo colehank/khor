@@ -9,7 +9,7 @@
 // server.
 import { useEffect, useState } from "react";
 
-import { invite, pair } from "@/api";
+import { invite, pair, type Ticket } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { gui } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 
 /** Issues a one-time ticket and shows it, ready to be carried across. */
 export function InviteDialog({
@@ -29,14 +29,14 @@ export function InviteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [ticket, setTicket] = useState("");
+  const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // The ticket is minted on opening, not on mounting: it burns on use,
   // and one issued per glance at the menu leaves a pile of live tokens.
   useEffect(() => {
     if (!open) return;
-    setTicket("");
+    setTicket(null);
     setError(null);
     let live = true;
     invite()
@@ -58,13 +58,30 @@ export function InviteDialog({
             {error}
           </div>
         ) : (
-          <Input
-            data-ticket
-            aria-label={gui.ticket}
-            readOnly
-            value={ticket}
-            onFocus={(e) => e.currentTarget.select()}
-          />
+          <>
+            <Input
+              data-ticket
+              aria-label={gui.ticket}
+              readOnly
+              value={ticket?.token ?? ""}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            {/* **How long it lasts, in the same words the terminal
+                uses** — one catalog key rendered twice, so the two faces
+                cannot come to say different things about one rule. The
+                number comes from the answer, never from here: a `15`
+                written into this file would be a second copy of
+                something only `link::INVITE_WINDOW_MS` decides, and the
+                day it moves this screen would go on promising the old
+                one with nothing anywhere disagreeing.
+                Drawn only once there is a ticket, because until then
+                there is nothing for it to be true of. */}
+            {ticket && (
+              <div data-ticket-window className="text-sm text-muted-foreground">
+                {cli.invite_window(ticket.minutes)}
+              </div>
+            )}
+          </>
         )}
       </DialogContent>
     </Dialog>

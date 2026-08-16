@@ -10,5 +10,6 @@ fn main() {
     khor_gui_core::DeviceRow::export_all_to(&dir).expect("export DeviceRow");
     khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
+    khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     println!("bindings -> {}", dir.display());
 }

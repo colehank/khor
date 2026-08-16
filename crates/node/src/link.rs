@@ -49,6 +49,22 @@ const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 /// clock never enters into it.
 pub const INVITE_WINDOW_MS: i64 = 15 * 60 * 1000;
 
+/// The same window in whole minutes — **the unit every word for it uses**
+/// (`invite-window`, `invite-expired`), so the conversion belongs here
+/// rather than at each place that says it.
+///
+/// It exists because three callers were each dividing by 60,000: the CLI
+/// after minting, the refusal an expired ticket gets, and the app's
+/// ticket dialog. Three divisions of one constant is three chances for a
+/// screen to name a window the code does not enforce — and the app's is
+/// the one that cannot be checked by reading the same file.
+pub fn invite_window_minutes() -> u32 {
+    // The constant is a positive literal one screen up; a future value
+    // that broke that would be caught here rather than in a rendered
+    // sentence.
+    (INVITE_WINDOW_MS / 60_000) as u32
+}
+
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
@@ -268,7 +284,7 @@ impl Node {
                     // It can never be used again, so it goes now rather
                     // than waiting for the next mint to sweep it.
                     let _ = fs::remove_file(&path);
-                    return Err(msg::invite_expired(INVITE_WINDOW_MS / 60_000));
+                    return Err(msg::invite_expired(invite_window_minutes()));
                 }
                 // Burn before use: a token that pairs twice is a door
                 // that never closes.

@@ -543,7 +543,7 @@ fn invite(_rest: &[String]) -> Result<(), String> {
     // goes to stderr, because a window nobody is told about is a refusal
     // nobody can explain later.
     println!("{}", node()?.invite()?);
-    eprintln!("{}", cli::invite_window(khor_node::link::INVITE_WINDOW_MS / 60_000));
+    eprintln!("{}", cli::invite_window(khor_node::link::invite_window_minutes()));
     Ok(())
 }
 

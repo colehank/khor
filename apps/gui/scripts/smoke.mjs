@@ -8,7 +8,9 @@
 //      aria-label (which proves the probe found the pane) and appears
 //      nowhere in what the pane paints;
 //   3. the GUI issues a real ticket: a third machine joins with it from
-//      the CLI and shows up in the list;
+//      the CLI and shows up in the list — and the dialog says how long
+//      that ticket lasts in the same sentence `khor invite` prints,
+//      with neither the words nor the number written in this script;
 //   4. search filters the devices pane for real, both ways, says so when
 //      nothing matched, and clearing brings everything back;
 //   5. leaving a line reaches the other machine: beta tells alpha from
@@ -104,7 +106,7 @@
 // (a rail item's aria-label, a row's data-word) and compared against
 // what the other face prints — the catalog owns the text, this script
 // owns the comparison.
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -308,6 +310,25 @@ try {
     const t = await page.locator("[data-ticket]").inputValue();
     return t.length > 0 && t;
   });
+  //    …and the dialog says how long that ticket lasts, in the very
+  //    sentence the terminal prints. **Neither the words nor the number
+  //    are written here**: another home is asked to mint one and to say
+  //    its own line, and the two are required to match — so the day the
+  //    window moves, a screen still promising the old one goes red
+  //    instead of being a discrepancy nobody is looking at.
+  //
+  //    `khor invite` puts the ticket on stdout and the window on
+  //    stderr, which is why this reads stderr. The ticket that mints is
+  //    left to expire unused; minting one is the only way to make it
+  //    say the sentence.
+  const shownWindow = (await page.locator("[data-ticket-window]").innerText()).trim();
+  const saidWindow = spawnSync(KHOR, ["invite"], { env: envA, encoding: "utf8" }).stderr.trim();
+  if (!shownWindow) throw new Error("the ticket dialog says nothing about how long it lasts");
+  if (!saidWindow) throw new Error("probe dead: `khor invite` said nothing about the window");
+  if (shownWindow !== saidWindow) {
+    throw new Error(`the dialog says ${shownWindow}, the terminal says ${saidWindow}`);
+  }
+
   await page.keyboard.press("Escape");
   cli(envG, "pair", guiTicket);
   await until("gamma in beta's device list", 30_000, async () =>
