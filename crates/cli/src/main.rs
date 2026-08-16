@@ -11,7 +11,7 @@ use khor_node::{list, AvatarStyle, FaceShape, MsgBody, Node, SessionId, Variant,
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Err(e) = run(&args) {
+    if let Err(e) = dispatch(&args) {
         eprintln!("{e}");
         std::process::exit(1);
     }
@@ -28,410 +28,498 @@ fn rt() -> Result<tokio::runtime::Runtime, String> {
         .map_err(msg::runtime_wont_start)
 }
 
-fn run(args: &[String]) -> Result<(), String> {
-    let verb = args.first().map(String::as_str).unwrap_or("help");
+/// One verb: the word a person types, and the code that word runs.
+///
+/// **A verb is declared here exactly once.** This used to be a `match` on
+/// the raw string, with the usage text keeping its own list — two places
+/// holding one fact, so they drifted, and drift in either direction is
+/// invisible: a word `khor help` promises and nothing answers, or a verb
+/// nothing documents, both read as a healthy CLI from every angle except
+/// a person typing that word. A row here cannot be half-written — there
+/// is no way to name a word without giving it code, or to write code
+/// without giving it a word.
+struct Verb {
+    /// What gets typed.
+    word: &'static str,
+    /// Everything after the word.
+    run: fn(&[String]) -> Result<(), String>,
+}
+
+/// Every verb khor answers, in the order the usage text lists them.
+const VERBS: &[Verb] = &[
+    Verb { word: "id", run: id },
+    Verb { word: "face", run: face },
+    Verb { word: "devices", run: devices },
+    Verb { word: "sessions", run: sessions },
+    Verb { word: "tell", run: tell },
+    Verb { word: "send", run: send },
+    Verb { word: "accept", run: accept },
+    Verb { word: "log", run: log },
+    Verb { word: "run", run: run },
+    Verb { word: "open", run: open },
+    Verb { word: "attach", run: attach },
+    Verb { word: "state", run: state },
+    Verb { word: "seen", run: seen },
+    Verb { word: "pin", run: pin },
+    Verb { word: "unpin", run: unpin },
+    Verb { word: "close", run: close },
+    Verb { word: "serve", run: serve },
+    Verb { word: "hooks", run: hooks },
+    Verb { word: "invite", run: invite },
+    Verb { word: "pair", run: pair },
+    Verb { word: "sync", run: sync },
+    Verb { word: "_host", run: host },
+    Verb { word: "help", run: help },
+    Verb { word: "--help", run: help },
+    Verb { word: "-h", run: help },
+];
+
+/// The verbs deliberately absent from the usage text, and why each stays
+/// out.
+///
+/// The gate below refuses a verb that is in neither place, so staying out
+/// of the usage becomes a decision somebody writes down rather than an
+/// omission that happens. **Delete a line here and that verb goes red** —
+/// which is the point: a hidden verb with nothing on record is
+/// indistinguishable from one somebody forgot to document.
+///
+/// It sits beside `VERBS` because that is where a person adding a verb is
+/// looking, and it is compiled only for the gate because checking is all
+/// it does — khor itself never asks whether a verb is documented.
+#[cfg(test)]
+const NOT_IN_USAGE: &[(&str, &str)] = &[
+    ("_host", "internal: the host process `open` spawns, whose arguments are a calling convention"),
+    ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
+    ("--help", "the spelling people try before reading anything"),
+    ("-h", "the short spelling of the same"),
+];
+
+/// What `khor` alone means. Named so the gate can keep it answerable: a
+/// fallback word no row claims turns the bare command into an unknown-verb
+/// error, which is the one failure nobody would think to test by hand.
+const NOTHING_TYPED: &str = "help";
+
+fn dispatch(args: &[String]) -> Result<(), String> {
+    let word = args.first().map(String::as_str).unwrap_or(NOTHING_TYPED);
     let rest = &args[args.len().min(1)..];
-    match verb {
-        "id" => {
-            let n = node()?;
-            println!("{}  {}", n.device_str(), n.name());
-            Ok(())
-        }
-        // This machine's face. It prints what the machine is wearing
-        // either way — with no flags because "what am I" is the question
-        // somebody runs this to ask, and after a change because a verb
-        // that says nothing leaves 做了但没变化 and 失败 looking alike
-        // (docs/UX.md 状态呈现).
-        "face" => {
-            let mut colors: Option<Vec<String>> = None;
-            let mut variant: Option<String> = None;
-            let mut shape: Option<String> = None;
-            let mut it = rest.iter();
-            while let Some(flag) = it.next() {
-                let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
-                match flag.as_str() {
-                    // A factory set by name. Resolved here rather than
-                    // inside `restyle`, so that the library has exactly
-                    // one way to be handed a palette: five colors.
-                    "--palette" => {
-                        let id = value()?;
-                        let p = khor_node::preset(&id).ok_or_else(|| {
-                            let all: Vec<&str> = PRESETS.iter().map(|p| p.id).collect();
-                            msg::no_such_palette(&id, all.join(cli::NAME_SEPARATOR))
-                        })?;
-                        colors = Some(p.colors.iter().map(|c| c.to_string()).collect());
-                    }
-                    "--colors" => {
-                        colors = Some(value()?.split(',').map(|c| c.trim().to_owned()).collect());
-                    }
-                    "--variant" => variant = Some(value()?),
-                    "--shape" => shape = Some(value()?),
-                    _ => return Err(USAGE.into()),
-                }
-            }
-            let n = node()?;
-            let style = match (&colors, &variant, &shape) {
-                (None, None, None) => n.avatar_style(),
-                _ => n.restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())?,
-            };
-            print_face(&style);
-            Ok(())
-        }
-        "devices" => {
-            let n = node()?;
-            for d in n.devices()? {
-                let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
-                let pin = if d.pinned { cli::PINNED_MARK } else { "" };
-                println!("{}\t{}…{here}{pin}", d.name, &d.id[..16]);
-            }
-            Ok(())
-        }
-        "sessions" => {
-            let mode = match rest {
-                [] => list::Arrange::Recent,
-                [flag, key] if flag == "--by" => list::Arrange::from_key(key).ok_or_else(|| {
-                    let all: Vec<&str> =
-                        list::Arrange::ALL.iter().map(|a| a.key()).collect();
-                    msg::not_a_way_to_arrange(key, all.join(cli::NAME_SEPARATOR))
-                })?,
-                _ => return Err(USAGE.into()),
-            };
-            let n = node()?;
-            // The heading is printed when the group changes, which is
-            // also why the node returns rows already grouped: this loop
-            // owns no comparison, it only notices the boundary.
-            let mut current: Option<String> = None;
-            for a in n.sessions_arranged(mode)? {
-                if !a.group.is_empty() && current.as_deref() != Some(a.group.as_str()) {
-                    println!("{}", cli::group_header(group_word(&a.group)));
-                    current = Some(a.group.clone());
-                }
-                let v = a.view;
-                let s = &v.session;
-                let src = match &v.source {
-                    // A fresh report reads like local truth; only age
-                    // worth knowing gets printed (docs/SESSION.md 离线).
-                    Some((name, age)) if *age >= 30_000 => {
-                        format!("\t{name} {}", cli::unreachable_for(human_age(*age)))
-                    }
-                    _ => String::new(),
-                };
-                // The order already says which rows are pinned; the mark
-                // says *why* they lead, which "on top" alone cannot.
-                let pin = if v.pinned { format!("\t{}", cli::PINNED_MARK) } else { String::new() };
-                println!(
-                    "{}\t{}\t{}\t{}{pin}{}",
-                    s.id.0,
-                    state::word(s.state.state.key()),
-                    cli::unread(s.unread),
-                    s.title,
-                    src
-                );
-            }
-            // A missing row is invisible; this is the one thing that
-            // makes "khor cannot read this vendor any more" visible
-            // instead of looking like a quiet machine.
-            let behind = n.unreadable_sessions();
-            if behind > 0 {
-                println!("{}", cli::adaptor_behind(behind));
-            }
-            Ok(())
-        }
-        "tell" => {
-            let [machine, text @ ..] = rest else {
-                return Err(USAGE.into());
-            };
-            if text.is_empty() {
-                return Err(USAGE.into());
-            }
-            let id = node()?.tell(machine, &text.join(" "))?;
-            println!("{id}");
-            Ok(())
-        }
-        "send" => {
-            let [machine, path] = rest else {
-                return Err(USAGE.into());
-            };
-            let id = node()?.send(machine, std::path::Path::new(path))?;
-            println!("{}", cli::summary_sent(&id.0));
-            Ok(())
-        }
-        "accept" => {
-            let [id] = rest else {
-                return Err(USAGE.into());
-            };
-            let moved = rt()?.block_on(node()?.accept(&SessionId(id.clone())))?;
-            println!("{}", cli::pulled(moved));
-            Ok(())
-        }
-        "log" => {
-            let [machine] = rest else {
-                return Err(USAGE.into());
-            };
-            let log = node()?.log(machine)?;
-            if log.broken > 0 {
-                eprintln!("{}", cli::broken_blocks(log.broken));
-            }
-            for m in log.messages {
-                println!("{}: {}", m.from.name, render(&m));
-            }
-            Ok(())
-        }
-        "run" => {
-            let mut tui = false;
-            let mut title: Option<String> = None;
-            let mut cmd: Vec<String> = Vec::new();
-            let mut it = rest.iter();
-            while let Some(a) = it.next() {
-                match a.as_str() {
-                    "--tui" if cmd.is_empty() => tui = true,
-                    "--title" if cmd.is_empty() => {
-                        title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
-                    }
-                    "--" if cmd.is_empty() => {}
-                    _ => cmd.push(a.clone()),
-                }
-            }
-            if cmd.is_empty() {
-                return Err(USAGE.into());
-            }
-            let n = node()?;
-            let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
-            let title = title.unwrap_or_else(|| {
-                std::path::Path::new(&cmd[0])
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| cmd[0].clone())
-            });
-            let id = n.open_ephemeral(kind, &title)?;
-            // The child owns stdout; the id goes to stderr so scripts can
-            // still capture the command's own output cleanly.
-            eprintln!("session: {}", id.0);
-            let code = n.run_ephemeral(&id, &cmd)?;
-            std::process::exit(code);
-        }
-        "open" => {
-            let mut tui = false;
-            let mut detached = false;
-            let mut title: Option<String> = None;
-            let mut cmd: Vec<String> = Vec::new();
-            let mut it = rest.iter();
-            while let Some(a) = it.next() {
-                match a.as_str() {
-                    "--tui" if cmd.is_empty() => tui = true,
-                    "-d" if cmd.is_empty() => detached = true,
-                    "--title" if cmd.is_empty() => {
-                        title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
-                    }
-                    "--" if cmd.is_empty() => {}
-                    _ => cmd.push(a.clone()),
-                }
-            }
-            if cmd.is_empty() {
-                cmd = vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())];
-            }
-            let n = node()?;
-            let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
-            let title = title.unwrap_or_else(|| {
-                std::path::Path::new(&cmd[0])
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| cmd[0].clone())
-            });
-            let size = tty_size().unwrap_or((80, 24));
-            let id = n.open_persistent(kind, &title, &cmd, size)?;
-            eprintln!("session: {}", id.0);
-            if detached {
-                println!("{}", id.0);
-                return Ok(());
-            }
-            attach_verb(&n, &id)
-        }
-        "attach" => {
-            let [sid] = rest else {
-                return Err(USAGE.into());
-            };
-            attach_verb(&node()?, &SessionId(sid.clone()))
-        }
-        // Internal: the detached host process `open` spawns. Not in the
-        // usage text on purpose — nobody types this.
-        "_host" => {
-            let (head, cmd) = match rest.iter().position(|a| a == "--") {
-                Some(i) => (&rest[..i], &rest[i + 1..]),
-                None => return Err(USAGE.into()),
-            };
-            let [sid, cols, rows] = head else {
-                return Err(USAGE.into());
-            };
-            if cmd.is_empty() {
-                return Err(USAGE.into());
-            }
-            let size = (
-                cols.parse::<u16>().map_err(|_| USAGE.to_string())?,
-                rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
-            );
-            khor_node::host::host_main(
-                Node::root_from_env(),
-                SessionId(sid.clone()),
-                size,
-                cmd.to_vec(),
-            )
-        }
-        "state" => {
-            let n = node()?;
-            match rest {
-                [flag] if flag == "--hook" => {
-                    use std::io::Read;
-                    let mut payload = String::new();
-                    std::io::stdin()
-                        .read_to_string(&mut payload)
-                        .map_err(msg::hook_payload_unreadable)?;
-                    n.claude_hook(&payload)?;
-                    Ok(())
-                }
-                [word] => {
-                    let sid = std::env::var("KHOR_SESSION")
-                        .map_err(|_| msg::WHICH_SESSION.to_string())?;
-                    let word = khor_node::State::try_from(word.clone())
-                        .map_err(|_| msg::not_a_state_word(word))?;
-                    n.report_state(&SessionId(sid), word)
-                }
-                [word, flag, sid] if flag == "--session" => {
-                    let word = khor_node::State::try_from(word.clone())
-                        .map_err(|_| msg::not_a_state_word(word))?;
-                    n.report_state(&SessionId(sid.clone()), word)
-                }
-                _ => Err(USAGE.into()),
-            }
-        }
-        "seen" => {
-            let [id] = rest else {
-                return Err(USAGE.into());
-            };
-            node()?.seen(&SessionId(id.clone()))
-        }
-        // Two verbs rather than one toggle: a toggle typed twice is a
-        // no-op you cannot see, and scripts have no way to say "make
-        // sure this is pinned". Both call the one node function the
-        // app's button calls.
-        verb @ ("pin" | "unpin") => {
-            let on = verb == "pin";
-            let n = node()?;
-            match rest {
-                [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
-                [id] => n.pin_session(&SessionId(id.clone()), on),
-                _ => Err(USAGE.into()),
-            }
-        }
-        "close" => {
-            let [id] = rest else {
-                return Err(USAGE.into());
-            };
-            node()?.close(&SessionId(id.clone()))
-        }
-        "serve" => {
-            let n = node()?;
-            eprintln!("{}", cli::serve_banner(n.name()));
-            rt()?.block_on(n.serve())
-        }
-        // Two shapes, one verb: asking is the default because it is the
-        // safe one, and installing has to be typed. `khor hooks` alone
-        // is also how somebody checks what `install` just did — a write
-        // nobody can verify afterwards is a write on trust.
-        "hooks" => {
-            let n = node()?;
-            match rest {
-                [] => {
-                    let report = n.hooks_report()?;
-                    println!("{}", cli::hooks_file(report.path.display()));
-                    let mut incomplete = false;
-                    for (event, state) in &report.events {
-                        let said = match state {
-                            khor_node::adaptor::claude::Installed::Here => {
-                                cli::HOOK_HERE.to_owned()
-                            }
-                            khor_node::adaptor::claude::Installed::Missing => {
-                                incomplete = true;
-                                cli::HOOK_MISSING.to_owned()
-                            }
-                            khor_node::adaptor::claude::Installed::Elsewhere(cmd) => {
-                                incomplete = true;
-                                cli::hook_elsewhere(cmd)
-                            }
-                        };
-                        println!("{event}\t{said}");
-                    }
-                    if incomplete {
-                        println!("{}", cli::HOOKS_WORTH_INSTALLING);
-                    }
-                    Ok(())
-                }
-                [word] if word == "install" => {
-                    let done = n.install_hooks()?;
-                    println!("{}", cli::hooks_file(done.path.display()));
-                    let list = |v: &[&str]| v.join(cli::NAME_SEPARATOR);
-                    if !done.added.is_empty() {
-                        println!("{}", cli::hooks_added(list(&done.added)));
-                    }
-                    if !done.repointed.is_empty() {
-                        println!("{}", cli::hooks_repointed(list(&done.repointed)));
-                    }
-                    if !done.unchanged.is_empty() {
-                        println!("{}", cli::hooks_already(list(&done.unchanged)));
-                    }
-                    if !done.added.is_empty() || !done.repointed.is_empty() {
-                        println!("{}", cli::HOOKS_RESTART_CLAUDE);
-                    }
-                    Ok(())
-                }
-                _ => Err(USAGE.into()),
-            }
-        }
-        "invite" => {
-            // The ticket goes to stdout so it can be piped; how long it
-            // lasts goes to stderr, because a window nobody is told
-            // about is a refusal nobody can explain later.
-            println!("{}", node()?.invite()?);
-            eprintln!(
-                "{}",
-                cli::invite_window(khor_node::link::INVITE_WINDOW_MS / 60_000)
-            );
-            Ok(())
-        }
-        "pair" => {
-            let [ticket] = rest else {
-                return Err(USAGE.into());
-            };
-            let name = rt()?.block_on(node()?.pair(ticket))?;
-            println!("{}", cli::paired_ok(name));
-            Ok(())
-        }
-        "sync" => {
-            let outcomes = rt()?.block_on(node()?.sync_now())?;
-            if outcomes.is_empty() {
-                println!("{}", cli::NOTHING_TO_SYNC);
-            }
-            for (name, verdict) in outcomes {
-                match verdict {
-                    Ok(what) => println!("{name}: {what}"),
-                    Err(e) => println!("{}", cli::sync_failed_line(name, e)),
-                }
-            }
-            Ok(())
-        }
-        "help" | "--help" | "-h" => {
-            println!("{USAGE}");
-            Ok(())
-        }
-        other => Err(format!("{}\n{USAGE}", msg::unknown_verb(other))),
+    match VERBS.iter().find(|v| v.word == word) {
+        Some(v) => (v.run)(rest),
+        None => Err(format!("{}\n{USAGE}", msg::unknown_verb(word))),
     }
+}
+
+fn id(_rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    println!("{}  {}", n.device_str(), n.name());
+    Ok(())
+}
+
+/// This machine's face. It prints what the machine is wearing either way
+/// — with no flags because "what am I" is the question somebody runs this
+/// to ask, and after a change because a verb that says nothing leaves
+/// 做了但没变化 and 失败 looking alike (docs/UX.md 状态呈现).
+fn face(rest: &[String]) -> Result<(), String> {
+    let mut colors: Option<Vec<String>> = None;
+    let mut variant: Option<String> = None;
+    let mut shape: Option<String> = None;
+    let mut it = rest.iter();
+    while let Some(flag) = it.next() {
+        let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
+        match flag.as_str() {
+            // A factory set by name. Resolved here rather than inside
+            // `restyle`, so that the library has exactly one way to be
+            // handed a palette: five colors.
+            "--palette" => {
+                let id = value()?;
+                let p = khor_node::preset(&id).ok_or_else(|| {
+                    let all: Vec<&str> = PRESETS.iter().map(|p| p.id).collect();
+                    msg::no_such_palette(&id, all.join(cli::NAME_SEPARATOR))
+                })?;
+                colors = Some(p.colors.iter().map(|c| c.to_string()).collect());
+            }
+            "--colors" => {
+                colors = Some(value()?.split(',').map(|c| c.trim().to_owned()).collect());
+            }
+            "--variant" => variant = Some(value()?),
+            "--shape" => shape = Some(value()?),
+            _ => return Err(USAGE.into()),
+        }
+    }
+    let n = node()?;
+    let style = match (&colors, &variant, &shape) {
+        (None, None, None) => n.avatar_style(),
+        _ => n.restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())?,
+    };
+    print_face(&style);
+    Ok(())
+}
+
+fn devices(_rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    for d in n.devices()? {
+        let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
+        let pin = if d.pinned { cli::PINNED_MARK } else { "" };
+        println!("{}\t{}…{here}{pin}", d.name, &d.id[..16]);
+    }
+    Ok(())
+}
+
+fn sessions(rest: &[String]) -> Result<(), String> {
+    let mode = match rest {
+        [] => list::Arrange::Recent,
+        [flag, key] if flag == "--by" => list::Arrange::from_key(key).ok_or_else(|| {
+            let all: Vec<&str> = list::Arrange::ALL.iter().map(|a| a.key()).collect();
+            msg::not_a_way_to_arrange(key, all.join(cli::NAME_SEPARATOR))
+        })?,
+        _ => return Err(USAGE.into()),
+    };
+    let n = node()?;
+    // The heading is printed when the group changes, which is also why
+    // the node returns rows already grouped: this loop owns no
+    // comparison, it only notices the boundary.
+    let mut current: Option<String> = None;
+    for a in n.sessions_arranged(mode)? {
+        if !a.group.is_empty() && current.as_deref() != Some(a.group.as_str()) {
+            println!("{}", cli::group_header(group_word(&a.group)));
+            current = Some(a.group.clone());
+        }
+        let v = a.view;
+        let s = &v.session;
+        let src = match &v.source {
+            // A fresh report reads like local truth; only age worth
+            // knowing gets printed (docs/SESSION.md 离线).
+            Some((name, age)) if *age >= 30_000 => {
+                format!("\t{name} {}", cli::unreachable_for(human_age(*age)))
+            }
+            _ => String::new(),
+        };
+        // The order already says which rows are pinned; the mark says
+        // *why* they lead, which "on top" alone cannot.
+        let pin = if v.pinned { format!("\t{}", cli::PINNED_MARK) } else { String::new() };
+        println!(
+            "{}\t{}\t{}\t{}{pin}{}",
+            s.id.0,
+            state::word(s.state.state.key()),
+            cli::unread(s.unread),
+            s.title,
+            src
+        );
+    }
+    // A missing row is invisible; this is the one thing that makes "khor
+    // cannot read this vendor any more" visible instead of looking like
+    // a quiet machine.
+    let behind = n.unreadable_sessions();
+    if behind > 0 {
+        println!("{}", cli::adaptor_behind(behind));
+    }
+    Ok(())
+}
+
+fn tell(rest: &[String]) -> Result<(), String> {
+    let [machine, text @ ..] = rest else {
+        return Err(USAGE.into());
+    };
+    if text.is_empty() {
+        return Err(USAGE.into());
+    }
+    let id = node()?.tell(machine, &text.join(" "))?;
+    println!("{id}");
+    Ok(())
+}
+
+fn send(rest: &[String]) -> Result<(), String> {
+    let [machine, path] = rest else {
+        return Err(USAGE.into());
+    };
+    let id = node()?.send(machine, std::path::Path::new(path))?;
+    println!("{}", cli::summary_sent(&id.0));
+    Ok(())
+}
+
+fn accept(rest: &[String]) -> Result<(), String> {
+    let [id] = rest else {
+        return Err(USAGE.into());
+    };
+    let moved = rt()?.block_on(node()?.accept(&SessionId(id.clone())))?;
+    println!("{}", cli::pulled(moved));
+    Ok(())
+}
+
+fn log(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(USAGE.into());
+    };
+    let log = node()?.log(machine)?;
+    if log.broken > 0 {
+        eprintln!("{}", cli::broken_blocks(log.broken));
+    }
+    for m in log.messages {
+        println!("{}: {}", m.from.name, render(&m));
+    }
+    Ok(())
+}
+
+fn run(rest: &[String]) -> Result<(), String> {
+    let mut tui = false;
+    let mut title: Option<String> = None;
+    let mut cmd: Vec<String> = Vec::new();
+    let mut it = rest.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--tui" if cmd.is_empty() => tui = true,
+            "--title" if cmd.is_empty() => {
+                title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+            }
+            "--" if cmd.is_empty() => {}
+            _ => cmd.push(a.clone()),
+        }
+    }
+    if cmd.is_empty() {
+        return Err(USAGE.into());
+    }
+    let n = node()?;
+    let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
+    let title = title.unwrap_or_else(|| {
+        std::path::Path::new(&cmd[0])
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| cmd[0].clone())
+    });
+    let id = n.open_ephemeral(kind, &title)?;
+    // The child owns stdout; the id goes to stderr so scripts can still
+    // capture the command's own output cleanly.
+    eprintln!("session: {}", id.0);
+    let code = n.run_ephemeral(&id, &cmd)?;
+    std::process::exit(code);
+}
+
+fn open(rest: &[String]) -> Result<(), String> {
+    let mut tui = false;
+    let mut detached = false;
+    let mut title: Option<String> = None;
+    let mut cmd: Vec<String> = Vec::new();
+    let mut it = rest.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--tui" if cmd.is_empty() => tui = true,
+            "-d" if cmd.is_empty() => detached = true,
+            "--title" if cmd.is_empty() => {
+                title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+            }
+            "--" if cmd.is_empty() => {}
+            _ => cmd.push(a.clone()),
+        }
+    }
+    if cmd.is_empty() {
+        cmd = vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())];
+    }
+    let n = node()?;
+    let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
+    let title = title.unwrap_or_else(|| {
+        std::path::Path::new(&cmd[0])
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| cmd[0].clone())
+    });
+    let size = tty_size().unwrap_or((80, 24));
+    let id = n.open_persistent(kind, &title, &cmd, size)?;
+    eprintln!("session: {}", id.0);
+    if detached {
+        println!("{}", id.0);
+        return Ok(());
+    }
+    attach_to(&n, &id)
+}
+
+fn attach(rest: &[String]) -> Result<(), String> {
+    let [sid] = rest else {
+        return Err(USAGE.into());
+    };
+    attach_to(&node()?, &SessionId(sid.clone()))
+}
+
+/// Internal: the detached host process `open` spawns. Nobody types this,
+/// which is why it is on record in `NOT_IN_USAGE` instead of in the
+/// usage text.
+fn host(rest: &[String]) -> Result<(), String> {
+    let (head, cmd) = match rest.iter().position(|a| a == "--") {
+        Some(i) => (&rest[..i], &rest[i + 1..]),
+        None => return Err(USAGE.into()),
+    };
+    let [sid, cols, rows] = head else {
+        return Err(USAGE.into());
+    };
+    if cmd.is_empty() {
+        return Err(USAGE.into());
+    }
+    let size = (
+        cols.parse::<u16>().map_err(|_| USAGE.to_string())?,
+        rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
+    );
+    khor_node::host::host_main(Node::root_from_env(), SessionId(sid.clone()), size, cmd.to_vec())
+}
+
+fn state(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    match rest {
+        [flag] if flag == "--hook" => {
+            use std::io::Read;
+            let mut payload = String::new();
+            std::io::stdin()
+                .read_to_string(&mut payload)
+                .map_err(msg::hook_payload_unreadable)?;
+            n.claude_hook(&payload)?;
+            Ok(())
+        }
+        [word] => {
+            let sid = std::env::var("KHOR_SESSION").map_err(|_| msg::WHICH_SESSION.to_string())?;
+            let word = khor_node::State::try_from(word.clone())
+                .map_err(|_| msg::not_a_state_word(word))?;
+            n.report_state(&SessionId(sid), word)
+        }
+        [word, flag, sid] if flag == "--session" => {
+            let word = khor_node::State::try_from(word.clone())
+                .map_err(|_| msg::not_a_state_word(word))?;
+            n.report_state(&SessionId(sid.clone()), word)
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+fn seen(rest: &[String]) -> Result<(), String> {
+    let [id] = rest else {
+        return Err(USAGE.into());
+    };
+    node()?.seen(&SessionId(id.clone()))
+}
+
+/// Two verbs rather than one toggle: a toggle typed twice is a no-op you
+/// cannot see, and scripts have no way to say "make sure this is pinned".
+/// Both call the one node function the app's button calls.
+fn pin(rest: &[String]) -> Result<(), String> {
+    pinning(rest, true)
+}
+
+fn unpin(rest: &[String]) -> Result<(), String> {
+    pinning(rest, false)
+}
+
+fn pinning(rest: &[String], on: bool) -> Result<(), String> {
+    let n = node()?;
+    match rest {
+        [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
+        [id] => n.pin_session(&SessionId(id.clone()), on),
+        _ => Err(USAGE.into()),
+    }
+}
+
+fn close(rest: &[String]) -> Result<(), String> {
+    let [id] = rest else {
+        return Err(USAGE.into());
+    };
+    node()?.close(&SessionId(id.clone()))
+}
+
+fn serve(_rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    eprintln!("{}", cli::serve_banner(n.name()));
+    rt()?.block_on(n.serve())
+}
+
+/// Two shapes, one verb: asking is the default because it is the safe
+/// one, and installing has to be typed. `khor hooks` alone is also how
+/// somebody checks what `install` just did — a write nobody can verify
+/// afterwards is a write on trust.
+fn hooks(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    match rest {
+        [] => {
+            let report = n.hooks_report()?;
+            println!("{}", cli::hooks_file(report.path.display()));
+            let mut incomplete = false;
+            for (event, state) in &report.events {
+                let said = match state {
+                    khor_node::adaptor::claude::Installed::Here => cli::HOOK_HERE.to_owned(),
+                    khor_node::adaptor::claude::Installed::Missing => {
+                        incomplete = true;
+                        cli::HOOK_MISSING.to_owned()
+                    }
+                    khor_node::adaptor::claude::Installed::Elsewhere(cmd) => {
+                        incomplete = true;
+                        cli::hook_elsewhere(cmd)
+                    }
+                };
+                println!("{event}\t{said}");
+            }
+            if incomplete {
+                println!("{}", cli::HOOKS_WORTH_INSTALLING);
+            }
+            Ok(())
+        }
+        [word] if word == "install" => {
+            let done = n.install_hooks()?;
+            println!("{}", cli::hooks_file(done.path.display()));
+            let list = |v: &[&str]| v.join(cli::NAME_SEPARATOR);
+            if !done.added.is_empty() {
+                println!("{}", cli::hooks_added(list(&done.added)));
+            }
+            if !done.repointed.is_empty() {
+                println!("{}", cli::hooks_repointed(list(&done.repointed)));
+            }
+            if !done.unchanged.is_empty() {
+                println!("{}", cli::hooks_already(list(&done.unchanged)));
+            }
+            if !done.added.is_empty() || !done.repointed.is_empty() {
+                println!("{}", cli::HOOKS_RESTART_CLAUDE);
+            }
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+fn invite(_rest: &[String]) -> Result<(), String> {
+    // The ticket goes to stdout so it can be piped; how long it lasts
+    // goes to stderr, because a window nobody is told about is a refusal
+    // nobody can explain later.
+    println!("{}", node()?.invite()?);
+    eprintln!("{}", cli::invite_window(khor_node::link::INVITE_WINDOW_MS / 60_000));
+    Ok(())
+}
+
+fn pair(rest: &[String]) -> Result<(), String> {
+    let [ticket] = rest else {
+        return Err(USAGE.into());
+    };
+    let name = rt()?.block_on(node()?.pair(ticket))?;
+    println!("{}", cli::paired_ok(name));
+    Ok(())
+}
+
+fn sync(_rest: &[String]) -> Result<(), String> {
+    let outcomes = rt()?.block_on(node()?.sync_now())?;
+    if outcomes.is_empty() {
+        println!("{}", cli::NOTHING_TO_SYNC);
+    }
+    for (name, verdict) in outcomes {
+        match verdict {
+            Ok(what) => println!("{name}: {what}"),
+            Err(e) => println!("{}", cli::sync_failed_line(name, e)),
+        }
+    }
+    Ok(())
+}
+
+fn help(_rest: &[String]) -> Result<(), String> {
+    println!("{USAGE}");
+    Ok(())
 }
 
 /// Raw passthrough to a hosted session: keystrokes and size changes go
 /// out framed, PTY bytes come back raw. Ctrl-\ detaches; the session
 /// stays. One writer thread frames everything so ops never interleave.
 #[cfg(unix)]
-fn attach_verb(n: &Node, id: &SessionId) -> Result<(), String> {
+fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
     use khor_node::host::{connect, write_frame, ClientOp};
     use std::io::{Read, Write};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -537,7 +625,7 @@ fn attach_verb(n: &Node, id: &SessionId) -> Result<(), String> {
 }
 
 #[cfg(not(unix))]
-fn attach_verb(_n: &Node, _id: &SessionId) -> Result<(), String> {
+fn attach_to(_n: &Node, _id: &SessionId) -> Result<(), String> {
     Err(msg::ATTACH_WINDOWS_LATER.into())
 }
 
@@ -656,5 +744,112 @@ fn render(m: &khor_node::Message) -> String {
             .collect::<Vec<_>>()
             .join(" "),
         MsgBody::Unknown(k) => cli::unknown_body(k),
+    }
+}
+
+/// **The usage text and the dispatch table say the same words.**
+///
+/// `VERBS` makes half of this structural — a word cannot exist without
+/// code, nor code without a word. The half no compiler can hold is the
+/// usage text: it is prose, and prose is where the drift lived. These
+/// tests are the other half.
+///
+/// **Nothing here runs a verb.** They read `word` and never touch `run`,
+/// which is the only reason a gate may be exhaustive over a list holding
+/// `serve` and `open`: calling them to prove they exist would start a
+/// server and open a session on whatever machine runs the tests.
+///
+/// They live inside the binary because a `[[bin]]` crate has nothing to
+/// import — and being unreachable from `tests/` is the same property that
+/// keeps `VERBS` the only place a verb is declared.
+#[cfg(test)]
+mod gate {
+    use super::{NOTHING_TYPED, NOT_IN_USAGE, VERBS};
+    use khor_catalog::cli::USAGE;
+
+    /// The words the usage promises, read back out of the text a person
+    /// reads.
+    ///
+    /// An entry starts at the list's left margin — two spaces, then the
+    /// word; a description that wraps is indented past it. Reading the
+    /// prose is the point: fed from a second, tidier list, this would
+    /// only prove the two lists agree, and the text somebody actually
+    /// reads could still say anything.
+    fn promised() -> Vec<&'static str> {
+        USAGE
+            .lines()
+            .filter_map(|l| l.strip_prefix("  "))
+            .filter(|l| !l.starts_with(' '))
+            .filter_map(|l| l.split_whitespace().next())
+            .collect()
+    }
+
+    #[test]
+    fn the_usage_promises_nothing_khor_cannot_answer() {
+        let promised = promised();
+        for word in &promised {
+            assert!(
+                VERBS.iter().any(|v| v.word == *word),
+                "the usage promises `{word}` and nothing answers it"
+            );
+        }
+        // Last, because it is the vaguer complaint of the two: a parser
+        // that quietly stopped matching would leave the loop above with
+        // nothing to walk and this test green. The count is derived from
+        // the two tables — never a number typed in here.
+        assert_eq!(
+            promised.len(),
+            VERBS.len() - NOT_IN_USAGE.len(),
+            "the usage did not parse into one word per listed verb: {promised:?}"
+        );
+    }
+
+    #[test]
+    fn every_verb_is_promised_or_on_record_as_hidden() {
+        let promised = promised();
+        for v in VERBS {
+            let hidden = NOT_IN_USAGE.iter().any(|(word, _)| *word == v.word);
+            assert!(
+                promised.contains(&v.word) || hidden,
+                "`{}` is a verb the usage never mentions and the register never explains",
+                v.word
+            );
+            assert!(
+                !(promised.contains(&v.word) && hidden),
+                "`{}` is in the usage and also on record as kept out of it",
+                v.word
+            );
+        }
+    }
+
+    #[test]
+    fn the_register_explains_only_verbs_khor_has() {
+        for (word, _) in NOT_IN_USAGE {
+            assert!(
+                VERBS.iter().any(|v| v.word == *word),
+                "the register explains `{word}`, which is not a verb"
+            );
+        }
+    }
+
+    /// Two rows claiming one word: dispatch takes the first, and the
+    /// second is code nobody can reach by typing.
+    #[test]
+    fn no_two_rows_claim_the_same_word() {
+        for (i, v) in VERBS.iter().enumerate() {
+            assert!(
+                !VERBS[..i].iter().any(|e| e.word == v.word),
+                "`{}` is claimed twice; the second row is unreachable",
+                v.word
+            );
+        }
+    }
+
+    #[test]
+    fn khor_with_no_verb_lands_on_one() {
+        assert!(
+            VERBS.iter().any(|v| v.word == NOTHING_TYPED),
+            "`khor` alone falls back to `{NOTHING_TYPED}`, which no row claims"
+        );
     }
 }
