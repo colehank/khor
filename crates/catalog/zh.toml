@@ -154,6 +154,18 @@ vitals-disk = "磁盘 {0} / {1}"
 # could not answer read the same otherwise — and 「0 / 0」 would read as
 # an empty disk (docs/SESSION.md 认不出就不落词).
 vitals-disk-unknown = "磁盘 说不上"
+# The graphics hardware, when khor could read it. **There is deliberately
+# no 「说不上」 word to match the disk's above**, and the asymmetry is the
+# judgment: khor's home is always on some filesystem, so failing to name
+# it means khor could not answer and is worth saying out loud. A machine
+# with no GPU, or one khor cannot ask, is an ordinary machine — a line
+# announcing that on every desktop without a card is noise reporting a
+# non-event. So the whole line is simply absent (khor_core::Gpu).
+vitals-gpu = "GPU {0}% / {1} 卡"
+# Video memory, summed over the cards. Absent on unified-memory machines,
+# where those bytes are already counted in 「内存」 above and a second line
+# would put the same memory on screen twice under another name.
+vitals-vram = "显存 {0} / {1}"
 # How old the reading is. **Printed on every reading that is not this
 # machine's own**, because a number with no age is read as the present:
 # a machine that has been off since yesterday would otherwise show

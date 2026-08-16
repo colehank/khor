@@ -231,6 +231,30 @@ function Readings({ row }: { row: DeviceRow }) {
           {cli.vitals_disk_unknown}
         </div>
       )}
+      {/* **Absent rather than explained**, which is the opposite of the
+          disk right above, and the asymmetry is the judgment. khor's home
+          is always on some filesystem, so failing to name it means khor
+          could not answer. A machine with no GPU — or one khor cannot ask
+          — is an ordinary machine, and a line announcing that on every
+          desktop without a card reports a non-event. Same again one level
+          in for the video memory: a unified-memory machine has none to
+          report, and those bytes are already in the 内存 line above. */}
+      {v.gpu && (
+        <>
+          <Unit
+            name="gpu"
+            label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
+            fraction={v.gpu.util_pct / 100}
+          />
+          {v.gpu.mem && (
+            <Unit
+              name="vram"
+              label={cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
+              fraction={v.gpu.mem.total > 0 ? v.gpu.mem.used / v.gpu.mem.total : null}
+            />
+          )}
+        </>
+      )}
       {/* Printed on every reading that was not taken to answer this very
           call — which is every machine but this one. A number with no age
           beside it is read as the present. */}

@@ -179,6 +179,18 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
             None => cli::VITALS_DISK_UNKNOWN.to_owned(),
         },
     ];
+    // **Nothing is said when there is no reading**, unlike the disk right
+    // above — a machine with no GPU is an ordinary machine, and the word
+    // for that would be printed by most desktops to report a non-event
+    // (`khor_core::Gpu`). Same again one level in: video memory is its
+    // own absence, because a unified-memory machine has none to report
+    // rather than none left.
+    if let Some(g) = v.gpu {
+        parts.push(cli::vitals_gpu(format_args!("{:.0}", g.util_pct), g.cards));
+        if let Some(m) = g.mem {
+            parts.push(cli::vitals_vram(bytes(m.used), bytes(m.total)));
+        }
+    }
     // Said for every reading that was not taken just now — which is every
     // machine but this one, and this one only while it is answering.
     if age > 0 {

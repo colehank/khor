@@ -84,7 +84,11 @@
 //      has the row's short id as its prefix (so it is *that* machine),
 //      one face on both, the readings drawn, and the age line present
 //      for a machine reached over the wire and absent for this one —
-//      the offline axis, which a locally faked reading would get wrong;
+//      the offline axis, which a locally faked reading would get wrong.
+//      **How many readings there are is read off `khor devices`, never
+//      written here**, so a machine khor cannot ask a GPU about is
+//      covered by the same assertion; and the GPU row itself is checked
+//      to be the same sentence and the same card count on both faces;
 //  24. the rows that open something are exactly the ones with somewhere
 //      to go: the devices pane's do, the files and browser panes' do
 //      not, with the positive half read first so the absence means
@@ -1387,6 +1391,35 @@ try {
     throw new Error("a machine card is filled in before any machine was opened");
   }
 
+  //     **`khor devices` is the independent witness for the readings.**
+  //     It prints the same reading from the same node, and `vitals_line`
+  //     joins its pieces with two spaces — so counting them needs no word
+  //     from the catalog, and this file stays free of Chinese.
+  const cliReadings = (machine, env) => {
+    const line = cli(env, "devices")
+      .split("\n")
+      .find((l) => l.startsWith(`${machine}\t`));
+    if (!line) throw new Error(`probe dead: no ${machine} row printed by \`khor devices\``);
+    const cells = line.split("\t");
+    if (cells.length < 3) throw new Error(`probe dead: ${machine}'s row prints no readings`);
+    return cells[2].split("  ").filter(Boolean);
+  };
+  //     The age counts on the GUI side too, because the CLI prints it as
+  //     one more piece of that same run — leaving it out would make the
+  //     two disagree for a reason that has nothing to do with readings.
+  const sameNumberOfReadings = async (machine, env) => {
+    const onScreen =
+      (await page.locator("[data-vitals-unit]").count()) +
+      (await page.locator("[data-vitals-age]").count());
+    const printed = cliReadings(machine, env);
+    if (onScreen !== printed.length) {
+      throw new Error(
+        `${machine}: the card draws ${onScreen} readings, \`khor devices\` prints ` +
+          `${printed.length} — ${printed.join(" | ")}`,
+      );
+    }
+  };
+
   //     Clicked the way a person clicks it: the row's own button.
   const shortId = await page
     .locator('[data-device="alpha"]')
@@ -1411,12 +1444,18 @@ try {
     throw new Error("alpha wears one face in the list and another on its card");
   }
 
-  //     The readings are drawn, all three units of them.
-  const units = await page.locator("[data-vitals-unit]").count();
-  if (units !== 3) throw new Error(`the card shows ${units} readings, expected three`);
+  //     The readings are drawn, and **how many of them there are is not
+  //     a number written here**. It follows what the backend could read
+  //     on this machine, which is the entire point of the GPU being a
+  //     field that can be absent: on a machine khor cannot ask, both
+  //     faces show one row fewer and this still holds. So the count comes
+  //     from `khor devices` printing the same reading — an independent
+  //     witness, with the age line counted on both sides because the CLI
+  //     prints it inside the same run of cells.
   if ((await page.locator("[data-vitals-bar]").count()) === 0) {
     throw new Error("no reading drew a bar");
   }
+  await sameNumberOfReadings("alpha", envB);
 
   //     **The offline axis reaches the screen.** alpha's reading was
   //     taken on alpha and carried here, so it has an age; beta samples
@@ -1432,11 +1471,43 @@ try {
       await page.locator('[data-device="beta"]').evaluate((el) => el.dataset.row.slice(0, 12)),
     ),
   );
-  if ((await page.locator("[data-vitals-unit]").count()) !== 3) {
+  if ((await page.locator("[data-vitals-unit]").count()) === 0) {
     throw new Error("this machine's own card is missing readings");
   }
   if ((await page.locator("[data-vitals-age]").count()) !== 0) {
     throw new Error("this machine's own reading is dressed as something remembered");
+  }
+  await sameNumberOfReadings("beta", envB);
+
+  //     **The GPU is one of those readings, and it is the same sentence
+  //     on both faces.** The counts above already tie how many rows there
+  //     are to what the CLI printed; what is left is that this particular
+  //     row says what the CLI says. Digits are stripped before comparing
+  //     because the utilisation is alive and the two faces sample a
+  //     moment apart — what has to match is the sentence (which is the
+  //     catalog key, so a word drifting on one face reddens this) and the
+  //     card count, which is not alive.
+  //
+  //     Required, not skipped: every Mac has an accelerator, so a missing
+  //     row here is a real finding. On a machine khor cannot ask this
+  //     goes red and names the reason, which beats a silent skip that
+  //     would pass by not running.
+  const gpuRow = page.locator('[data-vitals-unit="gpu"]');
+  if ((await gpuRow.count()) !== 1) {
+    throw new Error("no GPU reading on this machine's card, and every Mac has one to read");
+  }
+  const sentence = (s) => s.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+  const cardCount = (s) => s.match(/\d+/g)?.[1];
+  const onCard = await gpuRow.innerText();
+  const inTerminal = cliReadings("beta", envB).find((p) => sentence(p) === sentence(onCard));
+  if (!inTerminal) {
+    throw new Error(
+      `the card says "${onCard}" and \`khor devices\` prints nothing shaped like it — ` +
+        `${cliReadings("beta", envB).join(" | ")}`,
+    );
+  }
+  if (cardCount(onCard) !== cardCount(inTerminal)) {
+    throw new Error(`the card counts ${cardCount(onCard)} cards, the terminal ${cardCount(inTerminal)}`);
   }
 
   // 24) only the rows with somewhere to go open anything.
