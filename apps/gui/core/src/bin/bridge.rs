@@ -145,6 +145,9 @@ fn handle(
             khor_gui_core::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;
             Ok("null".to_owned())
         }
+        "hooks_state" => to_json(&khor_gui_core::hooks_state(root)?),
+        "install_hooks" => to_json(&khor_gui_core::install_hooks(root)?),
+        "uninstall_hooks" => to_json(&khor_gui_core::uninstall_hooks(root)?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

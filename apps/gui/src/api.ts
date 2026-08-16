@@ -4,8 +4,9 @@
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
+import type { HooksState } from "./gen/bindings/HooksState";
 
-export type { SessionRow, DeviceRow, FaceChoices };
+export type { SessionRow, DeviceRow, FaceChoices, HooksState };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
@@ -45,5 +46,13 @@ export const restyle = (change: {
   variant?: string;
   shape?: string;
 }) => call<null>("restyle", change);
+/** Whether claude on **this** machine is set up to tell khor what it is
+    doing. No machine argument on any of these three: the settings file
+    is rooted at this node's own vendor home, so there is nothing to
+    point at somebody else. Each write answers with the state after it,
+    so a button never has to guess what it just did. */
+export const fetchHooks = () => call<HooksState>("hooks_state");
+export const installHooks = () => call<HooksState>("install_hooks");
+export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
 export const invite = () => call<string>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });

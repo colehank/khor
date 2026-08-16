@@ -471,10 +471,10 @@ fn serve(_rest: &[String]) -> Result<(), String> {
     rt()?.block_on(n.serve())
 }
 
-/// Two shapes, one verb: asking is the default because it is the safe
-/// one, and installing has to be typed. `khor hooks` alone is also how
-/// somebody checks what `install` just did — a write nobody can verify
-/// afterwards is a write on trust.
+/// Three shapes, one verb: asking is the default because it is the safe
+/// one, and both writes have to be typed. `khor hooks` alone is also how
+/// somebody checks what `install` or `uninstall` just did — a write
+/// nobody can verify afterwards is a write on trust.
 fn hooks(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     match rest {
@@ -515,6 +515,21 @@ fn hooks(rest: &[String]) -> Result<(), String> {
                 println!("{}", cli::hooks_already(list(&done.unchanged)));
             }
             if !done.added.is_empty() || !done.repointed.is_empty() {
+                println!("{}", cli::HOOKS_RESTART_CLAUDE);
+            }
+            Ok(())
+        }
+        [word] if word == "uninstall" => {
+            let done = n.uninstall_hooks()?;
+            println!("{}", cli::hooks_file(done.path.display()));
+            // Both outcomes are said out loud. "Removed nothing" is not
+            // silence: nobody can check somebody else's settings file by
+            // hand, and a second run that printed the same thing as the
+            // first would be the only way to see that twice equals once.
+            if done.removed.is_empty() {
+                println!("{}", cli::HOOKS_NONE_TO_REMOVE);
+            } else {
+                println!("{}", cli::hooks_removed(done.removed.join(cli::NAME_SEPARATOR)));
                 println!("{}", cli::HOOKS_RESTART_CLAUDE);
             }
             Ok(())

@@ -59,6 +59,25 @@ fn restyle(
     khor_gui_core::restyle(&Node::root_from_env(), colors, variant, shape)
 }
 
+/// The three hook commands are about **this machine's** claude: the
+/// settings file they read and write is rooted at this node's vendor
+/// home, so there is no argument naming a machine and no way to point
+/// one of these at somebody else's.
+#[tauri::command]
+fn hooks_state() -> Result<khor_gui_core::HooksState, String> {
+    khor_gui_core::hooks_state(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn install_hooks() -> Result<khor_gui_core::HooksState, String> {
+    khor_gui_core::install_hooks(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
+    khor_gui_core::uninstall_hooks(&Node::root_from_env())
+}
+
 #[tauri::command]
 fn invite() -> Result<String, String> {
     khor_gui_core::invite(&Node::root_from_env())
@@ -101,6 +120,9 @@ pub fn run() {
             pin_device,
             face_choices,
             restyle,
+            hooks_state,
+            install_hooks,
+            uninstall_hooks,
             invite,
             pair
         ])

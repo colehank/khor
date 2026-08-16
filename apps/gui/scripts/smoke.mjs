@@ -87,13 +87,17 @@
 //      to go: the devices pane's do, the files and browser panes' do
 //      not, with the positive half read first so the absence means
 //      absence and not a renamed selector;
-//  25. a pin that does not take says so on the button that was pressed:
+//  25. the hook button is a pair and the button is the report: absent
+//      on another machine's card, present on this one, and each press
+//      moves both faces together — `khor hooks` reading the same home
+//      is the independent witness, with neither word spelled here;
+//  26. a pin that does not take says so on the button that was pressed:
 //      a real failure through the real path (the backend is taken away,
 //      the button is clicked the way a person clicks it), the face
 //      provably absent on the successful press just before, the colour
 //      measured against a probe wearing the token, and exactly one
 //      button wearing it;
-//  26. zero pageerror throughout.
+//  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -1441,7 +1445,81 @@ try {
   // finds, and which pane is open decides which row that is.
   await openLanding("devices");
 
-  // 25) a pin that does not take says so, on the button that was
+  // 25) the hook button is a pair, and the button *is* the report.
+  //
+  //     The state it edits lives in a file, so the CLI is an independent
+  //     witness: `khor hooks` reading beta's own home says the same
+  //     thing the button does, before and after each press. Both faces,
+  //     one fact — and neither word is spelled here, they are read off
+  //     the two and required to move together.
+  //
+  //     **It writes into beta's smoke home, never the developer's.**
+  //     `adaptor::vendor_home` roots at KHOR_HOME, which this run set,
+  //     so `~/.claude` is not reachable from here at all.
+  const hookWords = () =>
+    cli(envB, "hooks")
+      .split("\n")
+      .filter((l) => l.includes("\t"))
+      .map((l) => l.split("\t")[1]);
+  const hookToggle = page.locator("[data-hooks-toggle]");
+
+  //     The control: this control belongs to this machine, so alpha's
+  //     card must not carry it. Read first, because "absent on alpha"
+  //     would also pass if the selector named nothing anywhere.
+  await openLanding("devices");
+  await page.locator('[data-device="beta"] [data-row-open]').click();
+  await until("the hook button on this machine's card", 10_000, async () =>
+    (await hookToggle.count()) === 1,
+  );
+  await page.locator('[data-device="alpha"] [data-row-open]').click();
+  await until("alpha's card", 10_000, async () =>
+    (await page.locator("[data-machine-id]").count()) === 1,
+  );
+  if ((await hookToggle.count()) !== 0) {
+    throw new Error("another machine's card offers to edit this machine's hooks");
+  }
+  await page.locator('[data-device="beta"] [data-row-open]').click();
+  await until("back on this machine's card", 10_000, async () => (await hookToggle.count()) === 1);
+
+  //     Not installed to begin with, said by both faces.
+  const offWord = await hookToggle.innerText();
+  const offCli = hookWords();
+  if (offCli.length === 0) throw new Error("probe dead: `khor hooks` listed no events");
+  if (await page.locator('[data-hooks][data-installed="true"]').count()) {
+    throw new Error("hooks report themselves installed in a home that has never had any");
+  }
+
+  //     Pressed the way a person presses it.
+  await hookToggle.click();
+  await until("the hooks to go on", 10_000, async () =>
+    (await page.locator('[data-hooks][data-installed="true"]').count()) === 1,
+  );
+  const onWord = await hookToggle.innerText();
+  if (!onWord || onWord === offWord) {
+    throw new Error(`the button kept its old name after installing: ${onWord}`);
+  }
+  const onCli = hookWords();
+  if (onCli.some((w) => offCli.includes(w))) {
+    throw new Error(`the CLI says the same thing before and after installing: ${onCli}`);
+  }
+  if (new Set(onCli).size !== 1) {
+    throw new Error(`installing left the events disagreeing: ${onCli}`);
+  }
+
+  //     …and back off again, all the way to the words it started with.
+  //     A one-way button would pass everything above.
+  await hookToggle.click();
+  await until("the hooks to come back off", 10_000, async () =>
+    (await page.locator('[data-hooks][data-installed="false"]').count()) === 1,
+  );
+  if ((await hookToggle.innerText()) !== offWord) {
+    throw new Error("the button did not go back to offering the install");
+  }
+  if (hookWords().join(",") !== offCli.join(",")) {
+    throw new Error(`the CLI does not agree the hooks came out: ${hookWords()}`);
+  }
+
+  // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //
   //     **A real failure, through the real path.** The backend is taken
@@ -1527,7 +1605,7 @@ try {
     .evaluateAll((els) => els.filter((e) => e.dataset.pinFailed === "true").length);
   if (others !== 1) throw new Error(`${others} buttons wear the failure face; exactly one was pressed`);
 
-  // 26) the page never threw.
+  // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {

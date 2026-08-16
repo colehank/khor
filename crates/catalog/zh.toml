@@ -105,7 +105,9 @@ usage = """
   unpin [-m] <session|机器> 取消置顶
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
-  hooks [install]       看钩子装没装;install 装上(只加自己那几条,装两遍=装一遍)
+  hooks [install|uninstall]
+                        看钩子装没装;install 装上、uninstall 卸掉(都只碰
+                        khor 自己那几条,做两遍=做一遍)
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   sync                  立即和全网各同步一趟"""
@@ -188,6 +190,13 @@ hooks-already = "本来就有,没动: {0}"
 # is running is claude's business, and the reliable move is stated
 # instead of guessed at.
 hooks-restart-claude = "已经在跑的 claude 要重开才一定读得到"
+# `khor hooks uninstall`. Both outcomes get a word for the reason the
+# install side has three lists: **nobody can check somebody else's
+# settings file by hand**, so the run has to say what it did — and
+# "removed nothing" has to be sayable, or twice-removed cannot be shown
+# to equal once-removed.
+hooks-removed = "卸掉了: {0}"
+hooks-none-to-remove = "本来就没装,没动"
 # Said on stderr when a ticket is minted: the ticket itself goes to
 # stdout so it can be piped, and the window is something the person has
 # to know without it landing in whatever they paste.
@@ -450,6 +459,29 @@ unpin = "取消置顶"
 # be a whole surface built for the least common thing that happens here.
 pin-failed = "钉不上"
 unpin-failed = "取消不了"
+# The hook, on this machine's own card. Two names because the button has
+# two jobs and shows the one it will do next — the same rule the pin
+# follows.
+install-hooks = "装钩子"
+uninstall-hooks = "卸钩子"
+# …and what each says when the write did not take. Same reason the pin
+# has a pair of these: 做了但没变化 and 失败 may not wear one face
+# (docs/UX.md), and it is said on the button that was pressed because
+# this app has nowhere that collects messages.
+install-hooks-failed = "装不上"
+uninstall-hooks-failed = "卸不掉"
+# Why anybody would press it. **完成 is the whole of what the hook buys**
+# — `adaptor::claude::hook` maps SessionStart/UserPromptSubmit/Stop/
+# Notification, and `Stop` is the only source of 完成 anywhere in khor
+# (docs/HOOKS.md). It does **not** produce 中断: there is no State::Errored
+# on that path at all, so promising one here would be a word khor cannot
+# keep. Reading the disk already gives 忙碌/待批/空闲/失败.
+hooks-buy-you = "装上钩子,claude 答完一轮才报得出「完成」,不装只显示成空闲"
+# Which claude. The hook goes into a settings file on this machine, and
+# the button only appears on this machine's card — said out loud because
+# a control that silently applies to one machine out of a list is a
+# control people will press on the wrong one.
+hooks-are-local = "改的是这台机器上的 claude"
 tell-machine = "给机器留言"
 pick-a-machine = "选一台机器"
 message-text = "留言"

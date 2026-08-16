@@ -475,6 +475,114 @@ pub fn install_hooks(vendor_home: &Path) -> Result<HookInstall, String> {
     Ok(out)
 }
 
+/// What one uninstall did, per event.
+///
+/// Two lists for the same reason [`HookInstall`] has three: **"removed
+/// twice equals removed once" is only visible if the second run can say
+/// it found nothing.** Nobody can check somebody else's settings file by
+/// hand, so the run has to say what it did.
+#[derive(Debug, Default, Clone)]
+pub struct HookUninstall {
+    pub path: PathBuf,
+    pub removed: Vec<&'static str>,
+    /// Events that held no khor hook to begin with.
+    pub absent: Vec<&'static str>,
+}
+
+/// Takes khor's hooks back out of claude's settings, leaving everything
+/// else in that file exactly as it was.
+///
+/// **The inverse of [`install_hooks`], reach for reach.** It removes the
+/// command entries [`is_khors`] recognises and nothing else — which
+/// means a hook belonging to *another* khor (a different path, the
+/// [`Installed::Elsewhere`] case) comes out too, and that is the point:
+/// the alternative is a machine where `khor hooks` reports something
+/// installed that nothing can remove.
+///
+/// **Empty containers are pruned, up to and including the `hooks`
+/// object.** An empty group, an event whose list has nothing in it, and
+/// an empty `hooks` map all mean exactly what their absence means, so
+/// leaving them behind is khor's litter in a file khor does not own. A
+/// group that still holds somebody else's entry is left standing, and so
+/// is every event khor never touched.
+///
+/// Refuses rather than repairs a file it cannot parse, for the reason
+/// [`install_hooks`] gives: a settings file with a syntax error is one
+/// somebody is in the middle of editing.
+pub fn uninstall_hooks(vendor_home: &Path) -> Result<HookUninstall, String> {
+    let path = settings_path(vendor_home);
+    let mut out = HookUninstall { path: path.clone(), ..Default::default() };
+    let Some(mut settings) = read_settings(&path)? else {
+        // No file at all: nothing of khor's is in it, which is the
+        // answer rather than an error. Nothing is written either —
+        // creating a settings file in order to remove nothing from it
+        // would leave a trace of an operation that did nothing.
+        out.absent = HOOK_EVENTS.to_vec();
+        return Ok(out);
+    };
+
+    let root = settings
+        .as_object_mut()
+        .ok_or_else(|| msg::settings_not_an_object(path.display()))?;
+    // No `hooks` key: same as no file, minus the writing.
+    let Some(hooks) = root.get_mut("hooks") else {
+        out.absent = HOOK_EVENTS.to_vec();
+        return Ok(out);
+    };
+    let hooks = hooks
+        .as_object_mut()
+        .ok_or_else(|| msg::settings_hooks_not_an_object(path.display()))?;
+
+    for event in HOOK_EVENTS {
+        let Some(groups) = hooks.get_mut(event) else {
+            out.absent.push(event);
+            continue;
+        };
+        let groups = groups
+            .as_array_mut()
+            .ok_or_else(|| msg::settings_event_not_a_list(path.display(), event))?;
+        let mut took = false;
+        for g in groups.iter_mut() {
+            let Some(entries) = g.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+                continue;
+            };
+            let before = entries.len();
+            entries.retain(|e| !e["command"].as_str().is_some_and(is_khors));
+            took |= entries.len() != before;
+        }
+        if !took {
+            out.absent.push(event);
+            continue;
+        }
+        // **Pruned only where khor removed something.** A group khor
+        // emptied is a group khor made — install always appends its own
+        // holding exactly one entry — and an event array left empty by
+        // that is khor's leftover. An empty group or event khor never
+        // touched is somebody else's business and stays: this reaches
+        // exactly as far as it wrote.
+        groups.retain(|g| !g["hooks"].as_array().is_some_and(|h| h.is_empty()));
+        if groups.is_empty() {
+            hooks.remove(event);
+        }
+        out.removed.push(event);
+    }
+    // …and the same one level up. Only when khor emptied it: a `hooks`
+    // object that was already empty before this ran is not khor's to
+    // tidy away.
+    if !out.removed.is_empty() && hooks.is_empty() {
+        root.remove("hooks");
+    }
+
+    // Only written when something changed: a run that removed nothing
+    // must not rewrite somebody's file (a fresh trailing newline, a
+    // re-serialised number) and call it idempotent.
+    if !out.removed.is_empty() {
+        let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        write_keeping_mode(&path, format!("{text}\n").as_bytes())?;
+    }
+    Ok(out)
+}
+
 /// `None` when the file is absent, which is a normal state and not an
 /// error — claude has simply never been configured here.
 fn read_settings(path: &Path) -> Result<Option<serde_json::Value>, String> {
@@ -1008,6 +1116,157 @@ mod tests {
 
         assert!(install_hooks(&home).is_err());
         assert!(hooks_report(&home).is_err());
+        assert_eq!(
+            std::fs::read_to_string(settings_path(&home)).unwrap(),
+            broken,
+            "still exactly as the user left it"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // ── taking the hook back out ────────────────────────────
+
+    /// **The round trip on somebody's real file: install, uninstall, and
+    /// the bytes are what they were.**
+    ///
+    /// Compared as text, not as a parsed `Value`, and against the
+    /// fixture the install tests use — which holds other top-level keys
+    /// and other people's hooks under events khor also wants. A
+    /// comparison of parsed values would agree even if uninstall had
+    /// reordered every key in the file, and reordering somebody's
+    /// configuration is exactly the harm `preserve_order` is carried
+    /// for.
+    #[test]
+    fn uninstalling_puts_the_file_back_byte_for_byte() {
+        let home = hook_home("roundtrip");
+        std::fs::write(settings_path(&home), USED_SETTINGS).unwrap();
+
+        install_hooks(&home).unwrap();
+        let installed = std::fs::read_to_string(settings_path(&home)).unwrap();
+        assert_ne!(installed, USED_SETTINGS, "control: installing did change the file");
+
+        let gone = uninstall_hooks(&home).unwrap();
+        assert_eq!(gone.removed.len(), HOOK_EVENTS.len(), "every event khor added came out");
+        assert!(gone.absent.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(settings_path(&home)).unwrap(),
+            USED_SETTINGS,
+            "the file is the user's again, to the byte"
+        );
+        assert!(
+            hooks_report(&home).unwrap().events.iter().all(|(_, s)| *s == Installed::Missing),
+            "…and khor now reports itself as not installed"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// **Only khor's entries.** Somebody else's hooks under the very
+    /// events khor uses survive, and so does every other key.
+    ///
+    /// Asserted leaf by leaf rather than by eyeballing one path: a
+    /// removal that took a neighbour with it would still leave the
+    /// event key standing.
+    #[test]
+    fn uninstalling_leaves_every_hook_that_is_not_khors() {
+        let home = hook_home("neighbours");
+        std::fs::write(settings_path(&home), USED_SETTINGS).unwrap();
+        let mine = leaf_set(&read_json(&settings_path(&home)));
+
+        install_hooks(&home).unwrap();
+        uninstall_hooks(&home).unwrap();
+
+        assert_eq!(leaf_set(&read_json(&settings_path(&home))), mine, "nothing else moved");
+        assert_eq!(
+            top_level_keys(&std::fs::read_to_string(settings_path(&home)).unwrap()),
+            vec!["env", "permissions", "hooks", "model"],
+            "and the user's key order is untouched"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// **Removed twice is removed once**, and the second run says so
+    /// rather than only being harmless. Asserted on the bytes, because
+    /// an implementation that rewrote the file every time would still
+    /// report nothing removed and would still leave a working config.
+    #[test]
+    fn uninstalling_twice_changes_nothing_the_second_time() {
+        let home = hook_home("twice-off");
+        std::fs::write(settings_path(&home), USED_SETTINGS).unwrap();
+        install_hooks(&home).unwrap();
+        uninstall_hooks(&home).unwrap();
+        let once = std::fs::read_to_string(settings_path(&home)).unwrap();
+
+        let again = uninstall_hooks(&home).unwrap();
+        assert!(again.removed.is_empty(), "nothing left to take: {again:?}");
+        assert_eq!(again.absent.len(), HOOK_EVENTS.len(), "and it says which events those were");
+        assert_eq!(std::fs::read_to_string(settings_path(&home)).unwrap(), once);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// **A hook belonging to a different khor comes out too.**
+    ///
+    /// `hooks_report` calls that `Installed::Elsewhere` — a khor that
+    /// moved, or a second copy on this machine — and the alternative
+    /// here is a machine where khor reports something installed that
+    /// nothing khor offers can remove.
+    ///
+    /// The control runs first: the report must actually say `Elsewhere`
+    /// beforehand, or this would pass by removing something that was
+    /// never recognised as khor's in the first place.
+    #[test]
+    fn a_hook_left_by_another_khor_can_still_be_taken_out() {
+        let home = hook_home("stale-off");
+        let stale = format!("'/somewhere/else/khor'{HOOK_VERB}");
+        std::fs::write(
+            settings_path(&home),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": stale }] }] }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let before = hooks_report(&home).unwrap();
+        assert!(
+            before.events.iter().any(|(e, s)| *e == "Stop" && *s == Installed::Elsewhere(stale.clone())),
+            "control: the report has to see it as another khor's first: {before:?}"
+        );
+
+        let gone = uninstall_hooks(&home).unwrap();
+        assert_eq!(gone.removed, vec!["Stop"]);
+        assert!(
+            hooks_report(&home).unwrap().events.iter().all(|(_, s)| *s == Installed::Missing),
+            "nothing of any khor is left"
+        );
+        // Khor made the `hooks` object empty, so khor takes it away —
+        // an empty container says exactly what its absence says.
+        assert_eq!(read_json(&settings_path(&home)), serde_json::json!({}));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A machine where claude was never configured: there is nothing to
+    /// remove, and **no file is created in order to remove it from**.
+    #[test]
+    fn uninstalling_where_there_is_no_settings_file_writes_nothing() {
+        let home = hook_home("fresh-off");
+        let gone = uninstall_hooks(&home).unwrap();
+        assert!(gone.removed.is_empty());
+        assert_eq!(gone.absent.len(), HOOK_EVENTS.len());
+        assert!(
+            !settings_path(&home).exists(),
+            "removing nothing must not leave a trace that something happened"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A file khor cannot parse is refused here too, and left alone —
+    /// the same reason install refuses it.
+    #[test]
+    fn uninstalling_refuses_a_settings_file_it_cannot_read() {
+        let home = hook_home("garbled-off");
+        let broken = "{ \"hooks\": { \"Stop\": [ } ";
+        std::fs::write(settings_path(&home), broken).unwrap();
+
+        assert!(uninstall_hooks(&home).is_err());
         assert_eq!(
             std::fs::read_to_string(settings_path(&home)).unwrap(),
             broken,

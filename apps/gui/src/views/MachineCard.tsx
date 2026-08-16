@@ -1,4 +1,4 @@
-import type { DeviceRow } from "@/api";
+import type { DeviceRow, HooksState } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,10 @@ export function MachineCard({
   onBack,
   onPin,
   pinFailed,
+  hooks,
+  hooksFailed,
+  onInstallHooks,
+  onUninstallHooks,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
@@ -32,6 +36,11 @@ export function MachineCard({
   onPin: (row: DeviceRow) => void;
   /** Rows whose last pin attempt did not take — see `App`. */
   pinFailed: Set<string>;
+  /** This machine's hooks, or `null` until the first answer is in. */
+  hooks: HooksState | null;
+  hooksFailed: boolean;
+  onInstallHooks: () => void;
+  onUninstallHooks: () => void;
 }) {
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
@@ -95,9 +104,78 @@ export function MachineCard({
             </Button>
           </div>
           <Readings row={row} />
+          {/* **Only on this machine's card**, because the file it edits
+              is on this machine. Putting it on every card would be a
+              control that silently applies to one machine out of a list.
+              Installing on a machine you are looking at from here
+              belongs to the batch that adds remote verbs, and when it
+              lands, this is where it goes. */}
+          {row.me && (
+            <Hooks
+              state={hooks}
+              failed={hooksFailed}
+              onInstall={onInstallHooks}
+              onUninstall={onUninstallHooks}
+            />
+          )}
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The hook, and the one button that turns it on or off.
+ *
+ * **The button is the report.** It shows the job it will do next, so
+ * "install" on screen means the hooks are not in place — one control
+ * saying one thing, rather than a status line and a button that can
+ * disagree with each other. Failure lands on the same button, in the
+ * failure colour and under the word for what failed, exactly as a pin
+ * does and for the same reason: this app has nowhere that collects
+ * messages, and 做了但没变化 may not look like 失败 (docs/UX.md).
+ *
+ * Nothing is drawn until the state has been read once. A button guessing
+ * "not installed" while the answer is still coming would offer to do
+ * something already done, and the press would look like it did nothing.
+ */
+function Hooks({
+  state,
+  failed,
+  onInstall,
+  onUninstall,
+}: {
+  state: HooksState | null;
+  failed: boolean;
+  onInstall: () => void;
+  onUninstall: () => void;
+}) {
+  if (!state) return null;
+  const on = state.installed;
+  return (
+    <div data-hooks data-installed={on} className="flex flex-col gap-2 pt-8">
+      <Button
+        variant="outline"
+        size="sm"
+        data-hooks-toggle
+        data-failed={failed}
+        onClick={on ? onUninstall : onInstall}
+        className="self-start data-[failed=true]:text-state-failed"
+      >
+        {failed
+          ? on
+            ? gui.uninstall_hooks_failed
+            : gui.install_hooks_failed
+          : on
+            ? gui.uninstall_hooks
+            : gui.install_hooks}
+      </Button>
+      {/* What pressing it buys, and which claude it touches. Two facts
+          rather than one sentence: the second is not a detail of the
+          first, it is the answer to "whose machine". */}
+      <div className="text-sm text-muted-foreground">{gui.hooks_buy_you}</div>
+      <div className="text-sm text-muted-foreground">{gui.hooks_are_local}</div>
+    </div>
   );
 }
 

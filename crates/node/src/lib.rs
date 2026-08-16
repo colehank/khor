@@ -844,6 +844,16 @@ impl Node {
         adaptor::claude::install_hooks(&adaptor::vendor_home(&self.root))
     }
 
+    /// Takes them back out again, leaving the rest of that file alone.
+    /// See `adaptor::claude::uninstall_hooks`.
+    ///
+    /// Rooted through the same `vendor_home` as the other two, which is
+    /// what keeps this verifiable: a node opened on a temp home can only
+    /// ever edit that home's `.claude`.
+    pub fn uninstall_hooks(&self) -> Result<adaptor::claude::HookUninstall, String> {
+        adaptor::claude::uninstall_hooks(&adaptor::vendor_home(&self.root))
+    }
+
     /// Re-derives one session's row and pushes it to watchers.
     pub(crate) fn emit_row_of(&self, id: &SessionId) -> Result<(), String> {
         for k in self.kinds() {

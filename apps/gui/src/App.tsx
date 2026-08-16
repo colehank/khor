@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import {
   fetchDevices,
+  fetchHooks,
   fetchSessions,
+  installHooks,
   markSeen,
   pinDevice,
   pinSession,
+  uninstallHooks,
   type DeviceRow,
+  type HooksState,
   type SessionRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -236,14 +240,22 @@ export default function App() {
   // this one does not belong to any pane.
   const [settings, setSettings] = useState(false);
 
+  // This machine's hooks, polled with everything else rather than read
+  // once when the card opens: `khor hooks install` in a terminal is the
+  // other way this changes, and a button that only learns on mount would
+  // sit there offering to do something already done.
+  const [hooks, setHooks] = useState<HooksState | null>(null);
+  const [hooksFailed, setHooksFailed] = useState(false);
+
   useEffect(() => {
     let live = true;
     const tick = () => {
-      Promise.all([fetchSessions(arrangeBy), fetchDevices()])
-        .then(([s, d]) => {
+      Promise.all([fetchSessions(arrangeBy), fetchDevices(), fetchHooks()])
+        .then(([s, d, h]) => {
           if (!live) return;
           setRows(s);
           setDevices(d);
+          setHooks(h);
           setStale(false);
         })
         .catch(() => live && setStale(true));
@@ -287,6 +299,23 @@ export default function App() {
     setRows(s);
     setDevices(d);
   }, [arrangeBy]);
+
+  // Two-argument `then` for the same reason the pins use it: the
+  // rejection handler must see *this* call failing and nothing else. And
+  // the answer carries the state afterwards, so the button never spends
+  // a poll interval showing the job it just finished.
+  const onHooks = useCallback((run: () => Promise<HooksState>) => {
+    run().then(
+      (state) => {
+        setHooks(state);
+        setHooksFailed(false);
+      },
+      () => setHooksFailed(true),
+    );
+  }, []);
+
+  const onInstallHooks = useCallback(() => onHooks(installHooks), [onHooks]);
+  const onUninstallHooks = useCallback(() => onHooks(uninstallHooks), [onHooks]);
 
   /**
    * Rows whose last pin attempt did not take, by row id.
@@ -537,6 +566,10 @@ export default function App() {
       onBack={() => setScreen("list")}
       onPin={onPinDevice}
       pinFailed={pinFailed}
+      hooks={hooks}
+      hooksFailed={hooksFailed}
+      onInstallHooks={onInstallHooks}
+      onUninstallHooks={onUninstallHooks}
     />
   ) : null;
 

@@ -297,6 +297,48 @@ pub fn tell(root: &Path, machine: &str, text: &str) -> Result<(), String> {
     open(root)?.tell(machine, text).map(|_| ())
 }
 
+/// Whether claude on **this** machine is set up to tell khor what it is
+/// doing.
+///
+/// One bit, because the control it feeds has two states and no third.
+/// `khor hooks` is where the per-event detail lives, including the case
+/// this bit folds in: hooks recorded here that point at a *different*
+/// khor read as not installed, which is right for a button — pressing
+/// install is exactly what fixes them.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct HooksState {
+    /// True when every event khor asks for names this binary.
+    pub installed: bool,
+}
+
+fn hooks_state_of(n: &Node) -> Result<HooksState, String> {
+    use khor_node::adaptor::claude::Installed;
+    let report = n.hooks_report()?;
+    Ok(HooksState { installed: report.events.iter().all(|(_, s)| *s == Installed::Here) })
+}
+
+pub fn hooks_state(root: &Path) -> Result<HooksState, String> {
+    hooks_state_of(&open(root)?)
+}
+
+/// Adds them, and answers with the state afterwards.
+///
+/// **The new state comes back from the same call**, so the button cannot
+/// spend a moment showing the old one — and it is re-read rather than
+/// assumed, which is what makes a half-applied install visible instead
+/// of a button that claims success because the call returned.
+pub fn install_hooks(root: &Path) -> Result<HooksState, String> {
+    let n = open(root)?;
+    n.install_hooks()?;
+    hooks_state_of(&n)
+}
+
+pub fn uninstall_hooks(root: &Path) -> Result<HooksState, String> {
+    let n = open(root)?;
+    n.uninstall_hooks()?;
+    hooks_state_of(&n)
+}
+
 /// Issues a one-time pairing ticket. It carries the live endpoint's
 /// addresses, so it needs a resident serve — and both skins embed one
 /// (the bridge and the app each start `serve` on their own thread), so
