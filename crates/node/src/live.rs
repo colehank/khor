@@ -247,15 +247,35 @@ impl LiveKind {
     /// sides mint the id through `adaptor::id_for`, which is what makes
     /// the collision detectable at all.
     ///
+    /// **The one exception is an ending.** A hook-registered observed
+    /// session carries no pid — the hook's parent is a transient shell,
+    /// not the agent — so its word stands only because nobody is in a
+    /// position to pronounce it dead. The vendor's own file names its
+    /// pid, so the sweep is exactly that position. Without this, a user
+    /// who installs the hook would get *worse* crash detection than one
+    /// who installs nothing: a hard-killed claude would park on its last
+    /// word forever while the disk sat there knowing better.
+    ///
     /// Unreadable entries are skipped: a half-written registry dir is a
     /// moment, not an error.
     pub fn rows(&self, watermark: impl Fn(&str) -> i64) -> Vec<Session> {
-        let mut out = self.registry_rows(&watermark);
+        let registered = self.registry_rows(&watermark);
+        let mut out: Vec<Session> = registered.iter().map(|(row, _)| row.clone()).collect();
+        let unpinned: Vec<&SessionId> = registered
+            .iter()
+            .filter(|(_, has_pid)| !has_pid)
+            .map(|(row, _)| &row.id)
+            .collect();
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
         for sighting in sweep.rows {
             let id = sighting.id();
-            if out.iter().any(|r| r.id == id) {
+            if let Some(seat) = out.iter().position(|r| r.id == id) {
+                if sighting.word == State::Failed && unpinned.contains(&&id) {
+                    out[seat].state =
+                        StateStamp { state: State::Failed, at: Millis(sighting.at_ms.max(0) as u64) };
+                    out[seat].unread = 0;
+                }
                 continue;
             }
             let (state, unread) =
@@ -275,7 +295,9 @@ impl LiveKind {
         out
     }
 
-    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<Session> {
+    /// Registry rows, each with whether a pid is on record for it —
+    /// which is what decides whether anyone can pronounce it dead.
+    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<(Session, bool)> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else {
             return out;
@@ -292,14 +314,17 @@ impl LiveKind {
             };
             let id = SessionId(format!("{}/{leaf}", meta.kind));
             let (word, at, unread) = face(&meta, &state, watermark(&id.0));
-            out.push(Session {
-                id,
-                kind: Kind(meta.kind.clone()),
-                title: meta.title.clone(),
-                home: self.device,
-                state: StateStamp { state: word, at: Millis(at.max(0) as u64) },
-                unread,
-            });
+            out.push((
+                Session {
+                    id,
+                    kind: Kind(meta.kind.clone()),
+                    title: meta.title.clone(),
+                    home: self.device,
+                    state: StateStamp { state: word, at: Millis(at.max(0) as u64) },
+                    unread,
+                },
+                meta.pid.is_some(),
+            ));
         }
         out
     }
@@ -651,6 +676,64 @@ mod tests {
             "the registered row wins: it is the only one that can say 完成"
         );
         assert_eq!(rows[0].title, "one");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Installing the hook must not make crash detection worse.
+    ///
+    /// A hook-observed session has no pid, so its last word stands
+    /// forever on its own. The vendor's file has the pid, so when the
+    /// sweep says the process is gone it is the only party that knows —
+    /// and 失败 has to reach the row even though the registry owns it.
+    #[test]
+    fn a_hooked_session_still_learns_from_disk_that_its_process_died() {
+        use crate::adaptor::{Discovery, Procs};
+
+        let root = tmp("crashed-hooked");
+        let vendors = root.join("vendors");
+        let sessions = vendors.join(".claude/sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let vendor_sid = "88888888-8888-4888-8888-888888888888";
+        let at = now_ms() - 60_000;
+        fs::write(
+            sessions.join("8001.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "pid": 8001, "sessionId": vendor_sid, "cwd": "/w/hooked",
+                "startedAt": at - 1000, "name": "hooked-ee",
+                "status": "busy", "statusUpdatedAt": at,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        // The hook's side: registered with no pid, last word 忙碌.
+        let id = crate::adaptor::id_for(vendor_sid);
+        // An empty process table is the whole point — pid 8001 is gone.
+        let discovery = Arc::new(Discovery::at(&vendors).with_procs(Procs::default()));
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+        k.register(&id, "tui", "hooked", None).unwrap();
+        k.report(&id, State::Busy).unwrap();
+
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "still one row");
+        assert_eq!(
+            rows[0].state.state,
+            State::Failed,
+            "the registry had no pid; the vendor file did, and it says the process is gone"
+        );
+        assert_eq!(rows[0].unread, 0, "失败 sinks and never holds the badge");
+
+        // The control: with the process alive, the registry's own word
+        // is what shows — so the 失败 above came from the ending rule and
+        // not from the merge always preferring disk.
+        let alive = Arc::new(
+            Discovery::at(&vendors).with_procs(Procs::of([(
+                8001,
+                crate::adaptor::Proc { name: "claude".into(), started_ms: at - 1000, cwd: None },
+            )])),
+        );
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(alive);
+        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
         let _ = fs::remove_dir_all(&root);
     }
 }
