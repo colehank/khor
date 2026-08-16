@@ -210,14 +210,20 @@ pub struct Fill {
 /// current-looking number (docs/SESSION.md 离线不是第七个词 — the same
 /// two axes, applied to a machine instead of a session).
 ///
-/// **There is no GPU field, and that is a capability gap rather than a
-/// data one.** `sysinfo` — the process table khor already carries — has
-/// no GPU API at all: the only occurrences of the word in its source are
-/// a macOS thermal sensor key and unrelated FFI. A field that is
-/// structurally always empty is worse than no field, because it reads as
-/// a machine that failed to report rather than a khor that cannot ask.
-/// Adding it means adding a dependency or shelling out per platform, and
-/// that is its own decision.
+/// **There is no GPU field yet, and its absence is a capability gap
+/// rather than a data one.** `sysinfo` — the process table khor already
+/// carries — has no GPU API at all: the only occurrences of the word in
+/// its source are a macOS thermal sensor key and unrelated FFI. A field
+/// that is structurally always empty is worse than no field, because it
+/// reads as a machine that failed to report rather than a khor that
+/// cannot ask.
+///
+/// It is coming in its own batch, through per-platform in-process APIs
+/// rather than by shelling out (IOKit's IORegistry on macOS, the
+/// vendor's own library on Linux) — khor expects nothing installed. The
+/// rule it lands under is the one above, unchanged: **a reading that
+/// cannot be taken leaves no field**, because an invented gauge is worse
+/// than a missing one.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Vitals {
     /// Whole-machine CPU use, 0–100.
