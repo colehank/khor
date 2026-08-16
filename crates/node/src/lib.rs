@@ -648,7 +648,7 @@ impl Node {
     /// `run_ephemeral` runs. The persistent host (`open`) is a coming
     /// batch.
     pub fn open_ephemeral(&self, kind: &str, title: &str) -> Result<SessionId, String> {
-        let leaf: String = link::fresh_hex()?.chars().take(8).collect();
+        let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
         Ok(id)
@@ -670,7 +670,7 @@ impl Node {
         cmd: &[String],
         size: (u16, u16),
     ) -> Result<SessionId, String> {
-        let leaf: String = link::fresh_hex()?.chars().take(8).collect();
+        let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
         let dir = self

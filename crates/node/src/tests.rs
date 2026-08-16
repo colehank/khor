@@ -231,3 +231,59 @@ fn a_wrong_session_id_names_what_exists() {
     assert!(e.contains("chat/"), "the error should carry the existing ids: {e}");
     let _ = fs::remove_dir_all(&r);
 }
+
+/// **A session khor mints for itself carries the full 64 bits.**
+///
+/// The width is not decoration: these ids key two network-wide tables
+/// that hold no machine in the key (`khor_sync::pins` grades all four
+/// kinds), so shortening the leaf silently raises the collision rate on
+/// a machine nobody is looking at. The arithmetic is on
+/// `link::LEAF_HEX`; this is the guard that makes changing it a decision
+/// rather than an edit.
+#[test]
+fn a_minted_session_id_carries_its_full_width() {
+    let r = root("mint");
+    let n = Node::open(r.clone()).unwrap();
+
+    let id = n.open_ephemeral(khor_core::kind::SHELL, "a title").unwrap();
+    let leaf = id.0.split_once('/').expect("an id is <kind>/<leaf>").1;
+    // **The literal, not `link::LEAF_HEX`.** Comparing the mint against
+    // the constant that drives it passes no matter what the constant
+    // says — both sides move together, and narrowing the id back to 32
+    // bits was measured to leave this test green. The width is the fact
+    // being guarded, so the number has to be written down twice.
+    assert_eq!(
+        leaf.len(),
+        16,
+        "a minted leaf must be 16 hex digits = 64 bits: {}",
+        id.0
+    );
+    assert!(
+        leaf.chars().all(|c| c.is_ascii_hexdigit()),
+        "the leaf must be hex, or the bit count above means nothing: {leaf}"
+    );
+
+    // Two mints in a row must differ — a constant leaf would satisfy
+    // every assertion above.
+    let other = n.open_ephemeral(khor_core::kind::SHELL, "another").unwrap();
+    assert_ne!(id.0, other.0, "two sessions must not share an id");
+
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// `pid_alive` answers about this process, and about one that cannot
+/// exist. The second half is the control: a function that simply
+/// returned true would pass the first half alone.
+#[test]
+fn a_live_pid_reads_alive_and_an_impossible_one_does_not() {
+    assert!(
+        crate::link::pid_alive(std::process::id()),
+        "this very process must read as alive"
+    );
+    // Above every configured pid_max on Linux and macOS, so nothing can
+    // be wearing it.
+    assert!(
+        !crate::link::pid_alive(u32::MAX - 1),
+        "a pid that cannot exist must not read as alive"
+    );
+}

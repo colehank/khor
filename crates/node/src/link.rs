@@ -689,6 +689,52 @@ pub(crate) fn fresh_hex() -> Result<String, String> {
     Ok(raw.iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Hex digits in a session id khor mints for itself. 16 of them = **64
+/// bits**.
+///
+/// # Why 64 and not the 8 digits this used to take
+///
+/// Session ids are the key of two network-wide tables that carry no
+/// machine in the key (`khor_sync::seen`, `khor_sync::pins`), so the
+/// whole scheme rests on ids being unique across the network, not just
+/// on one machine. That module grades the four kinds of id, and this was
+/// the one it graded weak.
+///
+/// The birthday bound: with `n` ids of `b` bits, a collision arrives with
+/// probability about `n² / 2^(b+1)`.
+///
+/// - at the old **32 bits**: 10⁴ ids → ~1.2%, 10⁵ ids → effectively
+///   certain. A few thousand `khor run`s across a handful of machines is
+///   an ordinary year, so this was not a distant risk.
+/// - at **64 bits**: 10⁶ ids → ~3·10⁻⁸. Far past anything this product
+///   will mint.
+///
+/// 64 is chosen rather than merely sufficient because it is the width
+/// `khor_sync::pins` already calls strong for `transfer/` ids, which ride
+/// the loro peer id. Putting khor's own mint in the class that document
+/// already blessed means the grading table has one answer instead of
+/// three, and nobody has to re-derive whether "probably enough" still
+/// holds.
+///
+/// # The typing cost, which is real and is not the deciding factor
+///
+/// `khor attach <session>` takes the id exactly, so this makes a
+/// hand-typed id eight characters longer. Ids are read off `khor
+/// sessions` and pasted, and the GUI never types one — and if hand-typing
+/// ever becomes the path people actually take, the answer is resolving a
+/// unique prefix, not a shorter id. A short id trades a permanent
+/// correctness margin for a convenience that a lookup rule gives back for
+/// free.
+///
+/// **Ids already minted are unaffected**: nothing parses or validates the
+/// leaf's length, so an old 8-digit id keeps naming its session.
+pub(crate) const LEAF_HEX: usize = 16;
+
+/// A fresh session leaf — the part after `<kind>/`.
+pub(crate) fn fresh_leaf() -> Result<String, String> {
+    Ok(fresh_hex()?.chars().take(LEAF_HEX).collect())
+}
+
 /// Owner-only from the first byte: the hand-off cookie in endpoint.json
 /// is a capability, and create-then-chmod would leave a readable window.
 pub(crate) fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
@@ -795,12 +841,36 @@ async fn pull_one(
     Ok(moved)
 }
 
+/// Whether that pid is still a live process.
+///
+/// `libc::kill(pid, 0)` rather than shelling out to `kill -0`: khor
+/// compiles everything it needs in (docs/KHOR.md), and `kill` is a
+/// program Windows does not have. Signal 0 sends nothing — it only runs
+/// the permission and existence checks.
+///
+/// **`EPERM` counts as alive**, which is where this is deliberately more
+/// accurate than the shell was. A process owned by another user exists
+/// but refuses the signal; the shell reported that as failure, so khor
+/// read "somebody else's process" as "dead" and settled the row on a
+/// missing ending. Only `ESRCH` — no such process — is death.
 pub(crate) fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    #[cfg(unix)]
+    {
+        if unsafe { libc::kill(pid as libc::pid_t, 0) } == 0 {
+            return true;
+        }
+        std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows bring-up owns this (on the ledger): the answer there is
+        // OpenProcess/GetExitCodeProcess, not a signal. Saying "alive"
+        // here would park every dead session on its last word forever,
+        // and saying "dead" would bury every live one — so the honest
+        // placeholder is the one that keeps a word standing until a real
+        // implementation can pronounce it, which is what a missing pid
+        // already means everywhere else in this file.
+        let _ = pid;
+        true
+    }
 }

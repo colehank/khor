@@ -472,7 +472,20 @@ fn terminate(pid: u32) {
     // SIGTERM, not SIGKILL: the process gets to clean up. If it lingers,
     // the registry dir is already gone and the pid is printed nowhere —
     // acceptable for 临时 processes the user started themselves.
-    let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
+    //
+    // `libc::kill` rather than the `kill` program, for the reason
+    // `link::pid_alive` states: everything khor needs is compiled in, and
+    // Windows has no `kill`. This is the single-pid door; the group
+    // signal a few lines up in `close_session` was already libc.
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows bring-up owns this (on the ledger).
+        let _ = pid;
+    }
 }
 
 pub(crate) fn now_ms() -> i64 {

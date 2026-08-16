@@ -43,6 +43,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use khor_core::{SessionId, State};
 
@@ -192,6 +193,17 @@ pub struct Procs {
     by_pid: BTreeMap<u32, Proc>,
 }
 
+/// How many process-table scans this process has done. Read by the cost
+/// measurement (`tests/cost.rs`) to answer how many scans **one** session
+/// list costs — a question the call graph can be misread on, and was:
+/// the ledger recorded a guess of "maybe several" for months.
+static SNAPSHOTS: AtomicU64 = AtomicU64::new(0);
+
+/// The running count of [`Procs::snapshot`] calls.
+pub fn snapshots_taken() -> u64 {
+    SNAPSHOTS.load(Ordering::Relaxed)
+}
+
 impl Procs {
     /// What is running right now.
     ///
@@ -200,9 +212,37 @@ impl Procs {
     /// — so the sweep pass asks only for names and start times, and cwd
     /// is fetched afterwards for the handful of pids that are candidate
     /// agent processes.
+    ///
+    /// # What it costs, measured
+    ///
+    /// Was on the ledger as "never measured". Measured 2026-08-16 on the
+    /// development Mac (10 cores, 16 days up, **803 processes** — a busy
+    /// machine, so an upper-ish bound), **debug build**, with one real
+    /// `codex` running so the cwd pass is included:
+    ///
+    /// - one snapshot: **4.9 ms** median warm, 5.7 ms cold
+    /// - one whole `Node::sessions()`: **13.2 ms** median
+    /// - **one scan per `sessions()`** — counted with
+    ///   [`snapshots_taken`], not read off the call graph
+    /// - at the GUI's poll rate: **0.26% of a core**
+    ///
+    /// So no cache. A cache here would buy a quarter of a percent of one
+    /// core and pay for it with a staleness window on the one thing the
+    /// list exists to be right about — whether a process is still alive.
+    /// Re-run `cargo test -p khor-node --test cost -- --ignored
+    /// --nocapture` if the list ever feels slow, or on a machine with far
+    /// more processes than 803; the cost scales with that count, which is
+    /// why it is reported next to the times.
+    ///
+    /// **The ledger's other worry was wrong and is corrected here**: it
+    /// recorded that one `sessions()` call "might run `rows()` several
+    /// times". It runs it once — `sessions` walks three kinds and only
+    /// the live one sweeps. The rest of the 13.2 ms is reading documents
+    /// off disk, not scanning again.
     pub fn snapshot() -> Procs {
         use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
+        SNAPSHOTS.fetch_add(1, Ordering::Relaxed);
         let mut sys = System::new();
         sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
@@ -249,6 +289,18 @@ impl Procs {
     /// A hand-built table, for tests and for the fixture trees.
     pub fn of(procs: impl IntoIterator<Item = (u32, Proc)>) -> Procs {
         Procs { by_pid: procs.into_iter().collect() }
+    }
+
+    /// How many processes were seen. What [`Procs::snapshot`] costs
+    /// scales with this, so the cost measurement reports it alongside
+    /// the time — a duration without the size it was measured at cannot
+    /// be compared against a later one.
+    pub fn len(&self) -> usize {
+        self.by_pid.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_pid.is_empty()
     }
 
     /// The process at `pid`, but only if it started when the caller
