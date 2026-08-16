@@ -10,6 +10,7 @@
 //! by default, and it is what catches the day this fixture becomes
 //! fiction.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use jiff::tz::TimeZone;
@@ -30,12 +31,33 @@ fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/usage")
 }
 
-fn claude_only() -> Tally {
-    claude::Claude::at(fixture().join("claude/.claude")).tally(&plus_eight())
+/// A meter's records filed under days, which is what `Meters::tally_in`
+/// does at the end of a pass — done here so that a single vendor can be
+/// asserted about on its own.
+fn by_day(t: &Tally, zone: &TimeZone) -> HashMap<String, Tokens> {
+    let mut out: HashMap<String, Tokens> = HashMap::new();
+    for k in &t.kept {
+        out.entry(k.at.to_zoned(zone.clone()).date().to_string())
+            .or_default()
+            .add(k.tokens);
+    }
+    out
 }
 
-fn codex_only() -> Tally {
-    codex::Codex::at(fixture().join("codex/.codex")).tally(&plus_eight())
+fn claude_meter() -> claude::Claude {
+    claude::Claude::at(fixture().join("claude/.claude"))
+}
+
+fn codex_meter() -> codex::Codex {
+    codex::Codex::at(fixture().join("codex/.codex"))
+}
+
+fn claude_days() -> HashMap<String, Tokens> {
+    by_day(&claude_meter().tally(), &plus_eight())
+}
+
+fn codex_days() -> HashMap<String, Tokens> {
+    by_day(&codex_meter().tally(), &plus_eight())
 }
 
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
@@ -88,8 +110,8 @@ fn fixture_home(tag: &str) -> PathBuf {
 /// reading with the largest output is taken entire.
 #[test]
 fn a_message_written_several_times_is_billed_once_and_kept_whole() {
-    let t = claude_only();
-    let spent = t.by_day.get("2026-08-17").copied().expect("the fixture spends on this day");
+    let days = claude_days();
+    let spent = days.get("2026-08-17").copied().expect("the fixture spends on this day");
     assert_eq!(
         spent,
         tokens(26, 277, 228, 563),
@@ -112,8 +134,8 @@ fn a_message_written_several_times_is_billed_once_and_kept_whole() {
 /// fail this one.
 #[test]
 fn a_resumed_session_does_not_bill_its_history_twice() {
-    let t = claude_only();
-    let spent = t.by_day.get("2026-08-17").copied().unwrap();
+    let days = claude_days();
+    let spent = days.get("2026-08-17").copied().unwrap();
     assert_eq!(spent.output, 563, "msg_A's 500 counted once across the two files");
     assert!(spent.output >= 11, "…and msg_G, which only the second file holds, still counted");
     assert_eq!(spent.input, 26, "10 + 3 + 1 + 5 + 7 — msg_A's 10 appearing once");
@@ -135,49 +157,39 @@ fn a_subagents_transcript_is_found_and_billed() {
         nested.iter().any(|p| p.to_string_lossy().contains("subagents")),
         "the walk must go below the session file's own level: {nested:?}"
     );
-    let spent = claude_only().by_day.get("2026-08-17").copied().unwrap();
+    let spent = claude_days().get("2026-08-17").copied().unwrap();
     assert_eq!(spent.cached_input, 277, "…and msg_D's 70 is inside that");
 }
 
 /// **The day is the machine's, not UTC's.**
 ///
-/// One instant, 16:30 UTC, read under two zones in one test — which is
-/// the control the assertion needs: under UTC it is still the 17th, and
-/// eight hours east it is already the 18th. A tally that ignored the zone
-/// would give the same answer twice, and the first assertion alone could
-/// not tell.
+/// One instant, 16:30 UTC, read under two zones — which is the control
+/// the assertion needs: under UTC it is still the 17th, and eight hours
+/// east it is already the 18th. A tally that ignored the zone would give
+/// the same answer twice, and the first assertion alone could not tell.
 ///
 /// Both vendors are checked, because the two read their timestamps
-/// through different fields and only one shared function.
+/// through different fields.
 #[test]
 fn a_day_is_cut_where_the_machine_stands_not_at_utc_midnight() {
-    for meter in [fixture().join("claude/.claude"), fixture().join("codex/.codex")] {
-        let east: Tally = if meter.ends_with(".claude") {
-            claude::Claude::at(meter.clone()).tally(&plus_eight())
-        } else {
-            codex::Codex::at(meter.clone()).tally(&plus_eight())
-        };
-        let utc: Tally = if meter.ends_with(".claude") {
-            claude::Claude::at(meter.clone()).tally(&TimeZone::UTC)
-        } else {
-            codex::Codex::at(meter.clone()).tally(&TimeZone::UTC)
-        };
+    let tallies = [("claude", claude_meter().tally()), ("codex", codex_meter().tally())];
+    for (name, tally) in tallies {
+        let east = by_day(&tally, &plus_eight());
+        let utc = by_day(&tally, &TimeZone::UTC);
         assert!(
-            east.by_day.contains_key("2026-08-18"),
-            "{}: 16:30Z is past midnight eight hours east — days: {:?}",
-            meter.display(),
-            east.by_day.keys().collect::<Vec<_>>()
+            east.contains_key("2026-08-18"),
+            "{name}: 16:30Z is past midnight eight hours east — days: {:?}",
+            east.keys().collect::<Vec<_>>()
         );
         assert!(
-            !utc.by_day.contains_key("2026-08-18"),
-            "{}: …and in UTC that same instant is still the 17th, which is what makes \
+            !utc.contains_key("2026-08-18"),
+            "{name}: …and in UTC that same instant is still the 17th, which is what makes \
              the assertion above about the zone: {:?}",
-            meter.display(),
-            utc.by_day.keys().collect::<Vec<_>>()
+            utc.keys().collect::<Vec<_>>()
         );
-        let east_total: u64 = east.by_day.values().map(|t| t.output).sum();
-        let utc_total: u64 = utc.by_day.values().map(|t| t.output).sum();
-        assert_eq!(east_total, utc_total, "{}: the zone moves a day, never a token", meter.display());
+        let east_total: u64 = east.values().map(|t| t.output).sum();
+        let utc_total: u64 = utc.values().map(|t| t.output).sum();
+        assert_eq!(east_total, utc_total, "{name}: the zone moves a day, never a token");
     }
 }
 
@@ -191,19 +203,22 @@ fn a_day_is_cut_where_the_machine_stands_not_at_utc_midnight() {
 /// wrong field fails with the reason on the screen.
 #[test]
 fn a_running_total_is_not_a_sum_of_turns() {
-    let t = codex_only();
+    let days = codex_days();
     assert_eq!(
-        t.by_day.get("2026-08-17").copied(),
+        days.get("2026-08-17").copied(),
         Some(tokens(600, 2400, 0, 150)),
         "two turns: (1000-800, 800, -, 60) and (2000-1600, 1600, -, 90)"
     );
     assert_eq!(
-        t.by_day.get("2026-08-18").copied(),
+        days.get("2026-08-18").copied(),
         Some(tokens(400, 100, 33, 20)),
         "the turn past local midnight, and the cache-write only newer codex writes"
     );
-    let out_17 = t.by_day["2026-08-17"].output;
-    assert_ne!(out_17, 60 + 150, "the running totals were summed instead of the turns");
+    assert_ne!(
+        days["2026-08-17"].output,
+        60 + 150,
+        "the running totals were summed instead of the turns"
+    );
 }
 
 /// **Codex writes each event twice; two identical readings in a row are
@@ -215,8 +230,8 @@ fn a_running_total_is_not_a_sum_of_turns() {
 /// regardless would lose one of them.
 #[test]
 fn a_reading_written_twice_in_a_row_is_one_turn() {
-    let t = codex_only();
-    let spent = t.by_day["2026-08-17"];
+    let days = codex_days();
+    let spent = days["2026-08-17"];
     assert_eq!(spent.output, 150, "60 + 90, each written twice and counted once");
     assert_ne!(spent.output, 300, "every line was counted");
     assert_ne!(spent.output, 60, "the second turn was swallowed as a repeat of the first");
@@ -229,9 +244,8 @@ fn a_reading_written_twice_in_a_row_is_one_turn() {
 /// middle of a transcript, an assistant message that bills tokens without
 /// saying which message it is, one whose timestamp is not a time, and a
 /// codex `token_count` with no turn in it. It also ends `sess-1.jsonl`
-/// with `{"type":"assis` and **no newline** — an agent mid-write — which
-/// must not count, or the drift alarm goes off every time somebody is
-/// working.
+/// with an unterminated line — an agent mid-write — which must not count,
+/// or the drift alarm goes off every time somebody is working.
 ///
 /// The readable rows are asserted first: an implementation that gave up
 /// on the file at the garbled line would report the same count while
@@ -317,31 +331,25 @@ fn the_empty_registry_reads_nothing() {
     assert_eq!(Meters::empty().tally_in(&plus_eight()), Usage::default());
 }
 
-
-/// **The cache is kept until the files move, and dropped the moment they
-/// do.**
+/// **The answer is kept until the files move, and re-folded the moment
+/// they do.**
 ///
 /// Both halves in one test, because either alone passes for the wrong
-/// reason: a cache that never expires satisfies "the second ask read
-/// nothing", and no cache at all satisfies "an appended turn shows up".
+/// reason: an answer that never expires satisfies "the second ask did no
+/// work", and no cache at all satisfies "an appended turn shows up".
 ///
-/// "Read nothing" is asserted against this registry's own pass counter
-/// rather than against a stopwatch — a timing assertion on a shared
-/// machine measures how busy the machine is (docs/handoff 固定 sleep 的
-/// 测试，测的是「机器闲不闲」).
+/// "Did no work" is asserted against this registry's own counter rather
+/// than against a stopwatch — a timing assertion on a shared machine
+/// measures how busy the machine is (docs/handoff 固定 sleep 的测试，
+/// 测的是「机器闲不闲」).
 #[test]
-fn a_cached_answer_survives_until_the_tree_moves_and_not_after() {
+fn a_kept_answer_survives_until_the_tree_moves_and_not_after() {
     let home = std::env::temp_dir().join(format!("khor-usage-cache-{}", std::process::id()));
     let dir = home.join(".claude/projects/p");
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&dir).unwrap();
-    let line = |id: &str, out: u64| {
-        format!(
-            r#"{{"type":"assistant","timestamp":"2026-08-17T06:00:00Z","message":{{"id":"{id}","usage":{{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":{out}}}}}}}"#
-        )
-    };
     let file = dir.join("s.jsonl");
-    std::fs::write(&file, format!("{}\n", line("m1", 100))).unwrap();
+    std::fs::write(&file, format!("{}\n", claude_line("m1", 100))).unwrap();
 
     let meters = Meters::at(&home);
     let out = |u: &Usage| u.days.iter().map(|d| d.tokens.output).sum::<u64>();
@@ -352,13 +360,174 @@ fn a_cached_answer_survives_until_the_tree_moves_and_not_after() {
 
     let again = meters.tally();
     assert_eq!(again, first);
-    assert_eq!(meters.passes(), after_first, "the second ask must not have re-read anything");
+    assert_eq!(meters.passes(), after_first, "the second ask must not have re-folded anything");
 
     // A turn is appended, the way an agent appends one.
-    std::fs::write(&file, format!("{}\n{}\n", line("m1", 100), line("m2", 7))).unwrap();
+    append(&file, &claude_line("m2", 7));
     let third = meters.tally();
     assert_eq!(out(&third), 107, "the appended turn is in the answer");
     assert!(meters.passes() > after_first, "…and it got there by reading the file again");
 
     let _ = std::fs::remove_dir_all(&home);
+}
+
+/// **A pass reads only what was appended, and the answer is the same as a
+/// reader that started from scratch.**
+///
+/// This is the assertion the incremental bookkeeping exists for, and it
+/// is written as an equality against a **second meter opened on the same
+/// tree** — which has read nothing before and therefore has no offsets to
+/// be wrong about. An off-by-one in the offset shows up as one record
+/// billed twice or lost, and either way the two disagree.
+///
+/// The half-written tail is here too, because it is the case the offset
+/// rule and the drift alarm share: a line with no newline must be neither
+/// counted **nor consumed**, or the finished line would never be read.
+#[test]
+fn reading_only_the_tail_gives_the_same_answer_as_reading_it_all() {
+    let home = std::env::temp_dir().join(format!("khor-usage-tail-{}", std::process::id()));
+    let dir = home.join(".claude/projects/p");
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("s.jsonl");
+    std::fs::write(&file, format!("{}\n", claude_line("m1", 100))).unwrap();
+
+    let kept = claude::Claude::at(home.join(".claude"));
+    let fresh =
+        || by_day(&claude::Claude::at(home.join(".claude")).tally(), &TimeZone::UTC);
+    let seen = |m: &claude::Claude| by_day(&m.tally(), &TimeZone::UTC);
+    let out = |d: &HashMap<String, Tokens>| d.values().map(|t| t.output).sum::<u64>();
+    assert_eq!(seen(&kept), fresh(), "the two agree before anything is appended");
+
+    // A line arrives whole.
+    append(&file, &claude_line("m2", 7));
+    assert_eq!(seen(&kept), fresh(), "and after one append");
+    assert_eq!(out(&seen(&kept)), 107, "which is 100 + 7, not 100 and not 207");
+
+    // Half a line arrives. Neither reader may count it, and the one that
+    // has been following along must not consume it either.
+    std::fs::write(
+        &file,
+        format!(
+            "{}\n{}\n{}",
+            claude_line("m1", 100),
+            claude_line("m2", 7),
+            r#"{"type":"assistant","timestamp":"2026-08-17T06:00:00Z","message":{"id":"m3","usa"#
+        ),
+    )
+    .unwrap();
+    assert_eq!(seen(&kept), fresh(), "a half-written line is nobody's record yet");
+    assert_eq!(out(&seen(&kept)), 107);
+
+    // …and once it is finished it counts, which is what proves the
+    // unfinished line was left unconsumed rather than skipped forever.
+    std::fs::write(
+        &file,
+        format!(
+            "{}\n{}\n{}\n",
+            claude_line("m1", 100),
+            claude_line("m2", 7),
+            claude_line("m3", 1000)
+        ),
+    )
+    .unwrap();
+    assert_eq!(seen(&kept), fresh());
+    assert_eq!(out(&seen(&kept)), 1107, "the finished line was picked up on the next pass");
+
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// **A transcript that was replaced rather than appended to is read again
+/// from the beginning**, and one that was deleted stops being billed.
+///
+/// Both are the ways an offset can be wrong about a file. A shorter file
+/// is not the file that was read — logs do not lose their beginning — and
+/// a meter that trusted its offset would either seek past the end and see
+/// nothing or keep billing contents that are gone.
+#[test]
+fn a_replaced_transcript_is_read_again_and_a_deleted_one_stops_counting() {
+    let home = std::env::temp_dir().join(format!("khor-usage-replace-{}", std::process::id()));
+    let dir = home.join(".claude/projects/p");
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("s.jsonl");
+    let meter = claude::Claude::at(home.join(".claude"));
+    let out = |m: &claude::Claude| {
+        by_day(&m.tally(), &TimeZone::UTC).values().map(|t| t.output).sum::<u64>()
+    };
+
+    std::fs::write(&file, format!("{}\n{}\n", claude_line("m1", 100), claude_line("m2", 200)))
+        .unwrap();
+    assert_eq!(out(&meter), 300);
+
+    // Rotated: shorter, and holding something else entirely.
+    std::fs::write(&file, format!("{}\n", claude_line("m9", 5))).unwrap();
+    assert_eq!(out(&meter), 5, "the old contents are gone, so they are not billed");
+
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(out(&meter), 0, "a transcript that is gone bills nothing");
+
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// One claude assistant line, billing `out` and nothing else.
+fn claude_line(id: &str, out: u64) -> String {
+    format!(
+        r#"{{"type":"assistant","timestamp":"2026-08-17T06:00:00Z","message":{{"id":"{id}","usage":{{"input_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":{out}}}}}}}"#
+    )
+}
+
+/// Appends a line, the way an agent does — the file is not rewritten.
+fn append(path: &std::path::Path, line: &str) {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+    writeln!(f, "{line}").unwrap();
+}
+
+/// **The same tail rule on the vendor where getting it wrong duplicates
+/// rather than loses.**
+///
+/// Claude's meter is idempotent under re-reading — a message read twice
+/// collapses on its own id — so an offset that was too small would hide
+/// there. Codex's turns are a list, and reading a byte twice bills a turn
+/// twice, so this is where the bookkeeping is actually load-bearing.
+///
+/// Compared against a meter opened fresh on the same tree, for the reason
+/// the claude version gives: a fresh reader has no offsets to be wrong
+/// about.
+#[test]
+fn a_codex_turn_read_from_the_tail_is_billed_once() {
+    let home = std::env::temp_dir().join(format!("khor-usage-codex-{}", std::process::id()));
+    let dir = home.join(".codex/sessions/2026/08/17");
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("rollout-x.jsonl");
+    std::fs::write(&file, format!("{}\n", codex_line(100, 100))).unwrap();
+
+    let kept = codex::Codex::at(home.join(".codex"));
+    let fresh = || by_day(&codex::Codex::at(home.join(".codex")).tally(), &TimeZone::UTC);
+    let out = |d: &HashMap<String, Tokens>| d.values().map(|t| t.output).sum::<u64>();
+
+    assert_eq!(out(&by_day(&kept.tally(), &TimeZone::UTC)), 100);
+    append(&file, &codex_line(30, 130));
+    let seen = by_day(&kept.tally(), &TimeZone::UTC);
+    assert_eq!(seen, fresh(), "the tail reader and a fresh one must agree");
+    assert_eq!(out(&seen), 130, "100 + 30 — not 230, and not 100");
+
+    // The written-twice rule has to survive the boundary too: the repeat
+    // lands in a later pass than the turn it repeats.
+    append(&file, &codex_line(30, 130));
+    let seen = by_day(&kept.tally(), &TimeZone::UTC);
+    assert_eq!(seen, fresh(), "…including across a pass boundary");
+    assert_eq!(out(&seen), 130, "the repeat is the same turn written again");
+
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// One codex `token_count` event: a turn of `out` output tokens, with the
+/// session's running total at `running`.
+fn codex_line(out: u64, running: u64) -> String {
+    format!(
+        r#"{{"timestamp":"2026-08-17T06:00:00Z","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":{running}}},"last_token_usage":{{"input_tokens":0,"cached_input_tokens":0,"output_tokens":{out},"reasoning_output_tokens":0,"total_tokens":{out}}}}}}}}}"#
+    )
 }

@@ -14,8 +14,8 @@
 //! So it is a seam of its own, cut the same way and for the same reason
 //! the other one was cut at two implementations: what claude-on-disk and
 //! codex-on-disk genuinely share is one sentence — *read your own files,
-//! come back with tokens per day and a count of what you could not read* —
-//! and that sentence is [`Meter`], one method wide.
+//! come back with what was spent and a count of what you could not read* —
+//! and that sentence is [`Meter`], two methods wide.
 //!
 //! What they do **not** share is the arithmetic, and it is not a small
 //! difference:
@@ -34,12 +34,22 @@
 //! `total_token_usage` is cumulative, so line-summing it produces a number
 //! with no meaning at all.
 //!
+//! # Nothing in here knows what day it is
+//!
+//! A meter keeps [`Kept`] records stamped with the instant they happened,
+//! and the calendar is applied once, at the very end, in
+//! [`Meters::tally_in`]. That is not tidiness: it is what lets the reading
+//! be **cached across calls**, since a cache holding civil dates would be
+//! a cache of one time zone's opinion, and it is what keeps two vendors
+//! from straddling a daylight saving change and filing two halves of one
+//! afternoon under different rules.
+//!
 //! # The category is stamped here, not by the meter
 //!
 //! Same judgment as [`crate::adaptor::Found`]: whose tokens these were is
-//! the name of whoever recognised them, so [`Meters::tally`] attaches it
-//! and a meter has nowhere to write it. A field a meter filled in would be
-//! a field a meter could fill in wrongly.
+//! the name of whoever recognised them, so [`Meters::tally_in`] attaches
+//! it and a meter has nowhere to write it. A field a meter filled in would
+//! be a field a meter could fill in wrongly.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -48,26 +58,26 @@ use std::sync::Mutex;
 
 use khor_core::{Tokens, Usage, UsageDay};
 
-/// One vendor's spending, before anyone has said whose it is.
+/// One record a meter kept: what was spent, and when.
+///
+/// **The instant, not the day.** See the module head.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Kept {
+    pub at: jiff::Timestamp,
+    pub tokens: Tokens,
+}
+
+/// One vendor's spending, before anyone has said whose it is or what day
+/// it was.
 #[derive(Debug, Default, Clone)]
 pub struct Tally {
-    /// Local civil date (`YYYY-MM-DD`) to what was spent on it.
-    pub by_day: HashMap<String, Tokens>,
+    pub kept: Vec<Kept>,
     /// Records this meter found and could not read. See
     /// [`khor_core::Usage::unreadable`].
     pub unreadable: u64,
 }
 
-impl Tally {
-    fn add(&mut self, day: String, tokens: Tokens) {
-        self.by_day.entry(day).or_default().add(tokens);
-    }
-}
-
 /// One vendor's spending surface.
-///
-/// Deliberately one method, and deliberately without a process table. See
-/// the module head.
 pub trait Meter: Send + Sync {
     /// The vendor's name, which becomes the category on every row this
     /// meter produced.
@@ -76,15 +86,19 @@ pub trait Meter: Send + Sync {
     /// The directory this meter reads.
     ///
     /// **Not for reading — for asking cheaply whether anything in it
-    /// changed.** It is the second method only because a full pass costs
-    /// seconds (see [`Meters::tally`]) and the check that avoids one has
-    /// to know where to look. Keeping the layout knowledge here rather
-    /// than in [`Meters`] is the same rule the sweep follows: where a
-    /// vendor keeps its files is the vendor module's business.
+    /// changed.** It is the second method only because even an
+    /// incremental pass has to visit every file to find out
+    /// ([`Meters::tally`] has the figures). Keeping the layout knowledge
+    /// here rather than in [`Meters`] is the same rule the sweep follows:
+    /// where a vendor keeps its files is the vendor module's business.
     fn root(&self) -> PathBuf;
 
     /// Everything this vendor's files on this machine say was spent.
-    fn tally(&self, zone: &jiff::tz::TimeZone) -> Tally;
+    ///
+    /// **Reads only what has been appended since last time** — see
+    /// [`Files`]. Takes `&self` because that bookkeeping is the meter's
+    /// own business and no caller should be able to get it wrong.
+    fn tally(&self) -> Tally;
 }
 
 /// Every vendor khor can read spending from, rooted at one pretend-home.
@@ -98,17 +112,18 @@ pub struct Meters {
     /// The last answer and the shape of the tree it was read from.
     /// See [`Meters::tally`].
     cached: Mutex<Option<Cached>>,
-    /// How many full passes over the files this registry has made.
+    /// How many times this registry has folded its meters' records into
+    /// an answer.
     ///
     /// **Without it, "it is cached" is not a claim anybody can check** —
-    /// a cache that quietly re-read everything would still answer
+    /// a cache that quietly redid everything would still answer
     /// correctly, only slowly, and nothing would say so.
     ///
     /// A field rather than a process-wide static, which is where
     /// `crate::adaptor::snapshots_taken` sits: that one counts something
     /// process-wide, and paid for it with a test that has to be run
     /// serially or it counts its neighbours' work too (`tests/cost.rs`
-    /// says so at length). This counts one registry's passes, so the
+    /// says so at length). This counts one registry's work, so the
     /// question is answerable without asking anybody to run anything a
     /// particular way.
     passes: AtomicU64,
@@ -126,8 +141,8 @@ struct Cached {
 /// they are **append-only logs**: a turn adds bytes and moves an mtime, a
 /// new session adds a file. It would miss an edit that kept a file's size
 /// and its timestamp, which is not something a vendor writing a log does
-/// — and the honest alternative, hashing 1.5 GB, costs more than the pass
-/// it is trying to avoid.
+/// — and the honest alternative, hashing gigabytes, costs more than the
+/// work it is trying to avoid.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Shape {
     files: u64,
@@ -139,7 +154,11 @@ impl Meters {
     /// Reads nothing. The closed default, so that reading a real home is
     /// an explicit decision made in one place.
     pub fn empty() -> Meters {
-        Meters { meters: Vec::new(), cached: Mutex::new(None), passes: AtomicU64::new(0) }
+        Meters {
+            meters: Vec::new(),
+            cached: Mutex::new(None),
+            passes: AtomicU64::new(0),
+        }
     }
 
     /// The vendors under `home`.
@@ -154,41 +173,62 @@ impl Meters {
         }
     }
 
-    /// How many times this registry has read every file. See
-    /// [`Meters::passes`].
-    pub fn passes(&self) -> u64 {
-        self.passes.load(Ordering::Relaxed)
-    }
-
     /// Adds one meter. How a test names its own vendor.
     pub fn with(mut self, meter: Box<dyn Meter>) -> Meters {
         self.meters.push(meter);
         self
     }
 
-    /// This machine's spending, re-read only when the files have moved.
+    /// How many times this registry has folded an answer. See
+    /// [`Meters::passes`].
+    pub fn passes(&self) -> u64 {
+        self.passes.load(Ordering::Relaxed)
+    }
+
+    /// This machine's spending, in the machine's own time zone.
+    ///
+    /// # What it costs, measured, and what the measurement decided
+    ///
+    /// Measured on this machine 2026-08-17 (debug build, 1149 transcript
+    /// files, 1483 MiB), and the three numbers are the design:
+    ///
+    /// ```text
+    /// cold, every byte                18.0 – 18.8 s
+    /// nothing appended, folded again   0.11 – 0.14 s
+    /// nothing appended, not folded     under 10 ms
+    /// ```
+    ///
+    /// A spread rather than a number, because these were taken on a
+    /// machine with other work on it, and a single figure would invite
+    /// somebody to treat a later one as a regression.
+    ///
+    /// The app polls every two seconds, so the first figure decides two
+    /// things rather than one.
+    ///
+    /// - **It cannot be re-read from scratch when something changes.**
+    ///   While an agent is working, *something is always changing* — that
+    ///   is what a transcript is — so a cache that threw everything away
+    ///   on any change would pay the full 18.5 s on nearly every ask. The
+    ///   meters therefore read **only the bytes appended since last
+    ///   time** ([`Files`]) — the 18.40 s becomes 0.14 s.
+    /// - **And it must not re-fold when nothing changed either.** That
+    ///   0.14 s is still tens of thousands of records folded to produce
+    ///   an answer nobody's files changed; [`Shape`] is the cheap
+    ///   question that skips it, and the whole cost of an unchanged tree
+    ///   is one walk of directory entries.
+    ///
+    /// **Blocking, and it holds the lock while it reads** — so the one
+    /// async caller goes through `spawn_blocking`, the same way vitals
+    /// does. Holding the lock is deliberate: a second asker arriving
+    /// mid-pass waits and then finds the answer, instead of starting an
+    /// identical walk beside the first.
     ///
     /// # Why this one is cached and `khor_core::Vitals` is not
     ///
     /// A reading of a machine is true for seconds, so caching it would be
     /// caching a lie. Spending is the opposite: **what was spent
     /// yesterday will never change again**, and the only part of the
-    /// answer that moves is today's, when an agent writes another line.
-    /// So the whole answer is kept and thrown away the moment the tree
-    /// underneath it looks different ([`Shape`]).
-    ///
-    /// **The measurement is what makes this necessary rather than
-    /// tidy.** On this machine 2026-08-17, debug build: one pass is
-    /// **18.5 s** over 1149 files and 1482 MiB, and the check that
-    /// replaces it is a walk of directory entries. The app polls every
-    /// two seconds. Without the cache this could not be asked from
-    /// anywhere near a list.
-    ///
-    /// **Blocking, and it holds the lock while it reads** — so the one
-    /// async caller goes through `spawn_blocking`, the same way vitals
-    /// does. Holding the lock is deliberate: a second asker arriving
-    /// mid-pass waits and then finds the answer, instead of starting an
-    /// identical eighteen-second walk beside the first.
+    /// answer that moves is today's.
     pub fn tally(&self) -> Usage {
         let zone = jiff::tz::TimeZone::system();
         let tree = self.shape();
@@ -233,27 +273,21 @@ impl Meters {
         shape
     }
 
-    /// One pass over every vendor, in a given time zone, reading
-    /// everything. **Not cached** — this is what [`Meters::tally`] calls
-    /// when it has decided a pass is due.
-    ///
-    /// **The zone is handed down rather than asked for by each meter**:
-    /// two meters asking separately could straddle a daylight saving
-    /// change and file two halves of one afternoon under different rules.
-    /// It is also the seam a test uses to pin a zone, since an assertion
-    /// about which day a timestamp falls on is otherwise an assertion
-    /// about where the machine running the tests happens to be.
-
-    /// The same pass in a given zone.
+    /// The same answer with the calendar of a given zone. **Not cached**
+    /// — this is what [`Meters::tally`] calls once it has decided the
+    /// answer is due, and it is the seam a test uses to pin a zone, since
+    /// an assertion about which day a timestamp falls on is otherwise an
+    /// assertion about where the machine running the tests happens to be.
     pub fn tally_in(&self, zone: &jiff::tz::TimeZone) -> Usage {
         self.passes.fetch_add(1, Ordering::Relaxed);
         let mut rows: HashMap<(String, &'static str), Tokens> = HashMap::new();
         let mut unreadable = 0u64;
         for m in &self.meters {
-            let tally = m.tally(zone);
+            let tally = m.tally();
             unreadable = unreadable.saturating_add(tally.unreadable);
-            for (day, tokens) in tally.by_day {
-                rows.entry((day, m.vendor())).or_default().add(tokens);
+            for k in tally.kept {
+                let day = k.at.to_zoned(zone.clone()).date().to_string();
+                rows.entry((day, m.vendor())).or_default().add(k.tokens);
             }
         }
         let mut days: Vec<UsageDay> = rows
@@ -317,71 +351,8 @@ fn jsonl_under(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// One vendor file, line by line, with an unterminated tail forgiven.
-///
-/// **Buffered rather than read whole, and that is a size decision.** The
-/// largest transcript on this machine is 280 MB (measured 2026-08-17);
-/// slurping it would put that much on the heap to look at four numbers per
-/// line, on a walk that visits a thousand files.
-///
-/// **A line that no newline terminates is a write in progress, not a
-/// format khor has stopped understanding.** These files are appended to by
-/// a program that is running right now, and the honest test for "half
-/// written" is the missing terminator — not "it was the last line", which
-/// would also forgive a genuinely broken final record that the vendor
-/// finished writing. Without the distinction the drift alarm below would
-/// tick up whenever an agent happened to be mid-write, and an alarm that
-/// cries wolf is worse than none.
-///
-/// Returns how many records it could not read — **the meter says so by
-/// returning [`Read::Unreadable`], never by reaching for a counter**, so
-/// that "this line was json but not a shape I know" and "this line was not
-/// json" are added up in one place and cannot drift apart.
-fn for_each_record(path: &Path, mut f: impl FnMut(&serde_json::Value) -> Read) -> u64 {
-    use std::io::BufRead;
-
-    let mut unreadable = 0u64;
-    let Ok(file) = std::fs::File::open(path) else {
-        // A file khor cannot open at all is not a record it misread — it
-        // may be somebody else's permissions, or a file mid-replacement.
-        return 0;
-    };
-    let mut reader = std::io::BufReader::new(file);
-    // One buffer for the whole file: a tool result can be megabytes, and
-    // re-allocating per line would do that a thousand times over.
-    let mut buf = String::new();
-    loop {
-        buf.clear();
-        match reader.read_line(&mut buf) {
-            Ok(0) => break,
-            Ok(_) => {}
-            // Not text at all. That is a format khor cannot read, and it
-            // says so once rather than pretending the rest of the file
-            // is empty.
-            Err(_) => {
-                unreadable = unreadable.saturating_add(1);
-                break;
-            }
-        }
-        let terminated = buf.ends_with('\n');
-        let line = buf.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let read = match serde_json::from_str::<serde_json::Value>(line) {
-            Ok(v) => f(&v),
-            Err(_) if !terminated => Read::Fine,
-            Err(_) => Read::Unreadable,
-        };
-        if matches!(read, Read::Unreadable) {
-            unreadable = unreadable.saturating_add(1);
-        }
-    }
-    unreadable
-}
-
 /// What one line was to a meter.
-enum Read {
+pub enum Read {
     /// Nothing was missed: the meter either counted this line or knows it
     /// is not a spending record. **The two are one answer on purpose** —
     /// most lines in these files are conversation, and a meter that had
@@ -393,15 +364,157 @@ enum Read {
     Unreadable,
 }
 
-/// The local civil date a UTC instant falls on, `YYYY-MM-DD`.
+/// A meter's memory of the files it has already read.
 ///
-/// `None` for a timestamp khor cannot read, which the caller counts: a
-/// record whose numbers are legible but whose day is not cannot be filed
-/// anywhere, and filing it under today would move last month's spending
-/// onto this morning.
-fn day_of(ts: &str, zone: &jiff::tz::TimeZone) -> Option<String> {
-    let stamp: jiff::Timestamp = ts.parse().ok()?;
-    Some(stamp.to_zoned(zone.clone()).date().to_string())
+/// **The whole point is not to read a byte twice.** These are append-only
+/// logs; a full re-read of this machine's is 18.5 s, and while an agent is
+/// working there is always something new at the end of one of them. So
+/// each file remembers how far it has been consumed and what came out of
+/// it, and a pass reads the tail.
+///
+/// `S` is whatever the vendor accumulates per file — the two vendors keep
+/// different things, which is exactly why this holds it rather than
+/// defining it.
+struct Files<S> {
+    by_path: HashMap<PathBuf, Held<S>>,
+}
+
+struct Held<S> {
+    /// Bytes folded in so far, **always at a line boundary**. See
+    /// [`Files::fold`] for why that is the same rule as forgiving a
+    /// half-written tail.
+    consumed: u64,
+    unreadable: u64,
+    state: S,
+}
+
+impl<S: Default> Default for Files<S> {
+    fn default() -> Files<S> {
+        Files { by_path: HashMap::new() }
+    }
+}
+
+impl<S: Default> Files<S> {
+    /// Brings every file under `root` up to date, then hands the caller
+    /// each file's accumulated state.
+    ///
+    /// A file that **shrank** since last time is not the file that was
+    /// read: a log does not lose its beginning, so a shorter one has been
+    /// replaced or rotated, and its state is thrown away and rebuilt. A
+    /// file that vanished takes its state with it — otherwise a machine
+    /// that deletes old transcripts would keep billing for them forever.
+    fn refresh(
+        &mut self,
+        root: &Path,
+        mut fold: impl FnMut(&mut S, &serde_json::Value) -> Read,
+    ) -> (Vec<&S>, u64) {
+        let present = jsonl_under(root);
+        self.by_path.retain(|p, _| present.binary_search(p).is_ok());
+        for path in present {
+            let len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let held = self.by_path.entry(path.clone()).or_insert_with(|| Held {
+                consumed: 0,
+                unreadable: 0,
+                state: S::default(),
+            });
+            if len < held.consumed {
+                *held = Held { consumed: 0, unreadable: 0, state: S::default() };
+            }
+            if len == held.consumed {
+                continue;
+            }
+            let (consumed, unreadable) =
+                Self::fold(&path, held.consumed, &mut held.state, &mut fold);
+            held.consumed = consumed;
+            held.unreadable = held.unreadable.saturating_add(unreadable);
+        }
+        let mut unreadable = 0u64;
+        let mut states = Vec::with_capacity(self.by_path.len());
+        for held in self.by_path.values() {
+            unreadable = unreadable.saturating_add(held.unreadable);
+            states.push(&held.state);
+        }
+        (states, unreadable)
+    }
+
+    /// Reads `path` from `from` to the last **complete** line, folding
+    /// each record in. Returns the new offset and what it could not read.
+    ///
+    /// **Buffered rather than read whole, and that is a size decision.**
+    /// The largest transcript on this machine is 280 MB (measured
+    /// 2026-08-17); slurping it would put that much on the heap to look
+    /// at four numbers per line.
+    ///
+    /// **A line that no newline terminates is a write in progress, so it
+    /// is neither counted nor consumed.** These files are appended to by
+    /// a program running right now, and the honest test for "half
+    /// written" is the missing terminator — not "it was the last line",
+    /// which would also forgive a record the vendor finished writing and
+    /// khor genuinely cannot read. Leaving it unconsumed is the same rule
+    /// seen from the other side: the next pass picks it up once it is
+    /// whole. Without the distinction the drift alarm would go off
+    /// whenever somebody was working, and an alarm that cries wolf is
+    /// worse than none.
+    fn fold(
+        path: &Path,
+        from: u64,
+        state: &mut S,
+        fold: &mut impl FnMut(&mut S, &serde_json::Value) -> Read,
+    ) -> (u64, u64) {
+        use std::io::{BufRead, Seek};
+
+        let mut unreadable = 0u64;
+        let Ok(file) = std::fs::File::open(path) else {
+            // A file khor cannot open at all is not a record it misread —
+            // it may be somebody else's permissions, or a file being
+            // replaced. Nothing is consumed, so a later pass may still
+            // read it.
+            return (from, 0);
+        };
+        let mut reader = std::io::BufReader::new(file);
+        if from > 0 && reader.seek(std::io::SeekFrom::Start(from)).is_err() {
+            return (from, 0);
+        }
+        let mut at = from;
+        // One buffer for the whole file: a tool result can be megabytes,
+        // and re-allocating per line would do that a thousand times over.
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            let read = match reader.read_line(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => n as u64,
+                // Not text at all. That is a format khor cannot read, and
+                // it says so once rather than pretending the rest of the
+                // file is empty.
+                Err(_) => {
+                    unreadable = unreadable.saturating_add(1);
+                    break;
+                }
+            };
+            if !buf.ends_with('\n') {
+                break;
+            }
+            at += read;
+            let line = buf.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let outcome = match serde_json::from_str::<serde_json::Value>(line) {
+                Ok(v) => fold(state, &v),
+                Err(_) => Read::Unreadable,
+            };
+            if matches!(outcome, Read::Unreadable) {
+                unreadable = unreadable.saturating_add(1);
+            }
+        }
+        (at, unreadable)
+    }
+}
+
+/// The instant a record carries, or nothing when khor cannot read it.
+fn at_of(v: &serde_json::Value, key: &str) -> Option<jiff::Timestamp> {
+    v.get(key).and_then(serde_json::Value::as_str)?.parse().ok()
 }
 
 pub mod claude {
@@ -427,13 +540,17 @@ pub mod claude {
     //! session copies its history into the new transcript: 179 message ids
     //! on this machine appear in two files. Per-file dedup would bill a
     //! resumed conversation twice for everything said before the resume.
+    //! Each file keeps its own best-per-id and the files are merged at the
+    //! end, which is how the cross-file rule survives reading one file's
+    //! tail without re-reading the rest.
 
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::Mutex;
 
     use khor_core::Tokens;
 
-    use super::{day_of, for_each_record, jsonl_under, Meter, Read, Tally};
+    use super::{at_of, Files, Kept, Meter, Read, Tally};
 
     /// This vendor's name — the same string [`crate::adaptor::claude`]
     /// stamps on its rows, so a session and its tokens land in one
@@ -442,11 +559,16 @@ pub mod claude {
 
     pub struct Claude {
         root: PathBuf,
+        /// One entry per transcript. About 55 568 messages across this
+        /// machine's, measured 2026-08-17 — a few megabytes held for as
+        /// long as the node runs, which is the price of not re-reading
+        /// 1482 MiB.
+        files: Mutex<Files<HashMap<String, Kept>>>,
     }
 
     impl Claude {
         pub fn at(root: PathBuf) -> Claude {
-            Claude { root }
+            Claude { root, files: Mutex::new(Files::default()) }
         }
 
         fn projects_dir(&self) -> PathBuf {
@@ -454,19 +576,11 @@ pub mod claude {
         }
     }
 
-    /// One assistant message's reading, as the file spells it.
-    struct Reading {
-        day: String,
-        tokens: Tokens,
-    }
-
     /// The numbers off one `message.usage`, mapped onto the four names.
     ///
     /// **`input_tokens` is carried across unchanged**, unlike codex's:
     /// this vendor already reports it net of the cache, which is visible
     /// in the files as a two-digit input beside a five-digit cache read.
-    /// A record with no `usage` object is not this vendor's spending
-    /// record and never reaches here.
     fn tokens_of(usage: &serde_json::Value) -> Tokens {
         let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         Tokens {
@@ -475,6 +589,38 @@ pub mod claude {
             cache_write: n("cache_creation_input_tokens"),
             output: n("output_tokens"),
         }
+    }
+
+    /// One line into one file's best-per-message map.
+    fn fold(best: &mut HashMap<String, Kept>, v: &serde_json::Value) -> Read {
+        if v.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
+            return Read::Fine;
+        }
+        let Some(message) = v.get("message") else { return Read::Fine };
+        let Some(usage) = message.get("usage").filter(|u| u.is_object()) else {
+            return Read::Fine;
+        };
+        // An assistant message that bills something and says neither
+        // which message it is nor when it happened cannot be
+        // deduplicated or filed. That is a shape khor has stopped
+        // understanding, which is what the count is for — measured zero
+        // on this machine today.
+        let (Some(id), Some(at)) = (
+            message.get("id").and_then(serde_json::Value::as_str),
+            at_of(v, "timestamp"),
+        ) else {
+            return Read::Unreadable;
+        };
+        let tokens = tokens_of(usage);
+        match best.get(id) {
+            // The same message written again, no further along than last
+            // time.
+            Some(seen) if seen.tokens.output >= tokens.output => {}
+            _ => {
+                best.insert(id.to_owned(), Kept { at, tokens });
+            }
+        }
+        Read::Fine
     }
 
     impl Meter for Claude {
@@ -486,52 +632,23 @@ pub mod claude {
             self.projects_dir()
         }
 
-        fn tally(&self, zone: &jiff::tz::TimeZone) -> Tally {
-            let mut out = Tally::default();
-            // Keyed by message id, holding the fullest reading seen so
-            // far. Sized by the machine rather than by one file, because
-            // the same message can arrive from two of them — measured
-            // 55 568 entries here, a few megabytes.
-            let mut best: HashMap<String, Reading> = HashMap::new();
-            for path in jsonl_under(&self.projects_dir()) {
-                out.unreadable = out.unreadable.saturating_add(for_each_record(&path, |v| {
-                    if v.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
-                        return Read::Fine;
-                    }
-                    let Some(message) = v.get("message") else { return Read::Fine };
-                    let Some(usage) = message.get("usage").filter(|u| u.is_object()) else {
-                        return Read::Fine;
-                    };
-                    // An assistant message that bills something and says
-                    // neither who it is nor when it happened cannot be
-                    // deduplicated or filed. That is a shape khor has
-                    // stopped understanding, which is what the count is
-                    // for — measured zero on this machine today.
-                    let (Some(id), Some(ts)) = (
-                        message.get("id").and_then(serde_json::Value::as_str),
-                        v.get("timestamp").and_then(serde_json::Value::as_str),
-                    ) else {
-                        return Read::Unreadable;
-                    };
-                    let Some(day) = day_of(ts, zone) else {
-                        return Read::Unreadable;
-                    };
-                    let tokens = tokens_of(usage);
-                    match best.get(id) {
-                        // The same message written again, no further
-                        // along than last time.
-                        Some(seen) if seen.tokens.output >= tokens.output => {}
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.projects_dir(), fold);
+            // The cross-file half of the rule: one reading per message id
+            // across the whole tree, the fullest one.
+            let mut best: HashMap<&str, &Kept> = HashMap::new();
+            for state in states {
+                for (id, kept) in state {
+                    match best.get(id.as_str()) {
+                        Some(seen) if seen.tokens.output >= kept.tokens.output => {}
                         _ => {
-                            best.insert(id.to_owned(), Reading { day, tokens });
+                            best.insert(id, kept);
                         }
                     }
-                    Read::Fine
-                }));
+                }
             }
-            for reading in best.into_values() {
-                out.add(reading.day, reading.tokens);
-            }
-            out
+            Tally { kept: best.into_values().copied().collect(), unreadable }
         }
     }
 }
@@ -549,9 +666,14 @@ pub mod codex {
     //!
     //! Each event is written twice in a row with identical numbers, so a
     //! reading identical to the one immediately before it in the same file
-    //! is dropped. **That rule is checked against something khor did not
-    //! compute**: in the 69 sessions whose total never reset, the sum of
-    //! the deduplicated turns equals the session's own final
+    //! is dropped. **The running total is part of what "identical" means**,
+    //! and that is what makes the rule exact rather than nearly right: two
+    //! genuine turns that happened to bill the same amount still differ,
+    //! because the total behind them has advanced.
+    //!
+    //! **The rule is checked against something khor did not compute**: in
+    //! the 69 sessions whose total never reset, the sum of the
+    //! deduplicated turns equals the session's own final
     //! `total_token_usage` exactly — a number the vendor wrote and khor
     //! only reads.
     //!
@@ -569,22 +691,32 @@ pub mod codex {
     //! is what it looks like when the second is already inside the first.
 
     use std::path::PathBuf;
+    use std::sync::Mutex;
 
     use khor_core::Tokens;
 
-    use super::{day_of, for_each_record, jsonl_under, Meter, Read, Tally};
+    use super::{at_of, Files, Kept, Meter, Read, Tally};
 
     /// This vendor's name — the same string
     /// [`crate::adaptor::codex`] stamps on its rows.
     pub const VENDOR: &str = crate::adaptor::codex::VENDOR;
 
+    /// One rollout's turns, and the reading that came just before, so that
+    /// the repeat rule survives a pass that only read the file's tail.
+    #[derive(Default)]
+    pub struct Rollout {
+        turns: Vec<Kept>,
+        previous: Option<(Tokens, u64)>,
+    }
+
     pub struct Codex {
         root: PathBuf,
+        files: Mutex<Files<Rollout>>,
     }
 
     impl Codex {
         pub fn at(root: PathBuf) -> Codex {
-            Codex { root }
+            Codex { root, files: Mutex::new(Files::default()) }
         }
 
         fn sessions_dir(&self) -> PathBuf {
@@ -609,6 +741,39 @@ pub mod codex {
         }
     }
 
+    fn fold(roll: &mut Rollout, v: &serde_json::Value) -> Read {
+        let Some(payload) = v.get("payload") else { return Read::Fine };
+        if payload.get("type").and_then(serde_json::Value::as_str) != Some("token_count") {
+            return Read::Fine;
+        }
+        // `info: null` is codex saying it has no numbers for this event —
+        // a rate-limit notice rides the same event type. Nothing to read,
+        // nothing missed.
+        let Some(info) = payload.get("info").filter(|i| i.is_object()) else {
+            return Read::Fine;
+        };
+        // A token_count that reports no turn, or one khor cannot place in
+        // time, is a shape it has stopped understanding.
+        let Some(last) = info.get("last_token_usage").filter(|u| u.is_object()) else {
+            return Read::Unreadable;
+        };
+        let Some(at) = at_of(v, "timestamp") else {
+            return Read::Unreadable;
+        };
+        let running = info
+            .get("total_token_usage")
+            .and_then(|t| t.get("total_tokens"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        let tokens = tokens_of(last);
+        if roll.previous == Some((tokens, running)) {
+            return Read::Fine;
+        }
+        roll.previous = Some((tokens, running));
+        roll.turns.push(Kept { at, tokens });
+        Read::Fine
+    }
+
     impl Meter for Codex {
         fn vendor(&self) -> &'static str {
             VENDOR
@@ -618,51 +783,11 @@ pub mod codex {
             self.sessions_dir()
         }
 
-        fn tally(&self, zone: &jiff::tz::TimeZone) -> Tally {
-            let mut out = Tally::default();
-            for path in jsonl_under(&self.sessions_dir()) {
-                // The previous reading **in this file**. Two sessions
-                // that happened to bill identically are two turns, and
-                // nothing joins them.
-                let mut previous: Option<(String, Tokens)> = None;
-                let missed = for_each_record(&path, |v| {
-                    let Some(payload) = v.get("payload") else { return Read::Fine };
-                    if payload.get("type").and_then(serde_json::Value::as_str)
-                        != Some("token_count")
-                    {
-                        return Read::Fine;
-                    }
-                    // `info: null` is codex saying it has no numbers for
-                    // this event — a rate-limit notice rides the same
-                    // event type. Nothing to read, nothing missed.
-                    let Some(info) = payload.get("info").filter(|i| i.is_object()) else {
-                        return Read::Fine;
-                    };
-                    // A token_count that reports no turn, or one khor
-                    // cannot place in a day, is a shape it has stopped
-                    // understanding.
-                    let Some(last) = info.get("last_token_usage").filter(|u| u.is_object())
-                    else {
-                        return Read::Unreadable;
-                    };
-                    let Some(day) = v
-                        .get("timestamp")
-                        .and_then(serde_json::Value::as_str)
-                        .and_then(|ts| day_of(ts, zone))
-                    else {
-                        return Read::Unreadable;
-                    };
-                    let reading = (day, tokens_of(last));
-                    if previous.as_ref() == Some(&reading) {
-                        return Read::Fine;
-                    }
-                    out.add(reading.0.clone(), reading.1);
-                    previous = Some(reading);
-                    Read::Fine
-                });
-                out.unreadable = out.unreadable.saturating_add(missed);
-            }
-            out
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
+            let kept = states.into_iter().flat_map(|r| r.turns.iter().copied()).collect();
+            Tally { kept, unreadable }
         }
     }
 }

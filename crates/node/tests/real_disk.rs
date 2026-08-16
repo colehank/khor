@@ -287,16 +287,38 @@ fn one_spending_pass_is_timed_against_the_tree_it_walked() {
     }
     let zone = jiff::tz::TimeZone::UTC;
     let meters = khor_node::usage::Meters::at(&home);
-    let mut runs = Vec::new();
-    for _ in 0..3 {
+    let took = |f: &dyn Fn()| {
         let t = Instant::now();
+        f();
+        t.elapsed().as_secs_f64()
+    };
+    // Three different questions, and the design rests on the gap between
+    // them: reading every byte, reading only what was appended (nothing,
+    // here) and folding again, and deciding from the directory entries
+    // that there is nothing to fold.
+    let cold = took(&|| {
         let _ = meters.tally_in(&zone);
-        runs.push(t.elapsed().as_secs_f64());
-    }
+    });
+    let refold = took(&|| {
+        let _ = meters.tally_in(&zone);
+    });
+    let _ = meters.tally();
+    let kept = took(&|| {
+        let _ = meters.tally();
+    });
     println!(
-        "{files} files, {:.1} MiB — passes: {}",
+        "{files} files, {:.1} MiB — cold {cold:.2}s, tail-only re-fold {refold:.2}s, \
+         unchanged {kept:.3}s",
         bytes as f64 / (1024.0 * 1024.0),
-        runs.iter().map(|s| format!("{s:.2}s")).collect::<Vec<_>>().join(", ")
     );
     assert!(files > 0, "nothing to time under {}", home.display());
+    // Not a threshold on the machine — a threshold on the *shape* of the
+    // answer, which holds anywhere: whatever a cold pass costs, not
+    // paying it again is the whole design (`khor_node::usage`). A
+    // hard-coded second count here would go red on somebody else's
+    // laptop; this goes red if the incremental bookkeeping stops working.
+    assert!(
+        refold < cold,
+        "re-reading nothing must cost less than reading everything: {cold:.2}s then {refold:.2}s"
+    );
 }
