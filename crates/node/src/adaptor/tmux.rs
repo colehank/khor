@@ -535,6 +535,52 @@ mod tests {
         fn at(&self) -> Tmux {
             Tmux::on_socket(&self.socket)
         }
+
+        /// Blocks until tmux reports what the test set up, or gives up.
+        ///
+        /// **These tests had fixed sleeps first, and one lost a race.**
+        /// On 2026-08-16 a full suite run that happened to overlap a
+        /// compile saw `send-keys "sleep 300"` fail to become a running
+        /// `sleep` inside 900 ms; the pane read 空闲 and the assertion
+        /// failed — once, then passed eleven runs in a row, which is
+        /// exactly the shape of failure this repo refuses to write off
+        /// as "flaky, just re-run". A test that is only true on an idle
+        /// machine is not testing khor.
+        ///
+        /// Waits on the same `list-panes` khor itself reads, so what it
+        /// waits for is what the assertion will see.
+        fn until(&self, ready: impl Fn(&str) -> bool) {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let seen = self
+                    .tmux(&[
+                        "list-panes",
+                        "-a",
+                        "-F",
+                        "#{session_name}|#{pane_current_command}",
+                    ])
+                    .unwrap_or_default();
+                if ready(&seen) || Instant::now() >= deadline {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        }
+
+        /// Waits for one session's foreground command to be `want`.
+        fn until_running(&self, session: &str, want: &str) {
+            let line = format!("{session}|{want}");
+            self.until(|seen| seen.lines().any(|l| l == line));
+        }
+
+        /// Waits for a session to exist at all. Deliberately not "waits
+        /// for a `zsh` prompt": the shell here is whatever the machine
+        /// running the suite uses, and naming one would make these tests
+        /// quietly time out on a bash machine rather than fail on it.
+        fn until_present(&self, session: &str) {
+            let prefix = format!("{session}|");
+            self.until(|seen| seen.lines().any(|l| l.starts_with(&prefix)));
+        }
     }
 
     impl Drop for Server {
@@ -610,9 +656,9 @@ mod tests {
         s.tmux(&["new-session", "-d", "-s", "idle"]);
         s.tmux(&["new-session", "-d", "-s", "cmd", "sleep 300"]);
         s.tmux(&["new-session", "-d", "-s", "working"]);
-        std::thread::sleep(Duration::from_millis(400));
+        s.until_present("working");
         s.tmux(&["send-keys", "-t", "working", "sleep 300", "Enter"]);
-        std::thread::sleep(Duration::from_millis(900));
+        s.until_running("working", "sleep");
 
         let procs = Procs::snapshot();
         let listing = s.at().sweep(&procs);
@@ -647,9 +693,9 @@ mod tests {
         }
         let s = Server::start("holds");
         s.tmux(&["new-session", "-d", "-s", "deep"]);
-        std::thread::sleep(Duration::from_millis(400));
+        s.until_present("deep");
         s.tmux(&["send-keys", "-t", "deep", "sleep 300", "Enter"]);
-        std::thread::sleep(Duration::from_millis(900));
+        s.until_running("deep", "sleep");
 
         let procs = Procs::snapshot();
         let listing = s.at().sweep(&procs);
@@ -676,11 +722,11 @@ mod tests {
         }
         let s = Server::start("panes");
         s.tmux(&["new-session", "-d", "-s", "split"]);
-        std::thread::sleep(Duration::from_millis(400));
+        s.until_present("split");
         s.tmux(&["split-window", "-t", "split"]);
-        std::thread::sleep(Duration::from_millis(400));
+        s.until(|seen| seen.lines().filter(|l| l.starts_with("split|")).count() == 2);
         s.tmux(&["send-keys", "-t", "split.1", "sleep 300", "Enter"]);
-        std::thread::sleep(Duration::from_millis(900));
+        s.until(|seen| seen.lines().any(|l| l == "split|sleep"));
 
         let listing = s.at().sweep(&Procs::snapshot());
         assert_eq!(listing.rows.len(), 1, "panes are not rows");
@@ -744,7 +790,9 @@ mod tests {
         let s = Server::start("narrow");
         s.tmux(&["new-session", "-d", "-s", "one"]);
         s.tmux(&["new-session", "-d", "-s", "two", "sleep 300"]);
-        std::thread::sleep(Duration::from_millis(900));
+        s.until(|seen| {
+            seen.lines().any(|l| l.starts_with("one|")) && seen.lines().any(|l| l == "two|sleep")
+        });
         let listing = s.at().sweep(&Procs::snapshot());
         assert_eq!(listing.rows.len(), 2, "the control: it did find them");
         for m in &listing.rows {
