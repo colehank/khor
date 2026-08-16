@@ -38,6 +38,10 @@ this-machine = "(本机)"
 name-separator = "、"
 unread = "未读 {0}"
 unreachable-for = "{0}没联系上"
+# Said only when the number is non-zero. Zero rows and zero unreadable is
+# an idle machine; zero rows and a non-zero count is khor being out of
+# date, and nothing but this line tells the two apart.
+adaptor-behind = "有 {0} 个正在跑的智能体 session 读不出来,khor 认不得它落盘的格式"
 age-seconds = "{0} 秒"
 age-minutes = "{0} 分钟"
 age-hours = "{0} 小时"
@@ -185,6 +189,10 @@ cant-make-peers-dir = "建不了 peers 目录: {0}"
 bad-channel-name = "频道名不合法: {0}"
 cant-delete = "删不掉: {0}"
 remote-close-not-yet = "这个 session 的 home 是 {0},远程关还没有,去那台关"
+# Said about a row khor discovered by reading an agent's own files: it is
+# on the list, so "没有这个 session" would read as a bug in khor instead
+# of a boundary of it.
+not-khors-to-close = "{0} 不是 khor 起的,关不了它;去它自己的窗口里退"
 
 # ── the live kind (node) ──
 not-a-session-id = "这不是一个 session 号: {0}"

@@ -1,0 +1,2 @@
+{"timestamp": "2026-08-06T13:49:37.236Z", "type": "session_meta", "payload": {"session_id": "019fd755-6c0c-7ccc-8ccc-cccccccccccc", "id": "019fd755-6c0c-7ccc-8ccc-cccccccccccc", "timestamp": "2026-08-06T13:49:18.314Z", "cwd": "/w/gamma", "originator": "codex-tui", "cli_version": "0.146.1", "source": "cli", "thread_source": "user", "model_provider": "custom"}}
+{"timestamp": "2026-08-06T13:49:37.236Z", "type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1", "started_at": 1786024127}}

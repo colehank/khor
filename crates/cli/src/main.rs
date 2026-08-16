@@ -66,6 +66,13 @@ fn run(args: &[String]) -> Result<(), String> {
                     src
                 );
             }
+            // A missing row is invisible; this is the one thing that
+            // makes "khor cannot read this vendor any more" visible
+            // instead of looking like a quiet machine.
+            let behind = n.unreadable_sessions();
+            if behind > 0 {
+                println!("{}", cli::adaptor_behind(behind));
+            }
             Ok(())
         }
         "tell" => {

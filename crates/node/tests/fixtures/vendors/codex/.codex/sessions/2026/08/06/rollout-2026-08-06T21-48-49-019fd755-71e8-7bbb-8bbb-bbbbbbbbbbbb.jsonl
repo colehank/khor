@@ -1,0 +1,4 @@
+{"timestamp": "2026-08-06T13:49:37.236Z", "type": "session_meta", "payload": {"session_id": "019fd755-71e8-7bbb-8bbb-bbbbbbbbbbbb", "id": "019fd755-71e8-7bbb-8bbb-bbbbbbbbbbbb", "timestamp": "2026-08-06T13:49:18.314Z", "cwd": "/w/beta", "originator": "codex-tui", "cli_version": "0.146.1", "source": "cli", "thread_source": "user", "model_provider": "custom"}}
+{"timestamp": "2026-08-06T13:49:37.236Z", "type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1", "started_at": 1786024129}}
+{"timestamp": "2026-08-06T13:49:37.262Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "done"}]}}
+{"timestamp": "2026-08-06T13:49:37.236Z", "type": "event_msg", "payload": {"type": "task_complete", "turn_id": "t1", "last_agent_message": "done", "completed_at": 1786024140}}

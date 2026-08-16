@@ -1,0 +1,3 @@
+{"id": "aaaaaaaa-bbbb-40cc-8ddd-eeeeeeeeeeee", "timestamp": "2025-09-14T08:33:39.622Z", "instructions": null}
+{"record_type": "state"}
+{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]}

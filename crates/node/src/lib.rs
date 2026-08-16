@@ -7,6 +7,7 @@
 //! real implementations actually share: produce rows, claim an id,
 //! answer what "looked at now" means, and close.
 
+pub mod adaptor;
 pub mod chat;
 pub mod host;
 pub mod ipc;
@@ -125,7 +126,11 @@ impl Node {
             Sender { id: device_str.clone(), name: name.clone() },
         );
         let transfer = TransferKind::new(root.clone(), device_str.clone(), name.clone());
-        let live = LiveKind::new(root.clone(), device);
+        // The one place khor decides to read other vendors' files. Every
+        // other construction of a LiveKind discovers nothing, so no test
+        // answers with whatever the machine happens to be running.
+        let live = LiveKind::new(root.clone(), device)
+            .discovering(Arc::new(adaptor::Discovery::for_root(&root)));
         let node = Node {
             root,
             key,
@@ -552,6 +557,13 @@ impl Node {
             if let Some((name, _)) = v.source {
                 return Err(msg::remote_close_not_yet(name));
             }
+            // A local row no kind claims is a discovered one: khor found
+            // it by reading a vendor's files and never started it, so it
+            // has nothing to wind down and no business killing someone
+            // else's process. Saying so by name matters — "no such
+            // session" about a row the user is looking at reads as a bug
+            // in khor rather than a boundary of it.
+            return Err(msg::not_khors_to_close(&id.0));
         }
         Err(msg::no_such_session(&id.0))
     }
@@ -607,8 +619,17 @@ impl Node {
     }
 
     /// One Claude Code hook payload in, the mapped session move out.
-    pub fn claude_hook(&self, payload: &str) -> Result<live::Hooked, String> {
-        live::claude_hook(&self.live, payload)
+    pub fn claude_hook(&self, payload: &str) -> Result<adaptor::claude::Hooked, String> {
+        adaptor::claude::hook(&self.live, payload)
+    }
+
+    /// Live agent sessions the last sweep could see but could not read
+    /// — a vendor changed a file layout khor is reading (docs/HOOKS.md
+    /// 适配器过时). Zero rows and a zero count is an idle machine; zero
+    /// rows and a non-zero count is khor being out of date, and nothing
+    /// but this number tells those apart.
+    pub fn unreadable_sessions(&self) -> usize {
+        self.live.unreadable_sessions()
     }
 
     /// Re-derives one session's row and pushes it to watchers.

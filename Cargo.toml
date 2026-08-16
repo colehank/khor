@@ -43,4 +43,9 @@ libc = "0.2"
 # (openpty on POSIX, ConPTY on Windows). Compiled in — the product
 # expects no user-installed dependency, tmux included (docs/SESSION.md).
 portable-pty = "0.9"
+# The process table, one API on every desktop OS. Discovery needs it for
+# two things a vendor's files cannot answer: whether the process behind a
+# session is still running, and — for vendors that write no pid anywhere
+# — which sessions exist at all (crates/node/src/adaptor).
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tracing = "0.1"

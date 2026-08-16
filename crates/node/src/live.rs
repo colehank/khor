@@ -18,9 +18,13 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use khor_catalog::msg;
 use khor_core::{DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
+
+use crate::adaptor::Discovery;
 
 /// What a live session is. `pid` is the process whose death means the
 /// session is over — None for observed sessions registered by hooks,
@@ -66,11 +70,39 @@ pub fn clean_leaf(raw: &str) -> String {
 pub struct LiveKind {
     root: PathBuf,
     device: DeviceId,
+    /// The vendors this device reads (crates/node/src/adaptor). Empty by
+    /// default and opted into once, at [`crate::Node::open_as`]: a
+    /// registry test that swept the machine's real `~/.claude` would be
+    /// answering with whatever the user happens to be running.
+    discovery: Arc<Discovery>,
+    /// Live sessions the last sweep could not read. Kept from the sweep
+    /// that produced the rows so the two never disagree.
+    unmapped: Arc<AtomicUsize>,
 }
 
 impl LiveKind {
     pub fn new(root: PathBuf, device: DeviceId) -> LiveKind {
-        LiveKind { root, device }
+        LiveKind {
+            root,
+            device,
+            discovery: Arc::new(Discovery::empty()),
+            unmapped: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Also surface the agent sessions this machine's vendors are
+    /// running, with no configuration from the user (docs/HOOKS.md).
+    pub fn discovering(mut self, discovery: Arc<Discovery>) -> LiveKind {
+        self.discovery = discovery;
+        self
+    }
+
+    /// How many live sessions the last sweep saw but could not read —
+    /// the "适配器过时" signal. Never inferred from an empty list: a
+    /// vendor that changed its file layout produces zero rows and a
+    /// non-zero count, and only the count tells them apart.
+    pub fn unreadable_sessions(&self) -> usize {
+        self.unmapped.load(Ordering::Relaxed)
     }
 
     /// `<kind>/<leaf>` → its registry dir. The one place the mapping
@@ -204,9 +236,46 @@ impl LiveKind {
         fs::remove_dir_all(&dir).map_err(msg::cant_delete)
     }
 
-    /// Every registered session as a row. Unreadable entries are skipped:
-    /// a half-written registry dir is a moment, not an error.
+    /// Every live session on this device as a row: the ones registered
+    /// here, then the ones discovered by reading the vendors' own files.
+    ///
+    /// **The registry wins a collision, and that is the whole of "同源
+    /// 去重".** A claude session that both reports through hooks and
+    /// shows up on disk is one session; the registered row is the richer
+    /// of the two (it has a word history, and can say 完成, which the
+    /// status file cannot), so the discovered sighting steps aside. Both
+    /// sides mint the id through `adaptor::id_for`, which is what makes
+    /// the collision detectable at all.
+    ///
+    /// Unreadable entries are skipped: a half-written registry dir is a
+    /// moment, not an error.
     pub fn rows(&self, watermark: impl Fn(&str) -> i64) -> Vec<Session> {
+        let mut out = self.registry_rows(&watermark);
+        let sweep = self.discovery.sweep();
+        self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
+        for sighting in sweep.rows {
+            let id = sighting.id();
+            if out.iter().any(|r| r.id == id) {
+                continue;
+            }
+            let (state, unread) =
+                settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
+            out.push(Session {
+                id,
+                kind: Kind(khor_core::kind::TUI.to_owned()),
+                title: sighting.title,
+                home: self.device,
+                state: StateStamp {
+                    state,
+                    at: Millis(sighting.at_ms.max(0) as u64),
+                },
+                unread,
+            });
+        }
+        out
+    }
+
+    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<Session> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else {
             return out;
@@ -269,19 +338,26 @@ fn face(meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64) {
         if meta.kind == khor_core::kind::TUI {
             return (State::Idle, state.at_ms, 0);
         }
-        let unread = u64::from(state.at_ms > watermark);
-        let word = if unread > 0 { State::Done } else { State::Idle };
+        let (word, unread) = settle_done(State::Done, state.at_ms, watermark);
         return (word, state.at_ms, unread);
     }
     if !pid_says_alive(meta) {
         return (State::Failed, state.at_ms, 0);
     }
-    if state.word == State::Done {
-        let unread = u64::from(state.at_ms > watermark);
-        let word = if unread > 0 { State::Done } else { State::Idle };
-        return (word, state.at_ms, unread);
+    let (word, unread) = settle_done(state.word, state.at_ms, watermark);
+    (word, state.at_ms, unread)
+}
+
+/// 完成 clears to 空闲 once the seen watermark covers it, and it is the
+/// only word that carries unread (docs/UX.md 角标可归零). One place,
+/// because both the registry and the discovery sweep need it and two
+/// copies of a rule about badges is how a badge stops clearing.
+fn settle_done(word: State, at_ms: i64, watermark: i64) -> (State, u64) {
+    if word != State::Done {
+        return (word, 0);
     }
-    (state.word, state.at_ms, 0)
+    let unread = u64::from(at_ms > watermark);
+    (if unread > 0 { State::Done } else { State::Idle }, unread)
 }
 
 /// No pid on record means nobody can pronounce it dead — the word stands
@@ -397,74 +473,6 @@ fn exit_code_of(status: std::process::ExitStatus) -> i32 {
 #[cfg(not(unix))]
 fn exit_code_of(status: std::process::ExitStatus) -> i32 {
     status.code().unwrap_or(1)
-}
-
-// ── Claude Code hook glue ───────────────────────────────────
-
-/// What `khor state --hook` did, for the caller to print (or not).
-pub enum Hooked {
-    Updated(SessionId, State),
-    Ended(SessionId),
-    /// The event carries no state change (a passing notification, an
-    /// event this glue does not map).
-    Ignored,
-}
-
-/// Reads one Claude Code hook payload and moves the session it belongs
-/// to. Claude-version-specific glue, quarantined here: the mapping from
-/// hook events to the six words is this function and nothing else.
-///
-/// The session: `KHOR_SESSION` when the agent runs under `khor run`
-/// (one session, reliable pid, real exit code); otherwise an observed
-/// `tui/<claude session id>` is registered on first sight, with no pid.
-///
-/// Word mapping — the one deliberate narrowing is Notification: only a
-/// permission ask becomes 待批. Claude also notifies on long idle, and
-/// "等你说下一句" is exactly what 待批 must never mean (docs/SESSION.md).
-pub fn claude_hook(live: &LiveKind, payload: &str) -> Result<Hooked, String> {
-    let v: serde_json::Value =
-        serde_json::from_str(payload).map_err(msg::hook_payload_garbled)?;
-    let event = v["hook_event_name"].as_str().unwrap_or("");
-
-    let id = match std::env::var("KHOR_SESSION") {
-        Ok(sid) if live.claims(&SessionId(sid.clone())) => SessionId(sid),
-        _ => {
-            let raw = v["session_id"].as_str().unwrap_or("");
-            if raw.is_empty() {
-                return Err(msg::HOOK_PAYLOAD_NO_SESSION.into());
-            }
-            let title = v["cwd"]
-                .as_str()
-                .and_then(|c| Path::new(c).file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "claude".into());
-            let id = SessionId(format!("{}/{}", khor_core::kind::TUI, clean_leaf(raw)));
-            live.ensure(&id, khor_core::kind::TUI, &title, None)?;
-            id
-        }
-    };
-
-    let word = match event {
-        "SessionStart" => Some(State::Idle),
-        "UserPromptSubmit" => Some(State::Busy),
-        "Stop" => Some(State::Done),
-        "Notification" => {
-            let msg = v["message"].as_str().unwrap_or("");
-            if msg.contains("permission") { Some(State::Blocked) } else { None }
-        }
-        "SessionEnd" => {
-            live.record_exit(&id, 0)?;
-            return Ok(Hooked::Ended(id));
-        }
-        _ => None,
-    };
-    match word {
-        Some(w) => {
-            live.report(&id, w)?;
-            Ok(Hooked::Updated(id, w))
-        }
-        None => Ok(Hooked::Ignored),
-    }
 }
 
 #[cfg(test)]
@@ -598,43 +606,51 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// The Claude glue end to end on payloads: an observed session
-    /// registers itself on first sight; the idle-notification does NOT
-    /// become 待批 (a badge that cannot reach zero is no badge); a
-    /// permission ask does; SessionEnd settles it.
+    /// 同源去重: one claude session that both reports through a hook and
+    /// shows up in the vendor's own files is one row, and the registered
+    /// side is the one that survives.
+    ///
+    /// The two sources are made to disagree on the word on purpose — the
+    /// fixture session is `waiting` on a permission prompt (待批) while
+    /// the hook has just been told the turn ended (完成). A merge that
+    /// kept both, or kept the wrong one, cannot pass this.
     #[test]
-    fn claude_payloads_move_an_observed_session() {
-        let root = tmp("claude");
-        let k = kind_at(&root);
-        let payload = |event: &str, extra: &str| {
-            format!(
-                r#"{{"session_id":"55E-fake.uuid","cwd":"/home/u/proj","hook_event_name":"{event}"{extra}}}"#
-            )
-        };
+    fn a_session_that_is_both_hooked_and_discovered_is_one_row() {
+        use crate::adaptor::{Discovery, Proc, Procs};
 
-        claude_hook(&k, &payload("SessionStart", "")).unwrap();
-        let row = &k.rows(|_| 0)[0];
-        assert_eq!(row.id.0, "tui/55e-fakeuuid");
-        assert_eq!(row.title, "proj");
-        assert_eq!(row.state.state, State::Idle, "started, waiting for the first prompt");
+        let root = tmp("dedup");
+        // The fixture's first session, its pid vouched for by a process
+        // table that exists only here.
+        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let procs = Procs::of([(
+            4001,
+            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None },
+        )]);
+        let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
 
-        claude_hook(&k, &payload("UserPromptSubmit", "")).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
+        // Discovery alone: one row, wearing the word from disk.
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id.0, "tui/11111111-1111-4111-8111");
+        assert_eq!(rows[0].state.state, State::Blocked);
+        assert_eq!(rows[0].title, "one-aa");
 
-        let idle_note = payload("Notification", r#","message":"Claude is waiting for your input""#);
-        assert!(matches!(claude_hook(&k, &idle_note).unwrap(), Hooked::Ignored));
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy, "long-idle must not become 待批");
+        // Now the hook registers the same claude session and reports a
+        // different word.
+        let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
+        k.register(&id, "tui", "one", Some(std::process::id())).unwrap();
+        k.report(&id, State::Done).unwrap();
 
-        let ask = payload("Notification", r#","message":"Claude needs your permission to use Bash""#);
-        claude_hook(&k, &ask).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Blocked);
-
-        claude_hook(&k, &payload("Stop", "")).unwrap();
-        let row = &k.rows(|_| 0)[0];
-        assert_eq!((row.state.state, row.unread), (State::Done, 1));
-
-        claude_hook(&k, &payload("SessionEnd", "")).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Idle, "a clean end is idle");
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "one session, one row — not two");
+        assert_eq!(rows[0].id, id);
+        assert_eq!(
+            (rows[0].state.state, rows[0].unread),
+            (State::Done, 1),
+            "the registered row wins: it is the only one that can say 完成"
+        );
+        assert_eq!(rows[0].title, "one");
         let _ = fs::remove_dir_all(&root);
     }
 }

@@ -1,0 +1,19 @@
+{
+  "pid": 4002,
+  "sessionId": "22222222-2222-4222-8222-222222222222",
+  "cwd": "/w/two",
+  "startedAt": 1700000100000,
+  "procStart": "Wed Nov 15 06:13:20 2023",
+  "version": "2.1.233",
+  "peerProtocol": 1,
+  "kind": "interactive",
+  "entrypoint": "cli",
+  "tmux": "demo:@1.%1",
+  "messagingSocketPath": "/tmp/cc-socks/4002.sock",
+  "name": "two-bb",
+  "nameSource": "derived",
+  "nameSince": 1700000100000,
+  "status": "busy",
+  "updatedAt": 1700000160000,
+  "statusUpdatedAt": 1700000160000
+}
