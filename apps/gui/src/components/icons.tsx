@@ -3,6 +3,14 @@
 // rest in line — two densities, not two colors. Overlaps are cut with an
 // equal-width mask gap, never broken paths. Paths are copied verbatim;
 // changing one here forks the family.
+//
+// **One family, no exceptions.** Every mark any component draws comes
+// from this file — including the ones inside vendored shadcn components,
+// whose stock marks are swapped out on the way in. Two families differ in
+// stroke ratio, so mixing them on one screen reads the way two typefaces
+// in one paragraph read. `scripts/check-icons.mjs` fails the build on an
+// import from the foreign family (it names the package), which is what
+// catches a future `shadcn add` quietly bringing its own back.
 
 import { useId, type ReactNode } from "react";
 
@@ -10,8 +18,10 @@ import { cn } from "@/lib/utils";
 
 // Stroke widths are ratios in disguise: the number only means anything
 // divided by its canvas. 24-canvas rail glyphs use 1.4; 16-canvas marks
-// use 1.5 (optically compensated — thinner would vanish at 1x).
-export const STROKE = { rail: 1.4, sm: 1.5 } as const;
+// use 1.5 (optically compensated — thinner would vanish at 1x); the
+// tick-and-cross density is 1.9, heavier because those two are read as
+// answers, not as pictures.
+export const STROKE = { rail: 1.4, sm: 1.5, bold: 1.9 } as const;
 
 // The cut shape's width: the cut line is the front form's outline
 // widened to 3, leaving a (3 - 1.4) / 2 = 0.8 gap on each side.
@@ -109,20 +119,87 @@ export function IconMore({ className }: IconProps) {
   );
 }
 
-/** Back chevron, 16-canvas mark. */
-export function IconBack({ className }: IconProps) {
+/**
+ * The 16-canvas marks' common plate. Canvas and stroke are written once
+ * here for the same reason `RailGlyph` writes them once: a width spelled
+ * out per icon drifts, and mandala ended up with six of them, each right
+ * on its own and no two alike. `weight` names the two densities — the
+ * numbers behind them stay out of reach.
+ */
+function Mark({
+  className,
+  weight = "sm",
+  children,
+}: IconProps & { weight?: "sm" | "bold"; children: ReactNode }) {
   return (
     <svg
       className={cn("size-4", className)}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      strokeWidth={STROKE.sm}
+      strokeWidth={STROKE[weight]}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M10 3.2 5.2 8l4.8 4.8" />
+      {children}
     </svg>
+  );
+}
+
+/** Back chevron, 16-canvas mark. */
+export function IconBack({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M10 3.2 5.2 8l4.8 4.8" />
+    </Mark>
+  );
+}
+
+export function IconSearch({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <circle cx="7" cy="7" r="4.2" />
+      <path d="M10.2 10.2L13.5 13.5" />
+    </Mark>
+  );
+}
+
+export function IconPlus({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M8 3v10M3 8h10" />
+    </Mark>
+  );
+}
+
+/** How to look at this list. Three sliders — a menu of choices, which is
+    what separates it from `IconMore` (three dots, "there is more"). */
+export function IconFilter({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" />
+      <circle cx="5.5" cy="4.5" r="1.7" fill="currentColor" />
+      <circle cx="11" cy="8" r="1.7" fill="currentColor" />
+      <circle cx="7" cy="11.5" r="1.7" fill="currentColor" />
+    </Mark>
+  );
+}
+
+/** The tick a checkbox item shows — the family's own, not a borrowed one:
+    a second icon family on one screen reads as a second typeface. */
+export function IconCheck({ className }: IconProps) {
+  return (
+    <Mark className={className} weight="bold">
+      <path d="M3 8.5l3.2 3L13 4.5" />
+    </Mark>
+  );
+}
+
+export function IconClose({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </Mark>
   );
 }

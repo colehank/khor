@@ -4,23 +4,53 @@ import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { ago, word } from "@/words";
 
+/**
+ * Which rows the pane bar's search and filter leave standing.
+ *
+ * The filter matches on the state **key**, the one the node sent — never
+ * on the displayed word, and never on a state this layer worked out for
+ * itself (docs/UX.md 状态呈现). Search reads what the row shows plus its
+ * id, since the id is what the CLI prints and what people paste.
+ */
+export function visibleSessions(rows: SessionRow[], query: string, words: string[]) {
+  const q = query.trim().toLowerCase();
+  return rows.filter(
+    (r) =>
+      (words.length === 0 || words.includes(r.word)) &&
+      (q === "" || `${r.title} ${r.id}`.toLowerCase().includes(q)),
+  );
+}
+
 // Order and words come from the node untouched: the list never
 // re-derives a judgment the backend already made (docs/UX.md).
 export function SessionsList({
   rows,
+  query,
+  words,
   selected,
   onSelect,
 }: {
   rows: SessionRow[];
+  query: string;
+  words: string[];
   selected: string | null;
   onSelect: (row: SessionRow) => void;
 }) {
-  if (rows.length === 0) {
-    return <div className="p-4 text-sm text-muted-foreground">{gui.empty_sessions}</div>;
+  const shown = visibleSessions(rows, query, words);
+  if (shown.length === 0) {
+    // "Nothing here" and "nothing matched" are different facts, and the
+    // wrong one is a lie the user has no way to catch: someone who
+    // filtered down to zero would read "还没有 session" and believe the
+    // machine had lost their work.
+    return (
+      <div data-empty className="p-4 text-sm text-muted-foreground">
+        {rows.length === 0 ? gui.empty_sessions : gui.no_matches}
+      </div>
+    );
   }
   return (
     <div>
-      {rows.map((r) => (
+      {shown.map((r) => (
         <button
           key={r.id}
           type="button"

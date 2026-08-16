@@ -26,3 +26,6 @@ export const fetchSessions = () => call<SessionRow[]>("sessions");
 export const fetchDevices = () => call<DeviceRow[]>("devices");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
+export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
+export const invite = () => call<string>("invite");
+export const pair = (ticket: string) => call<string>("pair", { ticket });

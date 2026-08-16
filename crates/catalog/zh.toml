@@ -229,3 +229,22 @@ from-device = "来自 {0}"
 pick-a-session = "选一个 session"
 empty-sessions = "还没有 session"
 backend-unreachable = "够不着本机的 khor"
+# The pane bar. No page carries a title (docs/UX.md); the pane's name
+# lives in an aria-label, and what shows is the work you can do here.
+search-sessions = "搜索会话"
+search-devices = "搜索设备"
+filter = "筛选"
+new-item = "新建"
+# Filtered down to nothing is not "there are none" — the two states get
+# different words, or the empty list tells a lie.
+no-matches = "没有匹配的"
+tell-machine = "给机器留言"
+pick-a-machine = "选一台机器"
+message-text = "留言"
+send-it = "发出"
+make-a-ticket = "出一张配对票"
+join-with-a-ticket = "凭票入网"
+ticket = "配对票"
+paste-a-ticket = "把票贴在这里"
+join = "入网"
+close = "关闭"

@@ -109,3 +109,24 @@ pub fn seen(root: &Path, id: &str) -> Result<(), String> {
 pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.close(&SessionId(id.to_owned()))
 }
+
+/// Leaves a line in a machine's window — the call `khor tell` makes.
+pub fn tell(root: &Path, machine: &str, text: &str) -> Result<(), String> {
+    open(root)?.tell(machine, text).map(|_| ())
+}
+
+/// Issues a one-time pairing ticket. It carries the live endpoint's
+/// addresses, so it needs a resident serve — and both skins embed one
+/// (the bridge and the app each start `serve` on their own thread), so
+/// the GUI can issue a real ticket without a terminal.
+pub fn invite(root: &Path) -> Result<String, String> {
+    open(root)?.invite()
+}
+
+/// Joins with someone's ticket. Async because `Node::pair` dials — and
+/// because a resident serve holds this key's one endpoint, the call
+/// usually hands off to it over loopback rather than dialing here.
+pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
+    let node = open(root)?;
+    node.pair(ticket).await
+}

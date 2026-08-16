@@ -25,6 +25,23 @@ fn close_session(id: String) -> Result<(), String> {
     khor_gui_core::close_session(&Node::root_from_env(), &id)
 }
 
+#[tauri::command]
+fn tell(machine: String, text: String) -> Result<(), String> {
+    khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
+}
+
+#[tauri::command]
+fn invite() -> Result<String, String> {
+    khor_gui_core::invite(&Node::root_from_env())
+}
+
+/// Async on purpose: pairing dials, and a dial can sit on the timeout —
+/// a blocking command would freeze the window for those seconds.
+#[tauri::command]
+async fn pair(ticket: String) -> Result<String, String> {
+    khor_gui_core::pair(&Node::root_from_env(), &ticket).await
+}
+
 pub fn run() {
     // The app embeds serve — the desktop is a full node, not a client
     // (one mesh, no client/server split). Running `khor serve` on the
@@ -45,7 +62,15 @@ pub fn run() {
     });
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![sessions, devices, seen, close_session])
+        .invoke_handler(tauri::generate_handler![
+            sessions,
+            devices,
+            seen,
+            close_session,
+            tell,
+            invite,
+            pair
+        ])
         .run(tauri::generate_context!())
         .expect("tauri run");
 }

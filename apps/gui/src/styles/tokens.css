@@ -9,6 +9,11 @@
  * build error. Dark follows the system — no toggle (docs/UX.md 设置). */
 
 @import "tailwindcss";
+/* Enter/exit utilities for the Radix overlays (menus, dialogs, the rail's
+ * tooltip). It reads Tailwind's own `--tw-duration` / `--tw-ease`, so the
+ * components feed it the motion tokens below and nothing here invents a
+ * second timing vocabulary. */
+@import "tw-animate-css";
 
 :root {
   /* ── shadcn scheme, mandala light values ─────────── */

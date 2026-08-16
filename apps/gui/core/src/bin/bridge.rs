@@ -34,6 +34,13 @@ fn main() {
         });
     });
 
+    // A runtime for the one-shot verbs that dial (`pair`). Separate from
+    // serve's: this loop is synchronous and blocks on each call.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+
     let server = tiny_http::Server::http(("127.0.0.1", port)).expect("bind loopback");
     println!("bridge listening on 127.0.0.1:{port}");
     for mut req in server.incoming_requests() {
@@ -47,7 +54,7 @@ fn main() {
         let _ = req.as_reader().read_to_string(&mut body);
         let args: serde_json::Value =
             serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
-        let (code, payload) = match handle(&root, &cmd, &args) {
+        let (code, payload) = match handle(&rt, &root, &cmd, &args) {
             Ok(json) => (200, json),
             Err(e) => (400, serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into())),
         };
@@ -66,23 +73,35 @@ fn with_cors<R: Read>(r: tiny_http::Response<R>) -> tiny_http::Response<R> {
         .with_header("Access-Control-Allow-Methods: POST, OPTIONS".parse::<tiny_http::Header>().unwrap())
 }
 
-fn handle(root: &std::path::Path, cmd: &str, args: &serde_json::Value) -> Result<String, String> {
-    let id = || {
-        args.get("id")
+fn handle(
+    rt: &tokio::runtime::Runtime,
+    root: &std::path::Path,
+    cmd: &str,
+    args: &serde_json::Value,
+) -> Result<String, String> {
+    let arg = |name: &str| {
+        args.get(name)
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing arg: id".to_owned())
+            .ok_or_else(|| format!("missing arg: {name}"))
+            .map(|s| s.to_owned())
     };
     match cmd {
         "sessions" => to_json(&khor_gui_core::list_sessions(root)?),
         "devices" => to_json(&khor_gui_core::list_devices(root)?),
         "seen" => {
-            khor_gui_core::seen(root, id()?)?;
+            khor_gui_core::seen(root, &arg("id")?)?;
             Ok("null".to_owned())
         }
         "close_session" => {
-            khor_gui_core::close_session(root, id()?)?;
+            khor_gui_core::close_session(root, &arg("id")?)?;
             Ok("null".to_owned())
         }
+        "tell" => {
+            khor_gui_core::tell(root, &arg("machine")?, &arg("text")?)?;
+            Ok("null".to_owned())
+        }
+        "invite" => to_json(&khor_gui_core::invite(root)?),
+        "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),
     }
 }
