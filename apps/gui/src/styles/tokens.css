@@ -77,6 +77,11 @@
   --list-w: 288px;
   --avatar: 32px;
   --icon-rail: 26px;
+  /* The app mark at the head of the rail. Larger than a rail glyph and
+   * smaller than this machine's face at the foot: it is the app, not a
+   * place to go and not a machine, so it should not measure the same as
+   * either of its neighbours. */
+  --icon-mark: 28px;
 
   /* ── motion (mandala's tokens, verbatim) ──────────── */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -171,6 +176,7 @@
   --spacing-list: var(--list-w);
   --spacing-avatar: var(--avatar);
   --spacing-icon-rail: var(--icon-rail);
+  --spacing-icon-mark: var(--icon-mark);
 
   /* mandala-adjacent type scale */
   --text-xs: 11px;

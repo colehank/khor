@@ -26,10 +26,28 @@
 //      inside the SVG;
 //  11. the rail's name shows on hover with no delay worth measuring, on
 //      keyboard focus too, and goes away when the pointer leaves;
-//  12. the back button exists only on the narrow face (after proving
+//  12. all four landings open, and the two that have no content of
+//      their own (files, browser) list the same machines the devices
+//      pane does — the same set, not merely a list of the same length;
+//  13. each pane's bar carries exactly what that pane can do, and the
+//      three machine panes name their search box the same thing (a
+//      files pane offering to search files would be naming something
+//      it cannot find);
+//  14. the app's mark is at the head of the rail, its artwork actually
+//      loaded, and it is not a control: no button around it and no
+//      hover response — with a rail glyph measured the same way as the
+//      control, since "nothing changed" is also what a broken probe
+//      says;
+//  15. pinning, on every pane: every row can reach it, a pinned row
+//      goes to the top, a second pin joins it **in the list's own
+//      order and not in the order they were clicked**, it survives a
+//      reload (and is provably in local storage), unpinning puts the
+//      row back where it was, and pins do not leak between panes;
+//  16. the back button exists only on the narrow face (after proving
 //      the detail header renders at all — negative assertions must
-//      first prove the probe is alive);
-//  13. zero pageerror throughout.
+//      first prove the probe is alive), and the mark is not in the
+//      narrow rail;
+//  17. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -56,8 +74,13 @@ const G = join(SCRATCH, "gamma");
 // tree); borrowing a *backend* would mean the whole run measured the
 // wrong node while reporting green, so the bridge below is checked to be
 // ours before anything is asserted.
-const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 1431);
-const VITE_PORT = Number(process.env.VITE_PORT ?? 1430);
+// 1442/1443, not 1430/1431: those two are the developer's own pair on
+// this machine (`vite.config.ts` pins the dev server to 1430, and the
+// preview bridge sits on 1431). Defaulting here to the pair next door
+// means a smoke run and a session of hand-driving the app can be up at
+// the same time without either noticing the other.
+const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 1443);
+const VITE_PORT = Number(process.env.VITE_PORT ?? 1442);
 // The line beta leaves in alpha's window. ASCII on purpose: the message
 // is test data, not the thing under test (docs/handoff 中文 rule).
 const NEEDLE = "khor-smoke-hello";
@@ -350,7 +373,10 @@ try {
   await until("done + unread badge", 30_000, async () =>
     (await row.getAttribute("data-word")) === "done" && (await row.locator("[data-unread]").count()) === 1,
   );
-  await row.click();
+  // The row is a strip holding two controls now — what opens it, and
+  // the pin. Clicking the strip's centre would land on whichever of the
+  // two happens to sit there; name the one that means "open".
+  await row.locator("[data-row-open]").click();
   await until("beta's row to settle idle, badge gone", 30_000, async () =>
     (await row.getAttribute("data-word")) === "idle" && (await row.locator("[data-unread]").count()) === 0,
   );
@@ -515,11 +541,218 @@ try {
   }
   await railItem("devices").blur();
 
-  // 12) faces of the shell: wide has a detail header but no back;
+  // 12) four landings, and what the two borrowed ones show.
+  //
+  //     Machine *names* are compared as sets, not counts: three panes
+  //     each showing three rows proves nothing if one of them is
+  //     showing three of something else.
+  const LANDING_TABS = ["sessions", "devices", "files", "browser"];
+  const machinesOn = async (tab) => {
+    await openLanding(tab);
+    await until(`machines on the ${tab} pane`, 10_000, async () =>
+      (await page.locator("[data-device]").count()) > 0,
+    );
+    return (
+      await page.locator("[data-device]").evaluateAll((els) => els.map((e) => e.dataset.device))
+    ).sort();
+  };
+  for (const tab of LANDING_TABS) {
+    if ((await railItem(tab).count()) !== 1) throw new Error(`no rail glyph for ${tab}`);
+  }
+  const onDevices = await machinesOn("devices");
+  if (onDevices.length !== 3) throw new Error(`expected three machines, saw ${onDevices.length}`);
+  for (const tab of ["files", "browser"]) {
+    const here = await machinesOn(tab);
+    if (here.join(",") !== onDevices.join(",")) {
+      throw new Error(`the ${tab} pane lists ${here} where devices lists ${onDevices}`);
+    }
+  }
+
+  // 13) each pane's bar holds what that pane can do — and nothing it
+  //     cannot. The positive half runs first and is what proves the
+  //     selectors still name real things: without it, every "is absent"
+  //     below would also pass on a renamed attribute.
+  const barOf = async (tab) => {
+    await openLanding(tab);
+    return {
+      search: await page.locator("[data-pane-search]").count(),
+      filter: await page.locator("[data-pane-filter]").count(),
+      plus: await page.locator("[data-pane-new]").count(),
+      label: await page.locator("[data-pane-search]").getAttribute("aria-label"),
+    };
+  };
+  const bars = {};
+  for (const tab of LANDING_TABS) bars[tab] = await barOf(tab);
+  const want = {
+    sessions: { search: 1, filter: 1, plus: 1 },
+    devices: { search: 1, filter: 0, plus: 1 },
+    files: { search: 1, filter: 0, plus: 0 },
+    browser: { search: 1, filter: 0, plus: 0 },
+  };
+  for (const [tab, w] of Object.entries(want)) {
+    for (const [what, n] of Object.entries(w)) {
+      if (bars[tab][what] !== n) {
+        throw new Error(`the ${tab} bar has ${bars[tab][what]} ${what}, expected ${n}`);
+      }
+    }
+    if (!bars[tab].label) throw new Error(`probe dead: the ${tab} search box has no name`);
+  }
+  // The three machine panes search machines, so they say the same
+  // thing; the sessions pane searches something else and says something
+  // else. Read off the app, never spelled here — the catalog owns the
+  // words, this owns the comparison.
+  for (const tab of ["files", "browser"]) {
+    if (bars[tab].label !== bars.devices.label) {
+      throw new Error(`the ${tab} search box is named ${bars[tab].label}, not ${bars.devices.label}`);
+    }
+  }
+  if (bars.sessions.label === bars.devices.label) {
+    throw new Error("the sessions pane borrowed the machine pane's search label");
+  }
+
+  // 14) the mark at the head of the rail.
+  const mark = page.locator("[data-rail-mark]");
+  if ((await mark.count()) !== 1) throw new Error("no mark at the head of the rail");
+  // Its artwork really loaded. A broken import renders an <img> all the
+  // same, and every other assertion here would still pass.
+  const drew = await mark.locator("img").evaluate((el) => el.complete && el.naturalWidth > 0);
+  if (!drew) throw new Error("the mark's artwork did not load");
+  // It is not a control. Two independent readings, because they fail
+  // differently: no button wraps it, and pointing at it changes nothing.
+  if (await mark.evaluate((el) => Boolean(el.closest("button")))) {
+    throw new Error("the mark sits inside a button");
+  }
+  const bg = (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const settle = () => new Promise((r) => setTimeout(r, 300));
+  await pointerAway();
+  await settle();
+  const markResting = await bg(mark);
+  await mark.hover();
+  await settle();
+  if ((await bg(mark)) !== markResting) throw new Error("the mark answers the pointer");
+  // …and the control that says the measurement can see a hover at all.
+  const glyph = railItem("files");
+  await pointerAway();
+  await settle();
+  const glyphResting = await bg(glyph);
+  await glyph.hover();
+  await settle();
+  if ((await bg(glyph)) === glyphResting) {
+    throw new Error("probe dead: a rail glyph shows no hover either, so the mark's silence proves nothing");
+  }
+  await pointerAway();
+
+  // 15) pinning.
+  //
+  //     The node's own order is the baseline for all of it, so first:
+  //     is that order steady? Sampled across a poll tick, because a
+  //     list that reshuffles on its own would make every assertion
+  //     below meaningless in a way that reads as a pass or a fail at
+  //     random.
+  const namesNow = () =>
+    page.locator("[data-device]").evaluateAll((els) => els.map((e) => e.dataset.device));
+  await openLanding("devices");
+  const order0 = await namesNow();
+  await new Promise((r) => setTimeout(r, 2_500));
+  if ((await namesNow()).join(",") !== order0.join(",")) {
+    throw new Error(`the machine list does not hold still: ${order0} then ${await namesNow()}`);
+  }
+  const [first, second, third] = order0;
+
+  //     a. every row on every pane can reach a pin.
+  for (const tab of LANDING_TABS) {
+    await openLanding(tab);
+    const rowsHere = await page.locator(tab === "sessions" ? "[data-row]" : "[data-device]").count();
+    const pinsHere = await page.locator("[data-pin]").count();
+    if (rowsHere === 0) throw new Error(`no rows on the ${tab} pane to check`);
+    if (pinsHere !== rowsHere) {
+      throw new Error(`the ${tab} pane has ${pinsHere} pins for ${rowsHere} rows`);
+    }
+  }
+
+  //     b. a pinned row goes to the top, and a second pin joins it in
+  //        **the list's order, not the order they were clicked**. This
+  //        is the assertion that separates a partition from a second
+  //        sort: clicking third and then second must read second-third,
+  //        because that is how the node sent them.
+  const pinDevice = (name) => page.locator(`[data-device="${name}"] [data-pin]`).click();
+  await openLanding("devices");
+  await pinDevice(third);
+  await until(`${third} at the top`, 5_000, async () =>
+    (await namesNow()).join(",") === [third, first, second].join(","),
+  );
+  await pinDevice(second);
+  await until(`${second} and ${third} on top, in the list's own order`, 5_000, async () => {
+    const now = (await namesNow()).join(",");
+    if (now === [third, second, first].join(",")) {
+      throw new Error("the pinned rows came out in click order — that is a second sort");
+    }
+    return now === [second, third, first].join(",");
+  });
+
+  //     c. the pin is really in local storage, and it is read back on a
+  //        fresh page. The marker proves the reload happened at all —
+  //        "the order survived" is also what never reloading looks like.
+  const secondId = await page.locator(`[data-device="${second}"]`).getAttribute("data-row");
+  const inStorage = await page.evaluate(
+    (needle) => Object.values(localStorage).some((v) => String(v).includes(needle)),
+    secondId,
+  );
+  if (!inStorage) throw new Error("nothing in local storage carries the pinned row's key");
+  await page.evaluate(() => {
+    window.__smokeSurvived = true;
+  });
+  await page.reload();
+  if (await page.evaluate(() => Boolean(window.__smokeSurvived))) {
+    throw new Error("probe dead: the page never actually reloaded");
+  }
+  await openLanding("devices");
+  await until("the pinned pair still on top after a reload", 10_000, async () =>
+    (await namesNow()).join(",") === [second, third, first].join(","),
+  );
+
+  //     d. pins belong to one pane. The files pane lists the same three
+  //        machines and has been pinned on by nobody, so it must still
+  //        be in the node's order while devices is not.
+  await openLanding("files");
+  await until("machines on the files pane", 10_000, async () =>
+    (await page.locator("[data-device]").count()) === order0.length,
+  );
+  if ((await namesNow()).join(",") !== order0.join(",")) {
+    throw new Error(`a devices pin followed the machines onto the files pane: ${await namesNow()}`);
+  }
+  await openLanding("devices");
+  await until("the devices pane keeps its own pins", 5_000, async () =>
+    (await namesNow()).join(",") === [second, third, first].join(","),
+  );
+
+  //     e. unpinning puts a row back where it was, not merely somewhere
+  //        below the pinned ones.
+  await pinDevice(second);
+  await pinDevice(third);
+  await until("every machine back in the node's order", 5_000, async () =>
+    (await namesNow()).join(",") === order0.join(","),
+  );
+
+  //     f. the sessions pane pins too, on its own keys.
+  await openLanding("sessions");
+  const sessionOrder = () =>
+    page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  const rows0 = await sessionOrder();
+  if (rows0.length < 2) throw new Error(`need two session rows to tell a pin from a no-op; saw ${rows0.length}`);
+  const last = rows0[rows0.length - 1];
+  await page.locator(`[data-row="${last}"] [data-pin]`).click();
+  await until("the pinned session at the top", 5_000, async () => (await sessionOrder())[0] === last);
+  await page.locator(`[data-row="${last}"] [data-pin]`).click();
+  await until("the session list back as it was", 5_000, async () =>
+    (await sessionOrder()).join(",") === rows0.join(","),
+  );
+
+  // 16) faces of the shell: wide has a detail header but no back;
   //     narrow, after entering a detail, has the back button.
   await openLanding("sessions");
   await until("rows on the session list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
-  await row.click();
+  await row.locator("[data-row-open]").click();
   if ((await page.locator("[data-detail-header]").count()) !== 1) throw new Error("probe dead: no detail header");
   if ((await page.locator("[data-back]").count()) !== 0) throw new Error("back button on the wide face");
   // Shrinking mid-detail keeps the detail up (Telegram's behavior) —
@@ -529,8 +762,21 @@ try {
   await page.locator("[data-back]").click();
   await until("back to the narrow list", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
+  // All four landings are reachable down here too — the narrow rail is
+  // the only way to any of them — and the mark is not among them: it
+  // answers no tap, and this is the row where everything else does.
+  for (const tab of LANDING_TABS) {
+    if ((await railItem(tab).count()) !== 1) throw new Error(`no ${tab} glyph on the narrow rail`);
+  }
+  await openLanding("browser");
+  await until("machines on the narrow browser pane", 10_000, async () =>
+    (await page.locator("[data-device]").count()) === order0.length,
+  );
+  if ((await page.locator("[data-rail-mark]").count()) !== 0) {
+    throw new Error("the mark is in the narrow rail");
+  }
 
-  // 13) the page never threw.
+  // 17) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {

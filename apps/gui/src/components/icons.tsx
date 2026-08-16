@@ -108,6 +108,74 @@ export function IconDevices({ className }: IconProps) {
   );
 }
 
+/**
+ * Files = a folder in two pieces, the front one solid. Copied verbatim
+ * from mandala's `IconRailFiles`, including the two things about it that
+ * look like mistakes next to its neighbours and are not: its bounding box
+ * is one notch shorter (4.6–19.5 rather than 17 high) because a wide form
+ * reads bigger than a tall one at equal area, and its corner radii
+ * (1.1–1.7) never joined the 2.6/2.8 family the other glyphs share.
+ */
+export function IconFiles({ className }: IconProps) {
+  return (
+    <RailGlyph className={className}>
+      {/* Back piece: an open path, its right and bottom left to the front. */}
+      <path d="M3.5 16.9V6.3a1.7 1.7 0 0 1 1.7-1.7h4a1.2 1.2 0 0 1 1 .5l1.2 1.8h6.2a1.7 1.7 0 0 1 1.7 1.7v1.6" />
+      {/* Front piece: a trapezoid leaning up to the right. */}
+      <path
+        data-body
+        d="M6.6 10.2h12.8a1.1 1.1 0 0 1 1.1 1.4l-1.6 6.6a1.7 1.7 0 0 1-1.7 1.3H5.2a1.1 1.1 0 0 1-1.1-1.4l1.4-6.6a1.4 1.4 0 0 1 1.1-1.3z"
+      />
+    </RailGlyph>
+  );
+}
+
+/**
+ * Browser = a sphere with an orbit cutting across it, verbatim from
+ * mandala's `IconRailBrowser`. A level band would read as an equator (a
+ * globe); the tilt is what makes it an orbit, and this landing is about
+ * going out through someone else's network, not about the earth.
+ *
+ * The numbers are computed, not chosen: the band's half-width is
+ * `rx·cos20° + ry·sin20° = 8.1×0.940 + 2.9×0.342 = 8.60`, which puts its
+ * ends at 3.4 / 20.6 and makes the band — not the sphere — the thing
+ * setting this glyph's bounding box. The sphere sits at r = 7.2 so the
+ * band genuinely reaches past it; a band contained inside the sphere is
+ * an equator again.
+ */
+export function IconBrowser({ className }: IconProps) {
+  return (
+    <RailGlyph
+      className={className}
+      cut={
+        <ellipse
+          cx="12"
+          cy="12"
+          rx="8.1"
+          ry="2.9"
+          transform="rotate(-20 12 12)"
+          fill="none"
+          stroke="black"
+          // 0.2 wider than `CUT`, the family's one exception: the band
+          // crosses the sphere at a slant, and an equal-width cut leaves
+          // a visually narrower gap along a slanted edge than a square
+          // one. This is the value that makes the gap look the same as
+          // the other glyphs', not a different rule.
+          strokeWidth={CUT + 0.2}
+        />
+      }
+    >
+      {(cutId) => (
+        <>
+          <circle data-body mask={`url(#${cutId})`} cx="12" cy="12" r="7.2" />
+          {/* The orbit in front, drawn whole — this glyph's line half. */}
+          <ellipse cx="12" cy="12" rx="8.1" ry="2.9" transform="rotate(-20 12 12)" />
+        </>
+      )}
+    </RailGlyph>
+  );
+}
+
 /** More = three dots; lighter than the formed glyphs on purpose. */
 export function IconMore({ className }: IconProps) {
   return (
@@ -200,6 +268,37 @@ export function IconClose({ className }: IconProps) {
   return (
     <Mark className={className}>
       <path d="M4 4l8 8M12 4l-8 8" />
+    </Mark>
+  );
+}
+
+/**
+ * Pinned to the top of a list, and the button that puts it there.
+ * Ported from mandala's `IconPin`, rotation included.
+ *
+ * **The two states are two shapes, not one shape in two colors.** The
+ * pin metaphor comes with its own criterion — leaning means resting on
+ * top, upright means driven in — and 45° apart is a difference you catch
+ * without looking for it. Without it the button cannot report what it
+ * did, and the only remaining evidence is the row jumping, which happens
+ * somewhere else on the screen and is invisible for a row already at the
+ * top of a short list.
+ *
+ * `origin-center` is written out because an SVG element's transform
+ * origin is its own corner, not its middle: left off, the pin swings
+ * around its top-left and leaves its own box.
+ */
+export function IconPin({ className, pinned = false }: IconProps & { pinned?: boolean }) {
+  return (
+    <Mark
+      className={cn(
+        "origin-center transition-transform duration-[var(--dur-180)] ease-[var(--ease-out)]",
+        pinned && "-rotate-45",
+        className,
+      )}
+    >
+      <path d="M9.6 1.9l4.5 4.5-1.6.5-.6 2.6-4.9-4.9 2.6-.6.4-2.1z" />
+      <path d="M7 9L2.7 13.3" />
     </Mark>
   );
 }

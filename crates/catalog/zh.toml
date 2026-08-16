@@ -231,6 +231,12 @@ host-child-wait = "等不到孩子结束: {0}"
 [gui]
 sessions-tab = "会话"
 devices-tab = "设备"
+# The other two landings. Both list machines today — files is "which
+# machine do I go looking on", browser is "whose network am I borrowing"
+# — and each grows its own content when that batch lands. The names are
+# the destination, not what is currently painted there.
+files-tab = "文件"
+browser-tab = "浏览器"
 settings = "设置"
 back = "返回"
 from-device = "来自 {0}"
@@ -240,6 +246,10 @@ backend-unreachable = "够不着本机的 khor"
 # The pane bar. No page carries a title (docs/UX.md); the pane's name
 # lives in an aria-label, and what shows is the work you can do here.
 search-sessions = "搜索会话"
+# Also the label on the files and browser panes, because those panes
+# list machines too. A key of their own reading "搜索文件" would name
+# something the box cannot find — and a second key with this same text
+# is a build error by design (one text, one name).
 search-devices = "搜索设备"
 filter = "筛选"
 new-item = "新建"
@@ -256,3 +266,9 @@ ticket = "配对票"
 paste-a-ticket = "把票贴在这里"
 join = "入网"
 close = "关闭"
+# The pin control names its *effect*, and the two states get two words:
+# a button whose name never changes cannot report what it did, and this
+# one has to — the row moving is the only other evidence, and it happens
+# off in another part of the list.
+pin = "置顶"
+unpin = "取消置顶"

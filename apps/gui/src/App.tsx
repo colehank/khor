@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   fetchDevices,
@@ -8,7 +8,14 @@ import {
   type SessionRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconDevices, IconMore, IconSessions } from "@/components/icons";
+import {
+  IconBrowser,
+  IconDevices,
+  IconFiles,
+  IconMore,
+  IconSessions,
+} from "@/components/icons";
+import { KhorMark } from "@/components/KhorMark";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +26,7 @@ import {
 } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
+import { usePins } from "@/hooks/use-pins";
 import { cn } from "@/lib/utils";
 import { word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -27,11 +35,36 @@ import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
 import { TellDialog } from "@/views/TellDialog";
 
-type Landing = "sessions" | "devices";
+/**
+ * The four landings, all present from the first day.
+ *
+ * Files and browser have no content of their own yet, and they are here
+ * anyway because both of them *begin* with the same question the devices
+ * pane answers — which machine — so listing machines is not a placeholder
+ * standing in for the real thing, it is the real thing's first step.
+ * What they are missing is the second step (a machine's files, a
+ * machine's network), and that is what their batches add.
+ */
+type Landing = "sessions" | "devices" | "files" | "browser";
+
 /** Which of the "+" dialogs is up, if any. */
 type Sheet = "tell" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
+
+const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
+  { key: "sessions", name: gui.sessions_tab, glyph: <IconSessions /> },
+  { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
+  { key: "files", name: gui.files_tab, glyph: <IconFiles /> },
+  { key: "browser", name: gui.browser_tab, glyph: <IconBrowser /> },
+];
+
+const NO_QUERIES: Record<Landing, string> = {
+  sessions: "",
+  devices: "",
+  files: "",
+  browser: "",
+};
 
 function RailItem({
   label,
@@ -100,10 +133,12 @@ export default function App() {
   // One query per pane: switching landings is not a way of clearing a
   // search, and a search that follows you across panes filters the wrong
   // list on arrival.
-  const [sessionQuery, setSessionQuery] = useState("");
-  const [deviceQuery, setDeviceQuery] = useState("");
+  const [queries, setQueries] = useState<Record<Landing, string>>(NO_QUERIES);
   const [words, setWords] = useState<string[]>([]);
   const [sheet, setSheet] = useState<Sheet>(null);
+  // Pinning is per pane, so the pane that is up is the one whose pins
+  // are read — see `@/lib/pins` for why they do not travel together.
+  const { pinned, toggle: togglePin } = usePins(landing);
 
   useEffect(() => {
     let live = true;
@@ -134,6 +169,11 @@ export default function App() {
     }
     setScreen("detail");
   }, []);
+
+  const setQuery = useCallback(
+    (q: string) => setQueries((was) => ({ ...was, [landing]: q })),
+    [landing],
+  );
 
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
   const blockedOrUnread = rows.reduce(
@@ -175,31 +215,30 @@ export default function App() {
         narrow ? "flex-row justify-around border-t py-1" : "w-rail flex-col border-r py-3",
       )}
     >
-      <RailItem
-        label={gui.sessions_tab}
-        tab="sessions"
-        on={landing === "sessions"}
-        narrow={narrow}
-        badge={blockedOrUnread}
-        onClick={() => {
-          setLanding("sessions");
-          setScreen("list");
-        }}
-      >
-        <IconSessions />
-      </RailItem>
-      <RailItem
-        label={gui.devices_tab}
-        tab="devices"
-        on={landing === "devices"}
-        narrow={narrow}
-        onClick={() => {
-          setLanding("devices");
-          setScreen("list");
-        }}
-      >
-        <IconDevices />
-      </RailItem>
+      {/* The app's mark, wide only. On the narrow face this rail is a
+          bottom bar of places to go, and the mark is not one of them —
+          it would be the only thing there that does not answer a tap,
+          in the row where every tap is expected to. */}
+      {!narrow && <KhorMark className="mb-2" />}
+      {LANDINGS.map((l) => (
+        <RailItem
+          key={l.key}
+          label={l.name}
+          tab={l.key}
+          on={landing === l.key}
+          narrow={narrow}
+          // Only the sessions glyph counts anything: the badge rule is
+          // that it must be able to reach zero (docs/UX.md 状态呈现),
+          // and machines do not go away when you have looked at them.
+          badge={l.key === "sessions" ? blockedOrUnread : undefined}
+          onClick={() => {
+            setLanding(l.key);
+            setScreen("list");
+          }}
+        >
+          {l.glyph}
+        </RailItem>
+      ))}
       {!narrow && <span className="flex-1" />}
       <RailItem label={gui.settings} narrow={narrow}>
         <IconMore />
@@ -212,6 +251,7 @@ export default function App() {
   );
 
   const sessions = landing === "sessions";
+  const paneName = LANDINGS.find((l) => l.key === landing)!.name;
 
   // No pane wears its name where you can see it (docs/UX.md). The name
   // rides the region's aria-label — read aloud, taking no room — and the
@@ -219,13 +259,16 @@ export default function App() {
   const list = (
     <section
       data-list
-      aria-label={sessions ? gui.sessions_tab : gui.devices_tab}
+      aria-label={paneName}
       className={cn("flex h-full min-h-0 flex-col overflow-hidden bg-card", !narrow && "w-list border-r")}
     >
       <PaneBar
+        // Files and browser search machines, because machines are what
+        // they list — so they borrow the machine pane's label rather
+        // than growing one that names a thing the box cannot find.
         searchLabel={sessions ? gui.search_sessions : gui.search_devices}
-        query={sessions ? sessionQuery : deviceQuery}
-        onQuery={sessions ? setSessionQuery : setDeviceQuery}
+        query={queries[landing]}
+        onQuery={setQuery}
         filterLabel={gui.filter}
         filter={
           sessions
@@ -233,28 +276,44 @@ export default function App() {
             : undefined
         }
         actionsLabel={gui.new_item}
-        actions={sessions ? sessionActions : deviceActions}
+        // Nothing gets created from the files or browser panes yet, and
+        // an empty "+" is worse than no "+": it is a menu that teaches
+        // people not to open menus.
+        actions={sessions ? sessionActions : landing === "devices" ? deviceActions : undefined}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {stale && <div className="p-4 text-sm text-muted-foreground">{gui.backend_unreachable}</div>}
         {sessions ? (
           <SessionsList
             rows={rows}
-            query={sessionQuery}
+            query={queries.sessions}
             words={words}
             selected={selected}
             onSelect={onSelect}
+            pinned={pinned}
+            onTogglePin={togglePin}
           />
         ) : (
-          <DevicesList rows={devices} query={deviceQuery} />
+          <DevicesList
+            rows={devices}
+            query={queries[landing]}
+            pinned={pinned}
+            onTogglePin={togglePin}
+          />
         )}
       </div>
     </section>
   );
 
-  const detail = (
+  // Only the sessions pane has anything to select, so only it gets a
+  // detail. Over a list of machines the same component would print
+  // `gui.pick_a_session` — an instruction to do something this screen
+  // cannot do. Machine cards land in their own batch and this is where
+  // they go; until then the space stays empty rather than filled with
+  // copy about the emptiness (docs/UX.md 文案).
+  const detail = sessions ? (
     <DetailPane row={selectedRow} narrow={narrow} onBack={() => setScreen("list")} />
-  );
+  ) : null;
 
   const sheets = (
     <>
@@ -275,7 +334,7 @@ export default function App() {
       {narrow ? (
         <div className="flex h-dvh flex-col">
           <div className="min-h-0 flex-1 overflow-hidden">
-            {screen === "detail" && landing === "sessions" ? detail : list}
+            {screen === "detail" && detail ? detail : list}
           </div>
           {rail}
           {sheets}
