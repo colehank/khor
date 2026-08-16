@@ -1,9 +1,7 @@
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { PinButton } from "@/components/PinButton";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { pinnedFirst } from "@/lib/pins";
 import { ago, word } from "@/words";
 
 /**
@@ -24,27 +22,23 @@ export function visibleSessions(rows: SessionRow[], query: string, words: string
 }
 
 // Order and words come from the node untouched: the list never
-// re-derives a judgment the backend already made (docs/UX.md). Pinning
-// is the one exception and it is a partition, not a competing sort —
-// `pinnedFirst` carries the argument.
+// re-derives a judgment the backend already made (docs/UX.md) — and
+// that includes the order pinned rows will arrive in, when pinning
+// lands: it is the node that sorts, not this file (docs/handoff 置顶批).
 export function SessionsList({
   rows,
   query,
   words,
   selected,
   onSelect,
-  pinned,
-  onTogglePin,
 }: {
   rows: SessionRow[];
   query: string;
   words: string[];
   selected: string | null;
   onSelect: (row: SessionRow) => void;
-  pinned: ReadonlySet<string>;
-  onTogglePin: (key: string) => void;
 }) {
-  const shown = pinnedFirst(visibleSessions(rows, query, words), (r) => r.id, pinned);
+  const shown = visibleSessions(rows, query, words);
   if (shown.length === 0) {
     // "Nothing here" and "nothing matched" are different facts, and the
     // wrong one is a lie the user has no way to catch: someone who
@@ -59,16 +53,18 @@ export function SessionsList({
   return (
     <div>
       {shown.map((r) => (
-        // The row is a strip, not a button: the pin lives inside it and
-        // a button inside a button is not a thing the DOM has. The strip
-        // carries the row's identity and its highlight; the part you
-        // open is the button within.
+        // The row is a strip holding one button, not a button itself.
+        // It looks like one control today and is shaped for two: the
+        // row-level action pinning will add cannot be nested inside the
+        // button that opens the row, because a button inside a button
+        // is not a thing the DOM has. Splitting it later would move
+        // every anchor in here; splitting it now costs a wrapper.
         <div
           key={r.id}
           data-row={r.id}
           data-word={r.word}
           className={cn(
-            "flex w-full items-center gap-1 pr-2 hover:bg-secondary",
+            "flex w-full items-center pr-4 hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
           )}
         >
@@ -105,7 +101,6 @@ export function SessionsList({
               )}
             </span>
           </button>
-          <PinButton pinned={pinned.has(r.id)} onToggle={() => onTogglePin(r.id)} />
         </div>
       ))}
     </div>

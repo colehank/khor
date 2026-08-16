@@ -38,16 +38,11 @@
 //      hover response — with a rail glyph measured the same way as the
 //      control, since "nothing changed" is also what a broken probe
 //      says;
-//  15. pinning, on every pane: every row can reach it, a pinned row
-//      goes to the top, a second pin joins it **in the list's own
-//      order and not in the order they were clicked**, it survives a
-//      reload (and is provably in local storage), unpinning puts the
-//      row back where it was, and pins do not leak between panes;
-//  16. the back button exists only on the narrow face (after proving
+//  15. the back button exists only on the narrow face (after proving
 //      the detail header renders at all — negative assertions must
 //      first prove the probe is alive), and the mark is not in the
 //      narrow rail;
-//  17. zero pageerror throughout.
+//  16. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -642,113 +637,7 @@ try {
   }
   await pointerAway();
 
-  // 15) pinning.
-  //
-  //     The node's own order is the baseline for all of it, so first:
-  //     is that order steady? Sampled across a poll tick, because a
-  //     list that reshuffles on its own would make every assertion
-  //     below meaningless in a way that reads as a pass or a fail at
-  //     random.
-  const namesNow = () =>
-    page.locator("[data-device]").evaluateAll((els) => els.map((e) => e.dataset.device));
-  await openLanding("devices");
-  const order0 = await namesNow();
-  await new Promise((r) => setTimeout(r, 2_500));
-  if ((await namesNow()).join(",") !== order0.join(",")) {
-    throw new Error(`the machine list does not hold still: ${order0} then ${await namesNow()}`);
-  }
-  const [first, second, third] = order0;
-
-  //     a. every row on every pane can reach a pin.
-  for (const tab of LANDING_TABS) {
-    await openLanding(tab);
-    const rowsHere = await page.locator(tab === "sessions" ? "[data-row]" : "[data-device]").count();
-    const pinsHere = await page.locator("[data-pin]").count();
-    if (rowsHere === 0) throw new Error(`no rows on the ${tab} pane to check`);
-    if (pinsHere !== rowsHere) {
-      throw new Error(`the ${tab} pane has ${pinsHere} pins for ${rowsHere} rows`);
-    }
-  }
-
-  //     b. a pinned row goes to the top, and a second pin joins it in
-  //        **the list's order, not the order they were clicked**. This
-  //        is the assertion that separates a partition from a second
-  //        sort: clicking third and then second must read second-third,
-  //        because that is how the node sent them.
-  const pinDevice = (name) => page.locator(`[data-device="${name}"] [data-pin]`).click();
-  await openLanding("devices");
-  await pinDevice(third);
-  await until(`${third} at the top`, 5_000, async () =>
-    (await namesNow()).join(",") === [third, first, second].join(","),
-  );
-  await pinDevice(second);
-  await until(`${second} and ${third} on top, in the list's own order`, 5_000, async () => {
-    const now = (await namesNow()).join(",");
-    if (now === [third, second, first].join(",")) {
-      throw new Error("the pinned rows came out in click order — that is a second sort");
-    }
-    return now === [second, third, first].join(",");
-  });
-
-  //     c. the pin is really in local storage, and it is read back on a
-  //        fresh page. The marker proves the reload happened at all —
-  //        "the order survived" is also what never reloading looks like.
-  const secondId = await page.locator(`[data-device="${second}"]`).getAttribute("data-row");
-  const inStorage = await page.evaluate(
-    (needle) => Object.values(localStorage).some((v) => String(v).includes(needle)),
-    secondId,
-  );
-  if (!inStorage) throw new Error("nothing in local storage carries the pinned row's key");
-  await page.evaluate(() => {
-    window.__smokeSurvived = true;
-  });
-  await page.reload();
-  if (await page.evaluate(() => Boolean(window.__smokeSurvived))) {
-    throw new Error("probe dead: the page never actually reloaded");
-  }
-  await openLanding("devices");
-  await until("the pinned pair still on top after a reload", 10_000, async () =>
-    (await namesNow()).join(",") === [second, third, first].join(","),
-  );
-
-  //     d. pins belong to one pane. The files pane lists the same three
-  //        machines and has been pinned on by nobody, so it must still
-  //        be in the node's order while devices is not.
-  await openLanding("files");
-  await until("machines on the files pane", 10_000, async () =>
-    (await page.locator("[data-device]").count()) === order0.length,
-  );
-  if ((await namesNow()).join(",") !== order0.join(",")) {
-    throw new Error(`a devices pin followed the machines onto the files pane: ${await namesNow()}`);
-  }
-  await openLanding("devices");
-  await until("the devices pane keeps its own pins", 5_000, async () =>
-    (await namesNow()).join(",") === [second, third, first].join(","),
-  );
-
-  //     e. unpinning puts a row back where it was, not merely somewhere
-  //        below the pinned ones.
-  await pinDevice(second);
-  await pinDevice(third);
-  await until("every machine back in the node's order", 5_000, async () =>
-    (await namesNow()).join(",") === order0.join(","),
-  );
-
-  //     f. the sessions pane pins too, on its own keys.
-  await openLanding("sessions");
-  const sessionOrder = () =>
-    page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
-  const rows0 = await sessionOrder();
-  if (rows0.length < 2) throw new Error(`need two session rows to tell a pin from a no-op; saw ${rows0.length}`);
-  const last = rows0[rows0.length - 1];
-  await page.locator(`[data-row="${last}"] [data-pin]`).click();
-  await until("the pinned session at the top", 5_000, async () => (await sessionOrder())[0] === last);
-  await page.locator(`[data-row="${last}"] [data-pin]`).click();
-  await until("the session list back as it was", 5_000, async () =>
-    (await sessionOrder()).join(",") === rows0.join(","),
-  );
-
-  // 16) faces of the shell: wide has a detail header but no back;
+  // 15) faces of the shell: wide has a detail header but no back;
   //     narrow, after entering a detail, has the back button.
   await openLanding("sessions");
   await until("rows on the session list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
@@ -770,13 +659,13 @@ try {
   }
   await openLanding("browser");
   await until("machines on the narrow browser pane", 10_000, async () =>
-    (await page.locator("[data-device]").count()) === order0.length,
+    (await page.locator("[data-device]").count()) === onDevices.length,
   );
   if ((await page.locator("[data-rail-mark]").count()) !== 0) {
     throw new Error("the mark is in the narrow rail");
   }
 
-  // 17) the page never threw.
+  // 16) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {

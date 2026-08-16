@@ -271,34 +271,3 @@ export function IconClose({ className }: IconProps) {
     </Mark>
   );
 }
-
-/**
- * Pinned to the top of a list, and the button that puts it there.
- * Ported from mandala's `IconPin`, rotation included.
- *
- * **The two states are two shapes, not one shape in two colors.** The
- * pin metaphor comes with its own criterion — leaning means resting on
- * top, upright means driven in — and 45° apart is a difference you catch
- * without looking for it. Without it the button cannot report what it
- * did, and the only remaining evidence is the row jumping, which happens
- * somewhere else on the screen and is invisible for a row already at the
- * top of a short list.
- *
- * `origin-center` is written out because an SVG element's transform
- * origin is its own corner, not its middle: left off, the pin swings
- * around its top-left and leaves its own box.
- */
-export function IconPin({ className, pinned = false }: IconProps & { pinned?: boolean }) {
-  return (
-    <Mark
-      className={cn(
-        "origin-center transition-transform duration-[var(--dur-180)] ease-[var(--ease-out)]",
-        pinned && "-rotate-45",
-        className,
-      )}
-    >
-      <path d="M9.6 1.9l4.5 4.5-1.6.5-.6 2.6-4.9-4.9 2.6-.6.4-2.1z" />
-      <path d="M7 9L2.7 13.3" />
-    </Mark>
-  );
-}

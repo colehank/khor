@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
-import { usePins } from "@/hooks/use-pins";
 import { cn } from "@/lib/utils";
 import { word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -136,9 +135,6 @@ export default function App() {
   const [queries, setQueries] = useState<Record<Landing, string>>(NO_QUERIES);
   const [words, setWords] = useState<string[]>([]);
   const [sheet, setSheet] = useState<Sheet>(null);
-  // Pinning is per pane, so the pane that is up is the one whose pins
-  // are read — see `@/lib/pins` for why they do not travel together.
-  const { pinned, toggle: togglePin } = usePins(landing);
 
   useEffect(() => {
     let live = true;
@@ -290,16 +286,9 @@ export default function App() {
             words={words}
             selected={selected}
             onSelect={onSelect}
-            pinned={pinned}
-            onTogglePin={togglePin}
           />
         ) : (
-          <DevicesList
-            rows={devices}
-            query={queries[landing]}
-            pinned={pinned}
-            onTogglePin={togglePin}
-          />
+          <DevicesList rows={devices} query={queries[landing]} />
         )}
       </div>
     </section>
