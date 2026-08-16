@@ -17,7 +17,9 @@ pub mod live;
 pub mod proto;
 pub mod transfer;
 
-pub use khor_core::avatar::{avatar, Avatar, AvatarSeed, AvatarStyle};
+pub use khor_core::avatar::{
+    avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
+};
 pub use khor_core::{kind, Session, SessionId, State};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
@@ -224,6 +226,64 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
+    }
+
+    /// Changes the axes it is handed and leaves the rest where they are
+    /// — the one call behind `khor face` and behind every control on the
+    /// settings screen, so the two faces cannot drift into meaning
+    /// different things by the same words.
+    ///
+    /// **Refused by name, never defaulted.** An unknown variant key or a
+    /// slot that is not `#rrggbb` comes back as a message. Falling
+    /// through to the factory style instead would make a typo look
+    /// exactly like the setting failing to take — docs/UX.md forbids
+    /// 做了但没变化 wearing the same face as 失败 — and the next thing
+    /// anybody does is press it again.
+    ///
+    /// Read-modify-write over the *whole* style, because whole is what
+    /// the device table carries (`khor_sync::devices`: one JSON value,
+    /// whole-value LWW). There is deliberately nothing finer to write:
+    /// half a palette from one writer and a variant from another is a
+    /// face nobody chose.
+    pub fn restyle(
+        &self,
+        colors: Option<&[String]>,
+        variant: Option<&str>,
+        shape: Option<&str>,
+    ) -> Result<AvatarStyle, String> {
+        let mut style = self.avatar_style();
+        if let Some(colors) = colors {
+            style.palette = Palette::parse(colors).ok_or_else(|| {
+                msg::not_a_palette(colors.join(khor_catalog::cli::NAME_SEPARATOR))
+            })?;
+        }
+        if let Some(key) = variant {
+            style.variant = Variant::from_key(key).ok_or_else(|| {
+                let all: Vec<&str> = Variant::ALL.iter().map(|v| v.key()).collect();
+                msg::not_a_variant(key, all.join(khor_catalog::cli::NAME_SEPARATOR))
+            })?;
+        }
+        if let Some(key) = shape {
+            style.shape = FaceShape::from_key(key).ok_or_else(|| {
+                let all: Vec<&str> = FaceShape::ALL.iter().map(|s| s.key()).collect();
+                msg::not_a_face_shape(key, all.join(khor_catalog::cli::NAME_SEPARATOR))
+            })?;
+        }
+        self.set_avatar_style(&style)?;
+        Ok(style)
+    }
+
+    /// This machine's face under a style it has **not** chosen — what
+    /// each option on the settings screen is painted with.
+    ///
+    /// It goes through the same derivation and the same seed as every
+    /// row's face. A settings screen that drew its own previews would be
+    /// the second painter this whole module exists to prevent, and it
+    /// would be the worst place for one: the preview is the only
+    /// evidence anybody has before pressing, so a preview that lies is a
+    /// choice made on a picture that never appears.
+    pub fn face_under(&self, style: &AvatarStyle) -> Avatar {
+        avatar(&AvatarSeed::of(&self.device), style)
     }
 
     /// A device's face: **its own reported palette, keyed by its id.**

@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use khor_node::{avatar, AvatarSeed, AvatarStyle, Node};
+use khor_node::{avatar, preset, AvatarSeed, AvatarStyle, FaceShape, Node};
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -223,6 +223,121 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
     for r in [&ra, &rb] {
         let _ = std::fs::remove_dir_all(r);
     }
+}
+
+/// **One axis moves and the other two stay, and the write reaches the
+/// table — not only the file beside it.**
+///
+/// The two halves fail differently and both look fine on the screen that
+/// made the change. A `restyle` that rebuilt the style from the defaults
+/// plus the named axis would quietly undo the last two choices. A
+/// `restyle` that wrote only the local preference would leave this
+/// machine wearing one face here and its old one on every other device
+/// — the split `Node::set_avatar_style` exists to prevent, and the one
+/// nobody looking at this screen can see.
+#[test]
+fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
+    let r = root("restyle");
+    let n = Node::open_as(r.clone(), "solo").unwrap();
+    n.set_avatar_style(&a_reported_style()).unwrap();
+
+    let before = a_reported_style();
+    let after = n.restyle(None, None, Some("rounded")).expect("rounded is a shape");
+    assert_eq!(after.shape, FaceShape::Rounded);
+    assert_eq!(after.variant, before.variant, "the variant was not named and must not move");
+    assert_eq!(after.palette, before.palette, "the palette was not named and must not move");
+
+    // The table, read through the node that made the change — this
+    // instance was opened *before* the restyle, so its own registration
+    // wrote the old style and cannot be what satisfies this.
+    let devices = n.devices().unwrap();
+    let me = devices
+        .iter()
+        .find(|d| d.id == n.device_str())
+        .expect("this machine is in its own table");
+    assert_eq!(
+        me.style.as_deref().and_then(AvatarStyle::from_json),
+        Some(after.clone()),
+        "a restyle that never reaches the table is a face only this machine can see"
+    );
+
+    // …and it outlives the process, which is the other half of "chosen".
+    assert_eq!(Node::open_as(r.clone(), "solo").unwrap().avatar_style(), after);
+
+    let _ = std::fs::remove_dir_all(&r);
+}
+
+/// **An unknown option is refused by name and nothing is written.**
+///
+/// The second half is the one worth a test. Validation all happens
+/// before the write, so a good palette named alongside a bad variant
+/// leaves the palette alone; validating as it goes would land the
+/// palette and then report that the change failed — a face nobody chose,
+/// on a screen that just said nothing happened.
+#[test]
+fn an_unknown_option_is_refused_and_changes_nothing() {
+    let r = root("refuse");
+    let n = Node::open_as(r.clone(), "solo").unwrap();
+    n.set_avatar_style(&a_reported_style()).unwrap();
+
+    assert!(n.restyle(None, Some("holodeck"), None).is_err(), "an unknown variant is a variant");
+    assert!(n.restyle(None, None, Some("holodeck")).is_err(), "an unknown shape is a shape");
+    let short = vec!["#f8f8d6".to_owned()];
+    assert!(n.restyle(Some(&short), None, None).is_err(), "one slot is a palette");
+
+    // The half-written case.
+    let good: Vec<String> = preset("liquid").unwrap().colors.iter().map(|c| c.to_string()).collect();
+    assert!(n.restyle(Some(&good), Some("holodeck"), None).is_err());
+    assert_eq!(
+        n.avatar_style(),
+        a_reported_style(),
+        "a refused restyle wrote its palette on the way out"
+    );
+
+    // The control: the same call with a real key does take, so the
+    // refusals above are not "restyle never writes anything".
+    n.restyle(Some(&good), Some("beam"), None).expect("beam is a variant");
+    assert_ne!(n.avatar_style(), a_reported_style());
+
+    let _ = std::fs::remove_dir_all(&r);
+}
+
+/// **A preview is the picture the row will show.**
+///
+/// `Node::face_under` exists so a chooser can paint what a style *would*
+/// look like, and the one thing that has to be true of it is that it is
+/// not a second painter. The preview is the only evidence anybody has
+/// before pressing, so a preview derived any other way is a choice made
+/// on a picture that never appears.
+#[test]
+fn a_preview_is_the_same_picture_the_row_will_show() {
+    let r = root("preview");
+    let n = Node::open_as(r.clone(), "solo").unwrap();
+    let style = a_reported_style();
+
+    // Painted before it is chosen…
+    let previewed = n.face_under(&style);
+    // …then chosen, and read back the way a list reads it.
+    n.restyle(
+        Some(&style.palette.colors().to_vec()),
+        Some(style.variant.key()),
+        Some(style.shape.key()),
+    )
+    .expect("the fixture's own keys must be pickable");
+    let devices = n.devices().unwrap();
+    let me = devices.iter().find(|d| d.id == n.device_str()).unwrap();
+    assert_eq!(
+        n.face_of(me).expect("this machine has a face"),
+        previewed,
+        "the preview and the face it turned into are two different pictures"
+    );
+
+    // The control: a preview of a different style is a different
+    // picture, or the line above holds for a painter that ignores what
+    // it is handed.
+    assert_ne!(n.face_under(&AvatarStyle::default()), previewed);
+
+    let _ = std::fs::remove_dir_all(&r);
 }
 
 #[tokio::test]

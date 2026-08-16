@@ -6,8 +6,8 @@
 //! the catalog at print time (docs/UX.md 文案).
 
 use khor_catalog::cli::USAGE;
-use khor_catalog::{category, cli, msg, state};
-use khor_node::{list, MsgBody, Node, SessionId};
+use khor_catalog::{avatar, category, cli, msg, state};
+use khor_node::{list, AvatarStyle, FaceShape, MsgBody, Node, SessionId, Variant, PRESETS};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -35,6 +35,46 @@ fn run(args: &[String]) -> Result<(), String> {
         "id" => {
             let n = node()?;
             println!("{}  {}", n.device_str(), n.name());
+            Ok(())
+        }
+        // This machine's face. It prints what the machine is wearing
+        // either way — with no flags because "what am I" is the question
+        // somebody runs this to ask, and after a change because a verb
+        // that says nothing leaves 做了但没变化 and 失败 looking alike
+        // (docs/UX.md 状态呈现).
+        "face" => {
+            let mut colors: Option<Vec<String>> = None;
+            let mut variant: Option<String> = None;
+            let mut shape: Option<String> = None;
+            let mut it = rest.iter();
+            while let Some(flag) = it.next() {
+                let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
+                match flag.as_str() {
+                    // A factory set by name. Resolved here rather than
+                    // inside `restyle`, so that the library has exactly
+                    // one way to be handed a palette: five colors.
+                    "--palette" => {
+                        let id = value()?;
+                        let p = khor_node::preset(&id).ok_or_else(|| {
+                            let all: Vec<&str> = PRESETS.iter().map(|p| p.id).collect();
+                            msg::no_such_palette(&id, all.join(cli::NAME_SEPARATOR))
+                        })?;
+                        colors = Some(p.colors.iter().map(|c| c.to_string()).collect());
+                    }
+                    "--colors" => {
+                        colors = Some(value()?.split(',').map(|c| c.trim().to_owned()).collect());
+                    }
+                    "--variant" => variant = Some(value()?),
+                    "--shape" => shape = Some(value()?),
+                    _ => return Err(USAGE.into()),
+                }
+            }
+            let n = node()?;
+            let style = match (&colors, &variant, &shape) {
+                (None, None, None) => n.avatar_style(),
+                _ => n.restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())?,
+            };
+            print_face(&style);
             Ok(())
         }
         "devices" => {
@@ -538,6 +578,33 @@ fn raw_on() -> Result<libc::termios, String> {
 fn raw_off(saved: &libc::termios) {
     unsafe {
         libc::tcsetattr(0, libc::TCSANOW, saved);
+    }
+}
+
+/// What this machine is wearing, and what else it could wear.
+///
+/// The five colors get a line of their own rather than only a factory
+/// name: once a slot has been changed by hand the style belongs to no
+/// factory set, and a listing that could only name sets would have
+/// nothing at all to say about the machine in front of it.
+///
+/// Keys are printed beside the words because the keys are what the flags
+/// take. A listing of words alone would be a menu you cannot order from.
+fn print_face(style: &AvatarStyle) {
+    let mark = |on: bool| if on { format!("\t{}", cli::IN_USE) } else { String::new() };
+    println!("{}", cli::group_header(avatar::AXIS_PALETTE));
+    println!("{}", style.palette.colors().join("\t"));
+    let worn = style.palette.preset_id();
+    for p in PRESETS {
+        println!("{}\t{}{}", p.id, avatar::word(p.id), mark(worn == Some(p.id)));
+    }
+    println!("{}", cli::group_header(avatar::AXIS_VARIANT));
+    for v in Variant::ALL {
+        println!("{}\t{}{}", v.key(), avatar::word(v.key()), mark(v == style.variant));
+    }
+    println!("{}", cli::group_header(avatar::AXIS_SHAPE));
+    for s in FaceShape::ALL {
+        println!("{}\t{}{}", s.key(), avatar::word(s.key()), mark(s == style.shape));
     }
 }
 

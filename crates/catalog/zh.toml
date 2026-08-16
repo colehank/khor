@@ -24,10 +24,61 @@ shell = "命令"
 # row belongs to, and the whole point is that we could not tell.
 unknown = "认不出的"
 
+# A machine's face: the three axes a person picks on, and what each one
+# offers. Keys are the stable ones the code already travels under — a
+# factory palette's `id` (khor_core::avatar::PRESETS), a `Variant::key`,
+# a `FaceShape::key` — so a word is looked up and never stored.
+#
+# **A key prefixed `axis-` names a heading; every other key here names an
+# option somebody can pick.** That split is what
+# `every_face_option_has_a_word_and_every_word_names_an_option` walks, and
+# it is a prefix rather than a convention about dashes because a future
+# palette id may well carry one.
+[avatar]
+axis-palette = "色板"
+axis-variant = "画法"
+axis-shape = "形状"
+# One well per color slot. Numbered rather than named: no slot has a
+# fixed job — which one becomes the ground and which one the first stroke
+# is decided per machine by its id (khor_core::avatar::pick), so calling
+# one of them 底色 would be wrong on most machines.
+axis-palette-slot = "颜色 {0}"
+
+# ── the factory palettes ──
+# The borrowed sets keep their own names. Monokai, Nord, Catppuccin's
+# Mocha and Okabe-Ito are what those palettes are *called*, and inventing
+# a Chinese name for one leaves the user unable to look it up or to
+# recognize it from anywhere else they have seen it. Same judgment as the
+# vendor names deliberately absent from [category].
+liquid = "液态"
+monokai = "Monokai"
+mocha = "Mocha"
+nord = "Nord"
+okabe = "Okabe-Ito"
+warm = "暖纸"
+mandala = "Mandala"
+
+# ── the three compositions ──
+# Named for what they look like, not for upstream's file names: marble /
+# bauhaus / beam are boring-avatars' internal words and say nothing to
+# somebody choosing a picture. The swatch beside each word is the real
+# face, so the word only has to be a handle — it does not have to explain
+# the composition, and docs/UX.md 文案 says it must not try.
+marble = "晕染"
+bauhaus = "几何"
+beam = "笑脸"
+
+# ── the three crops ──
+circle = "圆形"
+rounded = "圆角"
+square = "方形"
+
 [cli]
 usage = """
 用法: khor <动词>
   id                    本机身份
+  face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
+                        本机的脸;不带参数看现在是什么、有哪些可选
   devices               网里的设备
   sessions [--by recent|category|device|state]
                         session 列表(默认最近);换一种排布,置顶永远在最上
@@ -51,6 +102,10 @@ usage = """
   pair <票>             凭票入网
   sync                  立即和全网各同步一趟"""
 this-machine = "(本机)"
+# Marks the option a machine is wearing, in a list of options. Without
+# it `khor face` prints a catalogue and answers "what am I" nowhere —
+# and the whole reason to run it with no arguments is that question.
+in-use = "(现在)"
 # Said on a row that someone pinned. The list already puts pinned rows on
 # top, and "on top" alone is not readable: without a mark, a row leading
 # the list looks like the most recent one.
@@ -285,6 +340,15 @@ settings-garbled = "{0} 读不懂,没有动它: {1}"
 settings-not-an-object = "{0} 不是一个 JSON 对象,没有动它"
 settings-hooks-not-an-object = "{0} 里的 hooks 不是一个对象,没有动它"
 settings-event-not-a-list = "{0} 里 hooks.{1} 不是一个列表,没有动它"
+
+# ── this machine's face (node) ──
+# Refusals by name, never a silent fall back to the factory style: a
+# mistyped option that quietly paints the default looks exactly like the
+# setting not working, and the next thing anyone does is press it again.
+no-such-palette = "没有这套色板: {0}。有: {1}"
+not-a-palette = "一套色板是五个 #rrggbb: {0}"
+not-a-variant = "不是一种画法: {0}。有: {1}"
+not-a-face-shape = "不是一种形状: {0}。有: {1}"
 
 # ── the persistent host (node) ──
 no-host = "这个 session 没有宿主(临时的,或宿主还没起来)"

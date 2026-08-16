@@ -93,6 +93,30 @@ fn handle(
             .and_then(|v| v.as_bool())
             .ok_or_else(|| format!("missing bool arg: {name}"))
     };
+    // Absent means "leave that axis alone" (`restyle`), so absent is not
+    // an error here — but **present and the wrong shape still is**. A
+    // malformed value quietly read as absent would report a change that
+    // took while nothing moved.
+    let opt_str = |name: &str| -> Result<Option<String>, String> {
+        match args.get(name) {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(v) => v
+                .as_str()
+                .map(|s| Some(s.to_owned()))
+                .ok_or_else(|| format!("arg is not a string: {name}")),
+        }
+    };
+    let opt_colors = || -> Result<Option<Vec<String>>, String> {
+        match args.get("colors") {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(serde_json::Value::Array(items)) => items
+                .iter()
+                .map(|c| c.as_str().map(str::to_owned).ok_or_else(|| "a color is not a string".to_owned()))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Some),
+            Some(_) => Err("arg is not a list: colors".to_owned()),
+        }
+    };
     match cmd {
         "sessions" => to_json(&khor_gui_core::list_sessions(root, &arg("by")?)?),
         "devices" => to_json(&khor_gui_core::list_devices(root)?),
@@ -114,6 +138,11 @@ fn handle(
         }
         "pin_device" => {
             khor_gui_core::pin_device(root, &arg("machine")?, flag("on")?)?;
+            Ok("null".to_owned())
+        }
+        "face_choices" => to_json(&khor_gui_core::face_choices(root)?),
+        "restyle" => {
+            khor_gui_core::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;
             Ok("null".to_owned())
         }
         "invite" => to_json(&khor_gui_core::invite(root)?),

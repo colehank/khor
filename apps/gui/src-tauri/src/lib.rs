@@ -2,7 +2,7 @@
 //! is one call into khor-node — CLI and GUI stay equivalent because they
 //! are the same functions (docs/KHOR.md 三条地基).
 
-use khor_gui_core::{DeviceRow, SessionRow};
+use khor_gui_core::{DeviceRow, FaceChoices, SessionRow};
 use khor_node::Node;
 
 /// `by` is the arrangement key (`khor_node::list::Arrange`). The window
@@ -41,6 +41,22 @@ fn pin_session(id: String, on: bool) -> Result<(), String> {
 #[tauri::command]
 fn pin_device(machine: String, on: bool) -> Result<(), String> {
     khor_gui_core::pin_device(&Node::root_from_env(), &machine, on)
+}
+
+#[tauri::command]
+fn face_choices() -> Result<FaceChoices, String> {
+    khor_gui_core::face_choices(&Node::root_from_env())
+}
+
+/// An axis left out stays where it is — the same shape as `khor face`'s
+/// flags, because they are the same call underneath.
+#[tauri::command]
+fn restyle(
+    colors: Option<Vec<String>>,
+    variant: Option<String>,
+    shape: Option<String>,
+) -> Result<(), String> {
+    khor_gui_core::restyle(&Node::root_from_env(), colors, variant, shape)
 }
 
 #[tauri::command]
@@ -83,6 +99,8 @@ pub fn run() {
             tell,
             pin_session,
             pin_device,
+            face_choices,
+            restyle,
             invite,
             pair
         ])

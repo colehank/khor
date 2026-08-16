@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use khor_node::list::Arrange;
-use khor_node::{Avatar, Node, SessionId};
+use khor_node::{Avatar, AvatarStyle, FaceShape, Node, SessionId, Variant, PRESETS};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -75,8 +75,115 @@ pub struct DeviceRow {
     pub pinned: bool,
 }
 
+/// One option on the variant or shape axis, already painted.
+///
+/// The face is **this machine's real face under that option**, derived by
+/// `khor_node::Node::face_under` — the same function and the same seed
+/// every row's face goes through. Letting the frontend build previews
+/// would put a second painter in the one place a second painter costs
+/// most: a preview is all the evidence anybody has before pressing.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct FaceChoice {
+    /// The stable key (`Variant::key`, `FaceShape::key`). The word beside
+    /// it is looked up in the catalog at paint time, never carried here.
+    pub key: String,
+    pub face: Avatar,
+}
+
+/// A factory palette, painted, and the five slots it would set.
+///
+/// It carries its colors because **a palette only ever reaches the
+/// library as five colors** (`Node::restyle`). Pressing a factory button
+/// and dragging one well then travel the same path, so there is no
+/// second way for a palette to arrive that could behave differently.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct PaletteChoice {
+    /// The palette's `id` (`khor_core::avatar::PRESETS`).
+    pub key: String,
+    pub colors: Vec<String>,
+    pub face: Avatar,
+}
+
+/// What this machine is wearing, and every option painted as it would
+/// look on it.
+///
+/// **One call, not one per option**, and each option's face derived with
+/// the *other two axes left where they are* — so a swatch is literally
+/// "what you get if you press this" rather than a face assembled out of
+/// factory defaults that nobody would ever see.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct FaceChoices {
+    /// The face as it stands — the same picture the rail and this
+    /// machine's own device row are painting.
+    pub face: Avatar,
+    /// The five slots as they stand, `#rrggbb`.
+    pub colors: Vec<String>,
+    /// Which factory palette those five are, when they are one. `None`
+    /// once a slot has been changed by hand, and then **no** palette is
+    /// marked: a nearest match would light a button nobody pressed, and
+    /// pressing that lit button would then look like a control that does
+    /// nothing (docs/UX.md 做了但没变化).
+    pub preset: Option<String>,
+    pub variant: String,
+    pub shape: String,
+    pub palettes: Vec<PaletteChoice>,
+    pub variants: Vec<FaceChoice>,
+    pub shapes: Vec<FaceChoice>,
+}
+
 fn open(root: &Path) -> Result<Node, String> {
     Node::open(root.to_path_buf())
+}
+
+/// Everything the settings screen paints. The order of each axis is the
+/// library's (`PRESETS` is ordered by provenance, `ALL` by the order a
+/// chooser should offer them); this layer picks none of it.
+pub fn face_choices(root: &Path) -> Result<FaceChoices, String> {
+    let n = open(root)?;
+    let now = n.avatar_style();
+    Ok(FaceChoices {
+        face: n.face_under(&now),
+        colors: now.palette.colors().to_vec(),
+        preset: now.palette.preset_id().map(str::to_owned),
+        variant: now.variant.key().to_owned(),
+        shape: now.shape.key().to_owned(),
+        palettes: PRESETS
+            .iter()
+            .map(|p| PaletteChoice {
+                key: p.id.to_owned(),
+                colors: p.colors.iter().map(|c| c.to_string()).collect(),
+                face: n.face_under(&AvatarStyle { palette: p.palette(), ..now.clone() }),
+            })
+            .collect(),
+        variants: Variant::ALL
+            .iter()
+            .map(|v| FaceChoice {
+                key: v.key().to_owned(),
+                face: n.face_under(&AvatarStyle { variant: *v, ..now.clone() }),
+            })
+            .collect(),
+        shapes: FaceShape::ALL
+            .iter()
+            .map(|s| FaceChoice {
+                key: s.key().to_owned(),
+                face: n.face_under(&AvatarStyle { shape: *s, ..now.clone() }),
+            })
+            .collect(),
+    })
+}
+
+/// Changes what this machine wears — the call `khor face` makes. One
+/// function behind the verb and behind every control, so the two faces
+/// cannot come to mean different things by the same words.
+pub fn restyle(
+    root: &Path,
+    colors: Option<Vec<String>>,
+    variant: Option<String>,
+    shape: Option<String>,
+) -> Result<(), String> {
+    open(root)?
+        .restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())
+        .map(|_| ())
 }
 
 /// The list, arranged. `by` is a `khor_node::list::Arrange` key; an

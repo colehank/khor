@@ -226,6 +226,32 @@ pub enum Variant {
     Beam,
 }
 
+impl Variant {
+    /// Every composition, in the order a chooser offers them.
+    pub const ALL: [Variant; 3] = [Variant::Marble, Variant::Bauhaus, Variant::Beam];
+
+    /// The stable key: what a chooser sends back, and what the catalog
+    /// looks a word up by.
+    ///
+    /// **It is the serde tag, and a test pins that** — the same variant
+    /// spelled two ways would let a face and the button that chose it
+    /// disagree, and neither side would say so.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Variant::Marble => "marble",
+            Variant::Bauhaus => "bauhaus",
+            Variant::Beam => "beam",
+        }
+    }
+
+    /// An unknown key is not a variant. Callers refuse by name rather
+    /// than quietly painting the default — a typo that silently paints
+    /// marble looks exactly like the setting not working.
+    pub fn from_key(key: &str) -> Option<Variant> {
+        Variant::ALL.into_iter().find(|v| v.key() == key)
+    }
+}
+
 /// What shape the face is cropped to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -240,6 +266,24 @@ pub enum FaceShape {
 }
 
 impl FaceShape {
+    /// Every crop, in the order a chooser offers them.
+    pub const ALL: [FaceShape; 3] = [FaceShape::Circle, FaceShape::Rounded, FaceShape::Square];
+
+    /// The stable key, and the serde tag with it — same rule and same
+    /// test as [`Variant::key`].
+    pub const fn key(self) -> &'static str {
+        match self {
+            FaceShape::Circle => "circle",
+            FaceShape::Rounded => "rounded",
+            FaceShape::Square => "square",
+        }
+    }
+
+    /// An unknown key is not a shape; refused by name, never defaulted.
+    pub fn from_key(key: &str) -> Option<FaceShape> {
+        FaceShape::ALL.into_iter().find(|s| s.key() == key)
+    }
+
     /// Corner radius as a fraction of the side. **This table exists
     /// once.**
     ///
@@ -308,6 +352,20 @@ impl Palette {
 
     pub fn colors(&self) -> &[String; SLOTS] {
         &self.0
+    }
+
+    /// Which factory palette these five slots are, when they are one.
+    ///
+    /// `None` is the honest answer after a slot has been changed by
+    /// hand, and a chooser must then mark **no** factory palette rather
+    /// than the nearest one: a highlight on "nord" over colors that are
+    /// not nord's says the user picked something they did not, and the
+    /// next press of that button would look like a no-op.
+    pub fn preset_id(&self) -> Option<&'static str> {
+        PRESETS
+            .iter()
+            .find(|p| self.0.iter().zip(p.colors).all(|(a, b)| a == b))
+            .map(|p| p.id)
     }
 }
 
@@ -459,6 +517,16 @@ pub const PRESETS: [Preset; 7] = [
         "#f8f8d6", "#b3c67f", "#5d7e62", "#50595c", "#fa3e3e",
     ]},
 ];
+
+impl Preset {
+    /// These five slots as a [`Palette`]. The table's literals are
+    /// already normalized, so this cannot fail the way [`Palette::parse`]
+    /// can — which is why picking a factory palette is the one path to a
+    /// style that needs no error word.
+    pub fn palette(&self) -> Palette {
+        Palette::from_preset(self)
+    }
+}
 
 /// Looks a factory palette up by id.
 pub fn preset(id: &str) -> Option<&'static Preset> {
@@ -2108,6 +2176,62 @@ mod tests {
         // came first
         let ids: HashSet<&str> = PRESETS.iter().map(|p| p.id).collect();
         assert_eq!(ids.len(), PRESETS.len(), "two palettes share an id");
+    }
+
+    /// **A key and its wire tag are the same string.**
+    ///
+    /// The two are written apart — `key()` is a match, the tag is a
+    /// serde attribute — and a settings screen sends a key back over the
+    /// very wire the tag names. If they drift, the button that chose a
+    /// variant and the face that came back disagree about which one it
+    /// was, and **nothing anywhere says so**: the style still parses,
+    /// still paints, and simply is not what was pressed.
+    ///
+    /// Asserted against the *serialized* form rather than a literal
+    /// table, so renaming the tag alone is what goes red.
+    #[test]
+    fn a_key_is_the_tag_it_travels_under() {
+        for v in Variant::ALL {
+            assert_eq!(serde_json::to_string(&v).unwrap(), format!("\"{}\"", v.key()));
+            assert_eq!(Variant::from_key(v.key()), Some(v), "{} does not come back", v.key());
+        }
+        for s in FaceShape::ALL {
+            assert_eq!(serde_json::to_string(&s).unwrap(), format!("\"{}\"", s.key()));
+            assert_eq!(FaceShape::from_key(s.key()), Some(s), "{} does not come back", s.key());
+        }
+        // Refused by name, never defaulted: a typo must not paint marble
+        // in a circle and look like the setting failed to take.
+        assert_eq!(Variant::from_key("holodeck"), None);
+        assert_eq!(FaceShape::from_key("holodeck"), None);
+        // The keys are distinct within each axis, or `from_key` answers
+        // with whichever came first.
+        let vs: HashSet<&str> = Variant::ALL.iter().map(|v| v.key()).collect();
+        assert_eq!(vs.len(), 3, "two variants share a key");
+        let ss: HashSet<&str> = FaceShape::ALL.iter().map(|s| s.key()).collect();
+        assert_eq!(ss.len(), 3, "two shapes share a key");
+    }
+
+    /// **"Which factory palette is this" has to answer `None` once a
+    /// slot has been touched.**
+    ///
+    /// The chooser marks the palette this returns. A nearest-match
+    /// answer would light a button the user did not press, and pressing
+    /// that lit button would then look like a control that does nothing
+    /// — the failure docs/UX.md names as 做了但没变化.
+    ///
+    /// The control is the second half: every factory row must recognize
+    /// itself, or the whole thing could answer `None` always and the
+    /// first assertion would pass.
+    #[test]
+    fn a_palette_names_its_factory_set_and_only_that() {
+        for p in PRESETS {
+            assert_eq!(p.palette().preset_id(), Some(p.id), "{} does not know itself", p.id);
+        }
+        // One slot off the default set, and it is nobody's set. The
+        // replacement is a color no factory palette holds.
+        let mut colors = preset(DEFAULT_PRESET).unwrap().colors.map(String::from);
+        colors[2] = "#123456".to_owned();
+        assert_eq!(Palette::parse(&colors).unwrap().preset_id(), None);
     }
 
     /// Three shapes give three different corner ratios, and **only
