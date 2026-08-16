@@ -293,6 +293,106 @@ pub struct Gpu {
     pub mem: Option<Fill>,
 }
 
+/// Tokens spent, in the four kinds a vendor bills separately.
+///
+/// **There is no total here, and that is a judgment rather than an
+/// omission.** Measured on this machine 2026-08-17 across every claude
+/// transcript on disk: 32.2 million output tokens against 16.2 **billion**
+/// cached input. A single sum would be 99.8% cache reads, so it would move
+/// with how often a conversation was resumed and barely at all with how
+/// much work was done — a number that looks like an answer and tracks the
+/// wrong thing. Whoever paints this picks the kinds worth showing; nobody
+/// downstream is handed a total that hides which is which.
+///
+/// The four are what both vendors bill separately today, spelled so that
+/// one name means one thing on every vendor (`khor_node::usage` does the
+/// per-vendor arithmetic, and says where the two disagree).
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS,
+)]
+pub struct Tokens {
+    /// Input the model had to read afresh — **never including what came
+    /// out of a cache**. The vendors disagree about this one: claude
+    /// reports it already excluding cache reads, codex reports a total
+    /// that includes them, so one of the two is a subtraction.
+    #[ts(type = "number")]
+    pub input: u64,
+    /// Input served from cache instead of being read afresh.
+    #[ts(type = "number")]
+    pub cached_input: u64,
+    /// Input written **into** the cache, which every vendor bills apart
+    /// from both of the above.
+    #[ts(type = "number")]
+    pub cache_write: u64,
+    /// What the model produced, reasoning included where a vendor
+    /// separates the two — it is output either way, and a vendor that
+    /// does not separate it has no second number to add.
+    #[ts(type = "number")]
+    pub output: u64,
+}
+
+impl Tokens {
+    /// Adds another reading in, saturating. A counter that wrapped would
+    /// read as a machine that spent almost nothing.
+    pub fn add(&mut self, other: Tokens) {
+        self.input = self.input.saturating_add(other.input);
+        self.cached_input = self.cached_input.saturating_add(other.cached_input);
+        self.cache_write = self.cache_write.saturating_add(other.cache_write);
+        self.output = self.output.saturating_add(other.output);
+    }
+
+    /// Whether anything at all was spent. A day with four zeroes is not a
+    /// day worth a row.
+    pub fn is_zero(self) -> bool {
+        self == Tokens::default()
+    }
+}
+
+/// One vendor's spend on one day, on one machine.
+///
+/// The machine is not a field: an answer is always *some machine's*, and
+/// the asker knows which one it asked — the same shape [`Vitals`] has, for
+/// the same reason (a device id inside the payload is a second copy of a
+/// fact the envelope already carries, and two copies can disagree).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct UsageDay {
+    /// The civil date, `YYYY-MM-DD`, **in the local time zone of the
+    /// machine that spent them**.
+    ///
+    /// Local rather than UTC because a person's "today" is their own, and
+    /// they were sitting at that machine when it happened. The cost is
+    /// stated rather than hidden: two machines in different zones cut the
+    /// day at two different instants, so a network total for "today" is a
+    /// sum of each machine's own today. UTC would have made the boundary
+    /// wrong for everybody instead of right for each.
+    pub day: String,
+    /// Whose tokens these were — the same open set of strings as
+    /// [`Session::category`], so `claude` means the same thing in both
+    /// places and a third vendor needs nothing added here.
+    pub category: String,
+    pub tokens: Tokens,
+}
+
+/// What one machine has spent, by day and by vendor.
+///
+/// **Asked for, never replicated**, the same call [`Vitals`] makes and for
+/// a related reason: this is derived from files the vendors own and khor
+/// only reads, so it is re-derivable at any time on the machine that has
+/// those files and meaningless to copy anywhere else.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Usage {
+    /// Sorted, oldest day first, and one row per (day, vendor). A day on
+    /// which nothing was spent has no row rather than a row of zeroes.
+    pub days: Vec<UsageDay>,
+    /// Records khor found but could not read: a line in a vendor's file
+    /// whose shape it does not understand. **Never silently zero** — the
+    /// same "适配器过时" signal [`Session`] discovery carries as
+    /// `unreadable_sessions`, and the honest alternative to a total that
+    /// quietly omits what it could not parse.
+    #[ts(type = "number")]
+    pub unreadable: u64,
+}
+
 /// The uniform event envelope. Payload bytes are kind-namespaced; this
 /// crate never looks inside. Whether events replicate (CRDT) or are
 /// fetched from home is a kind property, not an envelope field.
@@ -539,6 +639,66 @@ mod tests {
             assert_eq!(bytes[0], 0x95, "five fields today");
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
+    }
+
+    /// The token frame is a fixed-order array of four, and a day's frame
+    /// an array of three. Adding a fifth billing kind — or a per-model
+    /// breakdown on the day — must land here first, consciously, at the
+    /// tail (the rule the session and vitals frames follow).
+    #[test]
+    fn a_usage_frame_is_a_fixed_order_array() {
+        let day = UsageDay {
+            day: "2026-08-17".to_owned(),
+            category: "claude".to_owned(),
+            tokens: Tokens { input: 1, cached_input: 2, cache_write: 3, output: 4 },
+        };
+        let bytes = rmp_serde::to_vec(&day.tokens).unwrap();
+        assert_eq!(bytes[0], 0x94, "four billing kinds today");
+        let (input, cached_input, cache_write, output): (u64, u64, u64, u64) =
+            rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!((input, cached_input, cache_write, output), (1, 2, 3, 4));
+
+        let bytes = rmp_serde::to_vec(&day).unwrap();
+        assert_eq!(bytes[0], 0x93, "day, category, tokens");
+        assert_eq!(rmp_serde::from_slice::<UsageDay>(&bytes).unwrap(), day);
+
+        let answer = Usage { days: vec![day], unreadable: 2 };
+        let bytes = rmp_serde::to_vec(&answer).unwrap();
+        assert_eq!(bytes[0], 0x92, "the rows and what could not be read");
+        assert_eq!(rmp_serde::from_slice::<Usage>(&bytes).unwrap(), answer);
+    }
+
+    /// **A count of what could not be read survives the wire**, which is
+    /// the field most easily lost: an answer whose rows all decode looks
+    /// complete, and the only thing saying otherwise is this number.
+    ///
+    /// The empty answer is sent too, because "no rows and nothing
+    /// unreadable" (a machine that has never run an agent) and "no rows
+    /// but two unreadable records" (khor gone blind) are the two
+    /// situations this field exists to keep apart, and they differ by
+    /// exactly one number.
+    #[test]
+    fn an_empty_answer_and_a_blind_one_do_not_look_alike_on_the_wire() {
+        let quiet = Usage::default();
+        let blind = Usage { days: Vec::new(), unreadable: 2 };
+        assert_ne!(rmp_serde::to_vec(&quiet).unwrap(), rmp_serde::to_vec(&blind).unwrap());
+        for answer in [quiet, blind] {
+            let bytes = rmp_serde::to_vec(&answer).unwrap();
+            assert_eq!(rmp_serde::from_slice::<Usage>(&bytes).unwrap(), answer);
+        }
+    }
+
+    /// Adding saturates rather than wrapping. A wrapped counter reads as
+    /// a machine that spent almost nothing, which is the one wrong answer
+    /// nobody would question.
+    #[test]
+    fn adding_tokens_saturates_and_a_zero_day_knows_it_is_zero() {
+        let mut t = Tokens { input: u64::MAX, cached_input: 0, cache_write: 0, output: 5 };
+        t.add(Tokens { input: 10, cached_input: 0, cache_write: 0, output: 5 });
+        assert_eq!(t.input, u64::MAX);
+        assert_eq!(t.output, 10);
+        assert!(!t.is_zero());
+        assert!(Tokens::default().is_zero());
     }
 
     #[test]

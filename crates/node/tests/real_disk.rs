@@ -183,3 +183,120 @@ fn khor_can_read_this_machines_tmux_and_lists_nothing_twice() {
     );
     println!("kept {kept}, dropped {dropped}");
 }
+
+/// khor can read every spending record on this machine, and what that
+/// costs.
+///
+/// Two things at once because they are one walk. The count of unreadable
+/// records is the drift alarm — a vendor reshaping its files shows up
+/// here while every fixture test stays green — and the timing is the
+/// number that decides whether this may sit on a polling path (it may
+/// not; see the figure it prints).
+///
+/// Read-only throughout: it opens the user's real transcripts and adds
+/// up four numbers per record. **Nothing it prints is content** — days,
+/// vendor names and totals only, because a test that dumped a transcript
+/// would be a test that copied somebody's work into a build log.
+///
+/// UTC rather than the machine's own zone, so that the day boundaries
+/// line up with a check written in another language against the same
+/// files (the day the numbers are compared, both sides must cut the day
+/// in the same place).
+#[test]
+#[ignore]
+fn khor_can_read_every_spending_record_on_this_machine() {
+    use std::time::Instant;
+
+    let home = real_home();
+    let t = Instant::now();
+    let usage = khor_node::usage::Meters::at(&home).tally_in(&jiff::tz::TimeZone::UTC);
+    let elapsed = t.elapsed();
+
+    let mut total = khor_core::Tokens::default();
+    for d in &usage.days {
+        total.add(d.tokens);
+    }
+    println!(
+        "days: {}, unreadable: {}, one cold pass: {:.2}s",
+        usage.days.len(),
+        usage.unreadable,
+        elapsed.as_secs_f64()
+    );
+    println!(
+        "totals  input {}  cached {}  cache-write {}  output {}",
+        total.input, total.cached_input, total.cache_write, total.output
+    );
+    for d in usage.days.iter().rev().take(4) {
+        println!(
+            "  {} {:<8} input {:<10} cached {:<12} cache-write {:<11} output {}",
+            d.day, d.category, d.tokens.input, d.tokens.cached_input, d.tokens.cache_write,
+            d.tokens.output
+        );
+    }
+
+    assert!(
+        !usage.days.is_empty(),
+        "no agent has ever run under {} — every assertion below would pass vacuously",
+        home.display()
+    );
+    assert_eq!(
+        usage.unreadable, 0,
+        "a spending record khor could not read — a vendor's format moved"
+    );
+    // The one property that holds on every machine and would break on the
+    // two mistakes that matter: summing the repeats of one claude message
+    // inflates output, and summing codex's running total inflates input.
+    // Neither can be checked against a constant here, so what is checked
+    // is that the answer is not empty and not absurd.
+    assert!(total.output > 0 && total.input > 0, "{total:?}");
+}
+
+/// **What one pass costs, and why the answer is not "cache it".**
+///
+/// Printed rather than asserted, for the reason `cost.rs` gives: a
+/// threshold here is a test that fails on somebody else's laptop. The
+/// figure this exists to keep honest is the ratio between a full pass and
+/// the GUI's poll interval — if a pass ever becomes cheap enough to sit
+/// on the poll, the caching in `khor_node::usage` stops being necessary,
+/// and if it becomes far more expensive, the cache needs to become
+/// incremental rather than whole.
+#[test]
+#[ignore]
+fn one_spending_pass_is_timed_against_the_tree_it_walked() {
+    use std::time::Instant;
+
+    let home = real_home();
+    let mut files = 0usize;
+    let mut bytes = 0u64;
+    let mut stack = vec![home.join(".claude/projects"), home.join(".codex/sessions")];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(p),
+                Ok(t) if t.is_file() => {
+                    if p.extension().and_then(|x| x.to_str()) == Some("jsonl") {
+                        files += 1;
+                        bytes += e.metadata().map(|m| m.len()).unwrap_or(0);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let zone = jiff::tz::TimeZone::UTC;
+    let meters = khor_node::usage::Meters::at(&home);
+    let mut runs = Vec::new();
+    for _ in 0..3 {
+        let t = Instant::now();
+        let _ = meters.tally_in(&zone);
+        runs.push(t.elapsed().as_secs_f64());
+    }
+    println!(
+        "{files} files, {:.1} MiB — passes: {}",
+        bytes as f64 / (1024.0 * 1024.0),
+        runs.iter().map(|s| format!("{s:.2}s")).collect::<Vec<_>>().join(", ")
+    );
+    assert!(files > 0, "nothing to time under {}", home.display());
+}

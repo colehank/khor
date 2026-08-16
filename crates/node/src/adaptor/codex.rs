@@ -156,9 +156,16 @@ impl Codex {
     }
 }
 
+/// This vendor's name, which is also the category its rows carry — and,
+/// since `crate::usage`, the category its spending carries too. Named
+/// once for the reason [`super::claude::VENDOR`] gives: two spellings of
+/// one vendor put one session in two groups, and nothing would report an
+/// error about it.
+pub const VENDOR: &str = "codex";
+
 impl Adaptor for Codex {
     fn vendor(&self) -> &'static str {
-        "codex"
+        VENDOR
     }
 
     fn sweep(&self, procs: &Procs) -> Sweep {

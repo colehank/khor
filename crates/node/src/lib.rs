@@ -16,6 +16,7 @@ pub mod list;
 pub mod live;
 pub mod proto;
 pub mod transfer;
+pub mod usage;
 pub mod vitals;
 
 pub use khor_core::avatar::{
@@ -106,6 +107,11 @@ pub struct Node {
     chat: ChatKind,
     transfer: TransferKind,
     live: LiveKind,
+    /// What the agents on this machine have spent. Held on the node
+    /// rather than built per call, because it keeps the cache that makes
+    /// asking affordable at all (`usage::Meters::tally` has the
+    /// measurement).
+    usage: usage::Meters,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
     /// Serializes sync pumps within one process: two concurrent pumps
     /// share block stores and could collide on sequence numbers. The
@@ -141,6 +147,11 @@ impl Node {
         // answers with whatever the machine happens to be running.
         let live = LiveKind::new(root.clone(), device)
             .discovering(Arc::new(adaptor::Discovery::for_root(&root)));
+        // Rooted through the same `vendor_home` as discovery and the
+        // hooks: a node opened on a temp home reads that home's agents,
+        // never the real user's. Every verification of this feature is
+        // made of that.
+        let usage = usage::Meters::at(&adaptor::vendor_home(&root));
         let node = Node {
             root,
             key,
@@ -152,6 +163,7 @@ impl Node {
             chat,
             transfer,
             live,
+            usage,
             subscribers: Arc::new(Mutex::new(Vec::new())),
             sync_gate: tokio::sync::Mutex::new(()),
         };
@@ -817,6 +829,19 @@ impl Node {
     /// One Claude Code hook payload in, the mapped session move out.
     pub fn claude_hook(&self, payload: &str) -> Result<adaptor::claude::Hooked, String> {
         adaptor::claude::hook(&self.live, payload)
+    }
+
+    /// What the agents on this machine have spent, by day and by vendor.
+    ///
+    /// **Blocking, and it can take seconds on the first ask** — one pass
+    /// over every transcript is 18.5 s on this machine in a debug build
+    /// (the figures are on `usage::Meters::tally`). Every ask after that
+    /// is a walk of directory entries unless an agent has written
+    /// something, so this is affordable to ask repeatedly and not
+    /// affordable to ask from inside an async handler: the one caller
+    /// there goes through `spawn_blocking`, exactly as vitals does.
+    pub fn usage(&self) -> khor_core::Usage {
+        self.usage.tally()
     }
 
     /// Live agent sessions the last sweep could see but could not read

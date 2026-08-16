@@ -73,4 +73,17 @@ core-foundation = "0.10"
 # shared library is not an external command** — the thing khor promises
 # not to need is something the user had to install.
 nvml-wrapper = "0.12"
+# Civil dates in the machine's own time zone, for `khor_node::usage`: a
+# vendor stamps its files in UTC and a person's "today" is local, so the
+# bucket a token lands in is a function of the instant *and* the zone —
+# daylight saving means one fixed offset would misfile a night's work
+# twice a year.
+#
+# **It costs no new package**: `serde_with` already pulled jiff into this
+# tree, so naming it here added exactly one line to Cargo.lock. Measured
+# on its own it is two crates (jiff + jiff-core) with `tz-system`; chrono,
+# the other candidate, is three and reads the zone through `localtime_r`,
+# whose documented race with `setenv` khor would then own.
+# License: Unlicense OR MIT (checked before use, not after).
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system"] }
 tracing = "0.1"
