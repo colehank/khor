@@ -1,6 +1,6 @@
 //! What the session list costs, measured rather than guessed.
 //!
-//! `#[ignore]` on purpose, like the two real-disk checks: this reads the
+//! `#[ignore]` on purpose, like the real-disk checks: this reads the
 //! machine it runs on, so the numbers are a property of that machine and
 //! a threshold here would be a test that fails on someone else's laptop.
 //! It exists to be re-run by hand when the answer might have changed —
