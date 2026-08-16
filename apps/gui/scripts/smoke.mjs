@@ -1243,9 +1243,14 @@ try {
   //     would then look like a control that does nothing.
   //
   //     Driven by setting the well and dispatching what a commit
-  //     dispatches: the picker itself is an OS window Playwright cannot
-  //     open, so this is the closest the real path gets. The listener
-  //     under test reads the element, not the event.
+  //     dispatches. **This is not the forbidden kind of shortcut.** The
+  //     rule against going around the path under test is about stepping
+  //     over the app's own code when it is in the way; the OS color
+  //     picker is not the app's code, and it is a window Playwright
+  //     cannot open at all. Everything from the element and the event
+  //     onward is the real path — the listener being tested reads the
+  //     element, not the event — so this is as close to a person's
+  //     press as anything automated can stand.
   worn = await faceOf(railFace);
   await sheet.locator("[data-color-slot]").first().evaluate((el) => {
     el.value = "#123456";

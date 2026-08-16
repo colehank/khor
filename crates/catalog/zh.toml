@@ -56,7 +56,15 @@ mocha = "Mocha"
 nord = "Nord"
 okabe = "Okabe-Ito"
 warm = "暖纸"
-mandala = "Mandala"
+# **The key stays `mandala`, the word does not.** The key is the code's
+# — it is what a device reports about itself, and changing it would throw
+# away what everybody already picked. The word is a person's, and on this
+# screen "Mandala" reads as *that other app's theme*: khor is its own
+# product, and a family resemblance in the palette is not a reason to let
+# the sibling's name onto the surface. 纸墨 is what the set actually is,
+# in the words its own criterion uses — cream paper, moss, slate, one
+# cinnabar (`PRESETS`, the mandala row).
+mandala = "纸墨"
 
 # ── the three compositions ──
 # Named for what they look like, not for upstream's file names: marble /
