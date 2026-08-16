@@ -36,6 +36,12 @@ pub struct Meta {
     pub title: String,
     pub pid: Option<u32>,
     pub started_ms: i64,
+    /// Whose session this is (`khor_core::Session::category`), when
+    /// anyone can say. A registry entry written before this field existed
+    /// reads as `None`, which is the same thing it means for a fresh one:
+    /// nobody placed it.
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// How it is, as last written by its process (wrapper or hooks).
@@ -130,12 +136,19 @@ impl LiveKind {
 
     /// Registers a session. Refuses an id already taken — a hook
     /// re-registering must go through `ensure` instead.
+    ///
+    /// `category` is whose session it is, when the caller knows: a hook
+    /// knows (it is that vendor's hook), `khor run` knows only that the
+    /// user started a command. **Nobody guesses it from the command
+    /// name** — an alias, a wrapper or `npx` would each make that answer
+    /// wrong while looking right (see [`crate::adaptor::Found`]).
     pub fn register(
         &self,
         id: &SessionId,
         kind: &str,
         title: &str,
         pid: Option<u32>,
+        category: Option<&str>,
     ) -> Result<(), String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if dir.join("meta.json").exists() {
@@ -147,17 +160,45 @@ impl LiveKind {
             title: title.to_owned(),
             pid,
             started_ms: now_ms(),
+            category: category.map(str::to_owned),
         };
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
         self.write_state(&dir, State::Busy, None)
     }
 
     /// Registers if absent; either way the session exists afterwards.
-    pub fn ensure(&self, id: &SessionId, kind: &str, title: &str, pid: Option<u32>) -> Result<(), String> {
+    ///
+    /// An existing session **learns its category here if it had none**:
+    /// `khor run --tui -- <an agent>` registers a row nobody can place,
+    /// and the first hook from that agent is the moment somebody can.
+    /// A category already on record is never overwritten — the vendor
+    /// that registered a row is the one that knows.
+    pub fn ensure(
+        &self,
+        id: &SessionId,
+        kind: &str,
+        title: &str,
+        pid: Option<u32>,
+        category: Option<&str>,
+    ) -> Result<(), String> {
         if self.claims(id) {
+            return self.learn_category(id, category);
+        }
+        self.register(id, kind, title, pid, category)
+    }
+
+    /// Fills in a category the registry did not have. Never replaces one.
+    pub fn learn_category(&self, id: &SessionId, category: Option<&str>) -> Result<(), String> {
+        let Some(category) = category else {
+            return Ok(());
+        };
+        let dir = self.existing_dir(id)?;
+        let mut meta = read_meta(&dir)?;
+        if meta.category.is_some() {
             return Ok(());
         }
-        self.register(id, kind, title, pid)
+        meta.category = Some(category.to_owned());
+        write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)
     }
 
     /// Replaces the recorded pid — the wrapper registers before it knows
@@ -268,9 +309,18 @@ impl LiveKind {
             .collect();
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
-        for sighting in sweep.rows {
+        for found in sweep.rows {
+            let sighting = found.sighting;
             let id = sighting.id();
             if let Some(seat) = out.iter().position(|r| r.id == id) {
+                // The registered row wins, but it may have been registered
+                // by something that could not name the vendor (a bare
+                // `khor run --tui`). The sweep read that vendor's own
+                // files, so it can — and an empty category is a gap to
+                // fill, not an answer to respect.
+                if out[seat].category.is_none() {
+                    out[seat].category = Some(found.category.to_owned());
+                }
                 if sighting.word == State::Failed && unpinned.contains(&&id) {
                     out[seat].state =
                         StateStamp { state: State::Failed, at: Millis(sighting.at_ms.max(0) as u64) };
@@ -290,6 +340,7 @@ impl LiveKind {
                     at: Millis(sighting.at_ms.max(0) as u64),
                 },
                 unread,
+                category: Some(found.category.to_owned()),
             });
         }
         out
@@ -322,6 +373,7 @@ impl LiveKind {
                     home: self.device,
                     state: StateStamp { state: word, at: Millis(at.max(0) as u64) },
                     unread,
+                    category: meta.category.clone(),
                 },
                 meta.pid.is_some(),
             ));
@@ -535,7 +587,7 @@ mod tests {
         let root = tmp("tui");
         let k = kind_at(&root);
         let id = sid("tui/abc123");
-        k.register(&id, "tui", "khor", Some(std::process::id())).unwrap();
+        k.register(&id, "tui", "khor", Some(std::process::id()), None).unwrap();
 
         let row = &k.rows(|_| 0)[0];
         assert_eq!((row.state.state, row.unread), (State::Busy, 0));
@@ -555,7 +607,7 @@ mod tests {
         assert_eq!((row.state.state, row.unread), (State::Idle, 0), "a clean tui exit is idle");
 
         let id2 = sid("tui/def456");
-        k.register(&id2, "tui", "khor", Some(std::process::id())).unwrap();
+        k.register(&id2, "tui", "khor", Some(std::process::id()), None).unwrap();
         k.record_exit(&id2, 3).unwrap();
         let row = k.rows(|_| 0).into_iter().find(|r| r.id == id2).unwrap();
         assert_eq!((row.state.state, row.unread), (State::Failed, 0), "failed sinks, no badge");
@@ -570,7 +622,7 @@ mod tests {
         let root = tmp("shell");
         let k = kind_at(&root);
         let id = sid("shell/run1");
-        k.register(&id, "shell", "build", Some(std::process::id())).unwrap();
+        k.register(&id, "shell", "build", Some(std::process::id()), None).unwrap();
         k.record_exit(&id, 0).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!((row.state.state, row.unread), (State::Done, 1));
@@ -588,7 +640,7 @@ mod tests {
         let root = tmp("dead");
         let k = kind_at(&root);
         let id = sid("shell/gone1");
-        k.register(&id, "shell", "x", Some(dead_pid())).unwrap();
+        k.register(&id, "shell", "x", Some(dead_pid()), None).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(row.state.state, State::Failed);
         assert!(
@@ -597,7 +649,7 @@ mod tests {
         );
 
         let id2 = sid("tui/nopid1");
-        k.register(&id2, "tui", "x", None).unwrap();
+        k.register(&id2, "tui", "x", None, None).unwrap();
         k.report(&id2, State::Busy).unwrap();
         let row = k.rows(|_| 0).into_iter().find(|r| r.id == id2).unwrap();
         assert_eq!(row.state.state, State::Busy, "no pid on record = the word stands");
@@ -613,7 +665,7 @@ mod tests {
 
         for bad in ["tui/../../etc", "tui/", "/leaf", "noslash", "tui/UPPER CASE!"] {
             assert!(
-                k.register(&sid(bad), "tui", "x", None).is_err(),
+                k.register(&sid(bad), "tui", "x", None, None).is_err(),
                 "{bad:?} should not register"
             );
         }
@@ -621,7 +673,7 @@ mod tests {
         assert_eq!(clean_leaf("A-B_C.9"), "a-bc9");
 
         let id = sid("tui/ok1");
-        k.register(&id, "tui", "x", None).unwrap();
+        k.register(&id, "tui", "x", None, None).unwrap();
         assert_eq!(k.report(&id, State::Failed).unwrap_err(), msg::FAILED_IS_NOT_REPORTABLE);
         k.record_exit(&id, 0).unwrap();
         assert_eq!(k.report(&id, State::Busy).unwrap_err(), msg::session_over(&id.0));
@@ -664,7 +716,7 @@ mod tests {
         // Now the hook registers the same claude session and reports a
         // different word.
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
-        k.register(&id, "tui", "one", Some(std::process::id())).unwrap();
+        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
         k.report(&id, State::Done).unwrap();
 
         let rows = k.rows(|_| 0);
@@ -676,6 +728,66 @@ mod tests {
             "the registered row wins: it is the only one that can say 完成"
         );
         assert_eq!(rows[0].title, "one");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A row registered before anyone could place it learns its category
+    /// from whoever can — and **never has one overwritten**.
+    ///
+    /// Both halves matter. Without the first, `khor run --tui -- claude`
+    /// stays uncategorised forever even though claude is right there
+    /// writing its own files. Without the second, the last writer wins
+    /// and a session changes hands depending on sweep order.
+    #[test]
+    fn an_unplaced_row_learns_its_category_once_and_keeps_it() {
+        let root = tmp("learn");
+        let k = kind_at(&root);
+        let id = sid("tui/unplaced1");
+        k.register(&id, "tui", "some agent", None, None).unwrap();
+        assert_eq!(k.rows(|_| 0)[0].category, None, "control: nobody placed it");
+
+        k.learn_category(&id, Some("claude")).unwrap();
+        assert_eq!(k.rows(|_| 0)[0].category.as_deref(), Some("claude"));
+
+        k.learn_category(&id, Some("codex")).unwrap();
+        assert_eq!(
+            k.rows(|_| 0)[0].category.as_deref(),
+            Some("claude"),
+            "a category already on record is not up for grabs"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The disk sweep places a registered row that arrived unplaced.
+    ///
+    /// This is the same shape as the ending rule below: the registry wins
+    /// the row, but the vendor's own files know something the registry
+    /// cannot — there, that the process died; here, whose session it is.
+    #[test]
+    fn a_registered_row_gets_its_category_from_the_vendor_that_knows_it() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+
+        let root = tmp("place-from-disk");
+        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let procs = Procs::of([(
+            4001,
+            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None },
+        )]);
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32]))
+            .discovering(Arc::new(Discovery::at(&vendors).with_procs(procs)));
+
+        // The registry claims the id first, with nothing to say about
+        // whose it is — what `khor run --tui` leaves behind.
+        let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
+        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
+
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "still one row");
+        assert_eq!(
+            rows[0].category.as_deref(),
+            Some("claude"),
+            "the sweep read claude's own files, so it can place what the registry could not"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -711,7 +823,7 @@ mod tests {
         // An empty process table is the whole point — pid 8001 is gone.
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(Procs::default()));
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
-        k.register(&id, "tui", "hooked", None).unwrap();
+        k.register(&id, "tui", "hooked", None, None).unwrap();
         k.report(&id, State::Busy).unwrap();
 
         let rows = k.rows(|_| 0);

@@ -104,9 +104,36 @@ pub struct Sweep {
     pub unmapped: usize,
 }
 
-impl Sweep {
-    fn absorb(&mut self, other: Sweep) {
-        self.rows.extend(other.rows);
+/// One sighting plus the category its row will carry.
+///
+/// **The adaptor has nowhere to write this.** A row's category is "whose
+/// session is this", and the only honest answer is the name of whoever
+/// recognised it — so it is attached here, out of reach of [`Sweep`],
+/// rather than being a field an adaptor fills in and could fill in
+/// wrongly. The type is what keeps "who recognised it" and "whose it is"
+/// from drifting apart; a comment asking adaptors to agree would not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub category: &'static str,
+    pub sighting: Sighting,
+}
+
+/// What one sweep of every vendor found, each row already attributed.
+#[derive(Debug, Default, Clone)]
+pub struct Findings {
+    pub rows: Vec<Found>,
+    /// Summed across vendors; see [`Sweep::unmapped`].
+    pub unmapped: usize,
+}
+
+impl Findings {
+    fn absorb(&mut self, vendor: &'static str, other: Sweep) {
+        self.rows.extend(
+            other
+                .rows
+                .into_iter()
+                .map(|sighting| Found { category: vendor, sighting }),
+        );
         self.unmapped += other.unmapped;
     }
 }
@@ -307,7 +334,7 @@ impl Discovery {
     }
 
     /// One sweep of every vendor.
-    pub fn sweep(&self) -> Sweep {
+    pub fn sweep(&self) -> Findings {
         match &self.procs {
             Some(procs) => self.sweep_with(procs),
             None => self.sweep_with(&Procs::snapshot()),
@@ -315,10 +342,13 @@ impl Discovery {
     }
 
     /// One sweep against a given process table (tests inject theirs).
-    pub fn sweep_with(&self, procs: &Procs) -> Sweep {
-        let mut all = Sweep::default();
+    ///
+    /// This is the one place a row's category is decided, and it is
+    /// decided by which adaptor produced the row — see [`Found`].
+    pub fn sweep_with(&self, procs: &Procs) -> Findings {
+        let mut all = Findings::default();
         for a in &self.adaptors {
-            all.absorb(a.sweep(procs));
+            all.absorb(a.vendor(), a.sweep(procs));
         }
         all
     }
@@ -369,6 +399,56 @@ mod tests {
             "a process that started 1000s earlier is a different one wearing the number"
         );
         assert!(procs.alive_since(9999, 2_000_000).is_none(), "not running at all");
+    }
+
+    /// **A row's category is the adaptor that recognised it.**
+    ///
+    /// Both vendors are swept in one call, from one home, so the two
+    /// implementations that would otherwise pass cannot: stamping every
+    /// row with a constant, and stamping every row with the first
+    /// adaptor's name. That is the "全塞进同一格" trap — a property
+    /// assertion ("every row has a category") is blind to it, so this
+    /// enumerates instead.
+    #[cfg(unix)]
+    #[test]
+    fn each_row_carries_the_name_of_the_adaptor_that_found_it() {
+        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors");
+        // One home wearing both vendors' directories.
+        let home = std::env::temp_dir().join(format!("khor-both-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink(fixtures.join("claude/.claude"), home.join(".claude")).unwrap();
+        std::os::unix::fs::symlink(fixtures.join("codex/.codex"), home.join(".codex")).unwrap();
+
+        // One live process per vendor, each vouching for its own fixture.
+        let procs = Procs::of([
+            (4001, Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None }),
+            (
+                700,
+                Proc {
+                    name: codex::PROCESS_NAME.into(),
+                    started_ms: 1_786_024_158_000,
+                    cwd: Some(PathBuf::from("/w/alpha")),
+                },
+            ),
+        ]);
+        let found = Discovery::at(&home).sweep_with(&procs);
+
+        let mut seen: Vec<(&str, String)> = found
+            .rows
+            .iter()
+            .map(|f| (f.category, f.sighting.title.clone()))
+            .collect();
+        seen.sort();
+        assert_eq!(
+            seen,
+            vec![
+                ("claude", "one-aa".to_owned()),
+                ("codex", "alpha".to_owned()),
+            ],
+            "each vendor's own row must carry that vendor's name"
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// Exact name match: this machine runs `codex-code-mode-host` beside

@@ -143,6 +143,60 @@ fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// What khor says a row belongs to when khor itself started it.
+///
+/// A wrapped command is 命令 (`category::SHELL`) — the user started it,
+/// and that is a real answer. **A tui khor cannot attribute carries no
+/// category at all**, and the point of enumerating both here is that
+/// filing the tui under `shell` would be the neighbour trap: it reads as
+/// a confident answer where an honest gap belongs. A chat row is khor's
+/// own doing, so it says so.
+#[test]
+fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
+    let r = root("category");
+    let n = Node::open(r.clone()).unwrap();
+    n.tell(n.name().to_owned().as_str(), "a note").unwrap();
+    let shell = n.open_ephemeral(khor_core::kind::SHELL, "build").unwrap();
+    let tui = n.open_ephemeral(khor_core::kind::TUI, "some agent").unwrap();
+
+    let of = |id: &SessionId| -> Option<String> {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == *id)
+            .and_then(|v| v.session.category)
+    };
+    assert_eq!(of(&shell).as_deref(), Some(khor_core::category::SHELL));
+    assert_eq!(of(&tui), None, "khor must not guess a vendor from a command line");
+
+    let chat = SessionId(format!("chat/{}", n.name()));
+    assert_eq!(of(&chat).as_deref(), Some(khor_core::category::KHOR));
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// The gap above closes the moment the vendor speaks for itself: a
+/// claude hook naming a session is claude saying "this one is mine".
+#[test]
+fn a_vendors_hook_places_the_row_that_khor_could_not() {
+    let r = root("category-hook");
+    let n = Node::open(r.clone()).unwrap();
+    let payload = r#"{"session_id":"feed01","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#;
+    n.claude_hook(payload).unwrap();
+
+    let row = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id.0.starts_with("tui/"))
+        .expect("the hook should have registered a row");
+    assert_eq!(
+        row.session.category.as_deref(),
+        Some(crate::adaptor::claude::VENDOR),
+        "a claude hook is claude naming its own session"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// Machine pins are keyed by device id but spoken in machine names, and
 /// an unknown name is refused the way every other verb refuses one.
 #[test]

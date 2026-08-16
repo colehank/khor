@@ -33,6 +33,12 @@ pub struct SessionRow {
     /// paints a mark from this and **does not sort by it** — the rows
     /// arrive in the order the node decided.
     pub pinned: bool,
+    /// Whose session this is (`khor_core::Session::category`): `claude`,
+    /// `codex`, `khor`, `shell`. `None` when nobody could place it, and
+    /// the frontend must render that as its own group rather than
+    /// picking a neighbour — **never inferred from the title here or
+    /// there** (that is the whole reason it travels on the row).
+    pub category: Option<String>,
     /// The face of the machine this session lives on — derived here,
     /// never in the frontend (`khor_core::avatar`). `None` only when the
     /// home device is not in this table at all, and then the row draws a
@@ -82,6 +88,7 @@ pub fn list_sessions(root: &Path) -> Result<Vec<SessionRow>, String> {
             unread: v.session.unread,
             source: v.source.map(|(device, age_ms)| SourceTag { device, age_ms }),
             pinned: v.pinned,
+            category: v.session.category,
         })
         .collect())
 }

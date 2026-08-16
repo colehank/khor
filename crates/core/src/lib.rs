@@ -44,6 +44,24 @@ pub mod kind {
     pub const TRANSFER: &str = "transfer";
 }
 
+pub mod category {
+    //! Whose session this is — see [`crate::Session::category`].
+    //!
+    //! Only the two Khor produces itself are named here. Vendor
+    //! categories are the adaptors' own names and arrive with them, so
+    //! a third vendor must not have to touch this crate — the same
+    //! open-set rule [`kind`] follows.
+
+    /// Khor's own: a device chat, a file transfer. Not a vendor's, and
+    /// not a command the user started either.
+    pub const KHOR: &str = "khor";
+    /// A command the user started through Khor (`khor run`, `khor open`)
+    /// and nothing more is known about. **Not a fallback**: it says "you
+    /// started this yourself", which is a real answer. A row nobody can
+    /// place carries no category at all.
+    pub const SHELL: &str = "shell";
+}
+
 /// Milliseconds since the Unix epoch.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
@@ -156,6 +174,28 @@ pub struct Session {
     /// Events not yet seen. Seen state replicates, so clearing it on one
     /// device clears it everywhere.
     pub unread: u64,
+    /// **Whose** session this is (`claude`, `codex`, [`category::KHOR`],
+    /// [`category::SHELL`]) — a different question from [`Session::kind`],
+    /// which is what *shape* it is (a tui, a chat, a transfer). One
+    /// machine's list is mostly tui rows, and the useful cut across them
+    /// is which agent they belong to.
+    ///
+    /// It rides the row rather than being worked out where the row is
+    /// read, because **only the home device can answer it**: the
+    /// adaptor that recognised the session knows whose file it read, and
+    /// nobody downstream can recover that. Guessing it from the title is
+    /// the thing this field exists to prevent.
+    ///
+    /// `None` means nobody could place it, and it stays `None`: a row
+    /// khor started as a tui but cannot attribute to any vendor is not
+    /// [`category::SHELL`] — filing it under a neighbour would be a
+    /// confident wrong answer where an honest gap belongs (docs/SESSION.md
+    /// 认不出就不落词, the same rule the state words follow).
+    ///
+    /// Wire: appended at the tail with a serde default, so an older peer's
+    /// six-field frame still decodes (`a_frame_from_an_older_peer_...`).
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 #[cfg(test)]
@@ -170,6 +210,7 @@ mod tests {
             home: DeviceId([7; 32]),
             state: StateStamp { state: State::Busy, at: Millis(1) },
             unread: 3,
+            category: Some("claude".to_owned()),
         }
     }
 
@@ -201,31 +242,63 @@ mod tests {
     }
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_six() {
+    fn the_session_frame_is_a_fixed_order_array_of_seven() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x96 = msgpack fixarray of 6. Adding, removing, or reordering a
-        // field must land here first, consciously.
-        assert_eq!(bytes[0], 0x96);
-        let (id, kind, title, home, state, unread): (
+        // 0x97 = msgpack fixarray of 7. Adding, removing, or reordering a
+        // field must land here first, consciously. It was six until
+        // `category` was appended at the tail (never in the middle: a
+        // mid-frame optional desyncs the array on every older end).
+        assert_eq!(bytes[0], 0x97);
+        let (id, kind, title, home, state, unread, category): (
             SessionId,
             Kind,
             String,
             DeviceId,
             StateStamp,
             u64,
+            Option<String>,
         ) = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(
-            (id, kind, title, home, state, unread),
+            (id, kind, title, home, state, unread, category),
             (
                 session.id,
                 session.kind,
                 session.title,
                 session.home,
                 session.state,
-                session.unread
+                session.unread,
+                session.category
             )
         );
+    }
+
+    /// **Over the wire from an older peer**: a machine that predates
+    /// `category` sends six fields, and this end must read that row
+    /// rather than dropping the peer's whole list.
+    ///
+    /// The frame is built by hand as a six-tuple, and the first assertion
+    /// is that the bytes really are a six-array — without it the test
+    /// could be encoding today's struct and proving nothing (a test that
+    /// passes because both sides changed together is the failure mode
+    /// this whole discipline exists for).
+    #[test]
+    fn a_frame_from_an_older_peer_decodes_with_no_category() {
+        let old = (
+            SessionId("dev0/demo/1".to_owned()),
+            Kind("tui".to_owned()),
+            "build khor".to_owned(),
+            DeviceId([7; 32]),
+            StateStamp { state: State::Busy, at: Millis(1) },
+            3u64,
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x96, "the sample must be a six-field frame, or it proves nothing");
+
+        let row: Session = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(row.category, None, "an older peer said nothing about category");
+        assert_eq!(row.title, "build khor", "…and the rest of the row survived");
+        assert_eq!(row.unread, 3);
     }
 
     #[test]

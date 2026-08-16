@@ -128,9 +128,15 @@ impl Claude {
     }
 }
 
+/// This vendor's name, which is also the category its rows carry. Named
+/// once: the disk sweep reports it through [`Adaptor::vendor`] and the
+/// hook stamps it directly, and those two must be the same string or one
+/// session ends up in two groups.
+pub const VENDOR: &str = "claude";
+
 impl Adaptor for Claude {
     fn vendor(&self) -> &'static str {
-        "claude"
+        VENDOR
     }
 
     fn sweep(&self, procs: &Procs) -> Sweep {
@@ -237,7 +243,16 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
     let event = v["hook_event_name"].as_str().unwrap_or("");
 
     let id = match std::env::var("KHOR_SESSION") {
-        Ok(sid) if live.claims(&SessionId(sid.clone())) => SessionId(sid),
+        Ok(sid) if live.claims(&SessionId(sid.clone())) => {
+            let id = SessionId(sid);
+            // `khor run --tui -- claude` registered this row before any
+            // vendor could be named, so it has no category. This hook
+            // arriving *is* the moment somebody can name it: the hook is
+            // claude's own. Reading the command line instead would be a
+            // guess, and wrong for an alias or a wrapper.
+            live.learn_category(&id, Some(VENDOR))?;
+            id
+        }
         _ => {
             let raw = v["session_id"].as_str().unwrap_or("");
             if raw.is_empty() {
@@ -249,7 +264,7 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "claude".into());
             let id = id_for(raw);
-            live.ensure(&id, khor_core::kind::TUI, &title, None)?;
+            live.ensure(&id, khor_core::kind::TUI, &title, None, Some(VENDOR))?;
             id
         }
     };

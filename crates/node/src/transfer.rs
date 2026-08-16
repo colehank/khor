@@ -167,6 +167,8 @@ impl TransferKind {
                 home: device_id_from_hex(&m.from.id).unwrap_or(DeviceId([0; 32])),
                 state: StateStamp { state, at: Millis(at.max(0) as u64) },
                 unread,
+                // Same as a device chat: khor's own doing, no vendor.
+                category: Some(khor_core::category::KHOR.to_owned()),
             });
         }
         out

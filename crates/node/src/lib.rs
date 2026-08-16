@@ -628,13 +628,31 @@ impl Node {
 
     // ── the live kind's doors (临时 sessions and hooks) ─────
 
+    /// What khor can honestly say about a session it starts itself.
+    ///
+    /// A wrapped command is [`khor_core::category::SHELL`] — the user
+    /// started it, and that is the whole answer. **A tui gets nothing.**
+    /// Khor has the command line, and reading a vendor out of it would
+    /// be wrong for an alias, a wrapper or `npx` while looking right,
+    /// which is exactly the guess `Session::category` exists to prevent.
+    ///
+    /// So `khor run --tui -- claude` is an uncategorised row until the
+    /// vendor speaks for itself — its hook, or its own files on the next
+    /// sweep, both of which fill the gap in
+    /// (`LiveKind::learn_category`). Until then it sits in the category
+    /// view's "could not tell" group, which is the honest place for it
+    /// and not a neighbour's group.
+    fn category_of_started(kind: &str) -> Option<&'static str> {
+        (kind == khor_core::kind::SHELL).then_some(khor_core::category::SHELL)
+    }
+
     /// Opens a 临时 live session — it lives and dies with the process
     /// `run_ephemeral` runs. The persistent host (`open`) is a coming
     /// batch.
     pub fn open_ephemeral(&self, kind: &str, title: &str) -> Result<SessionId, String> {
         let leaf: String = link::fresh_hex()?.chars().take(8).collect();
         let id = SessionId(format!("{kind}/{leaf}"));
-        self.live.register(&id, kind, title, None)?;
+        self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
         Ok(id)
     }
 
@@ -656,7 +674,7 @@ impl Node {
     ) -> Result<SessionId, String> {
         let leaf: String = link::fresh_hex()?.chars().take(8).collect();
         let id = SessionId(format!("{kind}/{leaf}"));
-        self.live.register(&id, kind, title, None)?;
+        self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
         let dir = self
             .live
             .dir_of(&id)

@@ -61,7 +61,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         // wrapper uses: open, then bind the pid.
         use khor_node::live::LiveKind;
         let k = LiveKind::new(ra.clone(), a.device());
-        k.register(&id, "tui", "claude in proj", Some(agent.id())).unwrap();
+        k.register(&id, "tui", "claude in proj", Some(agent.id()), None).unwrap();
         k.report(&id, State::Blocked).unwrap();
     }
 
