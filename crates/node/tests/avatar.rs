@@ -153,6 +153,78 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
 /// A device that never reported a style is painted with the factory
 /// default — and **not** with the viewer's own choice, which would be
 /// the same "each screen paints its own way" bug in a smaller box.
+/// **The newcomer's own claim survives pairing, seen from the inviter.**
+///
+/// This is the direction that used to lose. The other test in this file
+/// watches the *inviter's* style travel outward, and that never broke:
+/// alpha's row is created by alpha alone. Pairing creates one row twice
+/// — the newcomer registers itself at open while the inviter creates a
+/// row for it answering `Request::Pair` — so it is **beta's** row, read
+/// on **alpha's** side, that the old nested shape blanked. `style` is
+/// the only field with exactly one legitimate writer, which is why it is
+/// the one that showed the loss; everything else had two writers saying
+/// the same thing and looked untouched.
+///
+/// It is asserted here without anything restating anything, because
+/// there is nothing left to restate: `Node::reassert_self` was retired
+/// with the flat table (`khor_sync::devices` module head). If this goes
+/// red, a row is being lost on creation again and the re-assertion is
+/// not coming back to hide it.
+#[tokio::test]
+async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
+    let ra = root("inv");
+    let rb = root("new");
+
+    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+
+    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let ticket = a.invite().unwrap();
+
+    // The newcomer picks its face before it has ever been seen, so the
+    // claim is already in its table when the inviter creates a row for
+    // the same id.
+    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    b.set_avatar_style(&a_reported_style()).unwrap();
+
+    timeout(Duration::from_secs(15), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+    timeout(Duration::from_secs(20), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+
+    let devices = a.devices().unwrap();
+    let beta = devices
+        .iter()
+        .find(|d| d.name == "beta")
+        .expect("the newcomer must be in the inviter's table at all");
+    assert_eq!(
+        beta.style.as_deref().and_then(AvatarStyle::from_json),
+        Some(a_reported_style()),
+        "the newcomer's own claim must survive the row being created twice"
+    );
+
+    // …and it reaches the paint, not just the field. Equal to the
+    // default-styled face would mean the report arrived and was ignored.
+    let seed = AvatarSeed::from_id_hex(&beta.id).unwrap();
+    let face = a.face_of(beta).expect("the inviter must be able to paint the newcomer");
+    assert_eq!(face, avatar(&seed, &a_reported_style()));
+    assert_ne!(
+        face,
+        avatar(&seed, &AvatarStyle::default()),
+        "the newcomer is being painted in the factory palette, not its own"
+    );
+
+    serve.abort();
+    for r in [&ra, &rb] {
+        let _ = std::fs::remove_dir_all(r);
+    }
+}
+
 #[tokio::test]
 async fn an_unreported_style_falls_back_to_the_factory_default() {
     let r = root("fallback");

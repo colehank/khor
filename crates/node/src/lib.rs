@@ -160,6 +160,20 @@ impl Node {
     /// and self-reported avatar style only — addresses belong to a live
     /// endpoint (`serve` writes them), and clobbering them with `[]` on
     /// every open would erase the hints other devices dial by.
+    ///
+    /// **There used to be a `reassert_self` that ran this again after
+    /// every devices merge, and it is gone.** It existed for one reason:
+    /// a device's row was a nested container, two replicas could create
+    /// the container for the same id concurrently (this machine at open,
+    /// the inviter while answering `Request::Pair`), and loro settled
+    /// that by keeping one container whole and discarding the other's
+    /// contents — so `style`, the one field only this machine may write,
+    /// came back blank on a freshly paired device with nothing reporting
+    /// a problem. The table is now a flat set of registers keyed
+    /// `<id>/<field>` (`khor_sync::devices` module head), no container is
+    /// created and none can lose, so re-stating after a merge has
+    /// nothing left to repair. It is also why this write, on its own,
+    /// is now enough.
     fn register_self(&self) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
         let keep = loaded
@@ -175,41 +189,6 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
-    }
-
-    /// Re-states this machine's own row after merging someone else's
-    /// copy of the table. **Must run after every devices merge.**
-    ///
-    /// The reason is a property of the document, not of avatars. A
-    /// device's row is a nested container, and two replicas can create
-    /// the container for the *same* id independently: this machine does
-    /// it for itself at [`Node::open_as`], and the inviter does it for
-    /// the newcomer while answering `Request::Pair`. Those two writes
-    /// are concurrent, and loro settles a container conflict by keeping
-    /// one container whole and **discarding the other's contents** —
-    /// not by merging them field by field the way it does once a single
-    /// container exists.
-    ///
-    /// It stayed invisible until a field had exactly one legitimate
-    /// writer. Both sides write the same `name`, and both wrote `addrs`
-    /// as `[]` at that moment, so whichever container won looked
-    /// identical. `style` is the first field only the machine itself
-    /// sets, so the loss finally showed: a freshly paired device was
-    /// painted in the factory palette instead of its own, on every
-    /// screen, with nothing anywhere reporting a problem.
-    ///
-    /// Re-asserting is idempotent (both writes below skip when nothing
-    /// changed) and self-healing: the re-stated row syncs out on the
-    /// next pump, so the far side's stale view corrects itself. What it
-    /// does **not** do is remove the hazard — a per-device nested
-    /// container still loses a concurrent creation, and any future field
-    /// with a single writer inherits the same failure mode. The
-    /// structural fix (one flat map keyed `<id>/<field>`, so a field is
-    /// its own register and there is no container to lose) changes the
-    /// document's shape and belongs to its own batch; it is on the
-    /// ledger.
-    fn reassert_self(&self) -> Result<(), String> {
-        self.register_self()
     }
 
     /// Where this machine's chosen avatar style is kept. A local
