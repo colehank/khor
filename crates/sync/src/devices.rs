@@ -14,6 +14,21 @@
 //! its face from what it reported about itself, not from local
 //! preference. Whole-value and not per-slot: half a palette from one
 //! writer and a variant from another is a face nobody chose.
+//!
+//! `pinned` is "this machine matters", and it rides the table for the
+//! reason `khor_sync::pins` states for sessions: a pin belongs to the
+//! thing pinned, so it has to be one fact the network agrees on rather
+//! than one answer per screen. **It is the opposite of `style` in who
+//! may write it** — anyone may pin anyone, while only a machine may
+//! describe its own face — and it lands in the same place for the
+//! opposite reason: the device table is already the one row per machine
+//! everybody replicates, and a second table keyed by device id would be
+//! the same key twice.
+//!
+//! What the two share is that [`DeviceDoc::upsert`] must not touch
+//! either. Pairing has every peer writing names and addresses for
+//! machines they just learned about; folding a pin into that write would
+//! have a routine update silently clear a pin set somewhere else.
 
 use std::path::{Path, PathBuf};
 
@@ -50,6 +65,9 @@ pub struct DeviceInfo {
     /// and does not know what an avatar is. Parsing happens at the one
     /// gate that knows, `khor_core::avatar::AvatarStyle::from_json`.
     pub style: Option<String>,
+    /// Whether someone pinned this machine to the top of the list.
+    /// Network-wide, not per viewer (see the module head).
+    pub pinned: bool,
 }
 
 pub struct DeviceDoc {
@@ -124,7 +142,25 @@ impl DeviceDoc {
         Ok(())
     }
 
-    /// Every device, sorted by name.
+    /// Pins or unpins a machine. Anyone may pin anyone — unlike
+    /// [`DeviceDoc::set_style`], this is not a claim only the subject can
+    /// make. Unchanged means unwritten, same reason as the others.
+    pub fn set_pinned(&self, id: &str, on: bool) -> Result<(), String> {
+        let entry = self.entry(id)?;
+        if bool_of(&entry, "pinned") == on {
+            return Ok(());
+        }
+        entry.insert("pinned", on).map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// Every device, pinned ones first, each group by name.
+    ///
+    /// **Sorted here, once.** Every face reads the table through this,
+    /// so a pin puts a machine at the top of the CLI and of the app
+    /// without either of them owning a comparison (docs/UX.md: the list
+    /// never re-derives a judgment the library already made).
     pub fn all(&self) -> Vec<DeviceInfo> {
         let map = self.map();
         let mut out = Vec::new();
@@ -139,9 +175,10 @@ impl DeviceDoc {
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
                 style: str_of(&entry, "style"),
+                pinned: bool_of(&entry, "pinned"),
             });
         }
-        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| a.name.cmp(&b.name)));
         out
     }
 
@@ -193,6 +230,15 @@ fn str_of(m: &LoroMap, k: &str) -> Option<String> {
         LoroValue::String(s) => Some(s.to_string()),
         _ => None,
     }
+}
+
+/// A flag that was never written reads false — "nobody pinned it" and
+/// "somebody unpinned it" are the same state to every reader.
+fn bool_of(m: &LoroMap, k: &str) -> bool {
+    matches!(
+        m.get(k).and_then(|v| v.into_value().ok()),
+        Some(LoroValue::Bool(true))
+    )
 }
 
 #[cfg(test)]
@@ -292,6 +338,67 @@ mod tests {
         let back = mine.get("aa").unwrap();
         assert_eq!(back.addrs, vec!["9.9.9.9:9".to_string()]);
         assert_eq!(back.style.as_deref(), Some("{\"shape\":\"square\"}"));
+    }
+
+    /// A pin travels, and it puts the machine at the head of the list on
+    /// the far side too — the ordering is the table's, so nobody has to
+    /// re-derive it.
+    #[test]
+    fn a_pinned_machine_travels_and_leads_the_list() {
+        let a = DeviceDoc::new(1).unwrap();
+        a.upsert("aa", "alpha", &[]).unwrap();
+        a.upsert("bb", "beta", &[]).unwrap();
+        a.upsert("cc", "gamma", &[]).unwrap();
+        assert_eq!(
+            a.all().into_iter().map(|d| d.name).collect::<Vec<_>>(),
+            vec!["alpha", "beta", "gamma"],
+            "control: by name while nothing is pinned"
+        );
+
+        a.set_pinned("cc", true).unwrap();
+        assert_eq!(
+            a.all().into_iter().map(|d| d.name).collect::<Vec<_>>(),
+            vec!["gamma", "alpha", "beta"],
+            "the pinned machine leads; the rest keep their order"
+        );
+
+        let b = DeviceDoc::new(2).unwrap();
+        b.merge(&a.snapshot().unwrap()).unwrap();
+        assert!(b.get("cc").unwrap().pinned, "the pin must reach the other device");
+        assert_eq!(b.all()[0].name, "gamma", "and lead there too");
+
+        // Taking it back travels as well, and the order returns.
+        a.set_pinned("cc", false).unwrap();
+        b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
+        assert!(!b.get("cc").unwrap().pinned);
+        assert_eq!(
+            b.all().into_iter().map(|d| d.name).collect::<Vec<_>>(),
+            vec!["alpha", "beta", "gamma"]
+        );
+    }
+
+    /// **A peer's routine upsert must not clear a pin.** Pairing has
+    /// every device writing names and addresses for machines it just
+    /// learned about; if `upsert` wrote `pinned` at all, one of those
+    /// writes would silently drop a pin someone set on another device —
+    /// and the symptom is a row quietly leaving the top of the list,
+    /// which reads as "I must have unpinned it".
+    #[test]
+    fn a_peers_upsert_leaves_a_pin_alone() {
+        let mine = DeviceDoc::new(1).unwrap();
+        mine.upsert("aa", "mac", &[]).unwrap();
+        mine.set_pinned("aa", true).unwrap();
+
+        let theirs = DeviceDoc::new(2).unwrap();
+        theirs.merge(&mine.snapshot().unwrap()).unwrap();
+        theirs.upsert("aa", "mac", &["9.9.9.9:9".into()]).unwrap();
+        assert!(
+            theirs.get("aa").unwrap().pinned,
+            "a peer's write must not drop the pin"
+        );
+
+        mine.merge(&theirs.changes_since(&mine.version()).unwrap()).unwrap();
+        assert!(mine.get("aa").unwrap().pinned, "…nor on the round trip home");
     }
 
     /// A device that never reported a style reads as `None`, not as an

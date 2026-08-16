@@ -41,7 +41,8 @@ fn run(args: &[String]) -> Result<(), String> {
             let n = node()?;
             for d in n.devices()? {
                 let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
-                println!("{}\t{}…{here}", d.name, &d.id[..16]);
+                let pin = if d.pinned { cli::PINNED_MARK } else { "" };
+                println!("{}\t{}…{here}{pin}", d.name, &d.id[..16]);
             }
             Ok(())
         }
@@ -57,8 +58,11 @@ fn run(args: &[String]) -> Result<(), String> {
                     }
                     _ => String::new(),
                 };
+                // The order already says which rows are pinned; the mark
+                // says *why* they lead, which "on top" alone cannot.
+                let pin = if v.pinned { format!("\t{}", cli::PINNED_MARK) } else { String::new() };
                 println!(
-                    "{}\t{}\t{}\t{}{}",
+                    "{}\t{}\t{}\t{}{pin}{}",
                     s.id.0,
                     state::word(s.state.state.key()),
                     cli::unread(s.unread),
@@ -247,6 +251,19 @@ fn run(args: &[String]) -> Result<(), String> {
                 return Err(USAGE.into());
             };
             node()?.seen(&SessionId(id.clone()))
+        }
+        // Two verbs rather than one toggle: a toggle typed twice is a
+        // no-op you cannot see, and scripts have no way to say "make
+        // sure this is pinned". Both call the one node function the
+        // app's button calls.
+        verb @ ("pin" | "unpin") => {
+            let on = verb == "pin";
+            let n = node()?;
+            match rest {
+                [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
+                [id] => n.pin_session(&SessionId(id.clone()), on),
+                _ => Err(USAGE.into()),
+            }
         }
         "close" => {
             let [id] = rest else {

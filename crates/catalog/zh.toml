@@ -29,12 +29,18 @@ usage = """
   attach <session>      接上一个持久 session(Ctrl-\\ 断开)
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
+  pin [-m] <session|机器>   置顶(-m 钉机器);钉在哪台都一样,全网同一份
+  unpin [-m] <session|机器> 取消置顶
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   sync                  立即和全网各同步一趟"""
 this-machine = "(本机)"
+# Said on a row that someone pinned. The list already puts pinned rows on
+# top, and "on top" alone is not readable: without a mark, a row leading
+# the list looks like the most recent one.
+pinned-mark = "(置顶)"
 name-separator = "、"
 unread = "未读 {0}"
 unreachable-for = "{0}没联系上"

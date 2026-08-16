@@ -261,6 +261,9 @@ impl Node {
                 } else if doc == "seen" {
                     let mut loaded = self.seen_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "pins" {
+                    let mut loaded = self.pins_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
                         .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
@@ -593,6 +596,13 @@ impl Node {
         {
             let mut loaded = self.seen_loaded()?;
             moved += self.rounds(&conn, "seen", &mut loaded).await?;
+        }
+        // Pins ride the same pump as the read watermark, and for the same
+        // reason: both say something about a session that belongs to the
+        // session rather than to the screen looking at it.
+        {
+            let mut loaded = self.pins_loaded()?;
+            moved += self.rounds(&conn, "pins", &mut loaded).await?;
         }
         for ch in self.known_channels()? {
             let dir = chat::channel_dir(self.root(), &ch)

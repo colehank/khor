@@ -30,6 +30,7 @@ use khor_catalog::msg;
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
+use khor_sync::pins::{pins_dir, PinDoc};
 use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
 
@@ -63,6 +64,11 @@ pub struct SessionView {
     pub session: Session,
     /// `(device name, report age in ms)` for reported rows.
     pub source: Option<(String, u64)>,
+    /// Pinned by someone, somewhere in the network (`khor_sync::pins`).
+    /// Read here rather than carried on the row: the pin document
+    /// replicates, so every device answers this from its own copy — a
+    /// reported row from an older machine is pinned all the same.
+    pub pinned: bool,
 }
 
 /// What subscribers receive. `watch()` is the one feed both faces
@@ -313,6 +319,10 @@ impl Node {
         load(&seen_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn pins_loaded(&self) -> Result<Loaded<PinDoc>, String> {
+        load(&pins_dir(&self.root), self.peer)
+    }
+
     /// Raises a session's seen watermark and persists it. The watermark
     /// travels the network (docs/NET.md): clear here, clear
     /// everywhere on the next sync.
@@ -359,11 +369,22 @@ impl Node {
     /// The list: one row per session, each answering the five questions.
     /// Local rows first; then rows other devices reported that this one
     /// cannot derive itself, freshest report winning a duplicate id.
+    ///
+    /// **Pinned rows lead, and the rest keep the order above.** Sorting
+    /// here is what lets every face stay a painter: the CLI prints this
+    /// order, the app renders it, and neither owns a comparison
+    /// (docs/UX.md — the list never re-derives a judgment the library
+    /// already made).
     pub fn sessions(&self) -> Result<Vec<SessionView>, String> {
+        let pins = self.pins_loaded()?;
         let mut views: Vec<SessionView> = Vec::new();
         for k in self.kinds() {
             for row in k.rows(self)? {
-                views.push(SessionView { session: row, source: None });
+                views.push(SessionView {
+                    pinned: pins.doc.pinned(&row.id.0),
+                    session: row,
+                    source: None,
+                });
             }
         }
         let mut have: std::collections::BTreeSet<String> =
@@ -372,10 +393,47 @@ impl Node {
         reported.sort_by_key(|(_, age, _)| *age);
         for (name, age, row) in reported {
             if have.insert(row.id.0.clone()) {
-                views.push(SessionView { session: row, source: Some((name, age)) });
+                views.push(SessionView {
+                    pinned: pins.doc.pinned(&row.id.0),
+                    session: row,
+                    source: Some((name, age)),
+                });
             }
         }
+        // Stable: within each group the order above survives untouched.
+        views.sort_by_key(|v| !v.pinned);
         Ok(views)
+    }
+
+    /// Pins or unpins a session, for everyone.
+    ///
+    /// The pin lands in a replicated document, not in this machine's
+    /// preferences (`khor_sync::pins` says why), so this is the one call
+    /// behind both the CLI verb and the app's button — CLI and GUI stay
+    /// equivalent because they are the same function (docs/KHOR.md).
+    ///
+    /// **Any id may be pinned, including one no row answers to today.**
+    /// Refusing unknown ids would mean a row that is merely offline
+    /// cannot be pinned from the device looking at it, and a session
+    /// that ends would make its own pin an error later. An id with no
+    /// row simply paints nothing.
+    pub fn pin_session(&self, id: &SessionId, on: bool) -> Result<(), String> {
+        let loaded = self.pins_loaded()?;
+        loaded.doc.set(&id.0, on)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        self.emit_row_of(id)
+    }
+
+    /// Pins or unpins a machine, for everyone. Named the way people
+    /// name machines; the pin itself is keyed by device id.
+    pub fn pin_device(&self, machine: &str, on: bool) -> Result<(), String> {
+        let (_, home) = self.resolve(machine)?;
+        let loaded = self.devices_loaded()?;
+        loaded.doc.set_pinned(&home.hex(), on)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(())
     }
 
     /// The rows only this device can derive — what `Request::Sessions`

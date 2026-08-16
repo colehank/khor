@@ -99,6 +99,65 @@ fn closing_a_chat_deletes_its_files_but_not_the_history() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// Pinning lifts a row to the top of the list the library hands out, and
+/// unpinning puts it back where it was — the order is the node's, so no
+/// face has to own a comparison.
+#[test]
+fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
+    let r = root("pin");
+    let n = Node::open(r.clone()).unwrap();
+    n.tell(n.name().to_owned().as_str(), "a note").unwrap();
+    let live = n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
+
+    let ids = |n: &Node| -> Vec<String> {
+        n.sessions().unwrap().into_iter().map(|v| v.session.id.0).collect()
+    };
+    let chat_first = ids(&n);
+    assert_eq!(chat_first.len(), 2);
+    assert!(chat_first[0].starts_with("chat/"), "control: {chat_first:?}");
+
+    n.pin_session(&live, true).unwrap();
+    assert_eq!(ids(&n)[0], live.0, "the pinned row must lead");
+    let pinned: Vec<bool> = n.sessions().unwrap().into_iter().map(|v| v.pinned).collect();
+    assert_eq!(pinned, vec![true, false], "and only it wears the flag");
+
+    n.pin_session(&live, false).unwrap();
+    assert_eq!(ids(&n), chat_first, "unpinning restores the original order exactly");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// A pin is a key, not a copy of the row. An id nothing answers to is
+/// pinnable and paints nothing: refusing it would mean a session that
+/// ends turns its own pin into an error, and an offline row could not be
+/// pinned from the device looking at it.
+#[test]
+fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
+    let r = root("pin-ghost");
+    let n = Node::open(r.clone()).unwrap();
+    n.tell(n.name().to_owned().as_str(), "a note").unwrap();
+
+    n.pin_session(&SessionId("tui/long-gone".into()), true).unwrap();
+    let rows = n.sessions().unwrap();
+    assert_eq!(rows.len(), 1, "a pin must not conjure a row: {:?}", rows.len());
+    assert!(!rows[0].pinned, "and it must not land on somebody else's row");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// Machine pins are keyed by device id but spoken in machine names, and
+/// an unknown name is refused the way every other verb refuses one.
+#[test]
+fn pinning_a_machine_that_is_not_in_the_table_is_refused_by_name() {
+    let r = root("pin-machine");
+    let n = Node::open(r.clone()).unwrap();
+    n.pin_device(n.name().to_owned().as_str(), true).unwrap();
+    assert!(n.devices().unwrap()[0].pinned, "this machine should be pinned now");
+
+    let e = n.pin_device("no-such-box", true).unwrap_err();
+    let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
+    assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
+    let _ = fs::remove_dir_all(&r);
+}
+
 #[test]
 fn telling_an_unknown_machine_is_refused_by_name() {
     let r = root("unknown");
