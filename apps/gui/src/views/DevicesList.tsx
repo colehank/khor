@@ -1,12 +1,13 @@
 import type { DeviceRow } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
 import { cli } from "@/gen/catalog";
 
 export function DevicesList({ rows }: { rows: DeviceRow[] }) {
   return (
     <div>
       {rows.map((d) => (
-        <div key={d.id} className="flex items-center gap-3 px-4 py-2">
-          <span aria-hidden="true" className="size-avatar flex-none rounded-full bg-muted" />
+        <div key={d.id} data-device={d.name} className="flex items-center gap-3 px-4 py-2">
+          <MachineAvatar face={d.face} className="size-avatar" />
           <span className="min-w-0 flex-1">
             <span className="block truncate">
               {d.name}

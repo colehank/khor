@@ -15,6 +15,7 @@ pub mod live;
 pub mod proto;
 pub mod transfer;
 
+pub use khor_core::avatar::{avatar, Avatar, AvatarSeed, AvatarStyle};
 pub use khor_core::{kind, Session, SessionId, State};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
@@ -144,9 +145,9 @@ impl Node {
     }
 
     /// The table must know this machine before anyone else can. Name
-    /// only — addresses belong to a live endpoint (`serve` writes them),
-    /// and clobbering them with `[]` on every open would erase the hints
-    /// other devices dial by.
+    /// and self-reported avatar style only — addresses belong to a live
+    /// endpoint (`serve` writes them), and clobbering them with `[]` on
+    /// every open would erase the hints other devices dial by.
     fn register_self(&self) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
         let keep = loaded
@@ -155,9 +156,110 @@ impl Node {
             .map(|d| d.addrs)
             .unwrap_or_default();
         loaded.doc.upsert(&self.device_str, &self.name, &keep)?;
+        // A machine's face is its own palette times its id: whoever is
+        // looking paints it from what it reported, so this has to be in
+        // the table before anyone syncs, not at first paint.
+        loaded.doc.set_style(&self.device_str, &self.avatar_style().to_json()?)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
+    }
+
+    /// Re-states this machine's own row after merging someone else's
+    /// copy of the table. **Must run after every devices merge.**
+    ///
+    /// The reason is a property of the document, not of avatars. A
+    /// device's row is a nested container, and two replicas can create
+    /// the container for the *same* id independently: this machine does
+    /// it for itself at [`Node::open_as`], and the inviter does it for
+    /// the newcomer while answering `Request::Pair`. Those two writes
+    /// are concurrent, and loro settles a container conflict by keeping
+    /// one container whole and **discarding the other's contents** —
+    /// not by merging them field by field the way it does once a single
+    /// container exists.
+    ///
+    /// It stayed invisible until a field had exactly one legitimate
+    /// writer. Both sides write the same `name`, and both wrote `addrs`
+    /// as `[]` at that moment, so whichever container won looked
+    /// identical. `style` is the first field only the machine itself
+    /// sets, so the loss finally showed: a freshly paired device was
+    /// painted in the factory palette instead of its own, on every
+    /// screen, with nothing anywhere reporting a problem.
+    ///
+    /// Re-asserting is idempotent (both writes below skip when nothing
+    /// changed) and self-healing: the re-stated row syncs out on the
+    /// next pump, so the far side's stale view corrects itself. What it
+    /// does **not** do is remove the hazard — a per-device nested
+    /// container still loses a concurrent creation, and any future field
+    /// with a single writer inherits the same failure mode. The
+    /// structural fix (one flat map keyed `<id>/<field>`, so a field is
+    /// its own register and there is no container to lose) changes the
+    /// document's shape and belongs to its own batch; it is on the
+    /// ledger.
+    fn reassert_self(&self) -> Result<(), String> {
+        self.register_self()
+    }
+
+    /// Where this machine's chosen avatar style is kept. A local
+    /// preference file, not a synced document: **the choice is made
+    /// here and only travels outward** (through the device table), so
+    /// no other device can restyle this one.
+    fn avatar_prefs_path(&self) -> PathBuf {
+        self.root.join(".khor").join("avatar.json")
+    }
+
+    /// This machine's avatar style, or the factory default.
+    ///
+    /// Unreadable and unparseable both fall back to the default rather
+    /// than erroring: the settings screen that writes this file is a
+    /// later batch, so today the common case *is* "no file", and a face
+    /// is style, never identity — falling back cannot make anyone
+    /// misread which machine they are looking at.
+    pub fn avatar_style(&self) -> AvatarStyle {
+        fs::read_to_string(self.avatar_prefs_path())
+            .ok()
+            .and_then(|t| AvatarStyle::from_json(&t))
+            .unwrap_or_default()
+    }
+
+    /// Chooses this machine's avatar style: persists it and reports it
+    /// to the network in the same move. Splitting those two is how a
+    /// machine ends up wearing one face locally and another everywhere
+    /// else.
+    pub fn set_avatar_style(&self, style: &AvatarStyle) -> Result<(), String> {
+        link::write_private(&self.avatar_prefs_path(), style.to_json()?.as_bytes())?;
+        let loaded = self.devices_loaded()?;
+        loaded.doc.set_style(&self.device_str, &style.to_json()?)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(())
+    }
+
+    /// A device's face: **its own reported palette, keyed by its id.**
+    ///
+    /// The two halves are deliberate. The seed is the device id, so a
+    /// rename keeps the face and a theme switch keeps it too. The style
+    /// is whatever *that* device reported, so a machine looks the same
+    /// to everyone — before this, a style stored per viewer meant the
+    /// same Mac was two different colors on two screens, **with neither
+    /// side wrong** and nothing to report.
+    ///
+    /// A device that reported nothing (an older version, or one seen
+    /// only through someone else's table) gets the factory default.
+    /// **Unparseable reports get the same treatment**, which is a
+    /// narrower rule than mandala's — there, a bad report fell back to
+    /// the *viewer's* preference so that a broken report never read as
+    /// "it just looks like that". Khor has no per-viewer machine style
+    /// to fall back to until the settings batch lands; when it does,
+    /// this is the line to revisit.
+    pub fn face_of(&self, device: &DeviceInfo) -> Option<Avatar> {
+        let seed = AvatarSeed::from_id_hex(&device.id)?;
+        let style = device
+            .style
+            .as_deref()
+            .and_then(AvatarStyle::from_json)
+            .unwrap_or_default();
+        Some(avatar(&seed, &style))
     }
 
     /// `KHOR_HOME` if set, else the home directory. The override exists

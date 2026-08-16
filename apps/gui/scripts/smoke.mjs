@@ -6,10 +6,14 @@
 //      one backend);
 //   3. clicking the row is the seen semantics: the unread badge clears
 //      AND alpha's own list turns idle — the loop closes cross-device;
-//   4. the back button exists only on the narrow face (after proving
+//   4. faces: rows paint a real derived SVG (not a placeholder), one
+//      machine is the same picture in two places on one screen, two
+//      machines are two pictures, and flipping the theme moves nothing
+//      inside the SVG;
+//   5. the back button exists only on the narrow face (after proving
 //      the detail header renders at all — negative assertions must
 //      first prove the probe is alive);
-//   5. zero pageerror throughout.
+//   6. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
@@ -126,8 +130,106 @@ try {
     return Boolean(line && line.includes(idleGuiWord));
   });
 
-  // 4) faces: wide has a detail header but no back; narrow, after
-  //    entering a detail, has the back button.
+  // 4) faces. Everything below is still on the wide viewport.
+  //
+  //    a. every session row paints a real derived face. Stated
+  //    positively on purpose: the blank branch renders no <svg> at all,
+  //    so "there is an svg in every row" *is* "no row fell back to a
+  //    placeholder", with no negative selector to spell wrong.
+  const rowCount = await page.locator("[data-word]").count();
+  const facedRows = await page.locator("[data-word] [data-face] svg").count();
+  if (rowCount === 0 || facedRows !== rowCount) {
+    throw new Error(`rows with a painted face: ${facedRows} of ${rowCount}`);
+  }
+  //    …and what it painted is the derivation, not an empty canvas: the
+  //    canvas side is one of the two the core ships, and the ground rect
+  //    carries a hex color from the palette.
+  const rowFace = page.locator("[data-word] [data-face] svg").first();
+  const viewBox = await rowFace.getAttribute("viewBox");
+  if (viewBox !== "0 0 80 80" && viewBox !== "0 0 36 36") {
+    throw new Error(`a face's canvas is neither 80 nor 36: ${viewBox}`);
+  }
+  if (!/<rect[^>]*fill="#[0-9a-f]{6}"/.test(await rowFace.innerHTML())) {
+    throw new Error("a face has no ground rect in a palette color");
+  }
+
+  //    b. one machine, two places on one screen, one picture. The blur
+  //    filter's id is per-instance (a document-uniqueness device, not
+  //    part of the face), so it is normalized away before comparing.
+  const faceOf = async (locator) =>
+    (await locator.innerHTML()).replace(/av-blur-[^"')\s]+/g, "BLUR");
+  await page.locator('[data-rail-item][data-landing="devices"]').click();
+  await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) >= 2);
+  const railFace = page.locator('nav > [data-face]');
+  const betaRow = page.locator('[data-device="beta"] [data-face]');
+  if ((await railFace.count()) !== 1) throw new Error("probe dead: no face at the foot of the rail");
+  if ((await betaRow.count()) !== 1) throw new Error("probe dead: no face on beta's own row");
+  if ((await faceOf(railFace)) !== (await faceOf(betaRow))) {
+    throw new Error("this machine has two different faces on one screen");
+  }
+
+  //    c. the control: two machines are not one picture. Without this,
+  //    a painter that drew the same thing for everyone would pass (b).
+  const alphaRow = page.locator('[data-device="alpha"] [data-face]');
+  if ((await alphaRow.count()) !== 1) throw new Error("probe dead: no face on alpha's row");
+  if ((await faceOf(alphaRow)) === (await faceOf(betaRow))) {
+    throw new Error("two machines were painted the same face");
+  }
+
+  //    d. a theme flip moves nothing inside the SVG.
+  //
+  //    Two measurements, because they fail differently. The markup
+  //    catches a painter that emitted different numbers or colors. The
+  //    *computed* paint catches the subtler one: markup that is
+  //    byte-identical because it says `var(--something)`, which then
+  //    resolves per theme — a face that reads the theme without any
+  //    string ever changing.
+  //
+  //    The probe has to be proven alive first, or "nothing changed" is
+  //    also exactly what a theme switch that never took effect looks
+  //    like. So two things that *should* follow the theme are measured
+  //    in the same breath: the page's ground, and the face's hairline
+  //    edge — the one documented theme-aware part, which lives outside
+  //    the SVG.
+  const themeProbe = async () =>
+    page.evaluate(() => {
+      const face = document.querySelector('[data-device="beta"] [data-face]');
+      const edge = face && face.querySelector("span");
+      const svg = face && face.querySelector("svg");
+      return {
+        body: getComputedStyle(document.body).backgroundColor,
+        edge: edge && getComputedStyle(edge).borderTopColor,
+        // Every painted element's resolved paint, in document order
+        paint:
+          svg &&
+          [...svg.querySelectorAll("*")]
+            .map((el) => {
+              const s = getComputedStyle(el);
+              return [el.tagName, s.fill, s.stroke, s.mixBlendMode, s.filter].join("|");
+            })
+            .join("\n"),
+      };
+    });
+  await page.emulateMedia({ colorScheme: "light" });
+  const lightFace = await faceOf(betaRow);
+  const light = await themeProbe();
+  await page.emulateMedia({ colorScheme: "dark" });
+  const darkFace = await faceOf(betaRow);
+  const dark = await themeProbe();
+  if (light.body === dark.body) throw new Error("probe dead: the theme flip changed no ground color");
+  if (!light.edge || light.edge === dark.edge) {
+    throw new Error(`probe dead: the avatar edge did not follow the theme (${light.edge} / ${dark.edge})`);
+  }
+  if (!light.paint) throw new Error("probe dead: read no computed paint off the face");
+  if (lightFace !== darkFace) throw new Error("the face's markup changed when the theme did");
+  if (light.paint !== dark.paint) throw new Error("the face's computed paint changed when the theme did");
+  await page.emulateMedia({ colorScheme: null });
+  await page.locator('[data-rail-item][data-landing="sessions"]').click();
+  await until("back on the session list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
+
+  // 5) faces of the shell: wide has a detail header but no back;
+  //    narrow, after entering a detail, has the back button.
+  await row.click();
   if ((await page.locator("[data-detail-header]").count()) !== 1) throw new Error("probe dead: no detail header");
   if ((await page.locator("[data-back]").count()) !== 0) throw new Error("back button on the wide face");
   // Shrinking mid-detail keeps the detail up (Telegram's behavior) —
@@ -138,11 +240,15 @@ try {
   await until("back to the narrow list", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
 
-  // 5) the page never threw.
+  // 6) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {
     await page.setViewportSize({ width: 1080, height: 720 });
+    // The rail clicks above leave the pointer on a glyph, and the rail
+    // labels appear on hover — park it off the rail so the shot shows
+    // the resting screen rather than one mid-hover.
+    await page.mouse.move(900, 600);
     await new Promise((r) => setTimeout(r, 600));
     await page.screenshot({ path: process.env.SMOKE_SHOT });
   }

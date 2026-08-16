@@ -250,7 +250,14 @@ impl Node {
                 }
                 let reply = if doc == "devices" {
                     let mut loaded = self.devices_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                    let reply = wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?;
+                    // What just merged may hold the caller's own
+                    // container for our row (Node::reassert_self). The
+                    // re-statement rides the next pump, not this reply —
+                    // the caller asked for what we had when it asked.
+                    drop(loaded);
+                    self.reassert_self()?;
+                    reply
                 } else if doc == "seen" {
                     let mut loaded = self.seen_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
@@ -517,6 +524,9 @@ impl Node {
                 loaded.doc.merge(&bytes)?;
                 let mut store = loaded.store;
                 store.flush(&loaded.doc)?;
+                // The inviter created our row from scratch too; one of
+                // the two containers lost its contents (Node::reassert_self)
+                self.reassert_self()?;
                 Ok(name)
             }
             Response::Refused { why } => Err(why),
@@ -577,6 +587,9 @@ impl Node {
             let mut loaded = self.devices_loaded()?;
             moved += self.rounds(&conn, "devices", &mut loaded).await?;
         }
+        // What we just merged may hold the far side's own container for
+        // our row (Node::reassert_self)
+        self.reassert_self()?;
         {
             let mut loaded = self.seen_loaded()?;
             moved += self.rounds(&conn, "seen", &mut loaded).await?;

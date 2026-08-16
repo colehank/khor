@@ -1,4 +1,5 @@
 import type { SessionRow } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { ago, word } from "@/words";
@@ -30,7 +31,11 @@ export function SessionsList({
             r.id === selected && "bg-accent hover:bg-accent",
           )}
         >
-          <span aria-hidden="true" className="size-avatar flex-none rounded-full bg-muted" />
+          {/* The machine's face, not the agent's mark: on one screen
+              most rows run the same agent, so the agent glyph is the
+              thing that tells rows apart least. A face is one per
+              machine and is what the eye picks up scanning. */}
+          <MachineAvatar face={r.face} className="size-avatar" />
           <span className="min-w-0 flex-1">
             <span className="block truncate">{r.title || r.id}</span>
             <span className="flex items-center gap-2 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">

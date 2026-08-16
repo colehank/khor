@@ -6,6 +6,14 @@ edition.workspace = true
 [dependencies]
 serde.workspace = true
 serde_bytes.workspace = true
+# A self-reported avatar style crosses the network as JSON in the device
+# table, and is parsed back through one gate (avatar::Palette).
+serde_json.workspace = true
+# The avatar types are the frontend's contract by design — Rust decides
+# what a machine looks like, each end only decides what to paint it
+# with. Generating the TS from these structs is the point; a hand-copied
+# frontend type is the drift bug at the type layer.
+ts-rs = "10"
 
 [dev-dependencies]
 rmp-serde.workspace = true

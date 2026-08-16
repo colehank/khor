@@ -8,9 +8,21 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod avatar;
+
 /// A device's identity: its public key (docs/NET.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub [u8; 32]);
+
+impl DeviceId {
+    /// The id as the device table spells it: the public key, lowercase
+    /// hex. The table is keyed by this, so anything holding a `DeviceId`
+    /// and wanting the table's entry goes through here rather than
+    /// spelling the conversion again.
+    pub fn hex(&self) -> String {
+        self.0.iter().map(|b| format!("{b:02x}")).collect()
+    }
+}
 
 /// Network-unique, stable across reconnects. Minting is kind-specific;
 /// everything outside the kind treats it as opaque.

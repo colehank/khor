@@ -6,9 +6,10 @@
 //! No judgment lives here: words, ordering, unread all come from the
 //! node. The GUI must not re-derive any of it (docs/UX.md 状态呈现).
 
+use std::collections::HashMap;
 use std::path::Path;
 
-use khor_node::{Node, SessionId};
+use khor_node::{Avatar, Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -28,6 +29,12 @@ pub struct SessionRow {
     pub unread: u64,
     /// Present on reported rows: the offline axis, never a seventh word.
     pub source: Option<SourceTag>,
+    /// The face of the machine this session lives on — derived here,
+    /// never in the frontend (`khor_core::avatar`). `None` only when the
+    /// home device is not in this table at all, and then the row draws a
+    /// blank, **not an invented face**: a made-up face gets believed,
+    /// and it is not that machine's.
+    pub face: Option<Avatar>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -42,6 +49,9 @@ pub struct DeviceRow {
     pub id: String,
     pub name: String,
     pub me: bool,
+    /// This machine's face, in **its own** reported palette. See
+    /// `khor_node::Node::face_of`.
+    pub face: Option<Avatar>,
 }
 
 fn open(root: &Path) -> Result<Node, String> {
@@ -49,10 +59,14 @@ fn open(root: &Path) -> Result<Node, String> {
 }
 
 pub fn list_sessions(root: &Path) -> Result<Vec<SessionRow>, String> {
-    let rows = open(root)?.sessions()?;
-    Ok(rows
+    let n = open(root)?;
+    // Derived once per list, not once per row: a face is a pure function
+    // of (id, reported style), and one machine owns many rows.
+    let faces = faces_by_id(&n)?;
+    Ok(n.sessions()?
         .into_iter()
         .map(|v| SessionRow {
+            face: faces.get(&v.session.home.hex()).cloned(),
             id: v.session.id.0,
             kind: v.session.kind.0,
             title: v.session.title,
@@ -69,7 +83,22 @@ pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
     let me = n.device_str().to_owned();
     Ok(n.devices()?
         .into_iter()
-        .map(|d| DeviceRow { me: d.id == me, id: d.id, name: d.name })
+        .map(|d| DeviceRow {
+            me: d.id == me,
+            face: n.face_of(&d),
+            id: d.id,
+            name: d.name,
+        })
+        .collect())
+}
+
+/// Every known machine's face, keyed the way the device table keys
+/// machines. The judgment behind each one — its own reported palette,
+/// seeded by its id — belongs to the node; this only indexes them.
+fn faces_by_id(n: &Node) -> Result<HashMap<String, Avatar>, String> {
+    Ok(n.devices()?
+        .into_iter()
+        .filter_map(|d| n.face_of(&d).map(|f| (d.id, f)))
         .collect())
 }
 

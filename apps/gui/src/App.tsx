@@ -7,6 +7,7 @@ import {
   type DeviceRow,
   type SessionRow,
 } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
 import { IconDevices, IconMore, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -22,6 +23,7 @@ const POLL_MS = 2000;
 
 function RailItem({
   label,
+  tab,
   on,
   narrow,
   badge,
@@ -29,6 +31,8 @@ function RailItem({
   children,
 }: {
   label: string;
+  /** Which landing this glyph opens, when it opens one. */
+  tab?: Landing;
   on?: boolean;
   narrow: boolean;
   badge?: number;
@@ -40,6 +44,7 @@ function RailItem({
       variant="ghost"
       aria-label={label}
       data-rail-item
+      data-landing={tab}
       data-on={on}
       onClick={onClick}
       className={cn(
@@ -120,6 +125,7 @@ export default function App() {
     >
       <RailItem
         label={gui.sessions_tab}
+        tab="sessions"
         on={landing === "sessions"}
         narrow={narrow}
         badge={blockedOrUnread}
@@ -132,6 +138,7 @@ export default function App() {
       </RailItem>
       <RailItem
         label={gui.devices_tab}
+        tab="devices"
         on={landing === "devices"}
         narrow={narrow}
         onClick={() => {
@@ -145,7 +152,10 @@ export default function App() {
       <RailItem label={gui.settings} narrow={narrow}>
         <IconMore />
       </RailItem>
-      {!narrow && <span aria-hidden="true" className="size-avatar flex-none rounded-full bg-muted" />}
+      {/* This machine, at the foot of the rail. Same derivation as its
+          row in the device list, so the two are the same picture — that
+          is the whole promise, and it is checkable on one screen. */}
+      {!narrow && <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-avatar" />}
     </nav>
   );
 

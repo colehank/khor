@@ -2,10 +2,18 @@
 //! One CRDT map, replicated everywhere — joining any one device reveals
 //! the whole network.
 //!
-//! Shape: `devices : Map<id_hex, Map{name, addrs}>`. Per-key LWW, so a
-//! rename on one device and an address update on another both survive.
-//! `addrs` is one JSON-array field (whole-list LWW): addresses are
-//! dialing hints, freshest writer wins is right for them.
+//! Shape: `devices : Map<id_hex, Map{name, addrs, style}>`. Per-key
+//! LWW, so a rename on one device and an address update on another both
+//! survive. `addrs` is one JSON-array field (whole-list LWW): addresses
+//! are dialing hints, freshest writer wins is right for them.
+//!
+//! `style` is the device's **self-reported** avatar style, one JSON
+//! object (whole-value LWW). It rides the table rather than a wire frame
+//! because of what it has to achieve: **a machine looks the same to
+//! everyone, painted in its own palette** — whoever is looking derives
+//! its face from what it reported about itself, not from local
+//! preference. Whole-value and not per-slot: half a palette from one
+//! writer and a variant from another is a face nobody chose.
 
 use std::path::{Path, PathBuf};
 
@@ -33,6 +41,15 @@ pub struct DeviceInfo {
     /// Last known dialing hints (`ip:port` strings). Best effort;
     /// discovery is the real path finder.
     pub addrs: Vec<String>,
+    /// The avatar style this device reported about itself, as JSON.
+    /// `None` means it never reported one (an older version, or a
+    /// device seen only through someone else's table) — whoever paints
+    /// it falls back to the factory default.
+    ///
+    /// Kept as an opaque string here: this crate replicates documents
+    /// and does not know what an avatar is. Parsing happens at the one
+    /// gate that knows, `khor_core::avatar::AvatarStyle::from_json`.
+    pub style: Option<String>,
 }
 
 pub struct DeviceDoc {
@@ -48,20 +65,31 @@ impl DeviceDoc {
         self.inner.get_map(DEVICES)
     }
 
-    /// Inserts or updates a device. Writes only fields that actually
-    /// changed — a no-change upsert must not grow the version vector on
-    /// every startup.
-    pub fn upsert(&self, id: &str, name: &str, addrs: &[String]) -> Result<(), String> {
-        let addrs_json = serde_json::to_string(addrs).map_err(|e| e.to_string())?;
+    /// The entry for `id`, created empty if absent.
+    fn entry(&self, id: &str) -> Result<LoroMap, String> {
         let map = self.map();
-        let entry = match map.get(id).and_then(as_map) {
-            Some(m) => m,
+        match map.get(id).and_then(as_map) {
+            Some(m) => Ok(m),
             // insert_container returns the attached handle; writing to
             // the pre-attach one goes nowhere, silently.
             None => map
                 .insert_container(id, LoroMap::new())
-                .map_err(|e| e.to_string())?,
-        };
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    /// Inserts or updates a device's name and dialing hints. Writes only
+    /// fields that actually changed — a no-change upsert must not grow
+    /// the version vector on every startup.
+    ///
+    /// **Deliberately does not touch `style`.** Everyone writes this for
+    /// their peers (pairing writes the far side's name and addresses),
+    /// while `style` is a claim only the device itself may make; folding
+    /// it in here would have every peer overwrite what a machine said
+    /// about its own face with nothing.
+    pub fn upsert(&self, id: &str, name: &str, addrs: &[String]) -> Result<(), String> {
+        let addrs_json = serde_json::to_string(addrs).map_err(|e| e.to_string())?;
+        let entry = self.entry(id)?;
         let mut dirty = false;
         if str_of(&entry, "name").as_deref() != Some(name) {
             entry.insert("name", name).map_err(|e| e.to_string())?;
@@ -79,6 +107,23 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// Records the avatar style a device reports about itself. Callers
+    /// pass their **own** id; a claim about someone else's face is not
+    /// theirs to make.
+    ///
+    /// Unchanged means unwritten, same as [`DeviceDoc::upsert`]: this
+    /// runs on every open, and a rewrite each time inflates the version
+    /// vector for nothing.
+    pub fn set_style(&self, id: &str, style_json: &str) -> Result<(), String> {
+        let entry = self.entry(id)?;
+        if str_of(&entry, "style").as_deref() == Some(style_json) {
+            return Ok(());
+        }
+        entry.insert("style", style_json).map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
     /// Every device, sorted by name.
     pub fn all(&self) -> Vec<DeviceInfo> {
         let map = self.map();
@@ -93,6 +138,7 @@ impl DeviceDoc {
                 addrs: str_of(&entry, "addrs")
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
+                style: str_of(&entry, "style"),
             });
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -211,8 +257,106 @@ mod tests {
     fn an_identical_upsert_writes_nothing() {
         let d = DeviceDoc::new(1).unwrap();
         d.upsert("aa", "mac", &["1.1.1.1:1".into()]).unwrap();
+        d.set_style("aa", "{\"variant\":\"marble\"}").unwrap();
         let before = d.version();
         d.upsert("aa", "mac", &["1.1.1.1:1".into()]).unwrap();
+        d.set_style("aa", "{\"variant\":\"marble\"}").unwrap();
         assert_eq!(d.version(), before, "no change must mean no new ops");
+    }
+
+    /// **A peer's upsert must not erase what a machine said about its
+    /// own face.** Everyone writes names and addresses for their peers
+    /// (pairing does), so if `upsert` touched `style` at all, every
+    /// peer's routine write would blank the one field only the machine
+    /// itself may set — and the symptom is silent: it would simply be
+    /// painted in the default palette, which looks like "that's how it
+    /// looks", not like data loss.
+    #[test]
+    fn a_peers_upsert_leaves_a_self_reported_style_alone() {
+        let mine = DeviceDoc::new(1).unwrap();
+        mine.upsert("aa", "mac", &[]).unwrap();
+        mine.set_style("aa", "{\"shape\":\"square\"}").unwrap();
+
+        // Someone else learns about "aa" and writes what they know
+        let theirs = DeviceDoc::new(2).unwrap();
+        theirs.merge(&mine.snapshot().unwrap()).unwrap();
+        theirs.upsert("aa", "mac", &["9.9.9.9:9".into()]).unwrap();
+        assert_eq!(
+            theirs.get("aa").unwrap().style.as_deref(),
+            Some("{\"shape\":\"square\"}"),
+            "a peer's write must not drop the reported style"
+        );
+
+        // …and it survives the round trip home
+        mine.merge(&theirs.changes_since(&mine.version()).unwrap()).unwrap();
+        let back = mine.get("aa").unwrap();
+        assert_eq!(back.addrs, vec!["9.9.9.9:9".to_string()]);
+        assert_eq!(back.style.as_deref(), Some("{\"shape\":\"square\"}"));
+    }
+
+    /// A device that never reported a style reads as `None`, not as an
+    /// empty string: "hasn't said" and "said nothing" have to stay
+    /// distinguishable, because only the first may fall back silently.
+    #[test]
+    fn a_device_that_never_reported_a_style_has_none() {
+        let d = DeviceDoc::new(1).unwrap();
+        d.upsert("aa", "mac", &[]).unwrap();
+        assert_eq!(d.get("aa").unwrap().style, None);
+    }
+
+    /// **Two replicas creating the same device's entry independently is
+    /// lossy, and this pins that it is** — the per-key LWW promise at
+    /// the top of this file starts one step later than one would think.
+    ///
+    /// Once an entry exists, concurrent writes to different fields both
+    /// survive (`a_concurrent_rename_and_addr_update_both_survive`).
+    /// Creating it is different: the entry is a nested container, two
+    /// replicas creating one for the same id produce two containers,
+    /// and the merge keeps one **whole** and discards the other's
+    /// contents. That is exactly what pairing does — a device registers
+    /// itself at open, and the inviter creates its row while answering
+    /// the pairing request.
+    ///
+    /// It hid for as long as every field had more than one writer
+    /// agreeing: both sides write the same `name`, and both wrote
+    /// `addrs` as `[]` at that moment, so the losing container was
+    /// indistinguishable. `style` has exactly one legitimate writer, so
+    /// it is where the loss finally became visible.
+    ///
+    /// The recovery is `khor_node::Node::reassert_self` — restate your
+    /// own row after any merge — and the second half of this test is
+    /// what that relies on. **This asserts today's behavior, not the
+    /// behavior we want**: whoever makes the entry a flat set of
+    /// registers (`<id>/<field>`) instead of a container should expect
+    /// this test to change, and should read it first.
+    #[test]
+    fn two_replicas_creating_one_entry_keep_only_one_of_them() {
+        let beta = DeviceDoc::new(1).unwrap();
+        beta.upsert("bb", "beta", &[]).unwrap();
+        beta.set_style("bb", "{\"mine\":true}").unwrap();
+
+        // The inviter, independently, creates a row for the newcomer
+        let alpha = DeviceDoc::new(2).unwrap();
+        alpha.upsert("aa", "alpha", &[]).unwrap();
+        alpha.upsert("bb", "beta", &[]).unwrap();
+
+        beta.merge(&alpha.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            beta.get("bb").unwrap().style,
+            None,
+            "if this survives, container creation stopped being lossy — read the \
+             comment above before deleting the re-assertion that works around it"
+        );
+        // The fields both sides wrote look untouched, which is why this
+        // went unnoticed for as long as every field had two writers
+        assert_eq!(beta.get("bb").unwrap().name, "beta");
+
+        // Restating the claim recovers it, and it is what the node does
+        // after every devices merge
+        beta.set_style("bb", "{\"mine\":true}").unwrap();
+        assert_eq!(beta.get("bb").unwrap().style.as_deref(), Some("{\"mine\":true}"));
+        // …and it reaches the other side from there
+        alpha.merge(&beta.changes_since(&alpha.version()).unwrap()).unwrap();
+        assert_eq!(alpha.get("bb").unwrap().style.as_deref(), Some("{\"mine\":true}"));
     }
 }

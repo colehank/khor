@@ -49,6 +49,19 @@
   --badge: #b23a2e;
   --badge-foreground: #ffffff;
 
+  /* ── the hairline around a face ───────────────────────
+   * The avatar palettes are tuned for dark editors, so they contrast
+   * only 1.12–1.56 against a light card: unedged, half the faces
+   * dissolve into the paper and the row reads as failed to paint. Not
+   * `--border` (alpha .08/.10): measured as "the edge against the card,
+   * worst slot", that gives 1.36 light / 2.21 dark, still no boundary.
+   * At .22 the same measurement gives 1.78 light / 3.00 dark. Worst
+   * cases are liquid's `#f2f6cb` on a white card and its `#7d2540` on
+   * the dark one — **both directions need covering**, since these
+   * palettes hold near-white papers and inks that nearly touch the
+   * card. Taking the theme's own ink handles both at once. */
+  --avatar-edge: rgba(26, 26, 20, 0.22);
+
   /* ── control heights: three, no fourth ────────────── */
   --ctl-sm: 24px;
   --ctl-md: 30px;
@@ -104,6 +117,8 @@
 
     --badge: #d4756b;
     --badge-foreground: #1a1a14;
+
+    --avatar-edge: rgba(238, 238, 231, 0.22);
   }
 }
 
@@ -136,6 +151,7 @@
   --color-state-idle: var(--state-idle);
   --color-badge: var(--badge);
   --color-badge-foreground: var(--badge-foreground);
+  --color-avatar-edge: var(--avatar-edge);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
