@@ -297,6 +297,18 @@ no-matches = "没有匹配的"
 # state tells you what is, not what pressing it does.
 pin = "置顶"
 unpin = "取消置顶"
+# …and what the button says when the write did not take. Two words for
+# the same reason the two above are two: the one shown is about the
+# action that was attempted.
+#
+# This exists because a failed pin used to look exactly like a missed
+# click — the row simply did not move — and docs/UX.md forbids 做了但
+# 没变化 and 失败 wearing one face. It is said **on the button that was
+# pressed**, not in a notification: there is no place in this app that
+# collects messages, and inventing one to carry a rare disk error would
+# be a whole surface built for the least common thing that happens here.
+pin-failed = "钉不上"
+unpin-failed = "取消不了"
 tell-machine = "给机器留言"
 pick-a-machine = "选一台机器"
 message-text = "留言"

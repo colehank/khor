@@ -59,7 +59,19 @@
 //  18. the pin is painted and works on the narrow face with the
 //      pointer parked away — a hover-only row action is missing on a
 //      phone and looks fine in every mouse-driven screenshot;
-//  19. zero pageerror throughout.
+//  19. search reaches the machine a row came from, asserted on a row
+//      whose own id and title provably do not carry that name, so the
+//      source is the only thing it can have matched;
+//  20. a ticked filter outlives a reload and is remembered per pane —
+//      the preference rule the arrangement already followed, and the
+//      one place that used to break it;
+//  21. a pin that does not take says so on the button that was pressed:
+//      a real failure through the real path (the backend is taken away,
+//      the button is clicked the way a person clicks it), the face
+//      provably absent on the successful press just before, the colour
+//      measured against a probe wearing the token, and exactly one
+//      button wearing it;
+//  22. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -977,7 +989,7 @@ try {
     throw new Error("the mark is in the narrow rail");
   }
 
-  // 17) the pin is reachable on the narrow face — the one where there is
+  // 18) the pin is reachable on the narrow face — the one where there is
   //     no pointer to reveal it with. A hover-only row action is simply
   //     absent on a phone, and it looks identical to a working one in
   //     every screenshot taken with a mouse present.
@@ -1014,7 +1026,157 @@ try {
   await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
   await until("the narrow row to go back", 10_000, async () => (await narrowIds())[0] !== narrowTarget);
 
-  // 19) the page never threw.
+  // 19) search reaches the machine a row came from.
+  //
+  //     The premise has to be established or this measures nothing: find
+  //     a row that **is** from somewhere else and whose own title and id
+  //     do not contain that machine's name. Then searching the name has
+  //     to keep it, and the only string it can be matching on is the
+  //     source. Beta also holds a `chat/alpha` row — titled and keyed by
+  //     that same name — which is exactly why the assertion is about one
+  //     identified row rather than about how many rows survive.
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await openLanding("sessions");
+  await until("rows back on the wide face", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
+  const reported = await page.locator("[data-row][data-source]").evaluateAll((els) =>
+    els.map((e) => ({ id: e.dataset.row, from: e.dataset.source, title: e.dataset.title ?? "" })),
+  );
+  if (!reported.length) throw new Error("probe dead: no row carries a source");
+  // Title and id only — deliberately **not** the row's rendered text,
+  // which paints "from <machine>" and therefore always contains the
+  // name. Checking that would make this probe unsatisfiable, and the
+  // failure would read like the feature was broken.
+  const bySource = reported.find(
+    (r) =>
+      !r.id.toLowerCase().includes(r.from.toLowerCase()) &&
+      !r.title.toLowerCase().includes(r.from.toLowerCase()),
+  );
+  if (!bySource) {
+    throw new Error(
+      `probe dead: every reported row already names its machine in its own id or title — ` +
+        `matching on the source cannot be told apart: ${JSON.stringify(reported)}`,
+    );
+  }
+  await sessionSearch.fill(bySource.from);
+  await until(`the row from ${bySource.from} to survive its machine's name`, 5_000, async () =>
+    (await page.locator(`[data-row="${bySource.id}"]`).count()) === 1,
+  );
+  // The control: a term nothing answers to drops it, so the line above
+  // is the search working rather than the search being off.
+  await sessionSearch.fill("no-machine-answers-to-this");
+  await until("that row gone for a term nothing matches", 5_000, async () =>
+    (await page.locator(`[data-row="${bySource.id}"]`).count()) === 0,
+  );
+  await sessionSearch.fill("");
+  await until("every session back", 5_000, async () => (await page.locator("[data-row]").count()) > 1);
+
+  // 20) a ticked filter outlives a reload, and is kept per pane.
+  //
+  //     The same rule the arrangement follows — a preference set once
+  //     stays set — and it used to be the one place that broke it. The
+  //     control is the state before: the tick has to be provably absent,
+  //     or "still ticked after a reload" could just be a tick that was
+  //     never anything else.
+  const filterLit = () => page.locator("[data-pane-filter][data-on=true]").count();
+  if ((await filterLit()) !== 0) throw new Error("probe dead: the filter is already on");
+  const keptWord = wordsOnScreen[0];
+  const keptRows = await page.locator(`[data-word="${keptWord}"]`).count();
+  await tickWord(keptWord);
+  await until(`only the ${keptWord} rows`, 5_000, async () => (await page.locator("[data-row]").count()) === keptRows);
+
+  await page.reload();
+  await until("rows after the reload", 20_000, async () => (await page.locator("[data-row]").count()) > 0);
+  if ((await filterLit()) !== 1) throw new Error("the filter control came back unlit after a reload");
+  if ((await page.locator("[data-row]").count()) !== keptRows) {
+    throw new Error("the ticked filter did not survive a reload — the list came back unfiltered");
+  }
+  // Per pane, not one setting shared by all of them: the stored key
+  // carries the landing. Read off storage because that *is* the
+  // mechanism, and today only one pane has a filter to tick.
+  const filterKeys = await page.evaluate(() =>
+    Object.keys(window.localStorage).filter((k) => k.startsWith("khor.filter")),
+  );
+  if (filterKeys.length !== 1 || !filterKeys[0].endsWith(".sessions")) {
+    throw new Error(`the filter is not remembered per pane: ${JSON.stringify(filterKeys)}`);
+  }
+  await tickWord(keptWord);
+  await until("every row back", 10_000, async () => (await page.locator("[data-row]").count()) > keptRows);
+
+  // 21) a pin that does not take says so, on the button that was
+  //     pressed.
+  //
+  //     **A real failure, through the real path.** The backend is taken
+  //     away and the pin is pressed in the app the way a person presses
+  //     it; nothing is stubbed and no call is made behind the UI's back.
+  //     This is last because it ends the bridge.
+  //
+  //     The control comes first: the same button, pressed while the
+  //     backend is there, must come back *not* wearing the face. A mark
+  //     that is always on is not a failure report.
+  const failTarget = (await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row)))[0];
+  const failPin = page.locator(`[data-row="${failTarget}"] [data-row-pin]`);
+  const pinState = () =>
+    failPin.evaluate((el) => ({
+      failed: el.dataset.pinFailed,
+      name: el.getAttribute("aria-label"),
+      color: getComputedStyle(el).color,
+    }));
+
+  await failPin.click();
+  await until("the pin to take while the backend is there", 10_000, async () =>
+    (await page.locator(`[data-row="${failTarget}"][data-pinned=true]`).count()) === 1,
+  );
+  const okState = await pinState();
+  if (okState.failed !== "false") {
+    throw new Error(`a pin that worked is wearing the failure face: ${JSON.stringify(okState)}`);
+  }
+
+  // What the failure colour actually computes to, measured off a probe
+  // wearing the token rather than written down here — a hex compared
+  // against a browser's `rgb()` never matches, and hard-coding either
+  // side would stop tracking the theme.
+  const failedColor = await page.evaluate(() => {
+    const el = document.createElement("span");
+    el.style.color = "var(--state-failed)";
+    document.body.appendChild(el);
+    const c = getComputedStyle(el).color;
+    el.remove();
+    return c;
+  });
+
+  process.kill(-bridge.pid, "SIGKILL");
+  await until("the bridge to be gone", 15_000, async () => {
+    const r = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/devices`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }).catch(() => null);
+    return r === null;
+  });
+
+  await failPin.click();
+  await until("the failure face on the button that was pressed", 10_000, async () =>
+    (await pinState()).failed === "true",
+  );
+  const badState = await pinState();
+  // The name changes with it, so the report is not colour alone —
+  // compared against the working button's name rather than spelled
+  // here, because the words belong to the catalog.
+  if (!badState.name || badState.name === okState.name) {
+    throw new Error(`the failed pin kept its old name: ${JSON.stringify(badState)}`);
+  }
+  if (badState.color !== failedColor) {
+    throw new Error(
+      `the failed pin is not wearing the failure colour: ${badState.color} vs ${failedColor}`,
+    );
+  }
+  // …and it is that row's report, not the whole list going red.
+  const others = await page
+    .locator("[data-row-pin]")
+    .evaluateAll((els) => els.filter((e) => e.dataset.pinFailed === "true").length);
+  if (others !== 1) throw new Error(`${others} buttons wear the failure face; exactly one was pressed`);
+
+  // 22) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {

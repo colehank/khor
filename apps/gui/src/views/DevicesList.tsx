@@ -32,10 +32,13 @@ export function DevicesList({
   rows,
   query,
   onPin,
+  pinFailed,
 }: {
   rows: DeviceRow[];
   query: string;
   onPin: (row: DeviceRow) => void;
+  /** Rows whose last pin attempt did not take — see `App`. */
+  pinFailed: Set<string>;
 }) {
   const shown = visibleDevices(rows, query);
   // An empty device table cannot happen — this machine is always in it —
@@ -66,14 +69,25 @@ export function DevicesList({
             </span>
             <span className="block truncate text-sm text-muted-foreground">{d.id.slice(0, 12)}</span>
           </span>
+          {/* Same failure face as a session row, for the same reason
+              and by the same rule — see `SessionsList`. */}
           <Button
             variant="ghost"
             size="icon"
             data-row-pin
             data-on={d.pinned}
-            aria-label={d.pinned ? gui.unpin : gui.pin}
+            data-pin-failed={pinFailed.has(d.id)}
+            aria-label={
+              pinFailed.has(d.id)
+                ? d.pinned
+                  ? gui.unpin_failed
+                  : gui.pin_failed
+                : d.pinned
+                  ? gui.unpin
+                  : gui.pin
+            }
             onClick={() => onPin(d)}
-            className="flex-none text-muted-foreground data-[on=true]:text-foreground"
+            className="flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
           >
             <IconPin pinned={d.pinned} />
           </Button>

@@ -15,13 +15,26 @@ import { ago, groupLabel, word } from "@/words";
  * on the displayed word, and never on a state this layer worked out for
  * itself (docs/UX.md 状态呈现). Search reads what the row shows plus its
  * id, since the id is what the CLI prints and what people paste.
+ *
+ * **The machine a row came from is part of what the row shows**, so it
+ * is part of what search reads — on a list gathering sessions from
+ * several machines, "which ones are on turing" is the obvious question
+ * to ask a search box, and it used to come back empty.
+ *
+ * Only reported rows carry that name, which is the same rule as
+ * everything else here rather than a gap: `source` is the offline axis,
+ * set on rows another device told us about, and a row living on this
+ * machine prints no machine name. Search matches what is on the screen —
+ * so a local row is not findable by this machine's name, because the row
+ * never says it.
  */
 export function visibleSessions(rows: SessionRow[], query: string, words: string[]) {
   const q = query.trim().toLowerCase();
   return rows.filter(
     (r) =>
       (words.length === 0 || words.includes(r.word)) &&
-      (q === "" || `${r.title} ${r.id}`.toLowerCase().includes(q)),
+      (q === "" ||
+        `${r.title} ${r.id} ${r.source?.device ?? ""}`.toLowerCase().includes(q)),
   );
 }
 
@@ -37,6 +50,7 @@ export function SessionsList({
   selected,
   onSelect,
   onPin,
+  pinFailed,
 }: {
   rows: SessionRow[];
   query: string;
@@ -44,6 +58,8 @@ export function SessionsList({
   selected: string | null;
   onSelect: (row: SessionRow) => void;
   onPin: (row: SessionRow) => void;
+  /** Rows whose last pin attempt did not take — see `App`. */
+  pinFailed: Set<string>;
 }) {
   const shown = visibleSessions(rows, query, words);
   if (shown.length === 0) {
@@ -85,10 +101,17 @@ export function SessionsList({
               thing the DOM has. The strip was cut one batch before the
               pin arrived, so no anchor in here had to move when it
               did. */}
+          {/* `data-source` is the machine a reported row came from, as
+              an anchor rather than only as painted text — verification
+              asserts on data attributes, never on the words, which
+              belong to the catalog. Absent on rows that live here,
+              which is the same fact `source` itself carries. */}
           <div
           data-row={r.id}
           data-word={r.word}
           data-pinned={r.pinned}
+          data-source={r.source?.device}
+          data-title={r.title}
           className={cn(
             "flex w-full items-center pr-2 hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
@@ -134,14 +157,30 @@ export function SessionsList({
               with a mouse is not reachable on a phone. Resting state is
               quiet (muted, tilted); pinned is upright and takes the
               foreground, so the mark is legible without hovering. */}
+          {/* When the write did not take, the button says so where it
+              was pressed: it goes to the failure colour and its name
+              becomes the word for what failed. Without this, a failed
+              pin and a missed click are the same picture — a row that
+              did not move (docs/UX.md 做了但没变化 / 失败). The name
+              tracks the action that was *attempted*, so it is the
+              opposite of `r.pinned` from the un-refreshed row. */}
           <Button
             variant="ghost"
             size="icon"
             data-row-pin
             data-on={r.pinned}
-            aria-label={r.pinned ? gui.unpin : gui.pin}
+            data-pin-failed={pinFailed.has(r.id)}
+            aria-label={
+              pinFailed.has(r.id)
+                ? r.pinned
+                  ? gui.unpin_failed
+                  : gui.pin_failed
+                : r.pinned
+                  ? gui.unpin
+                  : gui.pin
+            }
             onClick={() => onPin(r)}
-            className="flex-none text-muted-foreground data-[on=true]:text-foreground"
+            className="flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
           >
             <IconPin pinned={r.pinned} />
           </Button>

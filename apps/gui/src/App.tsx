@@ -92,6 +92,49 @@ function storedArrange(): string {
   }
 }
 
+/**
+ * The ticked filter words, remembered on this device — **one entry per
+ * pane**, which is why the key carries the landing.
+ *
+ * Same mechanism and same reasoning as the arrangement above: a
+ * preference the user set once should still be set the next time
+ * (docs/handoff — 所有偏好保留一次设置). Only the sessions pane can
+ * filter today, and the shape is per pane anyway because the alternative
+ * is one pane silently inheriting another's ticks the day a second pane
+ * grows a filter.
+ *
+ * **Not validated against a list of known words.** This layer does not
+ * get to say which states exist (docs/UX.md 状态呈现) — the options come
+ * from what the node sent — so all that can be checked here is the
+ * shape. A key that no longer means anything simply matches no rows,
+ * which the pane says out loud (`no_matches`) with the filter control
+ * lit, and one tick undoes it.
+ */
+const FILTER_KEY = "khor.filter";
+const filterKey = (landing: Landing) => `${FILTER_KEY}.${landing}`;
+
+function storedWords(landing: Landing): string[] {
+  try {
+    const raw = window.localStorage.getItem(filterKey(landing));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((k) => typeof k === "string")
+      ? (parsed as string[])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function storedWordsAll(): Record<Landing, string[]> {
+  return {
+    sessions: storedWords("sessions"),
+    devices: storedWords("devices"),
+    files: storedWords("files"),
+    browser: storedWords("browser"),
+  };
+}
+
 const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
   { key: "sessions", name: gui.sessions_tab, glyph: <IconSessions /> },
   { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
@@ -174,7 +217,10 @@ export default function App() {
   // search, and a search that follows you across panes filters the wrong
   // list on arrival.
   const [queries, setQueries] = useState<Record<Landing, string>>(NO_QUERIES);
-  const [words, setWords] = useState<string[]>([]);
+  // Per pane and remembered, unlike the query above: a search box is a
+  // thing you are doing right now, a filter is a way you have decided to
+  // look at this list.
+  const [words, setWords] = useState<Record<Landing, string[]>>(storedWordsAll);
   const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
   const [sheet, setSheet] = useState<Sheet>(null);
 
@@ -225,25 +271,66 @@ export default function App() {
     setDevices(d);
   }, [arrangeBy]);
 
-  // A failed pin currently shows as nothing happening, which is what
-  // "I missed the button" also looks like (docs/UX.md: 做了但没变化 and
-  // 失败 must not wear one face). The race that made this reachable is
-  // fixed at the source — a shared temp filename in the block store,
-  // measured at 17 of 40 pins failing before and 0 of 40 after — so what
-  // is left is the rare disk error, and saying it properly needs a place
-  // to say it that this screen does not have yet. On the ledger.
+  /**
+   * Rows whose last pin attempt did not take, by row id.
+   *
+   * **A failed pin used to look exactly like a missed click** — the row
+   * simply did not move — and docs/UX.md forbids 做了但没变化 and 失败
+   * wearing one face. The race that made this common is fixed at the
+   * source (a shared temp filename in the block store, measured at 17 of
+   * 40 pins failing before and 0 of 40 after), so what is left is the
+   * rare disk error; rare is a reason for the face to be small, not a
+   * reason for it to be absent.
+   *
+   * **It is said on the button that was pressed**, and no notification
+   * surface is introduced to carry it. There is nowhere in this app that
+   * collects messages, and building one for the least frequent thing
+   * that happens here would be a whole mechanism whose first and only
+   * customer is a disk error.
+   *
+   * Session ids and device ids cannot collide (`kind/leaf` against hex),
+   * so one set serves both lists.
+   */
+  const [pinFailed, setPinFailed] = useState<Set<string>>(() => new Set());
+
+  const markPin = useCallback((id: string, failed: boolean) => {
+    setPinFailed((was) => {
+      if (was.has(id) === failed) return was;
+      const next = new Set(was);
+      if (failed) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Two-argument `then`, not `.then().catch()`: the rejection handler
+  // must see the pin call failing and nothing else. Chained, a refresh
+  // that threw after a pin that worked would paint the failure face on a
+  // pin that actually took.
   const onPinSession = useCallback(
     (row: SessionRow) => {
-      pinSession(row.id, !row.pinned).then(refresh).catch(() => {});
+      pinSession(row.id, !row.pinned).then(
+        () => {
+          markPin(row.id, false);
+          refresh().catch(() => {});
+        },
+        () => markPin(row.id, true),
+      );
     },
-    [refresh],
+    [refresh, markPin],
   );
 
   const onPinDevice = useCallback(
     (row: DeviceRow) => {
-      pinDevice(row.name, !row.pinned).then(refresh).catch(() => {});
+      pinDevice(row.name, !row.pinned).then(
+        () => {
+          markPin(row.id, false);
+          refresh().catch(() => {});
+        },
+        () => markPin(row.id, true),
+      );
     },
-    [refresh],
+    [refresh, markPin],
   );
 
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
@@ -257,11 +344,14 @@ export default function App() {
   // order that matters. Enumerating the six words here instead would be
   // this layer deciding what states exist, and it does not get to
   // (docs/UX.md 状态呈现). Keys already ticked stay on the list even after
-  // their last row leaves, or a tick becomes impossible to undo.
+  // their last row leaves, or a tick becomes impossible to undo — which
+  // now also covers a tick restored from storage before any row has
+  // arrived, the one case where the ticked key is guaranteed to be
+  // missing from `rows`.
   const wordOptions = useMemo(() => {
     const keys: string[] = [];
     for (const r of rows) if (!keys.includes(r.word)) keys.push(r.word);
-    for (const w of words) if (!keys.includes(w)) keys.push(w);
+    for (const w of words.sessions) if (!keys.includes(w)) keys.push(w);
     return keys.map((key) => ({ key, label: word(key) }));
   }, [rows, words]);
 
@@ -278,8 +368,19 @@ export default function App() {
 
   const toggleWord = useCallback(
     (key: string) =>
-      setWords((was) => (was.includes(key) ? was.filter((w) => w !== key) : [...was, key])),
-    [],
+      setWords((was) => {
+        const had = was[landing];
+        const next = had.includes(key) ? had.filter((w) => w !== key) : [...had, key];
+        // Kept even if storage refuses, same as the arrangement: the
+        // filter still applies, it just will not outlive this session.
+        try {
+          window.localStorage.setItem(filterKey(landing), JSON.stringify(next));
+        } catch {
+          /* the list still filters; only the memory of it is lost */
+        }
+        return { ...was, [landing]: next };
+      }),
+    [landing],
   );
 
   const sessionActions: PaneAction[] = [
@@ -354,7 +455,7 @@ export default function App() {
         filterLabel={gui.filter}
         filter={
           sessions
-            ? { options: wordOptions, chosen: words, onToggle: toggleWord }
+            ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord }
             : undefined
         }
         arrange={
@@ -379,13 +480,19 @@ export default function App() {
           <SessionsList
             rows={rows}
             query={queries.sessions}
-            words={words}
+            words={words.sessions}
             selected={selected}
             onSelect={onSelect}
             onPin={onPinSession}
+            pinFailed={pinFailed}
           />
         ) : (
-          <DevicesList rows={devices} query={queries[landing]} onPin={onPinDevice} />
+          <DevicesList
+            rows={devices}
+            query={queries[landing]}
+            onPin={onPinDevice}
+            pinFailed={pinFailed}
+          />
         )}
       </div>
     </section>
