@@ -76,6 +76,12 @@
   --rail-w: 56px;
   --list-w: 288px;
   --avatar: 32px;
+  /* A machine's face on its own card. Its own token rather than a class
+   * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`
+   * utility (tailwind-merge does not read `avatar` as a size), so both
+   * classes would survive into the markup and the winner would be
+   * whichever the stylesheet emitted last. */
+  --avatar-lg: 72px;
   --icon-rail: 26px;
   /* The app mark at the head of the rail. Larger than a rail glyph and
    * smaller than this machine's face at the foot: it is the app, not a
@@ -175,6 +181,7 @@
   --spacing-rail: var(--rail-w);
   --spacing-list: var(--list-w);
   --spacing-avatar: var(--avatar);
+  --spacing-avatar-lg: var(--avatar-lg);
   --spacing-icon-rail: var(--icon-rail);
   --spacing-icon-mark: var(--icon-mark);
 

@@ -1,0 +1,213 @@
+import type { DeviceRow } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
+import { IconBack, IconPin } from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { cli, gui } from "@/gen/catalog";
+import { ago } from "@/words";
+
+/**
+ * One machine, opened from the devices pane.
+ *
+ * **This is the destination the machine rows were waiting for.** The
+ * previous batch left those rows inert on a stated judgment — no
+ * affordance may suggest a destination that does not exist — and the
+ * judgment has not changed, only its input: there is a destination now,
+ * so on *this* pane the row becomes a button. The files and browser
+ * panes still list machines with nowhere to send you, and their rows
+ * stay exactly as they were until their own batches give them one.
+ *
+ * No title here either (docs/UX.md). The machine's name is the content,
+ * not a heading over it.
+ */
+export function MachineCard({
+  row,
+  narrow,
+  onBack,
+  onPin,
+  pinFailed,
+}: {
+  row: DeviceRow | null;
+  narrow: boolean;
+  onBack: () => void;
+  onPin: (row: DeviceRow) => void;
+  /** Rows whose last pin attempt did not take — see `App`. */
+  pinFailed: Set<string>;
+}) {
+  return (
+    <section data-machine-card className="flex h-full min-w-0 flex-col">
+      {/* **A strip only where something has to live in it.** Back exists
+          on the narrow face, where the list really is off-screen; wide
+          keeps the list beside this, so there is nothing to go back
+          from. And the strip carries no name: the machine's name is the
+          first thing in the card below, so putting it here too would be
+          the same word twice on one screen — which is what a page title
+          is, whatever it is called (docs/UX.md 所有页面不要标题). The
+          session detail's header is not a counter-example: what it shows
+          is not repeated under it. */}
+      {narrow && (
+        <header className="flex h-ctl-lg flex-none items-center gap-2 border-b px-3">
+          <Button variant="ghost" size="icon" aria-label={gui.back} data-back onClick={onBack}>
+            <IconBack />
+          </Button>
+        </header>
+      )}
+      {row && (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="flex items-start gap-4">
+            {/* The same derivation as its row and as the rail's foot: one
+                machine, one face, painted from what that machine said
+                about itself. Bigger here, not different. */}
+            <MachineAvatar face={row.face} className="size-avatar-lg" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-lg">
+                {row.name}
+                {row.me ? ` ${cli.this_machine}` : ""}
+              </div>
+              {/* The whole id, not the row's twelve characters: this is
+                  the screen somebody is on when they need to paste it. */}
+              <div data-machine-id className="break-all text-sm text-muted-foreground">
+                {row.id}
+              </div>
+            </div>
+            {/* The same control as on the row, with the same two names
+                and the same failure face — it is one fact about this
+                machine, and a second way to express it would be a second
+                thing to keep in step. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              data-card-pin
+              data-on={row.pinned}
+              data-pin-failed={pinFailed.has(row.id)}
+              aria-label={
+                pinFailed.has(row.id)
+                  ? row.pinned
+                    ? gui.unpin_failed
+                    : gui.pin_failed
+                  : row.pinned
+                    ? gui.unpin
+                    : gui.pin
+              }
+              onClick={() => onPin(row)}
+              className="flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
+            >
+              <IconPin pinned={row.pinned} />
+            </Button>
+          </div>
+          <Readings row={row} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * What the machine is doing, and how old that answer is.
+ *
+ * **Three states, three different things to say.** Never reached is not
+ * an old reading and neither is a zero; an old reading is not the
+ * present. Collapsing any two of them would put a number on the screen
+ * that means something other than what it says (docs/SESSION.md 离线).
+ *
+ * **No severity colour, and that is a decision rather than an
+ * omission.** Colour in this app is spoken for: the six state words own
+ * it, 待批 is the only cool colour anywhere, and red means a session
+ * sank to the bottom of the list. Turning a 91%-full disk red would
+ * dress it as a failed session. Choosing a threshold at which a disk
+ * becomes a warning is also a product judgment nobody has made — and a
+ * threshold set wrong is an alarm that teaches people to ignore alarms.
+ * The numbers say how full it is; the bar shows it at a glance.
+ */
+function Readings({ row }: { row: DeviceRow }) {
+  if (!row.vitals) {
+    return (
+      <div data-vitals-never className="pt-6 text-sm text-muted-foreground">
+        {cli.vitals_never}
+      </div>
+    );
+  }
+  const { vitals: v, age_ms } = row.vitals;
+  return (
+    <div data-vitals className="flex flex-col gap-3 pt-6">
+      <Unit
+        name="cpu"
+        label={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
+        fraction={v.cpu_pct / 100}
+      />
+      <Unit
+        name="mem"
+        label={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
+        fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
+      />
+      {v.disk ? (
+        <Unit
+          name="disk"
+          label={cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total))}
+          fraction={v.disk.total > 0 ? v.disk.used / v.disk.total : null}
+        />
+      ) : (
+        // Said, not left out: a line that is simply absent and a machine
+        // that could not answer read the same, and `0 / 0` would read as
+        // an empty disk.
+        <div data-vitals-unit="disk" data-vitals-unknown className="text-sm text-muted-foreground">
+          {cli.vitals_disk_unknown}
+        </div>
+      )}
+      {/* Printed on every reading that was not taken to answer this very
+          call — which is every machine but this one. A number with no age
+          beside it is read as the present. */}
+      {age_ms > 0 && (
+        <div data-vitals-age className="text-sm text-muted-foreground">
+          {cli.vitals_taken(ago(Date.now() - age_ms))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Unit({
+  name,
+  label,
+  fraction,
+}: {
+  name: string;
+  label: string;
+  /** `null` when there is no denominator to divide by, and then no bar
+      is drawn — an empty track reads as "this is at zero". */
+  fraction: number | null;
+}) {
+  return (
+    <div data-vitals-unit={name}>
+      <div className="text-sm">{label}</div>
+      {fraction !== null && (
+        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-secondary">
+          <div
+            data-vitals-bar
+            className="h-full bg-muted-foreground"
+            style={{ width: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bytes as a person reads them: 1024-based, one decimal, no space.
+ *
+ * The CLI has its own copy of this (`crates/cli` `bytes`), deliberately:
+ * formatting is painting, not judgment. The wire carries bytes, nothing
+ * depends on the two producing identical characters, and a library
+ * handing back strings would be deciding what a screen it cannot see has
+ * room for.
+ */
+function bytes(n: number): string {
+  const units = ["B", "K", "M", "G", "T"];
+  let v = n;
+  let u = 0;
+  while (v >= 1024 && u + 1 < units.length) {
+    v /= 1024;
+    u += 1;
+  }
+  return u === 0 ? `${n}${units[0]}` : `${v.toFixed(1)}${units[u]}`;
+}

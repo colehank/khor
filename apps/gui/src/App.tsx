@@ -33,6 +33,7 @@ import { word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
+import { MachineCard } from "@/views/MachineCard";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
 import { TellDialog } from "@/views/TellDialog";
@@ -211,6 +212,11 @@ export default function App() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // The open machine, kept apart from the open session for the same
+  // reason each pane keeps its own query: they are two selections in two
+  // places, and one variable would have opening a machine close the
+  // session you were reading.
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">("list");
   const [stale, setStale] = useState(false);
@@ -259,6 +265,11 @@ export default function App() {
       // so this clears the badge on every device.
       markSeen(row.id).catch(() => {});
     }
+    setScreen("detail");
+  }, []);
+
+  const onSelectDevice = useCallback((row: DeviceRow) => {
+    setSelectedDevice(row.id);
     setScreen("detail");
   }, []);
 
@@ -497,6 +508,13 @@ export default function App() {
             rows={devices}
             query={queries[landing]}
             onPin={onPinDevice}
+            // Only the devices pane has anywhere to send you. Files and
+            // browser list machines as the first step of their own
+            // question and grow the second step in their own batches;
+            // until then their rows must not look like they open
+            // something (`DevicesList` says why this is a prop).
+            onOpen={landing === "devices" ? onSelectDevice : undefined}
+            selected={selectedDevice}
             pinFailed={pinFailed}
           />
         )}
@@ -504,14 +522,22 @@ export default function App() {
     </section>
   );
 
-  // Only the sessions pane has anything to select, so only it gets a
-  // detail. Over a list of machines the same component would print
-  // `gui.pick_a_session` — an instruction to do something this screen
-  // cannot do. Machine cards land in their own batch and this is where
-  // they go; until then the space stays empty rather than filled with
-  // copy about the emptiness (docs/UX.md 文案).
+  // Two panes have something to open, and each gets the component that
+  // can say something true about what it opened. The other two still get
+  // nothing: over a list of machines you cannot open, `DetailPane` would
+  // print `gui.pick_a_session` — an instruction to do something that
+  // screen cannot do — and inventing copy about the emptiness is worse
+  // than the emptiness (docs/UX.md 文案).
   const detail = sessions ? (
     <DetailPane row={selectedRow} narrow={narrow} onBack={() => setScreen("list")} />
+  ) : landing === "devices" ? (
+    <MachineCard
+      row={devices.find((d) => d.id === selectedDevice) ?? null}
+      narrow={narrow}
+      onBack={() => setScreen("list")}
+      onPin={onPinDevice}
+      pinFailed={pinFailed}
+    />
   ) : null;
 
   const sheets = (

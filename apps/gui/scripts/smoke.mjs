@@ -78,13 +78,22 @@
 //      alpha changes itself with `khor face` and beta's list follows,
 //      both before states established first, with this machine's own
 //      face as the control since nobody else may move it;
-//  23. a pin that does not take says so on the button that was pressed:
+//  23. a machine row opens that machine's card: the full id on the card
+//      has the row's short id as its prefix (so it is *that* machine),
+//      one face on both, the readings drawn, and the age line present
+//      for a machine reached over the wire and absent for this one —
+//      the offline axis, which a locally faked reading would get wrong;
+//  24. the rows that open something are exactly the ones with somewhere
+//      to go: the devices pane's do, the files and browser panes' do
+//      not, with the positive half read first so the absence means
+//      absence and not a renamed selector;
+//  25. a pin that does not take says so on the button that was pressed:
 //      a real failure through the real path (the backend is taken away,
 //      the button is clicked the way a person clicks it), the face
 //      provably absent on the successful press just before, the colour
 //      measured against a probe wearing the token, and exactly one
 //      button wearing it;
-//  24. zero pageerror throughout.
+//  26. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -1339,7 +1348,100 @@ try {
     throw new Error("alpha restyling itself repainted this machine");
   }
 
-  // 23) a pin that does not take says so, on the button that was
+  // 23) a machine row opens that machine's card.
+  //
+  //     The wide face is back on by now, so the list and the card are on
+  //     screen together. The control comes first and it is a real one:
+  //     the card's section exists as soon as the devices pane is open
+  //     (it is the detail region), so what proves a machine was opened
+  //     is its *content* — no id is printed until a row is clicked.
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await openLanding("devices");
+  await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) >= 2);
+  if ((await page.locator("[data-machine-id]").count()) !== 0) {
+    throw new Error("a machine card is filled in before any machine was opened");
+  }
+
+  //     Clicked the way a person clicks it: the row's own button.
+  const shortId = await page
+    .locator('[data-device="alpha"]')
+    .evaluate((el) => el.dataset.row.slice(0, 12));
+  await page.locator('[data-device="alpha"] [data-row-open]').click();
+  await until("alpha's card", 10_000, async () => (await page.locator("[data-machine-id]").count()) === 1);
+
+  //     …and it is alpha's card, not merely *a* card. The row prints the
+  //     first twelve characters of the id and the card prints all of it,
+  //     so one being a prefix of the other ties the two together without
+  //     this script knowing either value.
+  const cardId = await page.locator("[data-machine-id]").innerText();
+  if (!cardId.startsWith(shortId) || cardId.length <= shortId.length) {
+    throw new Error(`the card shows ${cardId}, which is not the full id behind ${shortId}`);
+  }
+
+  //     One machine, one picture — the same rule the rail and the row
+  //     already answer to, now with a third place to be wrong in.
+  const cardFace = page.locator("[data-machine-card] [data-face]");
+  if ((await cardFace.count()) !== 1) throw new Error("probe dead: no face on the card");
+  if ((await faceOf(cardFace)) !== (await faceOf(page.locator('[data-device="alpha"] [data-face]')))) {
+    throw new Error("alpha wears one face in the list and another on its card");
+  }
+
+  //     The readings are drawn, all three units of them.
+  const units = await page.locator("[data-vitals-unit]").count();
+  if (units !== 3) throw new Error(`the card shows ${units} readings, expected three`);
+  if ((await page.locator("[data-vitals-bar]").count()) === 0) {
+    throw new Error("no reading drew a bar");
+  }
+
+  //     **The offline axis reaches the screen.** alpha's reading was
+  //     taken on alpha and carried here, so it has an age; beta samples
+  //     itself to answer the very call that painted this, so it has
+  //     none. Both halves are asserted because either alone passes for
+  //     the wrong reason — always showing an age, or never showing one.
+  if ((await page.locator("[data-vitals-age]").count()) !== 1) {
+    throw new Error("a reading that travelled here shows no age");
+  }
+  await page.locator('[data-device="beta"] [data-row-open]').click();
+  await until("beta's card", 10_000, async () =>
+    (await page.locator("[data-machine-id]").innerText()).startsWith(
+      await page.locator('[data-device="beta"]').evaluate((el) => el.dataset.row.slice(0, 12)),
+    ),
+  );
+  if ((await page.locator("[data-vitals-unit]").count()) !== 3) {
+    throw new Error("this machine's own card is missing readings");
+  }
+  if ((await page.locator("[data-vitals-age]").count()) !== 0) {
+    throw new Error("this machine's own reading is dressed as something remembered");
+  }
+
+  // 24) only the rows with somewhere to go open anything.
+  //
+  //     The positive half is above (alpha's row was clicked and it
+  //     opened). Here is the other half, and the count on the devices
+  //     pane is re-read first so that "zero on files" means zero rather
+  //     than a selector that stopped naming anything.
+  const openersOn = async (tab) => {
+    await openLanding(tab);
+    await until(`machines on the ${tab} pane`, 10_000, async () =>
+      (await page.locator("[data-device]").count()) > 0,
+    );
+    return page.locator("[data-device] [data-row-open]").count();
+  };
+  const openersOnDevices = await openersOn("devices");
+  if (openersOnDevices < 2) {
+    throw new Error(`probe dead: ${openersOnDevices} machine rows open anything on the devices pane`);
+  }
+  for (const tab of ["files", "browser"]) {
+    const n = await openersOn(tab);
+    if (n !== 0) {
+      throw new Error(`${n} machine rows on the ${tab} pane offer to open something that is not there`);
+    }
+  }
+  // Back where the next item expects to be: it pins the first row it
+  // finds, and which pane is open decides which row that is.
+  await openLanding("devices");
+
+  // 25) a pin that does not take says so, on the button that was
   //     pressed.
   //
   //     **A real failure, through the real path.** The backend is taken
@@ -1352,12 +1454,24 @@ try {
   //     that is always on is not a failure report.
   const failTarget = (await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row)))[0];
   const failPin = page.locator(`[data-row="${failTarget}"] [data-row-pin]`);
+  // **The colour is read after the button's own transitions finish**,
+  // not the instant the attribute flips. The button carries
+  // `transition-colors`, and a reading taken at t=0 of a transition is
+  // bit-for-bit the colour it is *leaving* — which is what one observed
+  // failure here reported, with the failure attribute already set and
+  // the built stylesheet putting the failure rule last. Waiting on the
+  // element's own animations is the "wait for the thing itself" rule; a
+  // fixed sleep would measure how busy the machine is, and two equal
+  // consecutive reads can both land before the transition starts moving.
   const pinState = () =>
-    failPin.evaluate((el) => ({
-      failed: el.dataset.pinFailed,
-      name: el.getAttribute("aria-label"),
-      color: getComputedStyle(el).color,
-    }));
+    failPin.evaluate(async (el) => {
+      await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
+      return {
+        failed: el.dataset.pinFailed,
+        name: el.getAttribute("aria-label"),
+        color: getComputedStyle(el).color,
+      };
+    });
 
   await failPin.click();
   await until("the pin to take while the backend is there", 10_000, async () =>
@@ -1413,7 +1527,7 @@ try {
     .evaluateAll((els) => els.filter((e) => e.dataset.pinFailed === "true").length);
   if (others !== 1) throw new Error(`${others} buttons wear the failure face; exactly one was pressed`);
 
-  // 24) the page never threw.
+  // 26) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {
