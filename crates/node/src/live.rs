@@ -408,7 +408,7 @@ impl LiveKind {
                 continue;
             };
             let id = SessionId(format!("{}/{leaf}", meta.kind));
-            let (word, at, unread) = face(&meta, &state, watermark(&id.0));
+            let (word, at, unread) = face(&e.path(), &meta, &state, watermark(&id.0));
             out.push((
                 Session {
                     id,
@@ -439,6 +439,49 @@ impl LiveKind {
     }
 }
 
+/// Who is still there behind a registry row.
+///
+/// The registry records **one** pid, and for a 持久 session that pid is
+/// the host — khor's own plumbing — not the thing the user started. Most
+/// of the time that distinction does not matter, because the host
+/// outlives its child and records the ending. [`Backing::HostLost`] is
+/// the case where it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backing {
+    /// No pid on record: nobody is in a position to pronounce it dead
+    /// (a hook-observed session; a row registered before its process
+    /// started).
+    Unpronounceable,
+    Running,
+    /// **The host is gone and the session's process is not.** khor
+    /// cannot reach this session any more — the port in `host.json`
+    /// belongs to nothing — while the work inside it carries on.
+    HostLost,
+    Gone,
+}
+
+/// What is still running behind one registry entry.
+///
+/// Both questions go through `link::pid_alive`, so both inherit its
+/// rule: **only ESRCH is dead.** A pid that exists but refuses a signal
+/// (EPERM) is alive, which matters here twice over — reading it the
+/// other way would turn a host khor cannot signal into a lost host, and
+/// a child khor cannot signal into a dead session.
+fn backing(dir: &Path, meta: &Meta) -> Backing {
+    let Some(pid) = meta.pid else {
+        return Backing::Unpronounceable;
+    };
+    if crate::link::pid_alive(pid) {
+        return Backing::Running;
+    }
+    // The recorded pid is gone. For a hosted session that was the host,
+    // and the host dying is not the session dying: ask the child.
+    match crate::host::read_host_file(dir) {
+        Ok(hf) if crate::link::pid_alive(hf.child_pid) => Backing::HostLost,
+        _ => Backing::Gone,
+    }
+}
+
 /// The six-word mapping (docs/SESSION.md), one place:
 ///
 /// - an exit code decides first — shell lands on 完成/失败, a tui that
@@ -446,12 +489,37 @@ impl LiveKind {
 ///   screen) and lands on 空闲;
 /// - a dead process with no recorded ending is 失败: the normal path
 ///   always records, so a missing ending is itself an abnormal ending;
+/// - **a host that died while its child lives is 中断**, derived below;
 /// - otherwise the reported word stands, with 完成 downgrading to 空闲
 ///   once the seen watermark covers it (看过了).
 ///
 /// Only 完成/未看 counts as unread — 失败 sinks in the list but never
 /// holds the badge (docs/UX.md 角标可归零).
-fn face(meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64) {
+///
+/// # Why a lost host is 中断 and not 失败
+///
+/// Derived from the pair the two words form, not chosen. 中断 and 失败
+/// both say something went wrong; **what divides them is whether the
+/// process is still there** — 中断 is an error you can carry on from,
+/// 失败 is one you have to restart from (`khor_core::State::Errored`
+/// says so in its own words: "the name must not suggest stopped").
+///
+/// Here the session's process is running. The user's work is not lost,
+/// and restarting would throw it away. So 失败 is the one word this must
+/// not be, and 中断 is what is left once that is settled.
+///
+/// **This corrects docs/SESSION.md's table, where the shell row has "—"
+/// under 中断.** That row describes a shell's own vocabulary, where an
+/// error simply exits and there is nothing to be alive afterwards. It
+/// was written before the persistent host existed, and the host is a
+/// third party the shell knows nothing about: it is khor that broke
+/// here, not the shell.
+///
+/// The stamp stays the last word's, because nothing recorded when the
+/// host died — the row therefore ages from the last thing that was
+/// known, which is the honest reading of "and then khor lost sight of
+/// it".
+fn face(dir: &Path, meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64) {
     if let Some(code) = state.exit {
         if code != 0 {
             return (State::Failed, state.at_ms, 0);
@@ -462,11 +530,14 @@ fn face(meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64) {
         let (word, unread) = settle_done(State::Done, state.at_ms, watermark);
         return (word, state.at_ms, unread);
     }
-    if !pid_says_alive(meta) {
-        return (State::Failed, state.at_ms, 0);
+    match backing(dir, meta) {
+        Backing::Gone => (State::Failed, state.at_ms, 0),
+        Backing::HostLost => (State::Errored, state.at_ms, 0),
+        Backing::Running | Backing::Unpronounceable => {
+            let (word, unread) = settle_done(state.word, state.at_ms, watermark);
+            (word, state.at_ms, unread)
+        }
     }
-    let (word, unread) = settle_done(state.word, state.at_ms, watermark);
-    (word, state.at_ms, unread)
 }
 
 /// 完成 clears to 空闲 once the seen watermark covers it, and it is the
@@ -710,6 +781,66 @@ mod tests {
         k.report(&id2, State::Busy).unwrap();
         let row = k.rows(|_| 0).into_iter().find(|r| r.id == id2).unwrap();
         assert_eq!(row.state.state, State::Busy, "no pid on record = the word stands");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The lost-host rule at the level it is decided, with no host to
+    /// start: a dead recorded pid, a `host.json` naming a child that is
+    /// certainly alive (this test process), and the row must not say
+    /// 失败.
+    ///
+    /// The integration test in `crates/cli/tests/open.rs` does the same
+    /// thing for real — a real host, killed for real. This one exists
+    /// because the rule is a branch in `face`, and a branch deserves a
+    /// test that runs on a machine where spawning a pty is not an option.
+    #[test]
+    fn a_dead_host_with_a_live_child_is_errored_not_failed() {
+        let root = tmp("hostlost");
+        let k = kind_at(&root);
+        let id = sid("shell/hosted1");
+        let dead = dead_pid();
+        k.register(&id, "shell", "work", Some(dead), None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+
+        // Control first: with no host file, a dead recorded pid is the
+        // ordinary missing ending.
+        assert_eq!(k.rows(|_| 0)[0].state.state, State::Failed);
+
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&crate::host::HostFile {
+                port: 1,
+                cookie: "x".into(),
+                host_pid: dead,
+                // Alive by construction: this is the test itself.
+                child_pid: std::process::id(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let row = &k.rows(|_| 0)[0];
+        assert_eq!(
+            row.state.state,
+            State::Errored,
+            "the host is khor's, the child is the user's work, and it is still running"
+        );
+        assert_eq!(row.unread, 0, "中断 carries no badge; only 完成 does");
+
+        // And the other control: a host file naming a child that is also
+        // gone is back to 失败, so the branch above turns on the child
+        // being alive and not merely on a host file existing.
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&crate::host::HostFile {
+                port: 1,
+                cookie: "x".into(),
+                host_pid: dead,
+                child_pid: dead_pid(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(k.rows(|_| 0)[0].state.state, State::Failed);
         let _ = fs::remove_dir_all(&root);
     }
 

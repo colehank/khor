@@ -35,6 +35,24 @@ fn wait_until(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
     panic!("timed out waiting for: {what}");
 }
 
+/// Kills a pid when it goes out of scope, however it goes.
+///
+/// A test that deliberately makes a process outlive its host is a test
+/// that leaks one when it fails — and this one failed on purpose during
+/// its own red check, leaving a `sh` that ignores SIGHUP running under
+/// init with a `sleep` under it. An assertion panics past its cleanup;
+/// a `Drop` does not.
+struct Reaper(u32);
+
+impl Drop for Reaper {
+    fn drop(&mut self) {
+        let _ = Command::new("kill")
+            .args(["-9", &self.0.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
 fn pid_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", &pid.to_string()])
@@ -139,6 +157,67 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     assert!(!dir.exists());
     assert!(!sessions(&home).contains(&sid));
 
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// **A host that dies while its child lives must not read as 失败.**
+///
+/// The registry records the host's pid, and the missing-ending rule
+/// turns a dead recorded pid into 失败 — which for a hosted session
+/// means khor's own plumbing dying is reported as the user's work
+/// failing. It is 中断: the process is there, and 中断 vs 失败 is
+/// exactly the question of whether it is (`live::face` derives it).
+///
+/// Real, not simulated: a real host, a real child, `kill -9` on the
+/// host only, the word read back out of the real binary.
+///
+/// **The child has to ignore SIGHUP or there is nothing to test.**
+/// Measured on this machine: killing the host closes the pty master, and
+/// the kernel hangs up the foreground group — a plain `sleep 300` dies
+/// with it, and so does an interactive `zsh`. Only a child that ignores
+/// the signal outlives its host, which is both why this hole is narrow
+/// and why the test has to say `trap "" HUP` out loud.
+#[test]
+fn a_host_that_dies_while_its_child_lives_is_not_a_failure() {
+    let home = std::env::temp_dir().join(format!("khor-orphan-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+
+    let (sid, dir) = open_detached(&home, &["--", "sh", "-c", r#"trap "" HUP; sleep 300"#]);
+    let hf: HostFile =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("host.json")).unwrap()).unwrap();
+    // Whatever happens below, this child does not outlive the test: it
+    // ignores SIGHUP, so nothing else would take it away.
+    let _reap = Reaper(hf.child_pid);
+    assert!(pid_alive(hf.host_pid) && pid_alive(hf.child_pid), "control: both are up");
+
+    // The host alone.
+    Command::new("kill").args(["-9", &hf.host_pid.to_string()]).status().unwrap();
+    wait_until("the host to be gone", 5, || !pid_alive(hf.host_pid));
+    assert!(pid_alive(hf.child_pid), "the child ignores SIGHUP, so it is still working");
+
+    wait_until("the row to say 中断", 10, || {
+        sessions(&home)
+            .lines()
+            .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("errored")))
+    });
+    assert!(
+        !sessions(&home).contains(khor_catalog::state::word("failed")),
+        "失败 would tell the user to start over on work that is still running"
+    );
+
+    // The control group: now the child goes too, and the ordinary
+    // missing-ending rule applies again. Without this half, a `face`
+    // that simply never said 失败 would pass the assertion above.
+    Command::new("kill").args(["-9", &hf.child_pid.to_string()]).status().unwrap();
+    wait_until("the child to be gone", 5, || !pid_alive(hf.child_pid));
+    wait_until("the row to say 失败", 10, || {
+        sessions(&home)
+            .lines()
+            .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("failed")))
+    });
+
+    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
     let _ = std::fs::remove_dir_all(&home);
 }
 
