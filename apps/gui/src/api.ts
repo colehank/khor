@@ -27,5 +27,10 @@ export const fetchDevices = () => call<DeviceRow[]>("devices");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
+// `on` is explicit rather than a toggle: the caller already knows the
+// row's current state, and a toggle raced against a pin arriving from
+// another device would flip the wrong way.
+export const pinSession = (id: string, on: boolean) => call<null>("pin_session", { id, on });
+export const pinDevice = (machine: string, on: boolean) => call<null>("pin_device", { machine, on });
 export const invite = () => call<string>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });

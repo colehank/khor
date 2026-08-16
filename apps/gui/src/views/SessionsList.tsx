@@ -1,5 +1,7 @@
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { IconPin } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { ago, word } from "@/words";
@@ -22,21 +24,24 @@ export function visibleSessions(rows: SessionRow[], query: string, words: string
 }
 
 // Order and words come from the node untouched: the list never
-// re-derives a judgment the backend already made (docs/UX.md) — and
-// that includes the order pinned rows will arrive in, when pinning
-// lands: it is the node that sorts, not this file (docs/handoff 置顶批).
+// re-derives a judgment the backend already made (docs/UX.md). That
+// includes the order pinned rows arrive in — `Node::sessions` floats
+// them, this file only paints the mark. **There is no comparison
+// function in here, and adding one is the bug.**
 export function SessionsList({
   rows,
   query,
   words,
   selected,
   onSelect,
+  onPin,
 }: {
   rows: SessionRow[];
   query: string;
   words: string[];
   selected: string | null;
   onSelect: (row: SessionRow) => void;
+  onPin: (row: SessionRow) => void;
 }) {
   const shown = visibleSessions(rows, query, words);
   if (shown.length === 0) {
@@ -53,18 +58,18 @@ export function SessionsList({
   return (
     <div>
       {shown.map((r) => (
-        // The row is a strip holding one button, not a button itself.
-        // It looks like one control today and is shaped for two: the
-        // row-level action pinning will add cannot be nested inside the
-        // button that opens the row, because a button inside a button
-        // is not a thing the DOM has. Splitting it later would move
-        // every anchor in here; splitting it now costs a wrapper.
+        // The row is a strip holding two controls, not a button itself:
+        // the pin cannot be nested inside the button that opens the row,
+        // because a button inside a button is not a thing the DOM has.
+        // The strip was cut one batch before the pin arrived, so no
+        // anchor in here had to move when it did.
         <div
           key={r.id}
           data-row={r.id}
           data-word={r.word}
+          data-pinned={r.pinned}
           className={cn(
-            "flex w-full items-center pr-4 hover:bg-secondary",
+            "flex w-full items-center pr-2 hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
           )}
         >
@@ -101,6 +106,24 @@ export function SessionsList({
               )}
             </span>
           </button>
+          {/* The row's second control, and the reason the strip exists:
+              a button cannot live inside the button that opens the row.
+              **Always drawn, never hover-only** — the narrow face has no
+              pointer to reveal it with, and a control you can only reach
+              with a mouse is not reachable on a phone. Resting state is
+              quiet (muted, tilted); pinned is upright and takes the
+              foreground, so the mark is legible without hovering. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            data-row-pin
+            data-on={r.pinned}
+            aria-label={r.pinned ? gui.unpin : gui.pin}
+            onClick={() => onPin(r)}
+            className="flex-none text-muted-foreground data-[on=true]:text-foreground"
+          >
+            <IconPin pinned={r.pinned} />
+          </Button>
         </div>
       ))}
     </div>

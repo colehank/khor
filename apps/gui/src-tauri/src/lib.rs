@@ -31,6 +31,16 @@ fn tell(machine: String, text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn pin_session(id: String, on: bool) -> Result<(), String> {
+    khor_gui_core::pin_session(&Node::root_from_env(), &id, on)
+}
+
+#[tauri::command]
+fn pin_device(machine: String, on: bool) -> Result<(), String> {
+    khor_gui_core::pin_device(&Node::root_from_env(), &machine, on)
+}
+
+#[tauri::command]
 fn invite() -> Result<String, String> {
     khor_gui_core::invite(&Node::root_from_env())
 }
@@ -68,6 +78,8 @@ pub fn run() {
             seen,
             close_session,
             tell,
+            pin_session,
+            pin_device,
             invite,
             pair
         ])

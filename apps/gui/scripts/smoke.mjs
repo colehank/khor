@@ -38,11 +38,22 @@
 //      hover response — with a rail glyph measured the same way as the
 //      control, since "nothing changed" is also what a broken probe
 //      says;
-//  15. the back button exists only on the narrow face (after proving
+//  15. pinning crosses the CLI/GUI seam in both directions: a row
+//      pinned in the app leads beta's own `khor sessions` and gets a
+//      mark there, a row pinned from alpha's terminal shows as pinned
+//      in beta's app (which can only happen through the sync layer),
+//      both undo, the pinned and unpinned pin are two *shapes* rather
+//      than two colors, every row carries the control, and machines
+//      pin the same way — with the order always read back off the
+//      node, never checked against one this script worked out;
+//  16. the back button exists only on the narrow face (after proving
 //      the detail header renders at all — negative assertions must
 //      first prove the probe is alive), and the mark is not in the
 //      narrow rail;
-//  16. zero pageerror throughout.
+//  17. the pin is painted and works on the narrow face with the
+//      pointer parked away — a hover-only row action is missing on a
+//      phone and looks fine in every mouse-driven screenshot;
+//  18. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
 // No Chinese literal appears below. Words are read off the running app
@@ -98,8 +109,28 @@ function run(cmd, args, env, name) {
   children.push(c);
   return c;
 }
+// A CLI verb, retried on failure.
+//
+// **Not a way of ignoring errors**: a verb that is actually broken fails
+// every attempt and still throws, carrying its own stderr. What this
+// absorbs is the store race the ledger already records — `Node::open`
+// flushes the device table, so even a read-only verb writes, and the
+// loser of a race with the resident serve prints "改不了名" and exits 1.
+// The bridge embeds a serve against this very home, so the window is
+// open on every call here. Before this, the race surfaced as whichever
+// assertion happened to be running, which reads like that feature
+// breaking rather than like the known race it is.
 function cli(env, ...args) {
-  return execFileSync(KHOR, args, { env, encoding: "utf8", timeout: 30_000 });
+  let last;
+  for (let i = 0; i < 5; i++) {
+    try {
+      return execFileSync(KHOR, args, { env, encoding: "utf8", timeout: 30_000 });
+    } catch (e) {
+      last = e;
+      execFileSync("/bin/sleep", ["0.4"]);
+    }
+  }
+  throw new Error(`khor ${args.join(" ")} failed 5x: ${last?.stderr || last}`);
 }
 function feedHook(env, event, extra = "") {
   const payload = `{"session_id":"cafe1","cwd":"/tmp/proj","hook_event_name":"${event}"${extra}}`;
@@ -637,7 +668,138 @@ try {
   }
   await pointerAway();
 
-  // 15) faces of the shell: wide has a detail header but no back;
+  // 15) pinning, both directions across the CLI/GUI seam.
+  //
+  //     The order is never checked here — it is read back off the node.
+  //     What is asserted is that the row the node put first *is* first,
+  //     which is a different claim from "the frontend sorted correctly"
+  //     and the only one this layer is allowed to make.
+  await openLanding("sessions");
+  await until("rows on the session list", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
+  const sessionIds = () =>
+    page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  const pinButtons = page.locator("[data-row] [data-row-pin]");
+
+  //     a. the control: nothing is pinned, and every row carries the pin
+  //     — "every row" is the reachability claim, and counting it against
+  //     the rows themselves is what makes it one.
+  if ((await page.locator("[data-row][data-pinned=true]").count()) !== 0) {
+    throw new Error("something is pinned before the test pinned anything — the control is void");
+  }
+  if ((await pinButtons.count()) !== (await page.locator("[data-row]").count())) {
+    throw new Error(
+      `${await pinButtons.count()} pins for ${await page.locator("[data-row]").count()} rows — not every row can be pinned`,
+    );
+  }
+
+  //     b. GUI → CLI. Pin the second row (not the first: a row already on
+  //     top proves nothing about floating), then read beta's own CLI.
+  const idsBefore = await sessionIds();
+  const target = idsBefore[1];
+  const cliLineOf = (env, id) =>
+    cli(env, "sessions").split("\n").find((l) => l.startsWith(`${id}\t`)) ?? "";
+  const plainLine = cliLineOf(envB, target);
+  if (!plainLine) throw new Error(`probe dead: ${target} is not in beta's CLI list`);
+
+  await page.locator(`[data-row="${target}"] [data-row-pin]`).click();
+  await until("the pinned row to float to the top", 10_000, async () => {
+    const now = await sessionIds();
+    if (now[0] === target) return true;
+    // Say what the screen actually looks like: "it did not float" and
+    // "the click never reached the node" fail the same way from here.
+    const pinnedAttr = await page.locator(`[data-row="${target}"]`).getAttribute("data-pinned");
+    const backend = cli(envB, "sessions").split("\n").filter(Boolean)[0] ?? "";
+    throw new Error(
+      `target=${target} data-pinned=${pinnedAttr} order=[${now.join(" ")}] cli-first=${backend.split("\t")[0]}`,
+    );
+  });
+  if ((await page.locator(`[data-row="${target}"]`).getAttribute("data-pinned")) !== "true") {
+    throw new Error("the row floated but does not say it is pinned");
+  }
+  //     …and beta's CLI agrees, both in order and in what it prints. The
+  //     mark itself is never spelled here: it is whatever the pinned line
+  //     grew relative to the same line before, which is also the proof
+  //     that the CLI says *something* rather than only reordering.
+  await until("beta's CLI to lead with the pinned row", 10_000, () => {
+    const rowsOut = cli(envB, "sessions").split("\n").filter(Boolean);
+    return rowsOut[0]?.startsWith(`${target}\t`);
+  });
+  const markedLine = cliLineOf(envB, target);
+  if (markedLine === plainLine || !markedLine.startsWith(plainLine)) {
+    throw new Error(`the CLI does not mark the pinned row: ${plainLine} -> ${markedLine}`);
+  }
+
+  //     c. the two states are two shapes, not one shape in two colors.
+  //     Measured off the element: a painter that only swapped a color
+  //     would pass every other assertion here.
+  //     Both `transform` and the standalone `rotate` property are read:
+  //     tailwind v4 compiles `-rotate-45` to the latter, and reading only
+  //     the former returns "none" for a rotation that is plainly there.
+  const pinTransform = (id) =>
+    page.locator(`[data-row="${id}"] [data-row-pin] svg`).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return `${s.transform}|${s.rotate}|${s.transformOrigin}`;
+    });
+  const pinnedShape = await pinTransform(target);
+  const restingShape = await pinTransform(idsBefore[0] === target ? idsBefore[1] : idsBefore[0]);
+  if (pinnedShape === restingShape) {
+    throw new Error(`pinned and unpinned draw the same shape: ${pinnedShape}`);
+  }
+  if (/\|none\|/.test(pinnedShape)) {
+    throw new Error(`the pinned state is not a rotation at all: ${pinnedShape}`);
+  }
+  //     …and the rotation happens around the middle. An SVG element's
+  //     transform-origin defaults to (0, 0), which would swing the pin
+  //     out of its own box — visibly wrong, and nothing else here looks.
+  const [, , origin] = pinnedShape.split("|");
+  if (/^0px 0px/.test(origin)) {
+    throw new Error(`the pin rotates around its corner, not its centre: ${origin}`);
+  }
+
+  //     d. CLI → GUI, on the far machine. alpha pins one of its own rows
+  //     from its terminal; beta's app has to show it, which can only
+  //     happen through the sync layer.
+  if ((await page.locator('[data-row="tui/cafe1"]').getAttribute("data-pinned")) === "true") {
+    throw new Error("tui/cafe1 is already pinned in the GUI — the control is void");
+  }
+  cli(envA, "pin", "tui/cafe1");
+  await until("alpha's pin to reach beta's app", 40_000, async () =>
+    (await page.locator('[data-row="tui/cafe1"]').getAttribute("data-pinned")) === "true",
+    1_000,
+  );
+
+  //     e. taking it back travels the same way, and the row goes home.
+  await page.locator(`[data-row="${target}"] [data-row-pin]`).click();
+  await until("the unpinned row to leave the top", 10_000, async () => {
+    const now = await sessionIds();
+    return now[0] !== target;
+  });
+  if (cliLineOf(envB, target) !== plainLine) {
+    throw new Error(`unpinning left the CLI line changed: ${cliLineOf(envB, target)}`);
+  }
+  cli(envA, "unpin", "tui/cafe1");
+  await until("alpha's unpin to reach beta's app", 40_000, async () =>
+    (await page.locator('[data-row="tui/cafe1"]').getAttribute("data-pinned")) === "false",
+    1_000,
+  );
+
+  //     f. machines pin too, and the same way: the table sorts, the app
+  //     paints. gamma is last by name, so its arrival at the top is not
+  //     something the previous order could have produced.
+  await openLanding("devices");
+  await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) === 3);
+  const deviceNames = () =>
+    page.locator("[data-device]").evaluateAll((els) => els.map((e) => e.dataset.device));
+  if ((await deviceNames())[0] === "gamma") throw new Error("gamma already leads — the control is void");
+  await page.locator('[data-device="gamma"] [data-row-pin]').click();
+  await until("gamma to lead beta's machine list", 10_000, async () => (await deviceNames())[0] === "gamma");
+  await until("beta's CLI to lead with gamma", 10_000, () =>
+    cli(envB, "devices").split("\n")[0]?.startsWith("gamma"),
+  );
+  await page.locator('[data-device="gamma"] [data-row-pin]').click();
+  await until("gamma to go back", 10_000, async () => (await deviceNames())[0] !== "gamma");
+
+  // 16) faces of the shell: wide has a detail header but no back;
   //     narrow, after entering a detail, has the back button.
   await openLanding("sessions");
   await until("rows on the session list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
@@ -665,7 +827,44 @@ try {
     throw new Error("the mark is in the narrow rail");
   }
 
-  // 16) the page never threw.
+  // 17) the pin is reachable on the narrow face — the one where there is
+  //     no pointer to reveal it with. A hover-only row action is simply
+  //     absent on a phone, and it looks identical to a working one in
+  //     every screenshot taken with a mouse present.
+  //
+  //     So: park the pointer far away, then measure that the button is
+  //     really painted (visible, non-zero box, not transparent) and that
+  //     pressing it does what it does on the wide face.
+  await openLanding("sessions");
+  await until("rows on the narrow session list", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
+  await pointerAway();
+  await settle();
+  const narrowPin = page.locator("[data-row] [data-row-pin]").first();
+  const painted = await narrowPin.evaluate((el) => {
+    const s = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    return { opacity: s.opacity, display: s.display, visibility: s.visibility, w: box.width, h: box.height };
+  });
+  if (
+    painted.display === "none" ||
+    painted.visibility === "hidden" ||
+    Number(painted.opacity) === 0 ||
+    painted.w === 0 ||
+    painted.h === 0
+  ) {
+    throw new Error(`the pin is hover-only on the narrow face: ${JSON.stringify(painted)}`);
+  }
+  // …and it still works down here, which is the half a visibility check
+  // cannot cover: a button can be perfectly visible and out of reach.
+  const narrowIds = () =>
+    page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  const narrowTarget = (await narrowIds())[1];
+  await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
+  await until("the narrow pin to float its row", 10_000, async () => (await narrowIds())[0] === narrowTarget);
+  await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
+  await until("the narrow row to go back", 10_000, async () => (await narrowIds())[0] !== narrowTarget);
+
+  // 18) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
   if (process.env.SMOKE_SHOT) {

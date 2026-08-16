@@ -262,6 +262,11 @@ new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.
 no-matches = "没有匹配的"
+# The row action. Two words because the button has two jobs, and the one
+# it names is the one it will do next — a button labelled by its current
+# state tells you what is, not what pressing it does.
+pin = "置顶"
+unpin = "取消置顶"
 tell-machine = "给机器留言"
 pick-a-machine = "选一台机器"
 message-text = "留言"

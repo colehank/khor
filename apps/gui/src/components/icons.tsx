@@ -271,3 +271,29 @@ export function IconClose({ className }: IconProps) {
     </Mark>
   );
 }
+
+/**
+ * Pin a row to the top. Ported from mandala's `IconPin`, paths verbatim,
+ * and so is the judgment behind it:
+ *
+ * **The two states must be two shapes, not one shape in two colors.** A
+ * pin carries its own metaphor — tilted means resting on the surface,
+ * upright means driven in — so the button reports its own state instead
+ * of making you check whether the row jumped to the top. That check is
+ * position speaking on the control's behalf, and it fails exactly when
+ * the row was already at the top.
+ *
+ * Drawn tilted and rotated 45° when pinned, which is a difference the
+ * eye catches without looking for it. `origin-center` is not decoration:
+ * an SVG element's `transform-origin` defaults to (0, 0), not to the
+ * centre the way a normal HTML element's does, and without it the pin
+ * swings out of its own box.
+ */
+export function IconPin({ className, pinned = false }: IconProps & { pinned?: boolean }) {
+  return (
+    <Mark className={cn("origin-center", pinned && "-rotate-45", className)}>
+      <path d="M9.6 1.9l4.5 4.5-1.6.5-.6 2.6-4.9-4.9 2.6-.6.4-2.1z" />
+      <path d="M7 9L2.7 13.3" />
+    </Mark>
+  );
+}

@@ -85,6 +85,14 @@ fn handle(
             .ok_or_else(|| format!("missing arg: {name}"))
             .map(|s| s.to_owned())
     };
+    // Missing is an error, not a silent false: a bool that defaults would
+    // turn a typo'd argument name into "unpin", which looks like the
+    // button working and doing the opposite.
+    let flag = |name: &str| {
+        args.get(name)
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| format!("missing bool arg: {name}"))
+    };
     match cmd {
         "sessions" => to_json(&khor_gui_core::list_sessions(root)?),
         "devices" => to_json(&khor_gui_core::list_devices(root)?),
@@ -98,6 +106,14 @@ fn handle(
         }
         "tell" => {
             khor_gui_core::tell(root, &arg("machine")?, &arg("text")?)?;
+            Ok("null".to_owned())
+        }
+        "pin_session" => {
+            khor_gui_core::pin_session(root, &arg("id")?, flag("on")?)?;
+            Ok("null".to_owned())
+        }
+        "pin_device" => {
+            khor_gui_core::pin_device(root, &arg("machine")?, flag("on")?)?;
             Ok("null".to_owned())
         }
         "invite" => to_json(&khor_gui_core::invite(root)?),

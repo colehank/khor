@@ -4,6 +4,8 @@ import {
   fetchDevices,
   fetchSessions,
   markSeen,
+  pinDevice,
+  pinSession,
   type DeviceRow,
   type SessionRow,
 } from "@/api";
@@ -171,6 +173,37 @@ export default function App() {
     [landing],
   );
 
+  // Pinning: ask the node, then refresh from it. **The rows are not
+  // reordered here** — the order is the node's answer, and guessing it
+  // locally would mean the screen briefly shows an order the library
+  // never produced (and permanently shows it if the call fails).
+  const refresh = useCallback(async () => {
+    const [s, d] = await Promise.all([fetchSessions(), fetchDevices()]);
+    setRows(s);
+    setDevices(d);
+  }, []);
+
+  // A failed pin currently shows as nothing happening, which is what
+  // "I missed the button" also looks like (docs/UX.md: 做了但没变化 and
+  // 失败 must not wear one face). The race that made this reachable is
+  // fixed at the source — a shared temp filename in the block store,
+  // measured at 17 of 40 pins failing before and 0 of 40 after — so what
+  // is left is the rare disk error, and saying it properly needs a place
+  // to say it that this screen does not have yet. On the ledger.
+  const onPinSession = useCallback(
+    (row: SessionRow) => {
+      pinSession(row.id, !row.pinned).then(refresh).catch(() => {});
+    },
+    [refresh],
+  );
+
+  const onPinDevice = useCallback(
+    (row: DeviceRow) => {
+      pinDevice(row.name, !row.pinned).then(refresh).catch(() => {});
+    },
+    [refresh],
+  );
+
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
   const blockedOrUnread = rows.reduce(
     (n, r) => n + (r.word === "blocked" ? 1 : 0) + (r.unread > 0 ? 1 : 0),
@@ -286,9 +319,10 @@ export default function App() {
             words={words}
             selected={selected}
             onSelect={onSelect}
+            onPin={onPinSession}
           />
         ) : (
-          <DevicesList rows={devices} query={queries[landing]} />
+          <DevicesList rows={devices} query={queries[landing]} onPin={onPinDevice} />
         )}
       </div>
     </section>

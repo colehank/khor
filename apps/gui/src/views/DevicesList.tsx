@@ -1,5 +1,7 @@
 import type { DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { IconPin } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 
 /** Search matches the name people call the machine and the id they
@@ -15,15 +17,26 @@ export function visibleDevices(rows: DeviceRow[], query: string) {
  * browser — because "which machine" is the first step of all three, and
  * each of the latter two grows its own content in its own batch.
  *
- * **A row here does nothing at all yet.** Machine cards are a later
+ * **The row itself still goes nowhere.** Machine cards are a later
  * batch, so the row is not a button, does not light up under the
  * pointer and carries no chevron: an affordance that answers nothing
- * teaches people to stop trying the ones that do. That leaves a list
- * you can only read, and that is the honest shape of it today — the
- * first thing this row is going to be able to do is open the machine's
- * card, and until that exists there is nothing here to offer.
+ * teaches people to stop trying the ones that do.
+ *
+ * The pin is not a counter-example to that. It is a control that does
+ * the whole of what it promises the moment it is pressed — what the
+ * previous batch refused was an affordance suggesting a *destination*
+ * that does not exist. So the pin sits on the row while the row stays
+ * inert, and that difference is the point rather than an inconsistency.
  */
-export function DevicesList({ rows, query }: { rows: DeviceRow[]; query: string }) {
+export function DevicesList({
+  rows,
+  query,
+  onPin,
+}: {
+  rows: DeviceRow[];
+  query: string;
+  onPin: (row: DeviceRow) => void;
+}) {
   const shown = visibleDevices(rows, query);
   // An empty device table cannot happen — this machine is always in it —
   // so the only way to reach zero rows is by filtering, and that gets
@@ -42,7 +55,8 @@ export function DevicesList({ rows, query }: { rows: DeviceRow[]; query: string 
           key={d.id}
           data-device={d.name}
           data-row={d.id}
-          className="flex items-center gap-3 px-4 py-2"
+          data-pinned={d.pinned}
+          className="flex items-center gap-3 py-2 pr-2 pl-4"
         >
           <MachineAvatar face={d.face} className="size-avatar" />
           <span className="min-w-0 flex-1">
@@ -52,6 +66,17 @@ export function DevicesList({ rows, query }: { rows: DeviceRow[]; query: string 
             </span>
             <span className="block truncate text-sm text-muted-foreground">{d.id.slice(0, 12)}</span>
           </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            data-row-pin
+            data-on={d.pinned}
+            aria-label={d.pinned ? gui.unpin : gui.pin}
+            onClick={() => onPin(d)}
+            className="flex-none text-muted-foreground data-[on=true]:text-foreground"
+          >
+            <IconPin pinned={d.pinned} />
+          </Button>
         </div>
       ))}
     </div>

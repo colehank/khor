@@ -29,6 +29,10 @@ pub struct SessionRow {
     pub unread: u64,
     /// Present on reported rows: the offline axis, never a seventh word.
     pub source: Option<SourceTag>,
+    /// Pinned somewhere in the network (`khor_sync::pins`). The frontend
+    /// paints a mark from this and **does not sort by it** — the rows
+    /// arrive in the order the node decided.
+    pub pinned: bool,
     /// The face of the machine this session lives on — derived here,
     /// never in the frontend (`khor_core::avatar`). `None` only when the
     /// home device is not in this table at all, and then the row draws a
@@ -52,6 +56,9 @@ pub struct DeviceRow {
     /// This machine's face, in **its own** reported palette. See
     /// `khor_node::Node::face_of`.
     pub face: Option<Avatar>,
+    /// Pinned, network-wide. Same rule as `SessionRow::pinned`: a mark to
+    /// paint, never an ordering to redo.
+    pub pinned: bool,
 }
 
 fn open(root: &Path) -> Result<Node, String> {
@@ -74,6 +81,7 @@ pub fn list_sessions(root: &Path) -> Result<Vec<SessionRow>, String> {
             at_ms: v.session.state.at.0,
             unread: v.session.unread,
             source: v.source.map(|(device, age_ms)| SourceTag { device, age_ms }),
+            pinned: v.pinned,
         })
         .collect())
 }
@@ -86,10 +94,22 @@ pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
         .map(|d| DeviceRow {
             me: d.id == me,
             face: n.face_of(&d),
+            pinned: d.pinned,
             id: d.id,
             name: d.name,
         })
         .collect())
+}
+
+/// Pins or unpins a session — the call `khor pin <session>` makes. One
+/// function behind the verb and the button, so the two cannot drift.
+pub fn pin_session(root: &Path, id: &str, on: bool) -> Result<(), String> {
+    open(root)?.pin_session(&SessionId(id.to_owned()), on)
+}
+
+/// Pins or unpins a machine — the call `khor pin -m <machine>` makes.
+pub fn pin_device(root: &Path, machine: &str, on: bool) -> Result<(), String> {
+    open(root)?.pin_device(machine, on)
 }
 
 /// Every known machine's face, keyed the way the device table keys
