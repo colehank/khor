@@ -1,0 +1,10 @@
+<svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+  <!-- 托盘模板图标:纯黑+alpha,系统按明暗自动着色
+       取琉璃城的剪影:闭合外环 + 四门 + 心,不带进度语义 -->
+  <circle cx="22" cy="22" r="15" fill="none" stroke="#000" stroke-width="3.4" opacity="0.55"/>
+  <circle cx="22" cy="7" r="2.1" fill="#000"/>
+  <circle cx="37" cy="22" r="2.1" fill="#000"/>
+  <circle cx="22" cy="37" r="2.1" fill="#000"/>
+  <circle cx="7" cy="22" r="2.1" fill="#000"/>
+  <circle cx="22" cy="22" r="4.6" fill="#000"/>
+</svg>

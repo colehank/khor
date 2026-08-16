@@ -1,0 +1,24 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mandala 应用图标 · 16px 专稿
+       主稿在 16px 会糊成一团,这里按 Apple 的做法单独重绘:只留环与心,
+       粗细放大到 16px 下仍能读出。用于替换生成结果里的最小尺寸 PNG。 -->
+  <defs>
+    <clipPath id="sqm">
+      <path d="M330 0 L694 0 C894 0 1024 130 1024 330 L1024 694 C1024 894 894 1024 694 1024 L330 1024 C130 1024 0 894 0 694 L0 330 C0 130 130 0 330 0 Z"/>
+    </clipPath>
+    <linearGradient id="bgv2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141410"/>
+      <stop offset="1" stop-color="#080807"/>
+    </linearGradient>
+    <radialGradient id="bead" cx="0.5" cy="0.5" r="0.6" fx="0.35" fy="0.3">
+      <stop offset="0" stop-color="#f8fbdd"/>
+      <stop offset="0.5" stop-color="#dde9a7"/>
+      <stop offset="1" stop-color="#9fba55"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#sqm)">
+    <rect width="1024" height="1024" fill="url(#bgv2)"/>
+    <circle cx="512" cy="512" r="356" fill="none" stroke="#73735a" stroke-width="94"/>
+    <circle cx="512" cy="512" r="160" fill="url(#bead)"/>
+  </g>
+</svg>

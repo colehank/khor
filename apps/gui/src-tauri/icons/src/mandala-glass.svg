@@ -1,0 +1,134 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mandala 应用图标 · 琉璃城 V3「辉心」定稿 · 带掩模版
+       用途:传统 tauri icon / icns / ico 流程,直接 resvg 导出 1024 PNG
+       外形:全出血 1024 方形,角半径 229(22.4%)、曲率连续,按 Apple 图标网格
+       结构:外环(玻璃管) · 内方(玻璃平面,四顶点与外环相接) · 四门珠 · 心珠
+       材质原则(V3):明度推向两极——面几乎全透明(白 5%→2%),晕染只剩中心 30% 且尾段归零;
+       棱光 90%、内缘拾光 70%;底沉到 #141410→#080807 让光斑自己亮;
+       影子紧(35%/blur14/dy12);心珠 r66、bloom 55%;珠上白点 70%
+       注意:含 feGaussianBlur,必须用 resvg / rsvg-convert 等完整渲染器导出 -->
+  <defs>
+    <clipPath id="sqm">
+      <path d="M330 0 L694 0 C894 0 1024 130 1024 330 L1024 694 C1024 894 894 1024 694 1024 L330 1024 C130 1024 0 894 0 694 L0 330 C0 130 130 0 330 0 Z"/>
+    </clipPath>
+    <clipPath id="dia">
+      <path d="M512 144 L880 512 L512 880 L144 512 Z"/>
+    </clipPath>
+    <linearGradient id="lq" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2f6cb"/>
+      <stop offset="0.45" stop-color="#dce9a6"/>
+      <stop offset="1" stop-color="#b7cf75"/>
+    </linearGradient>
+    <linearGradient id="bgv2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141410"/>
+      <stop offset="1" stop-color="#080807"/>
+    </linearGradient>
+    <!-- 玻璃平面本体:几乎全透明 -->
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#eef7cd" stop-opacity="0.02"/>
+    </linearGradient>
+    <!-- 草绿晕染:圆心即坛城圆心,尾段归零 -->
+    <radialGradient id="wash">
+      <stop offset="0" stop-color="#dff0a8" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#c0d97e" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#c0d97e" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 内缘拾光:做出玻璃厚度 -->
+    <linearGradient id="edge" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#f4fad8" stop-opacity="0.70"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#c6dd85" stop-opacity="0.30"/>
+    </linearGradient>
+    <!-- 棱光:全图最亮的线 -->
+    <linearGradient id="rimD" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfdf0" stop-opacity="0.90"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#e4efb6" stop-opacity="0.50"/>
+    </linearGradient>
+    <linearGradient id="glassTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="0.35" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rimB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.65" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.07"/>
+    </linearGradient>
+    <radialGradient id="gl">
+      <stop offset="0" stop-color="#dce9a6" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#dce9a6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bead" cx="0.5" cy="0.5" r="0.6" fx="0.35" fy="0.3">
+      <stop offset="0" stop-color="#f8fbdd"/>
+      <stop offset="0.5" stop-color="#dde9a7"/>
+      <stop offset="1" stop-color="#9fba55"/>
+    </radialGradient>
+    <filter id="f3" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="f14" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="f18" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="f48" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="48"/></filter>
+    <filter id="f70" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="70"/></filter>
+  </defs>
+
+  <g clip-path="url(#sqm)">
+    <!-- 底:更沉的暗底 + 两团失焦液态色光斑(比之前更活) -->
+    <rect width="1024" height="1024" fill="url(#bgv2)"/>
+    <ellipse cx="340" cy="290" rx="330" ry="260" fill="#dce9a6" opacity="0.14" filter="url(#f48)"/>
+    <ellipse cx="720" cy="790" rx="310" ry="230" fill="#b7cf75" opacity="0.09" filter="url(#f48)"/>
+    <circle cx="512" cy="512" r="400" fill="url(#gl)"/>
+
+    <!-- 内方落影:紧、贴 -->
+    <path d="M512 144 L880 512 L512 880 L144 512 Z" transform="translate(0 12)" fill="#000000" opacity="0.35" filter="url(#f14)"/>
+
+    <!-- 内方:玻璃平面 + 草绿晕染 + 内缘拾光 -->
+    <g clip-path="url(#dia)">
+      <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="url(#plate)"/>
+      <circle cx="512" cy="512" r="330" fill="url(#wash)"/>
+      <ellipse cx="360" cy="330" rx="340" ry="280" fill="#eaf6c2" opacity="0.22" filter="url(#f70)"/>
+      <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="url(#edge)" stroke-width="20" filter="url(#f3)"/>
+    </g>
+
+    <!-- 中心 bloom -->
+    <g filter="url(#f18)" opacity="0.55">
+      <circle cx="512" cy="512" r="172" fill="none" stroke="#dce9a6" stroke-width="22"/>
+      <circle cx="512" cy="512" r="62" fill="#dce9a6"/>
+    </g>
+
+    <!-- 内方棱光:画在 bloom 之上,保持锐利 -->
+    <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="url(#rimD)" stroke-width="7" stroke-linejoin="round"/>
+
+    <!-- 外环:玻璃管三层(管体 / 内容物 / 顶部受光),不加 specular 弧线 -->
+    <circle cx="512" cy="512" r="368" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="32"/>
+    <circle cx="512" cy="512" r="368" fill="none" stroke="url(#lq)" stroke-opacity="0.34" stroke-width="32"/>
+    <circle cx="512" cy="512" r="368" fill="none" stroke="url(#glassTop)" stroke-width="32"/>
+
+    <!-- 液环:实色 + 液体高光弧 -->
+    <circle cx="512" cy="512" r="172" fill="none" stroke="url(#lq)" stroke-width="22"/>
+    <circle cx="512" cy="512" r="172" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="6"
+            stroke-linecap="round" stroke-dasharray="186 895" transform="rotate(-150 512 512)" filter="url(#f3)"/>
+
+    <!-- 四门珠:坐在圆与方的交点上 -->
+    <circle cx="512" cy="144" r="20" fill="url(#bead)"/>
+    <circle cx="506" cy="137" r="6" fill="#ffffff" opacity="0.7"/>
+    <circle cx="880" cy="512" r="20" fill="url(#bead)"/>
+    <circle cx="874" cy="505" r="6" fill="#ffffff" opacity="0.7"/>
+    <circle cx="512" cy="880" r="20" fill="url(#bead)"/>
+    <circle cx="506" cy="873" r="6" fill="#ffffff" opacity="0.7"/>
+    <circle cx="144" cy="512" r="20" fill="url(#bead)"/>
+    <circle cx="138" cy="505" r="6" fill="#ffffff" opacity="0.7"/>
+
+    <!-- 心珠 -->
+    <circle cx="512" cy="512" r="66" fill="url(#bead)"/>
+    <ellipse cx="492" cy="487" rx="19" ry="14" fill="#ffffff" opacity="0.75" transform="rotate(-25 492 487)"/>
+  </g>
+
+  <!-- 外形内缘:顶部拾光 + 底部反光 -->
+  <path d="M330 0 L694 0 C894 0 1024 130 1024 330 L1024 694 C1024 894 894 1024 694 1024 L330 1024 C130 1024 0 894 0 694 L0 330 C0 130 130 0 330 0 Z"
+        transform="translate(3 3) scale(0.99414)" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <path d="M330 0 L694 0 C894 0 1024 130 1024 330 L1024 694 C1024 894 894 1024 694 1024 L330 1024 C130 1024 0 894 0 694 L0 330 C0 130 130 0 330 0 Z"
+        transform="translate(3 3) scale(0.99414)" fill="none" stroke="url(#rimB)" stroke-width="3"/>
+</svg>

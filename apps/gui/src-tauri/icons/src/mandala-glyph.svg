@@ -1,0 +1,15 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mandala 抽象符号 · 骨干版
+       用途:app 内当通用符号用(空态、水印、标记),不是应用图标——
+       图标走 mandala-glass.svg 那一套材质,这份只管「这是坛城」这件事。
+       只留结构:外环(结界)· 内方(宫墙,四顶点与外环相接)· 四门珠 · 心珠,
+       去掉材质、渐变、模糊、背景——单色 currentColor,纯线条 + 实心珠,
+       深浅色主题下都能用。几何与坐标取自主稿,尺寸未改。 -->
+  <circle cx="512" cy="512" r="368" fill="none" stroke="currentColor" stroke-width="24"/>
+  <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="currentColor" stroke-width="24" stroke-linejoin="round"/>
+  <circle cx="512" cy="144" r="22" fill="currentColor"/>
+  <circle cx="880" cy="512" r="22" fill="currentColor"/>
+  <circle cx="512" cy="880" r="22" fill="currentColor"/>
+  <circle cx="144" cy="512" r="22" fill="currentColor"/>
+  <circle cx="512" cy="512" r="68" fill="currentColor"/>
+</svg>

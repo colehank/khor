@@ -36,7 +36,8 @@ export function SessionsList({
             </div>
           </span>
           <span className="row-side">
-            <span>{ago(r.at_ms)}</span>
+            {/* No stamp yet is no age — not an epoch-sized number. */}
+            {r.at_ms > 0 && <span>{ago(r.at_ms)}</span>}
             {r.unread > 0 && <span className="unread">{r.unread}</span>}
           </span>
         </button>

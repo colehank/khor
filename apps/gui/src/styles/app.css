@@ -88,8 +88,28 @@ button {
   background: var(--hover);
 }
 
+/* The rail glyphs render at their own size, not the label's em — the
+   stroke width was chosen against this rendered size (Icons.tsx). */
+.rail-item > svg {
+  width: var(--icon-rail);
+  height: var(--icon-rail);
+}
+
 .rail-item.on {
   color: var(--accent);
+}
+
+/* Two densities, one color (mandala's rail discipline): the solid piece
+   fills at sixty percent so body and line read as depths, not colors;
+   selection pushes it solid. */
+.rail-item svg [data-body] {
+  fill: currentColor;
+  fill-opacity: 0.6;
+  transition: fill-opacity var(--dur-180) var(--ease-out);
+}
+
+.rail-item.on svg [data-body] {
+  fill-opacity: 1;
 }
 
 .rail-badge {
@@ -208,6 +228,27 @@ button {
   padding: var(--sp-4);
   color: var(--ink-2);
   font-size: var(--fs-sm);
+}
+
+/* Busy takes no hue — it breathes (mandala's state doctrine). */
+@keyframes breath {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.row[data-word="busy"] .word {
+  animation: breath calc(var(--dur-420) * 6) var(--ease-move) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row[data-word="busy"] .word {
+    animation: none;
+  }
 }
 
 /* ── the detail pane ── */

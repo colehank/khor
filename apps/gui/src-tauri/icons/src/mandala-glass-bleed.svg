@@ -1,0 +1,101 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mandala 应用图标 · 琉璃城 V3「辉心」定稿 · 全出血无掩模版
+       用途:Xcode 26 / Icon Composer——提交满幅方形原图,圆角与折射由系统渲染
+       与 mandala-glass.svg 内容一致,差别:不裁切、不画外形内缘的拾光边
+       分层建议(Icon Composer 逐层导入):
+         L1 底光   = <rect> + 两个 <ellipse> + 中心 radial
+         L2 玻璃面 = 落影 + 菱形裁切组(本体 / 晕染 / 受光 / 内缘拾光)
+         L3 玻璃环 = 中心 bloom + 棱光 + 三条 r=368 的 circle
+         L4 珠心   = 液环 + 高光弧 + 四门珠 + 心珠 -->
+  <defs>
+    <clipPath id="dia">
+      <path d="M512 144 L880 512 L512 880 L144 512 Z"/>
+    </clipPath>
+    <linearGradient id="lq" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2f6cb"/>
+      <stop offset="0.45" stop-color="#dce9a6"/>
+      <stop offset="1" stop-color="#b7cf75"/>
+    </linearGradient>
+    <linearGradient id="bgv2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141410"/>
+      <stop offset="1" stop-color="#080807"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#eef7cd" stop-opacity="0.02"/>
+    </linearGradient>
+    <radialGradient id="wash">
+      <stop offset="0" stop-color="#dff0a8" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#c0d97e" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#c0d97e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#f4fad8" stop-opacity="0.70"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#c6dd85" stop-opacity="0.30"/>
+    </linearGradient>
+    <linearGradient id="rimD" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfdf0" stop-opacity="0.90"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#e4efb6" stop-opacity="0.50"/>
+    </linearGradient>
+    <linearGradient id="glassTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="gl">
+      <stop offset="0" stop-color="#dce9a6" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#dce9a6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bead" cx="0.5" cy="0.5" r="0.6" fx="0.35" fy="0.3">
+      <stop offset="0" stop-color="#f8fbdd"/>
+      <stop offset="0.5" stop-color="#dde9a7"/>
+      <stop offset="1" stop-color="#9fba55"/>
+    </radialGradient>
+    <filter id="f3" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="f14" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="f18" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="f48" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="48"/></filter>
+    <filter id="f70" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="70"/></filter>
+  </defs>
+
+  <!-- L1 底光 -->
+  <rect width="1024" height="1024" fill="url(#bgv2)"/>
+  <ellipse cx="340" cy="290" rx="330" ry="260" fill="#dce9a6" opacity="0.14" filter="url(#f48)"/>
+  <ellipse cx="720" cy="790" rx="310" ry="230" fill="#b7cf75" opacity="0.09" filter="url(#f48)"/>
+  <circle cx="512" cy="512" r="400" fill="url(#gl)"/>
+
+  <!-- L2 玻璃面 -->
+  <path d="M512 144 L880 512 L512 880 L144 512 Z" transform="translate(0 12)" fill="#000000" opacity="0.35" filter="url(#f14)"/>
+  <g clip-path="url(#dia)">
+    <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="url(#plate)"/>
+    <circle cx="512" cy="512" r="330" fill="url(#wash)"/>
+    <ellipse cx="360" cy="330" rx="340" ry="280" fill="#eaf6c2" opacity="0.22" filter="url(#f70)"/>
+    <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="url(#edge)" stroke-width="20" filter="url(#f3)"/>
+  </g>
+
+  <!-- L3 玻璃环 -->
+  <g filter="url(#f18)" opacity="0.55">
+    <circle cx="512" cy="512" r="172" fill="none" stroke="#dce9a6" stroke-width="22"/>
+    <circle cx="512" cy="512" r="62" fill="#dce9a6"/>
+  </g>
+  <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="url(#rimD)" stroke-width="7" stroke-linejoin="round"/>
+  <circle cx="512" cy="512" r="368" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="32"/>
+  <circle cx="512" cy="512" r="368" fill="none" stroke="url(#lq)" stroke-opacity="0.34" stroke-width="32"/>
+  <circle cx="512" cy="512" r="368" fill="none" stroke="url(#glassTop)" stroke-width="32"/>
+
+  <!-- L4 珠心 -->
+  <circle cx="512" cy="512" r="172" fill="none" stroke="url(#lq)" stroke-width="22"/>
+  <circle cx="512" cy="512" r="172" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="6"
+          stroke-linecap="round" stroke-dasharray="186 895" transform="rotate(-150 512 512)" filter="url(#f3)"/>
+  <circle cx="512" cy="144" r="20" fill="url(#bead)"/>
+  <circle cx="506" cy="137" r="6" fill="#ffffff" opacity="0.7"/>
+  <circle cx="880" cy="512" r="20" fill="url(#bead)"/>
+  <circle cx="874" cy="505" r="6" fill="#ffffff" opacity="0.7"/>
+  <circle cx="512" cy="880" r="20" fill="url(#bead)"/>
+  <circle cx="506" cy="873" r="6" fill="#ffffff" opacity="0.7"/>
+  <circle cx="144" cy="512" r="20" fill="url(#bead)"/>
+  <circle cx="138" cy="505" r="6" fill="#ffffff" opacity="0.7"/>
+  <circle cx="512" cy="512" r="66" fill="url(#bead)"/>
+  <ellipse cx="492" cy="487" rx="19" ry="14" fill="#ffffff" opacity="0.75" transform="rotate(-25 492 487)"/>
+</svg>

@@ -34,7 +34,9 @@ delete envB.KHOR_SESSION;
 
 const children = [];
 function run(cmd, args, env, name) {
-  const c = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+  // detached = own process group, so cleanup can kill the whole tree —
+  // killing an npx wrapper alone orphans the real server underneath.
+  const c = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
   c.stderr.on("data", (d) => process.stderr.write(`[${name}] ${d}`));
   children.push(c);
   return c;
@@ -139,18 +141,24 @@ try {
   // 5) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 
+  if (process.env.SMOKE_SHOT) {
+    await page.setViewportSize({ width: 1080, height: 720 });
+    await new Promise((r) => setTimeout(r, 600));
+    await page.screenshot({ path: process.env.SMOKE_SHOT });
+  }
+
   console.log("gui smoke: all green");
 } finally {
   if (browser) await browser.close().catch(() => {});
   for (const c of children) {
     try {
-      c.kill("SIGTERM");
+      process.kill(-c.pid, "SIGTERM");
     } catch {}
   }
   await new Promise((r) => setTimeout(r, 500));
   for (const c of children) {
     try {
-      c.kill("SIGKILL");
+      process.kill(-c.pid, "SIGKILL");
     } catch {}
   }
 }
