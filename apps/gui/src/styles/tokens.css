@@ -1,0 +1,87 @@
+/* The one table every screen draws from. Pages never invent a number:
+ * heights come in exactly three sizes, spacing from one scale, every
+ * color has a name. The px gate (scripts/check-px.mjs) makes this a
+ * build error, not a review comment — mandala's 614 stray px literals
+ * are the counterexample this file exists to prevent. */
+
+@import "tailwindcss";
+
+:root {
+  /* ── type ─────────────────────────────────────────── */
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-md: 14px;
+  --fs-lg: 17px;
+
+  /* ── control heights: three, no fourth ────────────── */
+  --ctl-sm: 24px;
+  --ctl-md: 30px;
+  --ctl-lg: 40px;
+
+  /* ── radii ────────────────────────────────────────── */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* ── spacing scale ────────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* ── layout ───────────────────────────────────────── */
+  --rail-w: 56px;
+  --list-w: 288px;
+  --avatar: 32px;
+  --hairline: 1px;
+
+  /* ── surfaces & ink (light) ───────────────────────── */
+  --bg: #f5f5f4;
+  --surface: #ffffff;
+  --ink: #1c1917;
+  --ink-2: #78716c;
+  --sep: rgba(28, 25, 23, 0.08);
+  --accent: #4f46e5;
+  --accent-ink: #ffffff;
+  --hover: rgba(28, 25, 23, 0.04);
+  --selected: rgba(79, 70, 229, 0.1);
+
+  /* ── the six words, one color each (docs/UX.md: same
+   *    state, same color, every end) ─────────────────── */
+  --state-busy: #2563eb;
+  --state-blocked: #ea580c;
+  --state-done: #16a34a;
+  --state-errored: #ca8a04;
+  --state-failed: #dc2626;
+  --state-idle: #a8a29e;
+
+  /* unread counts on badges; blocked shares the loudest ink */
+  --badge: #dc2626;
+  --badge-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171412;
+    --surface: #211d1a;
+    --ink: #e7e5e4;
+    --ink-2: #a8a29e;
+    --sep: rgba(231, 229, 228, 0.08);
+    --accent: #818cf8;
+    --accent-ink: #1c1917;
+    --hover: rgba(231, 229, 228, 0.05);
+    --selected: rgba(129, 140, 248, 0.14);
+
+    --state-busy: #60a5fa;
+    --state-blocked: #fb923c;
+    --state-done: #4ade80;
+    --state-errored: #facc15;
+    --state-failed: #f87171;
+    --state-idle: #78716c;
+
+    --badge: #ef4444;
+    --badge-ink: #fef2f2;
+  }
+}

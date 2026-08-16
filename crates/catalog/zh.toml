@@ -219,3 +219,13 @@ cant-write-pty = "写不了 PTY: {0}"
 cant-listen-loopback = "听不了本机口: {0}"
 wrong-cookie = "暗号不对"
 host-child-wait = "等不到孩子结束: {0}"
+
+[gui]
+sessions-tab = "会话"
+devices-tab = "设备"
+settings = "设置"
+back = "返回"
+from-device = "来自 {0}"
+pick-a-session = "选一个 session"
+empty-sessions = "还没有 session"
+backend-unreachable = "够不着本机的 khor"

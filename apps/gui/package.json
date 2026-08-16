@@ -1,0 +1,33 @@
+{
+  "name": "khor-gui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "gen": "mkdir -p src/gen && cargo run -q -p khor-catalog --bin gen_ts > src/gen/catalog.ts && cargo run -q -p khor-gui-core --bin gen_bindings",
+    "predev": "npm run gen",
+    "dev": "vite",
+    "prebuild": "npm run gen",
+    "build": "tsc --noEmit && vite build",
+    "pretest": "npm run gen",
+    "test": "node scripts/check-px.mjs && tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "playwright-core": "^1.54",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^7"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

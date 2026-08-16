@@ -13,7 +13,7 @@ fn main() {
     let doc: toml::Table = text.parse().expect("zh.toml must parse");
     let mut rs = String::from("// Generated from zh.toml by build.rs - do not edit.\n");
     let mut ts = String::from("// Generated from zh.toml by khor-catalog - do not edit.\n");
-    for section in ["state", "cli", "msg"] {
+    for section in ["state", "cli", "msg", "gui"] {
         let table = doc[section].as_table().expect("each section must be a table");
         let mut texts: BTreeMap<&str, &str> = BTreeMap::new();
         for (k, v) in table {
