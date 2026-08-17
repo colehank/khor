@@ -128,6 +128,19 @@ fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
     khor_gui_core::chat::history(&Node::root_from_env(), &id)
 }
 
+/// One machine's directory, for the files landing. Async because the
+/// machine may be far away (the same reason `pair` is).
+#[tauri::command]
+async fn ls(machine: String, path: String) -> Result<khor_gui_core::files::DirListing, String> {
+    khor_gui_core::files::ls(&Node::root_from_env(), &machine, &path).await
+}
+
+/// Takes a file into this machine's downloads; answers where it landed.
+#[tauri::command]
+async fn pull(machine: String, path: String) -> Result<String, String> {
+    khor_gui_core::files::pull(&Node::root_from_env(), &machine, &path).await
+}
+
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
@@ -184,6 +197,8 @@ pub fn run() {
             chat_replay,
             chat_leave,
             history,
+            ls,
+            pull,
             invite,
             pair
         ])

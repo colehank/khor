@@ -10,6 +10,7 @@ import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
+import type { DirListing } from "./gen/bindings/DirListing";
 
 export type {
   SessionRow,
@@ -21,6 +22,7 @@ export type {
   Strain,
   ChatBatch,
   ChatFrame,
+  DirListing,
 };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
@@ -98,3 +100,11 @@ export const chatLeave = (id: string) => call<null>("chat_leave", { id });
     replay-shaped frames, whole, ending in history_end — so the same
     fold paints it and a live replay alike. */
 export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id });
+/** One machine's directory — order, cap and the answered-about path
+    all come from the node; `""` asks for that machine's home. */
+export const fetchLs = (machine: string, path: string) =>
+  call<DirListing>("ls", { machine, path });
+/** Takes a file into this machine's downloads; answers where it
+    landed — the place was chosen silently, so it must be said. */
+export const pullFile = (machine: string, path: string) =>
+  call<string>("pull", { machine, path });

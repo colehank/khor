@@ -176,6 +176,8 @@ fn handle(
             Ok("null".to_owned())
         }
         "history" => to_json(&khor_gui_core::chat::history(root, &arg("id")?)?),
+        "ls" => to_json(&rt.block_on(khor_gui_core::files::ls(root, &arg("machine")?, &arg("path")?))?),
+        "pull" => to_json(&rt.block_on(khor_gui_core::files::pull(root, &arg("machine")?, &arg("path")?))?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

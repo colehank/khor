@@ -576,3 +576,14 @@ chat-over = "对话结束了"
 # A discovered session whose transcript could not be found or read. Not
 # chat-over: nothing ended — there is simply no record to paint.
 chat-no-record = "没有找到这段对话的记录"
+# The files pane. 上一级 is a place to go, not a "back": the list on
+# the left never left, so the only direction this pane owns is up the
+# tree. An empty directory says so — silence would read as broken.
+up-dir = "上一级"
+empty-dir = "空目录"
+# The row action, and its two ends. The landing is said because the
+# place (下载目录) was chosen silently; the failure wears its own words
+# on the row that was pressed (the pin's rule — this app has nowhere
+# that collects messages).
+take-file = "拉过来"
+took-file = "落在 {0}"

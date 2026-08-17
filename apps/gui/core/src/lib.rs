@@ -7,6 +7,7 @@
 //! node. The GUI must not re-derive any of it (docs/UX.md 状态呈现).
 
 pub mod chat;
+pub mod files;
 
 use std::collections::HashMap;
 use std::path::Path;
