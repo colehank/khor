@@ -598,6 +598,36 @@ mod tests {
         /// (`Some(Busy)` where 空闲 was expected) and green on five
         /// straight runs of the test alone, which is the signature.
         ///
+        /// # Why sampling alone was not enough — the settled look-alike
+        ///
+        /// This wait first shipped as the sampling loop below on its
+        /// own, and the same red came back with it compiled in (later
+        /// the same day, same two values). Startup files run *external*
+        /// commands with the shell back in the foreground **between**
+        /// them, and a sample landing in such a gap is indistinguishable
+        /// from a prompt; the sweep a few milliseconds later meets the
+        /// next startup command and reads 忙碌. Traced live on this
+        /// machine's real rc: the sampled condition held from 0.2s in,
+        /// while the buffered keys below were not consumed until 0.9s.
+        ///
+        /// So the sample now has a precondition that is evidence rather
+        /// than a look: keys typed at a pane sit in the pty's buffer,
+        /// and an interactive shell reads them only once its startup
+        /// files have finished — so the sentinel's product appearing on
+        /// disk *is* "startup is over", by definition. The sampling
+        /// loop still runs after it: the sentinel command itself, and
+        /// any prompt hook that follows it, must also leave the
+        /// foreground.
+        ///
+        /// Two boundaries, written down rather than implied. A startup
+        /// file that reads stdin eats the sentinel (observed while
+        /// building the red control for this fix: a `read -t` swallowed
+        /// the buffered line), leaving only the deadline. And a prompt
+        /// hook running external commands *after* the sentinel re-opens
+        /// a far smaller gap of the same shape — never observed, and
+        /// the first place to look if this test ever reds at these two
+        /// values again.
+        ///
         /// # Why it cannot be spelled as "wait for the shell"
         ///
         /// The same reason [`Server::until_present`] gives: the shell is
@@ -612,6 +642,21 @@ mod tests {
         /// [`word_of`] answers `None` there, and a row with no word is
         /// not the row this waits for.
         fn until_at_a_prompt(&self, session: &str) {
+            let marker = std::env::temp_dir()
+                .join(format!("khor-prompt-{}-{session}", std::process::id()));
+            let _ = std::fs::remove_file(&marker);
+            self.tmux(&[
+                "send-keys",
+                "-t",
+                session,
+                &format!("touch '{}'", marker.display()),
+                "Enter",
+            ]);
+            let rc_deadline = Instant::now() + Duration::from_secs(10);
+            while !marker.exists() && Instant::now() < rc_deadline {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            let _ = std::fs::remove_file(&marker);
             let prefix = format!("{session}|");
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
