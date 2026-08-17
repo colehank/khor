@@ -42,6 +42,17 @@ pub struct Meta {
     /// nobody placed it.
     #[serde(default)]
     pub category: Option<String>,
+    /// The session's full id. Listing used to rebuild the id from the
+    /// directory name by stripping `kind` off the front — which was
+    /// only ever true by coincidence: every early kind happened to spell
+    /// its ids `kind/leaf`. A GUI session is registered under the
+    /// vendor-session agreement (`tui/<uuid>`, `gui_host` module head)
+    /// with `kind: gui`, and the strip silently dropped the row from
+    /// every list while `dir_of` kept finding it — a session that works
+    /// and does not exist. Empty means an entry from before this field,
+    /// and for all of those the old rebuild is right.
+    #[serde(default)]
+    pub id: String,
 }
 
 /// How a word got onto a registry row.
@@ -223,6 +234,7 @@ impl LiveKind {
             pid,
             started_ms: now_ms(),
             category: category.map(str::to_owned),
+            id: id.0.clone(),
         };
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
         // Whoever registers a session is starting it, so this opening
@@ -506,10 +518,17 @@ impl LiveKind {
             let Some(name) = e.file_name().to_str().map(String::from) else {
                 continue;
             };
-            let Some(leaf) = name.strip_prefix(&format!("{}-", meta.kind)) else {
-                continue;
+            // The id is the meta's own where it says (Meta::id); the
+            // directory-name rebuild is only for entries older than
+            // that field, whose ids all spell `kind/leaf`.
+            let id = if meta.id.is_empty() {
+                let Some(leaf) = name.strip_prefix(&format!("{}-", meta.kind)) else {
+                    continue;
+                };
+                SessionId(format!("{}/{leaf}", meta.kind))
+            } else {
+                SessionId(meta.id.clone())
             };
-            let id = SessionId(format!("{}/{leaf}", meta.kind));
             let (word, at, unread) = face(&e.path(), &meta, &state, watermark(&id.0));
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
@@ -826,6 +845,23 @@ mod tests {
         let pid = c.id();
         c.wait().unwrap();
         pid
+    }
+
+    /// A row whose kind is not its id's first segment must still list.
+    /// A GUI session registers under the vendor-session agreement
+    /// (`tui/<uuid>`) with `kind: gui`, and the old directory-name
+    /// rebuild — strip the kind off the front — dropped exactly those
+    /// rows: the session answered `dir_of` and every op while appearing
+    /// in no list anywhere. `Meta::id` is what carries it now.
+    #[test]
+    fn a_row_lists_even_when_its_kind_is_not_its_ids_first_segment() {
+        let root = tmp("gui-id");
+        let k = kind_at(&root);
+        let id = sid("tui/stub-session-1");
+        k.register(&id, "gui", "stub", Some(std::process::id()), None).unwrap();
+        let rows = k.rows(|_| 0);
+        let row = rows.iter().find(|r| r.id == id).expect("the row lists");
+        assert_eq!(row.kind.0, "gui");
     }
 
     /// The tui walk: reported words stand while the process lives, 完成

@@ -94,6 +94,16 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
         std::fs::read_to_string(k.dir_of(&id).unwrap().join("meta.json")).expect("a registered row");
     assert!(meta.contains("\"gui\""), "kind is gui, not the id's tui spelling: {meta}");
 
+    // …and the row is IN THE LIST. This line was owed from the start:
+    // everything below reads the row through `dir_of`, which kept
+    // working while the kind-prefix rebuild dropped the row from every
+    // list (`Meta::id`) — a session that answered every op and
+    // appeared nowhere.
+    assert!(
+        k.rows(|_| 0).iter().any(|r| r.id == id),
+        "the GUI row must appear in the session list"
+    );
+
     // A fresh GUI session is a prompt nobody has typed into: 空闲, said
     // first-hand.
     let (word, source) = wait_for(&root, &id, State::Idle).expect("a state");
