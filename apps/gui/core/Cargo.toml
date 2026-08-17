@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+khor-core.workspace = true
 khor-node.workspace = true
 khor-catalog.workspace = true
 serde.workspace = true

@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod avatar;
+pub mod map;
 
 /// A device's identity: its public key (docs/NET.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

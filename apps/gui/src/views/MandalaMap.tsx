@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { ago } from "@/words";
 
 /**
- * The network as a mandala: this machine at the middle, everyone else
+ * The network as a mandala: this machine in the middle, everyone else
  * around it.
  *
  * # Every mark on it is a fact khor holds
@@ -20,20 +20,12 @@ import { ago } from "@/words";
  * | in the middle, and larger | it is this machine |
  * | how long ago, or never | the age of the last answer it gave |
  *
- * **And no line is drawn between any two of them, which is the judgment
- * this picture is built around.** khor knows *membership* — one pairing
- * puts a machine in the whole mesh (docs/NET.md) — and it does not know
- * reachability: who can currently dial whom, over which relay, through
- * whose network. A line is the most believable thing a diagram can draw
- * and it would be a claim nobody checked. So the members sit apart, and
- * what holds them together on screen is the arrangement, not an edge.
- *
- * **Position carries nothing either.** The seats are evenly spaced
- * starting at the top, in the order the node listed the machines; the
- * distance from the middle is the same for everyone. Neither angle nor
- * radius means anything, which is why they are both uniform — a varying
- * one would be read as data within about a second of somebody noticing
- * it.
+ * **No line is drawn between any two of them**, and **where they sit is
+ * not worked out here** — both are `khor_core::map`, which carries the
+ * reasoning: khor knows membership and not reachability, so there are no
+ * edges and one ring, and the arrangement derives in the library because
+ * a picture two faces work out separately is two pictures. This file
+ * paints what it is handed, the way `Avatar.tsx` does.
  *
  * # Three states, and no invented threshold between them
  *
@@ -75,6 +67,11 @@ export function MandalaMap({
   /** The machine whose card is open, if this map sits beside one. */
   selected?: string | null;
 }) {
+  // Which one is the middle is a fact about the machine, not about
+  // where it was placed — mandala keeps those two apart even where they
+  // always coincide (its docs/MAP.md), and so does this: `me` picks the
+  // machine, `seat` says where it goes, and neither is read off the
+  // other.
   const me = rows.find((r) => r.me) ?? null;
   const others = rows.filter((r) => !r.me);
   return (
@@ -90,51 +87,13 @@ export function MandalaMap({
           load. The height is the cap, which self-limits: the picture is
           never taller than the window it is in. */}
       <div className="relative aspect-square max-h-full w-full">
-        <Seat row={me} at={CENTRE} big onOpen={onOpen} selected={selected} />
-        {others.map((row, i) => (
-          <Seat
-            key={row.id}
-            row={row}
-            at={seat(i, others.length)}
-            onOpen={onOpen}
-            selected={selected}
-          />
+        <Seat row={me} big onOpen={onOpen} selected={selected} />
+        {others.map((row) => (
+          <Seat key={row.id} row={row} onOpen={onOpen} selected={selected} />
         ))}
       </div>
     </section>
   );
-}
-
-/** Where the middle is, as a percentage of the square. */
-const CENTRE = { left: 50, top: 50 };
-
-/**
- * How far out the ring sits, as a percentage of the square's side.
- *
- * Under half, because a seat is placed by its centre and carries a face
- * and two lines of text around it — at 50 the outermost ones would hang
- * off the edge. This is a proportion rather than a length, so it holds
- * at every size the square takes.
- */
-const RING = 34;
-
-/**
- * The i-th of n seats, going clockwise, arranged symmetrically about the
- * vertical.
- *
- * **Half a step past twelve o'clock, and that half step is the whole
- * reason this is not `i/n` from the top.** With a seat *at* twelve, two
- * machines land directly above and below the middle — three faces in a
- * column, which reads as a list rather than as anything surrounding
- * anything, and two machines is the ordinary case for this product. The
- * half step puts those two at left and right instead, and for three it
- * gives a triangle and for four a diamond. One formula, and the case it
- * rescues is the common one.
- */
-function seat(i: number, n: number) {
-  const step = (2 * Math.PI) / Math.max(1, n);
-  const angle = -Math.PI / 2 + step / 2 + i * step;
-  return { left: 50 + Math.cos(angle) * RING, top: 50 + Math.sin(angle) * RING };
 }
 
 /**
@@ -155,13 +114,11 @@ function seat(i: number, n: number) {
  */
 function Seat({
   row,
-  at,
   big,
   onOpen,
   selected,
 }: {
   row: DeviceRow | null;
-  at: { left: number; top: number };
   big?: boolean;
   onOpen?: (row: DeviceRow) => void;
   selected?: string | null;
@@ -199,7 +156,7 @@ function Seat({
       </span>
     </>
   );
-  const place = { left: `${at.left}%`, top: `${at.top}%` };
+  const place = { left: `${row.seat.left}%`, top: `${row.seat.top}%` };
   const shell = cn(
     "absolute -translate-x-1/2 -translate-y-1/2",
     // Arrival: the mandala assembles itself once, and a machine that

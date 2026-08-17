@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use khor_node::list::Arrange;
+use khor_core::map::{self, Seat};
 use khor_node::{
     Avatar, AvatarStyle, FaceShape, Node, SessionId, Usage, Variant, Vitals, PRESETS,
 };
@@ -78,6 +79,15 @@ pub struct DeviceRow {
     /// What that machine is doing, and how long ago it said so. `None`
     /// when it has never been reached — see [`VitalsReading`].
     pub vitals: Option<VitalsReading>,
+    /// Where this machine sits when the network is drawn as a mandala
+    /// (`khor_core::map`).
+    ///
+    /// **Derived here rather than by whoever paints it**, the same rule
+    /// the face follows: a picture two ends work out separately is two
+    /// pictures. It rides the row because a seat *is* a property of the
+    /// placed machine — and because the seat of one depends on the whole
+    /// set, which is a thing only the code building the whole set knows.
+    pub seat: Seat,
 }
 
 /// A machine's reading plus its age — the two axes docs/SESSION.md keeps
@@ -247,9 +257,22 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
 pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
     let n = open(root)?;
     let me = n.device_str().to_owned();
-    Ok(n.devices()?
+    let all = n.devices()?;
+    // The ring is as big as the network minus this machine, and the
+    // seats are handed out in the order the node listed them — so a
+    // machine keeps its seat for as long as the list keeps its shape,
+    // and nothing here decides an order the node did not.
+    let mut ring = map::ring(all.iter().filter(|d| d.id != me).count()).into_iter();
+    Ok(all
         .into_iter()
         .map(|d| DeviceRow {
+            seat: if d.id == me {
+                map::CENTRE
+            } else {
+                // One seat per machine on the ring, in step with the
+                // count above: `ring` was built from exactly this many.
+                ring.next().unwrap_or(map::CENTRE)
+            },
             me: d.id == me,
             face: n.face_of(&d),
             pinned: d.pinned,
