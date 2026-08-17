@@ -103,6 +103,12 @@
 //      provably absent on the successful press just before, the colour
 //      measured against a probe wearing the token, and exactly one
 //      button wearing it;
+//  28. the mandala map fills the devices pane before a machine is
+//      picked: a seat per machine, exactly one middle, every seat the
+//      same distance from it, **no line between any two of them** (khor
+//      knows membership, not reachability — asserted as a surplus-svg
+//      count, not as a hunt for lines nobody wrote), and pressing a face
+//      opens that machine;
 //  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
@@ -1391,6 +1397,87 @@ try {
     throw new Error("a machine card is filled in before any machine was opened");
   }
 
+  //     **And what that space holds instead is the mandala map** — one
+  //     seat per machine, exactly one of them the middle, the ring a
+  //     real ring, and nothing drawn between any two of them.
+  //
+  //     The last one is the judgment the picture is built on: khor knows
+  //     who is in the mesh and not who can reach whom, so no line may be
+  //     drawn. It is asserted as a count rather than as a hunt for lines
+  //     nobody wrote — every `svg` inside the map has to belong to a
+  //     face, so an overlay drawing edges turns up as a surplus — and
+  //     the positive half is counted first, so a zero means zero rather
+  //     than a selector that stopped naming anything.
+  const seats = page.locator("[data-mandala-map] [data-seat]");
+  const machines = await page.locator("[data-device]").count();
+  await until("a seat for every machine", 10_000, async () => (await seats.count()) === machines);
+  const middles = await seats.evaluateAll(
+    (els) => els.filter((e) => e.dataset.seatMe === "true").length,
+  );
+  if (middles !== 1) throw new Error(`${middles} seats claim to be this machine; exactly one may`);
+
+  const faces = await page.locator("[data-mandala-map] [data-seat] [data-face] svg").count();
+  if (faces !== machines) throw new Error(`${faces} faces painted for ${machines} machines`);
+  const drawn = await page.locator("[data-mandala-map] svg").count();
+  if (drawn !== faces) {
+    throw new Error(
+      `the map draws ${drawn} svg elements for ${faces} faces — the surplus is a line between ` +
+        "machines, and khor does not know who can reach whom",
+    );
+  }
+
+  //     The ring is a ring: every other **face** sits the same distance
+  //     from the middle one.
+  //
+  //     **The face, not the seat, and that distinction is the whole
+  //     assertion.** A seat is positioned by translating it half its own
+  //     size, so its box is centred on its point by construction and
+  //     every radius measured off *it* comes out equal no matter what is
+  //     inside. The first version of this check did exactly that and
+  //     stayed green when the layout was deliberately broken — the
+  //     middle seat has no age line, so a shorter caption pulled its
+  //     face a few pixels off the circle while its box did not move.
+  //     What a person sees is where the faces are, so that is what gets
+  //     measured.
+  //
+  //     **Two properties, because one of them alone is blind.** Equal
+  //     radii catch a single face drifting off the circle, and they are
+  //     blind to the middle sliding as a whole — the ring is symmetric,
+  //     so both radii grow by the same amount and stay equal. The second
+  //     is what "evenly spaced around it" actually means: **the middle
+  //     sits at the average of the ring**. That is what went red when the
+  //     layout was broken on purpose, and equal-radii alone did not.
+  const ring = await seats.evaluateAll((els) => {
+    const at = (e) => {
+      const b = (e.querySelector("[data-face]") ?? e).getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2, me: e.dataset.seatMe === "true" };
+    };
+    const all = els.map(at);
+    const centre = all.find((p) => p.me);
+    const around = all.filter((p) => !p.me);
+    return {
+      radii: around.map((p) => Math.round(Math.hypot(p.x - centre.x, p.y - centre.y))),
+      centre: [Math.round(centre.x), Math.round(centre.y)],
+      average: [
+        Math.round(around.reduce((t, p) => t + p.x, 0) / around.length),
+        Math.round(around.reduce((t, p) => t + p.y, 0) / around.length),
+      ],
+    };
+  });
+  if (ring.radii.length < 2) {
+    throw new Error(`probe dead: only ${ring.radii.length} seats around the middle`);
+  }
+  if (Math.max(...ring.radii) - Math.min(...ring.radii) > 2) {
+    throw new Error(`the seats are not on one circle: radii ${ring.radii.join(", ")}`);
+  }
+  const drift = Math.hypot(ring.centre[0] - ring.average[0], ring.centre[1] - ring.average[1]);
+  if (drift > 2) {
+    throw new Error(
+      `this machine's face is ${Math.round(drift)}px off the middle of the ring: ` +
+        `at ${ring.centre}, ring averages ${ring.average}`,
+    );
+  }
+
   //     **`khor devices` is the independent witness for the readings.**
   //     It prints the same reading from the same node, and `vitals_line`
   //     joins its pieces with two spaces — so counting them needs no word
@@ -1535,6 +1622,31 @@ try {
   }
   // Back where the next item expects to be: it pins the first row it
   // finds, and which pane is open decides which row that is.
+  await openLanding("devices");
+
+  // 28) pressing a face on the map opens that machine.
+  //
+  //     The map is the other way into a machine, and a picture that
+  //     looks pressable and answers nothing is exactly what the app's
+  //     mark was forbidden from being. A reload comes first because
+  //     opening a machine is what replaces the map with the card — the
+  //     two share the space, so getting the map back means having
+  //     nothing open.
+  await page.reload();
+  await openLanding("devices");
+  await until("the map again", 15_000, async () => (await seats.count()) > 1);
+  const guest = await seats.evaluateAll(
+    (els) => els.find((e) => e.dataset.seatMe !== "true")?.dataset.seat ?? "",
+  );
+  if (!guest) throw new Error("probe dead: no seat that is not this machine");
+  await page.locator(`[data-seat="${guest}"]`).click();
+  await until("the card the seat opened", 10_000, async () =>
+    (await page.locator("[data-machine-id]").textContent().catch(() => "")) === guest,
+  );
+  if ((await page.locator("[data-mandala-map]").count()) !== 0) {
+    throw new Error("the map is still on screen beside the card it opened");
+  }
+  await page.reload();
   await openLanding("devices");
 
   // 25) the hook button is a pair, and the button *is* the report.

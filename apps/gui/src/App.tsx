@@ -38,6 +38,7 @@ import { DetailPane } from "@/views/DetailPane";
 import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
+import { MandalaMap } from "@/views/MandalaMap";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
 import { TellDialog } from "@/views/TellDialog";
@@ -557,11 +558,20 @@ export default function App() {
   // print `gui.pick_a_session` — an instruction to do something that
   // screen cannot do — and inventing copy about the emptiness is worse
   // than the emptiness (docs/UX.md 文案).
+  //
+  // **The devices pane with nothing picked is the exception, and it is
+  // not a counter-example.** What used to sit there was an empty card,
+  // for exactly the reason above: there was nothing true to say. There is
+  // now — the whole mesh, which is what that pane is about — so the space
+  // holds the map rather than a sentence about being empty.
+  const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
   const detail = sessions ? (
     <DetailPane row={selectedRow} narrow={narrow} onBack={() => setScreen("list")} />
+  ) : landing === "devices" && !openDevice ? (
+    <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />
   ) : landing === "devices" ? (
     <MachineCard
-      row={devices.find((d) => d.id === selectedDevice) ?? null}
+      row={openDevice}
       narrow={narrow}
       onBack={() => setScreen("list")}
       onPin={onPinDevice}

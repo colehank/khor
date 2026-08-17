@@ -82,6 +82,11 @@
    * classes would survive into the markup and the winner would be
    * whichever the stylesheet emitted last. */
   --avatar-lg: 72px;
+  /* The mandala map's middle. One step above the ring's faces, because
+     the size difference is carrying a fact — that seat is this machine —
+     and two sizes a few pixels apart would read as a rendering accident
+     rather than as a statement. */
+  --avatar-xl: 96px;
   --icon-rail: 26px;
   /* The app mark at the head of the rail. Larger than a rail glyph and
    * smaller than this machine's face at the foot: it is the app, not a
@@ -182,6 +187,7 @@
   --spacing-list: var(--list-w);
   --spacing-avatar: var(--avatar);
   --spacing-avatar-lg: var(--avatar-lg);
+  --spacing-avatar-xl: var(--avatar-xl);
   --spacing-icon-rail: var(--icon-rail);
   --spacing-icon-mark: var(--icon-mark);
 

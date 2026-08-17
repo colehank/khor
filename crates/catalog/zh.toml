@@ -461,6 +461,11 @@ files-tab = "文件"
 browser-tab = "浏览器"
 settings = "设置"
 back = "返回"
+# The mandala map's region name. No page carries a title (docs/UX.md), so
+# this is read aloud and takes no room. It names what the picture is of —
+# the machines — rather than the picture, because「坛城」 is how the layout
+# was arrived at and not something anybody needs to be told.
+mesh-map = "网里的机器"
 from-device = "来自 {0}"
 pick-a-session = "选一个 session"
 empty-sessions = "还没有 session"
