@@ -41,7 +41,7 @@ pub enum Reply {
     Accepted { moved: u64 },
     Refused { why: String },
     /// Tail-appended with [`Op::Ls`].
-    Dir { entries: Vec<crate::proto::DirEntry>, truncated: bool },
+    Dir { path: String, entries: Vec<crate::proto::DirEntry>, truncated: bool },
     /// Tail-appended with [`Op::Pull`]: bytes moved, and where the file
     /// landed — the verb prints the landing because the default (the
     /// asker's cwd) is a place the serve never knew.

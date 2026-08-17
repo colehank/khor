@@ -31,7 +31,7 @@ pub const MOST_ENTRIES: usize = 4096;
 /// The listing behind [`crate::proto::Request::Ls`]. Ordered here —
 /// directories first, each half by case-folded name — so every face
 /// paints the same order and none re-sorts.
-pub fn list_dir(path: &str) -> Result<(Vec<DirEntry>, bool), String> {
+pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool), String> {
     let dir = if path.is_empty() {
         std::env::home_dir().ok_or(msg::NO_HOME_DIR)?
     } else if std::path::Path::new(path).is_absolute() {
@@ -69,7 +69,7 @@ pub fn list_dir(path: &str) -> Result<(Vec<DirEntry>, bool), String> {
     });
     let truncated = entries.len() > MOST_ENTRIES;
     entries.truncate(MOST_ENTRIES);
-    Ok((entries, truncated))
+    Ok((dir, entries, truncated))
 }
 
 /// One slice of a file by absolute path, plus the change contract
@@ -145,7 +145,7 @@ mod tests {
         std::fs::write(root.join("apple"), b"x").unwrap();
         std::fs::write(root.join("Banana"), b"xy").unwrap();
         std::fs::create_dir(root.join("zoo")).unwrap();
-        let (rows, truncated) = list_dir(root.to_str().unwrap()).unwrap();
+        let (_, rows, truncated) = list_dir(root.to_str().unwrap()).unwrap();
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["zoo", "apple", "Banana"]);
         assert!(rows[0].dir && !rows[1].dir);
@@ -169,7 +169,7 @@ mod tests {
         for i in 0..(MOST_ENTRIES + 3) {
             std::fs::write(root.join(format!("f{i:05}")), b"").unwrap();
         }
-        let (rows, truncated) = list_dir(root.to_str().unwrap()).unwrap();
+        let (_, rows, truncated) = list_dir(root.to_str().unwrap()).unwrap();
         assert_eq!(rows.len(), MOST_ENTRIES);
         assert!(truncated);
         let _ = std::fs::remove_dir_all(&root);

@@ -215,7 +215,7 @@ impl Node {
                 }
             }
             ipc::Op::Ls { machine, path } => match self.ls_with(ep, &machine, &path).await {
-                Ok((entries, truncated)) => ipc::Reply::Dir { entries, truncated },
+                Ok((path, entries, truncated)) => ipc::Reply::Dir { path, entries, truncated },
                 Err(why) => ipc::Reply::Refused { why },
             },
             ipc::Op::Pull { machine, path, dir } => {
@@ -412,11 +412,11 @@ impl Node {
                 // does it block", 坑节): a directory on a network mount
                 // can sit for seconds, and this reply's own QUIC
                 // connection would sit with it.
-                let (entries, truncated) =
+                let (path, entries, truncated) =
                     tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
                         .await
                         .map_err(|e| e.to_string())??;
-                Ok(Response::Dir { entries, truncated })
+                Ok(Response::Dir { path: path.display().to_string(), entries, truncated })
             }
             Request::FetchPath { path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -486,13 +486,13 @@ impl Node {
         &self,
         machine: &str,
         path: &str,
-    ) -> Result<(Vec<proto::DirEntry>, bool), String> {
+    ) -> Result<(String, Vec<proto::DirEntry>, bool), String> {
         if let Some(reply) = self
             .via_serve(ipc::Op::Ls { machine: machine.to_owned(), path: path.to_owned() })
             .await
         {
             return match reply? {
-                ipc::Reply::Dir { entries, truncated } => Ok((entries, truncated)),
+                ipc::Reply::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -513,13 +513,15 @@ impl Node {
         ep: &iroh::Endpoint,
         machine: &str,
         path: &str,
-    ) -> Result<(Vec<proto::DirEntry>, bool), String> {
+    ) -> Result<(String, Vec<proto::DirEntry>, bool), String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
             let path = path.to_owned();
-            return tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
-                .await
-                .map_err(|e| e.to_string())?;
+            let (at, entries, truncated) =
+                tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
+                    .await
+                    .map_err(|e| e.to_string())??;
+            return Ok((at.display().to_string(), entries, truncated));
         }
         // Resolve proved the name microseconds ago, but two reads of
         // one table can straddle a removal.
@@ -535,7 +537,7 @@ impl Node {
             .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
             .map_err(|e| msg::cant_reach_named(&channel, e))?;
         match request(&conn, &Request::Ls { path: path.to_owned() }).await? {
-            Response::Dir { entries, truncated } => Ok((entries, truncated)),
+            Response::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }

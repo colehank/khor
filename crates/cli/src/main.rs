@@ -170,7 +170,7 @@ fn ls(rest: &[String]) -> Result<(), String> {
         [machine, path] => (machine, path.as_str()),
         _ => return Err(USAGE.into()),
     };
-    let (entries, truncated) = rt()?.block_on(node()?.ls_of(machine, path))?;
+    let (_, entries, truncated) = rt()?.block_on(node()?.ls_of(machine, path))?;
     for e in &entries {
         if e.dir {
             println!("{}/", e.name);

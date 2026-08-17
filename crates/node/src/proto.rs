@@ -90,9 +90,12 @@ pub enum Response {
     Usage { usage: khor_core::Usage },
     /// One directory, already ordered — directories first, each half by
     /// name — because the screen paints and never re-sorts (docs/UX.md
-    /// 状态呈现). `truncated` is the no-silent-caps rule on the wire: a
-    /// directory bigger than the cap says so instead of looking whole.
-    Dir { entries: Vec<DirEntry>, truncated: bool },
+    /// 状态呈现). `path` is where the answer is about, absolute: the
+    /// asker may have said `""` (home), and without the expansion it
+    /// cannot spell the way down. `truncated` is the no-silent-caps
+    /// rule on the wire: a directory bigger than the cap says so
+    /// instead of looking whole.
+    Dir { path: String, entries: Vec<DirEntry>, truncated: bool },
     /// One slice of a pathed file. **Not [`Response::Slice`]**: that
     /// shape is what every shipped fetcher already decodes, and a field
     /// added to it would break them mid-pull — a new variant only ever
