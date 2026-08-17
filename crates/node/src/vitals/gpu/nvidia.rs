@@ -24,51 +24,45 @@
 //! exactly what a machine without one looks like.** It cannot invent a
 //! ring.
 //!
-//! # NOT VERIFIED ON REAL HARDWARE — and what would verify it
+//! # VERIFIED ON REAL HARDWARE, 2026-08-17 — against its own prediction
 //!
-//! **This has never run against a GPU.** Saying so plainly because a
-//! compile is not a verification (docs/handoff 编译级验证不算验), and
-//! because the next person reading this will otherwise assume the numbers
-//! below came from a run.
+//! An earlier revision of this header said "this has never run against a
+//! GPU" and recorded predictions so the eventual run would compare
+//! against a claim rather than against whatever came out. The run
+//! happened the same day (user-approved, ~3 s on turing's two RTX A5000):
+//! this module compiled **verbatim** into a probe binary — the source
+//! symlinked, not copied — cross-built from the Mac (`zig cc` pinned to
+//! turing's glibc 2.31; the survey's "no cross linker" was true when
+//! written and fixed the same day), and run beside the same `nvidia-smi`
+//! control the macOS side uses.
 //!
-//! The fleet was surveyed on 2026-08-17, read-only over ssh:
+//! Prediction vs. run:
 //!
-//! - **aliyun**: `Cirrus Logic GD 5446` — QEMU's virtual VGA. No
-//!   `libnvidia-ml`, no `/dev/nvidia*`, no `gpu_busy_percent`. No GPU.
-//! - **turing**: **two NVIDIA RTX A5000**, driver 580.126.09,
-//!   `libnvidia-ml.so.1` present. Real hardware — but no Rust toolchain,
-//!   `load average 45`, 43 logged-in users, and a home on NFS. Building
-//!   khor there would mean installing a toolchain on somebody else's
-//!   machine and pushing load onto a room full of people who are waiting
-//!   on their own jobs. Cross-compiling from the Mac was checked too: no
-//!   linux target, no cross linker, no container runtime.
+//! - `cards == 2` — hard prediction, **found 2**;
+//! - memory total ≈ 48 GiB, two cards of 24564 MiB — hard, **found
+//!   51514441728 bytes = 49128.0 MiB exactly**, digit for digit twice
+//!   24564;
+//! - memory used ≈ 43 GiB — soft (somebody else's jobs own it), **found
+//!   43999.5 MiB** against the control's 21811 + 22189 = 44000 MiB; the
+//!   half-MiB is the control printing each card rounded, not a
+//!   discrepancy.
 //!
-//! So the trigger for a real run is: **a Linux machine with an NVIDIA GPU
-//! that khor may build on.** When there is one, run
-//! `cargo test -p khor-node --lib gpu` there and compare against
-//! `nvidia-smi --query-gpu=index,utilization.gpu,memory.used,memory.total
-//! --format=csv`, the same shape of control the macOS side uses.
+//! Both cards again read **0% utilisation while holding 43 GiB**, live
+//! this time — kept as the reason [`Gpu::mem`] exists at all: the
+//! utilisation said idle and the memory said there is no room, and only
+//! one of those two tells somebody why their job will not start.
 //!
-//! **What that run should find on turing**, recorded now so the
-//! comparison is against a prediction rather than against whatever comes
-//! out:
+//! **What the run did not exercise**: utilisation was 0.0 on both cards,
+//! so the averaging in `super::across` has still only run against zeros
+//! on real hardware (its unit tests cover the rest). A busy-GPU run
+//! would close that; nothing observed argues it is wrong.
 //!
-//! - `cards == 2` — **a hard prediction**, it does not drift;
-//! - memory **total ≈ 48 GiB** (two cards of 24564 MiB) — also hard, it
-//!   is a property of the cards;
-//! - memory **used ≈ 43 GiB** — *not* hard: that is what the two cards
-//!   were holding during the survey (21811 and 22189 MiB), and somebody
-//!   else's job owns it. A run that finds a different `used` has found
-//!   nothing wrong; a run that finds a different `total` or `cards` has.
-//!
-//! (All three in GiB, the base the CLI and the card both print in:
-//! 44000 MiB of 49128 MiB.)
-//!
-//! At the time of the survey both cards read **0% utilisation while
-//! holding 43 GiB**, which is worth keeping as the reason [`Gpu::mem`]
-//! exists at all: **the utilisation said idle and the memory said there
-//! is no room**, and only one of those two would have told somebody why
-//! their job will not start.
+//! The fleet survey that found the hardware (read-only over ssh, same
+//! day): **aliyun** is QEMU's virtual VGA — no `libnvidia-ml`, no
+//! `/dev/nvidia*`, no GPU; **turing** carries the two A5000s, driver
+//! 580.126.09, no Rust toolchain, home on NFS — which is why the run
+//! went as a cross-built probe binary in `/tmp`, deleted in the same
+//! shell that ran it.
 //!
 //! # Only what NVML states, and nothing derived from it
 //!
