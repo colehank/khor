@@ -108,6 +108,11 @@ fn amp_meter() -> amp::Amp {
     amp::Amp::at(fixture().join("amp/.local/share/amp"))
 }
 
+/// OpenClaw read from one of the four names it has shipped under.
+fn openclaw_meter(root: &str) -> openclaw::OpenClaw {
+    openclaw::OpenClaw::at(fixture().join("openclaw").join(root))
+}
+
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
     Tokens { input, cached_input, cache_write, output }
 }
@@ -175,6 +180,13 @@ fn fixture_home(tag: &str) -> PathBuf {
         .unwrap();
         std::os::unix::fs::symlink(fixture().join("qwen/.qwen"), home.join(".qwen")).unwrap();
         std::os::unix::fs::symlink(fixture().join("junie/.junie"), home.join(".junie")).unwrap();
+        for root in ["openclaw", "moltbot"] {
+            std::os::unix::fs::symlink(
+                fixture().join("openclaw").join(format!(".{root}")),
+                home.join(format!(".{root}")),
+            )
+            .unwrap();
+        }
         std::fs::create_dir_all(home.join(".local/share")).unwrap();
         std::os::unix::fs::symlink(
             fixture().join("amp/.local/share/amp"),
@@ -682,6 +694,51 @@ fn a_thread_that_wrote_its_spending_twice_is_billed_once() {
     assert_eq!(tally.unreadable, 1, "the event that never says which model it was");
 }
 
+/// **A record that does not add up to its own total is counted, not
+/// billed** — the same door the Gemini family gets, on a vendor that
+/// spells the four names khor uses.
+///
+/// The fixture's four assistant records are one of each case: two that
+/// reconcile (one of them carrying a cache write, so the total is shown
+/// to span all four rather than the two easy ones), one whose parts sum
+/// to 6 against a stated 999, and one that bills without saying when.
+/// The last two are the count; the first two are the bill.
+#[test]
+fn openclaw_checks_its_reading_against_the_total_the_vendor_wrote() {
+    let tally = openclaw_meter(".openclaw/agents").tally();
+    let spent = by_day(&tally, &plus_eight())["2026-08-17"];
+    assert_eq!(spent, tokens(110, 200, 7, 52), "100/200/0/50 and 10/0/7/2");
+    assert_eq!(
+        tally.unreadable, 2,
+        "the one that does not add up, and the one with no time on it"
+    );
+    assert_ne!(spent.input, 115, "the record that disagrees with its own total was billed");
+}
+
+/// **An agent that has been renamed is read under every name it shipped
+/// as, and answers under one.**
+///
+/// A user who upgraded still has spending recorded under the old name; a
+/// user who did not still has an agent writing there. The fixture puts
+/// one record under `.moltbot` and the rest under `.openclaw`, so a
+/// reader that knew only the current name would be short by exactly that
+/// record — and short is the failure that looks like a quiet week.
+#[cfg(unix)]
+#[test]
+fn a_renamed_agent_is_read_under_every_name_it_shipped_as() {
+    let usage = both("openclaw-names");
+    assert_eq!(
+        day(&usage, "2026-08-17", "openclaw").map(|t| t.output),
+        Some(56),
+        "50 + 2 under the current name, 4 under the one it used to have"
+    );
+    assert_ne!(
+        day(&usage, "2026-08-17", "openclaw").map(|t| t.output),
+        Some(52),
+        "only the current name was looked under"
+    );
+}
+
 /// **What it cannot read, it counts — and a half-written line is not
 /// that.**
 ///
@@ -699,8 +756,9 @@ fn a_thread_that_wrote_its_spending_twice_is_billed_once() {
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
     assert_eq!(
-        usage.unreadable, 16,
-        "three claude, one codex, three gemini, two pi, two roo, two qwen, two junie, one amp"
+        usage.unreadable, 18,
+        "three claude, one codex, three gemini, two pi, two roo, two qwen, two junie, \
+         one amp, two openclaw"
     );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),
@@ -758,6 +816,7 @@ fn each_row_carries_the_name_of_the_meter_that_read_it() {
             ("2026-08-17", "junie", 53),
             ("2026-08-17", "kilocode", 4),
             ("2026-08-17", "kimchi", 4),
+            ("2026-08-17", "openclaw", 56),
             ("2026-08-17", "pi", 593),
             ("2026-08-17", "qwen", 125),
             ("2026-08-17", "roocode", 52),

@@ -1,0 +1,5 @@
+{"type":"message","id":"m1","message":{"role":"assistant","usage":{"input":100,"output":50,"cacheRead":200,"cacheWrite":0,"totalTokens":350,"cost":{"total":0.05}},"timestamp":1786928400000}}
+{"type":"message","id":"m2","message":{"role":"user","timestamp":1786928401000}}
+{"type":"message","id":"m3","message":{"role":"assistant","usage":{"input":10,"output":2,"cacheRead":0,"cacheWrite":7,"totalTokens":19},"timestamp":1786928402000}}
+{"type":"message","id":"m4","message":{"role":"assistant","usage":{"input":5,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":999},"timestamp":1786928403000}}
+{"type":"message","id":"m5","message":{"role":"assistant","usage":{"input":9,"output":9,"totalTokens":18}}}

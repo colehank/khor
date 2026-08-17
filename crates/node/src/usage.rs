@@ -201,6 +201,9 @@ impl Meters {
         meters.push(Box::new(qwen::Qwen::at(home.join(".qwen"))));
         meters.push(Box::new(junie::Junie::at(home.join(".junie"))));
         meters.push(Box::new(amp::Amp::at(home.join(".local/share/amp"))));
+        for root in openclaw::ROOTS {
+            meters.push(Box::new(openclaw::OpenClaw::at(home.join(root))));
+        }
         Meters { meters, cached: Mutex::new(None), passes: AtomicU64::new(0) }
     }
 
@@ -2311,6 +2314,134 @@ pub mod amp {
         fn tally(&self) -> Tally {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(json_under(&self.threads_dir()), parse);
+            Tally {
+                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                unreadable,
+            }
+        }
+    }
+}
+
+pub mod openclaw {
+    //! OpenClaw: a transcript per session, under whichever of its four
+    //! names this machine's copy was installed as.
+    //!
+    //! The agent has been renamed twice and khor looks under all of the
+    //! names it has answered to, because a user who upgraded still has
+    //! spending recorded under the old one and a user who did not still
+    //! has an agent writing there. One meter per root, all stamping the
+    //! same vendor.
+    //!
+    //! A spendable line carries `message.role == "assistant"` and a
+    //! `message.usage` already spelled in khor's four names —
+    //! `input`, `output`, `cacheRead`, `cacheWrite` — so like the Pi
+    //! format there is no arithmetic to get wrong.
+    //!
+    //! # This one can check itself
+    //!
+    //! Its `usage.totalTokens` spans exactly those four (upstream's own
+    //! test record: 100 + 50 + 200 + 0 = 350), so
+    //! [`super::reconciled`] applies here as it does to the Gemini
+    //! family — a reading that does not add up to what the vendor said it
+    //! spent is counted rather than billed. **That is why this vendor was
+    //! taken before its neighbours**, not its size: a format that can
+    //! referee khor's reading of it is worth more than one khor can only
+    //! be careful with.
+    //!
+    //! # Which way this one can be wrong
+    //!
+    //! **Under-count on both routes.** A record khor cannot place in time
+    //! is counted, not filed under the file's mtime the way upstream does
+    //! (`amp` has the same judgment and the same reason). A record whose
+    //! parts do not reconcile is counted too. **Over-count has no route**:
+    //! the reading needs no arithmetic, [`Files`] hands each line over
+    //! exactly once, and the four are checked against the vendor's total.
+    //!
+    //! # What khor does not read
+    //!
+    //! The legacy `sessions.json` index upstream also parses. It is a
+    //! second account of the same spending, and this batch has already
+    //! paid once for reading two accounts of one thing (`amp`): without a
+    //! sample to test the reconciliation against, reading both is the
+    //! one mistake that inflates a bill.
+
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{Files, Kept, Meter, Read, Tally};
+
+    pub const VENDOR: &str = "openclaw";
+
+    /// Every name this agent has shipped under, newest first.
+    pub const ROOTS: [&str; 4] = [
+        ".openclaw/agents",
+        ".clawdbot/agents",
+        ".moltbot/agents",
+        ".moldbot/agents",
+    ];
+
+    pub struct OpenClaw {
+        root: PathBuf,
+        files: Mutex<Files<Vec<Kept>>>,
+    }
+
+    impl OpenClaw {
+        pub fn at(root: PathBuf) -> OpenClaw {
+            OpenClaw { root, files: Mutex::new(Files::default()) }
+        }
+    }
+
+    fn tokens_of(usage: &serde_json::Value) -> Option<Tokens> {
+        let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64);
+        let (input, output, cache_read, cache_write) =
+            (n("input"), n("output"), n("cacheRead"), n("cacheWrite"));
+        if input.is_none() && output.is_none() && cache_read.is_none() && cache_write.is_none() {
+            return None;
+        }
+        super::reconciled(
+            Tokens {
+                input: input.unwrap_or(0),
+                cached_input: cache_read.unwrap_or(0),
+                cache_write: cache_write.unwrap_or(0),
+                output: output.unwrap_or(0),
+            },
+            n("totalTokens"),
+        )
+    }
+
+    fn fold(kept: &mut Vec<Kept>, v: &serde_json::Value) -> Read {
+        let Some(message) = v.get("message") else { return Read::Fine };
+        if message.get("role").and_then(serde_json::Value::as_str) != Some("assistant") {
+            return Read::Fine;
+        }
+        let Some(usage) = message.get("usage").filter(|u| u.is_object()) else {
+            return Read::Fine;
+        };
+        let at = message
+            .get("timestamp")
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok());
+        let (Some(tokens), Some(at)) = (tokens_of(usage), at) else {
+            return Read::Unreadable;
+        };
+        kept.push(Kept { at, tokens });
+        Read::Fine
+    }
+
+    impl Meter for OpenClaw {
+        fn vendor(&self) -> &'static str {
+            VENDOR
+        }
+
+        fn root(&self) -> PathBuf {
+            self.root.clone()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.root, fold);
             Tally {
                 kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
                 unreadable,
