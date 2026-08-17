@@ -1362,6 +1362,16 @@ pub mod pi {
     //!   answers into one. Upstream lets one client opt into a
     //!   cross-session key; khor waits for a real sample that needs it
     //!   rather than guessing which way the collision goes.
+    //!
+    //! # Which way this one can be wrong
+    //!
+    //! **Over-count**: a history copied into a file that declares a
+    //! *different* session id is billed twice, because the key khor
+    //! merges on carries the session. That is the case upstream's
+    //! opt-in cross-session key exists for, and khor does not have a
+    //! sample of it. **Under-count**: nothing here loses records — the
+    //! reading needs no arithmetic and the reconciliation above catches a
+    //! split that does not add up.
 
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -1559,6 +1569,24 @@ pub mod roo {
     //! [`Read::Unreadable`], because a renamed field would otherwise read
     //! as a request that cost nothing. A payload with some of them and not
     //! others is taken at face value, which is the one gap left open here.
+    //!
+    //! # Which way this one can be wrong
+    //!
+    //! Written down because a module that says "unverified" without
+    //! saying *which way* has told the reader nothing they can act on.
+    //!
+    //! - **Over-count, and the only route to it**: one task directory
+    //!   reachable under two of the twelve roots as genuine copies — a
+    //!   local VS Code and a `vscode-server` whose storage was copied
+    //!   rather than linked — is billed once per copy. Symlinked roots
+    //!   cannot do it: neither walker follows a symlinked directory.
+    //! - **Under-count**: a payload naming only some of the four is taken
+    //!   at face value, so a rename of one field silently zeroes it while
+    //!   the record still bills the rest.
+    //!
+    //! Neither is checkable here the way the Gemini family's is: this
+    //! format publishes no per-record total, so there is nothing to add
+    //! khor's four up against ([`super::reconciled`]).
 
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
@@ -2004,6 +2032,27 @@ pub mod amp {
     //! filed under the file's mtime as upstream does. **A file's mtime is
     //! not a fact about when tokens were spent**, and this module has no
     //! business inventing one.
+    //!
+    //! # Which way this one can be wrong
+    //!
+    //! The matching is where both directions live, and both are inherited
+    //! from upstream rather than introduced here:
+    //!
+    //! - **Over-count**: a message and the event that recorded it whose
+    //!   numbers differ at all — a retry the ledger rounded, a model
+    //!   string spelled two ways — match on neither route, so both are
+    //!   billed. This is the direction that matters and there is no
+    //!   sample of it to size.
+    //! - **Under-count**: two genuinely separate answers that billed the
+    //!   same model the same numbers, where one event covers only one of
+    //!   them, leave the second message claiming the other's event.
+    //!
+    //! No per-record total exists here either, so [`super::reconciled`]
+    //! cannot referee it. **What this format offers instead, and khor
+    //! does not yet use, is the thread's own `credits`** — a cost rather
+    //! than a token count, which is why it is not a witness khor can
+    //! spend. Recorded as the thing to reach for if this ever needs
+    //! settling.
     //!
     //! Upstream knowledge, fixture-driven: no Amp thread has ever been on
     //! this machine, and the fixture is built from upstream's own test
