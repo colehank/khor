@@ -1,0 +1,11 @@
+[package]
+name = "khor-acp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+agent-client-protocol = "2"
+tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
