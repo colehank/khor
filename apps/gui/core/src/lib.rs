@@ -8,6 +8,7 @@
 
 pub mod chat;
 pub mod files;
+pub mod term;
 pub mod web;
 
 use std::collections::HashMap;

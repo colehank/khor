@@ -10,6 +10,9 @@ khor-catalog.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+# The terminal engine, shared with the detector (crates/detect) so one
+# emulator paints and reads the same screen (docs/handoff 终端画屏).
+vt100.workspace = true
 # TS types are generated from these structs (gen_bindings) — hand-copied
 # frontend types are the mock-drift bug at the type layer.
 ts-rs = "10"

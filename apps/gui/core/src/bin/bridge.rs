@@ -183,6 +183,23 @@ fn handle(
             khor_gui_core::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
             Ok("null".to_owned())
         }
+        "term_open" => {
+            khor_gui_core::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
+            Ok("null".to_owned())
+        }
+        "term_poll" => to_json(&khor_gui_core::term::term_poll(&arg("id")?, num("since")?)?),
+        "term_key" => {
+            khor_gui_core::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
+            Ok("null".to_owned())
+        }
+        "term_resize" => {
+            khor_gui_core::term::term_resize(&arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
+            Ok("null".to_owned())
+        }
+        "term_leave" => {
+            khor_gui_core::term::term_leave(&arg("id")?)?;
+            Ok("null".to_owned())
+        }
         "web_pins" => to_json(&khor_gui_core::web::web_pins(root)?),
         "pin_web" => {
             khor_gui_core::web::pin_web(root, &arg("machine")?, &arg("url")?, flag("on")?)?;

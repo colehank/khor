@@ -20,5 +20,6 @@ fn main() {
     khor_gui_core::files::DirPinRow::export_all_to(&dir).expect("export DirPinRow");
     khor_gui_core::web::WebPinRow::export_all_to(&dir).expect("export WebPinRow");
     khor_gui_core::web::WebBorrow::export_all_to(&dir).expect("export WebBorrow");
+    khor_gui_core::term::TermBatch::export_all_to(&dir).expect("export TermBatch");
     println!("bindings -> {}", dir.display());
 }

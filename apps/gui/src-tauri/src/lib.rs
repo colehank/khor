@@ -151,6 +151,34 @@ fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
     khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
 }
 
+/// The six terminal commands are one attachment registry in gui-core,
+/// mirroring chat: the window polls for a screen because that is the
+/// shape both skins can serve (`khor_gui_core::term` module head).
+#[tauri::command]
+fn term_open(id: String, cols: u16, rows: u16) -> Result<(), String> {
+    khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows)
+}
+
+#[tauri::command]
+fn term_poll(id: String, since: u64) -> Result<khor_gui_core::term::TermBatch, String> {
+    khor_gui_core::term::term_poll(&id, since)
+}
+
+#[tauri::command]
+fn term_key(id: String, keys: String) -> Result<(), String> {
+    khor_gui_core::term::term_key(&id, keys.into_bytes())
+}
+
+#[tauri::command]
+fn term_resize(id: String, cols: u16, rows: u16) -> Result<(), String> {
+    khor_gui_core::term::term_resize(&id, cols, rows)
+}
+
+#[tauri::command]
+fn term_leave(id: String) -> Result<(), String> {
+    khor_gui_core::term::term_leave(&id)
+}
+
 #[tauri::command]
 fn web_pins() -> Result<Vec<khor_gui_core::web::WebPinRow>, String> {
     khor_gui_core::web::web_pins(&Node::root_from_env())
@@ -253,6 +281,11 @@ pub fn run() {
             pull,
             dir_pins,
             pin_dir,
+            term_open,
+            term_poll,
+            term_key,
+            term_resize,
+            term_leave,
             web_pins,
             pin_web,
             open_web,
