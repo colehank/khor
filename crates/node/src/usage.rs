@@ -198,6 +198,8 @@ impl Meters {
         for (vendor, root) in roo::roots() {
             meters.push(Box::new(roo::Roo::at(vendor, home.join(root))));
         }
+        meters.push(Box::new(qwen::Qwen::at(home.join(".qwen"))));
+        meters.push(Box::new(junie::Junie::at(home.join(".junie"))));
         Meters { meters, cached: Mutex::new(None), passes: AtomicU64::new(0) }
     }
 
@@ -707,6 +709,41 @@ impl<S> Whole<S> {
     }
 }
 
+/// Whether a record's cached tokens are part of its input, asked of the
+/// record's own total rather than assumed.
+///
+/// **The two vendors above it disagree about this** — claude reports
+/// input already net of the cache, codex does not — so a third format
+/// guessing would be a coin toss. Where a vendor publishes its own total,
+/// the question is answerable per record: if the total is the sum
+/// *without* the cached part added, then the cached part was never a
+/// separate line and is therefore inside the input, so it comes out.
+///
+/// Shared by [`gemini`] and [`qwen`], which is not a coincidence worth
+/// hiding: Qwen Code is a fork of the Gemini CLI, so the arithmetic is
+/// the same lineage even though one writes the CLI's own six fields and
+/// the other writes the API's `usageMetadata` verbatim. **The shared
+/// thing is the judgment, not the field names**, which is why this is one
+/// function taking numbers rather than two copies taking documents.
+///
+/// Absent a total there is no witness, and the answer is no — the branch
+/// that changes nothing.
+fn cached_sits_inside_input(
+    input: u64,
+    output: u64,
+    cached: u64,
+    thoughts: u64,
+    tool: u64,
+    total: Option<u64>,
+) -> bool {
+    let Some(total) = total else { return false };
+    let apart = input
+        .saturating_add(output)
+        .saturating_add(thoughts)
+        .saturating_add(tool);
+    cached > 0 && total == apart
+}
+
 /// The instant a record carries, or nothing when khor cannot read it.
 fn at_of(v: &serde_json::Value, key: &str) -> Option<jiff::Timestamp> {
     v.get(key).and_then(serde_json::Value::as_str)?.parse().ok()
@@ -1048,7 +1085,7 @@ pub mod gemini {
 
     use khor_core::Tokens;
 
-    use super::{at_of, Files, Kept, Meter, Read, Tally};
+    use super::{at_of, cached_sits_inside_input, Files, Kept, Meter, Read, Tally};
 
     /// This vendor's name.
     ///
@@ -1076,27 +1113,6 @@ pub mod gemini {
         fn chats_dir(&self) -> PathBuf {
             self.root.join("tmp")
         }
-    }
-
-    /// Whether this record's `cached` is part of its `input`.
-    ///
-    /// See the module head: the vendor's own total is the witness. Absent
-    /// a total there is no witness, and the answer is no — the branch that
-    /// changes nothing.
-    fn cached_sits_inside_input(
-        input: u64,
-        output: u64,
-        cached: u64,
-        thoughts: u64,
-        tool: u64,
-        total: Option<u64>,
-    ) -> bool {
-        let Some(total) = total else { return false };
-        let apart = input
-            .saturating_add(output)
-            .saturating_add(thoughts)
-            .saturating_add(tool);
-        cached > 0 && total == apart
     }
 
     /// The six numbers off one `tokens`, mapped onto the four khor bills,
@@ -1592,6 +1608,257 @@ pub mod roo {
             let (states, unreadable) = files.refresh(named_under(&self.root, LOG), parse);
             let kept = states.into_iter().flat_map(|s| s.iter().copied()).collect();
             Tally { kept, unreadable }
+        }
+    }
+}
+
+pub mod qwen {
+    //! Qwen Code: the Gemini CLI's cousin, writing the API's own
+    //! `usageMetadata` instead of the CLI's six fields.
+    //!
+    //! One JSONL file per chat under `.qwen/projects/<project>/chats/`,
+    //! and a spendable line is `"type": "assistant"` carrying
+    //! `usageMetadata` — `promptTokenCount`, `candidatesTokenCount`,
+    //! `thoughtsTokenCount`, `cachedContentTokenCount`.
+    //!
+    //! # The one question this format asks, and where the answer came from
+    //!
+    //! Is `cachedContentTokenCount` already inside `promptTokenCount`?
+    //! **Upstream does not subtract it.** khor does, when the record's own
+    //! `totalTokenCount` says so — the same witness
+    //! [`super::cached_sits_inside_input`] applies to gemini, and Qwen
+    //! Code is a fork of the Gemini CLI.
+    //!
+    //! **This is a deliberate divergence from upstream and it is worth
+    //! being explicit about why**, because there is no sample of this
+    //! vendor on this machine to settle it:
+    //!
+    //! - The sibling CLI's real recordings **were** settled here: in all
+    //!   106 of them the total omitted the cached part, so cached sat
+    //!   inside input.
+    //! - Following upstream would mean counting the cached tokens twice
+    //!   whenever that holds here too — an **over-count**, which is the
+    //!   one direction this tier is not allowed to be wrong in.
+    //! - Subtracting when the total says otherwise is not possible: the
+    //!   witness answers no and nothing is subtracted.
+    //!
+    //! So the error this can still make is losing a cache read out of
+    //! input on a file whose total is absent — an under-count, and the
+    //! side khor is allowed to be wrong on.
+    //!
+    //! `thoughtsTokenCount` is added to output on the rule
+    //! [`khor_core::Tokens::output`] states, the same as gemini and for
+    //! the same reason: this family counts thinking beside the answer
+    //! rather than inside it. Cache **writes** this format does not report
+    //! at all.
+
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{at_of, cached_sits_inside_input, Files, Kept, Meter, Read, Tally};
+
+    pub const VENDOR: &str = "qwen";
+
+    pub struct Qwen {
+        root: PathBuf,
+        files: Mutex<Files<Vec<Kept>>>,
+    }
+
+    impl Qwen {
+        pub fn at(root: PathBuf) -> Qwen {
+            Qwen { root, files: Mutex::new(Files::default()) }
+        }
+
+        fn projects_dir(&self) -> PathBuf {
+            self.root.join("projects")
+        }
+    }
+
+    /// The API's usage object, mapped onto khor's four.
+    fn tokens_of(usage: &serde_json::Value) -> Option<Tokens> {
+        let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64);
+        let prompt = n("promptTokenCount");
+        let candidates = n("candidatesTokenCount");
+        let thoughts = n("thoughtsTokenCount");
+        let cached = n("cachedContentTokenCount");
+        // Presence, not value: a record naming none of these is a shape
+        // that moved, and the total alone cannot tell khor what the parts
+        // were.
+        if prompt.is_none() && candidates.is_none() && thoughts.is_none() && cached.is_none() {
+            return None;
+        }
+        let (prompt, candidates, thoughts, cached) = (
+            prompt.unwrap_or(0),
+            candidates.unwrap_or(0),
+            thoughts.unwrap_or(0),
+            cached.unwrap_or(0),
+        );
+        let total = n("totalTokenCount");
+        let fresh = if cached_sits_inside_input(prompt, candidates, cached, thoughts, 0, total) {
+            prompt.saturating_sub(cached)
+        } else {
+            prompt
+        };
+        Some(Tokens {
+            input: fresh,
+            cached_input: cached,
+            cache_write: 0,
+            output: candidates.saturating_add(thoughts),
+        })
+    }
+
+    /// One line onto the end of this file's records.
+    ///
+    /// **Nothing deduplicates here, and it is the reader that makes that
+    /// safe**: [`Files`] hands each line over exactly once, so a record
+    /// cannot arrive twice. Upstream needs a key because it re-parses
+    /// whole files.
+    fn fold(kept: &mut Vec<Kept>, v: &serde_json::Value) -> Read {
+        if v.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
+            return Read::Fine;
+        }
+        let Some(usage) = v.get("usageMetadata").filter(|u| u.is_object()) else {
+            return Read::Fine;
+        };
+        let (Some(tokens), Some(at)) = (tokens_of(usage), at_of(v, "timestamp")) else {
+            return Read::Unreadable;
+        };
+        kept.push(Kept { at, tokens });
+        Read::Fine
+    }
+
+    impl Meter for Qwen {
+        fn vendor(&self) -> &'static str {
+            VENDOR
+        }
+
+        fn root(&self) -> PathBuf {
+            self.projects_dir()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.projects_dir(), fold);
+            Tally {
+                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                unreadable,
+            }
+        }
+    }
+}
+
+pub mod junie {
+    //! Junie: an event log, where one event can bill several models.
+    //!
+    //! `.junie/sessions/<session>/events.jsonl`, one JSON object per line.
+    //! The ones that cost anything carry
+    //! `event.agentEvent.kind == "LlmResponseMetadataEvent"` and a
+    //! **`modelUsage` array** — one row per model the turn used, each with
+    //! `inputTokens` and `outputTokens`.
+    //!
+    //! The array is the whole of what is interesting here. Every other
+    //! format above bills one record per line; this one bills as many as
+    //! the line says, so a reader that took the first row would quietly
+    //! undercount a turn that used two models — and quietly is the word,
+    //! because the answer would still look like a plausible number.
+    //!
+    //! **Two fields only.** This format reports no cache reads and no
+    //! cache writes, so both are zero — not because khor could not find
+    //! them but because nothing writes them, which is the same call
+    //! `gemini` makes about cache writes.
+    //!
+    //! Upstream knowledge, fixture-driven: no Junie has ever run on this
+    //! machine, and the fixture is upstream's own test event carried
+    //! across.
+
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{Files, Kept, Meter, Read, Tally};
+
+    pub const VENDOR: &str = "junie";
+
+    pub struct Junie {
+        root: PathBuf,
+        files: Mutex<Files<Vec<Kept>>>,
+    }
+
+    impl Junie {
+        pub fn at(root: PathBuf) -> Junie {
+            Junie { root, files: Mutex::new(Files::default()) }
+        }
+
+        fn sessions_dir(&self) -> PathBuf {
+            self.root.join("sessions")
+        }
+    }
+
+    fn tokens_of(row: &serde_json::Value) -> Option<Tokens> {
+        let n = |k: &str| row.get(k).and_then(serde_json::Value::as_u64);
+        let (input, output) = (n("inputTokens"), n("outputTokens"));
+        if input.is_none() && output.is_none() {
+            return None;
+        }
+        Some(Tokens {
+            input: input.unwrap_or(0),
+            cached_input: 0,
+            cache_write: 0,
+            output: output.unwrap_or(0),
+        })
+    }
+
+    fn fold(kept: &mut Vec<Kept>, v: &serde_json::Value) -> Read {
+        let Some(event) = v.pointer("/event/agentEvent") else { return Read::Fine };
+        if event.get("kind").and_then(serde_json::Value::as_str)
+            != Some("LlmResponseMetadataEvent")
+        {
+            return Read::Fine;
+        }
+        let Some(rows) = event.get("modelUsage").and_then(|u| u.as_array()) else {
+            return Read::Unreadable;
+        };
+        // This format stamps the event, not the row, so every model the
+        // turn used shares one instant. That is the vendor's own answer to
+        // "when", and inventing a spread would be khor making one up.
+        let at = v
+            .get("timestampMs")
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok());
+        let Some(at) = at else { return Read::Unreadable };
+        let mut missed = false;
+        for row in rows {
+            match tokens_of(row) {
+                Some(tokens) => kept.push(Kept { at, tokens }),
+                None => missed = true,
+            }
+        }
+        if missed {
+            Read::Unreadable
+        } else {
+            Read::Fine
+        }
+    }
+
+    impl Meter for Junie {
+        fn vendor(&self) -> &'static str {
+            VENDOR
+        }
+
+        fn root(&self) -> PathBuf {
+            self.sessions_dir()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
+            Tally {
+                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                unreadable,
+            }
         }
     }
 }

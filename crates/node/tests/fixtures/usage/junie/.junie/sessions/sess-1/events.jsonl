@@ -1,0 +1,4 @@
+{"timestampMs":1786928400000,"event":{"agentEvent":{"kind":"LlmResponseMetadataEvent","modelUsage":[{"model":"a-model","inputTokens":100,"outputTokens":50},{"model":"b-model","inputTokens":7,"outputTokens":3}]}}}
+{"timestampMs":1786928401000,"event":{"agentEvent":{"kind":"UserPromptEvent"}}}
+{"timestampMs":1786928402000,"event":{"agentEvent":{"kind":"LlmResponseMetadataEvent","modelUsage":[{"model":"a-model","cost":0}]}}}
+{"timestampMs":1786928403000,"event":{"agentEvent":{"kind":"LlmResponseMetadataEvent"}}}

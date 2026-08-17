@@ -96,6 +96,14 @@ fn roo_meter(vendor: &'static str) -> roo::Roo {
     roo::Roo::at(vendor, root)
 }
 
+fn qwen_meter() -> qwen::Qwen {
+    qwen::Qwen::at(fixture().join("qwen/.qwen"))
+}
+
+fn junie_meter() -> junie::Junie {
+    junie::Junie::at(fixture().join("junie/.junie"))
+}
+
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
     Tokens { input, cached_input, cache_write, output }
 }
@@ -161,6 +169,8 @@ fn fixture_home(tag: &str) -> PathBuf {
             home.join(".vscode-server"),
         )
         .unwrap();
+        std::os::unix::fs::symlink(fixture().join("qwen/.qwen"), home.join(".qwen")).unwrap();
+        std::os::unix::fs::symlink(fixture().join("junie/.junie"), home.join(".junie")).unwrap();
     }
     home
 }
@@ -572,6 +582,59 @@ fn a_rewritten_task_document_is_not_billed_twice() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// **The witness gemini uses travels to the fork, and khor parts company
+/// with upstream here.**
+///
+/// Qwen Code writes the API's `usageMetadata` rather than the Gemini
+/// CLI's own fields, and the fixture holds one record of each case the
+/// witness has to tell apart:
+///
+/// - 1000 prompt / 800 cached with a total of 1060 — the cached part was
+///   never added, so it is inside the prompt and comes out: 200 fresh.
+/// - 400 prompt / 90 cached with a total of 520 — counted apart, nothing
+///   subtracted.
+/// - 300 prompt / 100 cached with **no total at all** — no witness, so
+///   nothing is subtracted, which is the direction that loses tokens
+///   rather than inventing them.
+///
+/// Upstream subtracts in none of these. Following it would double-count
+/// the 800 in the first, which is the one direction this tier may not be
+/// wrong in.
+#[test]
+fn the_cached_witness_travels_to_the_gemini_fork() {
+    let spent = by_day(&qwen_meter().tally(), &plus_eight())["2026-08-17"];
+    assert_eq!(
+        spent,
+        tokens(1000, 990, 0, 125),
+        "100 + 200 + 400 + 300 fresh; 25 + 60 + 30 + 10 out"
+    );
+    assert_ne!(spent.input, 1000 + 800, "upstream's reading: the cached 800 counted twice");
+    assert_ne!(spent.input, 1000 - 190, "a total-blind implementation subtracted every cache read");
+}
+
+/// **One event, several models, and every one of them billed.**
+///
+/// A Junie turn that used two models writes them as two rows of one
+/// event's `modelUsage`. A reader that took the first row would report
+/// 100/50 — a plausible-looking number that is simply short, which is
+/// why this asserts the sum and names the wrong one.
+///
+/// The two unreadable records are the other half: a row naming neither
+/// token field, and an event of the right kind carrying no `modelUsage`
+/// at all.
+#[test]
+fn one_junie_event_can_bill_more_than_one_model() {
+    let tally = junie_meter().tally();
+    let spent = by_day(&tally, &plus_eight())["2026-08-17"];
+    assert_eq!(spent, tokens(107, 0, 0, 53), "100/50 and 7/3, both rows of one event");
+    assert_ne!(spent.input, 100, "only the first row of the event was billed");
+    assert_eq!(tally.kept.len(), 2, "two rows, two records, one instant");
+    assert_eq!(
+        tally.unreadable, 2,
+        "the row naming no token field, and the event with no modelUsage"
+    );
+}
+
 /// **What it cannot read, it counts — and a half-written line is not
 /// that.**
 ///
@@ -589,8 +652,8 @@ fn a_rewritten_task_document_is_not_billed_twice() {
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
     assert_eq!(
-        usage.unreadable, 10,
-        "three from claude, one from codex, two from gemini, two from pi, two from roo"
+        usage.unreadable, 14,
+        "three claude, one codex, two gemini, two pi, two roo, two qwen, two junie"
     );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),
@@ -644,9 +707,11 @@ fn each_row_carries_the_name_of_the_meter_that_read_it() {
             ("2026-08-17", "cline", 3),
             ("2026-08-17", "codex", 150),
             ("2026-08-17", "gemini", 155),
+            ("2026-08-17", "junie", 53),
             ("2026-08-17", "kilocode", 4),
             ("2026-08-17", "kimchi", 4),
             ("2026-08-17", "pi", 593),
+            ("2026-08-17", "qwen", 125),
             ("2026-08-17", "roocode", 52),
             ("2026-08-17", "senpi", 2),
             ("2026-08-18", "claude", 4),

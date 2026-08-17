@@ -1,0 +1,8 @@
+{"type": "user", "timestamp": "2026-08-17T01:00:00.000Z", "content": "x"}
+{"type": "assistant", "model": "a-model", "timestamp": "2026-08-17T01:00:01.000Z", "sessionId": "q-sess-1", "usageMetadata": {"promptTokenCount": 100, "candidatesTokenCount": 20, "thoughtsTokenCount": 5, "cachedContentTokenCount": 0}}
+{"type": "assistant", "model": "a-model", "timestamp": "2026-08-17T01:00:02.000Z", "sessionId": "q-sess-1", "usageMetadata": {"promptTokenCount": 1000, "candidatesTokenCount": 50, "thoughtsTokenCount": 10, "cachedContentTokenCount": 800, "totalTokenCount": 1060}}
+{"type": "assistant", "model": "a-model", "timestamp": "2026-08-17T01:00:03.000Z", "sessionId": "q-sess-1", "usageMetadata": {"promptTokenCount": 400, "candidatesTokenCount": 30, "thoughtsTokenCount": 0, "cachedContentTokenCount": 90, "totalTokenCount": 520}}
+{"type": "assistant", "model": "a-model", "timestamp": "2026-08-17T01:00:04.000Z", "sessionId": "q-sess-1", "usageMetadata": {"promptTokenCount": 300, "candidatesTokenCount": 10, "thoughtsTokenCount": 0, "cachedContentTokenCount": 100}}
+{"type": "system", "timestamp": "2026-08-17T01:00:05.000Z", "subtype": "ui_telemetry"}
+{"type": "assistant", "model": "a-model", "timestamp": "2026-08-17T01:00:06.000Z", "sessionId": "q-sess-1", "usageMetadata": {"totalTokenCount": 999}}
+{"type": "assistant", "model": "a-model", "sessionId": "q-sess-1", "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 12}}
