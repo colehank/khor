@@ -53,6 +53,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "face", run: face },
     Verb { word: "devices", run: devices },
     Verb { word: "ls", run: ls },
+    Verb { word: "pull", run: pull },
     Verb { word: "usage", run: usage },
     Verb { word: "sessions", run: sessions },
     Verb { word: "tell", run: tell },
@@ -180,6 +181,20 @@ fn ls(rest: &[String]) -> Result<(), String> {
     if truncated {
         eprintln!("{}", cli::dir_truncated(khor_node::files::MOST_ENTRIES as u64));
     }
+    Ok(())
+}
+
+/// Takes a file off a machine by path. The landing prints because the
+/// default (the current directory) was chosen silently — a file that
+/// arrived somewhere unsaid is a file someone will go looking for.
+fn pull(rest: &[String]) -> Result<(), String> {
+    let (machine, path, dir) = match rest {
+        [machine, path] => (machine, path, std::env::current_dir().map_err(|e| e.to_string())?),
+        [machine, path, dir] => (machine, path, std::path::PathBuf::from(dir)),
+        _ => return Err(USAGE.into()),
+    };
+    let (moved, dest) = rt()?.block_on(node()?.pull_path(machine, path, &dir))?;
+    println!("{}", cli::pulled_to(moved, dest.display()));
     Ok(())
 }
 

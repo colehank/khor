@@ -29,6 +29,9 @@ pub enum Op {
     /// List a machine's directory (`proto::Request::Ls` carried to the
     /// resident endpoint). Tail-appended, like everything after v1.
     Ls { machine: String, path: String },
+    /// Pull a pathed file whole (the slice loop runs in the serve, like
+    /// Accept's does). `dir` is where it lands. Tail-appended.
+    Pull { machine: String, path: String, dir: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,6 +42,10 @@ pub enum Reply {
     Refused { why: String },
     /// Tail-appended with [`Op::Ls`].
     Dir { entries: Vec<crate::proto::DirEntry>, truncated: bool },
+    /// Tail-appended with [`Op::Pull`]: bytes moved, and where the file
+    /// landed — the verb prints the landing because the default (the
+    /// asker's cwd) is a place the serve never knew.
+    Pulled { moved: u64, dest: String },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

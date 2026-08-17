@@ -218,6 +218,14 @@ impl Node {
                 Ok((entries, truncated)) => ipc::Reply::Dir { entries, truncated },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::Pull { machine, path, dir } => {
+                match self.pull_path_with(ep, &machine, &path, std::path::Path::new(&dir)).await {
+                    Ok((moved, dest)) => {
+                        ipc::Reply::Pulled { moved, dest: dest.display().to_string() }
+                    }
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
     }
 
@@ -410,6 +418,17 @@ impl Node {
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Dir { entries, truncated })
             }
+            Request::FetchPath { path, offset } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Off the reactor with Ls, for Ls's reason.
+                let (total, at_ms, bytes) =
+                    tokio::task::spawn_blocking(move || crate::files::read_slice(&path, offset))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
+            }
         }
     }
 
@@ -519,6 +538,142 @@ impl Node {
             Response::Dir { entries, truncated } => Ok((entries, truncated)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Takes one file off a machine by path, into `dir` — the
+    /// browse-then-take half of the files landing. Whole-file only (the
+    /// rsync-shaped delta is on the ledger, waiting for the repeat-pull
+    /// case to exist). Returns bytes moved and where the file landed.
+    pub async fn pull_path(
+        &self,
+        machine: &str,
+        path: &str,
+        dir: &std::path::Path,
+    ) -> Result<(u64, std::path::PathBuf), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::Pull {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+                dir: dir.display().to_string(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Pulled { moved, dest } => Ok((moved, std::path::PathBuf::from(dest))),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.pull_path_with(&ep, machine, path, dir).await;
+        ep.close().await;
+        outcome
+    }
+
+    /// The pull on an endpoint the caller owns. Asking this very
+    /// machine is a plain copy through the same refusals — the files
+    /// landing lists this machine too, and "download from myself" must
+    /// not need a wire to work.
+    async fn pull_path_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+        dir: &std::path::Path,
+    ) -> Result<(u64, std::path::PathBuf), String> {
+        use std::io::Write;
+        let (channel, home) = self.resolve(machine)?;
+        let fell = crate::files::landing(path, dir)?;
+        if home == self.device() {
+            let (path, part) = (path.to_owned(), fell.part.clone());
+            let moved = tokio::task::spawn_blocking(move || -> Result<u64, String> {
+                // Through read_slice rather than fs::copy so the local
+                // pull refuses exactly what the remote one refuses
+                // (relative paths, directories).
+                let mut out = std::fs::File::create(&part).map_err(|e| e.to_string())?;
+                let mut offset = 0u64;
+                loop {
+                    let (total, _, bytes) = crate::files::read_slice(&path, offset)?;
+                    out.write_all(&bytes).map_err(|e| e.to_string())?;
+                    offset += bytes.len() as u64;
+                    if offset >= total {
+                        return Ok(offset);
+                    }
+                }
+            })
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r);
+            return match moved {
+                Ok(moved) => {
+                    std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;
+                    Ok((moved, fell.dest))
+                }
+                Err(why) => {
+                    let _ = std::fs::remove_file(&fell.part);
+                    Err(why)
+                }
+            };
+        }
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
+            .map_err(|e| e.to_string())?;
+        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
+            .await
+            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|e| msg::cant_reach_named(&channel, e))?;
+        let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
+        // The change contract: the first slice's (total, mtime) must
+        // hold for every slice after it — two readings that differ are
+        // two files, and no digest guards this path (proto::PathSlice).
+        let mut contract: Option<(u64, u64)> = None;
+        let mut offset = 0u64;
+        let outcome = loop {
+            let resp =
+                request(&conn, &Request::FetchPath { path: path.to_owned(), offset }).await;
+            match resp {
+                Ok(Response::PathSlice { total, at_ms, bytes }) => {
+                    match contract {
+                        None => contract = Some((total, at_ms)),
+                        Some(c) if c != (total, at_ms) => {
+                            break Err(msg::FILE_CHANGED_MID_PULL.into())
+                        }
+                        Some(_) => {}
+                    }
+                    if bytes.is_empty() && total > 0 {
+                        break Err(msg::EMPTY_SLICE.into());
+                    }
+                    if let Err(e) = out.write_all(&bytes) {
+                        break Err(e.to_string());
+                    }
+                    offset += bytes.len() as u64;
+                    if offset >= total {
+                        break Ok(offset);
+                    }
+                }
+                Ok(Response::Refused { why }) => break Err(why),
+                Ok(other) => break Err(msg::peer_non_answer(format_args!("{other:?}"))),
+                Err(e) => break Err(e),
+            }
+        };
+        match outcome {
+            Ok(moved) => {
+                drop(out);
+                std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;
+                Ok((moved, fell.dest))
+            }
+            Err(why) => {
+                drop(out);
+                let _ = std::fs::remove_file(&fell.part);
+                Err(why)
+            }
         }
     }
 

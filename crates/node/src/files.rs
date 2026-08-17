@@ -72,6 +72,59 @@ pub fn list_dir(path: &str) -> Result<(Vec<DirEntry>, bool), String> {
     Ok((entries, truncated))
 }
 
+/// One slice of a file by absolute path, plus the change contract
+/// (`proto::Response::PathSlice`): total size and mtime ride out so the
+/// puller can notice the file moving under it — no digest guards this
+/// path, so "did it change" is the whole of the integrity story.
+pub fn read_slice(path: &str, offset: u64) -> Result<(u64, u64, Vec<u8>), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    if !std::path::Path::new(path).is_absolute() {
+        return Err(msg::path_not_absolute(path));
+    }
+    let meta = std::fs::metadata(path).map_err(|e| msg::cant_list_dir(&path, e))?;
+    if meta.is_dir() {
+        return Err(msg::not_a_file_path(path));
+    }
+    let total = meta.len();
+    if offset > total {
+        return Err(msg::offset_out_of_range(offset, total));
+    }
+    let at_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let mut f = std::fs::File::open(path).map_err(|e| msg::cant_list_dir(&path, e))?;
+    f.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let want = (total - offset).min(crate::proto::SLICE) as usize;
+    let mut buf = vec![0u8; want];
+    f.read_exact(&mut buf).map_err(msg::cant_read_slice)?;
+    Ok((total, at_ms, buf))
+}
+
+/// Where a pulled file lands and how it gets there: written beside its
+/// destination under a dot-name, renamed only when whole — a crash
+/// leaves a dotfile, never a truncated file wearing a real name. An
+/// existing destination refuses up front: overwriting what a person
+/// already has is the one irreversible act in this module.
+pub struct Landing {
+    pub part: std::path::PathBuf,
+    pub dest: std::path::PathBuf,
+}
+
+pub fn landing(remote_path: &str, dir: &std::path::Path) -> Result<Landing, String> {
+    let name = std::path::Path::new(remote_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| msg::not_a_file_path(remote_path))?;
+    let dest = dir.join(name);
+    if dest.exists() {
+        return Err(msg::dest_exists(dest.display()));
+    }
+    Ok(Landing { part: dir.join(format!(".khor-pull-{name}")), dest })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

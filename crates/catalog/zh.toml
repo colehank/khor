@@ -89,6 +89,8 @@ usage = """
                         本机的脸;不带参数看现在是什么、有哪些可选
   devices               网里的设备
   ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
+  pull <机器> <文件> [目录]
+                        把那台机器上的文件拉过来(默认落当前目录)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
   sessions [--by recent|category|device|state]
                         session 列表(默认最近);换一种排布,置顶永远在最上
@@ -210,6 +212,7 @@ usage-taken = "{0}前的账"
 usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
 summary-sent = "摘要已发,等对方许可。传输号: {0}"
 pulled = "收下了,这一趟拉了 {0} 字节"
+pulled-to = "拉了 {0} 字节,落在 {1}"
 # The no-silent-caps rule at the CLI: a listing cut at the cap must say
 # so, or a directory's first page reads as the whole of it.
 dir-truncated = "目录太大,只列出前 {0} 条"
@@ -382,6 +385,11 @@ offerer-left-table = "出让方已不在设备表里"
 # Two reads of one table can straddle a removal; the second read owns
 # this word. Not recipient-not-in-table: nothing is being received.
 machine-left-table = "这台机器已不在设备表里: {0}"
+# The pull's refusals. Overwriting is the one irreversible act on this
+# path, so an existing name refuses up front; and with no digest, a
+# total or mtime that moved mid-pull is two files, not one.
+dest-exists = "本地已有同名文件,先挪开: {0}"
+file-changed-mid-pull = "文件在拉取途中变了,重新拉一次"
 cant-make-files-dir = "建不了 files 目录: {0}"
 cant-mark-pulling = "记不了拉取标记: {0}"
 cant-read-partial = "读不了断点: {0}"

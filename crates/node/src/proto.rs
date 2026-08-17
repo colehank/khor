@@ -61,6 +61,13 @@ pub enum Request {
     /// 入网即全信). A khor that predates it answers
     /// [`Response::Refused`], read as "that machine cannot list".
     Ls { path: String },
+    /// One slice of a file named by absolute path — the browse-then-
+    /// take pull, which has no offer to be content-addressed by
+    /// ([`Request::Fetch`]'s path). No permission step here either,
+    /// and it is not an exception to 待批全量: that gate guards the
+    /// **receiving** side of an offer someone else pushed at it, and
+    /// a pull is the puller spending its own disk on its own ask.
+    FetchPath { path: String, offset: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +93,14 @@ pub enum Response {
     /// 状态呈现). `truncated` is the no-silent-caps rule on the wire: a
     /// directory bigger than the cap says so instead of looking whole.
     Dir { entries: Vec<DirEntry>, truncated: bool },
+    /// One slice of a pathed file. **Not [`Response::Slice`]**: that
+    /// shape is what every shipped fetcher already decodes, and a field
+    /// added to it would break them mid-pull — a new variant only ever
+    /// reaches the peer that asked for it. `total` and `at_ms` ride
+    /// every slice as the change contract: a puller that sees either
+    /// move between slices is reading two different files and must
+    /// start over, because no digest guards this path.
+    PathSlice { total: u64, at_ms: u64, bytes: serde_bytes::ByteBuf },
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -169,6 +184,7 @@ mod tests {
             (Request::Vitals, &b"Vitals"[..]),
             (Request::Usage, &b"Usage"[..]),
             (Request::Ls { path: String::new() }, &b"Ls"[..]),
+            (Request::FetchPath { path: String::new(), offset: 0 }, &b"FetchPath"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

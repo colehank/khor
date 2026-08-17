@@ -1,9 +1,8 @@
-//! The listing over a real wire (账本: 网络类改动必须真连,还要有对照组).
-//! One serve owns alpha's key; beta asks over UDP and must see exactly
-//! what alpha's disk holds, in the order the node promises. The control
-//! half: an unpaired key sending the same op is refused — "it worked"
-//! on the paired path proves nothing unless the unpaired one truly
-//! does not.
+//! The files landing over a real wire (账本: 网络类改动必须真连,还要有
+//! 对照组). One serve owns alpha's key; beta lists and pulls over UDP
+//! and must see exactly what alpha's disk holds. The control half: an
+//! unpaired key sending the same ops is refused — "it worked" on the
+//! paired path proves nothing unless the unpaired one truly does not.
 
 use std::fs;
 use std::path::PathBuf;
@@ -35,7 +34,7 @@ async fn wait_for_endpoint_file(root: &PathBuf) {
 }
 
 #[tokio::test]
-async fn a_paired_machine_lists_the_far_disk_and_an_unpaired_key_is_refused() {
+async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_refused() {
     let ra = root("a");
     let rb = root("b");
     let sa = Node::open_as(ra.clone(), "alpha").unwrap();
@@ -76,6 +75,51 @@ async fn a_paired_machine_lists_the_far_disk_and_an_unpaired_key_is_refused() {
         .unwrap_err();
     assert!(err.contains("some/where"), "the refusal names the path: {err}");
 
+    // The pull: a file bigger than one slice, taken whole and byte-
+    // identical — the loop is what a single-slice file cannot prove.
+    let big: Vec<u8> = (0..(2 * khor_node::proto::SLICE + 1234) as u32)
+        .map(|i| (i % 251) as u8)
+        .collect();
+    fs::write(browse.join("dataset.bin"), &big).unwrap();
+    let dl = rb.join("landed");
+    fs::create_dir_all(&dl).unwrap();
+    let (moved, dest) = timeout(
+        Duration::from_secs(30),
+        b.pull_path("alpha", browse.join("dataset.bin").to_str().unwrap(), &dl),
+    )
+    .await
+    .expect("the pull must not hang")
+    .unwrap();
+    assert_eq!(moved, big.len() as u64);
+    assert_eq!(fs::read(&dest).unwrap(), big, "every byte, in order");
+    assert!(
+        !dl.join(".khor-pull-dataset.bin").exists(),
+        "the dot-name must not survive a finished pull"
+    );
+
+    // Pulling onto an existing name refuses before any byte moves —
+    // overwriting is the one irreversible act on this path.
+    let err = timeout(
+        Duration::from_secs(15),
+        b.pull_path("alpha", browse.join("dataset.bin").to_str().unwrap(), &dl),
+    )
+    .await
+    .expect("must not hang")
+    .unwrap_err();
+    assert!(err.contains("dataset.bin"), "the refusal names the file: {err}");
+    assert_eq!(fs::read(&dest).unwrap(), big, "and the existing file is untouched");
+
+    // A directory is not a file, and the refusal crosses the wire.
+    let err = timeout(
+        Duration::from_secs(15),
+        b.pull_path("alpha", browse.join("zoo").to_str().unwrap(), &dl),
+    )
+    .await
+    .expect("must not hang")
+    .unwrap_err();
+    assert!(!err.is_empty());
+    assert!(!dl.join(".khor-pull-zoo").exists(), "a refused pull leaves no dot-name");
+
     // The control: an unpaired key, same op, same wire. Proved against
     // a live gate first — the paired listing above used this very
     // serve — so a refusal here is the gate and not a dead endpoint.
@@ -100,6 +144,25 @@ async fn a_paired_machine_lists_the_far_disk_and_an_unpaired_key_is_refused() {
     match resp {
         Response::Refused { why } => assert_eq!(why, khor_catalog::msg::NOT_PAIRED),
         other => panic!("an unpaired ls must be refused, got {other:?}"),
+    }
+    let resp = timeout(
+        Duration::from_secs(15),
+        raw_request(
+            iroh::SecretKey::generate(),
+            &alpha_info.id,
+            &alpha_info.addrs,
+            &Request::FetchPath {
+                path: browse.join("dataset.bin").to_str().unwrap().to_owned(),
+                offset: 0,
+            },
+        ),
+    )
+    .await
+    .expect("must not hang")
+    .unwrap();
+    match resp {
+        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::NOT_PAIRED),
+        other => panic!("an unpaired fetch-path must be refused, got {other:?}"),
     }
 
     serve_a.abort();
