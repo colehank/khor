@@ -104,6 +104,10 @@ fn junie_meter() -> junie::Junie {
     junie::Junie::at(fixture().join("junie/.junie"))
 }
 
+fn amp_meter() -> amp::Amp {
+    amp::Amp::at(fixture().join("amp/.local/share/amp"))
+}
+
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
     Tokens { input, cached_input, cache_write, output }
 }
@@ -171,6 +175,12 @@ fn fixture_home(tag: &str) -> PathBuf {
         .unwrap();
         std::os::unix::fs::symlink(fixture().join("qwen/.qwen"), home.join(".qwen")).unwrap();
         std::os::unix::fs::symlink(fixture().join("junie/.junie"), home.join(".junie")).unwrap();
+        std::fs::create_dir_all(home.join(".local/share")).unwrap();
+        std::os::unix::fs::symlink(
+            fixture().join("amp/.local/share/amp"),
+            home.join(".local/share/amp"),
+        )
+        .unwrap();
     }
     home
 }
@@ -635,6 +645,38 @@ fn one_junie_event_can_bill_more_than_one_model() {
     );
 }
 
+/// **A thread that wrote its spending down twice is billed once.**
+///
+/// This is the assertion the whole `amp` module exists for. Its fixture
+/// holds one thread where the two accounts overlap in both the ways
+/// upstream distinguishes, plus the case where they do not overlap at
+/// all:
+///
+/// - the ledger event that names its message (`toMessageId: 2`),
+/// - the one that names nothing and is recognised only by having the same
+///   model and the same numbers as message 3,
+/// - message 4, which no event accounts for and which therefore **is**
+///   billed,
+/// - and a second thread with no ledger at all, read from its messages.
+///
+/// Both failures are named with the number the red actually produces —
+/// **read off the failing run, not worked out on paper**, which is the
+/// third time in this batch that arithmetic in somebody's head named a
+/// value the test could never reach.
+#[test]
+fn a_thread_that_wrote_its_spending_twice_is_billed_once() {
+    let tally = amp_meter().tally();
+    let spent = by_day(&tally, &plus_eight())["2026-08-17"];
+    assert_eq!(
+        spent,
+        tokens(127, 20, 5, 59),
+        "thread 1: 100/20/5/50 + 7/0/0/3 + the unmatched 11/0/0/2; thread 2: 9/0/0/4"
+    );
+    assert_ne!(spent.input, 234, "the ledger and the messages were both billed");
+    assert_ne!(spent.input, 116, "the message no event accounted for was dropped");
+    assert_eq!(tally.unreadable, 1, "the event that never says which model it was");
+}
+
 /// **What it cannot read, it counts — and a half-written line is not
 /// that.**
 ///
@@ -652,8 +694,8 @@ fn one_junie_event_can_bill_more_than_one_model() {
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
     assert_eq!(
-        usage.unreadable, 14,
-        "three claude, one codex, two gemini, two pi, two roo, two qwen, two junie"
+        usage.unreadable, 15,
+        "three claude, one codex, two gemini, two pi, two roo, two qwen, two junie, one amp"
     );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),
@@ -703,6 +745,7 @@ fn each_row_carries_the_name_of_the_meter_that_read_it() {
     assert_eq!(
         listed,
         vec![
+            ("2026-08-17", "amp", 59),
             ("2026-08-17", "claude", 563),
             ("2026-08-17", "cline", 3),
             ("2026-08-17", "codex", 150),

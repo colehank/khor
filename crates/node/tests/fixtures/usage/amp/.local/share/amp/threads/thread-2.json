@@ -1,0 +1,7 @@
+{
+  "id": "t-2",
+  "created": 1786928400000,
+  "messages": [
+    { "role": "assistant", "messageId": 1, "usage": { "model": "a-model", "inputTokens": 9, "outputTokens": 4, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0 } }
+  ]
+}

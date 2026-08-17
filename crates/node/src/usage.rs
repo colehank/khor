@@ -200,6 +200,7 @@ impl Meters {
         }
         meters.push(Box::new(qwen::Qwen::at(home.join(".qwen"))));
         meters.push(Box::new(junie::Junie::at(home.join(".junie"))));
+        meters.push(Box::new(amp::Amp::at(home.join(".local/share/amp"))));
         Meters { meters, cached: Mutex::new(None), passes: AtomicU64::new(0) }
     }
 
@@ -435,6 +436,30 @@ fn jsonl_under(root: &Path) -> Vec<PathBuf> {
                 Ok(t) if t.is_dir() => stack.push(path),
                 Ok(t) if t.is_file() => {
                     if path.extension().and_then(|x| x.to_str()) == Some("jsonl") {
+                        out.push(path);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Every `.json` under `root`, at any depth, sorted. The sibling of
+/// [`jsonl_under`] for vendors that keep one document per conversation.
+fn json_under(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let path = e.path();
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(path),
+                Ok(t) if t.is_file() => {
+                    if path.extension().and_then(|x| x.to_str()) == Some("json") {
                         out.push(path);
                     }
                 }
@@ -1855,6 +1880,281 @@ pub mod junie {
         fn tally(&self) -> Tally {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
+            Tally {
+                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                unreadable,
+            }
+        }
+    }
+}
+
+pub mod amp {
+    //! Amp (Sourcegraph): one thread per JSON document, and **the same
+    //! spending written down twice inside it**.
+    //!
+    //! A thread under `.local/share/amp/threads/` carries two accounts of
+    //! what it cost: a `usageLedger.events[]` — the ledger proper, with
+    //! its own timestamps — and a `usage` object on each assistant entry
+    //! of `messages[]`. They overlap, and how much they overlap is not
+    //! fixed: an event may point at a message (`toMessageId`), or match
+    //! one only by having the same model and the same numbers, or answer
+    //! to nothing at all.
+    //!
+    //! # Reading both naively is the one mistake this whole module exists
+    //! to avoid
+    //!
+    //! Adding the two accounts together bills every answer twice. Reading
+    //! only the messages loses whatever the ledger knows that they do not.
+    //! So the rule is upstream's, ported rather than invented:
+    //!
+    //! 1. The **ledger is the account**. Every event is a record.
+    //! 2. Each message is matched against an unconsumed event — first by
+    //!    `toMessageId`, then by same model and identical numbers — and a
+    //!    matched message adds **nothing**; it only lends its clock to an
+    //!    event that had none.
+    //! 3. A message that matches no event **is** added: the ledger did not
+    //!    know about it.
+    //! 4. A thread with no ledger at all is read from its messages.
+    //!
+    //! The matching walks forward from the last match and wraps, so two
+    //! answers that billed identical numbers consume two different events
+    //! rather than the same one twice.
+    //!
+    //! # What khor does differently, and which way it errs
+    //!
+    //! A message's own clock is **derived**, not written: the thread's
+    //! `created` plus the message's id in seconds, which is upstream's
+    //! construction and is only ever used to place a record on a day. A
+    //! record khor cannot place in time at all — no event timestamp, no
+    //! thread `created` — is counted [`Read::Unreadable`] rather than
+    //! filed under the file's mtime as upstream does. **A file's mtime is
+    //! not a fact about when tokens were spent**, and this module has no
+    //! business inventing one.
+    //!
+    //! Upstream knowledge, fixture-driven: no Amp thread has ever been on
+    //! this machine, and the fixture is built from upstream's own test
+    //! documents.
+
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{json_under, Kept, Meter, Tally, Whole};
+
+    pub const VENDOR: &str = "amp";
+
+    pub struct Amp {
+        root: PathBuf,
+        files: Mutex<Whole<Vec<Kept>>>,
+    }
+
+    impl Amp {
+        pub fn at(root: PathBuf) -> Amp {
+            Amp { root, files: Mutex::new(Whole::default()) }
+        }
+
+        fn threads_dir(&self) -> PathBuf {
+            self.root.join("threads")
+        }
+    }
+
+    /// One account of one answer, before the two accounts are reconciled.
+    #[derive(Clone)]
+    struct Record {
+        model: String,
+        at: Option<jiff::Timestamp>,
+        /// Which message this event says it belongs to, if it says.
+        to_message: Option<i64>,
+        /// Which message this is, for a record read off `messages[]`.
+        message: Option<i64>,
+        tokens: Tokens,
+    }
+
+    fn ms(v: Option<&serde_json::Value>) -> Option<i64> {
+        v.and_then(serde_json::Value::as_i64).filter(|ms| *ms != 0)
+    }
+
+    fn at_of_ms(ms: i64) -> Option<jiff::Timestamp> {
+        jiff::Timestamp::from_millisecond(ms).ok()
+    }
+
+    /// The ledger's own spelling of the four counts.
+    fn ledger_tokens(t: Option<&serde_json::Value>) -> Tokens {
+        let n = |k: &str| {
+            t.and_then(|t| t.get(k)).and_then(serde_json::Value::as_u64).unwrap_or(0)
+        };
+        Tokens {
+            input: n("input"),
+            cached_input: n("cacheReadInputTokens"),
+            cache_write: n("cacheCreationInputTokens"),
+            output: n("output"),
+        }
+    }
+
+    /// A message's spelling of the same four, which is not the ledger's.
+    fn message_tokens(u: &serde_json::Value) -> Tokens {
+        let n = |k: &str| u.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        Tokens {
+            input: n("inputTokens"),
+            cached_input: n("cacheReadInputTokens"),
+            cache_write: n("cacheCreationInputTokens"),
+            output: n("outputTokens"),
+        }
+    }
+
+    fn ledger_records(thread: &serde_json::Value, created: Option<i64>) -> (Vec<Record>, u64) {
+        let mut out = Vec::new();
+        let mut unreadable = 0;
+        let events = thread
+            .pointer("/usageLedger/events")
+            .and_then(|e| e.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        for event in events {
+            let Some(model) = event.get("model").and_then(serde_json::Value::as_str) else {
+                unreadable += 1;
+                continue;
+            };
+            let at = event
+                .get("timestamp")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|s| s.parse::<jiff::Timestamp>().ok())
+                .or_else(|| created.and_then(at_of_ms));
+            if at.is_none() {
+                unreadable += 1;
+                continue;
+            }
+            out.push(Record {
+                model: model.to_owned(),
+                at,
+                to_message: event.get("toMessageId").and_then(serde_json::Value::as_i64),
+                message: None,
+                tokens: ledger_tokens(event.get("tokens")),
+            });
+        }
+        (out, unreadable)
+    }
+
+    fn message_records(thread: &serde_json::Value, created: Option<i64>) -> (Vec<Record>, u64) {
+        let mut out = Vec::new();
+        let mut unreadable = 0;
+        let messages = thread
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        for message in messages {
+            if message.get("role").and_then(serde_json::Value::as_str) != Some("assistant") {
+                continue;
+            }
+            let Some(usage) = message.get("usage").filter(|u| u.is_object()) else {
+                continue;
+            };
+            let Some(model) = usage.get("model").and_then(serde_json::Value::as_str) else {
+                unreadable += 1;
+                continue;
+            };
+            let id = message.get("messageId").and_then(serde_json::Value::as_i64).unwrap_or(0);
+            // Upstream's construction: the thread's own start, plus this
+            // message's place in it. Only ever used to pick a day.
+            let Some(at) = created.and_then(|c| at_of_ms(c.saturating_add(id.saturating_mul(1000))))
+            else {
+                unreadable += 1;
+                continue;
+            };
+            out.push(Record {
+                model: model.to_owned(),
+                at: Some(at),
+                to_message: None,
+                message: Some(id).filter(|id| *id > 0),
+                tokens: message_tokens(usage),
+            });
+        }
+        (out, unreadable)
+    }
+
+    /// The event this message is another account of, if there is one.
+    ///
+    /// Forward from the last match and then wrapping, which is upstream's
+    /// order and is what keeps two answers that billed the same numbers
+    /// from both claiming the same event.
+    fn matching(
+        events: &[Record],
+        consumed: &[bool],
+        from: usize,
+        message: &Record,
+    ) -> Option<usize> {
+        let scan = |pick: &dyn Fn(usize) -> bool| {
+            (from..events.len()).find(|i| pick(*i)).or_else(|| (0..from).find(|i| pick(*i)))
+        };
+        if let Some(id) = message.message {
+            if let Some(i) = scan(&|i| !consumed[i] && events[i].to_message == Some(id)) {
+                return Some(i);
+            }
+        }
+        scan(&|i| {
+            !consumed[i] && events[i].model == message.model && events[i].tokens == message.tokens
+        })
+    }
+
+    fn parse(path: &Path) -> (Vec<Kept>, u64) {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return (Vec::new(), 0);
+        };
+        let Ok(thread) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return (Vec::new(), 1);
+        };
+        let created = ms(thread.get("created"));
+        let (mut events, mut unreadable) = ledger_records(&thread, created);
+        let (messages, missed) = message_records(&thread, created);
+        unreadable += missed;
+
+        if events.is_empty() {
+            let kept = messages
+                .into_iter()
+                .filter_map(|r| r.at.map(|at| Kept { at, tokens: r.tokens }))
+                .collect();
+            return (kept, unreadable);
+        }
+
+        let mut consumed = vec![false; events.len()];
+        let mut from = 0usize;
+        let mut extra = Vec::new();
+        for message in &messages {
+            match matching(&events, &consumed, from, message) {
+                Some(i) => {
+                    consumed[i] = true;
+                    from = i.saturating_add(1);
+                    // The message adds no tokens. All it can lend is a
+                    // clock, and only to an event that never had one.
+                    if events[i].at.is_none() {
+                        events[i].at = message.at;
+                    }
+                }
+                None => extra.push(message.clone()),
+            }
+        }
+        events.extend(extra);
+        let kept = events
+            .into_iter()
+            .filter_map(|r| r.at.map(|at| Kept { at, tokens: r.tokens }))
+            .collect();
+        (kept, unreadable)
+    }
+
+    impl Meter for Amp {
+        fn vendor(&self) -> &'static str {
+            VENDOR
+        }
+
+        fn root(&self) -> PathBuf {
+            self.threads_dir()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(json_under(&self.threads_dir()), parse);
             Tally {
                 kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
                 unreadable,

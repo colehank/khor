@@ -1,0 +1,16 @@
+{
+  "id": "t-1",
+  "created": 1786928400000,
+  "messages": [
+    { "role": "user", "messageId": 1 },
+    { "role": "assistant", "messageId": 2, "usage": { "model": "a-model", "inputTokens": 100, "outputTokens": 50, "cacheReadInputTokens": 20, "cacheCreationInputTokens": 5 } },
+    { "role": "assistant", "messageId": 3, "usage": { "model": "b-model", "inputTokens": 7, "outputTokens": 3, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0 } },
+    { "role": "assistant", "messageId": 4, "usage": { "model": "c-model", "inputTokens": 11, "outputTokens": 2, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0 } }
+  ],
+  "usageLedger": {
+    "events": [
+      { "timestamp": "2026-08-17T01:00:00Z", "model": "a-model", "toMessageId": 2, "tokens": { "input": 100, "output": 50, "cacheReadInputTokens": 20, "cacheCreationInputTokens": 5 } },
+      { "timestamp": "2026-08-17T01:00:10Z", "model": "b-model", "tokens": { "input": 7, "output": 3, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0 } }
+    ]
+  }
+}
