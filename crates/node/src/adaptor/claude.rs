@@ -311,7 +311,8 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
 /// Each maps to a word in [`hook`], and the set is the smallest one that
 /// covers the walk: a session appears (`SessionStart`), a turn begins
 /// (`UserPromptSubmit`), an approval is asked for (`Notification`), a
-/// turn ends (`Stop` — **the only source of 完成 anywhere in khor**),
+/// turn ends (`Stop` — **the only source of 完成 for discovered
+/// sessions**; an ACP-opened one hears its turn end first-hand, `gui_host`),
 /// the session ends (`SessionEnd`).
 ///
 /// Asking for more would not make the row better and would make claude

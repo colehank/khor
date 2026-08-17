@@ -523,8 +523,9 @@ install-hooks-failed = "装不上"
 uninstall-hooks-failed = "卸不掉"
 # Why anybody would press it. **完成 is the whole of what the hook buys**
 # — `adaptor::claude::hook` maps SessionStart/UserPromptSubmit/Stop/
-# Notification, and `Stop` is the only source of 完成 anywhere in khor
-# (docs/HOOKS.md). It does **not** produce 中断: there is no State::Errored
+# Notification, and `Stop` is the only source of 完成 **for discovered
+# sessions** (docs/HOOKS.md; an ACP-opened session is the other
+# first-hand witness — khor is the end the turn ends at, `gui_host`). It does **not** produce 中断: there is no State::Errored
 # on that path at all, so promising one here would be a word khor cannot
 # keep. Reading the disk already gives 忙碌/待批/空闲/失败.
 hooks-buy-you = "装上钩子,claude 答完一轮才报得出「完成」,不装只显示成空闲"
