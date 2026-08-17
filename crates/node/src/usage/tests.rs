@@ -414,8 +414,9 @@ fn an_answer_written_twice_is_billed_once_across_files_too() {
 fn a_renamed_token_field_is_counted_rather_than_billed_as_nothing() {
     let tally = gemini_meter().tally();
     assert_eq!(
-        tally.unreadable, 2,
-        "the renamed one and the one that never says which answer it is"
+        tally.unreadable, 3,
+        "the renamed one, the one that never says which answer it is, and the one \
+         whose parts do not add up to its own total"
     );
     assert!(
         tally.kept.iter().all(|k| k.tokens != tokens(0, 0, 0, 0)),
@@ -698,8 +699,8 @@ fn a_thread_that_wrote_its_spending_twice_is_billed_once() {
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
     assert_eq!(
-        usage.unreadable, 15,
-        "three claude, one codex, two gemini, two pi, two roo, two qwen, two junie, one amp"
+        usage.unreadable, 16,
+        "three claude, one codex, three gemini, two pi, two roo, two qwen, two junie, one amp"
     );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),

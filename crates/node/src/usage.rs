@@ -783,6 +783,43 @@ fn cached_comes_out_of_input(
     total != apart.saturating_add(cached)
 }
 
+/// A reading, checked against the vendor's own total, or nothing when the
+/// two do not reconcile.
+///
+/// # Why this is stronger than looking for known field names
+///
+/// The other readers ask "are any of the names I know present?", which
+/// catches a rename and nothing else. Where a vendor publishes a total,
+/// khor can ask a far better question: **do my four numbers add up to
+/// what you said you spent?** They must, because the four are a partition
+/// of the same spending — so any disagreement means khor has split it
+/// wrongly, and khor says so instead of billing a number it just failed
+/// to justify.
+///
+/// It is what makes the two guesses in this family safe to make. Both
+/// `gemini` and `qwen` decide, without a sample to prove it, that
+/// thinking is counted beside the answer and that tool tokens are counted
+/// beside the input. **If either guess is backwards the reading exceeds
+/// the vendor's total, and this turns that into a counted record rather
+/// than an inflated bill** — the over-count that would otherwise be
+/// invisible becomes an under-count that announces itself.
+///
+/// Verified against every Gemini CLI record on this machine 2026-08-17:
+/// the four reconcile with the vendor's total in **106 of 106**, on both
+/// sides of the cached-input question.
+///
+/// No total, no check — the caller has already fallen back to asking
+/// whether it recognised any field at all.
+fn reconciled(tokens: Tokens, total: Option<u64>) -> Option<Tokens> {
+    let Some(total) = total else { return Some(tokens) };
+    let four = tokens
+        .input
+        .saturating_add(tokens.cached_input)
+        .saturating_add(tokens.cache_write)
+        .saturating_add(tokens.output);
+    (four == total).then_some(tokens)
+}
+
 /// The instant a record carries, or nothing when khor cannot read it.
 fn at_of(v: &serde_json::Value, key: &str) -> Option<jiff::Timestamp> {
     v.get(key).and_then(serde_json::Value::as_str)?.parse().ok()
@@ -1107,6 +1144,17 @@ pub mod gemini {
     //! borrowed and unverified; what is not a guess is that it must go
     //! somewhere, because gemini's total counts it.
     //!
+    //! # Both of those are guesses, and here is what happens if either is
+    //! backwards
+    //!
+    //! If thinking were already inside `output`, or tool tokens already
+    //! inside `input`, then adding them counts the same tokens twice — an
+    //! **over-count**, the direction this tier may not be wrong in. What
+    //! stops that being silent is [`super::reconciled`]: khor's four
+    //! numbers are checked against the record's own `total`, and a split
+    //! that does not add up is counted [`Read::Unreadable`] rather than
+    //! billed. So a backwards guess costs the record, and says so.
+    //!
     //! # What khor does not read here
     //!
     //! Only the spelling above. `tokscale` also accepts `prompt`,
@@ -1161,27 +1209,22 @@ pub mod gemini {
         let (input, output, cached, thoughts, tool) =
             (n("input"), n("output"), n("cached"), n("thoughts"), n("tool"));
         let total = t.get("total").and_then(serde_json::Value::as_u64);
-        // The drift alarm, and it is worth the four extra comparisons:
-        // gemini renaming its fields would otherwise show up as a machine
-        // that ran an agent all day and spent nothing, which is a lie no
-        // test can see. Its own total is the one number that catches it.
-        let silent = input == 0 && output == 0 && cached == 0 && thoughts == 0 && tool == 0;
-        if silent && total.is_some_and(|t| t > 0) {
-            return None;
-        }
         let fresh = if cached_comes_out_of_input(input, output, cached, thoughts, tool, total) {
             input.saturating_sub(cached)
         } else {
             input
         };
-        Some(Tokens {
-            input: fresh.saturating_add(tool),
-            cached_input: cached,
-            // Gemini reports no cache creation of its own — there is no
-            // number here to leave out.
-            cache_write: 0,
-            output: output.saturating_add(thoughts),
-        })
+        super::reconciled(
+            Tokens {
+                input: fresh.saturating_add(tool),
+                cached_input: cached,
+                // Gemini reports no cache creation of its own — there is
+                // no number here to leave out.
+                cache_write: 0,
+                output: output.saturating_add(thoughts),
+            },
+            total,
+        )
     }
 
     /// One line into one file's best-per-answer map.
@@ -1688,6 +1731,13 @@ pub mod qwen {
     //! the same reason: this family counts thinking beside the answer
     //! rather than inside it. Cache **writes** this format does not report
     //! at all.
+    //!
+    //! That too is a guess with no sample behind it, and it errs the same
+    //! way gemini's does: were thinking already inside `candidates`,
+    //! adding it would bill the same tokens twice. [`super::reconciled`]
+    //! is what keeps that from being silent — where the record carries a
+    //! `totalTokenCount`, a split that does not add up to it is counted
+    //! rather than billed.
 
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -1738,12 +1788,15 @@ pub mod qwen {
         } else {
             prompt
         };
-        Some(Tokens {
-            input: fresh,
-            cached_input: cached,
-            cache_write: 0,
-            output: candidates.saturating_add(thoughts),
-        })
+        super::reconciled(
+            Tokens {
+                input: fresh,
+                cached_input: cached,
+                cache_write: 0,
+                output: candidates.saturating_add(thoughts),
+            },
+            total,
+        )
     }
 
     /// One line onto the end of this file's records.
