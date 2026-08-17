@@ -865,6 +865,21 @@ pub mod claude {
     //! Each file keeps its own best-per-id and the files are merged at the
     //! end, which is how the cross-file rule survives reading one file's
     //! tail without re-reading the rest.
+    //!
+    //! # Which way this one can be wrong
+    //!
+    //! **Under-count, on both routes it has.** One message id carrying
+    //! two request ids would be merged into one reading where the vendor
+    //! billed two — measured zero times in 56 033 ids on this machine,
+    //! and on the ledger as a decision waiting for a real sample. A
+    //! message that bills but names neither itself nor a time is counted
+    //! [`Read::Unreadable`] rather than guessed at.
+    //!
+    //! **Over-count has no route here**, which is the whole point of
+    //! taking one whole reading per id: the two ways to invent tokens —
+    //! summing the repeats, and maximising the fields one by one — are
+    //! exactly what the rule above refuses, and both are held by a test
+    //! that has been made to fail.
 
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -1011,6 +1026,24 @@ pub mod codex {
     //! Reasoning output is **not** added to output: measured on the same
     //! readings, `reasoning_output_tokens <= output_tokens` always, which
     //! is what it looks like when the second is already inside the first.
+    //!
+    //! # Which way this one can be wrong
+    //!
+    //! **Over-count, and it is the only vendor here whose over-count is a
+    //! reading error rather than a guess**: the turns are a list, so a
+    //! pass that started a byte early bills a turn twice. That is why the
+    //! incremental bookkeeping is held by a test comparing this meter
+    //! against a freshly opened one with no offset to get wrong, and why
+    //! the repeat rule includes the running total — two genuine turns
+    //! that billed the same amount still differ, because the total behind
+    //! them has advanced.
+    //!
+    //! **Under-count**: a `token_count` naming no turn, or one that
+    //! cannot be placed in time, is counted rather than guessed at.
+    //!
+    //! **And this one must not use [`super::reconciled`]** — its total is
+    //! input plus output and says nothing about cache writes. See that
+    //! function.
 
     use std::path::PathBuf;
     use std::sync::Mutex;
