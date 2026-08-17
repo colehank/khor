@@ -52,12 +52,20 @@ fn codex_meter() -> codex::Codex {
     codex::Codex::at(fixture().join("codex/.codex"))
 }
 
+fn gemini_meter() -> gemini::Gemini {
+    gemini::Gemini::at(fixture().join("gemini/.gemini"))
+}
+
 fn claude_days() -> HashMap<String, Tokens> {
     by_day(&claude_meter().tally(), &plus_eight())
 }
 
 fn codex_days() -> HashMap<String, Tokens> {
     by_day(&codex_meter().tally(), &plus_eight())
+}
+
+fn gemini_days() -> HashMap<String, Tokens> {
+    by_day(&gemini_meter().tally(), &plus_eight())
 }
 
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
@@ -92,6 +100,8 @@ fn fixture_home(tag: &str) -> PathBuf {
         std::os::unix::fs::symlink(fixture().join("claude/.claude"), home.join(".claude"))
             .unwrap();
         std::os::unix::fs::symlink(fixture().join("codex/.codex"), home.join(".codex")).unwrap();
+        std::os::unix::fs::symlink(fixture().join("gemini/.gemini"), home.join(".gemini"))
+            .unwrap();
     }
     home
 }
@@ -237,6 +247,103 @@ fn a_reading_written_twice_in_a_row_is_one_turn() {
     assert_ne!(spent.output, 60, "the second turn was swallowed as a repeat of the first");
 }
 
+/// **The vendor's own total decides whether `cached` came out of
+/// `input`** — and the fixture holds one record of each kind so that
+/// neither answer can be hard-coded.
+///
+/// `g-C` totals 322, which is `300 + 10 + 5 + 7` — its 100 cached tokens
+/// were never added, so they are already inside the 300 and come out of
+/// it. `g-D` totals 520, which is `400 + 30` **plus** its 90 cached, so
+/// they were counted apart and nothing is subtracted. An implementation
+/// that always subtracts bills `g-D` 310 of fresh input; one that never
+/// subtracts bills `g-C` 300 and counts its cache hits twice.
+#[test]
+fn the_vendors_own_total_decides_whether_cached_came_out_of_the_input() {
+    // Found by the instant each was written at, so that the assertion
+    // below is not looking the record up by the very number it checks.
+    let tally = gemini_meter().tally();
+    let at = |stamp: &str| {
+        let want: jiff::Timestamp = stamp.parse().unwrap();
+        tally.kept.iter().find(|k| k.at == want).expect("the fixture holds this record").tokens
+    };
+    let c = at("2026-08-17T01:00:02Z");
+    let d = at("2026-08-17T01:00:03Z");
+    assert_eq!(c.input, 207, "300 less the 100 it had cached, plus 7 of tool");
+    assert_eq!(d.input, 400, "its total counted the 90 apart, so none of it is in here");
+    assert_eq!((c.cached_input, d.cached_input), (100, 90), "both keep what they had cached");
+}
+
+/// **Thinking is output, and it is the vendor's arithmetic that says so.**
+///
+/// `khor_core::Tokens::output` is "what the model produced, reasoning
+/// included where a vendor separates the two". Gemini separates them — its
+/// own total counts `thoughts` beside `output` — so the two are added.
+/// Codex is the other side of the same rule and is asserted about above:
+/// there `reasoning_output_tokens` is already inside `output_tokens` and
+/// adding them would bill work nobody did.
+///
+/// Asserted on the day rather than the record so that a change of mind
+/// about `thoughts` cannot hide inside a total that happens to match.
+#[test]
+fn thinking_is_output_and_a_tool_call_is_input() {
+    let days = gemini_days();
+    let spent = days["2026-08-17"];
+    assert_eq!(
+        spent,
+        tokens(1007, 990, 0, 155),
+        "A(200/800/0/100) C(207/100/0/15) D(400/90/0/30) F(200/0/0/10)"
+    );
+    assert_ne!(spent.output, 155 - 47, "the thinking was dropped");
+    assert_ne!(spent.input, 1007 - 7, "the tool tokens were dropped");
+    assert_eq!(spent.cache_write, 0, "gemini reports no cache creation at all");
+}
+
+/// **One answer is billed once, and the rule spans files.**
+///
+/// `g-A` is written twice in the same recording — which is what gemini
+/// does — and once more in a nested one, exactly as a copied history
+/// would. Summing the lines bills it three times.
+///
+/// The control sits in the nested file too: `g-F` is there and nowhere
+/// else, and it *is* billed. Skipping nested files entirely would satisfy
+/// the first assertion and fail this one — which is the same pair claude's
+/// resume test uses, and the same reason.
+#[test]
+fn an_answer_written_twice_is_billed_once_across_files_too() {
+    let days = gemini_days();
+    let spent = days["2026-08-17"];
+    assert_eq!(spent.cached_input, 990, "g-A's 800 counted once, not twice or three times");
+    assert_ne!(spent.cached_input, 990 + 800, "g-A was billed again from the nested file");
+    assert!(
+        spent.output >= 10,
+        "g-F sits only in the nested file and must still be read: {spent:?}"
+    );
+}
+
+/// **A renamed field is counted, not billed as nothing.**
+///
+/// `g-R` carries the API's own spelling (`promptTokenCount`,
+/// `candidatesTokenCount`) instead of the CLI's, so every name khor knows
+/// reads zero while the record's own total says 1008 were spent. Billing
+/// it as zero would be a machine that ran an agent and cost nothing —
+/// which no other assertion here can see, since a quiet day looks exactly
+/// like that.
+///
+/// The control is the record above it: an answer carrying no `tokens` at
+/// all (`g-quiet`) is a message, not a failure, and must not be counted.
+#[test]
+fn a_renamed_token_field_is_counted_rather_than_billed_as_nothing() {
+    let tally = gemini_meter().tally();
+    assert_eq!(
+        tally.unreadable, 2,
+        "the renamed one and the one that never says which answer it is"
+    );
+    assert!(
+        tally.kept.iter().all(|k| k.tokens != tokens(0, 0, 0, 0)),
+        "a record read as four zeroes was billed instead of counted"
+    );
+}
+
 /// **What it cannot read, it counts — and a half-written line is not
 /// that.**
 ///
@@ -253,7 +360,10 @@ fn a_reading_written_twice_in_a_row_is_one_turn() {
 #[test]
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
-    assert_eq!(usage.unreadable, 4, "three from claude's tree, one from codex's");
+    assert_eq!(
+        usage.unreadable, 6,
+        "three from claude's tree, one from codex's, two from gemini's"
+    );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),
         Some(563),
@@ -304,24 +414,34 @@ fn each_row_carries_the_name_of_the_meter_that_read_it() {
         vec![
             ("2026-08-17", "claude", 563),
             ("2026-08-17", "codex", 150),
+            ("2026-08-17", "gemini", 155),
             ("2026-08-18", "claude", 4),
             ("2026-08-18", "codex", 20),
+            ("2026-08-18", "gemini", 20),
         ],
         "oldest day first, then by vendor — and every vendor's own numbers under its own name"
     );
 }
 
-/// The two vendors' names are the ones the session list already uses.
+/// The vendors' names are the ones the session list already uses.
 ///
 /// Not cosmetic: a row in the session list and a row in the spending list
 /// are grouped by the same string, so a second spelling would put one
 /// agent in two categories on two screens and nothing would report an
 /// error.
+///
+/// Gemini is asserted against a literal instead, and the difference is the
+/// point: it has no adaptor to agree with, because a session row needs a
+/// live process and spending does not. The literal is what a gemini
+/// adaptor will have to match on the day there is one.
 #[test]
 fn the_categories_are_the_ones_the_session_list_already_spells() {
     assert_eq!(claude::VENDOR, crate::adaptor::claude::VENDOR);
     assert_eq!(codex::VENDOR, crate::adaptor::codex::VENDOR);
-    assert_eq!((claude::VENDOR, codex::VENDOR), ("claude", "codex"));
+    assert_eq!(
+        (claude::VENDOR, codex::VENDOR, gemini::VENDOR),
+        ("claude", "codex", "gemini")
+    );
 }
 
 /// A meter that reads nothing is the closed default, so no test of this

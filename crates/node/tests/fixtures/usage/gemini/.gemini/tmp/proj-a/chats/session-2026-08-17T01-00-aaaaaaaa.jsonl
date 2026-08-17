@@ -1,0 +1,12 @@
+{"sessionId": "aaaaaaaa-0000-4000-8000-000000000001", "projectHash": "0000000000000000000000000000000000000000000000000000000000000000", "startTime": "2026-08-17T01:00:00.000Z", "lastUpdated": "2026-08-17T01:00:00.000Z", "kind": "main"}
+{"id": "u-1", "timestamp": "2026-08-17T01:00:00.100Z", "type": "user"}
+{"id": "g-A", "timestamp": "2026-08-17T01:00:01.000Z", "type": "gemini", "model": "a-model", "tokens": {"input": 1000, "output": 60, "cached": 800, "thoughts": 40, "tool": 0, "total": 1100}}
+{"$set": {"lastUpdated": "2026-08-17T01:00:01.000Z"}}
+{"id": "g-A", "timestamp": "2026-08-17T01:00:01.000Z", "type": "gemini", "model": "a-model", "tokens": {"input": 1000, "output": 60, "cached": 800, "thoughts": 40, "tool": 0, "total": 1100}}
+{"id": "g-C", "timestamp": "2026-08-17T01:00:02.000Z", "type": "gemini", "model": "a-model", "tokens": {"input": 300, "output": 10, "cached": 100, "thoughts": 5, "tool": 7, "total": 322}}
+{"id": "g-D", "timestamp": "2026-08-17T01:00:03.000Z", "type": "gemini", "model": "a-model", "tokens": {"input": 400, "output": 30, "cached": 90, "thoughts": 0, "tool": 0, "total": 520}}
+{"id": "i-1", "timestamp": "2026-08-17T01:00:04.000Z", "type": "info"}
+{"id": "g-quiet", "timestamp": "2026-08-17T01:00:05.000Z", "type": "gemini", "model": "a-model"}
+{"timestamp": "2026-08-17T01:00:06.000Z", "type": "gemini", "model": "a-model", "tokens": {"input": 11, "output": 12, "cached": 0, "thoughts": 0, "tool": 0, "total": 23}}
+{"id": "g-R", "timestamp": "2026-08-17T01:00:07.000Z", "type": "gemini", "model": "a-model", "tokens": {"promptTokenCount": 999, "candidatesTokenCount": 9, "total": 1008}}
+{"id": "g-B", "timestamp": "2026-08-17T16:30:00.000Z", "type": "gemini", "model": "a-model", "tokens": {"input": 500, "output": 20, "cached": 0, "thoughts": 0, "tool": 0, "total": 520}}

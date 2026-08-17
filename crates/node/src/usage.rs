@@ -20,19 +20,39 @@
 //! What they do **not** share is the arithmetic, and it is not a small
 //! difference:
 //!
-//! | | claude | codex |
-//! |---|---|---|
-//! | a record is | one assistant message | one turn |
-//! | the numbers are | that message's own | a running total **and** that turn's |
-//! | repeats in the file | the same message, several times, output growing | the same reading, twice in a row |
-//! | so the rule is | one reading per `message.id`, the largest | drop a reading identical to the one before it |
+//! | | claude | codex | gemini |
+//! |---|---|---|---|
+//! | a record is | one assistant message | one turn | one answer |
+//! | the numbers are | that message's own | a running total **and** that turn's | that answer's own |
+//! | repeats in the file | the same message, several times, output growing | the same reading, twice in a row | the same answer, twice, identical |
+//! | so the rule is | one reading per `message.id`, the largest | drop a reading identical to the one before it | one reading per `id`, the largest |
 //!
-//! Summing the lines of either file is wrong, and wrong in a different
+//! Summing the lines of any of them is wrong, and wrong in a different
 //! direction each time. Measured on this machine 2026-08-17: claude's
 //! 1069 transcripts hold 109 792 assistant lines carrying only **55 568**
 //! distinct messages, so line-summing roughly doubles the answer; codex's
 //! `total_token_usage` is cumulative, so line-summing it produces a number
-//! with no meaning at all.
+//! with no meaning at all; gemini's two recordings hold 106 records
+//! carrying **58** distinct answers.
+//!
+//! # Which instant names the day
+//!
+//! **The one the answer was written at**, which is the line a meter reads
+//! the numbers off. So a turn asked at 23:55 and answered at 00:05 counts
+//! entire against the second day.
+//!
+//! Two reasons, and the second is the load-bearing one. The tokens are
+//! spent producing the answer, so the answer's own clock is the one that
+//! saw them go; and a meter reads forward through an append-only file
+//! ([`Files`]), where the line that asked may sit in another file
+//! altogether — a rule that reached back for it would be a rule that
+//! cannot be applied to a tail.
+//!
+//! It is a real choice rather than a detail, and the alternative is in
+//! use: `tokscale` stamps an answer with the request that started it, and
+//! against this machine's transcripts the two rules disagree about 21
+//! answers, moving them across a midnight in one direction or the other
+//! (net zero — nothing is gained or lost, days only trade).
 //!
 //! # Nothing in here knows what day it is
 //!
@@ -167,6 +187,7 @@ impl Meters {
             meters: vec![
                 Box::new(claude::Claude::at(home.join(".claude"))),
                 Box::new(codex::Codex::at(home.join(".codex"))),
+                Box::new(gemini::Gemini::at(home.join(".gemini"))),
             ],
             cached: Mutex::new(None),
             passes: AtomicU64::new(0),
@@ -853,6 +874,215 @@ pub mod codex {
             let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
             let kept = states.into_iter().flat_map(|r| r.turns.iter().copied()).collect();
             Tally { kept, unreadable }
+        }
+    }
+}
+
+pub mod gemini {
+    //! Gemini CLI: one answer per record, written twice, and the vendor's
+    //! own total says how to read it.
+    //!
+    //! A chat recording under `tmp/<project>/chats/` is one JSON object per
+    //! line: a header, `$set` updates to it, the user's turns, and the
+    //! answers. Only an answer (`"type": "gemini"`) carries `tokens`, and
+    //! that object is six numbers — `input`, `output`, `cached`,
+    //! `thoughts`, `tool`, `total`.
+    //!
+    //! # `cached` sits inside `input`, and the file says so rather than
+    //! this module assuming it
+    //!
+    //! The two vendors above disagree about this (claude reports input net
+    //! of the cache, codex does not), so a third one guessing would be a
+    //! coin toss. Gemini publishes its own `total`, which makes the
+    //! question answerable per record: where `total` equals
+    //! `input + output + thoughts + tool`, the cached part was never added
+    //! and is therefore already counted inside `input`, so it is
+    //! subtracted. Where the total is the larger sum, it is not.
+    //!
+    //! Measured 2026-08-17 on this machine's two recordings, 106 records:
+    //! the first form held in **106 of 106**, and `cached <= input` in all
+    //! of them. The second branch is upstream knowledge (`tokscale`'s
+    //! `normalize_gemini_session_input_and_cache` carries the same test)
+    //! and **is not exercised by anything on this machine** — it is here
+    //! because guessing the other way would silently halve a real answer.
+    //!
+    //! # `thoughts` is output; `tool` is input
+    //!
+    //! `thoughts` is added to output on the rule
+    //! [`khor_core::Tokens::output`] already states — reasoning is output
+    //! wherever a vendor separates the two — and gemini plainly separates
+    //! them: its own total counts `thoughts` **beside** `output` rather
+    //! than inside it. That is the opposite finding from codex, where
+    //! `reasoning_output_tokens <= output_tokens` always, and the two are
+    //! reconciled by asking the vendor's arithmetic instead of the field
+    //! name.
+    //!
+    //! `tool` is added to input, which is what `tokscale` does. **On this
+    //! machine it is zero in all 106 records**, so that placement is
+    //! borrowed and unverified; what is not a guess is that it must go
+    //! somewhere, because gemini's total counts it.
+    //!
+    //! # What khor does not read here
+    //!
+    //! Only the spelling above. `tokscale` also accepts `prompt`,
+    //! `promptTokenCount`, `candidatesTokenCount`,
+    //! `cachedContentTokenCount` and friends for older layouts and for the
+    //! API's own shape — none of which occur on this machine, so reading
+    //! them here would be arithmetic nobody could test. The drift alarm
+    //! covers the gap loudly instead: a record whose own `total` says
+    //! tokens were spent while every name khor knows reads zero is counted
+    //! [`Read::Unreadable`] rather than billed as nothing.
+
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{at_of, Files, Kept, Meter, Read, Tally};
+
+    /// This vendor's name.
+    ///
+    /// **Declared here rather than borrowed from an adaptor, because there
+    /// is no gemini adaptor**: a row in the session list has to be backed
+    /// by a live process, and what this machine holds is two finished
+    /// recordings from 2026-05-15 — enough to bill, and nothing to list.
+    /// Spending needs no live process at all (see this module's parent).
+    /// The direction is the only thing that differs from
+    /// [`super::claude::VENDOR`] — a gemini adaptor, when there is one,
+    /// must take this string rather than spell its own, or one agent lands
+    /// in two categories on two screens with nothing reporting an error.
+    pub const VENDOR: &str = "gemini";
+
+    pub struct Gemini {
+        root: PathBuf,
+        files: Mutex<Files<HashMap<String, Kept>>>,
+    }
+
+    impl Gemini {
+        pub fn at(root: PathBuf) -> Gemini {
+            Gemini { root, files: Mutex::new(Files::default()) }
+        }
+
+        fn chats_dir(&self) -> PathBuf {
+            self.root.join("tmp")
+        }
+    }
+
+    /// Whether this record's `cached` is part of its `input`.
+    ///
+    /// See the module head: the vendor's own total is the witness. Absent
+    /// a total there is no witness, and the answer is no — the branch that
+    /// changes nothing.
+    fn cached_sits_inside_input(
+        input: u64,
+        output: u64,
+        cached: u64,
+        thoughts: u64,
+        tool: u64,
+        total: Option<u64>,
+    ) -> bool {
+        let Some(total) = total else { return false };
+        let apart = input
+            .saturating_add(output)
+            .saturating_add(thoughts)
+            .saturating_add(tool);
+        cached > 0 && total == apart
+    }
+
+    /// The six numbers off one `tokens`, mapped onto the four khor bills,
+    /// or nothing when this is a shape khor has stopped understanding.
+    fn tokens_of(t: &serde_json::Value) -> Option<Tokens> {
+        let n = |k: &str| t.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        let (input, output, cached, thoughts, tool) =
+            (n("input"), n("output"), n("cached"), n("thoughts"), n("tool"));
+        let total = t.get("total").and_then(serde_json::Value::as_u64);
+        // The drift alarm, and it is worth the four extra comparisons:
+        // gemini renaming its fields would otherwise show up as a machine
+        // that ran an agent all day and spent nothing, which is a lie no
+        // test can see. Its own total is the one number that catches it.
+        let silent = input == 0 && output == 0 && cached == 0 && thoughts == 0 && tool == 0;
+        if silent && total.is_some_and(|t| t > 0) {
+            return None;
+        }
+        let fresh = if cached_sits_inside_input(input, output, cached, thoughts, tool, total) {
+            input.saturating_sub(cached)
+        } else {
+            input
+        };
+        Some(Tokens {
+            input: fresh.saturating_add(tool),
+            cached_input: cached,
+            // Gemini reports no cache creation of its own — there is no
+            // number here to leave out.
+            cache_write: 0,
+            output: output.saturating_add(thoughts),
+        })
+    }
+
+    /// One line into one file's best-per-answer map.
+    fn fold(best: &mut HashMap<String, Kept>, v: &serde_json::Value) -> Read {
+        if v.get("type").and_then(serde_json::Value::as_str) != Some("gemini") {
+            return Read::Fine;
+        }
+        // An answer with no `tokens` at all is a message, not a billing
+        // record khor failed to read — the same call claude's meter makes
+        // about an assistant message carrying no `usage`.
+        let Some(tokens) = v.get("tokens").filter(|t| t.is_object()) else {
+            return Read::Fine;
+        };
+        let (Some(id), Some(at)) = (
+            v.get("id").and_then(serde_json::Value::as_str),
+            at_of(v, "timestamp"),
+        ) else {
+            return Read::Unreadable;
+        };
+        let Some(tokens) = tokens_of(tokens) else {
+            return Read::Unreadable;
+        };
+        match best.get(id) {
+            // The same answer written again, no further along than last
+            // time. **On this machine the repeats are byte-identical** (0
+            // exceptions in 48 repeated ids), so "the largest" is
+            // inherited from claude's rule rather than demonstrated here;
+            // it is the safe direction if gemini ever streams a partial,
+            // and a no-op otherwise.
+            Some(seen) if seen.tokens.output >= tokens.output => {}
+            _ => {
+                best.insert(id.to_owned(), Kept { at, tokens });
+            }
+        }
+        Read::Fine
+    }
+
+    impl Meter for Gemini {
+        fn vendor(&self) -> &'static str {
+            VENDOR
+        }
+
+        fn root(&self) -> PathBuf {
+            self.chats_dir()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.chats_dir(), fold);
+            // Across files as well as within one, for claude's reason: a
+            // resumed conversation that copied its history would
+            // otherwise be billed twice. Nothing on this machine resumes
+            // that way, so this costs one merge and rules the case out.
+            let mut best: HashMap<&str, &Kept> = HashMap::new();
+            for state in states {
+                for (id, kept) in state {
+                    match best.get(id.as_str()) {
+                        Some(seen) if seen.tokens.output >= kept.tokens.output => {}
+                        _ => {
+                            best.insert(id, kept);
+                        }
+                    }
+                }
+            }
+            Tally { kept: best.into_values().copied().collect(), unreadable }
         }
     }
 }
