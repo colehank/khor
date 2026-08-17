@@ -198,24 +198,52 @@ fn khor_can_read_this_machines_tmux_and_lists_nothing_twice() {
 /// vendor names and totals only, because a test that dumped a transcript
 /// would be a test that copied somebody's work into a build log.
 ///
-/// UTC rather than the machine's own zone, so that the day boundaries
-/// line up with a check written in another language against the same
-/// files (the day the numbers are compared, both sides must cut the day
-/// in the same place).
+/// **The days are cut where the machine stands, and that is a correction.**
+/// This used to pass UTC, reasoning that a fixed boundary would line up
+/// with a checker written in another language. Held against a real one it
+/// did the opposite: `tokscale` pins a bucket timezone on its first scan
+/// and then **refuses to move** — the attempt answers `cannot change
+/// scanner.bucketTimezone from Asia/Singapore to UTC: historical submitted
+/// day rows are monotonic` — so the side that has to give is this one.
+/// Cutting where the machine stands also prints the days khor's own
+/// screens show (`khor_core::UsageDay`), so what is compared is what the
+/// user sees rather than a third thing neither tool displays.
+///
+/// The totals below are unaffected either way: a record is counted once
+/// whichever day it lands on, which is what makes them the right thing to
+/// compare first when two tools disagree.
+///
+/// **Every row is printed, not just the last few**, and with the raw
+/// integers rather than anything rounded — the point of this output is to
+/// be diffed against another tool's, and a comparison that can only see
+/// four days cannot tell a vendor's arithmetic changing from a quiet
+/// week. What it costs is a page of output on a machine with a year of
+/// history, which is cheap for the one thing it buys: the numbers khor
+/// would put on the screen, in a form somebody can check.
 #[test]
 #[ignore]
 fn khor_can_read_every_spending_record_on_this_machine() {
     use std::time::Instant;
 
     let home = real_home();
+    let zone = jiff::tz::TimeZone::system();
     let t = Instant::now();
-    let usage = khor_node::usage::Meters::at(&home).tally_in(&jiff::tz::TimeZone::UTC);
+    let usage = khor_node::usage::Meters::at(&home).tally_in(&zone);
     let elapsed = t.elapsed();
 
     let mut total = khor_core::Tokens::default();
     for d in &usage.days {
         total.add(d.tokens);
     }
+    // Named where the system can say so, and otherwise by the offset in
+    // force right now — which is the thing that actually decides where a
+    // day is cut, and the thing the other tool has to be holding too.
+    let now = jiff::Timestamp::now().to_zoned(zone.clone());
+    println!(
+        "days cut in {} (UTC{} today)",
+        zone.iana_name().unwrap_or("the system zone"),
+        now.offset()
+    );
     println!(
         "days: {}, unreadable: {}, one cold pass: {:.2}s",
         usage.days.len(),
@@ -226,11 +254,28 @@ fn khor_can_read_every_spending_record_on_this_machine() {
         "totals  input {}  cached {}  cache-write {}  output {}",
         total.input, total.cached_input, total.cache_write, total.output
     );
-    for d in usage.days.iter().rev().take(4) {
+    // Tab-separated, one row per day per vendor, oldest first — the order
+    // the library answers in, so that two runs (or two tools) diff
+    // line-for-line without either side sorting first.
+    println!("day\tcategory\tinput\tcached\tcache_write\toutput");
+    for d in &usage.days {
         println!(
-            "  {} {:<8} input {:<10} cached {:<12} cache-write {:<11} output {}",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             d.day, d.category, d.tokens.input, d.tokens.cached_input, d.tokens.cache_write,
             d.tokens.output
+        );
+    }
+    // Per vendor as well, because a per-day diff that goes red everywhere
+    // says nothing about which vendor's reading moved.
+    let mut per_vendor: std::collections::BTreeMap<&str, khor_core::Tokens> =
+        std::collections::BTreeMap::new();
+    for d in &usage.days {
+        per_vendor.entry(d.category.as_str()).or_default().add(d.tokens);
+    }
+    for (category, t) in &per_vendor {
+        println!(
+            "total\t{category}\t{}\t{}\t{}\t{}",
+            t.input, t.cached_input, t.cache_write, t.output
         );
     }
 
