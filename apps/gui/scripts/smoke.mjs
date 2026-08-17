@@ -1912,6 +1912,45 @@ try {
     throw new Error(`the CLI does not agree the hooks came out: ${hookWords()}`);
   }
 
+  // 24t) a session khor hosts here paints a live terminal.
+  //
+  //      Open a `cat` on beta (detached), attach in the app, type, and
+  //      see the bytes come back on the screen — the whole
+  //      PTY→vt100→grid path over the real bridge. `cat` because a tty
+  //      echoes it, so the marker is exact and not a prompt's guesswork.
+  //      Closed at the end so its detached host does not outlive the run.
+  //      Before #26 because that one ends the bridge.
+  const catId = cli(envB, "open", "-d", "--title", "termcat", "--", "cat").trim();
+  await openLanding("sessions");
+  await until("the hosted cat row", 10_000, async () =>
+    (await page.locator(`[data-row="${catId}"]`).count()) === 1,
+  );
+  await page.locator(`[data-row="${catId}"] [data-row-open]`).click();
+  await until("the terminal attached", 10_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  // Type inside the wait, re-focusing each round: React's dev double-mount
+  // briefly tears the attachment down and back up (chat's hold-count, and
+  // the same window), and a keystroke that lands in that gap is dropped.
+  // A real user types once the pane has settled; the smoke retries until a
+  // keystroke sticks. `cat` echoes each attempt, so one landing paints it.
+  const marker = "marker9";
+  await until("the typed line painted by the terminal", 15_000, async () => {
+    await page.locator("[data-terminal]").focus();
+    await page.keyboard.type(marker);
+    await page.keyboard.press("Enter");
+    await new Promise((r) => setTimeout(r, 300));
+    return (await page.locator("[data-terminal]").innerText()).includes(marker);
+  });
+  cli(envB, "close", catId);
+  // Wait for the closed row to leave the list before the next item, which
+  // pins the first row — a half-closed cat at the top would be pinned into
+  // a session that is going away.
+  await until("the closed cat row gone", 10_000, async () =>
+    (await page.locator(`[data-row="${catId}"]`).count()) === 0,
+  );
+  await openLanding("sessions");
+
   // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //

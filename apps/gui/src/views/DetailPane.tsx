@@ -3,13 +3,15 @@ import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { ChatView } from "@/views/ChatView";
+import { TerminalPane } from "@/views/TerminalPane";
 import { word } from "@/words";
 
-// Per-kind faces: a GUI session gets the conversation (ChatView); the
-// rest (transfer card, terminal) land with their own batches, and until
-// then the pane states the row's facts and nothing else — no invented
-// copy (docs/UX.md 文案: 装饰性说明归零). Keyed by the row's **kind**,
-// never its id: a GUI session's id is spelled `tui/…` on purpose (the
+// Per-kind faces: a GUI session gets the conversation (ChatView); a
+// session khor hosts here gets its live terminal (TerminalPane); the
+// rest (transfer card) land with their own batches, and until then the
+// pane states the row's facts and nothing else — no invented copy
+// (docs/UX.md 文案: 装饰性说明归零). Keyed by the row's **kind**, never
+// its id: a GUI session's id is spelled `tui/…` on purpose (the
 // vendor-session agreement — `gui_host` module head), so the id is an
 // address and the kind is the behaviour.
 export function DetailPane({
@@ -38,6 +40,14 @@ export function DetailPane({
         // Keyed so switching sessions remounts the chat: its cursor,
         // frames and attachment all belong to one conversation.
         <ChatView key={row.id} id={row.id} />
+      ) : row && row.hosted ? (
+        // A session this machine hosts (shell or agent TUI opened through
+        // khor): attach and paint its live terminal. `hosted` is the
+        // signal, not the kind — a `khor run` or a discovered session
+        // shares the kind but has no host to attach to (`Node::is_hosted`).
+        // Remote hosted sessions are on the ledger (their host is
+        // elsewhere), and fall through to the facts below.
+        <TerminalPane key={row.id} id={row.id} />
       ) : row && row.category === "claude" ? (
         // A discovered claude session: its recorded past, read from
         // the vendor's own transcript. Claude only, this batch — the

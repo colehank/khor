@@ -623,3 +623,6 @@ web-opening = "正在借 {0} 的网开…"
 web-opened = "在 {0} 的网里开了"
 no-pinned-webs = "还没有钉住的网页"
 pick-exit = "从左边挑一台机器,借它的网上网"
+# The terminal ended — the host's child exited or the connection tore.
+# Both are one fact to a face (docs/handoff 终端画屏).
+term-over = "这个终端结束了"

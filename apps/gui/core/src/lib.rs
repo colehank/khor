@@ -61,6 +61,11 @@ pub struct SessionRow {
     /// blank, **not an invented face**: a made-up face gets believed,
     /// and it is not that machine's.
     pub face: Option<Avatar>,
+    /// This machine hosts the session's terminal (`Node::is_hosted`) — so
+    /// a terminal can attach and paint it (docs/handoff 终端画屏). False
+    /// for a discovered session, a `khor run`, or a remote one; those keep
+    /// the transcript or the facts, not a live screen.
+    pub hosted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -284,8 +289,10 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .into_iter()
         .map(|a| {
             let (v, group) = (a.view, a.group);
+            let hosted = n.is_hosted(&v.session.id);
             SessionRow {
             face: faces.get(&v.session.home.hex()).cloned(),
+            hosted,
             id: v.session.id.0,
             kind: v.session.kind.0,
             title: v.session.title,

@@ -14,6 +14,10 @@ import type { DirListing } from "./gen/bindings/DirListing";
 import type { DirPinRow } from "./gen/bindings/DirPinRow";
 import type { WebPinRow } from "./gen/bindings/WebPinRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
+import type { TermBatch } from "./gen/bindings/TermBatch";
+import type { TermScreen } from "./gen/bindings/TermScreen";
+import type { TermRun } from "./gen/bindings/TermRun";
+import type { TermColor } from "./gen/bindings/TermColor";
 
 export type {
   SessionRow,
@@ -29,6 +33,10 @@ export type {
   DirPinRow,
   WebPinRow,
   WebBorrow,
+  TermBatch,
+  TermScreen,
+  TermRun,
+  TermColor,
 };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
@@ -128,3 +136,17 @@ export const pinWeb = (machine: string, url: string, on: boolean) =>
     proxy listens (the borrow) and the window half is the app's alone. */
 export const openWeb = (machine: string, url: string) =>
   call<WebBorrow | null>("open_web", { machine, url });
+/** Attaches a terminal to a hosted session at cols×rows; the host
+    resizes its PTY to match, so the screen repaints whole. */
+export const termOpen = (id: string, cols: number, rows: number) =>
+  call<null>("term_open", { id, cols, rows });
+/** The current screen if it changed since `since`, else none — a
+    terminal is a state, so a poll wants the latest whole screen. */
+export const termPoll = (id: string, since: number) =>
+  call<TermBatch>("term_poll", { id, since });
+/** Keystrokes as the bytes a terminal sends; the face maps keys to
+    bytes, the backend stays a pipe. */
+export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });
+export const termResize = (id: string, cols: number, rows: number) =>
+  call<null>("term_resize", { id, cols, rows });
+export const termLeave = (id: string) => call<null>("term_leave", { id });

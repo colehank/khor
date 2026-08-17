@@ -965,6 +965,17 @@ impl Node {
         self.live.dir_of(id).filter(|d| d.exists())
     }
 
+    /// Whether this machine hosts this session's terminal — a `host.json`
+    /// in its registry dir. False for a `khor run` (临时, no host process),
+    /// a discovered session (khor never hosted it), and any remote session
+    /// (its host is on another machine). It is the signal for "a terminal
+    /// can attach here": docs/handoff 终端画屏, remote attach on the ledger.
+    pub fn is_hosted(&self, id: &SessionId) -> bool {
+        self.live
+            .dir_of(id)
+            .is_some_and(|d| host::read_host_file(&d).is_ok())
+    }
+
     /// A process reporting its own word — the hook door. 失败 is refused
     /// by the kind: it derives from the exit code, never from a claim.
     ///
