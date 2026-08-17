@@ -3151,6 +3151,7 @@ dependencies = [
  "tiny_http",
  "tokio",
  "ts-rs",
+ "vt100",
 ]
 
 [[package]]
