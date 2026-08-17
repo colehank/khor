@@ -43,9 +43,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, InitializeRequest, NewSessionRequest, PermissionOptionId,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionId, SessionNotification, StopReason, TextContent,
+    CancelNotification, ContentBlock, InitializeRequest, LoadSessionRequest, NewSessionRequest,
+    PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
+    StopReason, TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo};
@@ -96,6 +97,10 @@ impl Ask {
 pub struct Handle {
     conn: ConnectionTo<Agent>,
     session: SessionId,
+    /// Where the session lives — kept because `session/load` must name
+    /// the same cwd the session was opened with (the real adapter
+    /// refuses a mismatch).
+    cwd: PathBuf,
     /// Dropping this ends the connection's main task, which drops the
     /// transport, which kills the agent's process group.
     _close: oneshot::Sender<()>,
@@ -112,6 +117,22 @@ impl Handle {
         let response =
             self.conn.send_request(request).block_task().await.map_err(|e| e.to_string())?;
         Ok(response.stop_reason)
+    }
+
+    /// Replays the whole conversation so far: every replayed update
+    /// arrives as [`Event::Note`], and **all of them are already on the
+    /// receiver when this resolves** — the protocol sends them before
+    /// the `session/load` response, and the connection delivers the
+    /// stream in order, so a caller may drain without waiting.
+    ///
+    /// Loading a session that is live on this very connection works
+    /// (probed on the real adapter, 2026-08-17: a second load answers
+    /// with the same replay) — but an agent replays from its own
+    /// transcript, so a session that has never had a turn may refuse
+    /// with "not found" rather than replay nothing.
+    pub async fn replay(&self) -> Result<(), String> {
+        let request = LoadSessionRequest::new(self.session.clone(), self.cwd.clone());
+        self.conn.send_request(request).block_task().await.map(|_| ()).map_err(|e| e.to_string())
     }
 
     /// Interrupt the current turn without ending the session.
@@ -143,6 +164,7 @@ pub async fn start(
     let notes = events_tx.clone();
     let asks = events_tx.clone();
     let closed = events_tx.clone();
+    let home = cwd.clone();
 
     tokio::spawn(async move {
         let mut ready_tx = Some(ready_tx);
@@ -197,5 +219,5 @@ pub async fn start(
         .await
         .map_err(|_| "the agent ended before a session existed".to_owned())?;
     let _ = events_tx.send(Event::Ready { session: session.clone() });
-    Ok((Handle { conn, session, _close: close_tx }, events_rx))
+    Ok((Handle { conn, session, cwd: home, _close: close_tx }, events_rx))
 }

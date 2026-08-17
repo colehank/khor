@@ -8,10 +8,11 @@
 //! actually crossed the wire instead of asserting its own bookkeeping.
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ContentChunk, InitializeRequest, InitializeResponse, NewSessionRequest,
-    NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
-    StopReason, TextContent, ToolCallUpdate, ToolCallUpdateFields,
+    ContentBlock, ContentChunk, InitializeRequest, InitializeResponse, LoadSessionRequest,
+    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PermissionOption,
+    PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, SessionNotification, SessionUpdate, StopReason, TextContent,
+    ToolCallUpdate, ToolCallUpdateFields,
 };
 use agent_client_protocol::{Agent, Stdio};
 
@@ -35,6 +36,20 @@ async fn main() -> agent_client_protocol::Result<()> {
         .on_receive_request(
             async move |_request: NewSessionRequest, responder, _connection| {
                 responder.respond(NewSessionResponse::new("stub-session-1"))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            // The replay contract, scripted: every replayed update goes
+            // out **before** the response — which is the ordering the
+            // real adapter honours and khor_acp::Handle::replay leans on.
+            async move |request: LoadSessionRequest, responder, connection| {
+                let session = request.session_id.clone();
+                for text in ["played back: one", "played back: two"] {
+                    connection
+                        .send_notification(SessionNotification::new(session.clone(), chunk(text)))?;
+                }
+                responder.respond(LoadSessionResponse::new())
             },
             agent_client_protocol::on_receive_request!(),
         )

@@ -146,3 +146,117 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Replay in one test, three claims: asked mid-turn it waits for the
+/// turn (the `Turn` frame arrives before any `History`), the replayed
+/// updates and the end marker reach the asker, and **none of it reaches
+/// anyone else** — with the negative half proved live first: the other
+/// connection read the whole turn's broadcast through the very frames
+/// it is then expected not to get (the grep-scope lesson: an empty read
+/// only means something after the same read has found something).
+#[test]
+fn history_answers_the_asker_alone_and_after_the_turn() {
+    let root = std::env::temp_dir().join(format!("khor-guireplay-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+
+    let host = {
+        let root = root.clone();
+        let ready = ready.clone();
+        let cmd = vec![stub_path().to_string_lossy().to_string()];
+        std::thread::spawn(move || gui_host_main(root, ready, "stub".into(), cmd))
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let id = loop {
+        if let Ok(text) = std::fs::read_to_string(&ready) {
+            break SessionId(text.trim().to_owned());
+        }
+        assert!(Instant::now() < deadline, "the host never wrote the ready file");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
+    let dir = k.dir_of(&id).unwrap();
+    let hf = read_host_file(&dir).expect("a host file");
+
+    let mut attach = || -> TcpStream {
+        let mut c = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
+        write_frame(&mut c, &Hello { cookie: hf.cookie.clone(), cols: 0, rows: 0 }).unwrap();
+        let w: Welcome = read_frame(&mut c).unwrap();
+        assert!(w.ok, "{}", w.why);
+        c
+    };
+    let mut asker = attach();
+    let mut bystander = attach();
+
+    // Say, then ask for history in the same breath: the ops arrive in
+    // order on one stream, so the host sees the turn start first and
+    // must hold the replay.
+    write_frame(&mut asker, &GuiOp::Say("hello".into())).unwrap();
+    write_frame(&mut asker, &GuiOp::Replay).unwrap();
+
+    // The whole turn plays out first, on both connections — anything
+    // History-shaped before the turn's end would be the mid-turn
+    // interleaving the host exists to prevent. The asker answers the
+    // stub's permission ask; the bystander only listens.
+    loop {
+        match next_note(&mut asker) {
+            GuiNote::Ask { ask, options, .. } => {
+                write_frame(&mut asker, &GuiOp::Answer { ask, option: Some(options[0].0.clone()) })
+                    .unwrap();
+            }
+            GuiNote::Turn(stop) => {
+                assert_eq!(stop, "EndTurn");
+                break;
+            }
+            GuiNote::Note(_) => {}
+            other => panic!("history before the turn ended: {}", kind_of(&other)),
+        }
+    }
+    loop {
+        match next_note(&mut bystander) {
+            GuiNote::Turn(_) => break,
+            GuiNote::Note(_) | GuiNote::Ask { .. } => {}
+            other => panic!("history before the turn ended: {}", kind_of(&other)),
+        }
+    }
+
+    // Now the held replay: the asker gets the stub's canned playback
+    // and the end marker, in order.
+    let mut played = Vec::new();
+    loop {
+        match next_note(&mut asker) {
+            GuiNote::History(json) => played.push(json),
+            GuiNote::HistoryEnd => break,
+            other => panic!("expected history frames, got {}", kind_of(&other)),
+        }
+    }
+    assert!(
+        played.iter().any(|j| j.contains("played back: one"))
+            && played.iter().any(|j| j.contains("played back: two")),
+        "the replayed conversation reached the asker: {played:?}"
+    );
+
+    // The bystander proved its read path on the turn above; the same
+    // read now finds silence where broadcast history would be.
+    bystander.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    assert!(
+        read_frame::<GuiNote>(&mut bystander).is_err(),
+        "history frames must never be broadcast"
+    );
+
+    write_frame(&mut asker, &GuiOp::Close).unwrap();
+    host.join().expect("the host thread ends").expect("cleanly");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+fn kind_of(n: &GuiNote) -> &'static str {
+    match n {
+        GuiNote::Note(_) => "Note",
+        GuiNote::Ask { .. } => "Ask",
+        GuiNote::Turn(_) => "Turn",
+        GuiNote::Gone => "Gone",
+        GuiNote::History(_) => "History",
+        GuiNote::HistoryEnd => "HistoryEnd",
+    }
+}

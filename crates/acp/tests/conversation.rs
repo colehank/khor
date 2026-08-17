@@ -102,6 +102,28 @@ async fn dropping_an_ask_unanswered_still_ends_the_turn() {
     let _ = timeout(Duration::from_secs(10), turn).await.expect("the turn resolves");
 }
 
+/// The replay contract: when `replay()` resolves, every replayed update
+/// is **already on the receiver** — drained here with `try_recv`, no
+/// waiting, because the protocol puts the updates before the
+/// `session/load` response and the connection delivers in stream order.
+/// An agent that answered first and replayed after would turn every
+/// history view into a race; this is the assertion that notices.
+#[tokio::test]
+async fn replay_is_all_there_when_the_call_answers() {
+    let (handle, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let _ready = next(&mut rx).await;
+    handle.replay().await.expect("the load succeeds");
+    let mut played = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        played.push(text_of(event));
+    }
+    assert!(
+        played.iter().any(|t| t.contains("played back: one"))
+            && played.iter().any(|t| t.contains("played back: two")),
+        "both replayed chunks are on the channel before anything is awaited: {played:?}"
+    );
+}
+
 /// Dropping the handle ends everything: the connection task returns,
 /// `Closed` arrives, and the child is the library's to kill (process
 /// group, npx wrappers included — lib.rs module head).

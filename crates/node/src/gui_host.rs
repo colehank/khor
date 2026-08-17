@@ -45,10 +45,18 @@
 //! [`GuiOp`] frames in — length-prefixed msgpack like everything else
 //! on this socket, positional arrays, so the wire discipline holds:
 //! new fields go at the tail with defaults, none in the middle.
-//! **Live only, no replay**: an attacher sees the conversation from
-//! now on. History is the detail view's business (`session/resume`
-//! replays it from the agent itself) — buffering a second copy here
-//! would be a transcript nobody owns.
+//! **Live frames are broadcast; history is asked for.** An attacher
+//! sees the conversation from now on, and one that wants the past sends
+//! [`GuiOp::Replay`]: the host asks the agent itself (`session/load`
+//! replays the whole conversation before it answers — probed on the
+//! real adapter, and re-loading a live session works) and relays the
+//! replayed updates as [`GuiNote::History`] frames **to that connection
+//! only** — broadcast history would repaint every other face's past.
+//! The host still buffers nothing: a second copy here would be a
+//! transcript nobody owns. A replay asked for mid-turn waits for the
+//! turn to end — the live updates already on screen are the same
+//! content, and a load answered during a turn would interleave the two
+//! indistinguishably (the protocol does not tag replayed updates).
 
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -69,11 +77,16 @@ pub enum GuiOp {
     /// The answer to [`GuiNote::Ask`] with this number: the chosen
     /// option id, or `None` to refuse.
     Answer { ask: u64, option: Option<String> },
-    /// End the conversation: the agent dies with the connection. The
-    /// tail of this enum on purpose — frames are positional msgpack,
-    /// and an old host reading a new client must fail on the frame,
-    /// never misread an earlier variant.
+    /// End the conversation: the agent dies with the connection. Held
+    /// at its position — frames are positional msgpack, and an old host
+    /// reading a new client must fail on the frame, never misread an
+    /// earlier variant.
     Close,
+    /// Ask for the conversation so far, replayed by the agent itself
+    /// and answered as [`GuiNote::History`] frames **to this connection
+    /// only**, closed by [`GuiNote::HistoryEnd`]. Sent mid-turn it
+    /// waits for the turn to end (module head). Tail-appended.
+    Replay,
 }
 
 /// What the host tells every connected face.
@@ -90,6 +103,15 @@ pub enum GuiNote {
     Turn(String),
     /// The conversation is over; no more frames follow.
     Gone,
+    /// One replayed update (`session/update` JSON, [`GuiNote::Note`]'s
+    /// shape), answering this connection's [`GuiOp::Replay`] — never
+    /// broadcast. Tail-appended.
+    History(String),
+    /// The replay is complete. Arrives with no [`GuiNote::History`]
+    /// before it when there is nothing to replay **or the load failed**
+    /// — to a face the two are one fact: no past to paint, the live
+    /// stream unaffected. Tail-appended.
+    HistoryEnd,
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -133,13 +155,19 @@ pub fn spawn_gui_host(title: &str, cmd: &[String]) -> Result<SessionId, String> 
 }
 
 struct Fanout {
-    clients: Mutex<Vec<std::net::TcpStream>>,
+    clients: Mutex<Vec<(u64, std::net::TcpStream)>>,
 }
 
 impl Fanout {
     fn send(&self, note: &GuiNote) {
         let mut clients = self.clients.lock().unwrap();
-        clients.retain_mut(|c| write_frame(c, note).is_ok());
+        clients.retain_mut(|(_, c)| write_frame(c, note).is_ok());
+    }
+
+    /// To one connection — history frames only ever travel this way.
+    fn send_to(&self, who: u64, note: &GuiNote) {
+        let mut clients = self.clients.lock().unwrap();
+        clients.retain_mut(|(id, c)| *id != who || write_frame(c, note).is_ok());
     }
 }
 
@@ -192,14 +220,17 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
     std::fs::write(&ready, &id.0).map_err(|e| e.to_string())?;
 
     let fanout = Arc::new(Fanout { clients: Mutex::new(Vec::new()) });
-    let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<GuiOp>();
+    let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp)>();
 
-    // Attachers: cookie in, frames both ways after the welcome.
+    // Attachers: cookie in, frames both ways after the welcome. Each
+    // gets a number so a replay can be answered to its asker alone;
+    // every other op is the same from anyone.
     {
         let fanout = fanout.clone();
         let cookie = cookie.clone();
         let ops_tx = ops_tx.clone();
         std::thread::spawn(move || {
+            let mut next_client: u64 = 0;
             for conn in listener.incoming().flatten() {
                 let mut conn = conn;
                 let Ok(hello) = read_frame::<Hello>(&mut conn) else { continue };
@@ -211,11 +242,13 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     continue;
                 }
                 let Ok(mut readable) = conn.try_clone() else { continue };
-                fanout.clients.lock().unwrap().push(conn);
+                let who = next_client;
+                next_client += 1;
+                fanout.clients.lock().unwrap().push((who, conn));
                 let ops_tx = ops_tx.clone();
                 std::thread::spawn(move || {
                     while let Ok(op) = read_frame::<GuiOp>(&mut readable) {
-                        if ops_tx.send(op).is_err() {
+                        if ops_tx.send((who, op)).is_err() {
                             break;
                         }
                     }
@@ -233,6 +266,10 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         let mut asks: Vec<(u64, khor_acp::Ask)> = Vec::new();
         let mut next_ask: u64 = 0;
+        // Who asked for history while a turn was running: answered when
+        // the turn ends (module head — a mid-turn load would interleave
+        // replayed and live updates indistinguishably).
+        let mut replay_wanted: Vec<u64> = Vec::new();
         let mut in_turn: Option<tokio::task::JoinHandle<()>> = None;
         let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
         let handle = Arc::new(handle);
@@ -271,7 +308,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     None => break None,
                 },
                 op = ops_rx.recv() => match op {
-                    Some(GuiOp::Say(text)) => {
+                    Some((_, GuiOp::Say(text))) => {
                         if in_turn.is_some() {
                             // One turn at a time; a queue would answer
                             // "who said what when" wrongly on every face.
@@ -288,7 +325,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                             let _ = turn_tx.send(out);
                         }));
                     }
-                    Some(GuiOp::Answer { ask, option }) => {
+                    Some((_, GuiOp::Answer { ask, option })) => {
                         let Some(seat) = asks.iter().position(|(n, _)| *n == ask) else {
                             continue;
                         };
@@ -303,7 +340,14 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                             let _ = live.report(&id, State::Busy, Source::Reported);
                         }
                     }
-                    Some(GuiOp::Close) => break None,
+                    Some((_, GuiOp::Close)) => break None,
+                    Some((who, GuiOp::Replay)) => {
+                        if in_turn.is_some() {
+                            replay_wanted.push(who);
+                        } else if let Err(e) = replay_to(&handle, &mut events, &fanout, who).await {
+                            break e;
+                        }
+                    }
                     None => break None,
                 },
                 turn = turn_rx.recv() => {
@@ -324,17 +368,68 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         }
                         None => {}
                     }
+                    // The turn is over: the replays that waited on it,
+                    // in the order they were asked for.
+                    let mut fell = false;
+                    let mut fall = None;
+                    for who in replay_wanted.drain(..) {
+                        if let Err(e) = replay_to(&handle, &mut events, &fanout, who).await {
+                            (fell, fall) = (true, e);
+                            break;
+                        }
+                    }
+                    if fell {
+                        break fall;
+                    }
                 }
             }
         }
     });
 
     fanout.send(&GuiNote::Gone);
-    for c in fanout.clients.lock().unwrap().drain(..) {
+    for (_, c) in fanout.clients.lock().unwrap().drain(..) {
         let _ = c.shutdown(std::net::Shutdown::Both);
     }
     // 0 for an ending nobody minded, 1 for a torn connection: the exit
     // code is how `record_exit` tells 完成-shaped endings from 失败.
     let _ = live.record_exit(&id, if ending.is_none() { 0 } else { 1 });
     Ok(())
+}
+
+/// One replay, answered to one connection: ask the agent
+/// ([`khor_acp::Handle::replay`] — every replayed update is on the
+/// events channel when it resolves), drain, relay as [`GuiNote::History`]
+/// to the asker, close with [`GuiNote::HistoryEnd`]. Runs only between
+/// turns, so what the drain can meet besides replayed notes is an
+/// ending — returned as `Err` for the caller to break the loop with.
+/// A failed load relays nothing and still closes the bracket
+/// ([`GuiNote::HistoryEnd`]'s doc): a partial replay would paint a past
+/// that silently stops short, which is worse than no past at all.
+async fn replay_to(
+    handle: &khor_acp::Handle,
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<khor_acp::Event>,
+    fanout: &Fanout,
+    who: u64,
+) -> Result<(), Option<String>> {
+    let loaded = handle.replay().await;
+    let mut fell = false;
+    let mut fall = None;
+    while let Ok(event) = events.try_recv() {
+        match event {
+            khor_acp::Event::Note(n) => {
+                if loaded.is_ok() {
+                    let json = serde_json::to_string(&n).unwrap_or_default();
+                    fanout.send_to(who, &GuiNote::History(json));
+                }
+            }
+            khor_acp::Event::Closed(err) => (fell, fall) = (true, err),
+            _ => {}
+        }
+    }
+    fanout.send_to(who, &GuiNote::HistoryEnd);
+    if fell {
+        Err(fall)
+    } else {
+        Ok(())
+    }
 }
