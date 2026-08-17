@@ -1,0 +1,600 @@
+# The PTY fallback's pattern table (docs/handoff/001.md 发现拓宽批).
+#
+# Knowledge transcribed from kbwo/ccmanager (MIT), src/services/
+# stateDetector/*.ts, read remotely at 2026-08-17. **Transcribed, not
+# adapted**: where upstream writes a regular expression this file holds
+# the same regular expression, so that a future upstream diff can be
+# read against this file line by line. Two mechanical differences are
+# unavoidable and are the only ones: JavaScript's `m`/`i` flags become
+# Rust's inline `(?m)`/`(?i)`, and a rule upstream expresses by
+# lowercasing the haystack first is written here as `case = "fold"`.
+#
+# **This is data on purpose.** Spinner glyphs, activity labels and the
+# debounce window are the parts that change month to month, so they live
+# in a file that a signed table update can replace whole. What is *not*
+# here is the handful of named scopes (`tail`, `above_prompt`): those are
+# screen geometry, and pushing them into this file would mean inventing a
+# small language for it.
+#
+# **The whole table reaches three words and cannot reach the other
+# three.** 完成 / 中断 / 失败 are endings, and an ending is the host's to
+# record (crates/node/src/live.rs `face`), never a screen's to guess.
+# That ceiling is enforced by the type this file deserialises into, not
+# by this comment.
+
+# Glyph sets, named so a rule can reference one and a table update can
+# replace one. Upstream factors these out for the same reason: they are
+# the fastest-moving part of the whole file. A `{name}` in a pattern is
+# replaced with the set at build time; an unknown name fails the build.
+[charset]
+# Ornament spinners, bullets, the record dot, triangles and circles.
+claude_spinner = '✱✲✳✴✵✶✷✸✹✺✻✼✽✾✿❀❁❂❃❇❈❉❊❋✢✣✤✥✦✧✨⊛⊕⊙◉◎◍⁂⁕※⍟☼★☆·•⏺▸▹∙⋅○●'
+cursor_spinner = '⬡⬢'
+
+# ── claude ──────────────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards busy**. Its idle answer is
+# the only one upstream guards with a debounce, because claude redraws a
+# screen that can look finished while a turn is still running — so the
+# cheap failure is a session that reads 忙碌 a beat too long, not one
+# that reads 空闲 while it works. The busy rules are also the only ones
+# in this file restricted to `above_prompt`: the input box echoes what
+# the user typed, and a user who types "esc to interrupt" into the box
+# would otherwise put their own session into 忙碌.
+[[vendor]]
+name = "claude"
+default = "idle"
+idle_debounce_ms = 1500
+
+[[vendor.rule]]
+scope = "tail"
+lines = 200
+test = "contains"
+case = "exact"
+pattern = '⌕ Search…'
+then = "idle"
+
+# Upstream keeps the current word here rather than answering: the
+# transcript search overlay hides whatever the session was doing.
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'ctrl+r to toggle'
+then = "keep"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '(?:do you want|would you like).+\n+[\s\S]*?(?:yes|❯)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'esc to cancel'
+then = "waiting"
+
+# A permission menu with no question in it ("… wants to navigate on
+# example.com"). The numbered deny option is the marker that holds
+# across variants.
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '\d+\.\s*deny\s*\(esc\)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "above_prompt"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'esc to interrupt'
+then = "busy"
+
+[[vendor.rule]]
+scope = "above_prompt"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'ctrl+c to interrupt'
+then = "busy"
+
+[[vendor.rule]]
+scope = "above_prompt"
+lines = 30
+test = "regex"
+case = "exact"
+pattern = '(?m)^[{claude_spinner}] \S+ing.*…'
+then = "busy"
+
+# The turn's stats line, e.g. "(9m 21s · ↓ 13.7k tokens)".
+[[vendor.rule]]
+scope = "above_prompt"
+lines = 30
+test = "regex"
+case = "exact"
+pattern = '(?i)\([^)]*\d[^)]*tokens\s*\)'
+then = "busy"
+
+# ── codex ───────────────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards 待批**. Seven of its nine
+# rules answer waiting, several off strings short enough to appear in
+# ordinary output ('[y/n]', 'yes (y)', 'enter to submit'), and codex
+# prints the command it is about to run — so a session that echoes one
+# of those can claim to be asking permission when it is not. khor holds
+# a second opinion for exactly this vendor: codex writes rollout files,
+# and the disk family outranks this one.
+[[vendor]]
+name = "codex"
+default = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'press enter to confirm or esc to cancel'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "exact"
+pattern = '(?i)confirm with .+ enter'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = '| enter to submit answer'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'allow command?'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = '[y/n]'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'yes (y)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'enter to submit'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '(do you want|would you like)[\s\S]*?\n+[\s\S]*?\byes\b'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = 'esc.*interrupt'
+then = "busy"
+
+# ── gemini ──────────────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards 忙碌**, and by way of a
+# string that means the opposite one vendor over. 'esc to cancel' is
+# gemini's busy marker and claude's 待批 marker — the same seven words,
+# two incompatible readings. That is the argument for this file being
+# per-vendor tables rather than one shared list of clever strings, and
+# it is why nothing here may be reused across vendors on the grounds
+# that it "looks generic".
+[[vendor]]
+name = "gemini"
+default = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'waiting for user confirmation'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "exact"
+pattern = '│ Apply this change'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "exact"
+pattern = '│ Allow execution'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "exact"
+pattern = '│ Do you want to proceed'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '(allow execution|do you want to|apply this change)[\s\S]*?\n+[\s\S]*?\byes\b'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'esc to cancel'
+then = "busy"
+
+# ── cursor ──────────────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards 待批**, off short option
+# labels — 'keep (n)', '(y) (enter)' — that a diff or a code listing can
+# contain without anyone being asked anything.
+[[vendor]]
+name = "cursor"
+default = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = '(y) (enter)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'keep (n)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = 'auto .* \(shift\+tab\)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = 'allow .+ \(y\)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = 'run .+ \(y\)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'skip (esc or n)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'write to this file?'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'reject & propose changes'
+then = "waiting"
+
+# The one conjunction in the file: upstream requires both halves,
+# because either alone appears in ordinary allowlist chatter.
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains_all"
+case = "fold"
+patterns = ['add write(', 'allowlist']
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'ctrl+c to stop'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "exact"
+pattern = '(?m)^\s*[{cursor_spinner}] \S+ing(?:.*…|.*\.{2,})'
+then = "busy"
+
+# ── github-copilot ──────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards 空闲**. Three rules is the
+# whole table, so anything copilot does that is not one of these two
+# prompts and not 'esc to cancel' reads as an idle session. The
+# under-reading is the safe direction here — an agent that looks idle
+# while working costs a second look, while a permanent 忙碌 costs the
+# badge its meaning.
+[[vendor]]
+name = "github-copilot"
+default = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "exact"
+pattern = '(?i)confirm with .+ enter'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = '│ do you want'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'esc to cancel'
+then = "busy"
+
+# ── cline ───────────────────────────────────────────────────
+#
+# **The only vendor in this file whose default is busy**, and the one
+# whose error direction therefore points the other way: anything cline
+# prints that is not its ready line reads as 忙碌, including a screen
+# nobody has touched for an hour. Upstream chose that because cline's
+# ready line is unmistakable and its working output is not.
+#
+# The two idle rules are kept as upstream wrote them even though the
+# second subsumes the first — transcription, not editing; the day
+# upstream narrows the broad one, the narrow one is already here.
+[[vendor]]
+name = "cline"
+default = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '\[(act|plan) mode\].*?\n.*yes'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = 'let cline use this tool'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '\[(act|plan) mode\].*cline is ready for your message'
+then = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = 'cline is ready for your message'
+then = "idle"
+
+# ── opencode ────────────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards 空闲**, same shape as
+# copilot — two rules, and everything else is idle.
+[[vendor]]
+name = "opencode"
+default = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "exact"
+pattern = '△ Permission required'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "exact"
+pattern = '(?i)esc.*interrupt'
+then = "busy"
+
+# ── kimi ────────────────────────────────────────────────────
+#
+# Which way this one can be wrong: **towards 忙碌, and badly.** Its busy
+# rules are bare English words — 'thinking', 'processing', 'generating'
+# — matched anywhere on screen, so an agent that writes the sentence
+# "I'm thinking about the cache" puts itself into 忙碌 by saying so, and
+# the word then sticks for as long as that line stays on screen. Its
+# waiting rules have the same shape one level down ('allow?', 'proceed?'
+# as free-floating substrings).
+#
+# **Transcribed anyway, and left last on purpose.** This is the upstream
+# knowledge tier: it is written down with its failure mode named rather
+# than silently improved, because an edit here would be khor guessing at
+# a vendor nobody in this repo has ever run. Whoever gets a real kimi
+# session should expect to rewrite this block, not to trust it.
+[[vendor]]
+name = "kimi"
+default = "idle"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'allow?'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'confirm?'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'approve?'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'proceed?'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '\[y/n\]'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "regex"
+case = "fold"
+pattern = '\(y/n\)'
+then = "waiting"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'thinking'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'processing'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'generating'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'waiting for response'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'ctrl+c to cancel'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'ctrl-c to cancel'
+then = "busy"
+
+[[vendor.rule]]
+scope = "tail"
+lines = 30
+test = "contains"
+case = "fold"
+pattern = 'press ctrl+c'
+then = "busy"

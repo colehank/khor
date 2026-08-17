@@ -1,0 +1,18 @@
+[package]
+name = "khor-detect"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[dependencies]
+vt100.workspace = true
+regex.workspace = true
+
+[build-dependencies]
+# The table is a data file; this reads it at build time so a malformed
+# one is a build error rather than a machine that quietly stops
+# recognising every agent. Same shape as khor-catalog's zh.toml.
+toml.workspace = true
+# Not for matching — for refusing to ship a pattern that cannot compile.
+# See build.rs.
+regex.workspace = true
