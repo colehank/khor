@@ -532,6 +532,20 @@ hooks-buy-you = "装上钩子,claude 答完一轮才报得出「完成」,不装
 # a control that silently applies to one machine out of a list is a
 # control people will press on the wrong one.
 hooks-are-local = "改的是这台机器上的 claude"
+# The codex quota line (usage pane). The label is the point: an
+# official window and a relay's counter must never wear one face —
+# 官方/中转 comes from the rollout's own model_provider, and the relay's
+# proper name is appended untranslated (a proper noun translated is one
+# nobody can look up). 没报窗口 is a reading, not a blank: this
+# machine's relay answers the key with nulls (khor_core::CodexQuota).
+quota-of = "{0} 额度"
+quota-official = "官方"
+quota-relay = "中转"
+quota-no-windows = "没报窗口"
+quota-window-used = "{0}窗已用 {1}%"
+quota-minutes = "{0} 分钟"
+quota-hours = "{0} 小时"
+quota-days = "{0} 天"
 tell-machine = "给机器留言"
 pick-a-machine = "选一台机器"
 message-text = "留言"

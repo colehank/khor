@@ -29,6 +29,11 @@ fn usage() -> Result<khor_node::Usage, String> {
 }
 
 #[tauri::command]
+fn codex_quota() -> Result<Option<khor_node::CodexQuota>, String> {
+    khor_gui_core::codex_quota(&Node::root_from_env())
+}
+
+#[tauri::command]
 fn seen(id: String) -> Result<(), String> {
     khor_gui_core::seen(&Node::root_from_env(), &id)
 }
@@ -127,6 +132,7 @@ pub fn run() {
             sessions,
             devices,
             usage,
+            codex_quota,
             seen,
             close_session,
             tell,

@@ -1086,3 +1086,44 @@ fn a_window_of_n_days_reaches_back_n_minus_one() {
     // meaning of its own, and the caller refuses it before getting here.
     assert_eq!(window_start(0), window_start(1));
 }
+
+mod quota {
+    use super::fixture;
+    use crate::usage::quota;
+
+    /// The backend restates its windows on every turn; the snapshot is
+    /// the **last** line, and the fixture's two lines disagree on
+    /// purpose (1.0 then 2.0) so a first-wins reader cannot pass.
+    #[test]
+    fn the_official_snapshot_reads_the_last_line_not_the_first() {
+        let q = quota::codex(&fixture().join("quota-official")).expect("a snapshot");
+        assert_eq!(q.provider.as_deref(), Some("openai"));
+        // 2025-12-30T03:07:26.506Z, milliseconds computed with an
+        // independent clock (python), not with the parser under test.
+        assert_eq!(q.at_ms, 1_767_064_046_506);
+        let p = q.primary.expect("official reports a primary window");
+        assert_eq!((p.used_percent, p.window_minutes), (2.0, 300));
+        assert_eq!(p.resets_at_ms, Some(1_767_080_796_000), "seconds on disk, ms on the type");
+        assert_eq!(q.secondary.expect("and a secondary").used_percent, 1.0);
+    }
+
+    /// The relay answers the key with nulls — a reading that says "this
+    /// backend does not say", not a blank. And it is found **behind** a
+    /// newer session that carries no snapshot at all, which pins the
+    /// walk-back: a newest-file-only reader returns nothing here.
+    #[test]
+    fn a_relay_that_reports_no_windows_is_a_reading_not_a_blank() {
+        let q = quota::codex(&fixture().join("quota")).expect("the older file answers");
+        assert_eq!(q.provider.as_deref(), Some("custom"));
+        assert_eq!(q.at_ms, 1_786_024_200_000, "from the 08-06 file, not the empty 08-07 one");
+        assert!(q.primary.is_none() && q.secondary.is_none());
+    }
+
+    /// No codex on the machine: `None`, which the caller must word as
+    /// "khor 没读到" — the difference between that and "no quota
+    /// exists" is the module head's whole under-report note.
+    #[test]
+    fn no_codex_no_answer() {
+        assert!(quota::codex(&fixture().join("quota-nowhere")).is_none());
+    }
+}

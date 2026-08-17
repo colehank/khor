@@ -15,5 +15,6 @@ fn main() {
     // for on its own, so nothing embeds it and `export_all_to` would
     // never walk into it.
     khor_node::Usage::export_all_to(&dir).expect("export Usage");
+    khor_node::CodexQuota::export_all_to(&dir).expect("export CodexQuota");
     println!("bindings -> {}", dir.display());
 }

@@ -22,7 +22,7 @@ pub mod vitals;
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
 };
-pub use khor_core::{kind, Fill, Session, SessionId, State, Tokens, Usage, UsageDay, Vitals};
+pub use khor_core::{kind, CodexQuota, Fill, Session, SessionId, State, Tokens, Usage, UsageDay, Vitals};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
@@ -972,6 +972,14 @@ impl Node {
     /// verification for this feature is made of that.
     pub fn hooks_report(&self) -> Result<adaptor::claude::HookReport, String> {
         adaptor::claude::hooks_report(&adaptor::vendor_home(&self.root))
+    }
+
+    /// The codex CLI's newest rate-limit snapshot, labelled by backend.
+    /// Rooted through `vendor_home` for the same reason [`Self::hooks_report`]
+    /// is, and `None` is "khor 没读到", never "no quota exists"
+    /// (`usage::quota` module head).
+    pub fn codex_quota(&self) -> Option<khor_core::CodexQuota> {
+        usage::quota::codex(&adaptor::vendor_home(&self.root))
     }
 
     /// Adds khor's hooks to claude's settings, leaving the rest of that

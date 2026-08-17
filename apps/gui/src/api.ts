@@ -8,8 +8,9 @@ import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
+import type { CodexQuota } from "./gen/bindings/CodexQuota";
 
-export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket, Usage, Strain };
+export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket, Usage, Strain, CodexQuota };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
@@ -36,6 +37,7 @@ export const fetchDevices = () => call<DeviceRow[]>("devices");
     the device rows: those are polled every couple of seconds and this is
     a list of every day there has ever been. */
 export const fetchUsage = () => call<Usage>("usage");
+export const fetchCodexQuota = () => call<CodexQuota | null>("codex_quota");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });

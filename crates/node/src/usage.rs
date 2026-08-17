@@ -2450,5 +2450,7 @@ pub mod openclaw {
     }
 }
 
+pub mod quota;
+
 #[cfg(test)]
 mod tests;

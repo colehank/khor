@@ -4,6 +4,7 @@ import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
+  fetchCodexQuota,
   fetchUsage,
   installHooks,
   markSeen,
@@ -13,6 +14,7 @@ import {
   type DeviceRow,
   type HooksState,
   type SessionRow,
+  type CodexQuota,
   type Usage,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -281,6 +283,7 @@ export default function App() {
   // so a slower beat of its own is enough for a number that changes as
   // fast as somebody can type.
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [codexQuota, setCodexQuota] = useState<CodexQuota | null>(null);
 
   // This machine's hooks, polled with everything else rather than read
   // once when the card opens: `khor hooks install` in a terminal is the
@@ -318,6 +321,9 @@ export default function App() {
     const tick = () => {
       fetchUsage()
         .then((u) => live && setUsage(u))
+        .catch(() => {});
+      fetchCodexQuota()
+        .then((q) => live && setCodexQuota(q))
         .catch(() => {});
     };
     tick();
@@ -711,7 +717,7 @@ export default function App() {
           narrow ? "max-h-1/2 flex-none border-t" : "w-list flex-none border-l",
         )}
       >
-        <UsagePanel usage={usage} />
+        <UsagePanel usage={usage} quota={codexQuota} />
       </div>
     </div>
   );
