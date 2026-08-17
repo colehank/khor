@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+khor-acp = { path = "../acp" }
 khor-core.workspace = true
 khor-catalog.workspace = true
 khor-detect.workspace = true

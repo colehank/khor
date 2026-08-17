@@ -78,8 +78,9 @@ pub struct Ask {
 }
 
 impl Ask {
-    /// Approve by picking one of the offered options.
-    pub fn choose(self, id: PermissionOptionId) {
+    /// Approve by picking one of the offered options, by its id.
+    pub fn choose(self, id: &str) {
+        let id = PermissionOptionId::new(id.to_owned());
         let _ = self
             .answer
             .send(RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(id)));

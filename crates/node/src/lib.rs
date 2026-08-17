@@ -9,6 +9,7 @@
 
 pub mod adaptor;
 pub mod chat;
+pub mod gui_host;
 pub mod host;
 pub mod ipc;
 pub mod link;
@@ -871,6 +872,13 @@ impl Node {
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         host::spawn_host(&dir, &id, cmd, size)?;
         Ok(id)
+    }
+
+    /// Opens a GUI session: a detached host holding one ACP agent. The
+    /// id comes back from the host — it is the vendor's own, and exists
+    /// only once the agent has answered (`gui_host` module head).
+    pub fn open_gui(&self, title: &str, cmd: &[String]) -> Result<SessionId, String> {
+        gui_host::spawn_gui_host(title, cmd)
     }
 
     /// The registry dir behind a live session id, for attach clients.

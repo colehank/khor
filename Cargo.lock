@@ -3178,6 +3178,7 @@ dependencies = [
  "io-kit-sys",
  "iroh",
  "jiff",
+ "khor-acp",
  "khor-catalog",
  "khor-core",
  "khor-detect",

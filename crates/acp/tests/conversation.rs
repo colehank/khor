@@ -51,8 +51,8 @@ async fn a_turn_streams_and_the_chosen_option_reaches_the_agent() {
         panic!("the stub asks permission after its chunks")
     };
     assert_eq!(ask.request.options.len(), 2, "the stub offers exactly go/stop");
-    let go = ask.request.options[0].option_id.clone();
-    ask.choose(go);
+    let go = ask.request.options[0].option_id.0.to_string();
+    ask.choose(&go);
 
     // The stub names what it received: this line is the agent's own
     // account of the answer, not this side's bookkeeping.

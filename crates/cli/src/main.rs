@@ -72,6 +72,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "pair", run: pair },
     Verb { word: "sync", run: sync },
     Verb { word: "_host", run: host },
+    Verb { word: "_ghost", run: ghost },
     Verb { word: "help", run: help },
     Verb { word: "--help", run: help },
     Verb { word: "-h", run: help },
@@ -92,6 +93,7 @@ const VERBS: &[Verb] = &[
 #[cfg(test)]
 const NOT_IN_USAGE: &[(&str, &str)] = &[
     ("_host", "internal: the host process `open` spawns, whose arguments are a calling convention"),
+    ("_ghost", "internal: the GUI-session host `open --gui` spawns; same convention, ACP instead of a PTY"),
     ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
@@ -455,6 +457,7 @@ fn run(rest: &[String]) -> Result<(), String> {
 
 fn open(rest: &[String]) -> Result<(), String> {
     let mut tui = false;
+    let mut gui = false;
     let mut detached = false;
     let mut title: Option<String> = None;
     let mut cmd: Vec<String> = Vec::new();
@@ -462,6 +465,7 @@ fn open(rest: &[String]) -> Result<(), String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--tui" if cmd.is_empty() => tui = true,
+            "--gui" if cmd.is_empty() => gui = true,
             "-d" if cmd.is_empty() => detached = true,
             "--title" if cmd.is_empty() => {
                 title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
@@ -474,13 +478,19 @@ fn open(rest: &[String]) -> Result<(), String> {
         cmd = vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())];
     }
     let n = node()?;
-    let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
     let title = title.unwrap_or_else(|| {
         std::path::Path::new(&cmd[0])
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| cmd[0].clone())
     });
+    if gui {
+        // No terminal exists to attach to; the id is the deliverable.
+        let id = n.open_gui(&title, &cmd)?;
+        println!("{}", id.0);
+        return Ok(());
+    }
+    let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
     let size = tty_size().unwrap_or((80, 24));
     let id = n.open_persistent(kind, &title, &cmd, size)?;
     eprintln!("session: {}", id.0);
@@ -501,6 +511,23 @@ fn attach(rest: &[String]) -> Result<(), String> {
 /// Internal: the detached host process `open` spawns. Nobody types this,
 /// which is why it is on record in `NOT_IN_USAGE` instead of in the
 /// usage text.
+/// Internal: the GUI-session host `open --gui` spawns (`NOT_IN_USAGE`).
+fn ghost(rest: &[String]) -> Result<(), String> {
+    let (head, cmd) = match rest.iter().position(|a| a == "--") {
+        Some(i) => (&rest[..i], &rest[i + 1..]),
+        None => return Err(USAGE.into()),
+    };
+    let [ready, title] = head else {
+        return Err(USAGE.into());
+    };
+    khor_node::gui_host::gui_host_main(
+        khor_node::Node::root_from_env(),
+        std::path::PathBuf::from(ready),
+        title.clone(),
+        cmd.to_vec(),
+    )
+}
+
 fn host(rest: &[String]) -> Result<(), String> {
     let (head, cmd) = match rest.iter().position(|a| a == "--") {
         Some(i) => (&rest[..i], &rest[i + 1..]),

@@ -41,6 +41,9 @@ pub mod kind {
     //! must appear without touching this crate.
     pub const SHELL: &str = "shell";
     pub const TUI: &str = "tui";
+    /// A conversation khor is the protocol client of (ACP): khor paints
+    /// the exchange itself, there is no terminal to attach.
+    pub const GUI: &str = "gui";
     pub const CHAT: &str = "chat";
     pub const TRANSFER: &str = "transfer";
 }
