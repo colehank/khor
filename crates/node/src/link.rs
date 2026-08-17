@@ -560,7 +560,15 @@ impl Node {
         ep: &iroh::Endpoint,
         machine: &str,
     ) -> Result<iroh::endpoint::Connection, String> {
-        let (channel, _home) = self.resolve(machine)?;
+        let (channel, home) = self.resolve(machine)?;
+        // Borrowing your own network is nothing to borrow — this machine
+        // *is* that network. Dialling your own key would knock the serve
+        // off its endpoint and then time out; refuse it in words instead.
+        // (Direct browsing from this machine, with no exit, is its own
+        // thing and on the ledger.)
+        if home == self.device() {
+            return Err(msg::BORROW_SELF.into());
+        }
         let target = self
             .devices_loaded()?
             .doc

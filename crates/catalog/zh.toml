@@ -423,6 +423,7 @@ tunnel-no-route = "出口连不上要去的地方: {0}"
 # proxy is long-lived, so it must live in the process that holds the key.
 borrowing-title = "借 {0} 的网"
 borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
+borrow-self = "这就是本机的网,不用借;要直连就直接开"
 
 # ── the session surface (node) ──
 name-not-pathable = "这个名字进不了路径: {0}"

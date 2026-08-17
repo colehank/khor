@@ -284,6 +284,17 @@ async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
         "a fresh borrow row opens 空闲"
     );
 
+    // Borrowing your own network is refused in words, not left to dial
+    // itself and time out.
+    let err = timeout(Duration::from_secs(10), b.borrow("beta"))
+        .await
+        .expect("a self-borrow must answer fast, not dial")
+        .unwrap_err();
+    assert!(
+        err.contains(khor_catalog::msg::BORROW_SELF),
+        "borrowing this machine is refused: {err}"
+    );
+
     // Hold a pipe open through the proxy: the row must turn 忙碌 while
     // bytes can flow, and back to 空闲 once the pipe closes.
     let mut held = connect_through(proxy, &echo).await;
