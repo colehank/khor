@@ -1,6 +1,5 @@
-import type { CodexQuota, Usage } from "@/api";
-import { cli, gui } from "@/gen/catalog";
-import { ago } from "@/words";
+import type { Usage } from "@/api";
+import { cli } from "@/gen/catalog";
 
 /**
  * What the agents have cost, by day.
@@ -31,7 +30,7 @@ import { ago } from "@/words";
  * scrolls on its own, so a control here would be a setting answering a
  * question the scrollbar already answers (docs/UX.md 设置).
  */
-export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: CodexQuota | null }) {
+export function UsagePanel({ usage }: { usage: Usage | null }) {
   // Nothing at all until the first answer is in. A panel that said "no
   // spending" while the answer was still coming would be telling a
   // machine's whole history wrong for as long as it took to arrive.
@@ -42,7 +41,6 @@ export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: Codex
   const days = [...usage.days].reverse();
   return (
     <section data-usage className="flex h-full min-w-0 flex-col overflow-y-auto p-4">
-      <Quota quota={quota} />
       {days.length === 0 && <div className="text-sm text-muted-foreground">{cli.usage_none}</div>}
       {days.map((row, i) => (
         <div key={`${row.day}/${row.category}`} data-usage-day={row.day}>
@@ -88,66 +86,6 @@ export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: Codex
       )}
     </section>
   );
-}
-
-/**
- * The codex rate windows, labelled by who answered them.
- *
- * # The label is the point (user ruling 2026-08-17)
- *
- * A rollout's `rate_limits` is the window of whatever backend served
- * that session — the official subscription, or a relay's own counter
- * (new-api and kin). 官方 and 中转 must never wear one face, so the
- * word comes from the snapshot's own provider field, and a relay keeps
- * its proper name untranslated beside it.
- *
- * # Two absences, two different sentences
- *
- * No snapshot at all → no line (khor read nothing; a line would claim
- * it did). A snapshot whose windows are null → the line says 没报窗口:
- * this machine's relay answers the key with nulls, and silence there
- * would read as "no quota exists" (`khor_core::CodexQuota`).
- */
-function Quota({ quota }: { quota: CodexQuota | null }) {
-  if (!quota) return null;
-  const label = quota.provider === "openai" ? gui.quota_official : labelRelay(quota.provider);
-  return (
-    <div data-codex-quota data-provider={quota.provider ?? undefined} className="flex flex-wrap items-baseline gap-x-3 pb-3">
-      <span className="text-sm">{gui.quota_of("codex")}</span>
-      <span data-quota-label className="text-sm">
-        {label}
-      </span>
-      {quota.primary || quota.secondary ? (
-        [quota.primary, quota.secondary].map(
-          (w, i) =>
-            w && (
-              <span key={i} data-quota-window={i === 0 ? "primary" : "secondary"} className="text-sm text-muted-foreground">
-                {gui.quota_window_used(span(w.window_minutes), w.used_percent)}
-              </span>
-            ),
-        )
-      ) : (
-        <span data-quota-no-windows className="text-sm text-muted-foreground">
-          {gui.quota_no_windows}
-        </span>
-      )}
-      <span data-quota-age className="text-sm text-muted-foreground">
-        {cli.vitals_taken(ago(quota.at_ms))}
-      </span>
-    </div>
-  );
-}
-
-/** 中转, with the relay's proper name when the rollout wrote one. */
-function labelRelay(provider: string | null): string {
-  return provider ? `${gui.quota_relay} ${provider}` : gui.quota_relay;
-}
-
-/** A window's span as a person says it: 300 → 5 小时, 10080 → 7 天. */
-function span(minutes: number): string {
-  if (minutes % 1440 === 0) return gui.quota_days(minutes / 1440);
-  if (minutes % 60 === 0) return gui.quota_hours(minutes / 60);
-  return gui.quota_minutes(minutes);
 }
 
 /**

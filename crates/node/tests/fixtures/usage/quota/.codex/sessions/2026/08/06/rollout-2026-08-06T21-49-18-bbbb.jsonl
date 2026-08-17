@@ -1,2 +1,0 @@
-{"timestamp":"2026-08-06T13:49:37.236Z","type":"session_meta","payload":{"session_id":"bbbb","model_provider":"custom"}}
-{"timestamp":"2026-08-06T13:50:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":50,"cached_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0,"total_tokens":55}},"rate_limits":{"limit_id":"codex","limit_name":null,"primary":null,"secondary":null,"credits":null,"plan_type":null}}}

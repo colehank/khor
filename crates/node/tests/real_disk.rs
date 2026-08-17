@@ -421,19 +421,3 @@ fn one_spending_pass_is_timed_against_the_tree_it_walked() {
         "re-reading nothing must cost less than reading everything: {cold:.2}s then {refold:.2}s"
     );
 }
-
-/// The codex quota snapshot off this machine's real rollouts — prints
-/// what the screen would say, so a person can hold it against
-/// `~/.codex/sessions` by hand. Read-only, like everything here.
-#[test]
-#[ignore = "reads the real home; run by hand"]
-fn the_codex_quota_line_reads_this_machines_newest_snapshot() {
-    let home = std::path::PathBuf::from(std::env::var("HOME").expect("a home"));
-    match khor_node::usage::quota::codex(&home) {
-        Some(q) => println!(
-            "provider={:?} at_ms={} primary={:?} secondary={:?}",
-            q.provider, q.at_ms, q.primary, q.secondary
-        ),
-        None => println!("no snapshot readable"),
-    }
-}

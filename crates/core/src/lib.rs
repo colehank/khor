@@ -397,58 +397,6 @@ impl Tokens {
     }
 }
 
-/// One rate window as the vendor's backend reported it, untouched.
-///
-/// All three figures are the backend's own words — khor does no
-/// arithmetic on an allowance it cannot see the terms of.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-pub struct QuotaWindow {
-    /// 0–100, as reported.
-    pub used_percent: f64,
-    /// The window's span, in minutes (300 = a 5-hour window).
-    #[ts(type = "number")]
-    pub window_minutes: u64,
-    /// When the window resets, unix milliseconds. Absent when the
-    /// backend did not say.
-    #[ts(type = "number | null")]
-    pub resets_at_ms: Option<u64>,
-}
-
-/// The codex CLI's rate-limit snapshot, labelled by who answered it.
-///
-/// # The label is the point (user ruling 2026-08-17)
-///
-/// A rollout's `rate_limits` is **the window of whatever backend served
-/// that session** — the official subscription when codex talked to
-/// OpenAI, a relay's own bookkeeping when it talked through one
-/// (new-api and kin, via cc-switch). The two must never wear one face:
-/// an official-looking percentage that is actually a relay's counter
-/// tells the user a fact about the wrong account. So the provider
-/// travels with the numbers, verbatim from the session's own
-/// `model_provider` field, and the screen labels 官方 / 中转 from it.
-///
-/// # Both windows may be absent, and that is a reading too
-///
-/// Measured on this machine 2026-08-17: every official-era session
-/// carries real windows; all six relay-era sessions carry the
-/// `rate_limits` key with `primary`/`secondary` **null** — the relay
-/// reports no windows at all. Absent windows with a present snapshot
-/// mean "this backend does not say", which the screen must print
-/// rather than leave blank.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-pub struct CodexQuota {
-    /// `model_provider` as the rollout wrote it (`"openai"`,
-    /// `"custom"`, …). `None` for sessions old enough to predate the
-    /// field — unknown, not official.
-    pub provider: Option<String>,
-    /// When the snapshot was taken, unix milliseconds — a quota with no
-    /// age would read as the present (the [`Vitals`] rule).
-    #[ts(type = "number")]
-    pub at_ms: u64,
-    pub primary: Option<QuotaWindow>,
-    pub secondary: Option<QuotaWindow>,
-}
-
 /// One vendor's spend on one day, on one machine.
 ///
 /// The machine is not a field: an answer is always *some machine's*, and

@@ -342,12 +342,6 @@ pub fn usage(root: &Path) -> Result<Usage, String> {
     open(root)?.usage_everywhere()
 }
 
-/// The codex rate-limit snapshot beside the spend — same pane, same
-/// call rhythm. `Ok(None)` is a fact the screen words as 没读到.
-pub fn codex_quota(root: &Path) -> Result<Option<khor_core::CodexQuota>, String> {
-    Ok(open(root)?.codex_quota())
-}
-
 /// Pins or unpins a session — the call `khor pin <session>` makes. One
 /// function behind the verb and the button, so the two cannot drift.
 pub fn pin_session(root: &Path, id: &str, on: bool) -> Result<(), String> {
