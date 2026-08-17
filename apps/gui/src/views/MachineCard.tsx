@@ -1,4 +1,4 @@
-import type { DeviceRow, HooksState } from "@/api";
+import type { DeviceRow, HooksState, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -187,14 +187,16 @@ function Hooks({
  * present. Collapsing any two of them would put a number on the screen
  * that means something other than what it says (docs/SESSION.md 离线).
  *
- * **No severity colour, and that is a decision rather than an
- * omission.** Colour in this app is spoken for: the six state words own
- * it, 待批 is the only cool colour anywhere, and red means a session
- * sank to the bottom of the list. Turning a 91%-full disk red would
- * dress it as a failed session. Choosing a threshold at which a disk
- * becomes a warning is also a product judgment nobody has made — and a
- * threshold set wrong is an alarm that teaches people to ignore alarms.
- * The numbers say how full it is; the bar shows it at a glance.
+ * **Strain is painted, and the colour is a new one** (user ruling
+ * 2026-08-17 flipped the earlier "no severity colour" decision — the
+ * trigger written on it was exactly 用户要). What survives from the old
+ * ruling is its real content: colour here is spoken for — 中断 owns
+ * amber, 失败 owns red, and a 95% disk wearing either would dress a
+ * machine as a session. So strain has its own token (`--strain`), one
+ * hue for one new thing, and the step from tight to critical is weight
+ * rather than a second hue. The judgment itself — which resources, at
+ * what thresholds, why — is `khor_core::Fill::strain`, minted into the
+ * row by gui-core; this file only paints the word it was handed.
  */
 function Readings({ row }: { row: DeviceRow }) {
   if (!row.vitals) {
@@ -216,12 +218,14 @@ function Readings({ row }: { row: DeviceRow }) {
         name="mem"
         label={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
         fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
+        strain={row.vitals.mem_strain}
       />
       {v.disk ? (
         <Unit
           name="disk"
           label={cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total))}
           fraction={v.disk.total > 0 ? v.disk.used / v.disk.total : null}
+          strain={row.vitals.disk_strain}
         />
       ) : (
         // Said, not left out: a line that is simply absent and a machine
@@ -271,16 +275,25 @@ function Unit({
   name,
   label,
   fraction,
+  strain,
 }: {
   name: string;
   label: string;
   /** `null` when there is no denominator to divide by, and then no bar
       is drawn — an empty track reads as "this is at zero". */
   fraction: number | null;
+  /** The word gui-core minted, absent for the units that carry none
+      (CPU, GPU) as much as for a reading below the first step. */
+  strain?: Strain | null;
 }) {
   return (
     <div data-vitals-unit={name}>
-      <div className="text-sm">{label}</div>
+      <div
+        data-strain={strain ?? undefined}
+        className="text-sm data-[strain]:text-strain data-[strain=critical]:font-medium"
+      >
+        {label}
+      </div>
       {fraction !== null && (
         <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-secondary">
           <div

@@ -7,8 +7,9 @@ import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { Usage } from "./gen/bindings/Usage";
+import type { Strain } from "./gen/bindings/Strain";
 
-export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket, Usage };
+export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket, Usage, Strain };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 

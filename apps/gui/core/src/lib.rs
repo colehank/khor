@@ -107,6 +107,48 @@ pub struct VitalsReading {
     pub vitals: Vitals,
     #[ts(type = "number")]
     pub age_ms: u64,
+    /// The strain words for memory and disk, minted here so the screen
+    /// paints a judgment instead of making one (the thresholds and their
+    /// reasons live on `khor_core::Fill::strain`). CPU and GPU carry no
+    /// word on purpose: a pinned core is a machine doing its job, a full
+    /// disk is a machine about to stop doing it.
+    pub mem_strain: Option<khor_core::Strain>,
+    pub disk_strain: Option<khor_core::Strain>,
+}
+
+impl VitalsReading {
+    fn of(vitals: Vitals, age_ms: u64) -> VitalsReading {
+        VitalsReading {
+            mem_strain: vitals.mem.strain(),
+            disk_strain: vitals.disk.and_then(|d| d.strain()),
+            vitals,
+            age_ms,
+        }
+    }
+}
+
+#[cfg(test)]
+mod vitals_reading_tests {
+    use super::*;
+    use khor_core::{Fill, Strain};
+
+    /// Memory strained, disk fine — asymmetric on purpose. A symmetric
+    /// fixture (both strained or both fine) would stay green with the two
+    /// assignments swapped, and a swap is the one mistake this three-line
+    /// constructor has room for.
+    #[test]
+    fn each_strain_word_comes_from_its_own_fill() {
+        let v = Vitals {
+            cpu_pct: 99.0, // pinned CPU carries no word, also on purpose
+            cores: 8,
+            mem: Fill { used: 96, total: 100 },
+            disk: Some(Fill { used: 50, total: 100 }),
+            gpu: None,
+        };
+        let r = VitalsReading::of(v, 0);
+        assert_eq!(r.mem_strain, Some(Strain::Critical));
+        assert_eq!(r.disk_strain, None, "a half-full disk says nothing");
+    }
 }
 
 /// One option on the variant or shape axis, already painted.
@@ -281,7 +323,7 @@ pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
             // alone, so no second field says it twice.
             vitals: n
                 .vitals_of(&d.id)
-                .map(|(vitals, age_ms)| VitalsReading { vitals, age_ms }),
+                .map(|(vitals, age_ms)| VitalsReading::of(vitals, age_ms)),
             id: d.id,
             name: d.name,
         })

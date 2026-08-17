@@ -199,6 +199,54 @@ pub struct Fill {
     pub total: u64,
 }
 
+/// How close to full a [`Fill`] is, in the two steps worth a colour.
+///
+/// A judgment, so it lives here and not in a screen: the thresholds are
+/// the fact, and two frontends eyeballing `used / total` against numbers
+/// of their own would disagree about the same machine.
+///
+/// **90 and 95, uniform across memory and disk.** Uniform because a pair
+/// of numbers someone can hold in their head survives; per-resource
+/// tuning is a precision nobody has measured a need for. 95 is where a
+/// nearly-full filesystem actually starts failing writes, and 90 is the
+/// last round number before it. A threshold set wrong is an alarm that
+/// teaches people to ignore alarms — which is why there are two steps
+/// and not a gradient.
+///
+/// **Derived, never on the wire.** [`Vitals`] frames carry the two
+/// numbers; anything that wants the word asks this method. Sending the
+/// word too would let the two drift apart in a cached reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "lowercase")]
+pub enum Strain {
+    /// ≥ 90% full: worth a glance.
+    Tight,
+    /// ≥ 95% full: worth acting on.
+    Critical,
+}
+
+impl Fill {
+    /// The strain word for this reading, or `None` while there is nothing
+    /// to say — including a zero `total`, which is "khor could not read
+    /// this", not "an empty resource" (the same judgment as the disk line
+    /// printing 读不出 instead of `0 / 0`).
+    pub fn strain(&self) -> Option<Strain> {
+        if self.total == 0 {
+            return None;
+        }
+        // Integer arithmetic on purpose: `used * 100 >= total * 90` has no
+        // float edge where 89.999… rounds its way over a threshold.
+        let (used, total) = (self.used as u128, self.total as u128);
+        if used * 100 >= total * 95 {
+            Some(Strain::Critical)
+        } else if used * 100 >= total * 90 {
+            Some(Strain::Tight)
+        } else {
+            None
+        }
+    }
+}
+
 /// What a machine is doing right now: the other half of docs/KHOR.md's
 /// core promise, beside the sessions.
 ///
@@ -598,6 +646,38 @@ mod tests {
         let bytes = rmp_serde::to_vec(&v).unwrap();
         assert_eq!(bytes[0], 0x95, "five fields today");
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
+    }
+
+    /// The two steps land exactly on 90 and 95 — an off-by-one here is a
+    /// colour that appears a percent early or late on every machine.
+    #[test]
+    fn strain_steps_at_ninety_and_ninety_five_exactly() {
+        let at = |used| Fill { used, total: 1000 }.strain();
+        assert_eq!(at(899), None, "89.9% carries no word");
+        assert_eq!(at(900), Some(Strain::Tight), "90.0% is the first step");
+        assert_eq!(at(949), Some(Strain::Tight));
+        assert_eq!(at(950), Some(Strain::Critical), "95.0% is the second");
+        assert_eq!(at(1000), Some(Strain::Critical));
+    }
+
+    /// A zero total is "khor could not read this", never an empty — and
+    /// so never a strained — resource. Guards the `total == 0` branch on
+    /// its own: without it, `0 * 100 >= 0 * 95` would answer Critical.
+    #[test]
+    fn an_unreadable_fill_carries_no_strain_word() {
+        assert_eq!(Fill { used: 0, total: 0 }.strain(), None);
+        assert_eq!(Fill { used: 7, total: 0 }.strain(), None);
+    }
+
+    /// Petabyte-scale numbers must not wrap the arithmetic: `u64::MAX`
+    /// bytes times 100 overflows u64, and a wrapped product would read a
+    /// full disk as a fine one.
+    #[test]
+    fn strain_survives_fills_near_u64_max() {
+        let full = Fill { used: u64::MAX, total: u64::MAX };
+        assert_eq!(full.strain(), Some(Strain::Critical));
+        let fine = Fill { used: u64::MAX / 2, total: u64::MAX };
+        assert_eq!(fine.strain(), None);
     }
 
     /// **Over the wire from a peer that predates the GPU**: four fields

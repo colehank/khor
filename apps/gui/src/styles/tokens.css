@@ -51,6 +51,13 @@
   --state-failed: #b23a2e;               /* red sinks, no badge */
   --state-idle: rgba(26, 26, 20, 0.45);
 
+  /* One new colour for one new thing: a resource nearly full (memory,
+     disk — khor_core::Strain). Deliberately none of the six words'
+     hues: 中断 owns amber and 失败 owns red, and a 95% disk wearing
+     either would read as a session's face. Escalation within strain is
+     weight, not a second hue. */
+  --strain: #7a3b5e;
+
   --badge: #b23a2e;
   --badge-foreground: #ffffff;
 
@@ -136,6 +143,8 @@
     --state-failed: #d4756b;
     --state-idle: rgba(238, 238, 231, 0.4);
 
+    --strain: #d59ab8;
+
     --badge: #d4756b;
     --badge-foreground: #1a1a14;
 
@@ -163,6 +172,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-strain: var(--strain);
 
   --color-state-busy: var(--state-busy);
   --color-state-blocked: var(--state-blocked);
