@@ -148,11 +148,15 @@ pub async fn serve_stream(
 }
 
 /// Copies bytes both ways between the QUIC stream halves and the TCP
-/// stream, and propagates each half-close: when the dialer stops sending,
-/// the target sees EOF (we `shutdown` its write side); when the target
-/// stops, the dialer's read side is finished. Neither direction waits on
-/// the other — a one-way stream (a long download) must not stall because
-/// the request direction went quiet.
+/// stream, and propagates each half-close: when the QUIC peer stops
+/// sending, the TCP side sees EOF (we `shutdown` its write side); when
+/// the TCP side stops, the QUIC send is finished. Neither direction waits
+/// on the other — a one-way stream (a long download) must not stall
+/// because the request direction went quiet.
+///
+/// The same code serves both ends: `recv` always drains to `tcp` and
+/// `tcp` always feeds `send`, whether `tcp` is the target (exit side) or
+/// the browser (proxy side) — the roles are symmetric.
 async fn splice(mut send: SendStream, mut recv: RecvStream, tcp: tokio::net::TcpStream) {
     let (mut tr, mut tw) = tcp.into_split();
     let up = async {
@@ -164,4 +168,98 @@ async fn splice(mut send: SendStream, mut recv: RecvStream, tcp: tokio::net::Tcp
         let _ = send.finish();
     };
     tokio::join!(up, down);
+}
+
+/// The largest CONNECT request head we will buffer before giving up. A
+/// real one is a request line plus a few short headers; anything past
+/// this is a client that will never send the blank line, not a big ask.
+const CONNECT_HEAD_MAX: usize = 8 * 1024;
+
+/// The local HTTP proxy half of a borrow (docs/NET.md 借网): a plain
+/// `CONNECT host:port` proxy in front of one lease. A browser (or
+/// `HTTPS_PROXY`-honouring tool) points here; every connection it makes
+/// becomes a stream through the exit to the host it named. Runs until the
+/// listener is dropped.
+///
+/// **CONNECT only, by design for this step.** It is what an HTTPS request
+/// uses and what a walled site — always HTTPS in practice — needs, and it
+/// keeps the proxy a blind byte pipe: it never sees the plaintext. The
+/// absolute-form GET a plain-HTTP request would send is on the ledger.
+pub async fn serve_proxy(
+    borrow: std::sync::Arc<Borrow>,
+    listener: tokio::net::TcpListener,
+) -> Result<(), String> {
+    loop {
+        let Ok((sock, _)) = listener.accept().await else { return Ok(()) };
+        let borrow = borrow.clone();
+        tokio::spawn(async move {
+            let _ = proxy_one(&borrow, sock).await;
+        });
+    }
+}
+
+/// One browser connection: read its `CONNECT`, open the tunnel, answer
+/// with the proxy's own status line, then splice. The status line is
+/// HTTP because the client speaks HTTP here — a `200` means "connected",
+/// a `502` means the exit could not, and the client shows its own error
+/// rather than hanging.
+async fn proxy_one(
+    borrow: &Borrow,
+    mut sock: tokio::net::TcpStream,
+) -> Result<(), String> {
+    use tokio::io::AsyncReadExt;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    // Read only the request head (to the blank line); the tunnelled bytes
+    // that follow belong to `splice`, not to this parse.
+    loop {
+        let n = sock.read(&mut byte).await.map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Ok(());
+        }
+        head.push(byte[0]);
+        if head.ends_with(b"\r\n\r\n") {
+            break;
+        }
+        if head.len() > CONNECT_HEAD_MAX {
+            return Ok(());
+        }
+    }
+    let Some(target) = connect_target(&head) else {
+        let _ = sock.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n").await;
+        return Ok(());
+    };
+    match borrow.open(&target).await {
+        Ok((send, recv)) => {
+            sock.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+                .map_err(|e| e.to_string())?;
+            splice(send, recv, sock).await;
+            Ok(())
+        }
+        Err(_) => {
+            let _ = sock.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+            Ok(())
+        }
+    }
+}
+
+/// The authority from a `CONNECT host:port HTTP/1.1` head, or `None` if
+/// this is not a CONNECT. Only the first line matters; the headers after
+/// it are the client's and we forward nothing from them.
+fn connect_target(head: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(head).ok()?;
+    let first = text.lines().next()?;
+    let mut parts = first.split_whitespace();
+    if !parts.next()?.eq_ignore_ascii_case("CONNECT") {
+        return None;
+    }
+    let authority = parts.next()?;
+    // A CONNECT authority is always host:port; a bare host would leave the
+    // exit's TCP connect without a port and is not a thing browsers send.
+    if authority.contains(':') {
+        Some(authority.to_owned())
+    } else {
+        None
+    }
 }

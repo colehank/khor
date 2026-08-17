@@ -127,3 +127,86 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
     let _ = fs::remove_dir_all(&ra);
     let _ = fs::remove_dir_all(&rb);
 }
+
+/// Reads from a socket until `needle` appears, returning all bytes read.
+async fn read_until(sock: &mut tokio::net::TcpStream, needle: &[u8]) -> Vec<u8> {
+    use tokio::io::AsyncReadExt;
+    let mut got = Vec::new();
+    let mut byte = [0u8; 1];
+    while sock.read(&mut byte).await.unwrap() == 1 {
+        got.push(byte[0]);
+        if got.ends_with(needle) {
+            break;
+        }
+    }
+    got
+}
+
+#[tokio::test]
+async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let ra = root("pa");
+    let rb = root("pb");
+    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let serve_a = tokio::spawn(async move { sa.serve().await });
+    wait_for_endpoint_file(&ra).await;
+
+    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let ticket = a.invite().unwrap();
+    timeout(Duration::from_secs(15), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    let echo = echo_server().await;
+
+    // beta stands up its local proxy in front of one lease to alpha.
+    let borrow = timeout(Duration::from_secs(15), b.tunnel_to("alpha"))
+        .await
+        .expect("dialling the tunnel must not hang")
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let proxy_addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = tunnel::serve_proxy(std::sync::Arc::new(borrow), listener).await;
+    });
+
+    // A client speaks HTTP CONNECT to the proxy, then raw bytes to the
+    // echo server through the established tunnel — exactly what a browser
+    // does for an HTTPS site, minus the TLS the proxy never sees.
+    let mut client = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+    client
+        .write_all(format!("CONNECT {echo} HTTP/1.1\r\nHost: {echo}\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let status = read_until(&mut client, b"\r\n\r\n").await;
+    assert!(
+        String::from_utf8_lossy(&status).starts_with("HTTP/1.1 200"),
+        "the proxy establishes the tunnel: {}",
+        String::from_utf8_lossy(&status)
+    );
+    client.write_all(b"ping through the exit").await.unwrap();
+    let mut back = [0u8; 21];
+    timeout(Duration::from_secs(15), client.read_exact(&mut back))
+        .await
+        .expect("the echo must not hang")
+        .unwrap();
+    assert_eq!(&back, b"ping through the exit", "bytes made the round trip");
+
+    // A non-CONNECT method is refused, not tunnelled: the proxy only
+    // speaks CONNECT (the plain-HTTP absolute-form GET is on the ledger).
+    let mut plain = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+    plain.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
+    let refused = read_until(&mut plain, b"\r\n\r\n").await;
+    assert!(
+        String::from_utf8_lossy(&refused).starts_with("HTTP/1.1 405"),
+        "a non-CONNECT method is refused: {}",
+        String::from_utf8_lossy(&refused)
+    );
+
+    serve_a.abort();
+    let _ = fs::remove_dir_all(&ra);
+    let _ = fs::remove_dir_all(&rb);
+}
