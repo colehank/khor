@@ -696,6 +696,15 @@ fn kimi_is_busy_on_its_progress_words() {
 /// containing "thinking" reports itself busy by saying so. Transcribed
 /// as upstream wrote it; this test is what makes the cost visible to
 /// whoever gets a real kimi session and comes to fix it.
+///
+/// **Not the thing the usage batch ruled against** ("do not build
+/// fixtures that lock a bad behaviour in place"). That ruling is about
+/// tests which *resist* a fix — change the behaviour for the better and
+/// they go red for no good reason, so the fix stalls. This one is a
+/// tripwire pointing the other way: it fires the moment kimi's table
+/// improves, and its own failure message says so and tells you to
+/// rewrite the note above. It marks an improvement rather than
+/// obstructing one.
 #[test]
 fn kimi_calls_itself_busy_for_merely_writing_the_word_thinking() {
     let lines = ["I've finished. My thinking here was that the cache was cold.", "> "];
