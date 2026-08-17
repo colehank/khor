@@ -1,0 +1,8 @@
+[
+  {
+    "type": "say",
+    "say": "api_req_started",
+    "ts": "2026-08-17T03:00:00Z",
+    "text": "{\"cost\":0.02,\"tokensIn\":9,\"tokensOut\":4,\"apiProtocol\":\"openai\"}"
+  }
+]

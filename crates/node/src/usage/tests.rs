@@ -83,6 +83,19 @@ fn pi_days(vendor: &'static str) -> HashMap<String, Tokens> {
     by_day(&pi_meter(vendor).tally(), &plus_eight())
 }
 
+/// One VS Code extension, read from whichever storage location the
+/// fixture put it under — which is a different one for each of the three,
+/// so finding it at all is part of what this asserts.
+fn roo_meter(vendor: &'static str) -> roo::Roo {
+    let base = fixture().join("roo");
+    let root = roo::roots()
+        .into_iter()
+        .find(|(name, root)| *name == vendor && base.join(root).exists())
+        .map(|(_, root)| base.join(root))
+        .expect("the fixture holds exactly one storage location for this vendor");
+    roo::Roo::at(vendor, root)
+}
+
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
     Tokens { input, cached_input, cache_write, output }
 }
@@ -119,9 +132,35 @@ fn fixture_home(tag: &str) -> PathBuf {
             .unwrap();
         // The three Pi-format roots live under one fixture directory, so
         // that one home wears all of them the way a real one would.
-        for dir in [".pi", ".senpi", ".config"] {
+        for dir in [".pi", ".senpi"] {
             std::os::unix::fs::symlink(fixture().join("pi").join(dir), home.join(dir)).unwrap();
         }
+        // `.config` has two tenants — Kimchi and VS Code — so it is a real
+        // directory here with a link per child, which is also what a real
+        // home looks like. Linking the whole of `.config` to one fixture
+        // would have let either vendor hide the other.
+        std::fs::create_dir_all(home.join(".config")).unwrap();
+        std::os::unix::fs::symlink(
+            fixture().join("pi/.config/kimchi"),
+            home.join(".config/kimchi"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            fixture().join("roo/.config/Code"),
+            home.join(".config/Code"),
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.join("Library/Application Support")).unwrap();
+        std::os::unix::fs::symlink(
+            fixture().join("roo/Library/Application Support/Code"),
+            home.join("Library/Application Support/Code"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            fixture().join("roo/.vscode-server"),
+            home.join(".vscode-server"),
+        )
+        .unwrap();
     }
     home
 }
@@ -433,6 +472,106 @@ fn three_agents_share_a_reader_and_none_of_them_share_a_name() {
     }
 }
 
+/// **A task document is a JSON array, and the numbers are inside a string
+/// inside it.**
+///
+/// The fixture is upstream's own test document carried across rather than
+/// one written from reading their parser — the numbers, the nesting and
+/// both spellings of the clock are theirs. It holds five entries and only
+/// three of them are requests: one with a time, one with milliseconds
+/// since the epoch (both occur upstream), and one whose payload is not
+/// JSON at all. A fourth parses and names none of the four token fields.
+///
+/// The last two are the point. Upstream skips both in silence; khor
+/// counts them, because a request that plainly billed something and could
+/// not be read is exactly what `unreadable` is for.
+#[test]
+fn a_task_document_is_read_whole_and_its_numbers_carried_across() {
+    let tally = roo_meter("roocode").tally();
+    let spent = by_day(&tally, &plus_eight())["2026-08-17"];
+    assert_eq!(
+        spent,
+        tokens(110, 21, 5, 52),
+        "the two readable requests: 100/20/5/50 and 10/1/0/2"
+    );
+    assert_eq!(
+        tally.unreadable, 2,
+        "the payload that is not JSON, and the one that names no token field"
+    );
+    assert_eq!(tally.kept.len(), 2, "the entry that is not a request was not billed");
+}
+
+/// **Each extension is found where that extension keeps things, and the
+/// three places are not the same place.**
+///
+/// The fixture puts roocode under Linux's `.config`, cline under macOS's
+/// `Library/Application Support` and kilocode under a remote
+/// `.vscode-server` — so a reader that knew only the platform it is
+/// running on would find one of the three and miss two, which on a real
+/// machine is a user whose tokens quietly do not exist.
+#[cfg(unix)]
+#[test]
+fn the_three_extensions_are_found_in_three_different_storage_locations() {
+    let usage = both("roo-family");
+    for (vendor, output) in [("roocode", 52), ("cline", 3), ("kilocode", 4)] {
+        assert_eq!(
+            day(&usage, "2026-08-17", vendor).map(|t| t.output),
+            Some(output),
+            "{vendor} was not found, or was found under somebody else's name"
+        );
+    }
+}
+
+/// **A document read whole must be replaced, not added to.**
+///
+/// This is the whole reason `Whole` exists beside `Files`. A task log is a
+/// JSON array the extension rewrites as it grows, so the second pass sees
+/// the first request again — and a bookkeeper that accumulated the way the
+/// append-only one does would bill it twice, with the number climbing
+/// every time the user did anything.
+///
+/// Both halves are asserted, because either alone passes for the wrong
+/// reason: a meter that never re-read the file would satisfy "the first
+/// request was billed once" and fail to see the second.
+#[test]
+fn a_rewritten_task_document_is_not_billed_twice() {
+    let root = std::env::temp_dir().join(format!("khor-usage-roo-{}", std::process::id()));
+    let task = root.join("task-1");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&task).unwrap();
+    let log = task.join(roo::LOG);
+    let request = |at: &str, tokens: u64| {
+        format!(
+            r#"{{"type":"say","say":"api_req_started","ts":"{at}","text":"{{\"tokensIn\":{tokens},\"tokensOut\":1}}"}}"#
+        )
+    };
+    std::fs::write(&log, format!("[{}]", request("2026-08-17T01:00:00Z", 10))).unwrap();
+
+    let meter = roo::Roo::at("roocode", root.clone());
+    let first = meter.tally();
+    assert_eq!(first.kept.len(), 1, "one request in the file, one record");
+
+    // The extension answers again and rewrites the whole array.
+    std::fs::write(
+        &log,
+        format!(
+            "[{},{}]",
+            request("2026-08-17T01:00:00Z", 10),
+            request("2026-08-17T01:00:05Z", 20)
+        ),
+    )
+    .unwrap();
+    let second = meter.tally();
+    let spent: u64 = second.kept.iter().map(|k| k.tokens.input).sum();
+    // The sum first and the count second, so that the failure this exists
+    // for is the one that speaks: an accumulating bookkeeper says 40 here,
+    // and 40 is the number a user would watch climb.
+    assert_eq!(spent, 30, "10 and 20, each once");
+    assert_ne!(spent, 40, "the first request was billed again on the second pass");
+    assert_eq!(second.kept.len(), 2, "two requests in the file, two records");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// **What it cannot read, it counts — and a half-written line is not
 /// that.**
 ///
@@ -450,8 +589,8 @@ fn three_agents_share_a_reader_and_none_of_them_share_a_name() {
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
     assert_eq!(
-        usage.unreadable, 8,
-        "three from claude's tree, one from codex's, two from gemini's, two from pi's"
+        usage.unreadable, 10,
+        "three from claude, one from codex, two from gemini, two from pi, two from roo"
     );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),
@@ -502,10 +641,13 @@ fn each_row_carries_the_name_of_the_meter_that_read_it() {
         listed,
         vec![
             ("2026-08-17", "claude", 563),
+            ("2026-08-17", "cline", 3),
             ("2026-08-17", "codex", 150),
             ("2026-08-17", "gemini", 155),
+            ("2026-08-17", "kilocode", 4),
             ("2026-08-17", "kimchi", 4),
             ("2026-08-17", "pi", 593),
+            ("2026-08-17", "roocode", 52),
             ("2026-08-17", "senpi", 2),
             ("2026-08-18", "claude", 4),
             ("2026-08-18", "codex", 20),

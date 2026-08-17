@@ -195,6 +195,9 @@ impl Meters {
         for (vendor, root) in pi::ROOTS {
             meters.push(Box::new(pi::PiFormat::at(vendor, home.join(root))));
         }
+        for (vendor, root) in roo::roots() {
+            meters.push(Box::new(roo::Roo::at(vendor, home.join(root))));
+        }
         Meters { meters, cached: Mutex::new(None), passes: AtomicU64::new(0) }
     }
 
@@ -441,6 +444,34 @@ fn jsonl_under(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Every file called `name` under `root`, at any depth, sorted.
+///
+/// The sibling of [`jsonl_under`] for vendors that keep one document per
+/// task in a directory of its own — the name is the whole match, because
+/// those directories hold several JSON files and only one of them is the
+/// log ([`roo`]).
+fn named_under(root: &Path, name: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let path = e.path();
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(path),
+                Ok(t) if t.is_file() => {
+                    if path.file_name().and_then(|x| x.to_str()) == Some(name) {
+                        out.push(path);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// What one line was to a meter.
 pub enum Read {
     /// Nothing was missed: the meter either counted this line or knows it
@@ -599,6 +630,80 @@ impl<S: Default> Files<S> {
             }
         }
         (at, unreadable)
+    }
+}
+
+/// A meter's memory of files it has to read **whole**.
+///
+/// The opposite bookkeeping from [`Files`], and the difference is forced
+/// rather than chosen: a JSON document is rewritten in place as it grows
+/// — the closing bracket moves — so there is no offset to resume from and
+/// no half-written line to forgive. Each pass re-reads a file whose size
+/// or mtime moved and **replaces** what it knew about it.
+///
+/// **Replacing is the whole of it.** [`Files`] adds each pass's findings
+/// to what it already had, because it only ever reads bytes it has never
+/// seen. An implementation that did the same here would bill every task
+/// in a file again every time anything in that file changed, and the
+/// number would climb while the user did nothing. The unreadable count is
+/// replaced for the same reason.
+///
+/// Size **and** mtime, where [`Shape`] uses size and mtime across a whole
+/// tree: an edit that leaves a JSON document exactly as long as it was is
+/// not what a log does, but it is precisely what rewriting one entry in
+/// place looks like.
+struct Whole<S> {
+    by_path: HashMap<PathBuf, WholeFile<S>>,
+}
+
+/// One file as it was last read.
+struct WholeFile<S> {
+    len: u64,
+    modified_ms: i64,
+    state: S,
+    unreadable: u64,
+}
+
+impl<S> Default for Whole<S> {
+    fn default() -> Whole<S> {
+        Whole { by_path: HashMap::new() }
+    }
+}
+
+impl<S> Whole<S> {
+    /// Brings every file in `present` up to date, then hands the caller
+    /// each one's state. `present` must be sorted; a file that vanished
+    /// takes its records with it, for [`Files::refresh`]'s reason.
+    fn refresh(
+        &mut self,
+        present: Vec<PathBuf>,
+        mut parse: impl FnMut(&Path) -> (S, u64),
+    ) -> (Vec<&S>, u64) {
+        self.by_path.retain(|p, _| present.binary_search(p).is_ok());
+        for path in present {
+            let meta = std::fs::metadata(&path).ok();
+            let len = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let modified_ms = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            if let Some(had) = self.by_path.get(&path) {
+                if had.len == len && had.modified_ms == modified_ms {
+                    continue;
+                }
+            }
+            let (state, unreadable) = parse(&path);
+            self.by_path.insert(path, WholeFile { len, modified_ms, state, unreadable });
+        }
+        let mut unreadable = 0u64;
+        let mut states = Vec::with_capacity(self.by_path.len());
+        for held in self.by_path.values() {
+            unreadable = unreadable.saturating_add(held.unreadable);
+            states.push(&held.state);
+        }
+        (states, unreadable)
     }
 }
 
@@ -1292,6 +1397,201 @@ pub mod pi {
             }
             loose.extend(best.into_values().copied());
             Tally { kept: loose, unreadable }
+        }
+    }
+}
+
+pub mod roo {
+    //! Roo Code, Cline and Kilo Code: one task per directory, one JSON
+    //! document per task.
+    //!
+    //! These three are VS Code extensions rather than command-line agents,
+    //! and they keep `tasks/<taskId>/ui_messages.json` — an **array**, not
+    //! a log, holding every message the panel drew. A request khor can
+    //! bill is an entry with `"type": "say"` and `"say":
+    //! "api_req_started"`, whose `text` is **itself a JSON document, as a
+    //! string**, carrying `tokensIn` / `tokensOut` / `cacheReads` /
+    //! `cacheWrites`. Those four map onto khor's four with no arithmetic.
+    //!
+    //! # Why this one needed new machinery
+    //!
+    //! Everything above it here reads append-only logs and remembers how
+    //! far it got ([`Files`]). A JSON array is rewritten in place as it
+    //! grows, so there is nothing to resume from — hence [`Whole`], which
+    //! re-reads a changed file and **replaces** what it knew. That is also
+    //! why nothing here deduplicates: each `api_req_started` is one
+    //! request, and a second reading of the file replaces the first rather
+    //! than adding to it. **Those two facts hold each other up** — reading
+    //! whole while accumulating would bill every task again on every
+    //! change.
+    //!
+    //! # Twelve roots, three names
+    //!
+    //! Each extension keeps its tasks under VS Code's `globalStorage`,
+    //! which sits in a different place on every platform and in a fifth
+    //! for a remote server. khor registers one meter per (extension,
+    //! location) and lets them all stamp their own three names, so a
+    //! machine that has the same extension locally and over `vscode-server`
+    //! has both counted without either root knowing about the other.
+    //! Directories that are not there cost one failed `read_dir`.
+    //!
+    //! # Upstream knowledge, and thinner than the others
+    //!
+    //! **No sample of any of these three has ever been on this machine**,
+    //! and the fixture is upstream's own test document copied across
+    //! rather than one written from reading their parser — a fixture
+    //! derived from the same misreading as the implementation would agree
+    //! with it forever.
+    //!
+    //! This format also gives khor **less to check itself against than any
+    //! other**: there is no per-record total, so the trick gemini and the
+    //! Pi format allow — asking the vendor's own sum whether khor read the
+    //! fields right — is not available. The drift alarm here is therefore
+    //! **presence, not arithmetic**: an `api_req_started` payload khor can
+    //! parse in which *none* of the four names appears is counted
+    //! [`Read::Unreadable`], because a renamed field would otherwise read
+    //! as a request that cost nothing. A payload with some of them and not
+    //! others is taken at face value, which is the one gap left open here.
+
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{named_under, Kept, Meter, Tally, Whole};
+
+    /// The three extensions, and the id each one stores under.
+    pub const EXTENSIONS: [(&str, &str); 3] = [
+        ("roocode", "rooveterinaryinc.roo-cline"),
+        ("cline", "saoudrizwan.claude-dev"),
+        ("kilocode", "kilocode.kilo-code"),
+    ];
+
+    /// Where VS Code keeps `globalStorage`, per platform, relative to the
+    /// home khor was rooted at. All of them are looked in on every
+    /// platform: the cost of a wrong guess is one `read_dir` that fails,
+    /// and the cost of guessing right only for this machine is a user on
+    /// another one whose tokens quietly do not exist.
+    pub const STORAGES: [&str; 4] = [
+        "Library/Application Support/Code/User/globalStorage",
+        ".config/Code/User/globalStorage",
+        "AppData/Roaming/Code/User/globalStorage",
+        ".vscode-server/data/User/globalStorage",
+    ];
+
+    /// The file inside a task directory that holds the requests. The
+    /// directory holds others (`api_conversation_history.json` among
+    /// them), so the name is the whole match.
+    pub const LOG: &str = "ui_messages.json";
+
+    /// Every (vendor, root) this format is read from, relative to a home.
+    pub fn roots() -> Vec<(&'static str, PathBuf)> {
+        let mut out = Vec::with_capacity(EXTENSIONS.len() * STORAGES.len());
+        for (vendor, extension) in EXTENSIONS {
+            for storage in STORAGES {
+                out.push((vendor, PathBuf::from(storage).join(extension).join("tasks")));
+            }
+        }
+        out
+    }
+
+    pub struct Roo {
+        vendor: &'static str,
+        root: PathBuf,
+        files: Mutex<Whole<Vec<Kept>>>,
+    }
+
+    impl Roo {
+        pub fn at(vendor: &'static str, root: PathBuf) -> Roo {
+            Roo { vendor, root, files: Mutex::new(Whole::default()) }
+        }
+    }
+
+    /// The four numbers off one `api_req_started` payload, or nothing when
+    /// it names none of them. See the module head on why presence is the
+    /// test here and arithmetic is elsewhere.
+    fn tokens_of(payload: &serde_json::Value) -> Option<Tokens> {
+        let n = |k: &str| payload.get(k).and_then(serde_json::Value::as_u64);
+        let (input, output, cache_read, cache_write) =
+            (n("tokensIn"), n("tokensOut"), n("cacheReads"), n("cacheWrites"));
+        if input.is_none() && output.is_none() && cache_read.is_none() && cache_write.is_none() {
+            return None;
+        }
+        Some(Tokens {
+            input: input.unwrap_or(0),
+            cached_input: cache_read.unwrap_or(0),
+            cache_write: cache_write.unwrap_or(0),
+            output: output.unwrap_or(0),
+        })
+    }
+
+    /// The entry's clock, which this format writes either as a time or as
+    /// milliseconds since the epoch — both occur in upstream's own tests.
+    fn instant_of(ts: Option<&serde_json::Value>) -> Option<jiff::Timestamp> {
+        let ts = ts?;
+        if let Some(text) = ts.as_str() {
+            return text.parse().ok();
+        }
+        jiff::Timestamp::from_millisecond(ts.as_i64()?).ok()
+    }
+
+    /// One task's whole document.
+    fn parse(path: &Path) -> (Vec<Kept>, u64) {
+        let mut kept = Vec::new();
+        let Ok(text) = std::fs::read_to_string(path) else {
+            // Unopenable is not misread, the same call `Files::fold`
+            // makes: nothing is remembered, so a later pass may still get
+            // it.
+            return (kept, 0);
+        };
+        let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
+            // **One count for the document, not one per entry.** khor
+            // cannot see the entries to count them, and a number that
+            // depended on how big the unreadable thing was would tell
+            // nobody anything.
+            return (kept, 1);
+        };
+        let mut unreadable = 0u64;
+        for entry in entries {
+            let say = |k: &str| entry.get(k).and_then(serde_json::Value::as_str);
+            if say("type") != Some("say") || say("say") != Some("api_req_started") {
+                continue;
+            }
+            // From here down every failure is a request that plainly
+            // billed something and khor could not read — which is the
+            // opposite of upstream, where a malformed payload is skipped
+            // in silence. Silence is the one thing this count exists to
+            // prevent.
+            let Some(payload) = say("text")
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+            else {
+                unreadable += 1;
+                continue;
+            };
+            let (Some(tokens), Some(at)) = (tokens_of(&payload), instant_of(entry.get("ts")))
+            else {
+                unreadable += 1;
+                continue;
+            };
+            kept.push(Kept { at, tokens });
+        }
+        (kept, unreadable)
+    }
+
+    impl Meter for Roo {
+        fn vendor(&self) -> &'static str {
+            self.vendor
+        }
+
+        fn root(&self) -> PathBuf {
+            self.root.clone()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(named_under(&self.root, LOG), parse);
+            let kept = states.into_iter().flat_map(|s| s.iter().copied()).collect();
+            Tally { kept, unreadable }
         }
     }
 }
