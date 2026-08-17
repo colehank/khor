@@ -178,6 +178,11 @@ fn handle(
         "history" => to_json(&khor_gui_core::chat::history(root, &arg("id")?)?),
         "ls" => to_json(&rt.block_on(khor_gui_core::files::ls(root, &arg("machine")?, &arg("path")?))?),
         "pull" => to_json(&rt.block_on(khor_gui_core::files::pull(root, &arg("machine")?, &arg("path")?))?),
+        "dir_pins" => to_json(&khor_gui_core::files::dir_pins(root)?),
+        "pin_dir" => {
+            khor_gui_core::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
+            Ok("null".to_owned())
+        }
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

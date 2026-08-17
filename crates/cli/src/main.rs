@@ -634,6 +634,9 @@ fn pinning(rest: &[String], on: bool) -> Result<(), String> {
     let n = node()?;
     match rest {
         [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
+        [flag, machine, path] if flag == "-d" || flag == "--dir" => {
+            n.pin_dir(machine, path, on)
+        }
         [id] => n.pin_session(&SessionId(id.clone()), on),
         _ => Err(USAGE.into()),
     }

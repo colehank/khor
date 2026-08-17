@@ -323,6 +323,9 @@ impl Node {
                 } else if doc == "pins" {
                     let mut loaded = self.pins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "dirpins" {
+                    let mut loaded = self.dirpins_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
                         .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
@@ -971,6 +974,17 @@ impl Node {
         {
             let mut loaded = self.pins_loaded()?;
             moved += self.rounds(&conn, "pins", &mut loaded).await?;
+        }
+        // Directory pins too — a shortcut chosen on the phone must be
+        // there when the desk opens the same machine's disk. Best
+        // effort, unlike the two above: a peer that predates the table
+        // refuses the doc by name, and that refusal must not cost the
+        // chat rounds behind it — it only means older shortcuts there.
+        {
+            let mut loaded = self.dirpins_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "dirpins", &mut loaded).await {
+                moved += n;
+            }
         }
         for ch in self.known_channels()? {
             let dir = chat::channel_dir(self.root(), &ch)

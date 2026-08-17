@@ -37,6 +37,7 @@ use khor_catalog::msg;
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
+use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::pins::{pins_dir, PinDoc};
 use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
@@ -402,6 +403,10 @@ impl Node {
         load(&pins_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn dirpins_loaded(&self) -> Result<Loaded<DirPinDoc>, String> {
+        load(&dirpins_dir(&self.root), self.peer)
+    }
+
     /// Raises a session's seen watermark and persists it. The watermark
     /// travels the network (docs/NET.md): clear here, clear
     /// everywhere on the next sync.
@@ -520,6 +525,37 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         self.emit_row_of(id)
+    }
+
+    /// Pins or unpins a directory on a machine, for everyone. The key
+    /// carries the machine because a bare path exists on every disk in
+    /// the mesh (`khor_sync::dirpins` module head); the path must be
+    /// absolute for the reason `Ls` demands it — a relative pin names
+    /// nowhere.
+    pub fn pin_dir(&self, machine: &str, path: &str, on: bool) -> Result<(), String> {
+        if !std::path::Path::new(path).is_absolute() {
+            return Err(msg::path_not_absolute(path));
+        }
+        let (_, home) = self.resolve(machine)?;
+        let loaded = self.dirpins_loaded()?;
+        loaded.doc.set(&khor_sync::dirpins::key(&home.hex(), path), on)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Every pinned directory, as `(device_hex, path)` in the table's
+    /// order (sorted keys — grouped by machine for free). Keys some
+    /// other version spelled differently are skipped, never guessed at.
+    pub fn dir_pins(&self) -> Result<Vec<(String, String)>, String> {
+        Ok(self
+            .dirpins_loaded()?
+            .doc
+            .all()
+            .iter()
+            .filter_map(|k| {
+                khor_sync::dirpins::split(k).map(|(d, p)| (d.to_owned(), p.to_owned()))
+            })
+            .collect())
     }
 
     /// Pins or unpins a machine, for everyone. Named the way people

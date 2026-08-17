@@ -60,3 +60,39 @@ fn dirs_download() -> std::path::PathBuf {
     let dl = home.join("Downloads");
     if dl.is_dir() { dl } else { home }
 }
+
+/// One pinned directory, with the machine's current name looked up
+/// here — the pin is keyed by device id (`khor_sync::dirpins`), and a
+/// machine that left the table keeps its pin under a short hex: the
+/// path is still real on that disk, and hiding it would make an unpin
+/// impossible from everywhere.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DirPinRow {
+    pub device: String,
+    pub name: String,
+    pub path: String,
+}
+
+pub fn dir_pins(root: &Path) -> Result<Vec<DirPinRow>, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let devices = n.devices()?;
+    Ok(n
+        .dir_pins()?
+        .into_iter()
+        .map(|(device, path)| DirPinRow {
+            name: devices
+                .iter()
+                .find(|d| d.id == device)
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| device.chars().take(8).collect()),
+            device,
+            path,
+        })
+        .collect())
+}
+
+/// Pins or unpins a directory — the call `khor pin -d` makes. `on` is
+/// explicit for the reason every pin API's is (`api.ts`).
+pub fn pin_dir(root: &Path, machine: &str, path: &str, on: bool) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.pin_dir(machine, path, on)
+}

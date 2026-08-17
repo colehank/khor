@@ -17,5 +17,6 @@ fn main() {
     khor_node::Usage::export_all_to(&dir).expect("export Usage");
     khor_gui_core::chat::ChatBatch::export_all_to(&dir).expect("export ChatBatch");
     khor_gui_core::files::DirListing::export_all_to(&dir).expect("export DirListing");
+    khor_gui_core::files::DirPinRow::export_all_to(&dir).expect("export DirPinRow");
     println!("bindings -> {}", dir.display());
 }

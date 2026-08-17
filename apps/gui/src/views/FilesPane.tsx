@@ -11,8 +11,8 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
-import { fetchLs, pullFile, type DirListing } from "@/api";
-import { IconBack } from "@/components/icons";
+import { fetchDirPins, fetchLs, pinDir, pullFile, type DirListing } from "@/api";
+import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -35,17 +35,26 @@ type Took = { path: string; state: "taking" | "landed" | "failed"; word: string 
 
 export function FilesPane({
   machine,
+  device,
+  initialPath = "",
   narrow,
   onBack,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
+  /** Its device id — what a directory pin is keyed by. */
+  device: string;
+  /** Where to open; "" is that machine's home. */
+  initialPath?: string;
   narrow: boolean;
   onBack: () => void;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [took, setTook] = useState<Took | null>(null);
+  // This machine's pinned paths. Refreshed with the pins call itself:
+  // each toggle answers by re-asking, so the mark never guesses.
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
 
   const navigate = (path: string) => {
     fetchLs(machine, path)
@@ -56,12 +65,26 @@ export function FilesPane({
       // The message is the node's, in the catalog's words.
       .catch((e) => setError(String(e instanceof Error ? e.message : e)));
   };
-  // The pane opens at the machine's home — "" is the ask, and the
+  const loadPins = () => {
+    fetchDirPins()
+      .then((rows) =>
+        setPinned(new Set(rows.filter((r) => r.device === device).map((r) => r.path))),
+      )
+      .catch(() => {});
+  };
+  // The pane opens where it was pointed — "" asks for home, and the
   // answer carries the real path so the way down can be spelled.
   useEffect(() => {
-    navigate("");
+    navigate(initialPath);
+    loadPins();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine]);
+  }, [machine, initialPath]);
+
+  const togglePin = (path: string) => {
+    pinDir(machine, path, !pinned.has(path))
+      .then(loadPins)
+      .catch(() => {});
+  };
 
   const up = () => {
     if (!listing) return;
@@ -120,18 +143,38 @@ export function FilesPane({
               const full = `${listing.path === "/" ? "" : listing.path}/${e.name}`;
               const faded = e.name.startsWith(".");
               return e.dir ? (
-                <button
+                <div
                   key={e.name}
-                  type="button"
-                  data-dir={e.name}
-                  onClick={() => navigate(full)}
                   className={cn(
-                    "flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-muted/50",
+                    "group flex items-center pr-2 hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate">{e.name}/</span>
-                </button>
+                  <button
+                    type="button"
+                    data-dir={e.name}
+                    onClick={() => navigate(full)}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{e.name}/</span>
+                  </button>
+                  {/* The two states get the two words the row action rule
+                      demands; the mark stays visible once set. */}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    data-pin-dir={e.name}
+                    data-on={pinned.has(full)}
+                    aria-label={pinned.has(full) ? gui.unpin : gui.pin}
+                    className={cn(
+                      "flex-none text-muted-foreground",
+                      !pinned.has(full) && "invisible group-hover:visible",
+                    )}
+                    onClick={() => togglePin(full)}
+                  >
+                    <IconPin pinned={pinned.has(full)} />
+                  </Button>
+                </div>
               ) : (
                 <div
                   key={e.name}

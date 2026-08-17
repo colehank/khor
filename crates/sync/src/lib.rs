@@ -10,6 +10,7 @@
 pub mod chat;
 pub mod devices;
 mod glue;
+pub mod dirpins;
 pub mod pins;
 pub mod plan;
 pub mod seen;

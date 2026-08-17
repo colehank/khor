@@ -11,6 +11,7 @@ import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
+import type { DirPinRow } from "./gen/bindings/DirPinRow";
 
 export type {
   SessionRow,
@@ -23,6 +24,7 @@ export type {
   ChatBatch,
   ChatFrame,
   DirListing,
+  DirPinRow,
 };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
@@ -108,3 +110,7 @@ export const fetchLs = (machine: string, path: string) =>
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>
   call<string>("pull", { machine, path });
+/** Every pinned directory, machine names already looked up. */
+export const fetchDirPins = () => call<DirPinRow[]>("dir_pins");
+export const pinDir = (machine: string, path: string, on: boolean) =>
+  call<null>("pin_dir", { machine, path, on });

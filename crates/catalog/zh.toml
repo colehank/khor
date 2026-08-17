@@ -106,8 +106,11 @@ usage = """
   attach <session>      接上一个持久 session(Ctrl-\\ 断开)
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
-  pin [-m] <session|机器>   置顶(-m 钉机器);钉在哪台都一样,全网同一份
-  unpin [-m] <session|机器> 取消置顶
+  pin [-m|-d] <session|机器|机器 路径>
+                        置顶(-m 钉机器,-d 钉某台机器上的目录);
+                        钉在哪台都一样,全网同一份
+  unpin [-m|-d] <session|机器|机器 路径>
+                        取消置顶
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
   hooks [install|uninstall]
@@ -587,3 +590,7 @@ empty-dir = "空目录"
 # that collects messages).
 take-file = "拉过来"
 took-file = "落在 {0}"
+# The files landing before a machine is picked: the pinned shortcuts.
+# Empty says what would be here — a blank region reads as broken, and
+# this one has no machine list to explain it.
+no-pinned-dirs = "还没有钉住的目录"

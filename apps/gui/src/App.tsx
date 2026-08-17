@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { FilesPane } from "@/views/FilesPane";
+import { PinnedDirs } from "@/views/PinnedDirs";
 import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
@@ -257,8 +258,9 @@ export default function App() {
   // …and the machine whose files are open, apart from both: the files
   // landing asks a different question of a machine than the devices
   // landing does, and sharing the variable would have browsing a disk
-  // flip which machine card the devices pane shows.
-  const [browsedDevice, setBrowsedDevice] = useState<string | null>(null);
+  // flip which machine card the devices pane shows. The path rides
+  // along so a pinned shortcut can open straight where it points.
+  const [browse, setBrowse] = useState<{ device: string; path: string } | null>(null);
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">("list");
   const [stale, setStale] = useState(false);
@@ -350,7 +352,7 @@ export default function App() {
   }, []);
 
   const onBrowseDevice = useCallback((row: DeviceRow) => {
-    setBrowsedDevice(row.id);
+    setBrowse({ device: row.id, path: "" });
     setScreen("detail");
   }, []);
 
@@ -637,7 +639,7 @@ export default function App() {
                   ? onBrowseDevice
                   : undefined
             }
-            selected={landing === "files" ? browsedDevice : selectedDevice}
+            selected={landing === "files" ? (browse?.device ?? null) : selectedDevice}
             pinFailed={pinFailed}
           />
         )}
@@ -658,17 +660,28 @@ export default function App() {
   // now — the whole mesh, which is what that pane is about — so the space
   // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
-  const browsed = devices.find((d) => d.id === browsedDevice) ?? null;
+  const browsed = browse ? (devices.find((d) => d.id === browse.device) ?? null) : null;
   const detail = sessions ? (
     <DetailPane row={selectedRow} narrow={narrow} onBack={() => setScreen("list")} />
-  ) : landing === "files" && browsed ? (
-    // Keyed so switching machines restarts the browse at that
-    // machine's home — a path from one disk means nothing on another.
+  ) : landing === "files" && browse && browsed ? (
+    // Keyed so switching machines or shortcuts restarts the browse
+    // where it points — a path from one disk means nothing on another.
     <FilesPane
-      key={browsed.id}
+      key={`${browse.device}:${browse.path}`}
       machine={browsed.name}
+      device={browsed.id}
+      initialPath={browse.path}
       narrow={narrow}
       onBack={() => setScreen("list")}
+    />
+  ) : landing === "files" ? (
+    // Before a machine is picked: the pinned shortcuts, each a jump
+    // straight to a directory somebody chose to keep close.
+    <PinnedDirs
+      onOpen={(device, path) => {
+        setBrowse({ device, path });
+        setScreen("detail");
+      }}
     />
   ) : landing === "devices" && !openDevice ? (
     <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />

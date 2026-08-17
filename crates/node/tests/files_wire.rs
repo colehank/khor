@@ -166,6 +166,21 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         other => panic!("an unpaired fetch-path must be refused, got {other:?}"),
     }
 
+    // A directory pinned on beta names alpha's disk, and reaches alpha
+    // over the same pump as every replicated decision — pin here,
+    // listed there.
+    b.pin_dir("alpha", browse.to_str().unwrap(), true).unwrap();
+    timeout(Duration::from_secs(20), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let pins = a.dir_pins().unwrap();
+    let alpha_hex = a.device_str();
+    assert!(
+        pins.iter().any(|(d, p)| d == alpha_hex && p == browse.to_str().unwrap()),
+        "a pin made on beta must reach alpha: {pins:?}"
+    );
+
     serve_a.abort();
     let _ = fs::remove_dir_all(&ra);
     let _ = fs::remove_dir_all(&rb);

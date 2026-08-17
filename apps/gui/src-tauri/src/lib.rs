@@ -141,6 +141,16 @@ async fn pull(machine: String, path: String) -> Result<String, String> {
     khor_gui_core::files::pull(&Node::root_from_env(), &machine, &path).await
 }
 
+#[tauri::command]
+fn dir_pins() -> Result<Vec<khor_gui_core::files::DirPinRow>, String> {
+    khor_gui_core::files::dir_pins(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
+    khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
+}
+
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
@@ -199,6 +209,8 @@ pub fn run() {
             history,
             ls,
             pull,
+            dir_pins,
+            pin_dir,
             invite,
             pair
         ])
