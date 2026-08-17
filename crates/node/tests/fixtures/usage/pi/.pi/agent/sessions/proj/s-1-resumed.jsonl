@@ -1,0 +1,3 @@
+{"type": "session", "version": 1, "id": "pi-sess-1", "timestamp": "2026-08-17T01:00:00.000Z", "cwd": "/x"}
+{"type": "message", "id": "p-A", "timestamp": "2026-08-17T01:00:01.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 100, "output": 20, "cacheRead": 30, "cacheWrite": 5, "totalTokens": 155}}}
+{"type": "message", "id": "p-E", "timestamp": "2026-08-17T01:00:07.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 4, "output": 2, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 6}}}

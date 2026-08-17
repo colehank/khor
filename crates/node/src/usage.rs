@@ -182,16 +182,20 @@ impl Meters {
     }
 
     /// The vendors under `home`.
+    ///
+    /// A vendor whose directory is not there reads nothing and costs one
+    /// failed `read_dir`, which is what makes it cheap to know about
+    /// agents nobody here runs (see [`pi`]).
     pub fn at(home: &Path) -> Meters {
-        Meters {
-            meters: vec![
-                Box::new(claude::Claude::at(home.join(".claude"))),
-                Box::new(codex::Codex::at(home.join(".codex"))),
-                Box::new(gemini::Gemini::at(home.join(".gemini"))),
-            ],
-            cached: Mutex::new(None),
-            passes: AtomicU64::new(0),
+        let mut meters: Vec<Box<dyn Meter>> = vec![
+            Box::new(claude::Claude::at(home.join(".claude"))),
+            Box::new(codex::Codex::at(home.join(".codex"))),
+            Box::new(gemini::Gemini::at(home.join(".gemini"))),
+        ];
+        for (vendor, root) in pi::ROOTS {
+            meters.push(Box::new(pi::PiFormat::at(vendor, home.join(root))));
         }
+        Meters { meters, cached: Mutex::new(None), passes: AtomicU64::new(0) }
     }
 
     /// Adds one meter. How a test names its own vendor.
@@ -1083,6 +1087,211 @@ pub mod gemini {
                 }
             }
             Tally { kept: best.into_values().copied().collect(), unreadable }
+        }
+    }
+}
+
+pub mod pi {
+    //! The Pi format, and the three agents that write it.
+    //!
+    //! `badlogic/pi-mono` publishes a session format that its descendants
+    //! kept: one JSONL file per session, a `{"type":"session"}` header
+    //! carrying the session id, then `{"type":"message"}` entries whose
+    //! `message.usage` is already spelled in khor's own four names —
+    //! `input`, `output`, `cacheRead`, `cacheWrite`. Nothing has to be
+    //! subtracted or added; of the three vendors above, only this one
+    //! needed no arithmetic at all.
+    //!
+    //! # Three vendors, one reader, and why that is not a shortcut
+    //!
+    //! Pi, Senpi (OmO Native) and Kimchi differ in **where** they keep
+    //! their sessions and in nothing else that matters here — upstream
+    //! says so by having two of the three delegate to the first one's
+    //! parser outright. So the vendor name and the root are the parameters
+    //! and the reading is shared, which also means a fixture proves the
+    //! reading for all three at once. What a shared reader must not do is
+    //! blur *whose* tokens these were: each root gets its own meter and
+    //! stamps its own name, because a row in the spending list saying
+    //! `pi` when the tokens were Kimchi's is a wrong answer that looks
+    //! right.
+    //!
+    //! # What is verified here and what is borrowed
+    //!
+    //! **Upstream knowledge, not measurement.** This machine has exactly
+    //! one Pi session (`~/.pi/agent/sessions`, 2026-06-27) and **every
+    //! number in it is zero** — a call that failed before it billed
+    //! anything. So it pins the *shape* (khor reads that file without
+    //! counting it unreadable) and pins **nothing about the arithmetic**:
+    //! an implementation that read no numbers at all would agree with it.
+    //! The numbers below are held by the fixture alone, and the two other
+    //! roots have never existed on this machine.
+    //!
+    //! That is the honest half of the trade the ledger asks for: being
+    //! wrong here makes khor read *less* than was spent, never more,
+    //! because a shape khor does not recognise is counted
+    //! ([`Read::Unreadable`]) rather than billed as zero.
+    //!
+    //! # Two places khor deliberately differs from upstream
+    //!
+    //! - **A record with no model is still counted.** Upstream drops it,
+    //!   because it prices tokens per model and cannot price what it
+    //!   cannot name. khor bills no money and never reads the model, so
+    //!   dropping the record would throw away tokens somebody spent for a
+    //!   reason khor does not have.
+    //! - **Deduplication is scoped to the session**, which is upstream's
+    //!   default (`parse_pi_format_file`). Message ids in this format are
+    //!   per-session — the upstream tests use `msg_001` — so merging on a
+    //!   bare id across files would collapse two different agents' first
+    //!   answers into one. Upstream lets one client opt into a
+    //!   cross-session key; khor waits for a real sample that needs it
+    //!   rather than guessing which way the collision goes.
+
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use khor_core::Tokens;
+
+    use super::{at_of, Files, Kept, Meter, Read, Tally};
+
+    /// Every agent known to write this format, and where each keeps its
+    /// sessions, relative to the home khor was rooted at.
+    ///
+    /// A table rather than three modules because the difference between
+    /// these three genuinely is two strings — and the moment one of them
+    /// needs a fourth, it stops being a row here and becomes its own
+    /// meter, the same way `gemini` is.
+    pub const ROOTS: [(&str, &str); 3] = [
+        ("pi", ".pi/agent/sessions"),
+        ("senpi", ".senpi/agent/sessions"),
+        ("kimchi", ".config/kimchi/harness/sessions"),
+    ];
+
+    /// One session file's answers, and the session they belong to.
+    #[derive(Default)]
+    pub struct Session {
+        /// From the header line. Kept in the state rather than re-read,
+        /// because a later pass reads only the file's tail and the header
+        /// is long behind it.
+        id: Option<String>,
+        best: HashMap<String, Kept>,
+    }
+
+    pub struct PiFormat {
+        vendor: &'static str,
+        root: PathBuf,
+        files: Mutex<Files<Session>>,
+    }
+
+    impl PiFormat {
+        pub fn at(vendor: &'static str, root: PathBuf) -> PiFormat {
+            PiFormat { vendor, root, files: Mutex::new(Files::default()) }
+        }
+    }
+
+    /// The four names off one `usage`, or nothing when this is a shape
+    /// khor has stopped understanding.
+    ///
+    /// `reasoning` is read by upstream and deliberately not added: this
+    /// format documents it as a **subset of** `output`, which is the same
+    /// finding codex gives and the opposite of gemini's. Each vendor is
+    /// asked rather than assumed.
+    fn tokens_of(usage: &serde_json::Value) -> Option<Tokens> {
+        let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        let (input, output, cache_read, cache_write) =
+            (n("input"), n("output"), n("cacheRead"), n("cacheWrite"));
+        // The same drift alarm gemini gets, on this format's own total:
+        // a record that says it spent something while every name khor
+        // knows reads zero is a renamed field, not a free answer.
+        let silent = input == 0 && output == 0 && cache_read == 0 && cache_write == 0;
+        let total = usage.get("totalTokens").and_then(serde_json::Value::as_u64);
+        if silent && total.is_some_and(|t| t > 0) {
+            return None;
+        }
+        Some(Tokens {
+            input,
+            cached_input: cache_read,
+            cache_write,
+            output,
+        })
+    }
+
+    fn fold(session: &mut Session, v: &serde_json::Value) -> Read {
+        match v.get("type").and_then(serde_json::Value::as_str) {
+            Some("session") => {
+                // The header, and the only line that says which session
+                // this file is. A file without one is still read; it just
+                // never merges with another (see `tally`).
+                if let Some(id) = v.get("id").and_then(serde_json::Value::as_str) {
+                    session.id = Some(id.to_owned());
+                }
+                return Read::Fine;
+            }
+            Some("message") => {}
+            _ => return Read::Fine,
+        }
+        let Some(message) = v.get("message") else { return Read::Fine };
+        if message.get("role").and_then(serde_json::Value::as_str) != Some("assistant") {
+            return Read::Fine;
+        }
+        // An assistant turn that bills nothing is a turn, not a failure:
+        // this format writes user and tool records through the same door.
+        let Some(usage) = message.get("usage").filter(|u| u.is_object()) else {
+            return Read::Fine;
+        };
+        let (Some(id), Some(at)) = (
+            v.get("id").and_then(serde_json::Value::as_str),
+            at_of(v, "timestamp"),
+        ) else {
+            return Read::Unreadable;
+        };
+        let Some(tokens) = tokens_of(usage) else {
+            return Read::Unreadable;
+        };
+        match session.best.get(id) {
+            Some(seen) if seen.tokens.output >= tokens.output => {}
+            _ => {
+                session.best.insert(id.to_owned(), Kept { at, tokens });
+            }
+        }
+        Read::Fine
+    }
+
+    impl Meter for PiFormat {
+        fn vendor(&self) -> &'static str {
+            self.vendor
+        }
+
+        fn root(&self) -> PathBuf {
+            self.root.clone()
+        }
+
+        fn tally(&self) -> Tally {
+            let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+            let (states, unreadable) = files.refresh(&self.root, fold);
+            // Session-scoped, so a history copied into a second file is
+            // billed once — and a file that never said which session it
+            // is merges with nothing, rather than merging on an id this
+            // format does not promise to be unique.
+            let mut best: HashMap<String, &Kept> = HashMap::new();
+            let mut loose: Vec<Kept> = Vec::new();
+            for state in states {
+                let Some(session) = state.id.as_deref() else {
+                    loose.extend(state.best.values().copied());
+                    continue;
+                };
+                for (id, kept) in &state.best {
+                    let key = format!("{session}/{id}");
+                    match best.get(&key) {
+                        Some(seen) if seen.tokens.output >= kept.tokens.output => {}
+                        _ => {
+                            best.insert(key, kept);
+                        }
+                    }
+                }
+            }
+            loose.extend(best.into_values().copied());
+            Tally { kept: loose, unreadable }
         }
     }
 }

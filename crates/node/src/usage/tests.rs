@@ -56,6 +56,17 @@ fn gemini_meter() -> gemini::Gemini {
     gemini::Gemini::at(fixture().join("gemini/.gemini"))
 }
 
+/// One of the three agents that write the Pi format, read from the
+/// fixture's copy of its own root.
+fn pi_meter(vendor: &'static str) -> pi::PiFormat {
+    let root = pi::ROOTS
+        .iter()
+        .find(|(name, _)| *name == vendor)
+        .map(|(_, root)| *root)
+        .expect("a vendor this format knows");
+    pi::PiFormat::at(vendor, fixture().join("pi").join(root))
+}
+
 fn claude_days() -> HashMap<String, Tokens> {
     by_day(&claude_meter().tally(), &plus_eight())
 }
@@ -66,6 +77,10 @@ fn codex_days() -> HashMap<String, Tokens> {
 
 fn gemini_days() -> HashMap<String, Tokens> {
     by_day(&gemini_meter().tally(), &plus_eight())
+}
+
+fn pi_days(vendor: &'static str) -> HashMap<String, Tokens> {
+    by_day(&pi_meter(vendor).tally(), &plus_eight())
 }
 
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
@@ -102,6 +117,11 @@ fn fixture_home(tag: &str) -> PathBuf {
         std::os::unix::fs::symlink(fixture().join("codex/.codex"), home.join(".codex")).unwrap();
         std::os::unix::fs::symlink(fixture().join("gemini/.gemini"), home.join(".gemini"))
             .unwrap();
+        // The three Pi-format roots live under one fixture directory, so
+        // that one home wears all of them the way a real one would.
+        for dir in [".pi", ".senpi", ".config"] {
+            std::os::unix::fs::symlink(fixture().join("pi").join(dir), home.join(dir)).unwrap();
+        }
     }
     home
 }
@@ -344,6 +364,75 @@ fn a_renamed_token_field_is_counted_rather_than_billed_as_nothing() {
     );
 }
 
+/// **The Pi format needs no arithmetic, and that is the assertion.**
+///
+/// Its `usage` is already spelled in khor's four names, so the failure
+/// this guards against is not a wrong sum — it is somebody "helpfully"
+/// making it look like its neighbours, subtracting the cache read out of
+/// input the way codex and gemini need. `p-A` is the record that would
+/// catch it: 100 of input beside 30 of cache read, which must stay 100.
+///
+/// `p-D` is the other half: it carries `reasoning: 25`, which this format
+/// documents as already inside `output`. Adding it — which is right for
+/// gemini and wrong here — turns 40 into 65.
+#[test]
+fn the_pi_format_is_carried_across_without_arithmetic() {
+    let spent = pi_days("pi")["2026-08-17"];
+    assert_eq!(
+        spent,
+        tokens(1171, 30, 5, 593),
+        "A(100/30/5/20) B(50/0/0/30) C(7/0/0/1) D(10/0/0/40) E(4/0/0/2) A'(1000/0/0/500)"
+    );
+    assert_ne!(spent.input, 1171 - 30, "the cache read was subtracted out of input");
+    assert_ne!(spent.output, 593 + 25, "p-D's reasoning was added to its output");
+}
+
+/// **One message id means one answer *within a session*, not across the
+/// tree.**
+///
+/// `p-A` appears three times: twice under `pi-sess-1` (a resumed session
+/// copying its history, which must be billed once) and once under
+/// `pi-sess-2` — a different conversation whose first answer happens to
+/// carry the same id, because ids in this format are numbered per
+/// session. Merging on the bare id would collapse the two conversations'
+/// first answers into whichever one produced more, losing the other.
+///
+/// The two failures are opposite and both are named, and **both numbers
+/// were read off a real red rather than worked out on paper**: keying on
+/// the bare id loses 100 (the merge keeps whichever `p-A` produced more
+/// output, which is the second session's), and dropping the merge
+/// altogether adds 100.
+#[test]
+fn a_message_id_belongs_to_its_session_and_not_to_the_tree() {
+    let spent = pi_days("pi")["2026-08-17"];
+    assert_ne!(
+        spent.input, 1071,
+        "the two sessions' p-A collided on a bare id and one of them was dropped"
+    );
+    assert_ne!(spent.input, 1271, "the resumed file billed p-A a second time");
+    assert_eq!(spent.input, 1171);
+}
+
+/// **One reader, three vendors, and each row keeps its own name.**
+///
+/// Pi, Senpi and Kimchi share a parser because upstream says they share a
+/// format — so the thing worth asserting is the half that sharing could
+/// break: which name the tokens land under. A reader that stamped a
+/// constant, or the first vendor's name, would satisfy every other
+/// assertion in this file.
+#[cfg(unix)]
+#[test]
+fn three_agents_share_a_reader_and_none_of_them_share_a_name() {
+    let usage = both("pi-family");
+    for (vendor, output) in [("pi", 593), ("senpi", 2), ("kimchi", 4)] {
+        assert_eq!(
+            day(&usage, "2026-08-17", vendor).map(|t| t.output),
+            Some(output),
+            "{vendor} reads its own root and answers under its own name"
+        );
+    }
+}
+
 /// **What it cannot read, it counts — and a half-written line is not
 /// that.**
 ///
@@ -361,8 +450,8 @@ fn a_renamed_token_field_is_counted_rather_than_billed_as_nothing() {
 fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
     let usage = both("unreadable");
     assert_eq!(
-        usage.unreadable, 6,
-        "three from claude's tree, one from codex's, two from gemini's"
+        usage.unreadable, 8,
+        "three from claude's tree, one from codex's, two from gemini's, two from pi's"
     );
     assert_eq!(
         day(&usage, "2026-08-17", "claude").map(|t| t.output),
@@ -415,6 +504,9 @@ fn each_row_carries_the_name_of_the_meter_that_read_it() {
             ("2026-08-17", "claude", 563),
             ("2026-08-17", "codex", 150),
             ("2026-08-17", "gemini", 155),
+            ("2026-08-17", "kimchi", 4),
+            ("2026-08-17", "pi", 593),
+            ("2026-08-17", "senpi", 2),
             ("2026-08-18", "claude", 4),
             ("2026-08-18", "codex", 20),
             ("2026-08-18", "gemini", 20),

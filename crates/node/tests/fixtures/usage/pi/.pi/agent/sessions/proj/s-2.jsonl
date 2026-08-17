@@ -1,0 +1,2 @@
+{"type": "session", "version": 1, "id": "pi-sess-2", "timestamp": "2026-08-17T01:10:00.000Z", "cwd": "/y"}
+{"type": "message", "id": "p-A", "timestamp": "2026-08-17T01:10:01.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 1000, "output": 500, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 1500}}}

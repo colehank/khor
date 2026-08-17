@@ -1,0 +1,10 @@
+{"type": "session", "version": 1, "id": "pi-sess-1", "timestamp": "2026-08-17T01:00:00.000Z", "cwd": "/x"}
+{"type": "model_change", "id": "mc-1", "timestamp": "2026-08-17T01:00:00.100Z", "provider": "openrouter", "modelId": "a-model"}
+{"type": "message", "id": "u-1", "timestamp": "2026-08-17T01:00:00.200Z", "message": {"role": "user"}}
+{"type": "message", "id": "p-A", "timestamp": "2026-08-17T01:00:01.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 100, "output": 20, "cacheRead": 30, "cacheWrite": 5, "totalTokens": 155}}}
+{"type": "message", "id": "p-B", "timestamp": "2026-08-17T01:00:02.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 50, "output": 3, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 53}}}
+{"type": "message", "id": "p-B", "timestamp": "2026-08-17T01:00:02.500Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 50, "output": 30, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 80}}}
+{"type": "message", "id": "p-C", "timestamp": "2026-08-17T01:00:03.000Z", "message": {"role": "assistant", "provider": "openrouter", "usage": {"input": 7, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 8}}}
+{"type": "message", "id": "p-D", "timestamp": "2026-08-17T01:00:04.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 10, "output": 40, "cacheRead": 0, "cacheWrite": 0, "reasoning": 25, "totalTokens": 50}}}
+{"type": "message", "id": "p-R", "timestamp": "2026-08-17T01:00:05.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"promptTokens": 999, "completionTokens": 1, "totalTokens": 1000}}}
+{"type": "message", "timestamp": "2026-08-17T01:00:06.000Z", "message": {"role": "assistant", "provider": "openrouter", "model": "a-model", "usage": {"input": 11, "output": 12, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 23}}}

@@ -296,6 +296,60 @@ fn khor_can_read_every_spending_record_on_this_machine() {
     assert!(total.output > 0 && total.input > 0, "{total:?}");
 }
 
+/// **khor reads this machine's Pi session, and reading it is not the same
+/// as counting it.**
+///
+/// The check above cannot see this one. Every number in the only Pi
+/// session on this machine is zero — a call that failed before it billed
+/// anything — and a day that spent nothing is not a row
+/// (`khor_node::usage`), so a reader that never opened the file and a
+/// reader that read it perfectly produce **the same** answer up there:
+/// no `pi` row, and nothing counted unreadable.
+///
+/// So this asks the meter directly. It is the only thing standing behind
+/// the claim in `usage::pi` that the format is pinned by a real file
+/// rather than only by a fixture — and it is worth having precisely
+/// because the arithmetic cannot be pinned that way: what it proves is
+/// that khor walks to the right root and parses the record, not that the
+/// numbers are right.
+///
+/// Skips rather than fails where no Pi agent has run: absent is the
+/// normal case for the two roots this machine has never had, and a test
+/// that failed on that would be a test nobody could run anywhere else.
+#[test]
+#[ignore]
+fn khor_reads_this_machines_pi_sessions_if_it_has_any() {
+    use khor_node::usage::{pi, Meter};
+
+    let home = real_home();
+    let mut found = 0;
+    for (vendor, root) in pi::ROOTS {
+        let dir = home.join(root);
+        if !dir.exists() {
+            println!("{vendor}: no {} on this machine, skipped", dir.display());
+            continue;
+        }
+        let tally = pi::PiFormat::at(vendor, dir.clone()).tally();
+        println!(
+            "{vendor}: {} record(s) read from {}, {} unreadable",
+            tally.kept.len(),
+            dir.display(),
+            tally.unreadable
+        );
+        assert_eq!(
+            tally.unreadable, 0,
+            "{vendor} keeps a record khor could not read — the format moved"
+        );
+        assert!(
+            !tally.kept.is_empty(),
+            "{vendor} has a session directory but khor read no record out of it: either the \
+             format moved or the walk is looking in the wrong place"
+        );
+        found += 1;
+    }
+    assert!(found > 0, "no Pi-format agent on this machine — nothing was checked");
+}
+
 /// **What one pass costs, and why the answer is not "cache it".**
 ///
 /// Printed rather than asserted, for the reason `cost.rs` gives: a
