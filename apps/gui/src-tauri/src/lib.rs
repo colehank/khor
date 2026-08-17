@@ -88,6 +88,39 @@ fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
     khor_gui_core::uninstall_hooks(&Node::root_from_env())
 }
 
+/// The six chat commands are one attachment registry in gui-core: the
+/// window polls for frames because that is the shape both skins can
+/// serve (`khor_gui_core::chat` module head).
+#[tauri::command]
+fn chat_open(id: String) -> Result<bool, String> {
+    khor_gui_core::chat::chat_open(&Node::root_from_env(), &id)
+}
+
+#[tauri::command]
+fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
+    khor_gui_core::chat::chat_poll(&id, since)
+}
+
+#[tauri::command]
+fn chat_say(id: String, text: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_say(&id, &text)
+}
+
+#[tauri::command]
+fn chat_answer(id: String, ask: u64, option: Option<String>) -> Result<(), String> {
+    khor_gui_core::chat::chat_answer(&id, ask, option)
+}
+
+#[tauri::command]
+fn chat_replay(id: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_replay(&id)
+}
+
+#[tauri::command]
+fn chat_leave(id: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_leave(&id)
+}
+
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
@@ -137,6 +170,12 @@ pub fn run() {
             hooks_state,
             install_hooks,
             uninstall_hooks,
+            chat_open,
+            chat_poll,
+            chat_say,
+            chat_answer,
+            chat_replay,
+            chat_leave,
             invite,
             pair
         ])

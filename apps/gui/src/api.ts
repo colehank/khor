@@ -8,8 +8,20 @@ import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
+import type { ChatBatch } from "./gen/bindings/ChatBatch";
+import type { ChatFrame } from "./gen/bindings/ChatFrame";
 
-export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket, Usage, Strain };
+export type {
+  SessionRow,
+  DeviceRow,
+  FaceChoices,
+  HooksState,
+  Ticket,
+  Usage,
+  Strain,
+  ChatBatch,
+  ChatFrame,
+};
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
@@ -67,3 +79,18 @@ export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
     copy of a number only `link::INVITE_WINDOW_MS` decides. */
 export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });
+/** The chat six: an attachment registry in gui-core holds the socket
+    (a webview cannot), a reader thread collects frames, and the poll
+    answers instantly from a cursor — nothing is lost between polls.
+    `chatLeave` detaches only; ending a conversation is `closeSession`. */
+/** Answers whether this call attached anew — replay history only then:
+    a second open of a living chat (dev double-mount) must not ask the
+    host to replay again. */
+export const chatOpen = (id: string) => call<boolean>("chat_open", { id });
+export const chatPoll = (id: string, since: number) =>
+  call<ChatBatch>("chat_poll", { id, since });
+export const chatSay = (id: string, text: string) => call<null>("chat_say", { id, text });
+export const chatAnswer = (id: string, ask: number, option: string | null) =>
+  call<null>("chat_answer", { id, ask, option });
+export const chatReplay = (id: string) => call<null>("chat_replay", { id });
+export const chatLeave = (id: string) => call<null>("chat_leave", { id });

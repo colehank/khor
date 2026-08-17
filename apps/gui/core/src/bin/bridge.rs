@@ -117,6 +117,14 @@ fn handle(
             Some(_) => Err("arg is not a list: colors".to_owned()),
         }
     };
+    // Whole and in range is the frame contract; a fraction or a
+    // negative quietly truncated would answer a different poll than the
+    // one asked.
+    let num = |name: &str| {
+        args.get(name)
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| format!("missing number arg: {name}"))
+    };
     match cmd {
         "sessions" => to_json(&khor_gui_core::list_sessions(root, &arg("by")?)?),
         "devices" => to_json(&khor_gui_core::list_devices(root)?),
@@ -149,6 +157,24 @@ fn handle(
         "hooks_state" => to_json(&khor_gui_core::hooks_state(root)?),
         "install_hooks" => to_json(&khor_gui_core::install_hooks(root)?),
         "uninstall_hooks" => to_json(&khor_gui_core::uninstall_hooks(root)?),
+        "chat_open" => to_json(&khor_gui_core::chat::chat_open(root, &arg("id")?)?),
+        "chat_poll" => to_json(&khor_gui_core::chat::chat_poll(&arg("id")?, num("since")?)?),
+        "chat_say" => {
+            khor_gui_core::chat::chat_say(&arg("id")?, &arg("text")?)?;
+            Ok("null".to_owned())
+        }
+        "chat_answer" => {
+            khor_gui_core::chat::chat_answer(&arg("id")?, num("ask")?, opt_str("option")?)?;
+            Ok("null".to_owned())
+        }
+        "chat_replay" => {
+            khor_gui_core::chat::chat_replay(&arg("id")?)?;
+            Ok("null".to_owned())
+        }
+        "chat_leave" => {
+            khor_gui_core::chat::chat_leave(&arg("id")?)?;
+            Ok("null".to_owned())
+        }
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

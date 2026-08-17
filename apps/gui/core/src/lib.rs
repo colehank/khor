@@ -6,6 +6,8 @@
 //! No judgment lives here: words, ordering, unread all come from the
 //! node. The GUI must not re-derive any of it (docs/UX.md 状态呈现).
 
+pub mod chat;
+
 use std::collections::HashMap;
 use std::path::Path;
 

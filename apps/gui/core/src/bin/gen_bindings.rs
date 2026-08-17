@@ -15,5 +15,6 @@ fn main() {
     // for on its own, so nothing embeds it and `export_all_to` would
     // never walk into it.
     khor_node::Usage::export_all_to(&dir).expect("export Usage");
+    khor_gui_core::chat::ChatBatch::export_all_to(&dir).expect("export ChatBatch");
     println!("bindings -> {}", dir.display());
 }

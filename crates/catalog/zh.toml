@@ -544,3 +544,11 @@ ticket = "配对票"
 paste-a-ticket = "把票贴在这里"
 join = "入网"
 close = "关闭"
+# The chat input's hint. Not a label: the box is the pane's only
+# control, and the hint says what typing here reaches.
+chat-input = "对它说…"
+# The conversation has ended — the host's goodbye and a torn wire wear
+# one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
+# the input's place: the control that can no longer do its job is the
+# one that says so, the same rule the pin follows.
+chat-over = "对话结束了"
