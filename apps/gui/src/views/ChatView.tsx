@@ -21,6 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  chatAnswer,
   chatLeave,
   chatOpen,
   chatPoll,
@@ -29,6 +30,7 @@ import {
   fetchHistory,
   type ChatFrame,
 } from "@/api";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -40,7 +42,7 @@ type Item =
   | { who: "agent"; text: string }
   | { who: "thought"; text: string }
   | { who: "tool"; title: string }
-  | { who: "ask"; title: string }
+  | { who: "ask"; ask: number; title: string; options: [string, string][] }
   | { who: "sys"; text: string }
   | { who: "seal" };
 
@@ -75,7 +77,7 @@ function fold(frames: ChatFrame[], says: Said[]): Exclude<Item, { who: "seal" }>
   };
   const eat = (frame: ChatFrame, paintUser: boolean) => {
     if (frame.kind === "ask") {
-      out.push({ who: "ask", title: frame.title });
+      out.push({ who: "ask", ask: frame.ask, title: frame.title, options: frame.options });
       return;
     }
     if (frame.kind === "turn") {
@@ -140,6 +142,11 @@ export function ChatView({ id, still = false }: { id: string; still?: boolean })
   const [gone, setGone] = useState(false);
   const [inTurn, setInTurn] = useState(false);
   const [text, setText] = useState("");
+  // Asks this face has answered: the buttons go, the line stays — a
+  // record that permission was asked outlives the asking. Local state
+  // on purpose: the host sends no receipt for an answer, and the turn
+  // moving on is the only confirmation the protocol has.
+  const [answered, setAnswered] = useState<Set<number>>(new Set());
   const scroller = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const liveCount = useRef(0);
@@ -251,11 +258,34 @@ export function ChatView({ id, still = false }: { id: string; still?: boolean })
             <div
               key={i}
               data-chat-ask
-              className="border-l-2 pl-2 text-xs"
-              style={{ color: "var(--state-blocked)", borderColor: "var(--state-blocked)" }}
+              className="flex flex-col gap-1.5 border-l-2 pl-2 text-xs"
+              style={{ borderColor: "var(--state-blocked)" }}
             >
-              {word("blocked")}
-              {item.title ? ` · ${item.title}` : ""}
+              <span style={{ color: "var(--state-blocked)" }}>
+                {word("blocked")}
+                {item.title ? ` · ${item.title}` : ""}
+              </span>
+              {/* The options are the agent's own, in its order and its
+                  words — including its refusals, so no extra dismiss
+                  control exists to answer differently than offered. */}
+              {!still && !gone && !answered.has(item.ask) && (
+                <span className="flex gap-1.5">
+                  {item.options.map(([oid, label]) => (
+                    <Button
+                      key={oid}
+                      size="sm"
+                      variant="outline"
+                      data-ask-option={oid}
+                      onClick={() => {
+                        setAnswered((prev) => new Set(prev).add(item.ask));
+                        chatAnswer(id, item.ask, oid).catch(() => {});
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </span>
+              )}
             </div>
           ) : (
             <div key={i} className="text-xs" style={{ color: "var(--state-errored)" }}>
