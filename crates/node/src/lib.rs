@@ -9,6 +9,7 @@
 
 pub mod adaptor;
 pub mod chat;
+pub mod files;
 pub mod gui_host;
 pub mod host;
 pub mod ipc;

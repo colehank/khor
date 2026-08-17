@@ -88,6 +88,7 @@ usage = """
   face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
                         本机的脸;不带参数看现在是什么、有哪些可选
   devices               网里的设备
+  ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
   sessions [--by recent|category|device|state]
                         session 列表(默认最近);换一种排布,置顶永远在最上
@@ -209,6 +210,9 @@ usage-taken = "{0}前的账"
 usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
 summary-sent = "摘要已发,等对方许可。传输号: {0}"
 pulled = "收下了,这一趟拉了 {0} 字节"
+# The no-silent-caps rule at the CLI: a listing cut at the cap must say
+# so, or a directory's first page reads as the whole of it.
+dir-truncated = "目录太大,只列出前 {0} 条"
 broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
 serve-banner = "khor serve: {0} 在听,配对与同步都归它"
 # `khor hooks`. The file is named on every run, installing or not: khor
@@ -331,6 +335,12 @@ bad-invite = "配对码不对,或已经被用过了"
 invite-expired = "这张票过期了(出票后 {0} 分钟内有效),让那台机器再出一张: khor invite"
 cant-burn-invite = "销不掉配对码: {0}"
 not-paired = "这台设备不在设备表里,先配对"
+# The Ls contract (`khor_node::files`): empty asks for home, anything
+# else is spelled from the root — a relative path would be relative to
+# wherever serve happened to start.
+no-home-dir = "这台机器说不出自己的主目录"
+path-not-absolute = "路径要从根写起: {0}"
+cant-list-dir = "列不出 {0}: {1}"
 unknown-doc = "不认识这种 doc: {0}"
 unknown-action = "不认识的动作: {0}"
 serve-non-answer = "serve 答非所问: {0}"
@@ -369,6 +379,9 @@ recipient-unreachable-timeout = "连不上 {0}(超时)——收下由那台机�
 offerer-unreachable-timeout = "连不上出让方(超时)"
 offerer-unreachable = "连不上出让方: {0}"
 offerer-left-table = "出让方已不在设备表里"
+# Two reads of one table can straddle a removal; the second read owns
+# this word. Not recipient-not-in-table: nothing is being received.
+machine-left-table = "这台机器已不在设备表里: {0}"
 cant-make-files-dir = "建不了 files 目录: {0}"
 cant-mark-pulling = "记不了拉取标记: {0}"
 cant-read-partial = "读不了断点: {0}"

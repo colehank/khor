@@ -53,6 +53,14 @@ pub enum Request {
     /// wire, so an unknown op is a refusal and not a misread neighbour),
     /// which the asking side treats as "no vitals" and nothing else.
     Vitals,
+    /// One directory of the asked machine, for the files landing.
+    /// `path` must be absolute; empty means that machine's home
+    /// directory. Answered to any paired device without a permission
+    /// step on purpose — this is one person's network, and what 待批
+    /// guards is a payload's bytes, never the looking (docs/NET.md
+    /// 入网即全信). A khor that predates it answers
+    /// [`Response::Refused`], read as "that machine cannot list".
+    Ls { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +81,25 @@ pub enum Response {
     Vitals { vitals: khor_core::Vitals },
     /// What that machine has spent. See [`Request::Usage`].
     Usage { usage: khor_core::Usage },
+    /// One directory, already ordered — directories first, each half by
+    /// name — because the screen paints and never re-sorts (docs/UX.md
+    /// 状态呈现). `truncated` is the no-silent-caps rule on the wire: a
+    /// directory bigger than the cap says so instead of looking whole.
+    Dir { entries: Vec<DirEntry>, truncated: bool },
+}
+
+/// One row of a listed directory. Every field required; whatever a
+/// later khor wants to add rides the tail with a serde default, never
+/// the middle (this file's field discipline).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub dir: bool,
+    /// Bytes; 0 for directories — a directory's byte size answers a
+    /// question nobody browsing is asking.
+    pub size: u64,
+    /// Modified, ms since epoch. 0 when the machine could not say.
+    pub at_ms: u64,
 }
 
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
@@ -138,7 +165,11 @@ mod tests {
             Act { session: String, action: String },
         }
 
-        for (op, name) in [(Request::Vitals, &b"Vitals"[..]), (Request::Usage, &b"Usage"[..])] {
+        for (op, name) in [
+            (Request::Vitals, &b"Vitals"[..]),
+            (Request::Usage, &b"Usage"[..]),
+            (Request::Ls { path: String::new() }, &b"Ls"[..]),
+        ] {
             let bytes = encode(&op).unwrap();
             assert!(
                 bytes.windows(name.len()).any(|w| w == name),

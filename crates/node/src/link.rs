@@ -214,6 +214,10 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::Ls { machine, path } => match self.ls_with(ep, &machine, &path).await {
+                Ok((entries, truncated)) => ipc::Reply::Dir { entries, truncated },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -392,6 +396,20 @@ impl Node {
                     other => Err(msg::unknown_action(other)),
                 }
             }
+            Request::Ls { path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Off the reactor for the standing reason ("how long
+                // does it block", 坑节): a directory on a network mount
+                // can sit for seconds, and this reply's own QUIC
+                // connection would sit with it.
+                let (entries, truncated) =
+                    tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::Dir { entries, truncated })
+            }
         }
     }
 
@@ -440,6 +458,68 @@ impl Node {
         let outcome = self.accept_with(&ep, id).await;
         ep.close().await;
         outcome
+    }
+
+    /// A machine's directory listing, for the files landing. Routed the
+    /// way every one-shot verb is: through the resident serve when one
+    /// holds this key, on a bound-and-closed endpoint otherwise.
+    pub async fn ls_of(
+        &self,
+        machine: &str,
+        path: &str,
+    ) -> Result<(Vec<proto::DirEntry>, bool), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::Ls { machine: machine.to_owned(), path: path.to_owned() })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Dir { entries, truncated } => Ok((entries, truncated)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.ls_with(&ep, machine, path).await;
+        ep.close().await;
+        outcome
+    }
+
+    /// The listing on an endpoint the caller owns. The asked machine may
+    /// be this one — the files landing lists every machine, this one
+    /// included — and then the answer never touches the wire.
+    async fn ls_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(Vec<proto::DirEntry>, bool), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            let path = path.to_owned();
+            return tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        // Resolve proved the name microseconds ago, but two reads of
+        // one table can straddle a removal.
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
+            .map_err(|e| e.to_string())?;
+        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
+            .await
+            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|e| msg::cant_reach_named(&channel, e))?;
+        match request(&conn, &Request::Ls { path: path.to_owned() }).await? {
+            Response::Dir { entries, truncated } => Ok((entries, truncated)),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     /// Accept on an endpoint the caller owns: pulls locally when this

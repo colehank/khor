@@ -52,6 +52,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "id", run: id },
     Verb { word: "face", run: face },
     Verb { word: "devices", run: devices },
+    Verb { word: "ls", run: ls },
     Verb { word: "usage", run: usage },
     Verb { word: "sessions", run: sessions },
     Verb { word: "tell", run: tell },
@@ -156,6 +157,29 @@ fn face(rest: &[String]) -> Result<(), String> {
         _ => n.restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())?,
     };
     print_face(&style);
+    Ok(())
+}
+
+/// A far machine's directory. Directories wear a trailing slash and no
+/// size — the two facts a browse runs on; the order is the node's
+/// (directories first, names case-folded), printed as it came.
+fn ls(rest: &[String]) -> Result<(), String> {
+    let (machine, path) = match rest {
+        [machine] => (machine, ""),
+        [machine, path] => (machine, path.as_str()),
+        _ => return Err(USAGE.into()),
+    };
+    let (entries, truncated) = rt()?.block_on(node()?.ls_of(machine, path))?;
+    for e in &entries {
+        if e.dir {
+            println!("{}/", e.name);
+        } else {
+            println!("{}\t{}", e.name, e.size);
+        }
+    }
+    if truncated {
+        eprintln!("{}", cli::dir_truncated(khor_node::files::MOST_ENTRIES as u64));
+    }
     Ok(())
 }
 

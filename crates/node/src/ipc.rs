@@ -26,6 +26,9 @@ pub enum Op {
     Pair { ticket: String },
     SyncNow,
     Accept { session: String },
+    /// List a machine's directory (`proto::Request::Ls` carried to the
+    /// resident endpoint). Tail-appended, like everything after v1.
+    Ls { machine: String, path: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,6 +37,8 @@ pub enum Reply {
     Synced { outcomes: Vec<(String, Result<String, String>)> },
     Accepted { moved: u64 },
     Refused { why: String },
+    /// Tail-appended with [`Op::Ls`].
+    Dir { entries: Vec<crate::proto::DirEntry>, truncated: bool },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.
