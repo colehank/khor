@@ -12,6 +12,8 @@ import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { DirPinRow } from "./gen/bindings/DirPinRow";
+import type { WebPinRow } from "./gen/bindings/WebPinRow";
+import type { WebBorrow } from "./gen/bindings/WebBorrow";
 
 export type {
   SessionRow,
@@ -25,6 +27,8 @@ export type {
   ChatFrame,
   DirListing,
   DirPinRow,
+  WebPinRow,
+  WebBorrow,
 };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
@@ -114,3 +118,13 @@ export const pullFile = (machine: string, path: string) =>
 export const fetchDirPins = () => call<DirPinRow[]>("dir_pins");
 export const pinDir = (machine: string, path: string, on: boolean) =>
   call<null>("pin_dir", { machine, path, on });
+/** Every pinned page, exit-machine names already looked up. */
+export const fetchWebPins = () => call<WebPinRow[]>("web_pins");
+export const pinWeb = (machine: string, url: string, on: boolean) =>
+  call<null>("pin_web", { machine, url, on });
+/** Opens a page through a machine's network. In the app the tauri skin
+    builds the proxied window and this resolves once it is up; over the
+    dev bridge there is no window, so the same call answers where the
+    proxy listens (the borrow) and the window half is the app's alone. */
+export const openWeb = (machine: string, url: string) =>
+  call<WebBorrow | null>("open_web", { machine, url });

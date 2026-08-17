@@ -28,9 +28,9 @@
 //      inside the SVG;
 //  11. the rail's name shows on hover with no delay worth measuring, on
 //      keyboard focus too, and goes away when the pointer leaves;
-//  12. all four landings open, and the two that have no content of
-//      their own (files, browser) list the same machines the devices
-//      pane does — the same set, not merely a list of the same length;
+//  12. all four landings open, and the two machine-first panes (files,
+//      browser) list the same machines the devices pane does — the same
+//      set, not merely a list of the same length;
 //  13. each pane's bar carries exactly what that pane can do, and the
 //      three machine panes name their search box the same thing (a
 //      files pane offering to search files would be naming something
@@ -89,10 +89,11 @@
 //      written here**, so a machine khor cannot ask a GPU about is
 //      covered by the same assertion; and the GPU row itself is checked
 //      to be the same sentence and the same card count on both faces;
-//  24. the rows that open something are exactly the ones with somewhere
-//      to go: the devices pane's do, the files and browser panes' do
-//      not, with the positive half read first so the absence means
-//      absence and not a renamed selector;
+//  24. every machine pane's rows now open their second step — the card,
+//      the disk, the borrowed network — so the assertion is that all
+//      three lead somewhere; and (24b) the browser landing's pin round
+//      trip: pinning a typed page makes a shortcut that reaches the
+//      PinnedWebs list and unpins back out;
 //  25. the hook button is a pair and the button is the report: absent
 //      on another machine's card, present on this one, and each press
 //      moves both faces together — `khor hooks` reading the same home
@@ -1655,12 +1656,11 @@ try {
     throw new Error(`the card counts ${cardCount(onCard)} cards, the terminal ${cardCount(inTerminal)}`);
   }
 
-  // 24) only the rows with somewhere to go open anything.
-  //
-  //     The positive half is above (alpha's row was clicked and it
-  //     opened). Here is the other half, and the count on the devices
-  //     pane is re-read first so that "zero on files" means zero rather
-  //     than a selector that stopped naming anything.
+  // 24) every machine pane's rows open their second step now — the
+  //     devices card, the disk, the borrowed network. The pane that led
+  //     nowhere was the bug this once caught; there is none left, so the
+  //     assertion inverts to "all three lead somewhere", read off the
+  //     same three machines each pane lists.
   const openersOn = async (tab) => {
     await openLanding(tab);
     await until(`machines on the ${tab} pane`, 10_000, async () =>
@@ -1668,16 +1668,64 @@ try {
     );
     return page.locator("[data-device] [data-row-open]").count();
   };
-  const openersOnDevices = await openersOn("devices");
-  if (openersOnDevices < 2) {
-    throw new Error(`probe dead: ${openersOnDevices} machine rows open anything on the devices pane`);
-  }
-  for (const tab of ["files", "browser"]) {
+  for (const tab of ["devices", "files", "browser"]) {
     const n = await openersOn(tab);
-    if (n !== 0) {
-      throw new Error(`${n} machine rows on the ${tab} pane offer to open something that is not there`);
+    if (n < 3) {
+      throw new Error(`only ${n} of three machine rows open their second step on the ${tab} pane`);
     }
   }
+
+  // 24b) the browser landing keeps pages: picking a machine opens the
+  //      address bar (whose placeholder names the exit, so the user
+  //      knows a page leaves through it), pinning a typed page makes a
+  //      shortcut that survives a reload into the PinnedWebs list before
+  //      any machine is picked, and unpinning takes it back. The pin
+  //      rides the real webpins table; the open itself (a real borrow)
+  //      is covered by tunnel_wire, and clicking a shortcut is avoided
+  //      here on purpose so this item never dials.
+  await openLanding("browser");
+  await until("machines on the browser pane", 10_000, async () =>
+    (await page.locator("[data-device] [data-row-open]").count()) > 0,
+  );
+  const exit = await page.locator("[data-device]").first().getAttribute("data-device");
+  const openExit = () =>
+    page.locator(`[data-device="${exit}"] [data-row-open]`).first().click();
+  await openExit();
+  await until("the address bar on the browser pane", 10_000, async () =>
+    (await page.locator("[data-web-address]").count()) === 1,
+  );
+  const barPlaceholder = await page.locator("[data-web-address]").getAttribute("placeholder");
+  if (!barPlaceholder?.includes(exit)) {
+    throw new Error(`the address bar (${barPlaceholder}) does not name the exit ${exit}`);
+  }
+  const url = "https://smoke.example/page";
+  await page.locator("[data-web-address]").fill(url);
+  await until("the pin-this-page control", 10_000, async () =>
+    (await page.locator("[data-pin-web]").count()) === 1,
+  );
+  await page.locator("[data-pin-web]").click();
+  await until("the pinned page in this exit's list", 10_000, async () =>
+    (await page.locator(`[data-web-pin-open="${url}"]`).count()) === 1,
+  );
+  // A reload drops every React selection, so the browser landing opens
+  // on PinnedWebs — where the pin, being the network's and not this
+  // screen's, must still be. (Reload keeps the ?bridge= query.)
+  await page.reload();
+  await openLanding("browser");
+  await until("the pinned page in the shortcut list", 10_000, async () =>
+    (await page.locator(`[data-pinned-web="${url}"]`).count()) === 1,
+  );
+  // Unpin from its exit — reached by the device row, not the shortcut,
+  // so opening it never dials.
+  await openExit();
+  await until("the address bar back", 10_000, async () =>
+    (await page.locator(`[data-unpin-web="${url}"]`).count()) === 1,
+  );
+  await page.locator(`[data-unpin-web="${url}"]`).click();
+  await until("the pinned page gone from this exit", 10_000, async () =>
+    (await page.locator(`[data-web-pin-open="${url}"]`).count()) === 0,
+  );
+
   // Back where the next item expects to be: it pins the first row it
   // finds, and which pane is open decides which row that is.
   await openLanding("devices");

@@ -183,6 +183,15 @@ fn handle(
             khor_gui_core::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
             Ok("null".to_owned())
         }
+        "web_pins" => to_json(&khor_gui_core::web::web_pins(root)?),
+        "pin_web" => {
+            khor_gui_core::web::pin_web(root, &arg("machine")?, &arg("url")?, flag("on")?)?;
+            Ok("null".to_owned())
+        }
+        // The bridge answers the borrow half only — it has no webview to
+        // point at the proxy, so it returns where the proxy listens and
+        // the window half stays the tauri skin's (`web::borrow_web`).
+        "open_web" => to_json(&rt.block_on(khor_gui_core::web::borrow_web(root, &arg("machine")?))?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

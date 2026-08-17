@@ -151,6 +151,48 @@ fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
     khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
 }
 
+#[tauri::command]
+fn web_pins() -> Result<Vec<khor_gui_core::web::WebPinRow>, String> {
+    khor_gui_core::web::web_pins(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn pin_web(machine: String, url: String, on: bool) -> Result<(), String> {
+    khor_gui_core::web::pin_web(&Node::root_from_env(), &machine, &url, on)
+}
+
+/// Opens a browsing window whose traffic leaves through `machine`'s
+/// network (docs/NET.md 借网). The borrow gives a local proxy address;
+/// the window is built pointing its `proxy_url` at it, so every request
+/// the page makes goes out the far machine. Async because the borrow
+/// dials. The window is labelled by the borrow session so it is unique
+/// and closing it is traceable.
+#[tauri::command]
+async fn open_web(
+    app: tauri::AppHandle,
+    machine: String,
+    url: String,
+) -> Result<(), String> {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    let borrow = khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?;
+    let target: tauri::Url = url.parse().map_err(|_| format!("not a url: {url}"))?;
+    let proxy: tauri::Url =
+        format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?;
+    let label = format!("web-{}", borrow.session.replace(['/', ':'], "-"));
+    // Reuse a window already open under this label rather than stacking a
+    // second — one borrow, one window.
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(target))
+        .title(machine)
+        .proxy_url(proxy)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
@@ -211,6 +253,9 @@ pub fn run() {
             pull,
             dir_pins,
             pin_dir,
+            web_pins,
+            pin_web,
+            open_web,
             invite,
             pair
         ])

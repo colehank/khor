@@ -15,6 +15,7 @@ pub mod pins;
 pub mod plan;
 pub mod seen;
 pub mod store;
+pub mod webpins;
 pub mod wire;
 
 #[cfg(test)]

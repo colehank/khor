@@ -8,6 +8,7 @@
 
 pub mod chat;
 pub mod files;
+pub mod web;
 
 use std::collections::HashMap;
 use std::path::Path;

@@ -25,9 +25,10 @@ export function visibleDevices(rows: DeviceRow[], query: string) {
  * one that answers nothing teaches people to stop trying the ones that
  * do. What changed is the input — the devices pane now opens a machine
  * card, so on that pane the row is a button, lights under the pointer
- * and is reachable by keyboard. Files and browser have no second step
- * yet, so they pass no `onOpen` and their rows stay exactly as inert as
- * they were.
+ * and is reachable by keyboard. The files pane opens the disk and the
+ * browser pane borrows the network, so all three now hand an `onOpen`
+ * over; a pane without a second step would pass none and its rows would
+ * stay inert.
  *
  * That is why this is a prop and not a flag read from a landing name:
  * the thing that decides is "is there somewhere to go", and the only

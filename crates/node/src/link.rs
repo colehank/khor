@@ -364,6 +364,9 @@ impl Node {
                 } else if doc == "dirpins" {
                     let mut loaded = self.dirpins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "webpins" {
+                    let mut loaded = self.webpins_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
                         .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
@@ -1153,6 +1156,15 @@ impl Node {
         {
             let mut loaded = self.dirpins_loaded()?;
             if let Ok(n) = self.rounds(&conn, "dirpins", &mut loaded).await {
+                moved += n;
+            }
+        }
+        // Web pins, same best-effort footing as directory pins and for
+        // the same reason: an older peer refuses the doc by name, and that
+        // must not cost the rounds behind it.
+        {
+            let mut loaded = self.webpins_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "webpins", &mut loaded).await {
                 moved += n;
             }
         }

@@ -39,6 +39,8 @@ import { word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { FilesPane } from "@/views/FilesPane";
 import { PinnedDirs } from "@/views/PinnedDirs";
+import { BrowserPane } from "@/views/BrowserPane";
+import { PinnedWebs } from "@/views/PinnedWebs";
 import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
@@ -51,12 +53,10 @@ import { TellDialog } from "@/views/TellDialog";
 /**
  * The four landings, all present from the first day.
  *
- * Files and browser have no content of their own yet, and they are here
- * anyway because both of them *begin* with the same question the devices
- * pane answers — which machine — so listing machines is not a placeholder
- * standing in for the real thing, it is the real thing's first step.
- * What they are missing is the second step (a machine's files, a
- * machine's network), and that is what their batches add.
+ * Every one begins with the same question the devices pane answers —
+ * which machine — and grows its own second step from there: a machine's
+ * card, its disk, or its network. Files opens a directory; browser
+ * borrows the network and opens a page through it (docs/NET.md 借网).
  */
 type Landing = "sessions" | "devices" | "files" | "browser";
 
@@ -261,6 +261,12 @@ export default function App() {
   // flip which machine card the devices pane shows. The path rides
   // along so a pinned shortcut can open straight where it points.
   const [browse, setBrowse] = useState<{ device: string; path: string } | null>(null);
+  // …and the exit machine whose network the browser landing surfs,
+  // apart from all the above for the same reason: browsing through a
+  // machine is a third question, and a shared variable would tangle it
+  // with the machine card and the disk. `url` rides along so a pinned
+  // page opens straight through on arrival.
+  const [surf, setSurf] = useState<{ device: string; url: string | null } | null>(null);
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">("list");
   const [stale, setStale] = useState(false);
@@ -353,6 +359,11 @@ export default function App() {
 
   const onBrowseDevice = useCallback((row: DeviceRow) => {
     setBrowse({ device: row.id, path: "" });
+    setScreen("detail");
+  }, []);
+
+  const onSurfDevice = useCallback((row: DeviceRow) => {
+    setSurf({ device: row.id, url: null });
     setScreen("detail");
   }, []);
 
@@ -627,19 +638,24 @@ export default function App() {
             rows={devices}
             query={queries[landing]}
             onPin={onPinDevice}
-            // Devices opens the machine card; files opens the machine's
-            // disk — two questions, two selections. Browser still lists
-            // machines as its first step and grows its second in its
-            // own batch; until then its rows must not look like they
-            // open something (`DevicesList` says why this is a prop).
+            // Each landing asks the machine a different question:
+            // devices opens the card, files opens the disk, browser
+            // borrows the network. Three selections, three variables
+            // (`DevicesList` says why onOpen is a prop).
             onOpen={
               landing === "devices"
                 ? onSelectDevice
                 : landing === "files"
                   ? onBrowseDevice
-                  : undefined
+                  : onSurfDevice
             }
-            selected={landing === "files" ? (browse?.device ?? null) : selectedDevice}
+            selected={
+              landing === "files"
+                ? (browse?.device ?? null)
+                : landing === "browser"
+                  ? (surf?.device ?? null)
+                  : selectedDevice
+            }
             pinFailed={pinFailed}
           />
         )}
@@ -647,12 +663,8 @@ export default function App() {
     </section>
   );
 
-  // Three panes have something to open, and each gets the component that
-  // can say something true about what it opened. The browser still gets
-  // nothing: over a list of machines you cannot open, `DetailPane` would
-  // print `gui.pick_a_session` — an instruction to do something that
-  // screen cannot do — and inventing copy about the emptiness is worse
-  // than the emptiness (docs/UX.md 文案).
+  // Every pane has something to open now, and each gets the component
+  // that can say something true about what it opened.
   //
   // **The devices pane with nothing picked is the exception, and it is
   // not a counter-example.** What used to sit there was an empty card,
@@ -661,6 +673,7 @@ export default function App() {
   // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
   const browsed = browse ? (devices.find((d) => d.id === browse.device) ?? null) : null;
+  const surfed = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
   const detail = sessions ? (
     <DetailPane row={selectedRow} narrow={narrow} onBack={() => setScreen("list")} />
   ) : landing === "files" && browse && browsed ? (
@@ -680,6 +693,26 @@ export default function App() {
     <PinnedDirs
       onOpen={(device, path) => {
         setBrowse({ device, path });
+        setScreen("detail");
+      }}
+    />
+  ) : landing === "browser" && surf && surfed ? (
+    // Keyed by exit and page so a shortcut opening a different machine's
+    // page restarts the pane pointed at it.
+    <BrowserPane
+      key={`${surf.device}:${surf.url ?? ""}`}
+      machine={surfed.name}
+      device={surfed.id}
+      initialUrl={surf.url}
+      narrow={narrow}
+      onBack={() => setScreen("list")}
+    />
+  ) : landing === "browser" ? (
+    // Before an exit is picked: the pinned pages, each a jump straight to
+    // opening it through the machine it was pinned against.
+    <PinnedWebs
+      onOpen={(device, url) => {
+        setSurf({ device, url });
         setScreen("detail");
       }}
     />

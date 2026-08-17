@@ -39,6 +39,7 @@ use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
+use khor_sync::webpins::{webpins_dir, WebPinDoc};
 use khor_sync::pins::{pins_dir, PinDoc};
 use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
@@ -417,6 +418,10 @@ impl Node {
         load(&dirpins_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn webpins_loaded(&self) -> Result<Loaded<WebPinDoc>, String> {
+        load(&webpins_dir(&self.root), self.peer)
+    }
+
     /// Raises a session's seen watermark and persists it. The watermark
     /// travels the network (docs/NET.md): clear here, clear
     /// everywhere on the next sync.
@@ -564,6 +569,33 @@ impl Node {
             .iter()
             .filter_map(|k| {
                 khor_sync::dirpins::split(k).map(|(d, p)| (d.to_owned(), p.to_owned()))
+            })
+            .collect())
+    }
+
+    /// Pins or unpins a web page against an exit machine, for everyone.
+    /// The key carries the machine because a pinned page is "this page
+    /// through this machine's network" (`khor_sync::webpins` module head)
+    /// — the browser landing's shortcuts.
+    pub fn pin_web(&self, machine: &str, url: &str, on: bool) -> Result<(), String> {
+        let (_, home) = self.resolve(machine)?;
+        let loaded = self.webpins_loaded()?;
+        loaded.doc.set(&khor_sync::webpins::key(&home.hex(), url), on)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Every pinned page, as `(device_hex, url)` in the table's order
+    /// (sorted keys — grouped by machine for free). Keys some other
+    /// version spelled differently are skipped, never guessed at.
+    pub fn web_pins(&self) -> Result<Vec<(String, String)>, String> {
+        Ok(self
+            .webpins_loaded()?
+            .doc
+            .all()
+            .iter()
+            .filter_map(|k| {
+                khor_sync::webpins::split(k).map(|(d, u)| (d.to_owned(), u.to_owned()))
             })
             .collect())
     }

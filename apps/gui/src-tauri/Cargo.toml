@@ -17,4 +17,8 @@ khor-node.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tauri = { version = "2", features = [] }
+# macos-proxy: a borrow opens a webview window whose traffic goes out
+# through another machine, which needs per-window proxy_url (docs/NET.md
+# 借网). macOS 14+ only; the other platforms' proxy paths are on the
+# ledger (platform batch).
+tauri = { version = "2", features = ["macos-proxy"] }

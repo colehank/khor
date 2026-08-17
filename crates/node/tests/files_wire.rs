@@ -181,6 +181,19 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         "a pin made on beta must reach alpha: {pins:?}"
     );
 
+    // A web page pinned against alpha as its exit travels the same pump —
+    // the fourth pins table, keyed URL-and-machine (docs/NET.md 借网).
+    b.pin_web("alpha", "https://example.com/read", true).unwrap();
+    timeout(Duration::from_secs(20), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let webs = a.web_pins().unwrap();
+    assert!(
+        webs.iter().any(|(d, u)| d == alpha_hex && u == "https://example.com/read"),
+        "a web pin made on beta must reach alpha: {webs:?}"
+    );
+
     serve_a.abort();
     let _ = fs::remove_dir_all(&ra);
     let _ = fs::remove_dir_all(&rb);

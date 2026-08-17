@@ -612,3 +612,13 @@ took-file = "落在 {0}"
 # Empty says what would be here — a blank region reads as broken, and
 # this one has no machine list to explain it.
 no-pinned-dirs = "还没有钉住的目录"
+# The browser landing (docs/NET.md 借网). The address bar names the exit
+# so the user knows a page opened here leaves through that machine, not
+# this one. Open builds the window; the empty state and the no-pins state
+# each say what would be there.
+web-address = "网址,从 {0} 的网开"
+web-open = "打开"
+web-opening = "正在借 {0} 的网开…"
+web-opened = "在 {0} 的网里开了"
+no-pinned-webs = "还没有钉住的网页"
+pick-exit = "从左边挑一台机器,借它的网上网"
