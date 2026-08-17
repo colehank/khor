@@ -581,6 +581,67 @@ mod tests {
             let prefix = format!("{session}|");
             self.until(|seen| seen.lines().any(|l| l.starts_with(&prefix)));
         }
+
+        /// Waits for a session to settle **at a prompt**.
+        ///
+        /// # The other half of the rule the batch above only did once
+        ///
+        /// `until_running` was added because "send keys, sleep 900ms,
+        /// assert 忙碌" measured how busy the machine was rather than
+        /// what khor read. **The idle side had the same hole and kept
+        /// it**: `new-session -d` returns the moment tmux has the
+        /// session, and a shell that is still running its startup files
+        /// has a foreground command that is *not* the shell — which is
+        /// [`word_of`]'s definition of 忙碌. So "a prompt is 空闲" was
+        /// true only on a machine quiet enough for the shell to have
+        /// finished. Observed once in a full-suite run 2026-08-17
+        /// (`Some(Busy)` where 空闲 was expected) and green on five
+        /// straight runs of the test alone, which is the signature.
+        ///
+        /// # Why it cannot be spelled as "wait for the shell"
+        ///
+        /// The same reason [`Server::until_present`] gives: the shell is
+        /// whatever the machine running the suite uses. So this waits on
+        /// **khor's own rule** instead — the pane's foreground command
+        /// *is* the pane's own process ([`same_program`]) — which is also
+        /// what makes it the right thing to wait for: it is the very
+        /// comparison the assertion is about to make, read from the same
+        /// `list-panes`.
+        ///
+        /// A pane khor cannot find a process for is not settled either:
+        /// [`word_of`] answers `None` there, and a row with no word is
+        /// not the row this waits for.
+        fn until_at_a_prompt(&self, session: &str) {
+            let prefix = format!("{session}|");
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let seen = self
+                    .tmux(&[
+                        "list-panes",
+                        "-a",
+                        "-F",
+                        "#{session_name}|#{pane_pid}|#{pane_current_command}",
+                    ])
+                    .unwrap_or_default();
+                let procs = Procs::snapshot();
+                let mut panes = seen.lines().filter(|l| l.starts_with(&prefix)).peekable();
+                // `all` over nothing is true, so the session has to be
+                // there before its panes can be settled.
+                let settled = panes.peek().is_some()
+                    && panes.all(|l| {
+                        let mut parts = l.split('|').skip(1);
+                        let Some(pid) = parts.next().and_then(|p| p.parse::<u32>().ok()) else {
+                            return false;
+                        };
+                        let Some(command) = parts.next() else { return false };
+                        procs.get(pid).is_some_and(|p| same_program(command, &p.name))
+                    });
+                if settled || Instant::now() >= deadline {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
     }
 
     impl Drop for Server {
@@ -659,6 +720,9 @@ mod tests {
         s.until_present("working");
         s.tmux(&["send-keys", "-t", "working", "sleep 300", "Enter"]);
         s.until_running("working", "sleep");
+        // …and the idle one has to have finished starting up, or "a
+        // prompt is 空闲" is a claim about how quiet the machine is.
+        s.until_at_a_prompt("idle");
 
         let procs = Procs::snapshot();
         let listing = s.at().sweep(&procs);
