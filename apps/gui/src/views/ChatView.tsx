@@ -26,6 +26,7 @@ import {
   chatPoll,
   chatReplay,
   chatSay,
+  fetchHistory,
   type ChatFrame,
 } from "@/api";
 import { Input } from "@/components/ui/input";
@@ -127,7 +128,13 @@ function fold(frames: ChatFrame[], says: Said[]): Exclude<Item, { who: "seal" }>
   return out.filter((i): i is Exclude<Item, { who: "seal" }> => i.who !== "seal");
 }
 
-export function ChatView({ id }: { id: string }) {
+/**
+ * `still` paints a conversation khor is not holding: a discovered
+ * session's recorded past, fetched once as replay-shaped frames — same
+ * fold, same painting, no attachment, no polling, and no input, since
+ * there is no protocol channel to say anything into.
+ */
+export function ChatView({ id, still = false }: { id: string; still?: boolean }) {
   const [frames, setFrames] = useState<ChatFrame[]>([]);
   const [says, setSays] = useState<Said[]>([]);
   const [gone, setGone] = useState(false);
@@ -140,6 +147,18 @@ export function ChatView({ id }: { id: string }) {
   useEffect(() => {
     let stopped = false;
     let cursor = 0;
+    if (still) {
+      fetchHistory(id)
+        .then((frames) => {
+          if (!stopped) setFrames(frames);
+        })
+        .catch(() => {
+          if (!stopped) setGone(true);
+        });
+      return () => {
+        stopped = true;
+      };
+    }
     const tick = () =>
       chatPoll(id, cursor)
         .then((batch) => {
@@ -180,7 +199,7 @@ export function ChatView({ id }: { id: string }) {
       clearInterval(timer);
       chatLeave(id).catch(() => {});
     };
-  }, [id]);
+  }, [id, still]);
 
   // Follow the stream only while the reader is at the tail — new frames
   // must not yank someone who scrolled up into the past.
@@ -245,6 +264,16 @@ export function ChatView({ id }: { id: string }) {
           ),
         )}
       </div>
+      {/* A recorded past has no channel to speak into: no input, and
+          the only thing its footer can say is that the record is
+          missing. */}
+      {still ? (
+        gone && (
+          <div className="flex-none border-t p-2">
+            <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_no_record}</div>
+          </div>
+        )
+      ) : (
       <div className="flex-none border-t p-2">
         {gone ? (
           <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_over}</div>
@@ -262,6 +291,7 @@ export function ChatView({ id }: { id: string }) {
           />
         )}
       </div>
+      )}
     </div>
   );
 }

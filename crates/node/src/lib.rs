@@ -982,6 +982,22 @@ impl Node {
         adaptor::claude::hooks_report(&adaptor::vendor_home(&self.root))
     }
 
+    /// The recorded conversation behind a discovered claude session —
+    /// the vendor's own transcript, read whole. Claude only, this
+    /// batch: other vendors' records are on the ledger. Rooted through
+    /// `vendor_home` like everything that reads a vendor's files.
+    pub fn transcript_of(
+        &self,
+        id: &SessionId,
+    ) -> Result<Vec<adaptor::claude::Utterance>, String> {
+        let leaf = id
+            .0
+            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
+            .ok_or_else(|| msg::no_such_session(&id.0))?;
+        adaptor::claude::Claude::at(adaptor::vendor_home(&self.root).join(".claude"))
+            .transcript(leaf)
+    }
+
     /// Adds khor's hooks to claude's settings, leaving the rest of that
     /// file alone. See `adaptor::claude::install_hooks`.
     pub fn install_hooks(&self) -> Result<adaptor::claude::HookInstall, String> {

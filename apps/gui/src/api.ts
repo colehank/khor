@@ -94,3 +94,7 @@ export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });
 export const chatLeave = (id: string) => call<null>("chat_leave", { id });
+/** A discovered session's recorded past: the vendor's transcript in
+    replay-shaped frames, whole, ending in history_end — so the same
+    fold paints it and a live replay alike. */
+export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id });

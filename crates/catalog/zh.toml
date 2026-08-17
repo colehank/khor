@@ -552,3 +552,6 @@ chat-input = "对它说…"
 # the input's place: the control that can no longer do its job is the
 # one that says so, the same rule the pin follows.
 chat-over = "对话结束了"
+# A discovered session whose transcript could not be found or read. Not
+# chat-over: nothing ended — there is simply no record to paint.
+chat-no-record = "没有找到这段对话的记录"

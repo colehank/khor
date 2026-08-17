@@ -121,6 +121,13 @@ fn chat_leave(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_leave(&id)
 }
 
+/// A discovered session's recorded past — the vendor's transcript in
+/// replay-shaped frames (`khor_gui_core::chat::history`).
+#[tauri::command]
+fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
+    khor_gui_core::chat::history(&Node::root_from_env(), &id)
+}
+
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
@@ -176,6 +183,7 @@ pub fn run() {
             chat_answer,
             chat_replay,
             chat_leave,
+            history,
             invite,
             pair
         ])

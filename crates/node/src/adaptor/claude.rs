@@ -127,6 +127,114 @@ impl Claude {
     fn sessions_dir(&self) -> PathBuf {
         self.root.join("sessions")
     }
+
+    fn projects_dir(&self) -> PathBuf {
+        self.root.join("projects")
+    }
+
+    /// The recorded conversation of one session, read from the
+    /// transcript claude itself writes (`projects/<project>/<sid>.jsonl`).
+    ///
+    /// `leaf` is a khor id's leaf, and [`crate::adaptor::id_for`]'s
+    /// cleaning is lossy (24 chars of a 36-char uuid) — so instead of
+    /// undoing it, the match runs the same cleaning over the file names.
+    /// Two files cleaning alike is a uuid-prefix collision; the newest
+    /// wins, and that choice is a judgment, not a guarantee.
+    pub fn transcript(&self, leaf: &str) -> Result<Vec<Utterance>, String> {
+        let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
+        let projects = std::fs::read_dir(self.projects_dir()).map_err(|e| e.to_string())?;
+        for proj in projects.flatten() {
+            let Ok(rd) = std::fs::read_dir(proj.path()) else { continue };
+            for e in rd.flatten() {
+                let path = e.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+                if crate::live::clean_leaf(stem) != leaf {
+                    continue;
+                }
+                let at = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                if hit.as_ref().is_none_or(|(t, _)| at > *t) {
+                    hit = Some((at, path));
+                }
+            }
+        }
+        let (_, path) = hit.ok_or_else(|| msg::no_such_session(leaf))?;
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        Ok(utterances_of(&text))
+    }
+}
+
+/// One utterance of a recorded conversation, in speaking order.
+#[derive(Debug, PartialEq)]
+pub enum Utterance {
+    User(String),
+    Agent(String),
+    Thought(String),
+    /// A tool call, by name only: a name is a fact about the
+    /// conversation, an input is a payload nobody asked a chat view to
+    /// carry.
+    Tool(String),
+}
+
+/// Transcript JSONL in, utterances out. Only `user` and `assistant`
+/// lines speak; the rest of the file (snapshots, modes, attachments,
+/// summaries) is the vendor's bookkeeping. Within a user line, a string
+/// opening with one of the CLI's own tags is plumbing a person never
+/// typed, and a `tool_result` block is the machine answering itself —
+/// both stay unpainted.
+fn utterances_of(text: &str) -> Vec<Utterance> {
+    const PLUMBING: [&str; 4] = [
+        "<command-name>",
+        "<local-command-stdout>",
+        "<local-command-caveat>",
+        "<system-reminder>",
+    ];
+    let user_text = |s: &str| -> Option<Utterance> {
+        if s.is_empty() || PLUMBING.iter().any(|tag| s.starts_with(tag)) {
+            None
+        } else {
+            Some(Utterance::User(s.to_owned()))
+        }
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let from_user = match v.get("type").and_then(|t| t.as_str()) {
+            Some("user") => true,
+            Some("assistant") => false,
+            _ => continue,
+        };
+        let Some(content) = v.get("message").and_then(|m| m.get("content")) else { continue };
+        match content {
+            serde_json::Value::String(s) if from_user => out.extend(user_text(s)),
+            serde_json::Value::String(s) => out.push(Utterance::Agent(s.clone())),
+            serde_json::Value::Array(blocks) => {
+                for b in blocks {
+                    let field = |name: &str| b.get(name).and_then(|x| x.as_str()).unwrap_or("");
+                    match (b.get("type").and_then(|t| t.as_str()), from_user) {
+                        (Some("text"), true) => out.extend(user_text(field("text"))),
+                        (Some("text"), false) if !field("text").is_empty() => {
+                            out.push(Utterance::Agent(field("text").to_owned()));
+                        }
+                        (Some("thinking"), false) if !field("thinking").is_empty() => {
+                            out.push(Utterance::Thought(field("thinking").to_owned()));
+                        }
+                        (Some("tool_use"), false) if !field("name").is_empty() => {
+                            out.push(Utterance::Tool(field("name").to_owned()));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// This vendor's name, which is also the category its rows carry. Named
@@ -662,6 +770,56 @@ mod tests {
 
     fn claude_at_fixture() -> Claude {
         Claude::at(fixture_home().join("claude/.claude"))
+    }
+
+    /// Every line shape a real transcript holds (sampled on this
+    /// machine, 2026-08-17): a spoken user string, a plumbing user
+    /// string, an assistant turn of thinking + text + tool_use blocks,
+    /// a tool_result riding a user line, vendor bookkeeping, and a
+    /// broken line. Only the speech survives, in order.
+    #[test]
+    fn a_transcript_keeps_the_speech_and_drops_the_plumbing() {
+        let text = concat!(
+            r#"{"type":"file-history-snapshot","messageId":"x"}"#, "\n",
+            r#"{"type":"user","message":{"role":"user","content":"look at the docs"}}"#, "\n",
+            r#"{"type":"user","message":{"role":"user","content":"<command-name>/compact</command-name>"}}"#, "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"reading","signature":"s"},{"type":"text","text":"here is what I found"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#, "\n",
+            "not json at all\n",
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"...","is_error":false}]}}"#, "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}"#, "\n",
+        );
+        assert_eq!(
+            utterances_of(text),
+            vec![
+                Utterance::User("look at the docs".into()),
+                Utterance::Thought("reading".into()),
+                Utterance::Agent("here is what I found".into()),
+                Utterance::Tool("Bash".into()),
+                Utterance::Agent("done".into()),
+            ]
+        );
+    }
+
+    /// The lookup runs `clean_leaf` over the file names because the id's
+    /// leaf is the lossy product of that same cleaning — a full uuid
+    /// (36 chars) must be found by its 24-char cleaned form.
+    #[test]
+    fn a_transcript_is_found_by_the_ids_lossy_leaf() {
+        let dir = std::env::temp_dir().join(format!("khor-transcript-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let proj = dir.join(".claude/projects/-some-cwd");
+        std::fs::create_dir_all(&proj).unwrap();
+        let uuid = "2f1115e7-ea8d-4f30-bc3d-8516fc64c8a5";
+        std::fs::write(
+            proj.join(format!("{uuid}.jsonl")),
+            r#"{"type":"user","message":{"role":"user","content":"hello"}}"#,
+        )
+        .unwrap();
+        let leaf = crate::live::clean_leaf(uuid);
+        assert_ne!(leaf, uuid, "the leaf is lossy, or this test tests nothing");
+        let got = Claude::at(dir.join(".claude")).transcript(&leaf).unwrap();
+        assert_eq!(got, vec![Utterance::User("hello".into())]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn proc_of(started_ms: i64) -> Proc {

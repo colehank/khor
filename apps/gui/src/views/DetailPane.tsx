@@ -38,6 +38,12 @@ export function DetailPane({
         // Keyed so switching sessions remounts the chat: its cursor,
         // frames and attachment all belong to one conversation.
         <ChatView key={row.id} id={row.id} />
+      ) : row && row.category === "claude" ? (
+        // A discovered claude session: its recorded past, read from
+        // the vendor's own transcript. Claude only, this batch — the
+        // other vendors' records are on the ledger, and their rows
+        // keep the facts pane below rather than an empty chat.
+        <ChatView key={row.id} id={row.id} still />
       ) : (
         <div className="grid flex-1 place-items-center text-center text-sm text-muted-foreground">
           {row ? (

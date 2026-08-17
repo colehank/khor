@@ -194,6 +194,44 @@ pub fn chat_replay(id: &str) -> Result<(), String> {
     write_frame(&mut *conn, &GuiOp::Replay)
 }
 
+/// The recorded past of a session khor did not open: the vendor's own
+/// transcript, translated into the frames a live replay wears — which
+/// is the very translation claude-code-acp's `loadSession` performs,
+/// one process closer. Static and whole: no attachment, no cursor, and
+/// the answer ends with [`ChatFrame::HistoryEnd`] like any replay, so
+/// one fold paints both kinds of past.
+pub fn history(root: &Path, id: &str) -> Result<Vec<ChatFrame>, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let said = n.transcript_of(&SessionId(id.to_owned()))?;
+    let mut frames: Vec<ChatFrame> = said
+        .into_iter()
+        .map(|u| {
+            use khor_node::adaptor::claude::Utterance;
+            let update = match u {
+                Utterance::User(text) => serde_json::json!({
+                    "sessionUpdate": "user_message_chunk",
+                    "content": { "type": "text", "text": text },
+                }),
+                Utterance::Agent(text) => serde_json::json!({
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": text },
+                }),
+                Utterance::Thought(text) => serde_json::json!({
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": { "type": "text", "text": text },
+                }),
+                Utterance::Tool(name) => serde_json::json!({
+                    "sessionUpdate": "tool_call",
+                    "title": name,
+                }),
+            };
+            ChatFrame::History { update: serde_json::json!({ "sessionId": id, "update": update }) }
+        })
+        .collect();
+    frames.push(ChatFrame::HistoryEnd);
+    Ok(frames)
+}
+
 /// Detaches one holder; the socket closes when the last one leaves
 /// (`Chat::holds`). **Not a close**: the session and its agent live
 /// on, and closing is [`crate::close_session`]'s job — a detail view

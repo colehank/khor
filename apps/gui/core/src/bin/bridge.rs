@@ -175,6 +175,7 @@ fn handle(
             khor_gui_core::chat::chat_leave(&arg("id")?)?;
             Ok("null".to_owned())
         }
+        "history" => to_json(&khor_gui_core::chat::history(root, &arg("id")?)?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),
