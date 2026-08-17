@@ -808,8 +808,22 @@ fn cached_comes_out_of_input(
 /// the four reconcile with the vendor's total in **106 of 106**, on both
 /// sides of the cached-input question.
 ///
-/// No total, no check — the caller has already fallen back to asking
-/// whether it recognised any field at all.
+/// # It is only sound where the total spans the same four buckets
+///
+/// **Codex is the counterexample, and it must not use this.** Its
+/// `total_tokens` is input plus output and nothing else — measured across
+/// all 5392 readings on this machine — so it says nothing about cache
+/// writes, and a reading with any cache write in it would fail a check it
+/// was never meant to answer. On this machine every codex cache write
+/// happens to be zero, which means the mistake would have passed here and
+/// gone red on somebody else's laptop: **the worst kind, and the reason
+/// this paragraph exists rather than a "looks fine" glance.**
+///
+/// Sound today for `gemini`, `qwen` and the Pi format, each of whose
+/// totals covers exactly what khor bills.
+///
+/// No total, no check — the caller falls back to asking whether it
+/// recognised any field at all.
 fn reconciled(tokens: Tokens, total: Option<u64>) -> Option<Tokens> {
     let Some(total) = total else { return Some(tokens) };
     let four = tokens
@@ -1403,20 +1417,15 @@ pub mod pi {
         let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         let (input, output, cache_read, cache_write) =
             (n("input"), n("output"), n("cacheRead"), n("cacheWrite"));
-        // The same drift alarm gemini gets, on this format's own total:
-        // a record that says it spent something while every name khor
-        // knows reads zero is a renamed field, not a free answer.
-        let silent = input == 0 && output == 0 && cache_read == 0 && cache_write == 0;
-        let total = usage.get("totalTokens").and_then(serde_json::Value::as_u64);
-        if silent && total.is_some_and(|t| t > 0) {
-            return None;
-        }
-        Some(Tokens {
-            input,
-            cached_input: cache_read,
-            cache_write,
-            output,
-        })
+        // This format's `totalTokens` spans exactly these four, so the
+        // strong check applies here as it does to the Gemini family: the
+        // reading has to add up to what the vendor said it spent. See
+        // `super::reconciled` for why that is worth more than looking for
+        // known names, and for the vendor it does *not* hold on.
+        super::reconciled(
+            Tokens { input, cached_input: cache_read, cache_write, output },
+            usage.get("totalTokens").and_then(serde_json::Value::as_u64),
+        )
     }
 
     fn fold(session: &mut Session, v: &serde_json::Value) -> Read {
