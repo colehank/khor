@@ -2926,6 +2926,7 @@ name = "khor-gui-core"
 version = "0.1.0"
 dependencies = [
  "khor-catalog",
+ "khor-core",
  "khor-node",
  "serde",
  "serde_json",
