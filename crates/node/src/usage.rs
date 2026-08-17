@@ -734,15 +734,28 @@ impl<S> Whole<S> {
     }
 }
 
-/// Whether a record's cached tokens are part of its input, asked of the
-/// record's own total rather than assumed.
+/// Whether the cached tokens have to come out of the input column,
+/// asked of the record's own total rather than assumed.
 ///
 /// **The two vendors above it disagree about this** — claude reports
 /// input already net of the cache, codex does not — so a third format
 /// guessing would be a coin toss. Where a vendor publishes its own total,
-/// the question is answerable per record: if the total is the sum
-/// *without* the cached part added, then the cached part was never a
-/// separate line and is therefore inside the input, so it comes out.
+/// the question is answerable per record: if the total counts the cached
+/// part **separately**, then it is genuinely extra input and the input
+/// column already excludes it. Anything else and it comes out.
+///
+/// # Why the default is to subtract
+///
+/// It is the only answer that cannot report the same tokens twice.
+/// [`khor_core::Tokens::input`] promises input "never including what came
+/// out of a cache", and it sits beside `cached_input`; leaving the cached
+/// part in both columns states the same spending in two places at once,
+/// which is the one direction this module may not be wrong in. Taking it
+/// out when it was in fact separate loses that much from the input column
+/// instead — the side khor is allowed to be wrong on.
+///
+/// So the witness is used to *decline* to subtract, not to permit it. No
+/// total, or a total that adds up to neither form, means subtract.
 ///
 /// Shared by [`gemini`] and [`qwen`], which is not a coincidence worth
 /// hiding: Qwen Code is a fork of the Gemini CLI, so the arithmetic is
@@ -750,10 +763,7 @@ impl<S> Whole<S> {
 /// the other writes the API's `usageMetadata` verbatim. **The shared
 /// thing is the judgment, not the field names**, which is why this is one
 /// function taking numbers rather than two copies taking documents.
-///
-/// Absent a total there is no witness, and the answer is no — the branch
-/// that changes nothing.
-fn cached_sits_inside_input(
+fn cached_comes_out_of_input(
     input: u64,
     output: u64,
     cached: u64,
@@ -761,12 +771,16 @@ fn cached_sits_inside_input(
     tool: u64,
     total: Option<u64>,
 ) -> bool {
-    let Some(total) = total else { return false };
+    if cached == 0 {
+        return false;
+    }
+    let Some(total) = total else { return true };
     let apart = input
         .saturating_add(output)
         .saturating_add(thoughts)
         .saturating_add(tool);
-    cached > 0 && total == apart
+    // Only one shape says the cached part was counted on its own line.
+    total != apart.saturating_add(cached)
 }
 
 /// The instant a record carries, or nothing when khor cannot read it.
@@ -1065,14 +1079,14 @@ pub mod gemini {
     //! The two vendors above disagree about this (claude reports input net
     //! of the cache, codex does not), so a third one guessing would be a
     //! coin toss. Gemini publishes its own `total`, which makes the
-    //! question answerable per record: where `total` equals
-    //! `input + output + thoughts + tool`, the cached part was never added
-    //! and is therefore already counted inside `input`, so it is
-    //! subtracted. Where the total is the larger sum, it is not.
+    //! question answerable per record — and the rule is spelled out on
+    //! [`super::cached_comes_out_of_input`]: the cached part comes out of
+    //! input **unless** the total shows it counted on its own line.
     //!
     //! Measured 2026-08-17 on this machine's two recordings, 106 records:
-    //! the first form held in **106 of 106**, and `cached <= input` in all
-    //! of them. The second branch is upstream knowledge (`tokscale`'s
+    //! the "already inside" form held in **106 of 106**, and
+    //! `cached <= input` in all of them. The other branch is upstream
+    //! knowledge (`tokscale`'s
     //! `normalize_gemini_session_input_and_cache` carries the same test)
     //! and **is not exercised by anything on this machine** — it is here
     //! because guessing the other way would silently halve a real answer.
@@ -1110,7 +1124,7 @@ pub mod gemini {
 
     use khor_core::Tokens;
 
-    use super::{at_of, cached_sits_inside_input, Files, Kept, Meter, Read, Tally};
+    use super::{at_of, cached_comes_out_of_input, Files, Kept, Meter, Read, Tally};
 
     /// This vendor's name.
     ///
@@ -1155,7 +1169,7 @@ pub mod gemini {
         if silent && total.is_some_and(|t| t > 0) {
             return None;
         }
-        let fresh = if cached_sits_inside_input(input, output, cached, thoughts, tool, total) {
+        let fresh = if cached_comes_out_of_input(input, output, cached, thoughts, tool, total) {
             input.saturating_sub(cached)
         } else {
             input
@@ -1649,10 +1663,10 @@ pub mod qwen {
     //! # The one question this format asks, and where the answer came from
     //!
     //! Is `cachedContentTokenCount` already inside `promptTokenCount`?
-    //! **Upstream does not subtract it.** khor does, when the record's own
-    //! `totalTokenCount` says so — the same witness
-    //! [`super::cached_sits_inside_input`] applies to gemini, and Qwen
-    //! Code is a fork of the Gemini CLI.
+    //! **Upstream does not subtract it.** khor does, unless the record's
+    //! own `totalTokenCount` shows the cached part counted on its own
+    //! line — [`super::cached_comes_out_of_input`], the same rule gemini
+    //! uses, because Qwen Code is a fork of the Gemini CLI.
     //!
     //! **This is a deliberate divergence from upstream and it is worth
     //! being explicit about why**, because there is no sample of this
@@ -1661,15 +1675,13 @@ pub mod qwen {
     //! - The sibling CLI's real recordings **were** settled here: in all
     //!   106 of them the total omitted the cached part, so cached sat
     //!   inside input.
-    //! - Following upstream would mean counting the cached tokens twice
-    //!   whenever that holds here too — an **over-count**, which is the
-    //!   one direction this tier is not allowed to be wrong in.
-    //! - Subtracting when the total says otherwise is not possible: the
-    //!   witness answers no and nothing is subtracted.
-    //!
-    //! So the error this can still make is losing a cache read out of
-    //! input on a file whose total is absent — an under-count, and the
-    //! side khor is allowed to be wrong on.
+    //! - Following upstream would leave those tokens in the input column
+    //!   while also reporting them in `cached_input` — the same spending
+    //!   in two places, which is the one direction this tier is not
+    //!   allowed to be wrong in.
+    //! - So the absent-total case subtracts too. Losing a genuinely
+    //!   separate cache read out of the input column is an under-count,
+    //!   and that is the side khor is allowed to be wrong on.
     //!
     //! `thoughtsTokenCount` is added to output on the rule
     //! [`khor_core::Tokens::output`] states, the same as gemini and for
@@ -1682,7 +1694,7 @@ pub mod qwen {
 
     use khor_core::Tokens;
 
-    use super::{at_of, cached_sits_inside_input, Files, Kept, Meter, Read, Tally};
+    use super::{at_of, cached_comes_out_of_input, Files, Kept, Meter, Read, Tally};
 
     pub const VENDOR: &str = "qwen";
 
@@ -1721,7 +1733,7 @@ pub mod qwen {
             cached.unwrap_or(0),
         );
         let total = n("totalTokenCount");
-        let fresh = if cached_sits_inside_input(prompt, candidates, cached, thoughts, 0, total) {
+        let fresh = if cached_comes_out_of_input(prompt, candidates, cached, thoughts, 0, total) {
             prompt.saturating_sub(cached)
         } else {
             prompt

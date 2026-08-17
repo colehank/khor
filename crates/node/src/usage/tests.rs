@@ -600,26 +600,30 @@ fn a_rewritten_task_document_is_not_billed_twice() {
 /// witness has to tell apart:
 ///
 /// - 1000 prompt / 800 cached with a total of 1060 — the cached part was
-///   never added, so it is inside the prompt and comes out: 200 fresh.
-/// - 400 prompt / 90 cached with a total of 520 — counted apart, nothing
-///   subtracted.
-/// - 300 prompt / 100 cached with **no total at all** — no witness, so
-///   nothing is subtracted, which is the direction that loses tokens
-///   rather than inventing them.
+///   never added on its own line, so it is inside the prompt and comes
+///   out: 200 fresh.
+/// - 400 prompt / 90 cached with a total of 520 — the total *does* count
+///   it apart, so it stays: 400 fresh.
+/// - 300 prompt / 100 cached with **no total at all** — no witness, and
+///   the default is to take it out anyway: 200 fresh.
 ///
-/// Upstream subtracts in none of these. Following it would double-count
-/// the 800 in the first, which is the one direction this tier may not be
-/// wrong in.
+/// **That last one is the case that decides the direction of every error
+/// this can make.** Leaving it in would report the same 100 tokens twice
+/// — once inside `input`, once in `cached_input` — while
+/// `khor_core::Tokens::input` promises input never includes what came out
+/// of a cache. Taking it out when it was genuinely separate loses 100
+/// from the input column instead, and that is the side khor is allowed to
+/// be wrong on.
 #[test]
 fn the_cached_witness_travels_to_the_gemini_fork() {
     let spent = by_day(&qwen_meter().tally(), &plus_eight())["2026-08-17"];
     assert_eq!(
         spent,
-        tokens(1000, 990, 0, 125),
-        "100 + 200 + 400 + 300 fresh; 25 + 60 + 30 + 10 out"
+        tokens(900, 990, 0, 125),
+        "100 + 200 + 400 + 200 fresh; 25 + 60 + 30 + 10 out"
     );
-    assert_ne!(spent.input, 1000 + 800, "upstream's reading: the cached 800 counted twice");
-    assert_ne!(spent.input, 1000 - 190, "a total-blind implementation subtracted every cache read");
+    assert_ne!(spent.input, 1800, "upstream's reading: no cache read ever comes out");
+    assert_ne!(spent.input, 810, "the total that counts the cache apart was overruled");
 }
 
 /// **One event, several models, and every one of them billed.**
