@@ -169,8 +169,9 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
         .unwrap();
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let proxy_addr = listener.local_addr().unwrap();
+    let idle: tunnel::Activity = std::sync::Arc::new(|_busy| {});
     tokio::spawn(async move {
-        let _ = tunnel::serve_proxy(std::sync::Arc::new(borrow), listener).await;
+        let _ = tunnel::serve_proxy(std::sync::Arc::new(borrow), listener, idle).await;
     });
 
     // A client speaks HTTP CONNECT to the proxy, then raw bytes to the
@@ -207,6 +208,128 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     );
 
     serve_a.abort();
+    let _ = fs::remove_dir_all(&ra);
+    let _ = fs::remove_dir_all(&rb);
+}
+
+/// Opens a tunnel through a proxy and returns the still-open client
+/// socket, so the caller can hold the pipe (to watch the row go 忙碌).
+async fn connect_through(proxy: std::net::SocketAddr, target: &str) -> tokio::net::TcpStream {
+    use tokio::io::AsyncWriteExt;
+    let mut client = tokio::net::TcpStream::connect(proxy).await.unwrap();
+    client
+        .write_all(format!("CONNECT {target} HTTP/1.1\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let status = read_until(&mut client, b"\r\n\r\n").await;
+    assert!(
+        String::from_utf8_lossy(&status).starts_with("HTTP/1.1 200"),
+        "proxy established: {}",
+        String::from_utf8_lossy(&status)
+    );
+    client
+}
+
+/// Waits up to ~4s for the borrow row to reach `want`, returning whether
+/// it did. The activity callback writes the state synchronously as pipes
+/// come and go, so this poll only rides out the tiny gap between the wire
+/// event and the disk write — no system cycle to cover.
+async fn wait_borrow_state(node: &Node, want: khor_core::State) -> bool {
+    for _ in 0..40 {
+        if let Ok(views) = node.sessions() {
+            if let Some(v) = views.iter().find(|v| v.session.kind.0 == "borrow") {
+                if v.session.state.state == want {
+                    return true;
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+#[tokio::test]
+async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
+    let ra = root("sa");
+    let rb = root("sb");
+    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let serve_a = tokio::spawn(async move { sa.serve().await });
+    let sb = Node::open_as(rb.clone(), "beta").unwrap();
+    let serve_b = tokio::spawn(async move { sb.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    wait_for_endpoint_file(&rb).await;
+
+    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let ticket = a.invite().unwrap();
+    // Routed through beta's serve (both hold their keys), like every verb.
+    timeout(Duration::from_secs(15), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    let echo = echo_server().await;
+
+    // The borrow is hosted by beta's serve — b.borrow hands off, gets back
+    // the session and the proxy address the serve bound.
+    let (session, addr) = timeout(Duration::from_secs(20), b.borrow("alpha"))
+        .await
+        .expect("borrow must not hang")
+        .unwrap();
+    let proxy: std::net::SocketAddr = addr.parse().unwrap();
+
+    // The row is there, and idle until something uses it.
+    assert!(
+        wait_borrow_state(&b, khor_core::State::Idle).await,
+        "a fresh borrow row opens 空闲"
+    );
+
+    // Hold a pipe open through the proxy: the row must turn 忙碌 while
+    // bytes can flow, and back to 空闲 once the pipe closes.
+    let mut held = connect_through(proxy, &echo).await;
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        held.write_all(b"live").await.unwrap();
+        let mut back = [0u8; 4];
+        timeout(Duration::from_secs(10), held.read_exact(&mut back))
+            .await
+            .expect("echo must not hang")
+            .unwrap();
+        assert_eq!(&back, b"live", "the held pipe carries bytes");
+    }
+    assert!(
+        wait_borrow_state(&b, khor_core::State::Busy).await,
+        "a lease with a live pipe reads 忙碌"
+    );
+    drop(held);
+    assert!(
+        wait_borrow_state(&b, khor_core::State::Idle).await,
+        "the lease falls back to 空闲 when the pipe closes"
+    );
+
+    // Closing the borrow removes its row; the serve reaps the proxy task
+    // on its next tick.
+    b.close(&khor_node::SessionId(session)).unwrap();
+    let gone = {
+        let mut gone = false;
+        for _ in 0..40 {
+            let has = b
+                .sessions()
+                .unwrap()
+                .iter()
+                .any(|v| v.session.kind.0 == "borrow");
+            if !has {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        gone
+    };
+    assert!(gone, "close removes the borrow row");
+
+    serve_a.abort();
+    serve_b.abort();
     let _ = fs::remove_dir_all(&ra);
     let _ = fs::remove_dir_all(&rb);
 }

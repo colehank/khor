@@ -54,6 +54,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "devices", run: devices },
     Verb { word: "ls", run: ls },
     Verb { word: "pull", run: pull },
+    Verb { word: "borrow", run: borrow },
     Verb { word: "usage", run: usage },
     Verb { word: "sessions", run: sessions },
     Verb { word: "tell", run: tell },
@@ -195,6 +196,18 @@ fn pull(rest: &[String]) -> Result<(), String> {
     };
     let (moved, dest) = rt()?.block_on(node()?.pull_path(machine, path, &dir))?;
     println!("{}", cli::pulled_to(moved, dest.display()));
+    Ok(())
+}
+
+/// Borrows a machine's network: the serve stands up a local HTTP CONNECT
+/// proxy in front of a lease and prints where it listens. Point a browser
+/// or HTTPS_PROXY there and it goes out through the far machine.
+fn borrow(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(USAGE.into());
+    };
+    let (session, addr) = rt()?.block_on(node()?.borrow(machine))?;
+    println!("{}", cli::borrowing(machine, addr, session));
     Ok(())
 }
 

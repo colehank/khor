@@ -71,19 +71,31 @@ async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
     String::from_utf8(buf).map_err(|e| msg::tunnel_bad_handshake(e))
 }
 
-/// A held tunnel to one exit: the endpoint that dialed it and the live
-/// connection. Streams are opened from `conn` via [`dial`] and borrow it,
-/// so a caller keeps the `Borrow` alive for as long as any stream runs.
-/// One `Borrow` is one lease — many streams share it (docs/NET.md 出口
-/// 是一层：一台出口一个 lease，多消费者共享).
+/// A held tunnel to one exit: the live connection, and — for a one-shot
+/// caller — the endpoint it dialed from. Streams are opened from `conn`
+/// via [`dial`] and borrow it, so a caller keeps the `Borrow` alive for
+/// as long as any stream runs. One `Borrow` is one lease — many streams
+/// share it (docs/NET.md 出口是一层：一台出口一个 lease，多消费者共享).
+///
+/// The endpoint is `Option` because who owns it differs by caller: a
+/// one-shot CLI/test dials a fresh endpoint the `Borrow` must keep alive;
+/// the resident serve dials on its own long-lived endpoint, which outlives
+/// any borrow and must not be owned here.
 pub struct Borrow {
-    _ep: iroh::Endpoint,
+    _ep: Option<iroh::Endpoint>,
     conn: Connection,
 }
 
 impl Borrow {
+    /// A borrow that owns the endpoint it dialed from (CLI/test).
     pub fn new(ep: iroh::Endpoint, conn: Connection) -> Self {
-        Borrow { _ep: ep, conn }
+        Borrow { _ep: Some(ep), conn }
+    }
+
+    /// A borrow dialed on an endpoint someone else keeps alive (the
+    /// resident serve's).
+    pub fn on_shared(conn: Connection) -> Self {
+        Borrow { _ep: None, conn }
     }
 
     /// Opens one pipe through this lease to `target`.
@@ -188,13 +200,50 @@ const CONNECT_HEAD_MAX: usize = 8 * 1024;
 pub async fn serve_proxy(
     borrow: std::sync::Arc<Borrow>,
     listener: tokio::net::TcpListener,
+    activity: Activity,
 ) -> Result<(), String> {
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     loop {
         let Ok((sock, _)) = listener.accept().await else { return Ok(()) };
         let borrow = borrow.clone();
+        let count = count.clone();
+        let activity = activity.clone();
         tokio::spawn(async move {
-            let _ = proxy_one(&borrow, sock).await;
+            let _ = proxy_one(&borrow, sock, count, activity).await;
         });
+    }
+}
+
+/// Called as the lease crosses between having pipes and having none, so a
+/// borrow row can read 忙碌 while bytes flow and 空闲 while the port waits
+/// (docs/SESSION.md 六词). `true` = now busy, `false` = now idle.
+pub type Activity = std::sync::Arc<dyn Fn(bool) + Send + Sync>;
+
+/// Increments the live-pipe count on creation and decrements on drop,
+/// firing `activity` only at the 0↔1 boundary so a busy lease is not
+/// rewritten on every stream. Held across a splice, so the count is
+/// exactly the number of pipes actually carrying bytes.
+struct PipeGuard {
+    count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    activity: Activity,
+}
+
+impl PipeGuard {
+    fn open(count: std::sync::Arc<std::sync::atomic::AtomicUsize>, activity: Activity) -> Self {
+        use std::sync::atomic::Ordering::SeqCst;
+        if count.fetch_add(1, SeqCst) == 0 {
+            (activity)(true);
+        }
+        PipeGuard { count, activity }
+    }
+}
+
+impl Drop for PipeGuard {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering::SeqCst;
+        if self.count.fetch_sub(1, SeqCst) == 1 {
+            (self.activity)(false);
+        }
     }
 }
 
@@ -206,6 +255,8 @@ pub async fn serve_proxy(
 async fn proxy_one(
     borrow: &Borrow,
     mut sock: tokio::net::TcpStream,
+    count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    activity: Activity,
 ) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
     let mut head = Vec::new();
@@ -234,6 +285,7 @@ async fn proxy_one(
             sock.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await
                 .map_err(|e| e.to_string())?;
+            let _pipe = PipeGuard::open(count, activity);
             splice(send, recv, sock).await;
             Ok(())
         }

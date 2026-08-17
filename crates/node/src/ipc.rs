@@ -32,6 +32,11 @@ pub enum Op {
     /// Pull a pathed file whole (the slice loop runs in the serve, like
     /// Accept's does). `dir` is where it lands. Tail-appended.
     Pull { machine: String, path: String, dir: String },
+    /// Start a borrow of a machine's network (docs/NET.md 借网): the serve
+    /// dials the tunnel on its own endpoint, binds a local proxy port, and
+    /// registers a borrow session — all of which must happen in the
+    /// process that holds the key, never in the verb. Tail-appended.
+    Borrow { machine: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,6 +51,10 @@ pub enum Reply {
     /// landed — the verb prints the landing because the default (the
     /// asker's cwd) is a place the serve never knew.
     Pulled { moved: u64, dest: String },
+    /// Tail-appended with [`Op::Borrow`]: the borrow session's id and the
+    /// local address its proxy listens on — the verb prints the address
+    /// because the caller points a browser at it.
+    Borrowing { session: String, addr: String },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

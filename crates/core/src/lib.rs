@@ -46,6 +46,12 @@ pub mod kind {
     pub const GUI: &str = "gui";
     pub const CHAT: &str = "chat";
     pub const TRANSFER: &str = "transfer";
+    /// A held borrow of another machine's network (docs/NET.md 借网): a
+    /// local proxy in front of one lease. It is the one borrow shape that
+    /// is a session of its own — a session or a browser window borrowing
+    /// an exit wears the exit on its own row, but a proxy the user holds
+    /// by hand has no other row to ride, so it is one.
+    pub const BORROW: &str = "borrow";
 }
 
 pub mod category {

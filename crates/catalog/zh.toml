@@ -91,6 +91,8 @@ usage = """
   ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
   pull <机器> <文件> [目录]
                         把那台机器上的文件拉过来(默认落当前目录)
+  borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
+                        它那儿出去(要 serve 在跑;close 那条 session 收口)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
   sessions [--by recent|category|device|state]
                         session 列表(默认最近);换一种排布,置顶永远在最上
@@ -219,6 +221,9 @@ pulled-to = "拉了 {0} 字节,落在 {1}"
 # The no-silent-caps rule at the CLI: a listing cut at the cap must say
 # so, or a directory's first page reads as the whole of it.
 dir-truncated = "目录太大,只列出前 {0} 条"
+# Borrow prints where the proxy listens because a browser or HTTPS_PROXY
+# points there, and how to collapse it because nothing else says so.
+borrowing = "借着 {0} 的网,代理口在 {1};把浏览器或 HTTPS_PROXY 指过来。收口: khor close {2}"
 broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
 serve-banner = "khor serve: {0} 在听,配对与同步都归它"
 # `khor hooks`. The file is named on every run, installing or not: khor
@@ -414,6 +419,10 @@ tunnel-target-too-long = "要连的地址太长了"
 tunnel-bad-handshake = "隧道握手读不了: {0}"
 tunnel-bad-status = "隧道回了个不认识的状态: {0}"
 tunnel-no-route = "出口连不上要去的地方: {0}"
+# The borrow row's title, and why a borrow needs a running serve: the
+# proxy is long-lived, so it must live in the process that holds the key.
+borrowing-title = "借 {0} 的网"
+borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
 
 # ── the session surface (node) ──
 name-not-pathable = "这个名字进不了路径: {0}"

@@ -123,6 +123,10 @@ impl Node {
             &serde_json::to_vec(&file).map_err(|e| e.to_string())?,
         )?;
 
+        // Borrow rows left by a previous serve point at ports this
+        // process does not hold; clear them before answering anyone.
+        self.sweep_stale_borrows();
+
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
         let node = std::sync::Arc::new(self);
@@ -161,6 +165,9 @@ impl Node {
                     let n = node.clone();
                     let e = ep.clone();
                     tokio::spawn(async move {
+                        // Reap borrows whose rows were closed since the
+                        // last tick, freeing their ports, before syncing.
+                        n.reap_borrows().await;
                         let Ok(_g) = n.sync_gate.try_lock() else { return };
                         let _ = n.sync_with_all(&e).await;
                     });
@@ -230,6 +237,10 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::Borrow { machine } => match self.start_borrow(ep, &machine).await {
+                Ok((id, addr)) => ipc::Reply::Borrowing { session: id.0, addr: addr.to_string() },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -521,6 +532,31 @@ impl Node {
     ///
     /// [`Borrow`]: crate::tunnel::Borrow
     pub async fn tunnel_to(&self, machine: &str) -> Result<crate::tunnel::Borrow, String> {
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let conn = self.dial_tunnel(&ep, machine).await?;
+        Ok(crate::tunnel::Borrow::new(ep, conn))
+    }
+
+    /// Dials a borrow lease on an endpoint the caller keeps alive — the
+    /// resident serve's own. Same dial as [`tunnel_to`], but the `Borrow`
+    /// does not own the endpoint, because the serve outlives it.
+    async fn tunnel_on(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<crate::tunnel::Borrow, String> {
+        Ok(crate::tunnel::Borrow::on_shared(self.dial_tunnel(ep, machine).await?))
+    }
+
+    /// Resolves a machine and opens the tunnel connection to it on `ep`.
+    /// The one recipe both borrow dialers share.
+    async fn dial_tunnel(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<iroh::endpoint::Connection, String> {
         let (channel, _home) = self.resolve(machine)?;
         let target = self
             .devices_loaded()?
@@ -529,14 +565,91 @@ impl Node {
             .ok_or_else(|| msg::machine_left_table(&channel))?;
         let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
             .map_err(|e| e.to_string())?;
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
-            .await
-            .map_err(|e| e.to_string())?;
-        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, endpoint::TUNNEL_ALPN))
+        tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, endpoint::TUNNEL_ALPN))
             .await
             .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
-            .map_err(|e| msg::cant_reach_named(&channel, e))?;
-        Ok(crate::tunnel::Borrow::new(ep, conn))
+            .map_err(|e| msg::cant_reach_named(&channel, e))
+    }
+
+    /// Starts a borrow the serve hosts: dials the lease on `ep`, binds a
+    /// local proxy port, registers a borrow session, and spawns the proxy
+    /// task tracked so a later `close` can reap it. Returns the session id
+    /// and the proxy's address — the caller points a browser at the
+    /// latter. Runs only inside the serve (it is the key's one endpoint).
+    pub async fn start_borrow(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<(crate::SessionId, std::net::SocketAddr), String> {
+        let borrow = self.tunnel_on(ep, machine).await?;
+        let id = self.open_ephemeral(khor_core::kind::BORROW, &msg::borrowing_title(machine))?;
+        // The lease starts with no pipes, so the row opens 空闲 rather
+        // than the 忙碌 a fresh registration writes.
+        self.report_state(&id, khor_core::State::Idle)?;
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| e.to_string())?;
+        let addr = listener.local_addr().map_err(|e| e.to_string())?;
+        // The activity callback rewrites the row as the lease crosses
+        // between busy and idle. It owns a bare registry handle (no
+        // discovery — it only writes this one row's state), so the proxy
+        // task can reach the registry without borrowing the node.
+        let by = crate::live::LiveKind::new(self.root().clone(), self.device());
+        let sid = id.clone();
+        let activity: crate::tunnel::Activity = std::sync::Arc::new(move |busy| {
+            let word = if busy { khor_core::State::Busy } else { khor_core::State::Idle };
+            let _ = by.report(&sid, word, crate::live::Source::Reported);
+        });
+        let handle = tokio::spawn(async move {
+            let _ = crate::tunnel::serve_proxy(std::sync::Arc::new(borrow), listener, activity).await;
+        });
+        self.borrows.lock().await.insert(id.clone(), handle);
+        Ok((id, addr))
+    }
+
+    /// Aborts any hosted borrow whose session row is gone (a `close` from
+    /// any process removed it) and drops finished ones, freeing the proxy
+    /// port. Called on the serve's tick, so a close from another process
+    /// is reaped within one sync period.
+    pub(crate) async fn reap_borrows(&self) {
+        let mut held = self.borrows.lock().await;
+        held.retain(|id, handle| {
+            if handle.is_finished() || !self.live.claims(id) {
+                handle.abort();
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Removes borrow rows left by a previous serve: their proxies died
+    /// with that process, so the rows point at ports nobody holds. Run
+    /// once at startup, before answering anyone (docs/handoff: 改了结构,
+    /// 为旧结构服务的东西不会自己消失).
+    pub(crate) fn sweep_stale_borrows(&self) {
+        // Watermark is irrelevant here — we look only at kind and id.
+        for row in self.live.rows(|_| 0) {
+            if row.kind.0 == khor_core::kind::BORROW {
+                let _ = self.live.close_session(&row.id);
+            }
+        }
+    }
+
+    /// Borrows a machine's network through the resident serve: the serve
+    /// hosts the proxy and the lease, and this returns the borrow
+    /// session's id and the local proxy address. Requires a serve — the
+    /// proxy is long-lived and must live in the process that holds the
+    /// key, so unlike ls/pull there is no bind-your-own fallback.
+    pub async fn borrow(&self, machine: &str) -> Result<(String, String), String> {
+        match self.via_serve(ipc::Op::Borrow { machine: machine.to_owned() }).await {
+            Some(reply) => match reply? {
+                ipc::Reply::Borrowing { session, addr } => Ok((session, addr)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Err(msg::BORROW_NEEDS_SERVE.into()),
+        }
     }
 
     /// A machine's directory listing, for the files landing. Routed the

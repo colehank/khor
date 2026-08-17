@@ -124,6 +124,14 @@ pub struct Node {
     /// share block stores and could collide on sequence numbers. The
     /// ticker skips when busy; an explicit sync waits its turn.
     pub(crate) sync_gate: tokio::sync::Mutex<()>,
+    /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
+    /// their session id. Each is a task holding a local proxy port and a
+    /// lease to the exit; the serve reaps one once its session row is
+    /// gone (a `close` from any process removes the row), which is also
+    /// what frees the port. Empty on a node that is not the resident
+    /// serve.
+    pub(crate) borrows:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<SessionId, tokio::task::JoinHandle<()>>>>,
 }
 
 impl Node {
@@ -179,6 +187,7 @@ impl Node {
             usage,
             subscribers: Arc::new(Mutex::new(Vec::new())),
             sync_gate: tokio::sync::Mutex::new(()),
+            borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         };
         node.register_self()?;
         Ok(node)
