@@ -6,6 +6,13 @@ use khor_catalog::msg;
 /// One protocol, one ALPN. Version bumps mean a new string.
 pub const ALPN: &[u8] = b"khor/0";
 
+/// The borrow tunnel (docs/NET.md 借网) runs on its own ALPN, not the
+/// main one: `khor/0` is strict request-reply (read a frame to FIN,
+/// answer, close), and a long-lived duplex byte pipe cannot live inside
+/// that handler. Both ALPNs bind on the same endpoint; the accept loop
+/// routes by which one a connection speaks.
+pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
+
 /// The Khor relay tier (docs/NET.md 中继): joins the n0 defaults on
 /// every bind, so a network that cannot reach n0 falls to it without
 /// anyone flipping a switch. Currently mandala's aliyun box, on loan —
@@ -38,7 +45,7 @@ pub fn configured_relays() -> Vec<String> {
 pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<iroh::Endpoint> {
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
-        .alpns(vec![ALPN.to_vec()]);
+        .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()]);
     let extras: Vec<iroh::RelayConfig> = extra_relays
         .iter()
         .filter_map(|r| r.parse::<iroh::RelayUrl>().ok())

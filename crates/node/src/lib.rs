@@ -18,6 +18,7 @@ pub mod list;
 pub mod live;
 pub mod proto;
 pub mod transfer;
+pub mod tunnel;
 pub mod usage;
 pub mod vitals;
 

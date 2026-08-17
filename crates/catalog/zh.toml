@@ -406,6 +406,15 @@ wrong-recipient = "这份文件是发给 {0} 的,这台机器不该收"
 not-a-file-path = "这不是一个文件路径: {0}"
 cant-canonicalize = "定不下这个路径: {0}"
 
+# ── borrowing a machine's network (docs/NET.md 借网) ──
+# The tunnel carries raw bytes to a target the exit machine can reach.
+# Its refusals: an oversized target header is a malformed dialer; a
+# target the exit cannot connect to is the far net's answer, not ours.
+tunnel-target-too-long = "要连的地址太长了"
+tunnel-bad-handshake = "隧道握手读不了: {0}"
+tunnel-bad-status = "隧道回了个不认识的状态: {0}"
+tunnel-no-route = "出口连不上要去的地方: {0}"
+
 # ── the session surface (node) ──
 name-not-pathable = "这个名字进不了路径: {0}"
 machine-name-not-pathable = "这个机器名进不了路径: {0}"

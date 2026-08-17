@@ -135,7 +135,11 @@ impl Node {
                     let e = ep.clone();
                     tokio::spawn(async move {
                         if let Ok(conn) = incoming.await {
-                            let _ = n.handle(conn, &e).await;
+                            if conn.alpn() == endpoint::TUNNEL_ALPN {
+                                let _ = n.serve_tunnel(conn).await;
+                            } else {
+                                let _ = n.handle(conn, &e).await;
+                            }
                         }
                     });
                 }
@@ -246,6 +250,29 @@ impl Node {
                 .await
                 .map_err(|e| msg::serve_handoff_failed(f.pid, e)),
         )
+    }
+
+    /// The exit side of a borrow tunnel (docs/NET.md 借网). One
+    /// connection carries many streams — a lease is one connection shared
+    /// by every consumer of this exit — so each accepted bi stream is one
+    /// pipe to a target, spawned so a slow one does not block the next.
+    ///
+    /// Pairing is checked per stream, freshly: a device removed from the
+    /// table mid-session must stop being answered, and reading the doc
+    /// each time is what makes the removal bite. The verdict is handed to
+    /// `serve_stream`, which puts it on the wire as the status byte.
+    async fn serve_tunnel(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
+        let remote = conn.remote_id().to_string();
+        while let Ok((send, recv)) = conn.accept_bi().await {
+            let paired = self
+                .devices_loaded()
+                .map(|l| l.doc.get(&remote).is_some())
+                .unwrap_or(false);
+            tokio::spawn(async move {
+                let _ = crate::tunnel::serve_stream(send, recv, paired).await;
+            });
+        }
+        Ok(())
     }
 
     async fn handle(&self, conn: iroh::endpoint::Connection, ep: &iroh::Endpoint) -> Result<(), String> {
@@ -480,6 +507,36 @@ impl Node {
         let outcome = self.accept_with(&ep, id).await;
         ep.close().await;
         outcome
+    }
+
+    /// Opens a borrow lease to a machine's network (docs/NET.md 借网):
+    /// a live tunnel connection whose streams each reach some `host:port`
+    /// the exit can reach. The returned [`Borrow`] owns the endpoint it
+    /// dialed from, so it must be kept alive while any stream runs.
+    ///
+    /// Binds its own endpoint — right for a one-shot caller (the CLI verb,
+    /// a test). The resident proxy reuses the serve's endpoint instead;
+    /// binding a second one under this key would knock the serve off
+    /// (endpoint.rs: one live endpoint per key).
+    ///
+    /// [`Borrow`]: crate::tunnel::Borrow
+    pub async fn tunnel_to(&self, machine: &str) -> Result<crate::tunnel::Borrow, String> {
+        let (channel, _home) = self.resolve(machine)?;
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
+            .map_err(|e| e.to_string())?;
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, endpoint::TUNNEL_ALPN))
+            .await
+            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|e| msg::cant_reach_named(&channel, e))?;
+        Ok(crate::tunnel::Borrow::new(ep, conn))
     }
 
     /// A machine's directory listing, for the files landing. Routed the
