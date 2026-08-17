@@ -18,6 +18,16 @@ fn devices() -> Result<Vec<DeviceRow>, String> {
     khor_gui_core::list_devices(&Node::root_from_env())
 }
 
+/// **Blocking, and the first call can take seconds**: reading every
+/// transcript on this machine is 18 s cold (`khor_node::usage`). Tauri
+/// runs commands on a worker thread rather than on the UI thread, so
+/// this does not freeze the window — and every call after the first is
+/// a walk of directory entries.
+#[tauri::command]
+fn usage() -> Result<khor_node::Usage, String> {
+    khor_gui_core::usage(&Node::root_from_env())
+}
+
 #[tauri::command]
 fn seen(id: String) -> Result<(), String> {
     khor_gui_core::seen(&Node::root_from_env(), &id)
@@ -116,6 +126,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sessions,
             devices,
+            usage,
             seen,
             close_session,
             tell,

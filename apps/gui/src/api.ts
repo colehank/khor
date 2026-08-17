@@ -6,8 +6,9 @@ import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
+import type { Usage } from "./gen/bindings/Usage";
 
-export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket };
+export type { SessionRow, DeviceRow, FaceChoices, HooksState, Ticket, Usage };
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
@@ -29,6 +30,11 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });
 export const fetchDevices = () => call<DeviceRow[]>("devices");
+/** What every machine has spent, by day and by vendor — the whole
+    answer, because a screen scrolls. Asked on its own rather than riding
+    the device rows: those are polled every couple of seconds and this is
+    a list of every day there has ever been. */
+export const fetchUsage = () => call<Usage>("usage");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });

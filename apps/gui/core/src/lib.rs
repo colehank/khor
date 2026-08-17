@@ -10,7 +10,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use khor_node::list::Arrange;
-use khor_node::{Avatar, AvatarStyle, FaceShape, Node, SessionId, Variant, Vitals, PRESETS};
+use khor_node::{
+    Avatar, AvatarStyle, FaceShape, Node, SessionId, Usage, Variant, Vitals, PRESETS,
+};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -261,6 +263,18 @@ pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
             name: d.name,
         })
         .collect())
+}
+
+/// What every machine in the network has spent, by day and by vendor —
+/// the call `khor usage` makes, with no window applied.
+///
+/// **No window, unlike the verb.** A terminal prints once and scrolls
+/// away, so `khor usage` takes a number of days; a screen scrolls, so the
+/// answer arrives whole and how far back somebody looks is how far they
+/// scroll. Same node call either way; what differs is what a face can do
+/// with it.
+pub fn usage(root: &Path) -> Result<Usage, String> {
+    open(root)?.usage_everywhere()
 }
 
 /// Pins or unpins a session — the call `khor pin <session>` makes. One

@@ -109,6 +109,13 @@
 //      knows membership, not reachability — asserted as a surplus-svg
 //      count, not as a hunt for lines nobody wrote), and pressing a face
 //      opens that machine;
+//  29. the app's mark opens the mesh and what it cost, on both faces —
+//      **the narrow one is the only way in there at all** — the place
+//      replaces the list-and-detail pair rather than filling it, a
+//      landing comes back out of it, the faces on it are not pressable
+//      (nothing in that space to open into), and every day and vendor
+//      the panel shows is one `khor usage` prints for the same home,
+//      with neither the day nor the word written in this file;
 //  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
@@ -117,7 +124,7 @@
 // what the other face prints — the catalog owns the text, this script
 // owns the comparison.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -224,6 +231,35 @@ let browser;
 try {
   rmSync(SCRATCH, { recursive: true, force: true });
   for (const d of [A, B, G]) mkdirSync(d, { recursive: true });
+
+  // Something for beta's agents to have cost. **Written under beta's own
+  // home**, which is where its meter reads (`khor_node::usage`) — so the
+  // spending panel and `khor usage` are looking at one tree, and the
+  // comparison between them is about the two faces rather than about two
+  // sets of files. ASCII throughout: this is test data, not the thing
+  // under test.
+  const spent = join(B, ".claude/projects/p");
+  mkdirSync(spent, { recursive: true });
+  const billed = (id, day, out, cached) =>
+    JSON.stringify({
+      type: "assistant",
+      timestamp: `2026-08-${day}T06:00:00Z`,
+      message: {
+        id,
+        usage: {
+          input_tokens: out * 3,
+          cache_read_input_tokens: cached,
+          cache_creation_input_tokens: Math.round(cached / 8),
+          output_tokens: out,
+        },
+      },
+    });
+  //     Two days rather than one: the panel groups by day, and a single
+  //     day cannot tell a grouping apart from a list.
+  writeFileSync(
+    join(spent, "s.jsonl"),
+    [billed("m1", "16", 890, 277965), billed("m2", "17", 4210, 1338402)].join("\n") + "\n",
+  );
 
   // alpha: serve + a hooked agent session (register → busy), and a
   // ticket from its CLI — the one thing the GUI is not being asked to
@@ -723,27 +759,37 @@ try {
     throw new Error("the sessions pane borrowed the machine pane's search label");
   }
 
-  // 14) the mark at the head of the rail.
+  // 14) the mark at the head of the rail — **and it answers now.**
+  //
+  //     This item used to assert the opposite, in as much detail: no
+  //     button around it, no response to the pointer. That was right
+  //     while it opened nothing, and it is now false — so it is turned
+  //     over rather than deleted, because the new fact is the one worth
+  //     guarding. What it opens is asserted below (the map and the
+  //     spending); what is asserted here is that it looks like something
+  //     that opens anything at all.
   const mark = page.locator("[data-rail-mark]");
   if ((await mark.count()) !== 1) throw new Error("no mark at the head of the rail");
   // Its artwork really loaded. A broken import renders an <img> all the
   // same, and every other assertion here would still pass.
-  const drew = await mark.locator("img").evaluate((el) => el.complete && el.naturalWidth > 0);
+  const drew = await mark.evaluate((el) => el.complete && el.naturalWidth > 0);
   if (!drew) throw new Error("the mark's artwork did not load");
-  // It is not a control. Two independent readings, because they fail
-  // differently: no button wraps it, and pointing at it changes nothing.
-  if (await mark.evaluate((el) => Boolean(el.closest("button")))) {
-    throw new Error("the mark sits inside a button");
+  const markButton = page.locator("[data-rail-item]", { has: mark });
+  if ((await markButton.count()) !== 1) {
+    throw new Error("the mark is not a rail item, so it is not reachable by keyboard either");
   }
   const bg = (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
   const settle = () => new Promise((r) => setTimeout(r, 300));
   await pointerAway();
   await settle();
-  const markResting = await bg(mark);
+  const markResting = await bg(markButton);
   await mark.hover();
   await settle();
-  if ((await bg(mark)) !== markResting) throw new Error("the mark answers the pointer");
-  // …and the control that says the measurement can see a hover at all.
+  if ((await bg(markButton)) === markResting) {
+    throw new Error("the mark does not answer the pointer, so nothing says it can be pressed");
+  }
+  //     …measured the same way as a glyph that is known to answer, so a
+  //     reading of "it changed" is not the measurement drifting.
   const glyph = railItem("files");
   await pointerAway();
   await settle();
@@ -751,7 +797,7 @@ try {
   await glyph.hover();
   await settle();
   if ((await bg(glyph)) === glyphResting) {
-    throw new Error("probe dead: a rail glyph shows no hover either, so the mark's silence proves nothing");
+    throw new Error("probe dead: a rail glyph shows no hover either, so nothing here means anything");
   }
   await pointerAway();
 
@@ -1038,18 +1084,22 @@ try {
   await until("back to the narrow list", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
   // All four landings are reachable down here too — the narrow rail is
-  // the only way to any of them — and the mark is not among them: it
-  // answers no tap, and this is the row where everything else does.
+  // the only way to any of them — **and the mark is among them now.**
+  //
+  // This assertion also used to say the opposite: the mark was kept out
+  // of the narrow rail because that row is places to go and it went
+  // nowhere. It goes somewhere now, so keeping it out would be the one
+  // place on a phone from which the mesh cannot be reached at all.
   for (const tab of LANDING_TABS) {
     if ((await railItem(tab).count()) !== 1) throw new Error(`no ${tab} glyph on the narrow rail`);
+  }
+  if ((await page.locator("[data-rail-mark]").count()) !== 1) {
+    throw new Error("the mark is missing from the narrow rail, so the mesh is unreachable here");
   }
   await openLanding("browser");
   await until("machines on the narrow browser pane", 10_000, async () =>
     (await page.locator("[data-device]").count()) === onDevices.length,
   );
-  if ((await page.locator("[data-rail-mark]").count()) !== 0) {
-    throw new Error("the mark is in the narrow rail");
-  }
 
   // 18) the pin is reachable on the narrow face — the one where there is
   //     no pointer to reveal it with. A hover-only row action is simply
@@ -1186,7 +1236,15 @@ try {
   // The rail's last glyph is the one that opens no landing — and there
   // being exactly one such glyph is itself the check that this is still
   // the settings one and not something added beside it.
-  const settingsGlyph = page.locator("[data-rail-item]:not([data-landing])");
+  //
+  // **The mark is excluded by name rather than by luck.** It is a rail
+  // item now and it opens no landing either (it opens the mesh), so
+  // without this the count would be two and the probe would report
+  // itself dead. Excluding it keeps the original guard doing its job: a
+  // *third* landing-less glyph still trips this.
+  const settingsGlyph = page.locator(
+    "[data-rail-item]:not([data-landing]):not(:has([data-rail-mark]))",
+  );
   if ((await settingsGlyph.count()) !== 1) {
     throw new Error("probe dead: the rail does not have exactly one glyph that opens no landing");
   }
@@ -1622,6 +1680,89 @@ try {
   }
   // Back where the next item expects to be: it pins the first row it
   // finds, and which pane is open decides which row that is.
+  await openLanding("devices");
+
+  // 29) the mark opens the mesh and what it cost — on both faces.
+  //
+  //     The narrow half is the point of it: with the map living in the
+  //     devices pane's detail, a phone can never see it (that pane shows
+  //     the list, and picking a machine shows that machine's card). This
+  //     is the only way in from there, so it is checked there first.
+  //
+  //     What the panel says is compared against `khor usage` reading the
+  //     same home — the independent witness, and **no number and no word
+  //     is written in this file**: the day and the category are read off
+  //     the app and looked for in the terminal's output.
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.locator("[data-rail-mark]").click();
+  await until("the mesh on the narrow face", 15_000, async () =>
+    (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
+  );
+  await until("the spending beside it", 30_000, async () =>
+    (await page.locator("[data-mark-place] [data-usage]").count()) === 1,
+  );
+  //     …and the list is gone while it is up: this place is not a pane.
+  if ((await page.locator("[data-list]").count()) !== 0) {
+    throw new Error("the mark's place is showing a list beside it; it replaces the pair");
+  }
+  //     The narrow face never shows two things at once, so that check
+  //     alone would be satisfied by a wide shell that kept the list —
+  //     which is why the wide one is checked too, below, where it can
+  //     actually fail.
+  //     Pressing a landing comes back out of it.
+  await openLanding("devices");
+  if ((await page.locator("[data-mark-place]").count()) !== 0) {
+    throw new Error("the mark's place is still up after a landing was picked");
+  }
+
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await page.locator("[data-rail-mark]").click();
+  await until("the mesh on the wide face", 15_000, async () =>
+    (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
+  );
+  if ((await page.locator("[data-list]").count()) !== 0) {
+    throw new Error("the wide shell kept the list beside the mesh; this place replaces the pair");
+  }
+  //     Read off the **text on screen**, not off the data attributes
+  //     beside it. A first version compared the attributes and stayed
+  //     green when the heading was made to print a date nobody spent
+  //     anything on — it was checking that the app agrees with itself.
+  //     What a person reads is the words, so the words are what get
+  //     looked for in the terminal's output.
+  const spentDays = await page
+    .locator("[data-usage] [data-usage-row]")
+    .evaluateAll((els) =>
+      els.map((e) => ({
+        day: e.closest("[data-usage-day]")?.querySelector("[data-usage-date]")?.textContent?.trim()
+          ?? e.previousElementSibling?.textContent?.trim()
+          ?? "",
+        category: e.querySelector("[data-usage-category]")?.textContent?.trim() ?? "",
+      })),
+    );
+  if (spentDays.some((d) => !d.day || !d.category)) {
+    throw new Error(`probe dead: a row printed no day or no vendor: ${JSON.stringify(spentDays)}`);
+  }
+  if (spentDays.length === 0) {
+    throw new Error("probe dead: the panel shows no spending, so nothing below compares anything");
+  }
+  //     The faces on the map are not pressable here: there is no card in
+  //     this space to open into, and an affordance that answers nothing
+  //     is what the mark itself was forbidden from being.
+  const pressable = await page
+    .locator("[data-mark-place] [data-seat]")
+    .evaluateAll((els) => els.filter((e) => e.tagName === "BUTTON").length);
+  if (pressable !== 0) {
+    throw new Error(`${pressable} faces on the mesh offer to open something that is not there`);
+  }
+  const printed = cli(envB, "usage", "--days", "30");
+  for (const { day, category } of spentDays) {
+    const line = printed.split("\n").find((l) => l.includes(day) && l.includes(category));
+    if (!line) {
+      throw new Error(
+        `the app shows ${category} spending on ${day} and \`khor usage\` prints no such line:\n${printed}`,
+      );
+    }
+  }
   await openLanding("devices");
 
   // 28) pressing a face on the map opens that machine.

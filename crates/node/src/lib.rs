@@ -110,8 +110,10 @@ pub struct Node {
     /// What the agents on this machine have spent. Held on the node
     /// rather than built per call, because it keeps the bookkeeping that
     /// makes a second reading cheap (`usage::Meters::tally` has the
-    /// measurement). Shared rather than owned so the async side can move
-    /// a reading onto a blocking thread without leaving the cache behind.
+    /// measurement). Shared rather than owned for two reasons: the async
+    /// side can move a reading onto a blocking thread without leaving the
+    /// bookkeeping behind, and every node opened on this home in this
+    /// process gets the same one (`usage::meters_for`).
     usage: Arc<usage::Meters>,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
     /// Serializes sync pumps within one process: two concurrent pumps
@@ -152,7 +154,13 @@ impl Node {
         // hooks: a node opened on a temp home reads that home's agents,
         // never the real user's. Every verification of this feature is
         // made of that.
-        let usage = Arc::new(usage::Meters::at(&adaptor::vendor_home(&root)));
+        //
+        // **Shared across every node on this home in this process**, and
+        // that is load-bearing rather than tidy: the GUI's data layer
+        // opens a node per call, so a registry built here per node would
+        // be a cold one every time — and cold is eighteen seconds
+        // (`usage::meters_for`).
+        let usage = usage::meters_for(&adaptor::vendor_home(&root));
         let node = Node {
             root,
             key,
@@ -892,6 +900,45 @@ impl Node {
     /// there goes through `spawn_blocking`, exactly as vitals does.
     pub fn usage(&self) -> khor_core::Usage {
         self.usage.tally()
+    }
+
+    /// What every machine in the network has spent, summed by day and
+    /// by vendor.
+    ///
+    /// **A machine khor has never got an answer out of contributes
+    /// nothing, and this cannot say which.** That is not a gap to be
+    /// filled with a caveat: whoever paints this shows the machines
+    /// beside it, and a machine that has never answered says so on its
+    /// own face (`khor_gui_core`, the map). Two halves of one screen,
+    /// neither explaining the other.
+    ///
+    /// **The days were each cut in their own machine's zone**, so a
+    /// network-wide "today" is the sum of everyone's own today
+    /// (`khor_core::UsageDay`). Two machines eight hours apart disagree
+    /// about which side of midnight a late evening falls on; the
+    /// alternative is a day boundary that is wrong for everybody instead
+    /// of right for each.
+    pub fn usage_everywhere(&self) -> Result<khor_core::Usage, String> {
+        let mut rows: std::collections::BTreeMap<(String, String), khor_core::Tokens> =
+            Default::default();
+        let mut unreadable = 0u64;
+        for d in self.devices()? {
+            let Some((u, _)) = self.usage_of(&d.id) else { continue };
+            unreadable = unreadable.saturating_add(u.unreadable);
+            for day in u.days {
+                rows.entry((day.day, day.category)).or_default().add(day.tokens);
+            }
+        }
+        Ok(khor_core::Usage {
+            // Oldest first, the same order one machine's answer comes in
+            // — a face that had to sort would be the second sort this
+            // repo keeps refusing to grow (`list`).
+            days: rows
+                .into_iter()
+                .map(|((day, category), tokens)| khor_core::UsageDay { day, category, tokens })
+                .collect(),
+            unreadable,
+        })
     }
 
     /// The meters themselves, so a caller that must not block the

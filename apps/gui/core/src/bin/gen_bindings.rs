@@ -11,5 +11,9 @@ fn main() {
     khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
+    // Not reachable through any row above: the spending answer is asked
+    // for on its own, so nothing embeds it and `export_all_to` would
+    // never walk into it.
+    khor_node::Usage::export_all_to(&dir).expect("export Usage");
     println!("bindings -> {}", dir.display());
 }

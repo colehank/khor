@@ -312,6 +312,39 @@ impl Meters {
     }
 }
 
+/// The registry reading `home`, shared by everyone in this process who
+/// asks for it.
+///
+/// # Why it outlives the call at all
+///
+/// Same shape and same reason as `crate::vitals`'s sampler: **the thing
+/// worth keeping is not the answer, it is what makes the next answer
+/// cheap.** A `Meters` remembers how far it has read into every
+/// transcript, and a fresh one has to read all of them — 18 s on this
+/// machine. The GUI's data layer opens a `Node` per call
+/// (`khor_gui_core`), so without this every press of a button would pay
+/// that again, and the feature would be unusable in exactly the place it
+/// is for.
+///
+/// Keyed by home, unlike the sampler, which is a single global: a machine
+/// has one set of readings but a process can be rooted at several homes
+/// — the dual-instance verifications are, and so is every test. Two nodes
+/// on one home sharing this is right; two nodes on two homes must not.
+///
+/// The map only grows, which is bounded in production (one home) and
+/// costs a test suite one entry per temp directory it opens.
+pub fn meters_for(home: &Path) -> std::sync::Arc<Meters> {
+    static ALL: std::sync::OnceLock<Mutex<HashMap<PathBuf, std::sync::Arc<Meters>>>> =
+        std::sync::OnceLock::new();
+    let mut all = ALL
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    all.entry(home.to_path_buf())
+        .or_insert_with(|| std::sync::Arc::new(Meters::at(home)))
+        .clone()
+}
+
 /// Today, where this machine stands.
 ///
 /// **The same zone that cut the days**, which is the whole reason the

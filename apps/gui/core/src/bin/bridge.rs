@@ -120,6 +120,7 @@ fn handle(
     match cmd {
         "sessions" => to_json(&khor_gui_core::list_sessions(root, &arg("by")?)?),
         "devices" => to_json(&khor_gui_core::list_devices(root)?),
+        "usage" => to_json(&khor_gui_core::usage(root)?),
         "seen" => {
             khor_gui_core::seen(root, &arg("id")?)?;
             Ok("null".to_owned())

@@ -4,6 +4,7 @@ import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
+  fetchUsage,
   installHooks,
   markSeen,
   pinDevice,
@@ -12,6 +13,7 @@ import {
   type DeviceRow,
   type HooksState,
   type SessionRow,
+  type Usage,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import {
@@ -39,6 +41,7 @@ import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
+import { UsagePanel } from "@/views/UsagePanel";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
 import { TellDialog } from "@/views/TellDialog";
@@ -55,10 +58,29 @@ import { TellDialog } from "@/views/TellDialog";
  */
 type Landing = "sessions" | "devices" | "files" | "browser";
 
+/**
+ * The app's mark opens a place of its own: the whole mesh, and what the
+ * agents on it have cost.
+ *
+ * **Not a fifth `Landing`, and the difference is structural rather than
+ * cosmetic.** A landing is a list beside a detail — that is what the
+ * shell is built out of, and what the rail's four glyphs each open. This
+ * one is neither half of that pair: there is no list of things to pick
+ * from, because the thing it shows is the network itself. So it replaces
+ * the list-and-detail pair rather than filling it, and the state that
+ * says so is separate from the landing rather than another value of it.
+ * Coming back from it restores whichever landing was open, which is why
+ * that value is never overwritten.
+ */
+type Mark = boolean;
+
 /** Which of the "+" dialogs is up, if any. */
 type Sheet = "tell" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
+/** How often the spending answer is re-asked while it is on screen. See
+    where it is used for why it is not the rows' beat. */
+const USAGE_POLL_MS = 10_000;
 
 /**
  * How to arrange the session list. The keys are the node's
@@ -163,6 +185,7 @@ function RailItem({
   narrow,
   badge,
   onClick,
+  className,
   children,
 }: {
   label: string;
@@ -172,6 +195,13 @@ function RailItem({
   narrow: boolean;
   badge?: number;
   onClick?: () => void;
+  /**
+   * Extra styling for one item. **Exists for the mark**, whose glyph is
+   * an image: the selected look below is a text colour, which tints a
+   * drawn glyph and does nothing at all to a picture — so that one item
+   * has to say it a second way.
+   */
+  className?: string;
   children: React.ReactNode;
 }) {
   const button = (
@@ -185,6 +215,7 @@ function RailItem({
       className={cn(
         "group relative h-auto flex-col gap-0 rounded-md px-2 py-2 text-muted-foreground",
         on && "text-primary hover:text-primary",
+        className,
       )}
     >
       {children}
@@ -240,6 +271,16 @@ export default function App() {
   // rather than another `Sheet`: those three are the "+" menu's, and
   // this one does not belong to any pane.
   const [settings, setSettings] = useState(false);
+  // Whether the mark's place is showing. See `Mark`.
+  const [mark, setMark] = useState<Mark>(false);
+  // What the agents have cost. **Asked for only while the place that
+  // shows it is open**, and not on the two-second poll the rows ride:
+  // the answer is every day there has ever been, and on the machine
+  // answering it a first pass is eighteen seconds
+  // (`khor_node::usage::Meters::tally`). Every one after that is cheap,
+  // so a slower beat of its own is enough for a number that changes as
+  // fast as somebody can type.
+  const [usage, setUsage] = useState<Usage | null>(null);
 
   // This machine's hooks, polled with everything else rather than read
   // once when the card opens: `khor hooks install` in a terminal is the
@@ -270,6 +311,22 @@ export default function App() {
     // Re-subscribed when the arrangement changes: the new order comes
     // from the node, so switching modes is a fetch, never a re-sort.
   }, [arrangeBy]);
+
+  useEffect(() => {
+    if (!mark) return;
+    let live = true;
+    const tick = () => {
+      fetchUsage()
+        .then((u) => live && setUsage(u))
+        .catch(() => {});
+    };
+    tick();
+    const t = setInterval(tick, USAGE_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [mark]);
 
   const onSelect = useCallback((row: SessionRow) => {
     setSelected(row.id);
@@ -445,23 +502,42 @@ export default function App() {
         narrow ? "flex-row justify-around border-t py-1" : "w-rail flex-col border-r py-3",
       )}
     >
-      {/* The app's mark, wide only. On the narrow face this rail is a
-          bottom bar of places to go, and the mark is not one of them —
-          it would be the only thing there that does not answer a tap,
-          in the row where every tap is expected to. */}
-      {!narrow && <KhorMark className="mb-2" />}
+      {/* The app's mark, on both faces now. It used to be wide-only,
+          because the narrow rail is a row of places to go and this was
+          not one of them; it is now, so the reason went with the
+          inertness (see `KhorMark`). */}
+      <RailItem
+        label={gui.mesh_map}
+        on={mark}
+        narrow={narrow}
+        onClick={() => {
+          setMark(true);
+          setScreen("list");
+        }}
+        // The one item whose glyph is a picture, so being the open one
+        // has to be said with something a picture can wear.
+        className="data-[on=true]:bg-accent"
+      >
+        <KhorMark />
+      </RailItem>
       {LANDINGS.map((l) => (
         <RailItem
           key={l.key}
           label={l.name}
           tab={l.key}
-          on={landing === l.key}
+          // **Not lit while the mark's place is up.** A landing is still
+          // remembered — coming back out of the mesh returns to it — but
+          // remembering it and being the thing on screen are two facts,
+          // and painting both at once puts two selected items in one
+          // rail with the wrong one lit.
+          on={!mark && landing === l.key}
           narrow={narrow}
           // Only the sessions glyph counts anything: the badge rule is
           // that it must be able to reach zero (docs/UX.md 状态呈现),
           // and machines do not go away when you have looked at them.
           badge={l.key === "sessions" ? blockedOrUnread : undefined}
           onClick={() => {
+            setMark(false);
             setLanding(l.key);
             setScreen("list");
           }}
@@ -607,14 +683,49 @@ export default function App() {
     </>
   );
 
+  /**
+   * The mark's place: the mesh, and what it cost.
+   *
+   * **Side by side wide, stacked narrow, and the two are one argument
+   * rather than two panels that happen to share a screen.** The picture
+   * names the machines and says which of them khor has heard from; the
+   * numbers are every machine's added together and name none. Each is
+   * the caption the other would otherwise have needed printed under it.
+   *
+   * The map is handed no `onOpen` here: there is no machine card in this
+   * space to open into, and an affordance that answers nothing is what
+   * the mark itself was forbidden from being until this batch
+   * (`MandalaMap` says why that is a prop).
+   */
+  const markPlace = (
+    <div
+      data-mark-place
+      className={cn("flex h-full min-h-0 min-w-0", narrow ? "flex-col" : "flex-row")}
+    >
+      <div className={cn("min-h-0 min-w-0", narrow ? "flex-1" : "flex-[3]")}>
+        <MandalaMap rows={devices} />
+      </div>
+      <div
+        className={cn(
+          "min-h-0 min-w-0",
+          narrow ? "max-h-1/2 flex-none border-t" : "w-list flex-none border-l",
+        )}
+      >
+        <UsagePanel usage={usage} />
+      </div>
+    </div>
+  );
+
   // One shell, two width classes: wide is rail|list|detail all at once,
-  // narrow is one screen at a time with the rail as a bottom bar.
+  // narrow is one screen at a time with the rail as a bottom bar. The
+  // mark's place is neither half of that pair, so it takes the whole of
+  // what is left of the window beside the rail (see `Mark`).
   return (
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
           <div className="min-h-0 flex-1 overflow-hidden">
-            {screen === "detail" && detail ? detail : list}
+            {mark ? markPlace : screen === "detail" && detail ? detail : list}
           </div>
           {rail}
           {sheets}
@@ -622,8 +733,14 @@ export default function App() {
       ) : (
         <div className="flex h-dvh">
           {rail}
-          {list}
-          <div className="min-w-0 flex-1">{detail}</div>
+          {mark ? (
+            <div className="min-w-0 flex-1">{markPlace}</div>
+          ) : (
+            <>
+              {list}
+              <div className="min-w-0 flex-1">{detail}</div>
+            </>
+          )}
           {sheets}
         </div>
       )}

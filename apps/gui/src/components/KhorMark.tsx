@@ -11,35 +11,39 @@
 // two vein paths, applied to the one asset that does *not* have to be
 // written twice.
 //
-// **It takes no clicks, and must not look as though it does.** What it
-// will eventually open (the mandala map and token usage) is a later
-// batch; until then it gets no hover state, no pointer cursor and no
-// button semantics, because an affordance that answers nothing teaches
-// people to stop trying the ones that do.
+// **It takes clicks now, and everything that used to say otherwise is
+// gone.** It was written inert on a stated judgment — no hover, no
+// pointer, no button semantics, and not drawn at all on the narrow face,
+// because an affordance that answers nothing teaches people to stop
+// trying the ones that do. What it was waiting for has landed (the
+// mandala map and what the agents cost), so every one of those went with
+// it, including the narrow rail's absence: that rail is a row of places
+// to go, and the only reason to keep this out of it was that it went
+// nowhere.
 import markUrl from "../../src-tauri/icons/src/mandala-glass.svg";
 
-import { cn } from "@/lib/utils";
-
-export function KhorMark({ className }: { className?: string }) {
+/**
+ * Just the artwork. **The button around it is `RailItem`**, the same one
+ * every other glyph in the rail sits in, so the mark hovers, focuses and
+ * lights exactly as its neighbours do — one implementation of "a place in
+ * the rail", not a second one that has to be kept in step.
+ */
+export function KhorMark() {
   return (
-    <div data-rail-mark className={cn("flex-none", className)}>
-      <img
-        src={markUrl}
-        // Decorative, deliberately. The rail's landings each say their
-        // name out loud because each is somewhere to go; this one is
-        // nowhere to go, and naming it would add a stop on the screen
-        // reader's tour that leads nowhere. The app's name is already on
-        // the window.
-        alt=""
-        aria-hidden="true"
-        // An image that can be dragged out of the window is the last
-        // remaining hint that it is a thing you operate.
-        draggable={false}
-        // No rounding here: the artwork carries its own corner radius
-        // (22.4%, Apple's icon grid) inside its clip path, and a second
-        // radius on top of that one shaves the mark's own silhouette.
-        className="block size-icon-mark"
-      />
-    </div>
+    <img
+      data-rail-mark
+      src={markUrl}
+      // Decorative: the button around it carries the name, so reading the
+      // artwork out too would announce the same thing twice.
+      alt=""
+      aria-hidden="true"
+      // An image that can be dragged out of the window is still not
+      // something anybody means to do with a control.
+      draggable={false}
+      // No rounding here: the artwork carries its own corner radius
+      // (22.4%, Apple's icon grid) inside its clip path, and a second
+      // radius on top of that one shaves the mark's own silhouette.
+      className="block size-icon-mark"
+    />
   );
 }
