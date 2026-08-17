@@ -162,6 +162,55 @@ struct Shared {
     clients: Mutex<Vec<TcpStream>>,
 }
 
+/// How often the host looks at what its child is doing.
+///
+/// One cadence for both faces below. They read completely different
+/// things — a process group versus a screen — but they answer the same
+/// question at the same rate, and two numbers here would be two numbers
+/// to keep in step for no reason.
+const FACE_POLL: Duration = Duration::from_millis(700);
+
+/// Which pattern table to try against this session's screen, if any.
+///
+/// **This reads khor's own argv, not the agent's output.** The user
+/// wrote `khor open --tui -- claude`; naming the program is something
+/// they did, not something khor inferred, which is what makes this
+/// different from the ledger's standing refusal to read a vendor off a
+/// command line. Two things keep it that way:
+///
+/// - **An exact basename match, and nothing else.** No alias
+///   resolution, no unwrapping `npx`, no prefix matching. Those are the
+///   cases where a command line lies, and the ledger's warning is that
+///   it lies *convincingly*.
+/// - **It never becomes the row's category.** It picks which patterns
+///   to try; who the session belongs to is still only answered by a
+///   source that read the vendor's own files or heard from its hooks.
+///
+/// A name that does not match runs no detector at all, and that is the
+/// honest end of it: the session then behaves exactly as it did before
+/// this existed. Guessing a table would be worse than having none —
+/// the vendors' markers contradict each other outright ('esc to cancel'
+/// is 忙碌 for gemini and 待批 for claude), so the wrong table is not a
+/// blurrier answer, it is a confident opposite one.
+fn table_for(command: &str) -> Option<&'static str> {
+    let base = Path::new(command).file_name()?.to_str()?;
+    khor_detect::vendors().find(|v| *v == base)
+}
+
+/// The three words a screen can reach, in khor's six.
+///
+/// Total and one-way: [`khor_detect::Word`] has no variant for 完成,
+/// 中断 or 失败, so this cannot accidentally start claiming an ending.
+/// Those are recorded by the host from the child's exit and by
+/// `live::face` from what is still running — never from appearances.
+fn state_of(word: khor_detect::Word) -> State {
+    match word {
+        khor_detect::Word::Busy => State::Busy,
+        khor_detect::Word::Waiting => State::Blocked,
+        khor_detect::Word::Idle => State::Idle,
+    }
+}
+
 /// The body of `khor _host` — blocks until the child ends.
 pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String>) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
@@ -217,11 +266,20 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     });
     let output_done = Arc::new(AtomicBool::new(false));
 
+    // A screen to match patterns against, for an agent TUI khor can
+    // name. None for a shell (the process group answers better), and
+    // none for a command whose basename is not a vendor in the table.
+    let screen: Option<Arc<Mutex<khor_detect::Screen>>> = (kind == khor_core::kind::TUI)
+        .then(|| table_for(&cmd[0]))
+        .flatten()
+        .map(|_| Arc::new(Mutex::new(khor_detect::Screen::new(size.1, size.0))));
+
     // PTY → ring + every attached client. Holding ring across the
     // broadcast keeps attachers exact (see Shared).
     {
         let shared = shared.clone();
         let output_done = output_done.clone();
+        let screen = screen.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
@@ -229,6 +287,12 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
                 };
+                // Before the ring, and in its own scope: the screen lock
+                // is never held while holding either of the other two,
+                // so it cannot join their order (see Shared).
+                if let Some(screen) = &screen {
+                    screen.lock().unwrap().feed(&buf[..n]);
+                }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.extend(&buf[..n]);
                 while ring.len() > RING {
@@ -244,9 +308,8 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
         });
     }
 
-    // The six-word face, shell kind only: 忙碌 = the terminal's
-    // foreground group is not the shell itself. A tui's words belong to
-    // its hooks (HOOKS.md) — polling would fight them.
+    // The six-word face for a shell: 忙碌 = the terminal's foreground
+    // group is not the shell itself.
     if kind == khor_core::kind::SHELL {
         let live = live.clone();
         let id = id.clone();
@@ -255,7 +318,7 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
         std::thread::spawn(move || {
             let mut last = State::Busy;
             while !output_done.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(700));
+                std::thread::sleep(FACE_POLL);
                 let leader = master.lock().unwrap().process_group_leader();
                 let word = match leader {
                     Some(pid) if pid as u32 != child_pid => State::Busy,
@@ -269,6 +332,50 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                 }
             }
         });
+    }
+
+    // The same face for an agent TUI, read off the screen it draws.
+    //
+    // **This is what a hookless agent had instead of a word.** Until
+    // now the branch above was the only one, so a `khor open --tui --
+    // <vendor with no hook>` kept the 忙碌 that `register` wrote and
+    // wore it until it exited — measured 2026-08-17, and not a word
+    // landing on its neighbour but one that is simply always wrong.
+    //
+    // It reports as `Source::Screen`, which is what keeps it in its
+    // place: a sighting from the vendor's own files beats it at the
+    // merge (`live::rows`), and a hook overwrites it outright. If this
+    // family is ever wrong, it is wrong where nothing better exists.
+    if let Some(screen) = screen.clone() {
+        let Some(vendor) = table_for(&cmd[0]) else {
+            unreachable!("screen only exists when a table was found");
+        };
+        if let Some(mut detector) = khor_detect::Detector::for_vendor(vendor) {
+            let live = live.clone();
+            let id = id.clone();
+            let output_done = output_done.clone();
+            std::thread::spawn(move || {
+                // The word `register` wrote, so the first reading is
+                // compared against what the row actually says rather
+                // than against an assumption.
+                let mut current = khor_detect::Word::Busy;
+                let mut last = State::Busy;
+                while !output_done.load(Ordering::SeqCst) {
+                    std::thread::sleep(FACE_POLL);
+                    let read = {
+                        let s = screen.lock().unwrap();
+                        detector.word(&s, current, crate::live::now_ms())
+                    };
+                    current = read;
+                    let word = state_of(read);
+                    if word != last
+                        && live.report(&id, word, crate::live::Source::Screen).is_ok()
+                    {
+                        last = word;
+                    }
+                }
+            });
+        }
     }
 
     // Attachers.
@@ -293,6 +400,14 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                     pixel_width: 0,
                     pixel_height: 0,
                 });
+                // The reader has to follow, or it is matching against a
+                // screen of a different shape than the one the agent is
+                // drawing to — and the first thing to break is the box
+                // border that scopes claude's busy rules, since a
+                // wrapped border line stops being a line of all `─`.
+                if let Some(screen) = &screen {
+                    screen.lock().unwrap().resize(hello.rows, hello.cols);
+                }
                 if write_frame(&mut conn, &Welcome { ok: true, why: String::new() }).is_err() {
                     continue;
                 }
@@ -344,4 +459,51 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
         std::thread::sleep(Duration::from_millis(100));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A path is fine; the basename is what is compared.
+    #[test]
+    fn a_vendors_own_name_picks_its_table() {
+        assert_eq!(table_for("claude"), Some("claude"));
+        assert_eq!(table_for("/Users/someone/.local/bin/claude"), Some("claude"));
+        assert_eq!(table_for("codex"), Some("codex"));
+        assert_eq!(table_for("github-copilot"), Some("github-copilot"));
+    }
+
+    /// **The half that matters.** Everything here is a way a command
+    /// line lies about what is behind it, and the ledger's warning is
+    /// that it lies convincingly. Matching any of them would apply one
+    /// vendor's markers to another's screen — and the markers contradict
+    /// each other outright, so that is not a vaguer answer, it is a
+    /// confident opposite one. No match runs no detector, which leaves
+    /// the session exactly where it was before this existed.
+    #[test]
+    fn anything_that_merely_resembles_a_vendor_picks_no_table() {
+        for lie in [
+            "npx",             // the vendor is an argument, not the command
+            "my-claude",       // someone's wrapper
+            "claude-wrapper",
+            "claude.sh",       // a script around it
+            "Claude",          // the table is lower case and so are the names
+            "sh",
+            "/bin/sh",
+            "",
+        ] {
+            assert_eq!(table_for(lie), None, "{lie:?} must not select a table");
+        }
+    }
+
+    /// Three in, three out. The other three of khor's six are endings
+    /// and are unreachable from here — not by this function's choice but
+    /// because `khor_detect::Word` has no variant for them.
+    #[test]
+    fn the_three_words_a_screen_reaches_map_to_khors_own() {
+        assert_eq!(state_of(khor_detect::Word::Busy), State::Busy);
+        assert_eq!(state_of(khor_detect::Word::Waiting), State::Blocked);
+        assert_eq!(state_of(khor_detect::Word::Idle), State::Idle);
+    }
 }

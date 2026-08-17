@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 khor-core.workspace = true
 khor-catalog.workspace = true
+khor-detect.workspace = true
 khor-net.workspace = true
 khor-sync.workspace = true
 serde.workspace = true

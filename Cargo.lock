@@ -2971,6 +2971,7 @@ dependencies = [
  "jiff",
  "khor-catalog",
  "khor-core",
+ "khor-detect",
  "khor-net",
  "khor-sync",
  "libc",
