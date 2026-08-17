@@ -62,7 +62,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         use khor_node::live::LiveKind;
         let k = LiveKind::new(ra.clone(), a.device());
         k.register(&id, "tui", "claude in proj", Some(agent.id()), None).unwrap();
-        k.report(&id, State::Blocked).unwrap();
+        k.report(&id, State::Blocked, khor_node::live::Source::Reported).unwrap();
     }
 
     // beta is not home: its row can only be a report, and says so.

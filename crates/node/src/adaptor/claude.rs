@@ -297,7 +297,7 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
     };
     match word {
         Some(w) => {
-            live.report(&id, w)?;
+            live.report(&id, w, crate::live::Source::Reported)?;
             Ok(Hooked::Updated(id, w))
         }
         None => Ok(Hooked::Ignored),

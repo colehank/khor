@@ -262,7 +262,9 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                     Some(_) => State::Idle,
                     None => continue,
                 };
-                if word != last && live.report(&id, word).is_ok() {
+                // Reported, not read off a screen: this is the kernel's
+                // answer to "who owns the terminal", not an appearance.
+                if word != last && live.report(&id, word, crate::live::Source::Reported).is_ok() {
                     last = word;
                 }
             }

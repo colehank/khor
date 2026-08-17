@@ -44,12 +44,74 @@ pub struct Meta {
     pub category: Option<String>,
 }
 
+/// How a word got onto a registry row.
+///
+/// Only exists to answer one question, and the question is asked in
+/// exactly one place ([`LiveKind::rows`]): **when this row and the
+/// vendor's own files disagree, which one is right?**
+///
+/// Until 2026-08-17 the answer was always "the registry", and the reason
+/// written down for it was that a registered row is the *richer* of the
+/// two — it carries a word history and it is the only side that can say
+/// 完成. That reason is true of a hook and false of a screen reading, so
+/// the rule could not simply be extended to the PTY fallback: it would
+/// have let the family that guesses overrule the family that knows.
+/// Hence a word carries where it came from, and the comparison reads
+/// that instead of assuming the channel.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Source {
+    /// A hook, or the host watching its own child's process group.
+    /// Somebody in a position to know said so outright; nothing was
+    /// inferred from appearances.
+    Reported,
+    /// Patterns matched against the screen the agent draws
+    /// (`khor_detect`). The bottom of the four-family order — it is a
+    /// guess, and it is meant to lose to anything else.
+    Screen,
+}
+
+impl Source {
+    /// Does a word from here stand against what the vendor's own files
+    /// say?
+    ///
+    /// Note what is *not* modelled: the vendor's files are not a
+    /// `Source`, because a sweep's sighting is never written to a
+    /// registry entry — it is the thing an entry gets compared against.
+    /// Giving the enum a `Disk` variant would add a state that can be
+    /// spelled and never occur.
+    fn outranks_disk(self) -> bool {
+        match self {
+            Source::Reported => true,
+            Source::Screen => false,
+        }
+    }
+}
+
 /// How it is, as last written by its process (wrapper or hooks).
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct LiveState {
     pub word: State,
     pub at_ms: i64,
     pub exit: Option<i32>,
+    /// Absent on every entry written before provenance existed.
+    ///
+    /// **Absent counts as [`Source::Reported`]**, the strongest, and the
+    /// reasoning is that there is nothing else it could honestly be:
+    /// every word already on disk was put there by a hook or by the
+    /// wrapper, since the screen reader did not exist when they were
+    /// written. Defaulting the other way would be the real hazard — it
+    /// would let a sweep start overruling existing rows the moment this
+    /// field shipped, which is the one thing this change must not do.
+    /// The lean lasts only until that row's next real write.
+    #[serde(default)]
+    pub source: Option<Source>,
+}
+
+impl LiveState {
+    /// See [`LiveState::source`] for why absent is the strong answer.
+    fn word_outranks_disk(&self) -> bool {
+        self.source.is_none_or(Source::outranks_disk)
+    }
 }
 
 pub fn sessions_dir(root: &Path) -> PathBuf {
@@ -163,7 +225,9 @@ impl LiveKind {
             category: category.map(str::to_owned),
         };
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
-        self.write_state(&dir, State::Busy, None)
+        // Whoever registers a session is starting it, so this opening
+        // 忙碌 is a fact about a spawn and not a reading of anything.
+        self.write_state(&dir, State::Busy, None, Source::Reported)
     }
 
     /// Registers if absent; either way the session exists afterwards.
@@ -212,7 +276,13 @@ impl LiveKind {
 
     /// A process reporting how it is. Only live words pass: failed is
     /// exit-derived, and a session that already ended stays ended.
-    pub fn report(&self, id: &SessionId, word: State) -> Result<(), String> {
+    ///
+    /// `source` is a parameter rather than a default because the whole
+    /// point of it is that the weakest caller must not be able to arrive
+    /// here looking like the strongest. A default would put that in a
+    /// comment asking new callers to be honest; a parameter makes the
+    /// compiler ask.
+    pub fn report(&self, id: &SessionId, word: State, source: Source) -> Result<(), String> {
         if word == State::Failed {
             return Err(msg::FAILED_IS_NOT_REPORTABLE.into());
         }
@@ -221,18 +291,24 @@ impl LiveKind {
         if state.exit.is_some() || !pid_says_alive(&meta) {
             return Err(msg::session_over(&id.0));
         }
-        self.write_state(&dir, word, None)
+        self.write_state(&dir, word, None, source)
     }
 
     /// The ending, recorded by whoever waited (the wrapper) or by an end
     /// hook. First recording wins; a session ends once.
+    ///
+    /// Keeps the word's provenance along with the word: this rewrites
+    /// the row to add an exit code, and re-stamping it as though someone
+    /// had freshly reported it would promote a screen reading on the way
+    /// past.
     pub fn record_exit(&self, id: &SessionId, code: i32) -> Result<(), String> {
         let dir = self.existing_dir(id)?;
         let (_, state) = read_pair(&dir)?;
         if state.exit.is_some() {
             return Ok(());
         }
-        self.write_state(&dir, state.word, Some(code))
+        let source = state.source.unwrap_or(Source::Reported);
+        self.write_state(&dir, state.word, Some(code), source)
     }
 
     /// The row's current stamp — what "looked at now" covers.
@@ -280,13 +356,23 @@ impl LiveKind {
     /// Every live session on this device as a row: the ones registered
     /// here, then the ones discovered by reading the vendors' own files.
     ///
-    /// **The registry wins a collision, and that is the whole of "同源
-    /// 去重".** A claude session that both reports through hooks and
-    /// shows up on disk is one session; the registered row is the richer
-    /// of the two (it has a word history, and can say 完成, which the
-    /// status file cannot), so the discovered sighting steps aside. Both
-    /// sides mint the id through `adaptor::id_for`, which is what makes
-    /// the collision detectable at all.
+    /// **A collision is won by the better source, and that is the whole
+    /// of "同源去重".** A claude session that both reports through hooks
+    /// and shows up on disk is one session; the hook-registered row is
+    /// the richer of the two (it has a word history, and can say 完成,
+    /// which the status file cannot), so the discovered sighting steps
+    /// aside. Both sides mint the id through `adaptor::id_for`, which is
+    /// what makes the collision detectable at all.
+    ///
+    /// **This used to be phrased as "the registry wins", and that was
+    /// only ever right by accident** — everything that could write a
+    /// registry word outranked a sighting, so "who wrote it" and "which
+    /// channel" gave the same answer. The PTY fallback splits them: it
+    /// writes registry words that a sighting beats. So the row carries
+    /// [`LiveState::source`] and the test is on that. Nothing about the
+    /// hook case changed; what changed is that its reason is now the
+    /// thing being read, instead of a coincidence being read in its
+    /// place.
     ///
     /// **The one exception is an ending.** A hook-registered observed
     /// session carries no pid — the hook's parent is a transient shell,
@@ -312,17 +398,21 @@ impl LiveKind {
     /// session, and khor already lists it.
     pub fn rows(&self, watermark: impl Fn(&str) -> i64) -> Vec<Session> {
         let registered = self.registry_rows(&watermark);
-        let mut out: Vec<Session> = registered.iter().map(|(row, _)| row.clone()).collect();
-        let unpinned: Vec<&SessionId> = registered
+        let mut out: Vec<Session> = registered.iter().map(|r| r.row.clone()).collect();
+        let unpinned: Vec<&SessionId> =
+            registered.iter().filter(|r| r.pid.is_none()).map(|r| &r.row.id).collect();
+        // Rows whose word came off a screen, and which a sighting from
+        // the vendor's own files therefore outranks.
+        let guessed: Vec<&SessionId> = registered
             .iter()
-            .filter(|(_, pid)| pid.is_none())
-            .map(|(row, _)| &row.id)
+            .filter(|r| !r.word_outranks_disk)
+            .map(|r| &r.row.id)
             .collect();
         // Everything on this list that is a running process. A pid on
         // record for a process that has already died costs nothing here:
         // what it is compared against is built from the live process
         // table, so a dead number can never match.
-        let mut claimed: Vec<u32> = registered.iter().filter_map(|(_, pid)| *pid).collect();
+        let mut claimed: Vec<u32> = registered.iter().filter_map(|r| r.pid).collect();
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
         claimed.extend(sweep.rows.iter().flat_map(|f| f.sighting.pids.iter().copied()));
@@ -339,7 +429,19 @@ impl LiveKind {
                 if out[seat].category.is_none() {
                     out[seat].category = Some(found.category.to_owned());
                 }
-                if sighting.word == State::Failed && unpinned.contains(&&id) {
+                if guessed.contains(&&id) {
+                    // **The registry does not always win — the stronger
+                    // source does.** This row's word was read off the
+                    // screen, and the vendor just told us in its own
+                    // files. Letting the guess stand here would put the
+                    // bottom of the four-family order on top of the
+                    // family it is a fallback *for*.
+                    let (state, unread) =
+                        settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
+                    out[seat].state =
+                        StateStamp { state, at: Millis(sighting.at_ms.max(0) as u64) };
+                    out[seat].unread = unread;
+                } else if sighting.word == State::Failed && unpinned.contains(&&id) {
                     out[seat].state =
                         StateStamp { state: State::Failed, at: Millis(sighting.at_ms.max(0) as u64) };
                     out[seat].unread = 0;
@@ -392,7 +494,7 @@ impl LiveKind {
     /// is one decides whether anyone can pronounce the session dead;
     /// which one it is decides whether a multiplexer session is already
     /// on this list (see [`LiveKind::rows`]).
-    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<(Session, Option<u32>)> {
+    fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<RegistryRow> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else {
             return out;
@@ -409,8 +511,9 @@ impl LiveKind {
             };
             let id = SessionId(format!("{}/{leaf}", meta.kind));
             let (word, at, unread) = face(&e.path(), &meta, &state, watermark(&id.0));
-            out.push((
-                Session {
+            out.push(RegistryRow {
+                word_outranks_disk: state.word_outranks_disk(),
+                row: Session {
                     id,
                     kind: Kind(meta.kind.clone()),
                     title: meta.title.clone(),
@@ -419,8 +522,8 @@ impl LiveKind {
                     unread,
                     category: meta.category.clone(),
                 },
-                meta.pid,
-            ));
+                pid: meta.pid,
+            });
         }
         out
     }
@@ -433,10 +536,28 @@ impl LiveKind {
         Ok(dir)
     }
 
-    fn write_state(&self, dir: &Path, word: State, exit: Option<i32>) -> Result<(), String> {
-        let state = LiveState { word, at_ms: now_ms(), exit };
+    fn write_state(
+        &self,
+        dir: &Path,
+        word: State,
+        exit: Option<i32>,
+        source: Source,
+    ) -> Result<(), String> {
+        let state = LiveState { word, at_ms: now_ms(), exit, source: Some(source) };
         write_whole(&dir.join("state.json"), &serde_json::to_vec(&state).map_err(|e| e.to_string())?)
     }
+}
+
+/// A registry row plus the two things [`LiveKind::rows`] needs that a
+/// [`Session`] does not carry: who is running it, and how good its word
+/// is.
+struct RegistryRow {
+    row: Session,
+    pid: Option<u32>,
+    /// See [`LiveState::source`]. False only for a word read off the
+    /// screen, which is the one case where the vendor's own files know
+    /// better than the row already on the list.
+    word_outranks_disk: bool,
 }
 
 /// Who is still there behind a registry row.
@@ -720,11 +841,11 @@ mod tests {
         let row = &k.rows(|_| 0)[0];
         assert_eq!((row.state.state, row.unread), (State::Busy, 0));
 
-        k.report(&id, State::Blocked).unwrap();
+        k.report(&id, State::Blocked, Source::Reported).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!((row.state.state, row.unread), (State::Blocked, 0), "waiting for approval");
 
-        k.report(&id, State::Done).unwrap();
+        k.report(&id, State::Done, Source::Reported).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!((row.state.state, row.unread), (State::Done, 1), "turn done, not looked at");
         let row = &k.rows(|_| i64::MAX)[0];
@@ -772,13 +893,13 @@ mod tests {
         let row = &k.rows(|_| 0)[0];
         assert_eq!(row.state.state, State::Failed);
         assert!(
-            k.report(&id, State::Busy).unwrap_err() == msg::session_over(&id.0),
+            k.report(&id, State::Busy, Source::Reported).unwrap_err() == msg::session_over(&id.0),
             "a dead session refuses reports by name"
         );
 
         let id2 = sid("tui/nopid1");
         k.register(&id2, "tui", "x", None, None).unwrap();
-        k.report(&id2, State::Busy).unwrap();
+        k.report(&id2, State::Busy, Source::Reported).unwrap();
         let row = k.rows(|_| 0).into_iter().find(|r| r.id == id2).unwrap();
         assert_eq!(row.state.state, State::Busy, "no pid on record = the word stands");
         let _ = fs::remove_dir_all(&root);
@@ -862,9 +983,9 @@ mod tests {
 
         let id = sid("tui/ok1");
         k.register(&id, "tui", "x", None, None).unwrap();
-        assert_eq!(k.report(&id, State::Failed).unwrap_err(), msg::FAILED_IS_NOT_REPORTABLE);
+        assert_eq!(k.report(&id, State::Failed, Source::Reported).unwrap_err(), msg::FAILED_IS_NOT_REPORTABLE);
         k.record_exit(&id, 0).unwrap();
-        assert_eq!(k.report(&id, State::Busy).unwrap_err(), msg::session_over(&id.0));
+        assert_eq!(k.report(&id, State::Busy, Source::Reported).unwrap_err(), msg::session_over(&id.0));
         k.record_exit(&id, 7).unwrap();
         let row = &k.rows(|_| 0)[0];
         assert_eq!(row.state.state, State::Idle, "the first recorded ending wins");
@@ -905,7 +1026,7 @@ mod tests {
         // different word.
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
         k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
-        k.report(&id, State::Done).unwrap();
+        k.report(&id, State::Done, Source::Reported).unwrap();
 
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1, "one session, one row — not two");
@@ -916,6 +1037,145 @@ mod tests {
             "the registered row wins: it is the only one that can say 完成"
         );
         assert_eq!(rows[0].title, "one");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The same collision, decided the other way, because the registry
+    /// word came off a screen.
+    ///
+    /// **Both halves are the test.** The screen and the vendor's files
+    /// are made to disagree, and then the *only* thing that changes
+    /// between the two halves is which [`Source`] the word was written
+    /// with — same fixture, same ids, same two words. Without the
+    /// control the first half proves nothing: "the row says 待批" is
+    /// also what you get from a merge that ignored the registry
+    /// entirely, and from one that never wrote the word at all.
+    ///
+    /// The direction being defended is the one that would hurt: a
+    /// pattern match saying "nothing is happening" must not be able to
+    /// paint over a permission prompt that claude has written down. Get
+    /// this backwards and khor stops asking the user for something an
+    /// agent is stuck waiting on — the one word 待批 exists for.
+    #[test]
+    fn a_word_read_off_the_screen_does_not_cover_what_the_vendor_says() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+
+        let root = tmp("provenance");
+        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let procs = Procs::of([(
+            4001,
+            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: None },
+        )]);
+        let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+
+        let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
+        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
+
+        // The screen reader says the session is idle. The vendor's own
+        // file says it is sitting on a permission prompt.
+        k.report(&id, State::Idle, Source::Screen).unwrap();
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "still one session");
+        assert_eq!(
+            rows[0].state.state,
+            State::Blocked,
+            "the vendor's own file outranks a guess about its screen",
+        );
+
+        // Control: the identical disagreement, reported instead of read.
+        k.report(&id, State::Idle, Source::Reported).unwrap();
+        assert_eq!(
+            k.rows(|_| 0)[0].state.state,
+            State::Idle,
+            "control: a reported word still wins, so the source is the only thing deciding",
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Recording an ending must not launder a word's provenance.
+    ///
+    /// `record_exit` rewrites the whole entry to add an exit code, so it
+    /// is a place where a screen reading could be re-stamped as though
+    /// somebody had reported it — a promotion nobody asked for, arriving
+    /// through a function whose job is unrelated. Cheap to get right,
+    /// invisible when wrong, which is why it is worth its own test
+    /// rather than a note.
+    #[test]
+    fn recording_an_ending_keeps_the_word_as_weak_as_it_was() {
+        let root = tmp("exitprov");
+        let k = kind_at(&root);
+        let id = sid("tui/screenword");
+        k.register(&id, "tui", "agent", Some(std::process::id()), None).unwrap();
+        k.report(&id, State::Idle, Source::Screen).unwrap();
+        assert_eq!(
+            read_pair(&k.dir(&id).unwrap()).unwrap().1.source,
+            Some(Source::Screen),
+            "precondition: it went in weak",
+        );
+
+        k.record_exit(&id, 0).unwrap();
+        assert_eq!(
+            read_pair(&k.dir(&id).unwrap()).unwrap().1.source,
+            Some(Source::Screen),
+            "an ending is not a fresh report",
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// An entry written before provenance existed reads as the strong
+    /// source, not the weak one.
+    ///
+    /// This is the "what does it turn into while it is not connected
+    /// yet" blank filled in. Absent leans strong because every word
+    /// already on a disk somewhere was put there by a hook or the
+    /// wrapper — the screen reader did not exist yet. Leaning the other
+    /// way would have every existing row on every existing machine
+    /// quietly handed over to the sweep the moment this field shipped.
+    #[test]
+    fn a_row_written_before_provenance_existed_is_treated_as_reported() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+
+        let root = tmp("legacyprov");
+        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let procs = Procs::of([(
+            4001,
+            Proc { name: "claude".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: None },
+        )]);
+        let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+
+        let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
+        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
+        k.report(&id, State::Idle, Source::Reported).unwrap();
+
+        // Rewrite the entry the way an older khor would have left it.
+        // Built by *deleting* the key from what this khor writes rather
+        // than by spelling the old shape out here: that keeps the other
+        // fields encoded exactly as the real writer encodes them, so the
+        // test cannot pass because it happened to hand-write a word the
+        // way the parser likes it.
+        let dir = k.dir(&id).unwrap();
+        let path = dir.join("state.json");
+        let mut doc: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        doc.as_object_mut().unwrap().remove("source").expect("the new writer put one there");
+        let bytes = serde_json::to_vec(&doc).unwrap();
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("source"),
+            "the bytes must really lack the key, or this test proves nothing",
+        );
+        fs::write(&path, &bytes).unwrap();
+        assert!(
+            read_pair(&dir).unwrap().1.source.is_none(),
+            "precondition: it reads back absent",
+        );
+
+        assert_eq!(
+            k.rows(|_| 0)[0].state.state,
+            State::Idle,
+            "an entry from before this field stands against the sweep",
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -1135,7 +1395,7 @@ mod tests {
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(Procs::default()));
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
         k.register(&id, "tui", "hooked", None, None).unwrap();
-        k.report(&id, State::Busy).unwrap();
+        k.report(&id, State::Busy, Source::Reported).unwrap();
 
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1, "still one row");
