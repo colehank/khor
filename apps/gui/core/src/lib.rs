@@ -512,8 +512,15 @@ pub fn open_session(root: &Path, dir: &str, title: &str, form: &str) -> Result<S
     match form {
         "chat" => {
             let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
-            let id =
-                n.open_gui_at(&path, &title, &[exe.display().to_string(), "_cagent".into()])?;
+            let id = n.open_gui_at(
+                &path,
+                &title,
+                &[exe.display().to_string(), "_cagent".into()],
+                // The wizard's 智能体 field. One vendor today, and it
+                // is still passed rather than assumed downstream: the
+                // day there are two, this line is the one that changes.
+                Some(khor_node::adaptor::claude::VENDOR),
+            )?;
             Ok(id.0)
         }
         "term" => {

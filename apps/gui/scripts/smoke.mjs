@@ -2298,6 +2298,13 @@ for line in sys.stdin:
     if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
     return (await page.locator("[data-new-session-dialog]").count()) === 0;
   });
+  // **A session khor opened itself knows whose it is.** The wizard's
+  // 智能体 field is the user's own answer, so the row wears the vendor
+  // mark from birth — where before it was the one kind of row that
+  // could not say, and waited on a hook that may never be installed.
+  await until("the wizard's row wearing its vendor", 20_000, async () =>
+    (await page.locator('[data-title="wizard-one"] [data-kind-mark="claude"]').count()) === 1,
+  );
   // The fresh conversation is selected and live: speak into it.
   await until("the fresh conversation with an input", 20_000, async () =>
     (await page.locator("[data-chat-input]").count()) === 1,
@@ -2327,6 +2334,16 @@ for line in sys.stdin:
   if (!typed.includes("**bold**")) {
     throw new Error(`the user's own line must stay verbatim: ${typed}`);
   }
+  // A link in an agent's text is a control that carries its address.
+  // **Not clicked here**: pressing it hands the page to this machine's
+  // browser, and a test must not open one on whoever ran it. What the
+  // scheme whitelist refuses is asserted in Rust
+  // (`khor_gui_core::web::open_link`), where nothing is launched.
+  await say(page, "see [khor](https://example.com/x) here");
+  await until("the agent's link wearing its address", 20_000, async () => {
+    const links = page.locator('[data-md-link="https://example.com/x"]');
+    return (await links.count()) === 1 && (await links.first().innerText()).trim() === "khor";
+  });
 
   // **A turn that will not end has a way out that is not 关闭.** The
   // fake hangs until the stop reaches it as the control protocol's

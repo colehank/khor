@@ -979,18 +979,26 @@ impl Node {
     /// id comes back from the host — it is the vendor's own, and exists
     /// only once the agent has answered (`gui_host` module head).
     pub fn open_gui(&self, title: &str, cmd: &[String]) -> Result<SessionId, String> {
-        gui_host::spawn_gui_host(None, title, cmd)
+        gui_host::spawn_gui_host(None, title, cmd, None)
     }
 
     /// `open_gui`, born in a chosen directory (the wizard's 目录 field);
     /// the agent underneath inherits it as the session's cwd.
+    ///
+    /// `vendor` is the wizard's 智能体 field — **the user's own answer
+    /// to "whose session is this"**, carried to the row. Khor still
+    /// refuses to *guess* a vendor from an adapter's command name
+    /// (`gui_host` module head); being told is not guessing, and
+    /// without this a session khor opened itself was the one kind of
+    /// row that could not say who it belonged to.
     pub fn open_gui_at(
         &self,
         cwd: &std::path::Path,
         title: &str,
         cmd: &[String],
+        vendor: Option<&str>,
     ) -> Result<SessionId, String> {
-        gui_host::spawn_gui_host(Some(cwd), title, cmd)
+        gui_host::spawn_gui_host(Some(cwd), title, cmd, vendor)
     }
 
     /// 接管 (批C): the conversation stays; the process presenting it

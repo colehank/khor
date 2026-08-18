@@ -147,8 +147,9 @@ pub fn spawn_gui_host(
     cwd: Option<&std::path::Path>,
     title: &str,
     cmd: &[String],
+    vendor: Option<&str>,
 ) -> Result<SessionId, String> {
-    spawn_ghost(cwd, title, cmd, None)
+    spawn_ghost(cwd, title, cmd, None, vendor)
 }
 
 /// [`spawn_gui_host`], but resuming an existing vendor session — the
@@ -161,18 +162,29 @@ pub fn spawn_gui_host_resume(
     cmd: &[String],
     session: &str,
 ) -> Result<SessionId, String> {
-    spawn_ghost(cwd, title, cmd, Some(session))
+    // No vendor: a resume re-seats a row that already has one, and
+    // `LiveKind::reopen` does not touch a category anyway.
+    spawn_ghost(cwd, title, cmd, Some(session), None)
 }
 
 /// How `_ghost` learns it resumes: env, not argv — the argv convention
 /// stays what every existing binary parses (`VIEWER_ENV`'s precedent).
 const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
 
+/// Whose session this is, when the **opener** knows — the wizard's own
+/// 智能体 field, which is the user saying it, not khor guessing from an
+/// adapter's command name (the argv ruling in the module head covers
+/// the guess; a declaration is not a guess). Absent for anything opened
+/// without that answer, and a hook may still fill it in later:
+/// `LiveKind::learn_category` never overwrites what is already there.
+const VENDOR_ENV: &str = "KHOR_GHOST_VENDOR";
+
 fn spawn_ghost(
     cwd: Option<&std::path::Path>,
     title: &str,
     cmd: &[String],
     resume: Option<&str>,
+    vendor: Option<&str>,
 ) -> Result<SessionId, String> {
     let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
     let ready = std::env::temp_dir().join(format!(
@@ -190,6 +202,14 @@ fn spawn_ghost(
         }
         None => {
             c.env_remove(RESUME_ENV);
+        }
+    }
+    match vendor {
+        Some(v) => {
+            c.env(VENDOR_ENV, v);
+        }
+        None => {
+            c.env_remove(VENDOR_ENV);
         }
     }
     c.arg("_ghost")
@@ -271,7 +291,17 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         // the ending the takeover itself just caused).
         live.reopen(&id, khor_core::kind::GUI, &title, std::process::id())?;
     } else {
-        live.register(&id, khor_core::kind::GUI, &title, Some(std::process::id()), None)?;
+        // The vendor the opener declared, if it did: the wizard's own
+        // 智能体 field is the user saying whose session this is, which
+        // is not the guess the argv ruling forbids.
+        let vendor = std::env::var(VENDOR_ENV).ok();
+        live.register(
+            &id,
+            khor_core::kind::GUI,
+            &title,
+            Some(std::process::id()),
+            vendor.as_deref(),
+        )?;
         // Register wrote the spawn's 忙碌; a fresh GUI session is a
         // prompt nobody has typed into yet.
         live.report(&id, State::Idle, Source::Reported)?;
