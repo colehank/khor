@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
-import type { SessionRow } from "@/api";
+import { takeoverTerm as takeoverTermCall, type SessionRow } from "@/api";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -28,8 +28,83 @@ function takeoverOffer(row: SessionRow): "busy" | "calm" | undefined {
   return row.word === "busy" ? "busy" : "calm";
 }
 
-function HostedAgentDetail({ row }: { row: SessionRow }) {
-  const id = row.id;
+/**
+ * The terminal face of a session khor is holding **as a conversation**:
+ * there is no terminal to show, and the way to get one is the 接管
+ * ruling read backwards — the conversation ends here and the same
+ * session comes back up inside a terminal, under the same vendor uuid.
+ *
+ * The confirm is the forward takeover's, with its own two sentences:
+ * which form is ending is the one thing a person must not have to
+ * guess from the button.
+ */
+function ChatToTerm({ row }: { row: SessionRow }) {
+  const [confirming, setConfirming] = useState(false);
+  const [taking, setTaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="grid flex-1 place-items-center p-4 text-center text-sm">
+      <div className="flex max-w-sm flex-col items-center gap-2">
+        <p data-term-is-a-chat className="text-muted-foreground">
+          {gui.term_is_a_chat}
+        </p>
+        {confirming ? (
+          <>
+            <p data-takeover-term-warn className="text-muted-foreground">
+              {row.word === "busy" ? gui.takeover_term_busy : gui.takeover_term}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                data-takeover-term-go
+                disabled={taking}
+                onClick={() => {
+                  setTaking(true);
+                  setError(null);
+                  takeoverTermCall(row.id).catch((e) => {
+                    setError(String(e instanceof Error ? e.message : e));
+                    setTaking(false);
+                    setConfirming(false);
+                  });
+                  // On success the row turns tui and the list's poll
+                  // swaps this pane for a terminal.
+                }}
+              >
+                {gui.takeover}
+              </Button>
+              <Button size="sm" variant="ghost" data-takeover-term-back onClick={() => setConfirming(false)}>
+                {gui.back}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Button size="sm" variant="secondary" data-takeover-term onClick={() => setConfirming(true)}>
+            {gui.takeover}
+          </Button>
+        )}
+        {error && (
+          <span data-takeover-term-error className="text-destructive">
+            {error}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The face switch, for a session with two faces to switch between.
+    Which two they are depends on the row: a hosted agent has a live
+    terminal and a recorded conversation; a conversation khor holds has
+    the conversation and the offer to move it into a terminal. */
+function Faces({
+  id,
+  term,
+  chat,
+}: {
+  id: string;
+  term: ReactNode;
+  chat: ReactNode;
+}) {
   const [view, setViewState] = useState<"term" | "chat">(() =>
     window.localStorage.getItem(faceKey(id)) === "term" ? "term" : "chat",
   );
@@ -59,8 +134,18 @@ function HostedAgentDetail({ row }: { row: SessionRow }) {
           {gui.view_chat}
         </Button>
       </div>
-      {view === "term" ? <TerminalPane id={id} /> : <ChatView id={id} still takeover={takeoverOffer(row)} />}
+      {view === "term" ? term : chat}
     </>
+  );
+}
+
+function HostedAgentDetail({ row }: { row: SessionRow }) {
+  return (
+    <Faces
+      id={row.id}
+      term={<TerminalPane id={row.id} />}
+      chat={<ChatView id={row.id} still takeover={takeoverOffer(row)} />}
+    />
   );
 }
 
@@ -96,8 +181,16 @@ export function DetailPane({
       </header>
       {row && row.kind === "gui" ? (
         // Keyed so switching sessions remounts the chat: its cursor,
-        // frames and attachment all belong to one conversation.
-        <ChatView key={row.id} id={row.id} />
+        // frames and attachment all belong to one conversation. The
+        // terminal face is not a terminal — this session has none — it
+        // is where the conversation can be moved into one (接管 read
+        // backwards).
+        <Faces
+          key={row.id}
+          id={row.id}
+          term={<ChatToTerm row={row} />}
+          chat={<ChatView id={row.id} />}
+        />
       ) : row && row.attachable && row.category === "claude" ? (
         // A hosted claude gets both faces with a switch; keyed so the
         // choice resets with the session it was made about.

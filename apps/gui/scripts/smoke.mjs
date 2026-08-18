@@ -255,8 +255,43 @@ async function say(page, text) {
   throw new Error(`the line would not stay in the box: ${text}`);
 }
 
+/**
+ * Kills anything still living in the smoke's own homes.
+ *
+ * The suite kills what it spawned, by pid — but a khor host is
+ * **detached on purpose** (that is the product), so a run that dies at
+ * an assertion leaves a `_ghost` or a `_host` behind, holding a session
+ * in a home the next run is about to delete and recreate. It then
+ * writes its files back into the fresh home and the next run inherits a
+ * row nobody asked for: measured once as a suite that hung six minutes
+ * in with no error to show for it.
+ *
+ * By environment, not by name: a `_ghost` names no home on its command
+ * line, and matching on the binary would kill the developer's own app.
+ */
+function killStrays() {
+  let table = "";
+  try {
+    table = execFileSync("ps", ["eww", "-o", "pid=,command="], { encoding: "utf8" });
+  } catch {
+    return; // no ps, no sweep — not a reason to refuse to run
+  }
+  for (const line of table.split("\n")) {
+    if (!line.includes(`KHOR_HOME=${SCRATCH}`)) continue;
+    const pid = Number(line.trim().split(/\s+/)[0]);
+    if (pid > 0) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}
+
 let browser;
 try {
+  killStrays();
   rmSync(SCRATCH, { recursive: true, force: true });
   mkdirSync(SCRATCH, { recursive: true });
   // The fake claude the shim drives in 25c: canned stream-json, the
@@ -264,7 +299,7 @@ try {
   writeFileSync(
     FAKE_CLAUDE,
     `#!/usr/bin/env python3
-import json, sys
+import json, os, sys
 args = sys.argv[1:]
 if "--session-id" in args:
     sid = args[args.index("--session-id") + 1]
@@ -272,6 +307,17 @@ else:
     sid = args[args.index("--resume") + 1]
 def emit(o):
     sys.stdout.write(json.dumps(o) + "\\n"); sys.stdout.flush()
+# The transcript, the way the real one exists: khor finds a session's
+# full uuid and its recorded cwd by reading this file, and both 接管
+# directions hang on that. Written on the way up so it is there before
+# anybody asks.
+home = os.environ.get("KHOR_HOME", "")
+if home:
+    proj = os.path.join(home, ".claude", "projects", "p")
+    os.makedirs(proj, exist_ok=True)
+    with open(os.path.join(proj, sid + ".jsonl"), "a") as t:
+        t.write(json.dumps({"type": "user", "cwd": os.getcwd(),
+                            "message": {"role": "user", "content": "the fake's own past"}}) + "\\n")
 first = True
 for line in sys.stdin:
     m = json.loads(line)
@@ -2269,8 +2315,26 @@ for line in sys.stdin:
       .innerText()
       .catch(() => "");
     return afterTakeover.includes("echo: hello taken");
-  }).catch((e) => {
-    throw new Error(`${e.message} — the pane held: ${JSON.stringify(afterTakeover.slice(-300))}`);
+  }).catch(async (e) => {
+    // The pane says what was painted; the frame log says what arrived.
+    // Between them there is no room left for a guess about which half
+    // of the chain stopped.
+    const frames = await page
+      .evaluate(
+        async ([port, id]) => {
+          const r = await fetch(`http://127.0.0.1:${port}/chat_poll`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id, since: 0 }),
+          });
+          return await r.text();
+        },
+        [BRIDGE_PORT, tmuxAgentRow],
+      )
+      .catch((x) => `frames unreadable: ${x}`);
+    throw new Error(
+      `${e.message} — the pane held: ${JSON.stringify(afterTakeover.slice(-300))} — frames: ${String(frames).slice(0, 1200)}`,
+    );
   });
   rmSync(join(sdir, `${agentPid}.json`), { force: true });
   cli(envB, "close", tmuxAgentRow);
@@ -2345,6 +2409,26 @@ for line in sys.stdin:
     return (await links.count()) === 1 && (await links.first().innerText()).trim() === "khor";
   });
 
+  // **The agent's own commands, offered by name.** The list arrives on
+  // the protocol (the shim turns claude's init frame into one
+  // `available_commands_update`), so what is asserted here is the whole
+  // chain: the fake's own word for its command, filtered by what was
+  // typed, completed into the box, and reaching the agent as a line.
+  await page.locator("[data-chat-input]").fill("/comp");
+  await until("the agent's own command offered", 20_000, async () =>
+    (await page.locator('[data-slash-item="compact"]').count()) === 1,
+  );
+  await page.locator("[data-chat-input]").press("Enter");
+  await until("the command completed into the box, not sent", 10_000, async () => {
+    const v = await page.locator("[data-chat-input]").inputValue();
+    return v === "/compact " && (await page.locator("[data-slash-menu]").count()) === 0;
+  });
+  await page.locator("[data-chat-input]").press("Enter");
+  await until("the command reaching the agent as a line", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("echo: /compact");
+  });
+
   // **A turn that will not end has a way out that is not 关闭.** The
   // fake hangs until the stop reaches it as the control protocol's
   // interrupt; the box comes back and the conversation is still there,
@@ -2374,6 +2458,9 @@ for line in sys.stdin:
   // The row wears claude's own uuid (the merge story), and close ends
   // host and agent together.
   const wizId = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  if (!wizId || !wizId.startsWith("tui/")) {
+    throw new Error(`the wizard row must wear the vendor uuid: ${wizId}`);
+  }
   // **A face that was not there when the ask was raised must still be
   // able to answer it.** Leaving the row and coming back is a whole
   // fresh attachment — the pane detaches on unmount, and the host's
@@ -2405,9 +2492,37 @@ for line in sys.stdin:
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("verdict:allow");
   });
-  if (!wizId || !wizId.startsWith("tui/")) {
-    throw new Error(`the wizard row must wear the vendor uuid: ${wizId}`);
+  // 25d) 接管, the other way (唯一本体 read backwards): the terminal
+  //      face of a conversation khor holds is not a terminal — it is
+  //      where the conversation moves into one. The row keeps its id
+  //      and its past; what changes hands is the form.
+  await page.locator("[data-view-term]").click();
+  await until("the terminal face offering the move", 15_000, async () =>
+    (await page.locator("[data-term-is-a-chat]").count()) === 1 &&
+    (await page.locator("[data-takeover-term]").count()) === 1,
+  );
+  await page.locator("[data-takeover-term]").click();
+  await until("the confirm saying which form ends", 10_000, async () =>
+    (await page.locator("[data-takeover-term-warn]").count()) === 1,
+  );
+  await page.locator("[data-takeover-term-go]").click();
+  await until("the same row now holding a terminal", 40_000, async () => {
+    if (await page.locator("[data-takeover-term-error]").count()) {
+      throw new Error(await page.locator("[data-takeover-term-error]").innerText());
+    }
+    return (await page.locator("[data-terminal]").count()) === 1;
+  });
+  if ((await page.locator(`[data-row="${wizId}"]`).count()) !== 1) {
+    throw new Error("the moved conversation must stay one row, under its own id");
   }
+  // Its past came along: the conversation face now reads the vendor's
+  // own transcript, and the line the agent wrote on the way up is in it.
+  await page.locator("[data-view-chat]").click();
+  await until("the conversation surviving the move", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("the fake's own past");
+  });
+
   cli(envB, "close", wizId);
   await until("the wizard row gone", 20_000, async () =>
     (await page.locator(`[data-row="${wizId}"]`).count()) === 0,
@@ -2529,4 +2644,9 @@ for line in sys.stdin:
       process.kill(-c.pid, "SIGKILL");
     } catch {}
   }
+  // The detached ones are nobody's child, so the loops above cannot see
+  // them. Swept here too, not only on the way in: a run that leaves
+  // hosts alive leaves them holding ports and memory for however long
+  // it is until somebody runs the suite again.
+  killStrays();
 }

@@ -255,6 +255,11 @@ fn takeover(id: String) -> Result<(), String> {
     khor_gui_core::takeover(&Node::root_from_env(), &id)
 }
 
+#[tauri::command]
+fn takeover_term(id: String) -> Result<(), String> {
+    khor_gui_core::takeover_term(&Node::root_from_env(), &id)
+}
+
 /// The wizard's door (会话身份批B): a fresh claude session, born in the
 /// chosen directory, as a conversation (`chat`) or a terminal (`term`).
 #[tauri::command]
@@ -340,6 +345,7 @@ pub fn run() {
             open_web,
             open_session,
             takeover,
+            takeover_term,
             invite,
             pair
         ])

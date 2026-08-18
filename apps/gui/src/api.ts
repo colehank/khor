@@ -113,6 +113,9 @@ export const chatOpen = (id: string) => call<boolean>("chat_open", { id });
     anything that is not http/https — the address came out of an agent's
     own words (`khor_gui_core::web::open_link`). */
 export const openLink = (url: string) => call<null>("open_link", { url });
+/** 接管 the other way: a conversation khor holds moves into a terminal
+    (`Node::takeover_term`). Same row, same conversation. */
+export const takeoverTerm = (id: string) => call<null>("takeover_term", { id });
 /** Ends the running turn — not the session (`GuiOp::Stop`). */
 export const chatStop = (id: string) => call<null>("chat_stop", { id });
 export const chatPoll = (id: string, since: number) =>

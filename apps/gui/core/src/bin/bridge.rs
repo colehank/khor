@@ -234,6 +234,10 @@ fn handle(
             khor_gui_core::takeover(root, &arg("id")?)?;
             Ok("null".to_owned())
         }
+        "takeover_term" => {
+            khor_gui_core::takeover_term(root, &arg("id")?)?;
+            Ok("null".to_owned())
+        }
         "open_session" => to_json(&khor_gui_core::open_session(
             root,
             &arg("dir")?,

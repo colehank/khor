@@ -285,6 +285,21 @@ impl LiveKind {
         title: &str,
         pid: u32,
     ) -> Result<(), String> {
+        self.reseat(id, kind, title, Some(pid))
+    }
+
+    /// [`Self::reopen`] without claiming the pid — for the re-seating
+    /// where the **new process registers itself** (a terminal host calls
+    /// `set_pid` on the way up). Passing a pid here anyway would either
+    /// be a lie (the caller's own) or a race (the host's, read before it
+    /// exists).
+    pub fn reseat(
+        &self,
+        id: &SessionId,
+        kind: &str,
+        title: &str,
+        pid: Option<u32>,
+    ) -> Result<(), String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
         let mut meta = read_meta(&dir).unwrap_or(Meta {
@@ -298,7 +313,9 @@ impl LiveKind {
         });
         meta.kind = kind.to_owned();
         meta.title = title.to_owned();
-        meta.pid = Some(pid);
+        if let Some(pid) = pid {
+            meta.pid = Some(pid);
+        }
         meta.id = id.0.clone();
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
         self.write_state(&dir, State::Idle, None, Source::Reported)

@@ -482,6 +482,13 @@ pub fn takeover(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.takeover(&SessionId(id.to_owned()))
 }
 
+/// 接管 the other way: a conversation khor holds moves into a terminal
+/// (`Node::takeover_term`). Same row, same conversation — the form is
+/// what changes hands.
+pub fn takeover_term(root: &Path, id: &str) -> Result<(), String> {
+    open(root)?.takeover_term(&SessionId(id.to_owned()))
+}
+
 /// Opens a fresh claude session where the wizard pointed (会话身份批B:
 /// 建 session 四字段 — 目录、智能体、形式、名字; claude only this
 /// batch). The two forms are the user ruling's two channels: `chat`

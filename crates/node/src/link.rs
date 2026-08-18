@@ -1463,6 +1463,36 @@ async fn pull_one(
 /// but refuses the signal; the shell reported that as failure, so khor
 /// read "somebody else's process" as "dead" and settled the row on a
 /// missing ending. Only `ESRCH` — no such process — is death.
+/// Whether a pid is a process that is still **running** — a zombie is
+/// not one, and [`pid_alive`] cannot tell the difference.
+///
+/// A signal probe answers "the pid is taken", and a child that has
+/// exited keeps its pid until somebody waits for it. Khor spawns its
+/// hosts detached and never waits, so inside the process that spawned
+/// one, `kill(pid, 0)` says "alive" forever after it dies — which is how
+/// a takeover that politely waits for the old host to go ended up
+/// reporting 那边的进程没退 about a process that had exited a
+/// millisecond earlier.
+///
+/// Reaps, when the pid is this process's own child. That is safe here
+/// because khor's detached helpers are precisely the ones nobody waits
+/// for; a child somebody does wait for (the PTY child, inside its own
+/// host) is never asked about from the process holding its handle.
+pub(crate) fn pid_running(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let mut status = 0;
+        // WNOHANG: 0 = ours and still running, pid = ours and reaped
+        // just now, -1 = not ours, and then the signal probe is all
+        // there is to go on.
+        if unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) } == pid as libc::pid_t
+        {
+            return false;
+        }
+    }
+    pid_alive(pid)
+}
+
 pub(crate) fn pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {

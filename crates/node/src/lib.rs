@@ -1053,7 +1053,7 @@ impl Node {
                     libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
                 }
                 for _ in 0..50 {
-                    if !link::pid_alive(hf.host_pid) {
+                    if !link::pid_running(hf.host_pid) {
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -1094,6 +1094,74 @@ impl Node {
             let _ = self.live.close_session(id);
         }
         Ok(())
+    }
+
+    /// 接管, the other way: a conversation khor holds moves into a
+    /// terminal. Same conversation, same row, same vendor uuid — the
+    /// form changes and nothing else, which is the 唯一本体 ruling read
+    /// in the direction [`Self::takeover`] does not cover.
+    ///
+    /// The order matters. The ghost dies first (its process group takes
+    /// the shim and the agent with it), because two processes holding
+    /// one vendor session is the one state the ruling forbids. Then the
+    /// terminal host comes up **on the same registry dir**, running the
+    /// vendor's own resume; only then is the row re-seated as a
+    /// terminal — the host claims the pid itself on the way up
+    /// (`LiveKind::reseat`), so nothing here has to guess it.
+    pub fn takeover_term(&self, id: &SessionId) -> Result<(), String> {
+        let Some((kind, title)) = self.live.on_record(id) else {
+            return Err(msg::takeover_no_record(&id.0));
+        };
+        if kind != khor_core::kind::GUI {
+            return Err(msg::already_a_terminal(&id.0));
+        }
+        // A GUI row's id **is** the vendor's uuid, lossily spelled
+        // (`adaptor::id_for`); the transcript's own filename is the
+        // whole one.
+        let leaf = id
+            .0
+            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
+            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let home = adaptor::vendor_home(&self.root).join(".claude");
+        let claude = adaptor::claude::Claude::at(home);
+        let full = claude
+            .full_session_id(leaf)
+            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let cwd = claude
+            .recorded_cwd(leaf)
+            .or_else(std::env::home_dir)
+            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let dir = self.live.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+
+        // End the conversation's body. The ghost writes itself as both
+        // host and child (`gui_host`), so its group is the shim and the
+        // agent too.
+        if let Ok(hf) = host::read_host_file(&dir) {
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            // `pid_running`, not `pid_alive`: the ghost is this
+            // process's own child, so after it exits its pid stays taken
+            // until somebody reaps it — and a signal probe would call
+            // that "still there" for as long as this process lives.
+            while link::pid_running(hf.host_pid) {
+                if std::time::Instant::now() > deadline {
+                    return Err(msg::takeover_wont_die(&id.0));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        let vendor = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
+        host::spawn_host_at(
+            &cwd,
+            &dir,
+            id,
+            &[vendor, "--resume".into(), full],
+            (80, 24),
+        )?;
+        self.live.reseat(id, khor_core::kind::TUI, &title, None)
     }
 
     /// Stands a host up for a discovered tmux session so a terminal can

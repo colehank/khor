@@ -458,6 +458,7 @@ not-a-page = "这不是一个网页地址: {0}"
 takeover-no-record = "没有它的对话记录,接管不了: {0}"
 takeover-wont-die = "那边的进程没退,接管中止: {0}"
 already-a-chat = "它已经是对话形式了: {0}"
+already-a-terminal = "它已经是终端形式了: {0}"
 # The `_host` re-exec convention got malformed arguments — a programming
 # error on the spawning side, never something a user typed.
 host-bad-convention = "宿主参数不合约定"
@@ -534,6 +535,16 @@ chat-readonly = "只读——它正在自己的终端里跑"
 takeover = "接管"
 takeover-busy = "它正忙,接管会打断这一轮;那边的终端会结束,对话从这里继续"
 takeover-calm = "那边的终端会结束,对话从这里继续"
+# The same act the other way round: a conversation moves into a
+# terminal. One body, two forms — what ends is the form khor is holding,
+# never the conversation, and the two sentences say which one is ending
+# so the direction is never guessed from the button alone.
+takeover-term = "对话面会结束,它回到一个终端里,对话接着往下走"
+takeover-term-busy = "它正说着,接管会打断这一轮;对话面会结束,它回到一个终端里"
+# Where the terminal would be, on a session khor is holding as a
+# conversation. Not an error: nothing is broken, the form simply is
+# what it is until somebody moves it.
+term-is-a-chat = "它现在是对话形式——khor 在替它说话,没有终端可看"
 create = "建立"
 devices-tab = "设备"
 # The other two landings. Both list machines today — files is "which
