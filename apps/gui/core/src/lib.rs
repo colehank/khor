@@ -66,11 +66,12 @@ pub struct SessionRow {
     /// for a discovered session, a `khor run`, or a remote one; those keep
     /// the transcript or the facts, not a live screen.
     pub hosted: bool,
-    /// A terminal can be had here: hosted already, or a local discovered
-    /// tmux session the attach bridge can stand a host up for on first
-    /// open (`Node::attach_tmux`). What the detail routes its terminal
-    /// faces on — `hosted` alone would leave every discovered tmux row
-    /// on the facts pane, which is exactly the gap the bridge closes.
+    /// A terminal can be had here: hosted already, or something the
+    /// attach bridge can stand a host up for on first open — a local
+    /// discovered tmux session, or an agent sitting inside one (the
+    /// row's own `Session::term`, via `Node::attach_tmux`). What the
+    /// detail routes its terminal faces on — `hosted` alone would leave
+    /// every one of those on the facts pane.
     pub attachable: bool,
     /// The row's preview line (`khor_core::Session::last`): the newest
     /// message, transcript utterance or terminal line — the kind judged
@@ -307,14 +308,12 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .map(|a| {
             let (v, group) = (a.view, a.group);
             let hosted = n.is_hosted(&v.session.id);
-            let attachable = hosted
-                || (v.source.is_none()
-                    && v.session.kind.0 == khor_node::kind::SHELL
-                    && v.session
-                        .id
-                        .0
-                        .strip_prefix("shell/")
-                        .is_some_and(khor_node::adaptor::tmux::is_tmux_leaf));
+            // The row itself says whether its home can stand a terminal
+            // up (`Session::term` — hosted, a discovered tmux session,
+            // or an agent sitting inside one); this end only adds the
+            // locality gate, because the terminal does not travel
+            // (remote attach is on the ledger).
+            let attachable = hosted || (v.source.is_none() && v.session.term);
             SessionRow {
             attachable,
             face: faces.get(&v.session.home.hex()).cloned(),

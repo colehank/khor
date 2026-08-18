@@ -559,14 +559,11 @@ fn attach(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     let id = SessionId(sid.clone());
-    // The tmux bridge, same door the app's terminal uses: a discovered
-    // tmux row has no host until someone attaches, and the CLI is
-    // someone (`Node::attach_tmux` has the judgment).
-    if !n.is_hosted(&id)
-        && sid
-            .strip_prefix("shell/")
-            .is_some_and(khor_node::adaptor::tmux::is_tmux_leaf)
-    {
+    // The bridge, same door the app's terminal uses: a discovered tmux
+    // session — or an agent sitting inside one — has no host until
+    // someone attaches, and the CLI is someone (`Node::attach_tmux` has
+    // the judgment, including refusing rows with no route).
+    if !n.is_hosted(&id) {
         n.attach_tmux(&id)?;
     }
     attach_to(&n, &id)

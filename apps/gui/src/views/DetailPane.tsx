@@ -9,15 +9,25 @@ import { TerminalPane } from "@/views/TerminalPane";
 import { word } from "@/words";
 
 /**
- * A hosted agent session has two honest faces: the live terminal it runs
- * in, and the conversation its vendor recorded (the hook-bridged
- * transcript, `Node::transcript_of`). The user picks; the terminal is
- * the default because it is the live one. The chat face is read-only —
- * speaking into a TUI from a chat box means injecting bytes into
- * whatever state its menus are in, and that is on the ledger, not here.
+ * An agent session has two honest faces: the conversation its vendor
+ * recorded (the transcript, `Node::transcript_of`) and the live terminal
+ * it runs in. The conversation is the default face (会话身份批 ruling —
+ * it is the one that reads the same on every device); the choice is
+ * remembered per row, which is the cheapest form of "user preference"
+ * and adds no settings entry. The chat face is read-only — speaking into
+ * a TUI from a chat box means injecting bytes into whatever state its
+ * menus are in; speaking through ACP is its own batch on the ledger.
  */
+const faceKey = (id: string) => `khor.session.face.${id}`;
+
 function HostedAgentDetail({ id }: { id: string }) {
-  const [view, setView] = useState<"term" | "chat">("term");
+  const [view, setViewState] = useState<"term" | "chat">(() =>
+    window.localStorage.getItem(faceKey(id)) === "term" ? "term" : "chat",
+  );
+  const setView = (v: "term" | "chat") => {
+    setViewState(v);
+    window.localStorage.setItem(faceKey(id), v);
+  };
   return (
     <>
       <div className="flex flex-none gap-1 border-b p-1">
