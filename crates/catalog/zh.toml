@@ -522,6 +522,7 @@ sessions-tab = "会话"
 new-session = "新会话"
 new-session-dir = "目录"
 new-session-name = "名字"
+chat-readonly = "只读——它正在自己的终端里跑;想说话,开个对话形式的新会话"
 create = "建立"
 devices-tab = "设备"
 # The other two landings. Both list machines today — files is "which

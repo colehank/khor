@@ -298,11 +298,15 @@ export function ChatView({ id, still = false }: { id: string; still?: boolean })
           the only thing its footer can say is that the record is
           missing. */}
       {still ? (
-        gone && (
-          <div className="flex-none border-t p-2">
-            <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_no_record}</div>
+        // The read-only face says so where the input would be — without
+        // this line, "no input" reads as a bug, not as the 接管 ruling
+        // (a live TUI is the one mouth; speaking from here is 批C). The
+        // 无记录 case keeps its own words.
+        <div className="flex-none border-t p-2">
+          <div data-chat-readonly className="px-2 py-1.5 text-sm text-muted-foreground">
+            {gone ? gui.chat_no_record : gui.chat_readonly}
           </div>
-        )
+        </div>
       ) : (
       <div className="flex-none border-t p-2">
         {gone ? (
