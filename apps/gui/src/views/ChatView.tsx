@@ -18,6 +18,7 @@
 // - **Tool lines never change.** `tool_call_update` is not painted, so
 //   a line shows the call's title and no status — no status is honest
 //   where a stale "running" would be a lie shaped like a fact.
+import { takeover as takeoverCall } from "@/api";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -136,10 +137,23 @@ function fold(frames: ChatFrame[], says: Said[]): Exclude<Item, { who: "seal" }>
  * fold, same painting, no attachment, no polling, and no input, since
  * there is no protocol channel to say anything into.
  */
-export function ChatView({ id, still = false }: { id: string; still?: boolean }) {
+export function ChatView({
+  id,
+  still = false,
+  takeover,
+}: {
+  id: string;
+  still?: boolean;
+  /** Offered on a read-only face whose session could speak from here
+      (批C 接管): "busy" warns the confirm that a turn will be cut. */
+  takeover?: "busy" | "calm";
+}) {
   const [frames, setFrames] = useState<ChatFrame[]>([]);
   const [says, setSays] = useState<Said[]>([]);
   const [gone, setGone] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [taking, setTaking] = useState(false);
+  const [takeErr, setTakeErr] = useState<string | null>(null);
   const [inTurn, setInTurn] = useState(false);
   const [text, setText] = useState("");
   // Asks this face has answered: the buttons go, the line stays — a
@@ -300,12 +314,55 @@ export function ChatView({ id, still = false }: { id: string; still?: boolean })
       {still ? (
         // The read-only face says so where the input would be — without
         // this line, "no input" reads as a bug, not as the 接管 ruling
-        // (a live TUI is the one mouth; speaking from here is 批C). The
-        // 无记录 case keeps its own words.
+        // (a live TUI is the one mouth). Where a takeover is possible it
+        // is offered right here, with a second look before the cut: the
+        // click ends a process somewhere else, and mid-turn it cuts a
+        // turn — the confirm's words say which (词按行的状态分).
         <div className="flex-none border-t p-2">
-          <div data-chat-readonly className="px-2 py-1.5 text-sm text-muted-foreground">
-            {gone ? gui.chat_no_record : gui.chat_readonly}
-          </div>
+          {takeover && confirming ? (
+            <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+              <span data-takeover-warn className="min-w-0 flex-1 text-muted-foreground">
+                {takeover === "busy" ? gui.takeover_busy : gui.takeover_calm}
+              </span>
+              <Button
+                size="sm"
+                data-takeover-go
+                disabled={taking}
+                onClick={() => {
+                  setTaking(true);
+                  setTakeErr(null);
+                  takeoverCall(id).catch((e) => {
+                    setTakeErr(String(e instanceof Error ? e.message : e));
+                    setTaking(false);
+                    setConfirming(false);
+                  });
+                  // On success the row turns gui and the poll swaps this
+                  // face for the live one — nothing to do here.
+                }}
+              >
+                {gui.takeover}
+              </Button>
+              <Button size="sm" variant="ghost" data-takeover-back onClick={() => setConfirming(false)}>
+                {gui.back}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+              <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
+                {gone ? gui.chat_no_record : gui.chat_readonly}
+              </span>
+              {takeErr && (
+                <span data-takeover-error className="text-destructive">
+                  {takeErr}
+                </span>
+              )}
+              {takeover && (
+                <Button size="sm" variant="secondary" data-takeover onClick={() => setConfirming(true)}>
+                  {gui.takeover}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
       <div className="flex-none border-t p-2">

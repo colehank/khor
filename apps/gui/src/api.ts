@@ -71,6 +71,8 @@ export const tell = (machine: string, text: string) => call<null>("tell", { mach
     conversation ("chat") or a terminal ("term"). Answers the new row's id. */
 export const openSession = (dir: string, title: string, form: "chat" | "term") =>
   call<string>("open_session", { dir, title, form });
+/** 接管 (批C): end the session's terminal side; the conversation continues here. */
+export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the
 // row's current state, and a toggle raced against a pin arriving from
 // another device would flip the wrong way.

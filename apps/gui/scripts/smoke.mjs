@@ -245,7 +245,10 @@ try {
     `#!/usr/bin/env python3
 import json, sys
 args = sys.argv[1:]
-sid = args[args.index("--session-id") + 1]
+if "--session-id" in args:
+    sid = args[args.index("--session-id") + 1]
+else:
+    sid = args[args.index("--resume") + 1]
 def emit(o):
     sys.stdout.write(json.dumps(o) + "\\n"); sys.stdout.flush()
 first = True
@@ -2151,9 +2154,13 @@ for line in sys.stdin:
     }),
   );
   const inTmux = "the words of the agent living in tmux";
+  const agentCwd = join(SCRATCH, "agenthome-cwd");
+  mkdirSync(agentCwd, { recursive: true });
+  // `cwd` on the line the way real transcripts carry it — the takeover
+  // resumes the agent in its recorded world, not in the resumer's.
   writeFileSync(
     join(tdir, `${tmuxAgentUuid}.jsonl`),
-    JSON.stringify({ type: "user", message: { role: "user", content: inTmux } }) + "\n",
+    JSON.stringify({ type: "user", cwd: agentCwd, message: { role: "user", content: inTmux } }) + "\n",
   );
   await openLanding("sessions");
   await until("the tmux-held agent row wearing claude", 20_000, async () =>
@@ -2186,17 +2193,45 @@ for line in sys.stdin:
     await new Promise((r) => setTimeout(r, 300));
     return (await page.locator("[data-terminal]").innerText()).includes(paneMarker);
   });
-  // Ending the agent ends the row. **Not by `kill-session`**: while
-  // khor's viewer is attached, its grouped twin shares the session's
-  // windows, so killing the origin session leaves the pane alive inside
-  // the twin — measured here first (the row stayed, correctly: the
-  // process was still running). Killing the *process* collapses both
-  // sessions, the viewer host sees its client die and cleans itself up,
-  // and with the status file gone there is no sighting left.
-  await page.locator(`[data-row="chat/alpha"] [data-row-open]`).click();
-  process.kill(Number(agentPid));
+  // 24k) 接管 (批C): the read-only face offers it, the confirm warns,
+  //      and the go moves the conversation's body — the TUI process
+  //      dies (the pane WAS the process, so the tmux session goes with
+  //      it), the same row is reborn as a live conversation under the
+  //      same vendor uuid, and speaking works: the resumed fake claude
+  //      answers. This also ends the viewer host stood up above — the
+  //      takeover cleans the bridge before it re-seats the row.
+  await page.locator("[data-view-chat]").click();
+  await until("the readonly face offering a takeover", 15_000, async () =>
+    (await page.locator("[data-takeover]").count()) === 1,
+  );
+  await page.locator("[data-takeover]").click();
+  await until("the confirm with its warning", 10_000, async () =>
+    (await page.locator("[data-takeover-warn]").count()) === 1,
+  );
+  await page.locator("[data-takeover-go]").click();
+  await until("the tmux side ended by the takeover", 30_000, async () => {
+    try {
+      execFileSync("tmux", ["-L", TMUX_SOCK, "has-session", "-t", "agenthome"], {
+        timeout: 5_000,
+        stdio: "ignore",
+      });
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  await until("the same row reborn as a live conversation", 30_000, async () =>
+    (await page.locator("[data-chat-input]").count()) === 1,
+  );
+  await page.locator("[data-chat-input]").fill("hello taken");
+  await page.locator("[data-chat-input]").press("Enter");
+  await until("the resumed agent answering from the same id", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("echo: hello taken");
+  });
   rmSync(join(sdir, `${agentPid}.json`), { force: true });
-  await until("the held agent row gone with its process", 20_000, async () =>
+  cli(envB, "close", tmuxAgentRow);
+  await until("the taken-over row gone on close", 20_000, async () =>
     (await page.locator(`[data-row="${tmuxAgentRow}"]`).count()) === 0,
   );
 

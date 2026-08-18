@@ -238,6 +238,13 @@ async fn open_web(machine: String, url: String) -> Result<(), String> {
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
+/// 接管 (批C): ends the session's terminal side; the conversation
+/// continues here (`khor_gui_core::takeover`).
+#[tauri::command]
+fn takeover(id: String) -> Result<(), String> {
+    khor_gui_core::takeover(&Node::root_from_env(), &id)
+}
+
 /// The wizard's door (会话身份批B): a fresh claude session, born in the
 /// chosen directory, as a conversation (`chat`) or a terminal (`term`).
 #[tauri::command]
@@ -320,6 +327,7 @@ pub fn run() {
             pin_web,
             open_web,
             open_session,
+            takeover,
             invite,
             pair
         ])

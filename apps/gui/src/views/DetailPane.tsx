@@ -20,7 +20,16 @@ import { word } from "@/words";
  */
 const faceKey = (id: string) => `khor.session.face.${id}`;
 
-function HostedAgentDetail({ id }: { id: string }) {
+/** Whether — and how — the read-only chat face offers 接管 (批C): only
+    local claude rows that are not already conversations; "busy" makes
+    the confirm warn that a turn will be cut. */
+function takeoverOffer(row: SessionRow): "busy" | "calm" | undefined {
+  if (row.category !== "claude" || row.kind === "gui" || row.source) return undefined;
+  return row.word === "busy" ? "busy" : "calm";
+}
+
+function HostedAgentDetail({ row }: { row: SessionRow }) {
+  const id = row.id;
   const [view, setViewState] = useState<"term" | "chat">(() =>
     window.localStorage.getItem(faceKey(id)) === "term" ? "term" : "chat",
   );
@@ -50,7 +59,7 @@ function HostedAgentDetail({ id }: { id: string }) {
           {gui.view_chat}
         </Button>
       </div>
-      {view === "term" ? <TerminalPane id={id} /> : <ChatView id={id} still />}
+      {view === "term" ? <TerminalPane id={id} /> : <ChatView id={id} still takeover={takeoverOffer(row)} />}
     </>
   );
 }
@@ -92,7 +101,7 @@ export function DetailPane({
       ) : row && row.attachable && row.category === "claude" ? (
         // A hosted claude gets both faces with a switch; keyed so the
         // choice resets with the session it was made about.
-        <HostedAgentDetail key={row.id} id={row.id} />
+        <HostedAgentDetail key={row.id} row={row} />
       ) : row && row.attachable ? (
         // A session with a terminal to be had: hosted here already, or a
         // discovered tmux session the bridge stands a host up for on
@@ -106,7 +115,7 @@ export function DetailPane({
         // the vendor's own transcript. Claude only, this batch — the
         // other vendors' records are on the ledger, and their rows
         // keep the facts pane below rather than an empty chat.
-        <ChatView key={row.id} id={row.id} still />
+        <ChatView key={row.id} id={row.id} still takeover={takeoverOffer(row)} />
       ) : (
         <div className="grid flex-1 place-items-center text-center text-sm text-muted-foreground">
           {row ? (

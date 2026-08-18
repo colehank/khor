@@ -476,6 +476,12 @@ pub struct Ticket {
     pub minutes: u32,
 }
 
+/// 接管 (批C): the chat face becomes the session's one body — the node
+/// ends the terminal side and resumes the conversation (`Node::takeover`).
+pub fn takeover(root: &Path, id: &str) -> Result<(), String> {
+    open(root)?.takeover(&SessionId(id.to_owned()))
+}
+
 /// Opens a fresh claude session where the wizard pointed (会话身份批B:
 /// 建 session 四字段 — 目录、智能体、形式、名字; claude only this
 /// batch). The two forms are the user ruling's two channels: `chat`

@@ -222,6 +222,10 @@ fn handle(
         // point at the proxy, so it returns where the proxy listens and
         // the window half stays the tauri skin's (`web::borrow_web`).
         "open_web" => to_json(&rt.block_on(khor_gui_core::web::borrow_web(root, &arg("machine")?))?),
+        "takeover" => {
+            khor_gui_core::takeover(root, &arg("id")?)?;
+            Ok("null".to_owned())
+        }
         "open_session" => to_json(&khor_gui_core::open_session(
             root,
             &arg("dir")?,
