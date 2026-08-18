@@ -100,6 +100,15 @@
    * place to go and not a machine, so it should not measure the same as
    * either of its neighbours. */
   --icon-mark: 28px;
+  /* The session row's corner mark (mandala's .wsagent, numbers verbatim):
+   * a 14px frame holding an 11px glyph. The frame matches the old 14px
+   * machine badge so the row's grid does not move; the glyph takes 11
+   * not 14 because a full-bleed glyph against the rounded frame reads as
+   * about to spill. The frame is a solid punch-out (bg-card) — brand
+   * glyphs are transparent-bottomed strokes, and laid straight on a
+   * painted face they dissolve into its light and dark. */
+  --kind-mark: 14px;
+  --kind-mark-glyph: 11px;
 
   /* ── motion (mandala's tokens, verbatim) ──────────── */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -201,6 +210,8 @@
   --spacing-avatar-xl: var(--avatar-xl);
   --spacing-icon-rail: var(--icon-rail);
   --spacing-icon-mark: var(--icon-mark);
+  --spacing-kind-mark: var(--kind-mark);
+  --spacing-kind-mark-glyph: var(--kind-mark-glyph);
 
   /* mandala-adjacent type scale */
   --text-xs: 11px;

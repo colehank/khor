@@ -297,3 +297,56 @@ export function IconPin({ className, pinned = false }: IconProps & { pinned?: bo
     </Mark>
   );
 }
+
+/**
+ * A terminal: prompt and cursor. Ported from mandala's own-drawn one
+ * (BrandIcons.tsx there, path verbatim): a session with no agent is not
+ * "missing an agent", it *is* a terminal — the mark states that rather
+ * than negating something.
+ */
+export function IconTerminal({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M3.4 4.6L6.6 8l-3.2 3.4" />
+      <path d="M8.2 11.6h4.4" />
+    </Mark>
+  );
+}
+
+/**
+ * A conversation: one bubble, not two — two stacked bubbles blur into a
+ * blob at this size, and this one shape means the same thing in every
+ * app (mandala's judgment, path verbatim). The lower-left point is the
+ * whole information content: without it this is a rounded box.
+ */
+export function IconChat({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M13.2 8.6c0 2.3-2.2 4.2-5 4.2-.6 0-1.2-.1-1.7-.2l-3 1.2.9-2.4c-.9-.8-1.4-1.7-1.4-2.8 0-2.3 2.2-4.2 5-4.2s5 1.9 5 4.2z" />
+    </Mark>
+  );
+}
+
+/** A file — the transfer rows' mark (mandala path, verbatim). */
+export function IconFile({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M9 2.4H4.6c-.7 0-1.2.5-1.2 1.2v8.8c0 .7.5 1.2 1.2 1.2h6.8c.7 0 1.2-.5 1.2-1.2V5.8L9 2.4z" />
+      <path d="M8.9 2.6v3.1h3.3" />
+    </Mark>
+  );
+}
+
+/**
+ * A link — the borrow rows' mark: a borrowed pipe to another machine's
+ * network (mandala path, verbatim; there it meant a symlink, here the
+ * same shape reads as "connected through").
+ */
+export function IconLink({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l1.7-1.7a2.6 2.6 0 0 0-3.7-3.7l-1 1" />
+      <path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3L3.8 8a2.6 2.6 0 0 0 3.7 3.7l1-1" />
+    </Mark>
+  );
+}

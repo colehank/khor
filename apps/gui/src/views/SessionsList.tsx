@@ -2,11 +2,19 @@ import { Fragment } from "react";
 
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { sessionMark } from "@/components/BrandIcons";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { ago, groupLabel, word } from "@/words";
+
+/** The corner mark on a row's face: the shape is `sessionMark`'s one
+    judgment; this only sizes it. */
+function KindMark({ kind, category }: { kind: string; category: string | null }) {
+  const M = sessionMark(kind, category);
+  return <M className="size-kind-mark-glyph" />;
+}
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -123,11 +131,27 @@ export function SessionsList({
             onClick={() => onSelect(r)}
             className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left"
           >
-            {/* The machine's face, not the agent's mark: on one screen
-                most rows run the same agent, so the agent glyph is the
-                thing that tells rows apart least. A face is one per
-                machine and is what the eye picks up scanning. */}
-            <MachineAvatar face={r.face} className="size-avatar" />
+            {/* The machine's face carries the row (one per machine, what
+                the eye scans by), and its corner wears the kind mark:
+                shape says what this session is, colour says how it is —
+                one mark answering two things (mandala's .wsbrand rule).
+                The word itself stays at the row's end: state must never
+                be colour alone. The mark sits on a solid punch-out, or
+                the transparent brand strokes dissolve into the face. */}
+            {/* `flex`, not inline: an inline wrap grows the baseline's few
+                pixels under the face and the mark's corner offset bites
+                into that gap instead of the face (mandala's .badged-face
+                fix, the flex spelling of display:block+line-height:0). */}
+            <span className="relative flex flex-none">
+              <MachineAvatar face={r.face} className="size-avatar" />
+              <span
+                data-kind-mark={r.category ?? r.kind}
+                className="absolute -bottom-0.5 -right-0.5 grid size-kind-mark place-items-center rounded-sm bg-card"
+                style={{ color: `var(--state-${r.word})` }}
+              >
+                <KindMark kind={r.kind} category={r.category} />
+              </span>
+            </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate">{r.title || r.id}</span>
               <span className="flex items-center gap-2 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
