@@ -534,8 +534,23 @@ pub fn open_session(root: &Path, dir: &str, title: &str, form: &str) -> Result<S
             // The TUI child resolves claude the same way the shim does,
             // env door included, so both forms honour one override.
             let claude = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
-            let id =
-                n.open_persistent_at(&path, khor_node::kind::TUI, &title, &[claude], (80, 24))?;
+            // **The session is named before it exists**, and the row
+            // wears that name — the same trick the shim plays on the
+            // protocol side. Without it this form produced the one row
+            // khor could not take over: a khor-minted id names no
+            // vendor file, so 接管 answered 「没有它的对话记录」 unless
+            // a hook happened to be installed to fill the leaf in.
+            let vendor_session = khor_node::adaptor::uuid_v4()?;
+            let id = khor_node::adaptor::id_for(&vendor_session);
+            let id = n.open_persistent_as(
+                &id,
+                &path,
+                khor_node::kind::TUI,
+                &title,
+                &[claude, "--session-id".into(), vendor_session],
+                (80, 24),
+                Some(khor_node::adaptor::claude::VENDOR),
+            )?;
             Ok(id.0)
         }
         // The wizard sends exactly the two above; anything else is a

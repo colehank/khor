@@ -2528,6 +2528,38 @@ for line in sys.stdin:
     (await page.locator(`[data-row="${wizId}"]`).count()) === 0,
   );
 
+  // **A terminal-form session is named before it exists.** The row
+  // wears the vendor's own uuid — 26 characters of it, the lossy
+  // spelling every agent row uses — rather than a khor-minted leaf
+  // that names no vendor file. Without this, the one row khor could
+  // not take over was the one khor opened itself.
+  const termDir = join(SCRATCH, "wizard-term-cwd");
+  mkdirSync(termDir, { recursive: true });
+  await page.locator("[data-pane-new]").click();
+  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-new-session-dir]").fill(termDir);
+  await page.locator("[data-new-session-name]").fill("wizard-term");
+  await page.locator("[data-new-session-term]").click();
+  await page.locator("[data-new-session-create]").click();
+  await until("the terminal-form row born under a vendor uuid", 40_000, async () => {
+    const err = await page.locator("[data-new-session-error]").count();
+    if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
+    const row = await page.locator('[data-title="wizard-term"]').getAttribute("data-row").catch(() => null);
+    // 8-4-4-4 of a uuid is 26 characters, and a khor-minted leaf is not
+    // shaped like that at all (`link::fresh_leaf`).
+    return !!row && /^tui\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}$/.test(row);
+  });
+  const termRow = await page.locator('[data-title="wizard-term"]').getAttribute("data-row");
+  cli(envB, "close", termRow);
+  // Waited for, not fired and forgotten: a row on its way out is still
+  // the newest row, and the step after this one picks the first one it
+  // sees and presses its pin — which never takes on a row that is
+  // being removed. (Measured: that is exactly how it failed.)
+  await until("the terminal-form row gone", 20_000, async () =>
+    (await page.locator(`[data-row="${termRow}"]`).count()) === 0,
+  );
+
+
   // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //

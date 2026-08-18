@@ -216,6 +216,32 @@ pub trait Adaptor: Send + Sync {
 /// disagree the same claude session appears twice, once registered and
 /// once discovered. `tui` is the kind because that is what these are —
 /// an agent TUI, whichever vendor built it (docs/SESSION.md 六词映射).
+/// 16 random bytes worn as a proper v4 uuid — claude refuses
+/// `--session-id` values that are not valid uuids, so the version and
+/// variant nibbles are set rather than left to chance.
+///
+/// Shared because **both** ways of opening a session mint one: the shim
+/// hands it to `--session-id` on the protocol side, and the terminal
+/// form does the same so its row can wear the vendor's own id from
+/// birth rather than waiting for a hook to say what it is.
+pub fn uuid_v4() -> Result<String, String> {
+    let hex = crate::link::fresh_hex()?;
+    let b: Vec<char> = hex.chars().collect();
+    let mut s = String::with_capacity(36);
+    for (i, c) in b.iter().enumerate() {
+        match i {
+            8 | 12 | 16 | 20 => s.push('-'),
+            _ => {}
+        }
+        match i {
+            12 => s.push('4'),
+            16 => s.push(['8', '9', 'a', 'b'][(c.to_digit(16).unwrap_or(0) % 4) as usize]),
+            _ => s.push(*c),
+        }
+    }
+    Ok(s)
+}
+
 pub fn id_for(vendor_session_id: &str) -> SessionId {
     SessionId(format!(
         "{}/{}",

@@ -975,6 +975,35 @@ impl Node {
         Ok(id)
     }
 
+    /// [`Self::open_persistent_at`] under an id **the caller chose** —
+    /// for a terminal-form session khor opens itself and hands the
+    /// vendor its own session id (`claude --session-id`).
+    ///
+    /// The whole point is the id. A khor-minted `tui/<random>` row is a
+    /// row that cannot say which vendor conversation it holds, so
+    /// 接管 has nothing to resume and the transcript merges into
+    /// nothing — and the only thing that could tell it was a hook,
+    /// which a machine may simply not have installed. Naming the
+    /// session up front removes the dependency instead of reporting it.
+    pub fn open_persistent_as(
+        &self,
+        id: &SessionId,
+        cwd: &std::path::Path,
+        kind: &str,
+        title: &str,
+        cmd: &[String],
+        size: (u16, u16),
+        category: Option<&str>,
+    ) -> Result<SessionId, String> {
+        self.live.register(id, kind, title, None, category)?;
+        let dir = self
+            .live
+            .dir_of(id)
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        host::spawn_host_at(cwd, &dir, id, cmd, size)?;
+        Ok(id.clone())
+    }
+
     /// Opens a GUI session: a detached host holding one ACP agent. The
     /// id comes back from the host — it is the vendor's own, and exists
     /// only once the agent has answered (`gui_host` module head).

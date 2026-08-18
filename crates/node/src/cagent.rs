@@ -248,7 +248,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
 impl Shim {
     /// Spawns the claude child for one freshly-minted session id.
     fn start_claude(self: &Arc<Self>, cwd: &std::path::Path) -> Result<String, String> {
-        let sid = uuid_v4()?;
+        let sid = crate::adaptor::uuid_v4()?;
         self.start_claude_with(cwd, &["--session-id", &sid])?;
         *self.session.lock().unwrap() = Some(sid.clone());
         Ok(sid)
@@ -494,26 +494,6 @@ fn replayed(u: crate::adaptor::claude::Utterance) -> SessionUpdate {
     }
 }
 
-/// 16 random bytes worn as a proper v4 uuid — claude refuses
-/// `--session-id` values that are not valid uuids, so the version and
-/// variant nibbles are set rather than left to chance.
-fn uuid_v4() -> Result<String, String> {
-    let hex = crate::link::fresh_hex()?;
-    let b: Vec<char> = hex.chars().collect();
-    let mut s = String::with_capacity(36);
-    for (i, c) in b.iter().enumerate() {
-        match i {
-            8 | 12 | 16 | 20 => s.push('-'),
-            _ => {}
-        }
-        match i {
-            12 => s.push('4'),
-            16 => s.push(['8', '9', 'a', 'b'][(c.to_digit(16).unwrap_or(0) % 4) as usize]),
-            _ => s.push(*c),
-        }
-    }
-    Ok(s)
-}
 
 #[cfg(test)]
 mod wire_tests {
