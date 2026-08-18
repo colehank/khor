@@ -106,6 +106,7 @@ usage = """
                         持久 session:终端关了还在,能重连(默认接上;-d 只开;
                         --gui 走 ACP 协议,khor 画对话,给会说这个协议的 agent)
   attach <session>      接上一个持久 session(Ctrl-\\ 断开)
+  takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   pin [-m|-d] <session|机器|机器 路径>
@@ -450,6 +451,9 @@ cagent-one-session = "这个垫片只装一个会话"
 cagent-not-started = "会话还没开始"
 cagent-no-pipe = "接不到 claude 的输出"
 no-such-dir = "没有这个目录: {0}"
+takeover-no-record = "没有它的对话记录,接管不了: {0}"
+takeover-wont-die = "那边的进程没退,接管中止: {0}"
+already-a-chat = "它已经是对话形式了: {0}"
 # The `_host` re-exec convention got malformed arguments — a programming
 # error on the spawning side, never something a user typed.
 host-bad-convention = "宿主参数不合约定"
@@ -522,7 +526,10 @@ sessions-tab = "会话"
 new-session = "新会话"
 new-session-dir = "目录"
 new-session-name = "名字"
-chat-readonly = "只读——它正在自己的终端里跑;想说话,开个对话形式的新会话"
+chat-readonly = "只读——它正在自己的终端里跑"
+takeover = "接管"
+takeover-busy = "它正忙,接管会打断这一轮;那边的终端会结束,对话从这里继续"
+takeover-calm = "那边的终端会结束,对话从这里继续"
 create = "建立"
 devices-tab = "设备"
 # The other two landings. Both list machines today — files is "which

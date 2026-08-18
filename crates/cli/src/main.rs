@@ -64,6 +64,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "run", run: run },
     Verb { word: "open", run: open },
     Verb { word: "attach", run: attach },
+    Verb { word: "takeover", run: takeover },
     Verb { word: "state", run: state },
     Verb { word: "seen", run: seen },
     Verb { word: "pin", run: pin },
@@ -607,6 +608,20 @@ fn host(rest: &[String]) -> Result<(), String> {
         rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
     );
     khor_node::host::host_main(Node::root_from_env(), SessionId(sid.clone()), size, cmd.to_vec())
+}
+
+/// 接管 (批C): typing the verb is the confirmation — the CLI's precedent
+/// is `close`, which also acts on the word alone. The GUI is where a
+/// click is cheap enough to deserve a second look.
+fn takeover(rest: &[String]) -> Result<(), String> {
+    let [sid] = rest else {
+        return Err(USAGE.into());
+    };
+    let n = node()?;
+    let id = SessionId(sid.clone());
+    n.takeover(&id)?;
+    println!("{}", id.0);
+    Ok(())
 }
 
 fn cagent(_rest: &[String]) -> Result<(), String> {

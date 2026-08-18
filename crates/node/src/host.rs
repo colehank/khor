@@ -400,6 +400,14 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let mut builder = CommandBuilder::new(&cmd[0]);
     builder.args(&cmd[1..]);
     builder.env("KHOR_SESSION", &id.0);
+    // A hosted session is nobody's nested session, whatever process
+    // tree the host was spawned from. The markers are claude's, but
+    // clearing them costs a shell nothing — and inheriting them costs a
+    // claude its transcript (`CLAUDE_CODE_CHILD_SESSION` turns saving
+    // off; found live through a dev bridge started inside a claude).
+    for marker in ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION"] {
+        builder.env_remove(marker);
+    }
     if let Ok(cwd) = std::env::current_dir() {
         builder.cwd(cwd);
     }

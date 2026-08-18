@@ -122,6 +122,32 @@ pub fn spawn_gui_host(
     title: &str,
     cmd: &[String],
 ) -> Result<SessionId, String> {
+    spawn_ghost(cwd, title, cmd, None)
+}
+
+/// [`spawn_gui_host`], but resuming an existing vendor session — the
+/// takeover (批C): the ghost loads the recorded conversation instead of
+/// opening a fresh one, and re-seats the existing row (`LiveKind::reopen`)
+/// instead of registering a new one.
+pub fn spawn_gui_host_resume(
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+    session: &str,
+) -> Result<SessionId, String> {
+    spawn_ghost(cwd, title, cmd, Some(session))
+}
+
+/// How `_ghost` learns it resumes: env, not argv — the argv convention
+/// stays what every existing binary parses (`VIEWER_ENV`'s precedent).
+const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
+
+fn spawn_ghost(
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+    resume: Option<&str>,
+) -> Result<SessionId, String> {
     let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
@@ -131,6 +157,14 @@ pub fn spawn_gui_host(
     let mut c = std::process::Command::new(exe);
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
+    }
+    match resume {
+        Some(sid) => {
+            c.env(RESUME_ENV, sid);
+        }
+        None => {
+            c.env_remove(RESUME_ENV);
+        }
     }
     c.arg("_ghost")
         .arg(&ready)
@@ -193,17 +227,30 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
 
     let command = cmd.join(" ");
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
-    let (handle, mut events) =
-        rt.block_on(khor_acp::start(&command, cwd)).map_err(|e| e.to_string())?;
+    let resume = std::env::var(RESUME_ENV).ok();
+    let (handle, mut events) = rt
+        .block_on(async {
+            match &resume {
+                Some(sid) => khor_acp::start_resume(&command, cwd, sid).await,
+                None => khor_acp::start(&command, cwd).await,
+            }
+        })
+        .map_err(|e| e.to_string())?;
 
     // The vendor's uuid is the id — the whole merge story hangs on this
     // line (module head).
     let id = crate::adaptor::id_for(&handle.session().0);
-    live.register(&id, khor_core::kind::GUI, &title, Some(std::process::id()), None)?;
+    if resume.is_some() {
+        // The takeover re-seats a row that already exists (and clears
+        // the ending the takeover itself just caused).
+        live.reopen(&id, khor_core::kind::GUI, &title, std::process::id())?;
+    } else {
+        live.register(&id, khor_core::kind::GUI, &title, Some(std::process::id()), None)?;
+        // Register wrote the spawn's 忙碌; a fresh GUI session is a
+        // prompt nobody has typed into yet.
+        live.report(&id, State::Idle, Source::Reported)?;
+    }
     let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-    // Register wrote the spawn's 忙碌; a fresh GUI session is a prompt
-    // nobody has typed into yet.
-    live.report(&id, State::Idle, Source::Reported)?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();

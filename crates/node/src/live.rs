@@ -272,6 +272,38 @@ impl LiveKind {
         self.register(id, kind, title, pid, category)
     }
 
+    /// Re-seats a row on a new presentation channel — the takeover
+    /// (批C): the same conversation, a different process showing it.
+    /// Creates the entry when the row was only ever discovered; clears
+    /// any recorded ending (the old process was killed *by* the
+    /// takeover, and that ending is the switch, not the session's);
+    /// the fresh word is 空闲 — a prompt nobody has typed into yet.
+    pub fn reopen(
+        &self,
+        id: &SessionId,
+        kind: &str,
+        title: &str,
+        pid: u32,
+    ) -> Result<(), String> {
+        let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        fs::create_dir_all(&dir).map_err(msg::cant_make_session_dir)?;
+        let mut meta = read_meta(&dir).unwrap_or(Meta {
+            kind: kind.to_owned(),
+            title: title.to_owned(),
+            pid: None,
+            started_ms: now_ms(),
+            category: None,
+            id: id.0.clone(),
+            vendor_leaf: None,
+        });
+        meta.kind = kind.to_owned();
+        meta.title = title.to_owned();
+        meta.pid = Some(pid);
+        meta.id = id.0.clone();
+        write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
+        self.write_state(&dir, State::Idle, None, Source::Reported)
+    }
+
     /// Fills in the vendor's session leaf. Write-once, like
     /// `learn_category`: the first hook knows, and a later different
     /// answer would mean the vendor restarted a new session inside the
@@ -360,6 +392,25 @@ impl LiveKind {
     pub fn stamp(&self, id: &SessionId) -> Result<i64, String> {
         let dir = self.existing_dir(id)?;
         Ok(read_pair(&dir)?.1.at_ms)
+    }
+
+    /// The live sighting behind an id, for the takeover: the title the
+    /// vendor gave it and the processes to end. `None` when nothing is
+    /// running behind it — then there is nothing to kill, only a record
+    /// to resume.
+    pub fn sighting_of(&self, id: &SessionId) -> Option<(String, Vec<u32>)> {
+        self.discovery
+            .sweep()
+            .rows
+            .into_iter()
+            .find(|f| f.id() == *id)
+            .map(|f| (f.sighting.title, f.sighting.pids))
+    }
+
+    /// The kind and title on record, when a registry entry exists.
+    pub fn on_record(&self, id: &SessionId) -> Option<(String, String)> {
+        let dir = self.dir(id)?;
+        read_meta(&dir).ok().map(|m| (m.kind, m.title))
     }
 
     /// Stands a host up for a discovered multiplexer session, so the

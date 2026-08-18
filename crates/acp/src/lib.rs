@@ -156,6 +156,27 @@ pub async fn start(
     command: &str,
     cwd: PathBuf,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), String> {
+    start_with(command, cwd, None).await
+}
+
+/// [`start`], but the session is an existing one the agent resumes
+/// (`session/load` instead of `session/new`) — the takeover path (批C).
+/// The load's replayed updates arrive as [`Event::Note`]s before
+/// [`Event::Ready`]; a caller with nobody attached yet simply drops
+/// them, and the past stays askable through [`Handle::replay`].
+pub async fn start_resume(
+    command: &str,
+    cwd: PathBuf,
+    session: &str,
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), String> {
+    start_with(command, cwd, Some(session.to_owned())).await
+}
+
+async fn start_with(
+    command: &str,
+    cwd: PathBuf,
+    resume: Option<String>,
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), String> {
     let agent = AcpAgent::from_str(command).map_err(|e| e.to_string())?;
     let (events_tx, events_rx) = mpsc::unbounded_channel::<Event>();
     let (ready_tx, ready_rx) = oneshot::channel::<(ConnectionTo<Agent>, SessionId)>();
@@ -198,11 +219,23 @@ pub async fn start(
                     .send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task()
                     .await?;
-                let session = connection
-                    .send_request(NewSessionRequest::new(cwd))
-                    .block_task()
-                    .await?
-                    .session_id;
+                let session = match resume {
+                    Some(sid) => {
+                        let sid = SessionId::new(sid);
+                        connection
+                            .send_request(LoadSessionRequest::new(sid.clone(), cwd))
+                            .block_task()
+                            .await?;
+                        sid
+                    }
+                    None => {
+                        connection
+                            .send_request(NewSessionRequest::new(cwd))
+                            .block_task()
+                            .await?
+                            .session_id
+                    }
+                };
                 if let Some(tx) = ready_tx.take() {
                     let _ = tx.send((connection.clone(), session));
                 }

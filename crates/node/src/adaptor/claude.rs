@@ -148,6 +148,33 @@ impl Claude {
 
     /// The transcript file behind a leaf, with its mtime — the shared
     /// resolution `transcript` and `last_said` both run.
+    /// The vendor's **full** session id behind a lossy leaf — the
+    /// transcript's own filename. A khor row id truncates the uuid
+    /// (`clean_leaf` caps at 24), but `--resume` wants the whole thing;
+    /// the file is the one place that never forgot it.
+    pub(crate) fn full_session_id(&self, leaf: &str) -> Option<String> {
+        let (path, _) = self.transcript_path(leaf)?;
+        path.file_stem().map(|s| s.to_string_lossy().to_string())
+    }
+
+    /// The cwd the transcript itself records — every entry carries one.
+    /// A takeover resumes the conversation somewhere else entirely, and
+    /// the agent's world must not move with the resumer (`cagent`'s
+    /// load-before-new branch reads this).
+    pub(crate) fn recorded_cwd(&self, leaf: &str) -> Option<PathBuf> {
+        use std::io::Read;
+        let (path, _) = self.transcript_path(leaf)?;
+        let mut head = String::new();
+        std::fs::File::open(path).ok()?.take(64 * 1024).read_to_string(&mut head).ok()?;
+        head.lines().find_map(|l| {
+            serde_json::from_str::<serde_json::Value>(l)
+                .ok()?
+                .get("cwd")?
+                .as_str()
+                .map(PathBuf::from)
+        })
+    }
+
     fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
         let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
         let projects = std::fs::read_dir(self.projects_dir()).ok()?;

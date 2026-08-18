@@ -24,10 +24,14 @@ async fn the_shim_speaks_acp_for_a_fake_claude() {
 import json, sys, os
 open("fake.pid", "w").write(str(os.getpid()))
 
-sid = None
 args = sys.argv[1:]
 assert "--permission-prompt-tool" in args, "the shim must ask for the control protocol"
-sid = args[args.index("--session-id") + 1]
+if "--session-id" in args:
+    sid = args[args.index("--session-id") + 1]
+    open("fake.mode", "w").write("new")
+else:
+    sid = args[args.index("--resume") + 1]
+    open("fake.mode", "w").write("resume")
 
 def emit(obj):
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -180,5 +184,38 @@ for line in sys.stdin:
     }
     assert!(gone, "the claude child must die with the shim");
     let _ = pump2.await;
+
+    // The takeover path (批C): resuming an existing session must reach
+    // claude as `--resume <sid>`, replay the transcript on the way up,
+    // and then converse as usual.
+    let (handle3, mut events3) =
+        khor_acp::start_resume(&format!("{exe} _cagent"), dir.join("cwd"), &sid).await.unwrap();
+    assert_eq!(handle3.session().0.to_string(), sid, "the resumed session keeps its id");
+    let notes3 = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let n3 = notes3.clone();
+    let pump3 = tokio::spawn(async move {
+        while let Some(e) = events3.recv().await {
+            match e {
+                khor_acp::Event::Note(n) => {
+                    n3.lock().unwrap().push(serde_json::to_string(&n).unwrap());
+                }
+                khor_acp::Event::Closed(_) => break,
+                _ => {}
+            }
+        }
+    });
+    let stop = handle3.prompt("hello resumed").await.unwrap();
+    assert_eq!(format!("{stop:?}"), "EndTurn");
+    let said = notes3.lock().unwrap().join("\n");
+    assert!(said.contains("echo: hello resumed"), "the resumed session converses: {said}");
+    // Read after the round-trip — the interpreter needs a beat to write
+    // the marker, and a turn proves it is long past started.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("cwd/fake.mode")).unwrap(),
+        "resume",
+        "claude must be asked to resume, not to start fresh"
+    );
+    drop(handle3);
+    let _ = pump3.await;
     let _ = std::fs::remove_dir_all(&dir);
 }

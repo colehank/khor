@@ -993,6 +993,101 @@ impl Node {
         gui_host::spawn_gui_host(Some(cwd), title, cmd)
     }
 
+    /// 接管 (批C): the conversation stays; the process presenting it
+    /// changes hands. Ends whatever shows this session now — a viewer
+    /// host's bridge, the TUI process itself — and resurrects the same
+    /// vendor session as a conversation row (`gui_host` resume mode,
+    /// `--resume` probed: same id, same transcript, works across cwd).
+    /// The one-mouth ruling made executable: after this, the chat face
+    /// is the only body.
+    ///
+    /// Refuses honestly: a row that is already a conversation, and a
+    /// session whose transcript nobody can find (nothing to resume).
+    /// A session with no live process is taken over by resurrection
+    /// alone — nothing to kill is not an error.
+    pub fn takeover(&self, id: &SessionId) -> Result<(), String> {
+        let id_leaf = id
+            .0
+            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
+            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        // A khor-minted id names no vendor file; the hook-recorded
+        // vendor leaf is the bridge (`transcript_of`'s precedent).
+        let leaf = self.live.vendor_leaf_of(id).unwrap_or_else(|| id_leaf.to_owned());
+        let leaf = leaf.as_str();
+        if let Some((kind, _)) = self.live.on_record(id) {
+            if kind == khor_core::kind::GUI {
+                return Err(msg::already_a_chat(&id.0));
+            }
+        }
+        let home = adaptor::vendor_home(&self.root).join(".claude");
+        let claude = adaptor::claude::Claude::at(home);
+        let full = claude
+            .full_session_id(leaf)
+            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let cwd = claude
+            .recorded_cwd(leaf)
+            .or_else(std::env::home_dir)
+            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let sighting = self.live.sighting_of(id);
+        let title = sighting
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .or_else(|| self.live.on_record(id).map(|(_, t)| t))
+            .unwrap_or_else(|| leaf.to_owned());
+
+        // A host standing on this row is a viewer (agent rows never own
+        // their process): end its bridge first, and let it clean up
+        // after itself before the ghost writes its own host marker.
+        if let Some(dir) = self.live.dir_of(id) {
+            if let Ok(hf) = host::read_host_file(&dir) {
+                #[cfg(unix)]
+                unsafe {
+                    libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
+                }
+                for _ in 0..50 {
+                    if !link::pid_alive(hf.host_pid) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+        // End the TUI itself. SIGTERM leaves the transcript whole and
+        // resumable (实测③: 0 bad lines, resumes at once); what was not
+        // flushed to disk is the interruption the confirm warned about.
+        if let Some((_, pids)) = &sighting {
+            #[cfg(unix)]
+            for &pid in pids {
+                unsafe {
+                    libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                }
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while pids.iter().any(|&p| link::pid_alive(p)) {
+                if std::time::Instant::now() > deadline {
+                    return Err(msg::takeover_wont_die(&id.0));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
+        gui_host::spawn_gui_host_resume(
+            Some(&cwd),
+            &title,
+            &[exe.display().to_string(), "_cagent".into()],
+            &full,
+        )?;
+        // The reborn row wears the vendor's uuid. A khor-minted row was
+        // a different spelling of the same conversation — one thing, one
+        // row (批A), so the old spelling leaves with the process it
+        // described.
+        let reborn = adaptor::id_for(&full);
+        if reborn != *id {
+            let _ = self.live.close_session(id);
+        }
+        Ok(())
+    }
+
     /// Stands a host up for a discovered tmux session so a terminal can
     /// attach (`LiveKind::attach_multiplexed` has the whole judgment).
     pub fn attach_tmux(&self, id: &SessionId) -> Result<(), String> {

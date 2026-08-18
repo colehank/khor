@@ -164,8 +164,26 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 // file, and the very translation the GUI's history()
                 // uses for discovered rows, so both pasts read alike.
                 let sid = load.session_id.0.to_string();
-                if s_load.session.lock().unwrap().as_deref() != Some(sid.as_str()) {
-                    return responder.respond_with_internal_error(msg::no_such_session(&sid));
+                let started = s_load.session.lock().unwrap().clone();
+                match started {
+                    Some(cur) if cur == sid => {}
+                    Some(_) => {
+                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION)
+                    }
+                    None => {
+                        // A load before any new is the takeover: resume
+                        // the recorded conversation. Its world (cwd) is
+                        // the transcript's own record, not the loader's
+                        // — the resumer may stand anywhere.
+                        let home =
+                            crate::adaptor::vendor_home(&s_load.root).join(".claude");
+                        let cwd = crate::adaptor::claude::Claude::at(home)
+                            .recorded_cwd(&crate::live::clean_leaf(&sid))
+                            .unwrap_or_else(|| load.cwd.clone());
+                        if let Err(e) = s_load.start_claude_resume(&cwd, &sid) {
+                            return responder.respond_with_internal_error(e);
+                        }
+                    }
                 }
                 let home = crate::adaptor::vendor_home(&s_load.root).join(".claude");
                 let said = crate::adaptor::claude::Claude::at(home)
@@ -227,10 +245,26 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
 impl Shim {
     /// Spawns the claude child for one freshly-minted session id.
     fn start_claude(self: &Arc<Self>, cwd: &std::path::Path) -> Result<String, String> {
+        let sid = uuid_v4()?;
+        self.start_claude_with(cwd, &["--session-id", &sid])?;
+        *self.session.lock().unwrap() = Some(sid.clone());
+        Ok(sid)
+    }
+
+    /// Spawns the claude child **resuming** an existing session — the
+    /// takeover path (批C): the conversation already exists on disk, and
+    /// `--resume` continues the same id into the same transcript
+    /// (probed: same file, and it works across cwd).
+    fn start_claude_resume(self: &Arc<Self>, cwd: &std::path::Path, sid: &str) -> Result<(), String> {
+        self.start_claude_with(cwd, &["--resume", sid])?;
+        *self.session.lock().unwrap() = Some(sid.to_owned());
+        Ok(())
+    }
+
+    fn start_claude_with(self: &Arc<Self>, cwd: &std::path::Path, tail: &[&str]) -> Result<(), String> {
         if self.session.lock().unwrap().is_some() {
             return Err(msg::CAGENT_ONE_SESSION.into());
         }
-        let sid = uuid_v4()?;
         let bin = std::env::var(CLAUDE_ENV).unwrap_or_else(|_| "claude".into());
         let mut c = std::process::Command::new(&bin);
         c.args([
@@ -242,9 +276,8 @@ impl Shim {
             "--verbose",
             "--permission-prompt-tool",
             "stdio",
-            "--session-id",
-            &sid,
         ])
+        .args(tail)
         .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -254,12 +287,17 @@ impl Shim {
         // reads these to refuse. This child is not a nested session —
         // it is the session.
         .env_remove("CLAUDECODE")
-        .env_remove("CLAUDE_CODE_ENTRYPOINT");
+        .env_remove("CLAUDE_CODE_ENTRYPOINT")
+        // Inherited from a dev bridge started inside a claude session,
+        // this marker turns transcript saving OFF — which silently
+        // severs the whole 同源 story (found live: a probe session with
+        // nothing on disk to resume). khor's sessions are never anyone's
+        // child sessions.
+        .env_remove("CLAUDE_CODE_CHILD_SESSION");
         let mut child = c.spawn().map_err(|e| msg::wont_start(&bin, e))?;
         let stdout = child.stdout.take().ok_or(msg::CAGENT_NO_PIPE)?;
         *self.child_pid.lock().unwrap() = Some(child.id());
         *self.stdin.lock().unwrap() = child.stdin.take();
-        *self.session.lock().unwrap() = Some(sid.clone());
         let frames = self.frames.clone();
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(stdout);
@@ -274,7 +312,7 @@ impl Shim {
             // The child ended; a pending turn must not hang forever.
             let _ = frames.send(serde_json::json!({ "type": "khor_child_gone" }));
         });
-        Ok(sid)
+        Ok(())
     }
 
     /// One user turn onto claude's stdin.
