@@ -125,18 +125,29 @@ export function TerminalPane({ id }: { id: string }) {
     };
     const poll = window.setInterval(tick, 50);
 
+    // Coalesced to one fit per frame (mandala's TerminalView judgment):
+    // dragging a window fires ResizeObserver tens of times a second, and
+    // a resize is an IPC round plus a PTY resize plus a full repaint —
+    // per callback that is the drag stutter itself. rAF folds a burst
+    // into at most one.
+    let raf = 0;
     const observer = new ResizeObserver(() => {
-      const next = fit();
-      if (next.cols !== sentRef.current.cols || next.rows !== sentRef.current.rows) {
-        sentRef.current = next;
-        termResize(id, next.cols, next.rows).catch(() => {});
-      }
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const next = fit();
+        if (next.cols !== sentRef.current.cols || next.rows !== sentRef.current.rows) {
+          sentRef.current = next;
+          termResize(id, next.cols, next.rows).catch(() => {});
+        }
+      });
     });
     if (boxRef.current) observer.observe(boxRef.current);
 
     return () => {
       stopped = true;
       window.clearInterval(poll);
+      if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
       termLeave(id).catch(() => {});
     };
@@ -149,6 +160,17 @@ export function TerminalPane({ id }: { id: string }) {
     termKey(id, bytes).catch(() => {});
   };
 
+  // Paste goes to the PTY, not the page. Selection needs no such care —
+  // this grid is DOM text, so select-and-copy just work (the reason
+  // mandala had to intercept Cmd+C was a canvas with no text in it).
+  // Bracketed paste is on the ledger; until then the bytes go plain.
+  const onPaste = (e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData("text");
+    if (!text) return;
+    e.preventDefault();
+    termKey(id, text).catch(() => {});
+  };
+
   const { w: cw, h: ch } = cellRef.current;
 
   return (
@@ -156,6 +178,7 @@ export function TerminalPane({ id }: { id: string }) {
       data-terminal
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onPaste={onPaste}
       ref={boxRef}
       className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-bg)] p-1 font-mono text-sm leading-tight text-[var(--term-fg)] outline-none"
       style={
