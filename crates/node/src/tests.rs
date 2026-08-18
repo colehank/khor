@@ -197,6 +197,49 @@ fn a_vendors_hook_places_the_row_that_khor_could_not() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// A khor-opened agent row's conversation is found through the vendor
+/// leaf the hook recorded — khor's minted leaf names no file in
+/// projects/, so without the bridge the transcript must NOT resolve
+/// (that is the control: a lookup that found it anyway would mean the
+/// bridge is decoration and this test tests nothing).
+#[test]
+fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
+    let r = root("vendor-leaf");
+    let n = Node::open(r.clone()).unwrap();
+    let tui = n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
+
+    // The vendor's transcript, named by the vendor's own session id.
+    let uuid = "0a9f61c2-77aa-4bde-9c01-3e5f8a7b1234";
+    let proj = crate::adaptor::vendor_home(&r).join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    fs::write(
+        proj.join(format!("{uuid}.jsonl")),
+        concat!(
+            r#"{"type":"user","message":{"role":"user","content":"the real words"}}"#,
+            "\n"
+        ),
+    )
+    .unwrap();
+
+    // Control first: khor's own leaf must find nothing.
+    assert!(
+        n.transcript_of(&tui).is_err(),
+        "without the bridge the khor mint must resolve no transcript"
+    );
+
+    // The hook's half, minus the env: record the vendor leaf, then the
+    // same lookup lands on the vendor's file.
+    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid)).unwrap();
+    let said = n.transcript_of(&tui).unwrap();
+    assert_eq!(
+        said,
+        vec![crate::adaptor::claude::Utterance::User("the real words".into())],
+        "the vendor leaf must lead to the vendor's own file"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// Machine pins are keyed by device id but spoken in machine names, and
 /// an unknown name is refused the way every other verb refuses one.
 #[test]

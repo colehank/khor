@@ -431,6 +431,13 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
             // claude's own. Reading the command line instead would be a
             // guess, and wrong for an alias or a wrapper.
             live.learn_category(&id, Some(VENDOR))?;
+            // The hook also carries claude's own session id — the name
+            // its transcript file wears. Recording it is what lets the
+            // conversation view find that file for a khor-opened row,
+            // whose khor-minted leaf matches nothing in projects/.
+            if let Some(raw) = v["session_id"].as_str() {
+                live.learn_vendor_leaf(&id, &crate::live::clean_leaf(raw))?;
+            }
             id
         }
         _ => {

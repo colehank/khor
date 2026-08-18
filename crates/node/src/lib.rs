@@ -1084,8 +1084,13 @@ impl Node {
             .0
             .strip_prefix(&format!("{}/", khor_core::kind::TUI))
             .ok_or_else(|| msg::no_such_session(&id.0))?;
+        // A khor-opened row's own leaf is khor's mint and names no
+        // vendor file; the hook-recorded vendor leaf is the bridge
+        // (`live::Meta::vendor_leaf`). A discovered row has no record
+        // and needs none — its leaf *is* the vendor's.
+        let leaf = self.live.vendor_leaf_of(id).unwrap_or_else(|| leaf.to_owned());
         adaptor::claude::Claude::at(adaptor::vendor_home(&self.root).join(".claude"))
-            .transcript(leaf)
+            .transcript(&leaf)
     }
 
     /// Adds khor's hooks to claude's settings, leaving the rest of that

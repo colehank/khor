@@ -53,6 +53,14 @@ pub struct Meta {
     /// and for all of those the old rebuild is right.
     #[serde(default)]
     pub id: String,
+    /// The vendor's own session leaf (already `clean_leaf`ed), when a
+    /// hook told us. A khor-opened agent session carries khor's minted
+    /// leaf in its id, but the vendor names its transcript after its
+    /// *own* session id — this is the bridge that lets `transcript_of`
+    /// find that file. `None` until a hook speaks; write-once like
+    /// `category`, and for the same reason.
+    #[serde(default)]
+    pub vendor_leaf: Option<String>,
 }
 
 /// How a word got onto a registry row.
@@ -235,6 +243,7 @@ impl LiveKind {
             started_ms: now_ms(),
             category: category.map(str::to_owned),
             id: id.0.clone(),
+            vendor_leaf: None,
         };
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
         // Whoever registers a session is starting it, so this opening
@@ -261,6 +270,30 @@ impl LiveKind {
             return self.learn_category(id, category);
         }
         self.register(id, kind, title, pid, category)
+    }
+
+    /// Fills in the vendor's session leaf. Write-once, like
+    /// `learn_category`: the first hook knows, and a later different
+    /// answer would mean the vendor restarted a new session inside the
+    /// same terminal — at which point the *newest* transcript under the
+    /// first leaf is still the conversation this row hosted.
+    pub fn learn_vendor_leaf(&self, id: &SessionId, leaf: &str) -> Result<(), String> {
+        if leaf.is_empty() {
+            return Ok(());
+        }
+        let dir = self.existing_dir(id)?;
+        let mut meta = read_meta(&dir)?;
+        if meta.vendor_leaf.is_some() {
+            return Ok(());
+        }
+        meta.vendor_leaf = Some(leaf.to_owned());
+        write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)
+    }
+
+    /// The vendor leaf on record for a session, if a hook ever spoke.
+    pub fn vendor_leaf_of(&self, id: &SessionId) -> Option<String> {
+        let dir = self.dir(id)?;
+        read_meta(&dir).ok()?.vendor_leaf
     }
 
     /// Fills in a category the registry did not have. Never replaces one.

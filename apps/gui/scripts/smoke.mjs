@@ -1974,6 +1974,56 @@ try {
   );
   await openLanding("sessions");
 
+  // 24v) a hosted claude session shows two faces, and the switch works.
+  //
+  //      A hosted tui (cat again), then claude's own hook naming it —
+  //      which is what records the vendor leaf — and a transcript file
+  //      under that vendor id. The row turns claude, the detail grows
+  //      the 终端/对话 switch, the chat face reads the recorded words
+  //      through the vendor-leaf bridge, and the terminal face comes
+  //      back. End to end: hook → vendor_leaf → transcript_of → still
+  //      chat view (会话行改版批, 四刀之四: 只读).
+  const agentId = cli(envB, "open", "-d", "--tui", "--title", "fakeagent", "--", "cat").trim();
+  const agentUuid = "b7e2fa10-1234-4cd9-9c33-aabbccddeeff";
+  execFileSync(KHOR, ["state", "--hook"], {
+    env: { ...envB, KHOR_SESSION: agentId },
+    input: JSON.stringify({ session_id: agentUuid, cwd: "/tmp/proj", hook_event_name: "SessionStart" }),
+    encoding: "utf8",
+  });
+  const recorded = "the recorded words of the fake agent";
+  const tdir = join(B, ".claude", "projects", "p");
+  mkdirSync(tdir, { recursive: true });
+  writeFileSync(
+    join(tdir, `${agentUuid}.jsonl`),
+    JSON.stringify({ type: "user", message: { role: "user", content: recorded } }) + "\n",
+  );
+  await until("the hosted agent row wearing claude", 20_000, async () =>
+    (await page.locator(`[data-row="${agentId}"] [data-kind-mark="claude"]`).count()) === 1,
+  );
+  await page.locator(`[data-row="${agentId}"] [data-row-open]`).click();
+  await until("the view switch on a hosted claude", 15_000, async () =>
+    (await page.locator("[data-view-chat]").count()) === 1,
+  );
+  if ((await page.locator("[data-terminal]").count()) !== 1) {
+    throw new Error("the default face of a hosted agent is its terminal");
+  }
+  await page.locator("[data-view-chat]").click();
+  await until("the recorded conversation on the chat face", 15_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes(recorded);
+  });
+  if ((await page.locator("[data-terminal]").count()) !== 0) {
+    throw new Error("the chat face must replace the terminal, not stack on it");
+  }
+  await page.locator("[data-view-term]").click();
+  await until("the terminal face back", 15_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  cli(envB, "close", agentId);
+  await until("the agent row gone", 10_000, async () =>
+    (await page.locator(`[data-row="${agentId}"]`).count()) === 0,
+  );
+
   // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //
