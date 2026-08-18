@@ -72,7 +72,28 @@ type Update = {
   sessionUpdate?: string;
   content?: { type?: string; text?: string };
   title?: string | null;
+  /** `available_commands_update`'s payload. The spelling is pinned by a
+      test on the Rust side (`cagent`'s `wire_tests`) — this face reads
+      the protocol's JSON by hand, so a rename there would leave the "/"
+      menu quietly empty rather than break anything. */
+  availableCommands?: { name?: string; description?: string }[];
 };
+
+/** The agent's own command list, as of the newest update carrying one.
+    A list, not a merge: the agent republishes the whole set (claude's
+    垫片 turns each init frame's `slash_commands` into one of these), so
+    the last word is the truth. */
+function commandsOf(frames: ChatFrame[]): { name: string; description: string }[] {
+  let out: { name: string; description: string }[] = [];
+  for (const f of frames) {
+    const u = updateOf(f);
+    if (u?.sessionUpdate !== "available_commands_update") continue;
+    out = (u.availableCommands ?? [])
+      .map((c) => ({ name: c.name ?? "", description: c.description ?? "" }))
+      .filter((c) => c.name);
+  }
+  return out;
+}
 
 function updateOf(frame: ChatFrame): Update | null {
   if (frame.kind !== "note" && frame.kind !== "history") return null;
@@ -188,6 +209,8 @@ export function ChatView({
   const [takeErr, setTakeErr] = useState<string | null>(null);
   const [inTurn, setInTurn] = useState(false);
   const [text, setText] = useState("");
+  /** Which line of the "/" menu is under the keyboard. */
+  const [pick, setPick] = useState(0);
   // Asks this face has answered: the buttons go, the line stays — a
   // record that permission was asked outlives the asking. Local state
   // on purpose: the host sends no receipt for an answer, and the turn
@@ -273,6 +296,22 @@ export function ChatView({
     setInTurn(true);
     setSays((prev) => [...prev, { afterLive: liveCount.current, text: line }]);
     chatSay(id, line).catch(() => setInTurn(false));
+  };
+
+  // The "/" menu: the agent's own commands, filtered by what has been
+  // typed so far. Open only while the box holds a single slash-word —
+  // a space means the command is chosen and what follows is its
+  // argument, which is the agent's business and not this menu's.
+  const commands = commandsOf(frames);
+  const slash = /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : null;
+  const menu =
+    slash === null ? [] : commands.filter((c) => c.name.toLowerCase().startsWith(slash));
+  const complete = (name: string) => {
+    // A trailing space: it closes the menu and leaves room for an
+    // argument, and `say` trims it back off for a command that takes
+    // none.
+    setText(`/${name} `);
+    setPick(0);
   };
 
   const items = fold(frames, says);
@@ -423,15 +462,77 @@ export function ChatView({
           // away to get rid of one stuck line (found live — an agent's
           // request to its own API never came back, and the row read
           // 忙碌 for as long as anyone waited).
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
+            {/* The agent's own commands, above the box that will carry
+                them. Absolute so opening it does not push the
+                conversation up — a list that moves the text you are
+                reading is worse than no list. */}
+            {menu.length > 0 && (
+              <div
+                data-slash-menu
+                className="absolute bottom-full left-0 mb-1 max-h-40 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
+              >
+                {menu.map((c, n) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    data-slash-item={c.name}
+                    data-on={n === pick}
+                    className={cn(
+                      "flex w-full cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1 text-left text-sm",
+                      n === pick && "bg-accent",
+                    )}
+                    // The box must not lose focus to the press, or the
+                    // completion would land in a box nobody is typing in.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => complete(c.name)}
+                  >
+                    <span>/{c.name}</span>
+                    {c.description && (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {c.description}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             <Input
               data-chat-input
               value={text}
               placeholder={gui.chat_input}
               disabled={inTurn}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                setPick(0);
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) say();
+                if (e.nativeEvent.isComposing) return;
+                if (menu.length > 0) {
+                  // While the menu is open the keys belong to it: Enter
+                  // chooses rather than sends, because a half-typed
+                  // command name is not a thing to say to an agent.
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const step = e.key === "ArrowDown" ? 1 : menu.length - 1;
+                    setPick((p) => (p + step) % menu.length);
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    complete(menu[Math.min(pick, menu.length - 1)].name);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    // Escape leaves the text alone and closes the menu
+                    // the only way it can be closed: by no longer being
+                    // a bare slash-word.
+                    e.preventDefault();
+                    setText(`${text} `);
+                    return;
+                  }
+                }
+                if (e.key === "Enter") say();
               }}
               className={cn("min-w-0 flex-1", inTurn && "opacity-60")}
             />

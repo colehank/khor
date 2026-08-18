@@ -514,3 +514,27 @@ fn uuid_v4() -> Result<String, String> {
     }
     Ok(s)
 }
+
+#[cfg(test)]
+mod wire_tests {
+    use agent_client_protocol::schema::v1::{
+        AvailableCommand, AvailableCommandsUpdate, SessionUpdate,
+    };
+
+    /// **The command list crosses the wire under the names the face
+    /// reads.** The conversation pane narrows this JSON by hand
+    /// (`ChatView`'s `Update`), so the two ends agree by convention
+    /// and nothing else: a rename in the protocol crate would leave
+    /// the "/" menu quietly empty, which reads as "this agent has no
+    /// commands" rather than as a break.
+    #[test]
+    fn the_command_list_is_spelled_the_way_the_face_reads_it() {
+        let update = SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(vec![
+            AvailableCommand::new("compact", "squeeze the context"),
+        ]));
+        let json = serde_json::to_value(&update).unwrap();
+        assert_eq!(json["sessionUpdate"], "available_commands_update");
+        assert_eq!(json["availableCommands"][0]["name"], "compact");
+        assert_eq!(json["availableCommands"][0]["description"], "squeeze the context");
+    }
+}
