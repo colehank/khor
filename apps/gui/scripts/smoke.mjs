@@ -234,6 +234,27 @@ async function until(what, ms, f, step = 400) {
   throw new Error(`timed out waiting for: ${what} (last: ${last})`);
 }
 
+// Say one line into the conversation pane.
+//
+// The value is checked in the box before Enter is pressed, because the
+// two calls are two round trips and the pane remounts on its own clock
+// (the row's kind flips the moment a takeover lands, and that swaps the
+// whole detail). A `fill` that landed in an element about to be
+// replaced leaves an **empty** box for `press` to Enter on, and an
+// empty box says nothing at all — which reads downstream as "the agent
+// never answered". Seen twice in five runs before this existed.
+async function say(page, text) {
+  const box = page.locator("[data-chat-input]");
+  for (let i = 0; i < 5; i += 1) {
+    await box.fill(text);
+    if ((await box.inputValue()) === text) {
+      await box.press("Enter");
+      return;
+    }
+  }
+  throw new Error(`the line would not stay in the box: ${text}`);
+}
+
 let browser;
 try {
   rmSync(SCRATCH, { recursive: true, force: true });
@@ -260,6 +281,18 @@ for line in sys.stdin:
     if first:
         first = False
         emit({"type": "system", "subtype": "init", "session_id": sid, "slash_commands": ["compact"]})
+    if "hang" in text:
+        # The turn that does not end on its own: it ends when the shim
+        # relays the client's stop as the control protocol's interrupt.
+        while True:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            c = json.loads(line)
+            if c.get("type") == "control_request" and c.get("request", {}).get("subtype") == "interrupt":
+                break
+        emit({"type": "result", "subtype": "interrupted", "session_id": sid})
+        continue
     if "ask-permission" in text:
         emit({"type": "control_request", "request_id": "req-1",
               "request": {"subtype": "can_use_tool", "tool_name": "Write", "display_name": "Write",
@@ -2223,11 +2256,21 @@ for line in sys.stdin:
   await until("the same row reborn as a live conversation", 30_000, async () =>
     (await page.locator("[data-chat-input]").count()) === 1,
   );
-  await page.locator("[data-chat-input]").fill("hello taken");
-  await page.locator("[data-chat-input]").press("Enter");
+  await say(page, "hello taken");
+  // The pane's own text rides the timeout: "last: false" says only that
+  // the assertion never came true, and what the pane *did* hold is the
+  // whole difference between "the line never went out" and "the agent
+  // answered something else".
+  let afterTakeover = "";
   await until("the resumed agent answering from the same id", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
-    return t.includes("echo: hello taken");
+    afterTakeover = await page
+      .locator("[data-detail-header]")
+      .locator("..")
+      .innerText()
+      .catch(() => "");
+    return afterTakeover.includes("echo: hello taken");
+  }).catch((e) => {
+    throw new Error(`${e.message} — the pane held: ${JSON.stringify(afterTakeover.slice(-300))}`);
   });
   rmSync(join(sdir, `${agentPid}.json`), { force: true });
   cli(envB, "close", tmuxAgentRow);
@@ -2259,8 +2302,7 @@ for line in sys.stdin:
   await until("the fresh conversation with an input", 20_000, async () =>
     (await page.locator("[data-chat-input]").count()) === 1,
   );
-  await page.locator("[data-chat-input]").fill("hello wizard");
-  await page.locator("[data-chat-input]").press("Enter");
+  await say(page, "hello wizard");
   await until("the reply streamed through the shim", 20_000, async () => {
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("echo: hello wizard");
@@ -2273,8 +2315,7 @@ for line in sys.stdin:
   // an asterisk they meant as an asterisk).
   // ASCII on purpose: this is test data, not the thing under test
   // (the NEEDLE rule above).
-  await page.locator("[data-chat-input]").fill("**bold** and *slant*");
-  await page.locator("[data-chat-input]").press("Enter");
+  await say(page, "**bold** and *slant*");
   await until("the agent's markdown arriving rendered", 20_000, async () =>
     (await page.locator("[data-md] strong").count()) > 0,
   );
@@ -2287,21 +2328,66 @@ for line in sys.stdin:
     throw new Error(`the user's own line must stay verbatim: ${typed}`);
   }
 
+  // **A turn that will not end has a way out that is not 关闭.** The
+  // fake hangs until the stop reaches it as the control protocol's
+  // interrupt; the box comes back and the conversation is still there,
+  // which is the whole difference from closing the session.
+  await say(page, "hang for a while");
+  await until("the box closed and a way out beside it", 20_000, async () =>
+    (await page.locator("[data-chat-stop]").count()) === 1,
+  );
+  await page.locator("[data-chat-stop]").click();
+  await until("the turn ended and the box back", 20_000, async () =>
+    (await page.locator("[data-chat-stop]").count()) === 0,
+  );
+  // The proof that the *turn* ended and not the session: it takes
+  // another line. A pane that merely repainted would fail here.
+  await say(page, "after the stop");
+  await until("the same conversation answering after a stop", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("echo: after the stop");
+  });
+
   // The permission round-trip, on the screen's own buttons, in khor's
   // catalog words.
-  await page.locator("[data-chat-input]").fill("please ask-permission");
-  await page.locator("[data-chat-input]").press("Enter");
+  await say(page, "please ask-permission");
   await until("the ask surfacing with an allow", 20_000, async () =>
     (await page.locator('[data-ask-option="allow"]').count()) === 1,
   );
+  // The row wears claude's own uuid (the merge story), and close ends
+  // host and agent together.
+  const wizId = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  // **A face that was not there when the ask was raised must still be
+  // able to answer it.** Leaving the row and coming back is a whole
+  // fresh attachment — the pane detaches on unmount, and the host's
+  // stream only ever carried "from now on". Without the re-send, this
+  // comes back to a conversation whose row says 待批 and whose pane
+  // offers nothing to press: a dead end, reachable by opening the
+  // session in a second window.
+  const elsewhere = (
+    await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row))
+  ).find((r) => r !== wizId);
+  await page.locator(`[data-row="${elsewhere}"]`).click();
+  await until("the conversation actually left", 10_000, async () =>
+    (await page.locator("[data-chat-ask]").count()) === 0,
+  );
+  await page.locator(`[data-row="${wizId}"]`).click();
+  await until("the ask still answerable from a face that just arrived", 20_000, async () =>
+    (await page.locator('[data-ask-option="allow"]').count()) === 1,
+  );
   await page.locator('[data-ask-option="allow"]').click();
+  // The decision replaces the buttons and stays as the record. This
+  // can only come from the host's own `Answered` frame: the clicking
+  // face's local memory hides the buttons but paints no word, so a
+  // pane that lost the answer would show an empty line here.
+  await until("the answered ask wearing what was decided", 20_000, async () => {
+    if (await page.locator('[data-ask-option="allow"]').count()) return false;
+    return (await page.locator("[data-ask-answer]").count()) === 1;
+  });
   await until("the allow reaching the fake claude", 20_000, async () => {
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("verdict:allow");
   });
-  // The row wears claude's own uuid (the merge story), and close ends
-  // host and agent together.
-  const wizId = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
   if (!wizId || !wizId.startsWith("tui/")) {
     throw new Error(`the wizard row must wear the vendor uuid: ${wizId}`);
   }

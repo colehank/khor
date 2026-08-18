@@ -180,6 +180,10 @@ fn handle(
             khor_gui_core::chat::chat_answer(&arg("id")?, num("ask")?, opt_str("option")?)?;
             Ok("null".to_owned())
         }
+        "chat_stop" => {
+            khor_gui_core::chat::chat_stop(&arg("id")?)?;
+            Ok("null".to_owned())
+        }
         "chat_replay" => {
             khor_gui_core::chat::chat_replay(&arg("id")?)?;
             Ok("null".to_owned())

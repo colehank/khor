@@ -633,6 +633,12 @@ chat-over = "对话结束了"
 # A discovered session whose transcript could not be found or read. Not
 # chat-over: nothing ended — there is simply no record to paint.
 chat-no-record = "没有找到这段对话的记录"
+# Ends the turn that is running. 停止 is what it does to the *turn*,
+# not to the session: the agent stays, its conversation stays, and the
+# next line goes on where this one left off — which is exactly 空闲's
+# boundary with 失败. Sits beside the input because the input is what
+# it gives back.
+chat-stop = "停止"
 # The files pane. 上一级 is a place to go, not a "back": the list on
 # the left never left, so the only direction this pane owns is up the
 # tree. An empty directory says so — silence would read as broken.

@@ -200,11 +200,14 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         )
         .on_receive_notification(
             async move |_cancel: agent_client_protocol::schema::v1::CancelNotification, _cx| {
-                // Best-effort, untested against a live turn: the
-                // control-protocol interrupt the SDK sends. If claude
-                // ignores it the turn simply runs out; the flag still
-                // makes the eventual result read as the cancellation
-                // the client asked for.
+                // The control-protocol interrupt the SDK sends, and
+                // claude honours it: measured on a live turn through
+                // the app's own 停止 — a running turn ended in 401 ms
+                // and the session took the next line. The flag is the
+                // belt: if a vendor ever ignores the interrupt the turn
+                // runs out on its own, and its result still reads as
+                // the cancellation the client asked for rather than as
+                // a refusal (取消 is 空闲; 拒绝 is 中断).
                 s_cancel.interrupted.store(true, Ordering::SeqCst);
                 let _ = s_cancel.control(&serde_json::json!({
                     "type": "control_request",

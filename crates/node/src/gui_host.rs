@@ -87,10 +87,21 @@ pub enum GuiOp {
     /// only**, closed by [`GuiNote::HistoryEnd`]. Sent mid-turn it
     /// waits for the turn to end (module head). Tail-appended.
     Replay,
+    /// End the turn that is running — not the session. The agent stays,
+    /// its conversation stays, and the ending is `Cancelled`, which is
+    /// 空闲: stopping it was the user's own act, so nothing is broken.
+    /// Tail-appended.
+    Stop,
 }
 
 /// What the host tells every connected face.
-#[derive(Serialize, Deserialize)]
+///
+/// `Clone` because a pending ask is **re-sent to a face that arrives
+/// after it was raised**: the row says 待批, and a face that cannot see
+/// what it is being asked has no way to unblock it (found live — a
+/// second window on a session mid-ask showed a conversation with no
+/// buttons and no way forward).
+#[derive(Clone, Serialize, Deserialize)]
 pub enum GuiNote {
     /// One `session/update`, as the protocol's own JSON. Passed through
     /// whole on purpose: this host relays a conversation, it does not
@@ -112,6 +123,21 @@ pub enum GuiNote {
     /// — to a face the two are one fact: no past to paint, the live
     /// stream unaffected. Tail-appended.
     HistoryEnd,
+    /// A turn is already running — told to a face the moment it
+    /// attaches, and to nobody else. Without it, a second face opens
+    /// on a conversation mid-turn with an inviting empty input, and
+    /// what it says is dropped on the floor (one turn at a time is the
+    /// host's rule, and silence is how it used to say so).
+    /// Tail-appended.
+    Turning,
+    /// An [`GuiNote::Ask`] has its answer: the option id that was
+    /// chosen, or `None` for a refusal. Broadcast, and tail-appended.
+    ///
+    /// Without it, "answered" lives only in the answering face's own
+    /// memory — so the next face to read this conversation paints live
+    /// buttons on a permission that was settled minutes ago, and
+    /// pressing one answers a request that already has an answer.
+    Answered { ask: u64, option: Option<String> },
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -275,6 +301,11 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
 
     let fanout = Arc::new(Fanout { clients: Mutex::new(Vec::new()) });
     let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp)>();
+    // A face that just arrived, so the loop can hand it what is
+    // outstanding. Its own channel rather than a `GuiOp`: joining is
+    // not something a face *does*, it is something that happened to
+    // this host, and a face must not be able to spell it.
+    let (joined_tx, mut joined_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
 
     // Attachers: cookie in, frames both ways after the welcome. Each
     // gets a number so a replay can be answered to its asker alone;
@@ -283,6 +314,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         let fanout = fanout.clone();
         let cookie = cookie.clone();
         let ops_tx = ops_tx.clone();
+        let joined_tx = joined_tx.clone();
         std::thread::spawn(move || {
             let mut next_client: u64 = 0;
             for conn in listener.incoming().flatten() {
@@ -299,6 +331,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                 let who = next_client;
                 next_client += 1;
                 fanout.clients.lock().unwrap().push((who, conn));
+                let _ = joined_tx.send(who);
                 let ops_tx = ops_tx.clone();
                 std::thread::spawn(move || {
                     while let Ok(op) = read_frame::<GuiOp>(&mut readable) {
@@ -318,7 +351,10 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
     let loop_fanout = fanout.clone();
     let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
-        let mut asks: Vec<(u64, khor_acp::Ask)> = Vec::new();
+        // The pending asks, each with the very note it was announced
+        // by: a face that arrives later must be told the same sentence
+        // the first face got, not a second rendering of it.
+        let mut asks: Vec<(u64, khor_acp::Ask, GuiNote)> = Vec::new();
         let mut next_ask: u64 = 0;
         // Who asked for history while a turn was running: answered when
         // the turn ends (module head — a mid-turn load would interleave
@@ -350,8 +386,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                             .iter()
                             .map(|o| (o.option_id.0.to_string(), o.name.clone()))
                             .collect();
-                        asks.push((n, ask));
-                        fanout.send(&GuiNote::Ask { ask: n, title, options });
+                        let note = GuiNote::Ask { ask: n, title, options };
+                        fanout.send(&note);
+                        asks.push((n, ask, note));
                         let _ = live.report(&id, State::Blocked, Source::Reported);
                     }
                     Some(khor_acp::Event::Ready { .. }) => {}
@@ -361,6 +398,19 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     Some(khor_acp::Event::Closed(err)) => break err,
                     None => break None,
                 },
+                // A face that arrived mid-ask gets the ask. Nothing
+                // else is re-sent: the conversation's past is what
+                // `Replay` is for, and the row already carries the word.
+                who = joined_rx.recv() => {
+                    if let Some(who) = who {
+                        if in_turn.is_some() {
+                            fanout.send_to(who, &GuiNote::Turning);
+                        }
+                        for (_, _, note) in &asks {
+                            fanout.send_to(who, note);
+                        }
+                    }
+                }
                 op = ops_rx.recv() => match op {
                     Some((_, GuiOp::Say(text))) => {
                         if in_turn.is_some() {
@@ -380,18 +430,32 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         }));
                     }
                     Some((_, GuiOp::Answer { ask, option })) => {
-                        let Some(seat) = asks.iter().position(|(n, _)| *n == ask) else {
+                        let Some(seat) = asks.iter().position(|(n, _, _)| *n == ask) else {
                             continue;
                         };
-                        let (_, pending) = asks.swap_remove(seat);
-                        match option {
-                            Some(oid) => pending.choose(&oid),
+                        let (_, pending, _) = asks.swap_remove(seat);
+                        match &option {
+                            Some(oid) => pending.choose(oid),
                             None => pending.dismiss(),
                         }
+                        // Every face learns the answer, including the
+                        // ones that arrive afterwards: the record of a
+                        // settled permission outlives the answering.
+                        fanout.send(&GuiNote::Answered { ask, option });
                         if asks.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
                             // turn the ask interrupted is still running.
                             let _ = live.report(&id, State::Busy, Source::Reported);
+                        }
+                    }
+                    Some((_, GuiOp::Stop)) => {
+                        // The cancel goes to the agent, not to the task:
+                        // aborting the join handle here would leave the
+                        // agent still working with nobody reading it.
+                        // The turn ends the way every turn ends, through
+                        // its own `Turn` note.
+                        if in_turn.is_some() {
+                            let _ = handle.cancel();
                         }
                     }
                     Some((_, GuiOp::Close)) => break None,

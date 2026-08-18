@@ -34,6 +34,7 @@ import {
   chatPoll,
   chatReplay,
   chatSay,
+  chatStop,
   fetchHistory,
   type ChatFrame,
 } from "@/api";
@@ -50,7 +51,17 @@ type Item =
   | { who: "agent"; text: string }
   | { who: "thought"; text: string }
   | { who: "tool"; title: string }
-  | { who: "ask"; ask: number; title: string; options: [string, string][] }
+  | {
+      who: "ask";
+      ask: number;
+      title: string;
+      options: [string, string][];
+      /** The option id this ask was answered with, once the host says
+          so. `null` while it is still open, `""` for a refusal — the
+          three states are three pictures, and "answered with nothing"
+          is not the same as "still asking". */
+      answer: string | null;
+    }
   | { who: "sys"; text: string }
   | { who: "seal" };
 
@@ -85,7 +96,21 @@ function fold(frames: ChatFrame[], says: Said[]): Exclude<Item, { who: "seal" }>
   };
   const eat = (frame: ChatFrame, paintUser: boolean) => {
     if (frame.kind === "ask") {
-      out.push({ who: "ask", ask: frame.ask, title: frame.title, options: frame.options });
+      out.push({
+        who: "ask",
+        ask: frame.ask,
+        title: frame.title,
+        options: frame.options,
+        answer: null,
+      });
+      return;
+    }
+    if (frame.kind === "answered") {
+      // The answer lands on the ask it settles, wherever that sits —
+      // the host may have re-sent the ask to this face long after it
+      // was raised (`gui_host` — a face that arrives mid-ask).
+      const seat = out.find((i) => i.who === "ask" && i.ask === frame.ask);
+      if (seat && seat.who === "ask") seat.answer = frame.option ?? "";
       return;
     }
     if (frame.kind === "turn") {
@@ -199,6 +224,11 @@ export function ChatView({
             if (batch.frames.some((f) => f.kind === "turn" || f.kind === "gone")) {
               setInTurn(false);
             }
+            // A turn that was already running when this face attached.
+            // Without it, a second face opens on an inviting empty box
+            // and what it types is dropped (one turn at a time is the
+            // host's rule — `gui_host` `GuiNote::Turning`).
+            if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
             setFrames((prev) => prev.concat(batch.frames));
           }
           if (batch.gone) setGone(true);
@@ -285,10 +315,22 @@ export function ChatView({
                 {word("blocked")}
                 {item.title ? ` · ${item.title}` : ""}
               </span>
+              {/* Once answered, the decision replaces the buttons: the
+                  line stays as the record that permission was asked,
+                  and it says what was decided in the agent's own word
+                  for it. `item.answer` is the host's fact and outlives
+                  this mount; `answered` is this face's own click,
+                  painted at once so the buttons do not sit there for a
+                  poll's length after being pressed. */}
+              {item.answer !== null && (
+                <span data-ask-answer className="text-muted-foreground">
+                  {item.options.find(([oid]) => oid === item.answer)?.[1] ?? ""}
+                </span>
+              )}
               {/* The options are the agent's own, in its order and its
                   words — including its refusals, so no extra dismiss
                   control exists to answer differently than offered. */}
-              {!still && !gone && !answered.has(item.ask) && (
+              {!still && !gone && item.answer === null && !answered.has(item.ask) && (
                 <span className="flex gap-1.5">
                   {item.options.map(([oid, label]) => (
                     <Button
@@ -375,17 +417,41 @@ export function ChatView({
         {gone ? (
           <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_over}</div>
         ) : (
-          <Input
-            data-chat-input
-            value={text}
-            placeholder={gui.chat_input}
-            disabled={inTurn}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) say();
-            }}
-            className={cn(inTurn && "opacity-60")}
-          />
+          // While a turn runs the box is closed and the way out sits
+          // next to it: a turn that never ends used to leave 关闭 the
+          // session as the only exit, which throws the conversation
+          // away to get rid of one stuck line (found live — an agent's
+          // request to its own API never came back, and the row read
+          // 忙碌 for as long as anyone waited).
+          <div className="flex items-center gap-2">
+            <Input
+              data-chat-input
+              value={text}
+              placeholder={gui.chat_input}
+              disabled={inTurn}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) say();
+              }}
+              className={cn("min-w-0 flex-1", inTurn && "opacity-60")}
+            />
+            {inTurn && (
+              <Button
+                size="sm"
+                variant="secondary"
+                data-chat-stop
+                onClick={() => {
+                  // The turn's own ending is what clears the box: this
+                  // asks, the host answers with a `Turn` frame like any
+                  // other ending. Painting it stopped here would be a
+                  // guess about somebody else's process.
+                  chatStop(id).catch(() => {});
+                }}
+              >
+                {gui.chat_stop}
+              </Button>
+            )}
+          </div>
         )}
       </div>
       )}

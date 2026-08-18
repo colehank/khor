@@ -47,6 +47,19 @@ for line in sys.stdin:
         first = False
         emit({"type": "system", "subtype": "init", "session_id": sid,
               "slash_commands": ["compact", "model"]})
+    if "hang" in text:
+        # A turn that ends only when the client's stop reaches it as
+        # the control protocol's interrupt (the shim's cancel handler).
+        while True:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            c = json.loads(line)
+            if c.get("type") == "control_request" and c.get("request", {}).get("subtype") == "interrupt":
+                open("fake.interrupt", "w").write("seen")
+                break
+        emit({"type": "result", "subtype": "interrupted", "session_id": sid})
+        continue
     if "ask-permission" in text:
         emit({"type": "control_request", "request_id": "req-1",
               "request": {"subtype": "can_use_tool", "tool_name": "Write",
@@ -130,6 +143,43 @@ for line in sys.stdin:
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
     assert!(said.contains("verdict:allow"), "the fake must see the allow: {said}");
+
+    // Shared from here on: a cancel has to reach the handle **while a
+    // prompt on it is still in flight**, which is two owners of one
+    // handle for the length of one turn.
+    let handle = std::sync::Arc::new(handle);
+    // **A turn that will not end on its own ends when the client says
+    // so.** `cancel` is the ACP side; what it becomes on the wire is
+    // the control protocol's `interrupt`, and the fake writes a file
+    // when it sees one — so this cannot pass on a cancel that never
+    // left the shim. The turn's own reason must read as the
+    // cancellation, not as a refusal, because 取消 is 空闲 and a
+    // refusal is 中断.
+    let hung = {
+        let handle = handle.clone();
+        tokio::spawn(async move { handle.prompt("hang for a while").await })
+    };
+    // The prompt has to be in flight before the cancel means anything;
+    // the fake announces itself by reading, so wait for the turn to be
+    // the thing that is running rather than for a clock.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    handle.cancel().unwrap();
+    let stop = tokio::time::timeout(std::time::Duration::from_secs(10), hung)
+        .await
+        .expect("a cancelled turn must end")
+        .unwrap()
+        .unwrap();
+    assert_eq!(format!("{stop:?}"), "Cancelled", "a stopped turn is 取消, not a refusal");
+    assert!(
+        dir.join("cwd/fake.interrupt").exists(),
+        "the cancel must reach claude as the control protocol's interrupt"
+    );
+    // The session is still there — that is the whole difference between
+    // stopping a turn and closing a conversation.
+    let stop = handle.prompt("after the stop").await.unwrap();
+    assert_eq!(format!("{stop:?}"), "EndTurn");
+    let said = notes.lock().unwrap().join("\n");
+    assert!(said.contains("echo: after the stop"), "the conversation survives a stop: {said}");
 
     // Replay reads the vendor transcript through the same lossy leaf
     // the id wears — write one for this session and load it back.

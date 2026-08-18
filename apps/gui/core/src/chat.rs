@@ -52,6 +52,16 @@ pub enum ChatFrame {
         title: String,
         options: Vec<(String, String)>,
     },
+    /// A turn was already running when this face attached.
+    Turning,
+    /// An [`ChatFrame::Ask`] has its answer: the chosen option id, or
+    /// `None` for a refusal. The label is not carried — the `Ask` this
+    /// answers is in the same stream and holds the words.
+    Answered {
+        #[ts(type = "number")]
+        ask: u64,
+        option: Option<String>,
+    },
     /// The turn ended, with the protocol's stop reason.
     Turn { stop: String },
     /// The conversation is over; no more frames follow.
@@ -100,6 +110,8 @@ fn frame_of(note: GuiNote) -> ChatFrame {
         GuiNote::History(s) => ChatFrame::History { update: parse(s) },
         GuiNote::HistoryEnd => ChatFrame::HistoryEnd,
         GuiNote::Ask { ask, title, options } => ChatFrame::Ask { ask, title, options },
+        GuiNote::Answered { ask, option } => ChatFrame::Answered { ask, option },
+        GuiNote::Turning => ChatFrame::Turning,
         GuiNote::Turn(stop) => ChatFrame::Turn { stop },
         GuiNote::Gone => ChatFrame::Gone,
     }
@@ -184,6 +196,13 @@ pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), Str
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
     write_frame(&mut *conn, &GuiOp::Answer { ask, option })
+}
+
+/// Ends the running turn — not the session (`GuiOp::Stop`).
+pub fn chat_stop(id: &str) -> Result<(), String> {
+    let chat = chat_of(id)?;
+    let mut conn = chat.conn.lock().unwrap();
+    write_frame(&mut *conn, &GuiOp::Stop)
 }
 
 /// Asks for the conversation so far; it arrives as

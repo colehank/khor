@@ -112,6 +112,11 @@ fn chat_answer(id: String, ask: u64, option: Option<String>) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn chat_stop(id: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_stop(&id)
+}
+
+#[tauri::command]
 fn chat_replay(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_replay(&id)
 }
@@ -311,6 +316,7 @@ pub fn run() {
             chat_poll,
             chat_say,
             chat_answer,
+            chat_stop,
             chat_replay,
             chat_leave,
             history,

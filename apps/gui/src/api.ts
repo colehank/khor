@@ -109,6 +109,8 @@ export const pair = (ticket: string) => call<string>("pair", { ticket });
     a second open of a living chat (dev double-mount) must not ask the
     host to replay again. */
 export const chatOpen = (id: string) => call<boolean>("chat_open", { id });
+/** Ends the running turn — not the session (`GuiOp::Stop`). */
+export const chatStop = (id: string) => call<null>("chat_stop", { id });
 export const chatPoll = (id: string, since: number) =>
   call<ChatBatch>("chat_poll", { id, since });
 export const chatSay = (id: string, text: string) => call<null>("chat_say", { id, text });
