@@ -473,6 +473,8 @@ impl LiveKind {
                 },
                 unread,
                 category: Some(found.category.to_owned()),
+                last: None,
+                via: None,
             });
         }
         for held in sweep.multiplexed {
@@ -497,7 +499,25 @@ impl LiveKind {
                 // that could be unread (docs/UX.md 角标可归零).
                 unread: 0,
                 category: Some(held.found.category.to_owned()),
+                last: None,
+                via: None,
             });
+        }
+        // The preview post-pass, one place for every claude-backed row —
+        // discovered, hooked or GUI alike: a row that got nothing better
+        // (no hosted terminal line) and whose vendor keeps a transcript
+        // gets that transcript's newest utterance. Cached by (path,
+        // mtime) inside `last_said`, so a list poll costs stats, not
+        // reads.
+        for r in out.iter_mut() {
+            if r.last.is_none() && r.category.as_deref() == Some("claude") {
+                if let Some(leaf) = r.id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI)) {
+                    r.last = crate::adaptor::claude::Claude::at(
+                        crate::adaptor::vendor_home(&self.root).join(".claude"),
+                    )
+                    .last_said(leaf);
+                }
+            }
         }
         out
     }
@@ -540,6 +560,12 @@ impl LiveKind {
                     state: StateStamp { state: word, at: Millis(at.max(0) as u64) },
                     unread,
                     category: meta.category.clone(),
+                    // The host keeps the terminal's last non-empty line
+                    // beside its state; a row with no host keeps `None`
+                    // here and may still earn a preview from a
+                    // transcript (`rows`'s post-pass).
+                    last: crate::host::read_last(&e.path()),
+                    via: None,
                 },
                 pid: meta.pid,
             });

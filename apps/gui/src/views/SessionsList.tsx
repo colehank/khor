@@ -154,24 +154,48 @@ export function SessionsList({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate">{r.title || r.id}</span>
-              <span className="flex items-center gap-2 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
-                <span data-word-text style={{ color: `var(--state-${r.word})` }}>
-                  {word(r.word)}
+              {/* The preview line: the newest thing said or shown, the
+                  kind's own judgment carried on the row (`last`). The
+                  machine a reported row came from rides the same line —
+                  both are "where this row has been", not state. */}
+              {(r.last || r.source) && (
+                <span className="flex items-baseline gap-2 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
+                  {r.last && (
+                    <span data-last className="min-w-0 flex-1 truncate">
+                      {r.last}
+                    </span>
+                  )}
+                  {r.source && <span className="flex-none">{gui.from_device(r.source.device)}</span>}
                 </span>
-                {r.source && <span>{gui.from_device(r.source.device)}</span>}
-              </span>
+              )}
             </span>
             <span className="flex flex-none flex-col items-end gap-1 text-xs text-muted-foreground">
               {/* No stamp yet is no age — not an epoch-sized number. */}
               {r.at_ms > 0 && <span>{ago(r.at_ms)}</span>}
-              {r.unread > 0 && (
-                <span
-                  data-unread
-                  className="min-w-4 rounded-full bg-badge px-1 text-center leading-4 text-badge-foreground"
-                >
-                  {r.unread}
+              {/* The trailing fine print: the state word (still a word —
+                  state is never colour alone, the mark's tint is the
+                  second channel not the only one), the unread count, and
+                  the borrowed exit's mini face at the row's very corner
+                  (docs/NET.md via 记号; absent until `--via` produces
+                  one). */}
+              <span className="flex items-center gap-1">
+                <span data-word-text style={{ color: `var(--state-${r.word})` }}>
+                  {word(r.word)}
                 </span>
-              )}
+                {r.unread > 0 && (
+                  <span
+                    data-unread
+                    className="min-w-4 rounded-full bg-badge px-1 text-center leading-4 text-badge-foreground"
+                  >
+                    {r.unread}
+                  </span>
+                )}
+                {r.via && (
+                  <span data-via={r.via} className="flex flex-none">
+                    <MachineAvatar face={r.via_face} className="size-kind-mark" />
+                  </span>
+                )}
+              </span>
             </span>
           </button>
           {/* The row's second control, and the reason the strip exists:

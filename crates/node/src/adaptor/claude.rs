@@ -141,8 +141,16 @@ impl Claude {
     /// Two files cleaning alike is a uuid-prefix collision; the newest
     /// wins, and that choice is a judgment, not a guarantee.
     pub fn transcript(&self, leaf: &str) -> Result<Vec<Utterance>, String> {
+        let (path, _) = self.transcript_path(leaf).ok_or_else(|| msg::no_such_session(leaf))?;
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        Ok(utterances_of(&text))
+    }
+
+    /// The transcript file behind a leaf, with its mtime — the shared
+    /// resolution `transcript` and `last_said` both run.
+    fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
         let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
-        let projects = std::fs::read_dir(self.projects_dir()).map_err(|e| e.to_string())?;
+        let projects = std::fs::read_dir(self.projects_dir()).ok()?;
         for proj in projects.flatten() {
             let Ok(rd) = std::fs::read_dir(proj.path()) else { continue };
             for e in rd.flatten() {
@@ -163,10 +171,62 @@ impl Claude {
                 }
             }
         }
-        let (_, path) = hit.ok_or_else(|| msg::no_such_session(leaf))?;
-        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        Ok(utterances_of(&text))
+        hit.map(|(t, p)| (p, t))
     }
+
+    /// The newest utterance in a leaf's transcript, as one preview line —
+    /// what the row's 最近一条消息 shows for a claude-backed session.
+    ///
+    /// A list polls this for every claude row every few seconds, so the
+    /// answer is cached by (path, mtime): an unchanged transcript costs
+    /// directory stats, not a read. On change only the tail is read — the
+    /// last utterance lives at the end, and a long conversation's file
+    /// does not get re-parsed whole for one preview line.
+    pub fn last_said(&self, leaf: &str) -> Option<String> {
+        use std::collections::HashMap;
+        use std::sync::{Mutex, OnceLock};
+        static CACHE: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Option<String>)>>> =
+            OnceLock::new();
+        let (path, mtime) = self.transcript_path(leaf)?;
+        let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Some((t, said)) = cache.lock().unwrap().get(&path) {
+            if *t == mtime {
+                return said.clone();
+            }
+        }
+        let said = tail_said(&path);
+        cache.lock().unwrap().insert(path, (mtime, said.clone()));
+        said
+    }
+}
+
+/// The last utterance out of a transcript's tail. Reads the final 64 KiB
+/// and drops the first (possibly cut) line before parsing — a line split
+/// mid-JSON must read as absent, not as garbage.
+fn tail_said(path: &std::path::Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 64 * 1024;
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let start = len.saturating_sub(TAIL);
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut text = String::new();
+    f.take(TAIL).read_to_string(&mut text).ok()?;
+    let text = if start > 0 {
+        match text.split_once('\n') {
+            Some((_, rest)) => rest,
+            None => return None,
+        }
+    } else {
+        text.as_str()
+    };
+    utterances_of(text).into_iter().rev().find_map(|u| match u {
+        Utterance::User(t) | Utterance::Agent(t) => Some(khor_core::preview(&t)),
+        // A thought or a tool name is the machine's bookkeeping — a
+        // preview line should say what was *said*, and skipping back to
+        // the newest real sentence reads better than "Read".
+        Utterance::Thought(_) | Utterance::Tool(_) => None,
+    })
 }
 
 /// One utterance of a recorded conversation, in speaking order.

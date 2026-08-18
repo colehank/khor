@@ -77,6 +77,18 @@ impl ChatKind {
             // Khor's own, not a vendor's: a device chat is a thing this
             // product makes, and there is no agent behind it to name.
             category: Some(khor_core::category::KHOR.to_owned()),
+            // The row's preview: the newest message still standing. A
+            // retracted one is skipped (its slot stays, its words must
+            // not); a kind this version cannot read previews as nothing
+            // rather than as blank text (MsgBody::Unknown's rule).
+            last: msgs.iter().rev().filter(|m| !m.retracted).find_map(|m| match &m.body {
+                khor_sync::chat::MsgBody::Text(t) => Some(khor_core::preview(t)),
+                khor_sync::chat::MsgBody::Files(fs) => Some(khor_core::preview(
+                    &fs.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(" "),
+                )),
+                khor_sync::chat::MsgBody::Unknown(_) => None,
+            }),
+            via: None,
         }
     }
 

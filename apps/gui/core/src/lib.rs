@@ -66,6 +66,17 @@ pub struct SessionRow {
     /// for a discovered session, a `khor run`, or a remote one; those keep
     /// the transcript or the facts, not a live screen.
     pub hosted: bool,
+    /// The row's preview line (`khor_core::Session::last`): the newest
+    /// message, transcript utterance or terminal line — the kind judged
+    /// it, this only paints it.
+    pub last: Option<String>,
+    /// The network exit this session borrows (device hex), when it does
+    /// (docs/NET.md 借网 via 记号). No producer yet — lands with `--via`.
+    pub via: Option<String>,
+    /// The exit machine's face, looked up like `face` — the 行尾右下
+    /// mini avatar. `None` with `via` set draws a blank, not an invented
+    /// face (Avatar.tsx's rule).
+    pub via_face: Option<Avatar>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -293,6 +304,9 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             SessionRow {
             face: faces.get(&v.session.home.hex()).cloned(),
             hosted,
+            via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
+            last: v.session.last,
+            via: v.session.via,
             id: v.session.id.0,
             kind: v.session.kind.0,
             title: v.session.title,

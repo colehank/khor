@@ -168,6 +168,13 @@ impl Screen {
         self.parser.screen_mut().set_size(rows, cols);
     }
 
+    /// The last line with anything on it — a hosted row's preview
+    /// (khor_core::Session::last). `visible` already drops trailing
+    /// blanks, so its last element is that line.
+    pub fn last_line(&self) -> Option<String> {
+        self.visible().pop()
+    }
+
     /// The visible rows, right-trimmed, with trailing blank rows
     /// dropped.
     fn visible(&self) -> Vec<String> {

@@ -169,6 +169,8 @@ impl TransferKind {
                 unread,
                 // Same as a device chat: khor's own doing, no vendor.
                 category: Some(khor_core::category::KHOR.to_owned()),
+                last: None,
+                via: None,
             });
         }
         out

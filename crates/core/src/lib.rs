@@ -451,6 +451,31 @@ pub struct Usage {
     pub unreadable: u64,
 }
 
+/// One line of preview out of arbitrary said text, for
+/// [`Session::last`]: whitespace runs (newlines included) collapse to
+/// single spaces, and the result is cut at a character boundary. The
+/// cap is generous because the row truncates visually anyway — this cut
+/// only keeps a pasted wall of text from riding every list frame.
+pub fn preview(text: &str) -> String {
+    let mut out = String::new();
+    let mut spaced = true;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            if !spaced {
+                out.push(' ');
+                spaced = true;
+            }
+        } else {
+            out.push(c);
+            spaced = false;
+        }
+        if out.chars().count() >= 160 {
+            break;
+        }
+    }
+    out.trim_end().to_owned()
+}
+
 /// The uniform event envelope. Payload bytes are kind-namespaced; this
 /// crate never looks inside. Whether events replicate (CRDT) or are
 /// fetched from home is a kind property, not an envelope field.
@@ -498,6 +523,21 @@ pub struct Session {
     /// six-field frame still decodes (`a_frame_from_an_older_peer_...`).
     #[serde(default)]
     pub category: Option<String>,
+    /// The most recent thing said or shown, one line, for the row's
+    /// preview (like a chat list's last message). What it is is the
+    /// kind's judgment: a chat's last message, a claude session's last
+    /// transcript utterance, a hosted terminal's last non-empty screen
+    /// line. `None` when the kind has nothing of the sort — the row
+    /// simply paints no preview, never an invented one.
+    #[serde(default)]
+    pub last: Option<String>,
+    /// The network exit this session leaves through (device hex), when
+    /// it borrows one (docs/NET.md 借网: 消费者行戴出口记号). `None` =
+    /// its own network. No producer sets it yet — it lands with
+    /// session `--via` (ledger) — but the slot is the row's shape, so
+    /// it is minted with the rest.
+    #[serde(default)]
+    pub via: Option<String>,
 }
 
 #[cfg(test)]
@@ -513,6 +553,8 @@ mod tests {
             state: StateStamp { state: State::Busy, at: Millis(1) },
             unread: 3,
             category: Some("claude".to_owned()),
+            last: Some("last said".to_owned()),
+            via: None,
         }
     }
 
@@ -562,15 +604,16 @@ mod tests {
     }
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_seven() {
+    fn the_session_frame_is_a_fixed_order_array_of_nine() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x97 = msgpack fixarray of 7. Adding, removing, or reordering a
-        // field must land here first, consciously. It was six until
-        // `category` was appended at the tail (never in the middle: a
-        // mid-frame optional desyncs the array on every older end).
-        assert_eq!(bytes[0], 0x97);
-        let (id, kind, title, home, state, unread, category): (
+        // 0x99 = msgpack fixarray of 9. Adding, removing, or reordering a
+        // field must land here first, consciously. Six → seven appended
+        // `category`; seven → nine appended `last` and `via` together
+        // (会话行改版批) — always at the tail, never in the middle: a
+        // mid-frame optional desyncs the array on every older end.
+        assert_eq!(bytes[0], 0x99);
+        let (id, kind, title, home, state, unread, category, last, via): (
             SessionId,
             Kind,
             String,
@@ -578,9 +621,11 @@ mod tests {
             StateStamp,
             u64,
             Option<String>,
+            Option<String>,
+            Option<String>,
         ) = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(
-            (id, kind, title, home, state, unread, category),
+            (id, kind, title, home, state, unread, category, last, via),
             (
                 session.id,
                 session.kind,
@@ -588,7 +633,9 @@ mod tests {
                 session.home,
                 session.state,
                 session.unread,
-                session.category
+                session.category,
+                session.last,
+                session.via
             )
         );
     }
@@ -802,5 +849,21 @@ mod tests {
         let bytes = rmp_serde::to_vec(&event).unwrap();
         let back: Event = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(back, event);
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::preview;
+
+    /// Newlines and runs of spaces collapse to one; the cap cuts at a
+    /// character boundary (a CJK wall of text must not split a char).
+    #[test]
+    fn a_preview_is_one_line_and_bounded() {
+        assert_eq!(preview("a  b\n\nc\t d"), "a b c d");
+        let long = "字".repeat(500);
+        let p = preview(&long);
+        assert!(p.chars().count() <= 160, "{}", p.chars().count());
+        assert!(p.chars().all(|c| c == '字'));
     }
 }

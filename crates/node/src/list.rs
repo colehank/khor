@@ -176,6 +176,8 @@ mod tests {
                 state: StateStamp { state: word, at: Millis(at) },
                 unread: 0,
                 category: category.map(str::to_owned),
+                last: None,
+                via: None,
             },
             source: None,
             pinned: false,

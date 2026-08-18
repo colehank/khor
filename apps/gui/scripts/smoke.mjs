@@ -428,6 +428,19 @@ try {
     1_000,
   );
 
+  // 5b) the line beta just told rides the chat row as its preview —
+  //      `Session::last` end to end: the CRDT's newest message, through
+  //      the node's row, painted on the second line (会话行改版批). On
+  //      the sessions pane, within a couple of list polls.
+  await openLanding("sessions");
+  await until("the chat row previewing the told line", 20_000, async () => {
+    const t = await page
+      .locator(`[data-row="chat/alpha"] [data-last]`)
+      .innerText()
+      .catch(() => "");
+    return t.includes(NEEDLE);
+  });
+
   // 6) the reported row reaches beta's GUI, busy, with its source; and
   //    the CLI line for the same row carries the same display word.
   const row = page.locator("[data-word]", { hasText: "proj" });
@@ -1941,6 +1954,16 @@ try {
     await page.keyboard.press("Enter");
     await new Promise((r) => setTimeout(r, 300));
     return (await page.locator("[data-terminal]").innerText()).includes(marker);
+  });
+  // The typed line also becomes the row's preview — the host derives its
+  // last non-empty terminal line (last.txt, throttled) and the list
+  // carries it as `last`. Cat echoes the marker, so the preview holds it.
+  await until("the cat row previewing the typed line", 20_000, async () => {
+    const t = await page
+      .locator(`[data-row="${catId}"] [data-last]`)
+      .innerText()
+      .catch(() => "");
+    return t.includes(marker);
   });
   cli(envB, "close", catId);
   // Wait for the closed row to leave the list before the next item, which

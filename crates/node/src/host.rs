@@ -72,6 +72,58 @@ pub fn host_file_path(dir: &Path) -> PathBuf {
     dir.join("host.json")
 }
 
+/// The terminal's last non-empty line, as the host keeps it beside its
+/// state (`last.txt`) — the row preview's source for hosted sessions.
+/// Absent file, absent preview; nothing here invents one.
+pub fn read_last(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join("last.txt")).ok()?;
+    let line = text.trim();
+    (!line.is_empty()).then(|| line.to_owned())
+}
+
+/// The last line with visible content out of raw PTY bytes, ANSI
+/// stripped. An approximation by design: without a screen model a
+/// cursor-addressed repaint cannot be replayed, so this reads the byte
+/// tail the way `tail -1` would — good enough for a preview line, and
+/// the TUI path (which has a screen) does not use it.
+fn last_plain_line(bytes: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.peek() {
+                // CSI: parameters then one final byte in @..~.
+                Some('[') => {
+                    chars.next();
+                    for f in chars.by_ref() {
+                        if ('@'..='~').contains(&f) {
+                            break;
+                        }
+                    }
+                }
+                // OSC: terminated by BEL or ESC \ (the ESC re-enters here).
+                Some(']') => {
+                    chars.next();
+                    for f in chars.by_ref() {
+                        if f == '\u{7}' || f == '\u{1b}' {
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    chars.next();
+                }
+            },
+            '\n' => out.push('\n'),
+            '\r' => {}
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out.lines().rev().find(|l| !l.trim().is_empty()).map(|l| khor_core::preview(l))
+}
+
 pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {
     let text = std::fs::read_to_string(host_file_path(dir))
         .map_err(|_| msg::NO_HOST.to_string())?;
@@ -280,8 +332,18 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
         let shared = shared.clone();
         let output_done = output_done.clone();
         let screen = screen.clone();
+        let last_dir = dir.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
+            // The preview line (`last.txt`): derived after every read,
+            // written only when it changed. Not throttled — a throttle
+            // here has no trailing edge, and the one update that matters
+            // most is the one after the *last* burst of output, exactly
+            // the one a leading-edge throttle drops (caught live by the
+            // smoke: the typed marker never previewed). The derive is a
+            // 4 KiB strip or one screen read per 8 KiB of output —
+            // cheap; the change gate keeps the disk out of the loop.
+            let mut last_written: Option<String> = None;
             loop {
                 let n = match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
@@ -300,6 +362,29 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                 }
                 let mut clients = shared.clients.lock().unwrap();
                 clients.retain_mut(|c| c.write_all(&buf[..n]).is_ok());
+                drop(clients);
+                drop(ring);
+                {
+                    // The screen's reading beats the byte tail — it is
+                    // what is actually on the terminal; the strip is the
+                    // screenless (plain shell) approximation.
+                    let line = match &screen {
+                        Some(s) => s.lock().unwrap().last_line().map(|l| khor_core::preview(&l)),
+                        None => {
+                            let ring = shared.ring.lock().unwrap();
+                            let tail: Vec<u8> =
+                                ring.iter().rev().take(4096).rev().copied().collect();
+                            drop(ring);
+                            last_plain_line(&tail)
+                        }
+                    };
+                    if line != last_written {
+                        if let Some(l) = &line {
+                            let _ = std::fs::write(last_dir.join("last.txt"), l);
+                        }
+                        last_written = line;
+                    }
+                }
             }
             output_done.store(true, Ordering::SeqCst);
             for c in shared.clients.lock().unwrap().drain(..) {
@@ -505,5 +590,25 @@ mod tests {
         assert_eq!(state_of(khor_detect::Word::Busy), State::Busy);
         assert_eq!(state_of(khor_detect::Word::Waiting), State::Blocked);
         assert_eq!(state_of(khor_detect::Word::Idle), State::Idle);
+    }
+}
+
+#[cfg(test)]
+mod last_line_tests {
+    use super::last_plain_line;
+
+    /// The preview strip reads bytes the way `tail -1` would: ANSI
+    /// dropped, CR dropped, the last line with visible content wins.
+    #[test]
+    fn ansi_is_stripped_and_the_last_visible_line_wins() {
+        let bytes = b"\x1b[32mhello\x1b[0m world\r\n\x1b]0;title\x07$ make test\r\n\r\n";
+        assert_eq!(last_plain_line(bytes).as_deref(), Some("$ make test"));
+    }
+
+    /// All-control input previews as nothing, not as an empty string —
+    /// `read_last` treats blank as absent for the same reason.
+    #[test]
+    fn a_tail_of_pure_control_bytes_is_no_preview() {
+        assert_eq!(last_plain_line(b"\x1b[2J\x1b[H\r\r\n"), None);
     }
 }
