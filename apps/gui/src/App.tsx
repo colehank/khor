@@ -48,6 +48,7 @@ import { MandalaMap } from "@/views/MandalaMap";
 import { UsagePanel } from "@/views/UsagePanel";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
+import { NewSessionDialog } from "@/views/NewSessionDialog";
 import { TellDialog } from "@/views/TellDialog";
 
 /**
@@ -77,7 +78,7 @@ type Landing = "sessions" | "devices" | "files" | "browser";
 type Mark = boolean;
 
 /** Which of the "+" dialogs is up, if any. */
-type Sheet = "tell" | "invite" | "join" | null;
+type Sheet = "new" | "tell" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
 /** How often the spending answer is re-asked while it is on screen. See
@@ -512,6 +513,9 @@ export default function App() {
   );
 
   const sessionActions: PaneAction[] = [
+    // First, because opening a session is the pane's first act
+    // (会话身份批B: 建 session 是第一动作).
+    { key: "new", label: gui.new_session, onSelect: () => setSheet("new") },
     { key: "tell", label: gui.tell_machine, onSelect: () => setSheet("tell") },
   ];
   const deviceActions: PaneAction[] = [
@@ -734,6 +738,12 @@ export default function App() {
 
   const sheets = (
     <>
+      <NewSessionDialog
+        open={sheet === "new"}
+        onOpenChange={(o) => setSheet(o ? "new" : null)}
+        // The freshly-opened session is what the person came to see.
+        onOpened={(id) => setSelected(id)}
+      />
       <TellDialog
         open={sheet === "tell"}
         onOpenChange={(o) => setSheet(o ? "tell" : null)}

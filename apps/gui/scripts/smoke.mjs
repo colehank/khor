@@ -166,7 +166,8 @@ const envA = homeEnv(A, "alpha");
 // door): the bridge item stands sessions up on it, and the user's real
 // server is never looked at, let alone attached to.
 const TMUX_SOCK = `khor-smoke-${process.pid}`;
-const envB = { ...homeEnv(B, "beta"), KHOR_TMUX_SOCKET: TMUX_SOCK };
+const FAKE_CLAUDE = join(SCRATCH, "claude-fake.py");
+const envB = { ...homeEnv(B, "beta"), KHOR_TMUX_SOCKET: TMUX_SOCK, KHOR_CLAUDE: FAKE_CLAUDE };
 const envG = homeEnv(G, "gamma");
 
 const children = [];
@@ -236,6 +237,40 @@ async function until(what, ms, f, step = 400) {
 let browser;
 try {
   rmSync(SCRATCH, { recursive: true, force: true });
+  mkdirSync(SCRATCH, { recursive: true });
+  // The fake claude the shim drives in 25c: canned stream-json, the
+  // same frames the real probes recorded (cli/tests/cagent.rs's twin).
+  writeFileSync(
+    FAKE_CLAUDE,
+    `#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+sid = args[args.index("--session-id") + 1]
+def emit(o):
+    sys.stdout.write(json.dumps(o) + "\\n"); sys.stdout.flush()
+first = True
+for line in sys.stdin:
+    m = json.loads(line)
+    if m.get("type") != "user":
+        continue
+    text = m["message"]["content"][0]["text"]
+    if first:
+        first = False
+        emit({"type": "system", "subtype": "init", "session_id": sid, "slash_commands": ["compact"]})
+    if "ask-permission" in text:
+        emit({"type": "control_request", "request_id": "req-1",
+              "request": {"subtype": "can_use_tool", "tool_name": "Write", "display_name": "Write",
+                          "description": "x.txt", "tool_use_id": "t1",
+                          "input": {"file_path": "x.txt", "content": "hi"}}})
+        resp = json.loads(sys.stdin.readline())
+        emit({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "verdict:" + resp["response"]["response"]["behavior"]}]}})
+    else:
+        emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "echo: " + text}]}})
+    emit({"type": "result", "subtype": "success", "session_id": sid})
+`,
+  );
+  chmodSync(FAKE_CLAUDE, 0o755);
   for (const d of [A, B, G]) mkdirSync(d, { recursive: true });
 
   // Something for beta's agents to have cost. **Written under beta's own
@@ -2163,6 +2198,59 @@ try {
   rmSync(join(sdir, `${agentPid}.json`), { force: true });
   await until("the held agent row gone with its process", 20_000, async () =>
     (await page.locator(`[data-row="${tmuxAgentRow}"]`).count()) === 0,
+  );
+
+
+  // 25c) the wizard (会话身份批B): a claude session born as a
+  //      conversation in a chosen directory, spoken to through khor's
+  //      own shim — the fake claude underneath, so the whole chain
+  //      (wizard → gui host → _cagent → stream-json → frames → ask
+  //      buttons) runs hermetically, no API in sight.
+  const wizDir = join(SCRATCH, "wizard-cwd");
+  mkdirSync(wizDir, { recursive: true });
+  await openLanding("sessions");
+  await page.locator("[data-pane-new]").click();
+  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-new-session-dir]").fill(wizDir);
+  await page.locator("[data-new-session-name]").fill("wizard-one");
+  // The conversation form is the default (the ruling); just create.
+  await page.locator("[data-new-session-create]").click();
+  await until("the wizard dialog closed on success", 40_000, async () => {
+    const err = await page.locator("[data-new-session-error]").count();
+    if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
+    return (await page.locator("[data-new-session-dialog]").count()) === 0;
+  });
+  // The fresh conversation is selected and live: speak into it.
+  await until("the fresh conversation with an input", 20_000, async () =>
+    (await page.locator("[data-chat-input]").count()) === 1,
+  );
+  await page.locator("[data-chat-input]").fill("hello wizard");
+  await page.locator("[data-chat-input]").press("Enter");
+  await until("the reply streamed through the shim", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("echo: hello wizard");
+  });
+  // The permission round-trip, on the screen's own buttons, in khor's
+  // catalog words.
+  await page.locator("[data-chat-input]").fill("please ask-permission");
+  await page.locator("[data-chat-input]").press("Enter");
+  await until("the ask surfacing with an allow", 20_000, async () =>
+    (await page.locator('[data-ask-option="allow"]').count()) === 1,
+  );
+  await page.locator('[data-ask-option="allow"]').click();
+  await until("the allow reaching the fake claude", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("verdict:allow");
+  });
+  // The row wears claude's own uuid (the merge story), and close ends
+  // host and agent together.
+  const wizId = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  if (!wizId || !wizId.startsWith("tui/")) {
+    throw new Error(`the wizard row must wear the vendor uuid: ${wizId}`);
+  }
+  cli(envB, "close", wizId);
+  await until("the wizard row gone", 20_000, async () =>
+    (await page.locator(`[data-row="${wizId}"]`).count()) === 0,
   );
 
   // 26) a pin that does not take says so, on the button that was

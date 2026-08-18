@@ -238,6 +238,18 @@ async fn open_web(machine: String, url: String) -> Result<(), String> {
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
+/// The wizard's door (会话身份批B): a fresh claude session, born in the
+/// chosen directory, as a conversation (`chat`) or a terminal (`term`).
+#[tauri::command]
+fn open_session(dir: String, title: Option<String>, form: String) -> Result<String, String> {
+    khor_gui_core::open_session(
+        &Node::root_from_env(),
+        &dir,
+        title.as_deref().unwrap_or(""),
+        &form,
+    )
+}
+
 #[tauri::command]
 fn invite() -> Result<khor_gui_core::Ticket, String> {
     khor_gui_core::invite(&Node::root_from_env())
@@ -307,6 +319,7 @@ pub fn run() {
             web_pins,
             pin_web,
             open_web,
+            open_session,
             invite,
             pair
         ])

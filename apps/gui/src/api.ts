@@ -67,6 +67,10 @@ export const fetchUsage = () => call<Usage>("usage");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
+/** The wizard (会话身份批B): a fresh claude session in `dir`, as a
+    conversation ("chat") or a terminal ("term"). Answers the new row's id. */
+export const openSession = (dir: string, title: string, form: "chat" | "term") =>
+  call<string>("open_session", { dir, title, form });
 // `on` is explicit rather than a toggle: the caller already knows the
 // row's current state, and a toggle raced against a pin arriving from
 // another device would flip the wrong way.

@@ -3099,6 +3099,8 @@ dependencies = [
 name = "khor-cli"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
+ "khor-acp",
  "khor-catalog",
  "khor-node",
  "libc",
@@ -3172,6 +3174,7 @@ dependencies = [
 name = "khor-node"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
  "base64 0.22.1",
  "blake3",
  "core-foundation 0.10.1",

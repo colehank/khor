@@ -222,6 +222,12 @@ fn handle(
         // point at the proxy, so it returns where the proxy listens and
         // the window half stays the tauri skin's (`web::borrow_web`).
         "open_web" => to_json(&rt.block_on(khor_gui_core::web::borrow_web(root, &arg("machine")?))?),
+        "open_session" => to_json(&khor_gui_core::open_session(
+            root,
+            &arg("dir")?,
+            &opt_str("title")?.unwrap_or_default(),
+            &arg("form")?,
+        )?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

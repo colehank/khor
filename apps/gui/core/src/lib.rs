@@ -476,6 +476,55 @@ pub struct Ticket {
     pub minutes: u32,
 }
 
+/// Opens a fresh claude session where the wizard pointed (会话身份批B:
+/// 建 session 四字段 — 目录、智能体、形式、名字; claude only this
+/// batch). The two forms are the user ruling's two channels: `chat`
+/// hosts khor's own claude shim behind the GUI host (`_cagent` — zero
+/// dependencies, the skin ruling), `term` hosts the claude TUI. Either
+/// way the session is born standing in the chosen directory, and its
+/// row id is claude's own uuid (chat) or a khor mint (term).
+pub fn open_session(root: &Path, dir: &str, title: &str, form: &str) -> Result<String, String> {
+    let n = open(root)?;
+    let home = std::env::home_dir();
+    let path = match dir.trim() {
+        "" | "~" => home.clone().ok_or_else(|| khor_catalog::msg::no_such_dir("~"))?,
+        d if d.starts_with("~/") => {
+            home.clone().ok_or_else(|| khor_catalog::msg::no_such_dir(d))?.join(&d[2..])
+        }
+        d => std::path::PathBuf::from(d),
+    };
+    if !path.is_dir() {
+        return Err(khor_catalog::msg::no_such_dir(&path.display().to_string()));
+    }
+    let title = if title.trim().is_empty() {
+        path.file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "claude".to_owned())
+    } else {
+        title.trim().to_owned()
+    };
+    match form {
+        "chat" => {
+            let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
+            let id =
+                n.open_gui_at(&path, &title, &[exe.display().to_string(), "_cagent".into()])?;
+            Ok(id.0)
+        }
+        "term" => {
+            // The TUI child resolves claude the same way the shim does,
+            // env door included, so both forms honour one override.
+            let claude = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
+            let id =
+                n.open_persistent_at(&path, khor_node::kind::TUI, &title, &[claude], (80, 24))?;
+            Ok(id.0)
+        }
+        // The wizard sends exactly the two above; anything else is a
+        // programmer's error, not a person's.
+        other => Err(format!("no such form: {other}")),
+    }
+}
+
+
 /// Issues a one-time pairing ticket. It carries the live endpoint's
 /// addresses, so it needs a resident serve — and both skins embed one
 /// (the bridge and the app each start `serve` on their own thread), so
