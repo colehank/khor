@@ -112,6 +112,11 @@ fn chat_answer(id: String, ask: u64, option: Option<String>) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    khor_gui_core::web::open_link(&url)
+}
+
+#[tauri::command]
 fn chat_stop(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_stop(&id)
 }
@@ -317,6 +322,7 @@ pub fn run() {
             chat_say,
             chat_answer,
             chat_stop,
+            open_link,
             chat_replay,
             chat_leave,
             history,

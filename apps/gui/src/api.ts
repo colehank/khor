@@ -109,6 +109,10 @@ export const pair = (ticket: string) => call<string>("pair", { ticket });
     a second open of a living chat (dev double-mount) must not ask the
     host to replay again. */
 export const chatOpen = (id: string) => call<boolean>("chat_open", { id });
+/** Hands a page to whatever this machine opens pages with. Refuses
+    anything that is not http/https — the address came out of an agent's
+    own words (`khor_gui_core::web::open_link`). */
+export const openLink = (url: string) => call<null>("open_link", { url });
 /** Ends the running turn — not the session (`GuiOp::Stop`). */
 export const chatStop = (id: string) => call<null>("chat_stop", { id });
 export const chatPoll = (id: string, since: number) =>

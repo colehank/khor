@@ -180,6 +180,10 @@ fn handle(
             khor_gui_core::chat::chat_answer(&arg("id")?, num("ask")?, opt_str("option")?)?;
             Ok("null".to_owned())
         }
+        "open_link" => {
+            khor_gui_core::web::open_link(&arg("url")?)?;
+            Ok("null".to_owned())
+        }
         "chat_stop" => {
             khor_gui_core::chat::chat_stop(&arg("id")?)?;
             Ok("null".to_owned())

@@ -451,6 +451,10 @@ cagent-one-session = "这个垫片只装一个会话"
 cagent-not-started = "会话还没开始"
 cagent-no-pipe = "接不到 claude 的输出"
 no-such-dir = "没有这个目录: {0}"
+# A link out of an agent's own words whose scheme is not a page. Says
+# what it is rather than "refused": the address is right there and the
+# face shows it, so the person decides.
+not-a-page = "这不是一个网页地址: {0}"
 takeover-no-record = "没有它的对话记录,接管不了: {0}"
 takeover-wont-die = "那边的进程没退,接管中止: {0}"
 already-a-chat = "它已经是对话形式了: {0}"

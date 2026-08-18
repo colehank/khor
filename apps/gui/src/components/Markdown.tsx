@@ -15,22 +15,27 @@
 // - **No raw HTML.** `react-markdown` refuses it by default and nothing
 //   here re-enables it: this is a *remote* agent's output painted into
 //   the app's own window (`_cagent` relays whatever the model emits).
-// - **A link is painted, not wired.** This window has nowhere to
-//   navigate — a page belongs in the browser landing, through some
-//   machine's network (docs/NET.md 借网) — and a control that looks
-//   clickable and does nothing is a lie shaped like a control. So the
-//   label wears its address in plain text: selectable, copyable, honest.
-//   Wiring it to 借网 needs a machine chosen and is on the ledger.
+// - **A link opens where this machine opens pages.** Not by navigating
+//   this window (there is nothing here to navigate *to*) and not
+//   through 借网 either: borrowing another machine's network is a
+//   deliberate act with a machine to choose, while clicking a link in
+//   a conversation is the ordinary one. The scheme is whitelisted on
+//   the Rust side — the address came out of a model's words, and a
+//   scheme this machine has registered can be an action rather than a
+//   page (`khor_gui_core::web::open_link`). A refusal is not silent:
+//   the label falls back to showing the address, which is what the
+//   first version of this file did for every link.
 //
 // Streaming is safe by construction: an unterminated fence is a code
 // block that runs to the end of the text (CommonMark), so a half-arrived
 // block paints as a growing code block rather than as three backticks
 // that later disappear.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
+import { openLink } from "@/api";
 import { cn } from "@/lib/utils";
 
 /** The shape every component override receives from react-markdown. */
@@ -89,16 +94,38 @@ const parts: Components = {
   ),
   th: ({ children }) => <th className="border px-2 py-1 text-left font-semibold">{children}</th>,
   td: ({ children }) => <td className="border px-2 py-1 align-top">{children}</td>,
-  a: ({ children, href }) => (
-    <span className="underline decoration-dotted underline-offset-2">
-      {children}
-      {href && typeof children === "string" && children !== href ? ` (${href})` : null}
-    </span>
-  ),
+  a: ({ children, href }) => <Link href={href}>{children}</Link>,
   // An image is a remote fetch from an agent's text; its alt is the part
   // that was written here.
   img: ({ alt }) => <span className="text-muted-foreground">{alt || ""}</span>,
 };
+
+/** A link in an agent's text: pressed, it goes to this machine's own
+    browser. A refusal (a scheme that is not a page) puts the address on
+    screen instead of doing nothing — the person is then the one who
+    decides what it is. */
+function Link({ href, children }: { href?: string; children?: ReactNode }) {
+  const [refused, setRefused] = useState(false);
+  if (!href || refused) {
+    return (
+      <span className="underline decoration-dotted underline-offset-2">
+        {children}
+        {href && typeof children === "string" && children !== href ? ` (${href})` : null}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-md-link={href}
+      title={href}
+      className="cursor-pointer underline underline-offset-2"
+      onClick={() => openLink(href).catch(() => setRefused(true))}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (

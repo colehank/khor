@@ -65,3 +65,66 @@ pub async fn borrow_web(root: &Path, machine: &str) -> Result<WebBorrow, String>
     let (session, addr) = Node::open(root.to_path_buf())?.borrow(machine).await?;
     Ok(WebBorrow { session, addr })
 }
+
+/// Hands a page to whatever this machine opens pages with.
+///
+/// **The address comes out of an agent's own words** — a conversation
+/// pane paints a link because a model wrote one — so the scheme is a
+/// whitelist, not a check for the obviously bad. `http` and `https` are
+/// pages; `file:` reads this machine's disk, and a scheme this machine
+/// happens to have registered can be an action rather than a page (a
+/// mail client sending, an app that takes a command). Anything else is
+/// refused with its own text, and the face falls back to showing the
+/// address so a person can decide for themselves.
+///
+/// The opener is the platform's, not a tool the user had to install
+/// (docs/STACK.md 零依赖 is about **the user's tools**): `open` and
+/// `xdg-open` ship with the desktop that would be showing this window.
+pub fn open_link(url: &str) -> Result<(), String> {
+    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
+    if !matches!(scheme.as_deref(), Some("http") | Some("https")) {
+        return Err(khor_catalog::msg::not_a_page(url));
+    }
+    // A URL is a URL, never a shell word: the opener is executed
+    // directly with one argument, so nothing in the address can become
+    // a second command.
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod open_link_tests {
+    use super::open_link;
+
+    /// The whitelist is the point: what an agent writes is text, and a
+    /// scheme this machine has registered can be an action rather than
+    /// a page. Only the refusals are asserted here — the allowed side
+    /// would open a browser on whoever ran the tests.
+    #[test]
+    fn only_a_page_is_a_page() {
+        for url in [
+            "file:///etc/passwd",
+            "FILE:///etc/passwd",
+            "mailto:someone@example.com",
+            "javascript:alert(1)",
+            "vscode://file/etc/passwd",
+            "/etc/passwd",
+            "",
+        ] {
+            assert!(open_link(url).is_err(), "must refuse: {url}");
+        }
+    }
+}
