@@ -176,6 +176,19 @@ struct Term {
     holds: AtomicUsize,
 }
 
+/// A lock that outlives a panic on the other side. A reader thread that
+/// panicked mid-`process` (vt100 has corner-case panics on real streams)
+/// poisons whatever it held; every later `.lock().unwrap()` then panics
+/// too, and in the bridge that cascade killed the whole server (seen
+/// live, 2026-08-18: one bad tmux frame → poisoned parser → a resize's
+/// unwrap → exit 101). The data under these locks is a screen or a
+/// socket — nothing an interrupted writer leaves half-true in a way a
+/// repaint does not fix — so the poison flag carries no information
+/// worth dying for.
+fn plock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn terms() -> &'static Mutex<HashMap<String, Arc<Term>>> {
     static TERMS: OnceLock<Mutex<HashMap<String, Arc<Term>>>> = OnceLock::new();
     TERMS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -186,7 +199,7 @@ fn terms() -> &'static Mutex<HashMap<String, Arc<Term>>> {
 /// host resizes its PTY to this size, so the whole screen repaints and
 /// the attacher sees a full frame rather than a fragment.
 pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), String> {
-    let mut registry = terms().lock().unwrap();
+    let mut registry = plock(terms());
     if let Some(term) = registry.get(id) {
         if !term.gone.load(Ordering::Relaxed) {
             term.holds.fetch_add(1, Ordering::Relaxed);
@@ -219,12 +232,27 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     let reader = term.clone();
     std::thread::spawn(move || {
         use std::io::Read;
+        use std::panic::{catch_unwind, AssertUnwindSafe};
         let mut buf = [0u8; 8192];
         loop {
             match reading.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    reader.parser.lock().unwrap().process(&buf[..n]);
+                    // The catch is inside the lock scope on purpose: the
+                    // guard then drops normally and the mutex is never
+                    // poisoned. On a panic (vt100's corner cases — see
+                    // `plock`) the screen is replaced at the same size
+                    // and a same-size resize is sent, which is a
+                    // SIGWINCH: the program repaints the whole frame
+                    // into the fresh screen (mandala's self-heal trick).
+                    let mut g = plock(&reader.parser);
+                    if catch_unwind(AssertUnwindSafe(|| g.process(&buf[..n]))).is_err() {
+                        let (rows, cols) = g.screen().size();
+                        *g = vt100::Parser::new(rows, cols, 0);
+                        drop(g);
+                        let mut conn = plock(&reader.conn);
+                        let _ = write_frame(&mut *conn, &ClientOp::Resize { cols, rows });
+                    }
                     reader.seq.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -249,7 +277,7 @@ fn term_of(id: &str) -> Result<Arc<Term>, String> {
 pub fn term_poll(id: &str, since: u64) -> Result<TermBatch, String> {
     let term = term_of(id)?;
     let seq = term.seq.load(Ordering::Relaxed);
-    let screen = (seq != since).then(|| snapshot(term.parser.lock().unwrap().screen()));
+    let screen = (seq != since).then(|| snapshot(plock(&term.parser).screen()));
     Ok(TermBatch { screen, seq, gone: term.gone.load(Ordering::Relaxed) })
 }
 
@@ -257,7 +285,7 @@ pub fn term_poll(id: &str, since: u64) -> Result<TermBatch, String> {
 /// keys to bytes, this layer stays a pipe.
 pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
     let term = term_of(id)?;
-    let mut conn = term.conn.lock().unwrap();
+    let mut conn = plock(&term.conn);
     write_frame(&mut *conn, &ClientOp::Input(bytes))
 }
 
@@ -266,16 +294,16 @@ pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
 /// into a screen already the right shape.
 pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
     let term = term_of(id)?;
-    term.parser.lock().unwrap().screen_mut().set_size(rows, cols);
+    plock(&term.parser).screen_mut().set_size(rows, cols);
     term.seq.fetch_add(1, Ordering::Relaxed);
-    let mut conn = term.conn.lock().unwrap();
+    let mut conn = plock(&term.conn);
     write_frame(&mut *conn, &ClientOp::Resize { cols, rows })
 }
 
 /// Drops one hold; the last one out closes the socket (chat's rule, and
 /// for the same double-mount reason).
 pub fn term_leave(id: &str) -> Result<(), String> {
-    let mut registry = terms().lock().unwrap();
+    let mut registry = plock(terms());
     if let Some(term) = registry.get(id) {
         if term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
             registry.remove(id);
@@ -287,6 +315,23 @@ pub fn term_leave(id: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The mechanism the live crash cascaded through: a thread panicking
+    /// while holding a lock poisons it, and an `unwrap` on the next lock
+    /// re-panics. `plock` must answer with the data instead — the flag
+    /// carries nothing a repaint does not fix.
+    #[test]
+    fn a_poisoned_lock_answers_instead_of_cascading() {
+        let m = Arc::new(Mutex::new(7u8));
+        let poisoner = m.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = poisoner.lock().unwrap();
+            panic!("poison it");
+        })
+        .join();
+        assert!(m.lock().is_err(), "the control: the mutex really is poisoned");
+        assert_eq!(*plock(&m), 7, "plock answers with the value regardless");
+    }
 
     fn feed(bytes: &[u8]) -> TermScreen {
         let mut parser = vt100::Parser::new(3, 10, 0);

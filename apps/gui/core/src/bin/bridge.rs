@@ -59,7 +59,15 @@ fn main() {
         let _ = req.as_reader().read_to_string(&mut body);
         let args: serde_json::Value =
             serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
-        let (code, payload) = match handle(&rt, &root, &cmd, &args) {
+        // The belt under every handler: a panic in one request must be
+        // that request's 500, not the whole server's death — the bridge
+        // runs its loop on main, and one poisoned corner took the whole
+        // preview down once (term.rs `plock` has the story).
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handle(&rt, &root, &cmd, &args)
+        }))
+        .unwrap_or_else(|_| Err("panic in handler".to_owned()));
+        let (code, payload) = match outcome {
             Ok(json) => (200, json),
             Err(e) => (400, serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into())),
         };

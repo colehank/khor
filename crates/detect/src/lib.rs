@@ -155,7 +155,18 @@ impl Screen {
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
-        self.parser.process(bytes);
+        // vt100 has corner-case panics on real streams (seen live, 2026-08-18:
+        // a wide character at the last column, vt100 screen.rs:870 unwrap on
+        // the neighbour cell — hit within seconds of attaching a real tmux
+        // with a CJK prompt; the exact byte recipe did not reproduce in
+        // isolation). One bad frame must not kill the process reading it:
+        // catch the panic, replace the parser at the same size, and the
+        // program's next full repaint restores the picture.
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        let (rows, cols) = self.parser.screen().size();
+        if catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err() {
+            self.parser = vt100::Parser::new(rows, cols, 0);
+        }
     }
 
     /// Follow the PTY's size.
