@@ -476,6 +476,180 @@ pub fn preview(text: &str) -> String {
     out.trim_end().to_owned()
 }
 
+/// Said text with its markdown marks taken off, for a **preview line**.
+///
+/// Agents write markdown. A conversation pane renders it (the GUI's
+/// `components/Markdown`); a one-line preview has nowhere to render it
+/// to, so left alone it shows the source: a real row on this machine's
+/// list read its last sentence out as literal asterisks and backticks —
+/// which is the one thing a preview may not be, the worse reading of the
+/// same sentence.
+///
+/// Deliberately conservative, because the text it is handed is prose,
+/// not a document: a delimiter is only a mark when a matching one
+/// closes it on the same line and it flanks its content the way
+/// CommonMark requires (`2 * 3 * 4` keeps its stars, `snake_case` keeps
+/// its underscore). What is not certain is left as typed — a preview
+/// with a stray asterisk reads fine; a preview with a word eaten does
+/// not.
+///
+/// **Only for text that is known to be a message.** A shell row's
+/// preview is a terminal's last line, where `*` and `` ` `` are bytes
+/// somebody's program wrote and mean themselves.
+pub fn plain(text: &str) -> String {
+    let mut out = String::new();
+    for (i, line) in text.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&plain_line(line));
+    }
+    out
+}
+
+/// One line, marks off: the line-anchored ones first (they only count at
+/// the head), then the paired ones inside.
+fn plain_line(line: &str) -> String {
+    let mut rest = line.trim_start();
+    // A rule is a line that is only a rule: it says nothing to preview.
+    let bare = rest.trim_end();
+    if bare.len() >= 3
+        && (bare.chars().all(|c| c == '-')
+            || bare.chars().all(|c| c == '*')
+            || bare.chars().all(|c| c == '_'))
+    {
+        return String::new();
+    }
+    // A fence says what language the block is in, not what was said.
+    if bare.starts_with("```") || bare.starts_with("~~~") {
+        return String::new();
+    }
+    // A table's pipes are its grid. Only when the line starts with one:
+    // prose does not, and a leading pipe is what every table row has.
+    if rest.starts_with('|') {
+        if bare.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')) {
+            return String::new(); // the rule row under the header
+        }
+        return bare
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| inline(cell.trim()))
+            .filter(|cell| !cell.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+    // Quote markers stack; a heading or a bullet can sit inside one.
+    while let Some(r) = rest.strip_prefix('>') {
+        rest = r.trim_start();
+    }
+    if let Some(r) = rest.strip_prefix(|c| c == '#') {
+        let hashes = 1 + r.chars().take_while(|c| *c == '#').count();
+        let after = &rest[hashes..];
+        if hashes <= 6 && after.starts_with(' ') {
+            rest = after.trim_start();
+        }
+    }
+    for mark in ["- ", "* ", "+ "] {
+        if let Some(r) = rest.strip_prefix(mark) {
+            rest = r.trim_start();
+            break;
+        }
+    }
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    if digits > 0 && rest[digits..].starts_with(". ") {
+        rest = rest[digits + 2..].trim_start();
+    }
+    // A task box is content, not a mark: whether it is ticked is the
+    // whole point of the line.
+    inline(rest)
+}
+
+/// The paired marks: code spans, emphasis, strikethrough, links.
+fn inline(line: &str) -> String {
+    let src: Vec<char> = line.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < src.len() {
+        let c = src[i];
+        // An escape means the next character is itself.
+        if c == '\\' && i + 1 < src.len() {
+            out.push(src[i + 1]);
+            i += 2;
+            continue;
+        }
+        // `code` — equal-length runs, no flanking rule (CommonMark).
+        if c == '`' {
+            let run = src[i..].iter().take_while(|c| **c == '`').count();
+            if let Some(close) = closing_run(&src, i + run, '`', run) {
+                out.extend(&src[i + run..close]);
+                i = close + run;
+                continue;
+            }
+        }
+        // *emphasis* / _emphasis_ / ~~strike~~
+        if c == '*' || c == '_' || c == '~' {
+            let run = src[i..].iter().take_while(|x| **x == c).count();
+            let opens = run <= 3
+                && src.get(i + run).is_some_and(|n| !n.is_whitespace())
+                && (c != '_'
+                    || i == 0
+                    || src[i - 1].is_whitespace()
+                    || !src[i - 1].is_alphanumeric());
+            if opens {
+                if let Some(close) = closing_run(&src, i + run, c, run) {
+                    let closes = !src[close - 1].is_whitespace()
+                        && (c != '_'
+                            || src
+                                .get(close + run)
+                                .is_none_or(|n| n.is_whitespace() || !n.is_alphanumeric()));
+                    if closes {
+                        out.push_str(&inline(&src[i + run..close].iter().collect::<String>()));
+                        i = close + run;
+                        continue;
+                    }
+                }
+            }
+        }
+        // [label](url) and ![alt](url) — the label is what was written
+        // here; the address belongs to a face that can open it.
+        if c == '[' || (c == '!' && src.get(i + 1) == Some(&'[')) {
+            let open = if c == '!' { i + 1 } else { i };
+            if let Some(shut) = src[open..].iter().position(|x| *x == ']').map(|p| open + p) {
+                if src.get(shut + 1) == Some(&'(') {
+                    if let Some(end) = src[shut..].iter().position(|x| *x == ')').map(|p| shut + p)
+                    {
+                        out.push_str(&inline(&src[open + 1..shut].iter().collect::<String>()));
+                        i = end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// Where the run of `n` copies of `mark` closing the one at `from`
+/// starts — a run of exactly `n`, so ``` ``a`` ``` is not closed by a
+/// single backtick.
+fn closing_run(src: &[char], from: usize, mark: char, n: usize) -> Option<usize> {
+    let mut i = from;
+    while i < src.len() {
+        if src[i] == mark {
+            let run = src[i..].iter().take_while(|c| **c == mark).count();
+            if run == n && i > from {
+                return Some(i);
+            }
+            i += run;
+            continue;
+        }
+        i += 1;
+    }
+    None
+}
+
 /// The uniform event envelope. Payload bytes are kind-namespaced; this
 /// crate never looks inside. Whether events replicate (CRDT) or are
 /// fetched from home is a kind property, not an envelope field.
@@ -862,6 +1036,64 @@ mod tests {
         let bytes = rmp_serde::to_vec(&event).unwrap();
         let back: Event = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(back, event);
+    }
+}
+
+#[cfg(test)]
+mod plain_tests {
+    use super::{plain, preview};
+
+    /// The marks come off and the words stay, in the shapes a preview
+    /// line actually meets.
+    #[test]
+    fn the_marks_come_off_and_the_words_stay() {
+        assert_eq!(
+            plain("it is **Nous**, `arXiv:2606.22030`; v1 was called *\"Nous\"*"),
+            "it is Nous, arXiv:2606.22030; v1 was called \"Nous\""
+        );
+        assert_eq!(plain("## Overview"), "Overview");
+        assert_eq!(plain("- never refuses an update"), "never refuses an update");
+        assert_eq!(plain("1. the first step"), "the first step");
+        assert_eq!(plain("> the quoted line"), "the quoted line");
+        assert_eq!(plain("see [khor](https://example.com) here"), "see khor here");
+        assert_eq!(plain("~~struck~~kept"), "struckkept");
+        assert_eq!(plain("**bold with `code`**"), "bold with code");
+        assert_eq!(plain("---"), "");
+    }
+
+    /// The two block shapes that carry their scaffolding on every line:
+    /// a table's grid and a fence's language tag say nothing a preview
+    /// line wants, and left in they crowd out the words that do.
+    #[test]
+    fn a_tables_grid_and_a_fences_tag_are_not_words() {
+        let said = "Overview\n\n| item | count |\n|---|---:|\n| members | 16 |\n\n```python\nprint(1)\n```";
+        assert_eq!(preview(&plain(said)), "Overview item count members 16 print(1)");
+    }
+
+    /// What is not certainly a mark stays as typed: a preview with a
+    /// stray asterisk reads fine, one with a word eaten does not.
+    #[test]
+    fn prose_that_only_looks_like_markdown_is_left_alone() {
+        // Not flanking: a star with space on the inside opens nothing.
+        assert_eq!(plain("2 * 3 * 4 = 24"), "2 * 3 * 4 = 24");
+        // Intraword underscores are identifiers, not emphasis.
+        assert_eq!(plain("run snake_case_name here"), "run snake_case_name here");
+        // Unclosed marks are just characters.
+        assert_eq!(plain("wrote **and forgot to close"), "wrote **and forgot to close");
+        assert_eq!(plain("the cost is `unclosed"), "the cost is `unclosed");
+        // A dash that leads real content is a bullet; a word is not.
+        assert_eq!(plain("-nospace-dash"), "-nospace-dash");
+        // An escape means the character itself.
+        assert_eq!(plain("a literal \\*star\\*"), "a literal *star*");
+    }
+
+    /// `plain` is line-anchored, so it must run before `preview` folds
+    /// the newlines away — the other order leaves every bullet's dash.
+    #[test]
+    fn the_line_anchored_marks_need_the_lines() {
+        let said = "## Title\n- one\n- two";
+        assert_eq!(preview(&plain(said)), "Title one two");
+        assert_eq!(plain(&preview(said)), "Title - one - two");
     }
 }
 

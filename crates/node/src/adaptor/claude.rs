@@ -248,7 +248,12 @@ fn tail_said(path: &std::path::Path) -> Option<String> {
         text.as_str()
     };
     utterances_of(text).into_iter().rev().find_map(|u| match u {
-        Utterance::User(t) | Utterance::Agent(t) => Some(khor_core::preview(&t)),
+        // The marks come off before the line is folded: a said line is
+        // markdown, and a preview has nowhere to render it to
+        // (`khor_core::plain`). `plain` first — its list and heading
+        // marks only exist at the head of a line, and `preview` is what
+        // takes the lines away.
+        Utterance::User(t) | Utterance::Agent(t) => Some(khor_core::preview(&khor_core::plain(&t))),
         // A thought or a tool name is the machine's bookkeeping — a
         // preview line should say what was *said*, and skipping back to
         // the newest real sentence reads better than "Read".
