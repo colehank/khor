@@ -125,8 +125,9 @@
 // what the other face prints — the catalog owns the text, this script
 // owns the comparison.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, rmSync, existsSync, writeFileSync, copyFileSync, chmodSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
@@ -1978,15 +1979,18 @@ try {
   );
   await openLanding("sessions");
 
-  // 24v) a hosted claude session shows two faces, and the switch works.
+  // 24v) an agent session shows two faces: the conversation by default
+  //      (会话身份批 ruling), the terminal on the switch — and the
+  //      choice is remembered per row.
   //
   //      A hosted tui (cat again), then claude's own hook naming it —
   //      which is what records the vendor leaf — and a transcript file
-  //      under that vendor id. The row turns claude, the detail grows
-  //      the 终端/对话 switch, the chat face reads the recorded words
-  //      through the vendor-leaf bridge, and the terminal face comes
-  //      back. End to end: hook → vendor_leaf → transcript_of → still
-  //      chat view (会话行改版批, 四刀之四: 只读).
+  //      under that vendor id. The row turns claude; **its preview turns
+  //      with it** (the transcript outranks the hosted screen line —
+  //      the line a real agent shows there is its chrome, "⏵⏵ bypass
+  //      permissions on…"); the detail opens on the chat face reading
+  //      the recorded words through the vendor-leaf bridge; the terminal
+  //      face is one click away and is the face the row reopens on.
   const agentId = cli(envB, "open", "-d", "--tui", "--title", "fakeagent", "--", "cat").trim();
   const agentUuid = "b7e2fa10-1234-4cd9-9c33-aabbccddeeff";
   execFileSync(KHOR, ["state", "--hook"], {
@@ -2004,23 +2008,38 @@ try {
   await until("the hosted agent row wearing claude", 20_000, async () =>
     (await page.locator(`[data-row="${agentId}"] [data-kind-mark="claude"]`).count()) === 1,
   );
+  await until("the agent row previewing the transcript, not the screen", 20_000, async () => {
+    const t = await page
+      .locator(`[data-row="${agentId}"] [data-last]`)
+      .innerText()
+      .catch(() => "");
+    return t.includes(recorded);
+  });
   await page.locator(`[data-row="${agentId}"] [data-row-open]`).click();
-  await until("the view switch on a hosted claude", 15_000, async () =>
+  await until("the view switch on an agent detail", 15_000, async () =>
     (await page.locator("[data-view-chat]").count()) === 1,
   );
-  if ((await page.locator("[data-terminal]").count()) !== 1) {
-    throw new Error("the default face of a hosted agent is its terminal");
+  if ((await page.locator("[data-terminal]").count()) !== 0) {
+    throw new Error("the default face of an agent is its conversation (会话身份批)");
   }
-  await page.locator("[data-view-chat]").click();
-  await until("the recorded conversation on the chat face", 15_000, async () => {
+  await until("the recorded conversation on the default face", 15_000, async () => {
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes(recorded);
   });
-  if ((await page.locator("[data-terminal]").count()) !== 0) {
-    throw new Error("the chat face must replace the terminal, not stack on it");
-  }
   await page.locator("[data-view-term]").click();
-  await until("the terminal face back", 15_000, async () =>
+  await until("the terminal face on the switch", 15_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  // The choice is remembered per row: visit *another* row's detail (so
+  // this one truly unmounts — a same-row re-click would keep the mounted
+  // state and pass without any memory), then come back and land on the
+  // terminal without another click.
+  await page.locator(`[data-row="chat/alpha"] [data-row-open]`).click();
+  await until("another detail in between", 10_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 0,
+  );
+  await page.locator(`[data-row="${agentId}"] [data-row-open]`).click();
+  await until("the remembered face is the terminal", 15_000, async () =>
     (await page.locator("[data-terminal]").count()) === 1,
   );
   cli(envB, "close", agentId);
@@ -2063,6 +2082,87 @@ try {
   // next item picks "the first row" — same trap the cat close hit.
   await until("the killed tmux row gone", 20_000, async () =>
     (await page.locator('[data-title="bridgeme"]').count()) === 0,
+  );
+
+
+  // 24g) an agent inside a tmux session is one row — the agent's — and
+  //      its terminal face bridges into the pane it sits in (会话身份批:
+  //      真实 session 一行到底; tmux 是路线, 不是身份).
+  //
+  //      A binary *named* claude (cat copied under the name — the sweep
+  //      matches process names exactly) idles in a session on the
+  //      private server; beta's vendor home gets claude's own status
+  //      file naming that pid, plus a transcript. One row appears and it
+  //      is the agent's — the tmux session's name is on no row. Its
+  //      preview is the transcript, its default face the conversation,
+  //      and the terminal face reaches the very pane: typing echoes,
+  //      because the pane runs cat.
+  const fakeClaudeDir = join(tmpdir(), `khor-smoke-claude-${process.pid}`);
+  mkdirSync(fakeClaudeDir, { recursive: true });
+  const fakeClaude = join(fakeClaudeDir, "claude");
+  copyFileSync("/bin/cat", fakeClaude);
+  chmodSync(fakeClaude, 0o755);
+  execFileSync("tmux", ["-L", TMUX_SOCK, "new-session", "-d", "-s", "agenthome", "-x", "80", "-y", "24", fakeClaude], { timeout: 10_000 });
+  const agentPid = execFileSync("tmux", ["-L", TMUX_SOCK, "list-panes", "-t", "agenthome", "-F", "#{pane_pid}"], { encoding: "utf8", timeout: 10_000 }).trim();
+  const tmuxAgentUuid = "c9d4ab21-4321-4abc-9def-001122334455";
+  const tmuxAgentRow = "tui/c9d4ab21-4321-4abc-9def";
+  const sdir = join(B, ".claude", "sessions");
+  mkdirSync(sdir, { recursive: true });
+  writeFileSync(
+    join(sdir, `${agentPid}.json`),
+    JSON.stringify({
+      pid: Number(agentPid), sessionId: tmuxAgentUuid, cwd: "/tmp/proj",
+      startedAt: Date.now() - 1000, name: "tmuxagent", status: "busy", statusUpdatedAt: Date.now(),
+    }),
+  );
+  const inTmux = "the words of the agent living in tmux";
+  writeFileSync(
+    join(tdir, `${tmuxAgentUuid}.jsonl`),
+    JSON.stringify({ type: "user", message: { role: "user", content: inTmux } }) + "\n",
+  );
+  await openLanding("sessions");
+  await until("the tmux-held agent row wearing claude", 20_000, async () =>
+    (await page.locator(`[data-row="${tmuxAgentRow}"] [data-kind-mark="claude"]`).count()) === 1,
+  );
+  if ((await page.locator('[data-title="agenthome"]').count()) !== 0) {
+    throw new Error("the tmux session holding the agent must not be a second row");
+  }
+  await until("the held agent previewing its transcript, not its screen", 20_000, async () => {
+    const t = await page
+      .locator(`[data-row="${tmuxAgentRow}"] [data-last]`)
+      .innerText()
+      .catch(() => "");
+    return t.includes(inTmux);
+  });
+  await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();
+  await until("the conversation as the default face", 15_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes(inTmux) && (await page.locator("[data-terminal]").count()) === 0;
+  });
+  await page.locator("[data-view-term]").click();
+  await until("the pane's terminal painted", 20_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  const paneMarker = "pane-marker4";
+  await until("a keystroke reaching the real pane", 20_000, async () => {
+    await page.locator("[data-terminal]").focus();
+    await page.keyboard.type(paneMarker);
+    await page.keyboard.press("Enter");
+    await new Promise((r) => setTimeout(r, 300));
+    return (await page.locator("[data-terminal]").innerText()).includes(paneMarker);
+  });
+  // Ending the agent ends the row. **Not by `kill-session`**: while
+  // khor's viewer is attached, its grouped twin shares the session's
+  // windows, so killing the origin session leaves the pane alive inside
+  // the twin — measured here first (the row stayed, correctly: the
+  // process was still running). Killing the *process* collapses both
+  // sessions, the viewer host sees its client die and cleans itself up,
+  // and with the status file gone there is no sighting left.
+  await page.locator(`[data-row="chat/alpha"] [data-row-open]`).click();
+  process.kill(Number(agentPid));
+  rmSync(join(sdir, `${agentPid}.json`), { force: true });
+  await until("the held agent row gone with its process", 20_000, async () =>
+    (await page.locator(`[data-row="${tmuxAgentRow}"]`).count()) === 0,
   );
 
   // 26) a pin that does not take says so, on the button that was
