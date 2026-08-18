@@ -117,7 +117,11 @@ pub enum GuiNote {
 /// Where the freshly-minted session id is written for the opener —
 /// which cannot know it in advance: the id exists only once the agent
 /// has answered `session/new`.
-pub fn spawn_gui_host(title: &str, cmd: &[String]) -> Result<SessionId, String> {
+pub fn spawn_gui_host(
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+) -> Result<SessionId, String> {
     let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
@@ -125,6 +129,9 @@ pub fn spawn_gui_host(title: &str, cmd: &[String]) -> Result<SessionId, String> 
         crate::link::fresh_hex()?
     ));
     let mut c = std::process::Command::new(exe);
+    if let Some(cwd) = cwd {
+        c.current_dir(cwd);
+    }
     c.arg("_ghost")
         .arg(&ready)
         .arg(title)

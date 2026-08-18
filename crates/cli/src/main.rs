@@ -76,6 +76,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "sync", run: sync },
     Verb { word: "_host", run: host },
     Verb { word: "_ghost", run: ghost },
+    Verb { word: "_cagent", run: cagent },
     Verb { word: "help", run: help },
     Verb { word: "--help", run: help },
     Verb { word: "-h", run: help },
@@ -97,6 +98,7 @@ const VERBS: &[Verb] = &[
 const NOT_IN_USAGE: &[(&str, &str)] = &[
     ("_host", "internal: the host process `open` spawns, whose arguments are a calling convention"),
     ("_ghost", "internal: the GUI-session host `open --gui` spawns; same convention, ACP instead of a PTY"),
+    ("_cagent", "internal: khor's own claude ACP shim; the agent a claude GUI session runs (`cagent` module head)"),
     ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
@@ -605,6 +607,10 @@ fn host(rest: &[String]) -> Result<(), String> {
         rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
     );
     khor_node::host::host_main(Node::root_from_env(), SessionId(sid.clone()), size, cmd.to_vec())
+}
+
+fn cagent(_rest: &[String]) -> Result<(), String> {
+    khor_node::cagent::cagent_main(Node::root_from_env())
 }
 
 fn state(rest: &[String]) -> Result<(), String> {

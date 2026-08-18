@@ -162,6 +162,10 @@ pub fn main_if_host(root: std::path::PathBuf) {
     let outcome = match args.first().map(String::as_str) {
         Some("_host") => host_args(&root, &args[1..]),
         Some("_ghost") => ghost_args(&root, &args[1..]),
+        // The claude shim (`cagent`): every binary that can spawn a GUI
+        // host must also be able to *be* the agent it spawns, for the
+        // same current_exe reason the two arms above exist.
+        Some("_cagent") => crate::cagent::cagent_main(root.clone()),
         _ => return,
     };
     if let Err(e) = outcome {
@@ -216,7 +220,19 @@ pub fn spawn_host(
     cmd: &[String],
     size: (u16, u16),
 ) -> Result<(), String> {
-    spawn_host_with(dir, id, cmd, size, None)
+    spawn_host_with(dir, id, cmd, size, None, None)
+}
+
+/// `spawn_host`, born in a chosen working directory — the wizard names
+/// where a session lives; every other opener is already standing there.
+pub fn spawn_host_at(
+    cwd: &Path,
+    dir: &Path,
+    id: &SessionId,
+    cmd: &[String],
+    size: (u16, u16),
+) -> Result<(), String> {
+    spawn_host_with(dir, id, cmd, size, None, Some(cwd))
 }
 
 /// A host that is a **lens, not an owner**: it bridges a terminal onto a
@@ -233,7 +249,7 @@ pub fn spawn_viewer_host(
     size: (u16, u16),
     made: bool,
 ) -> Result<(), String> {
-    spawn_host_with(dir, id, cmd, size, Some(if made { "made" } else { "keep" }))
+    spawn_host_with(dir, id, cmd, size, Some(if made { "made" } else { "keep" }), None)
 }
 
 /// How `_host` learns it is a viewer: env rather than argv, so the argv
@@ -246,9 +262,13 @@ fn spawn_host_with(
     cmd: &[String],
     (cols, rows): (u16, u16),
     viewer: Option<&str>,
+    cwd: Option<&Path>,
 ) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
     let mut c = std::process::Command::new(exe);
+    if let Some(cwd) = cwd {
+        c.current_dir(cwd);
+    }
     c.arg("_host")
         .arg(&id.0)
         .arg(cols.to_string())

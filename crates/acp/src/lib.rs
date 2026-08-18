@@ -206,10 +206,24 @@ pub async fn start(
                 if let Some(tx) = ready_tx.take() {
                     let _ = tx.send((connection.clone(), session));
                 }
-                // Park until the Handle goes away; the transport drops on
-                // return and takes the agent's process group with it.
-                let _ = close_rx.await;
-                Ok(())
+                // Park until the Handle goes away **or the agent's side
+                // of the pipe does**. The crate treats a clean incoming
+                // EOF as observable, never terminal (`connect_with`'s
+                // contract), so without the second arm a dead agent
+                // leaves this closure parked and the caller's loop
+                // waiting for a Closed that never comes — found live: a
+                // gui host whose agent died hung in its conversation
+                // loop until killed by hand. The EOF arm is an error on
+                // purpose: the caller did not ask for this ending, and
+                // Closed(None) is reserved for the one it did.
+                tokio::select! {
+                    _ = close_rx => Ok(()),
+                    _ = connection.incoming_closed() => {
+                        Err(agent_client_protocol::util::internal_error(
+                            "the agent closed the connection",
+                        ))
+                    }
+                }
             })
             .await;
         let _ = closed.send(Event::Closed(outcome.err().map(|e| e.to_string())));

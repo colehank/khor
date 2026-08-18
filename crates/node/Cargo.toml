@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 khor-acp = { path = "../acp" }
+agent-client-protocol = "2"
 khor-core.workspace = true
 khor-catalog.workspace = true
 khor-detect.workspace = true

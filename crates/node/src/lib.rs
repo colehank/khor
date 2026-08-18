@@ -8,6 +8,7 @@
 //! answer what "looked at now" means, and close.
 
 pub mod adaptor;
+pub mod cagent;
 pub mod chat;
 pub mod files;
 pub mod gui_host;
@@ -953,11 +954,43 @@ impl Node {
         Ok(id)
     }
 
+    /// `open_persistent`, born in a chosen directory — same registration,
+    /// the host just starts life standing where the wizard pointed.
+    pub fn open_persistent_at(
+        &self,
+        cwd: &std::path::Path,
+        kind: &str,
+        title: &str,
+        cmd: &[String],
+        size: (u16, u16),
+    ) -> Result<SessionId, String> {
+        let leaf = link::fresh_leaf()?;
+        let id = SessionId(format!("{kind}/{leaf}"));
+        self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
+        let dir = self
+            .live
+            .dir_of(&id)
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        host::spawn_host_at(cwd, &dir, &id, cmd, size)?;
+        Ok(id)
+    }
+
     /// Opens a GUI session: a detached host holding one ACP agent. The
     /// id comes back from the host — it is the vendor's own, and exists
     /// only once the agent has answered (`gui_host` module head).
     pub fn open_gui(&self, title: &str, cmd: &[String]) -> Result<SessionId, String> {
-        gui_host::spawn_gui_host(title, cmd)
+        gui_host::spawn_gui_host(None, title, cmd)
+    }
+
+    /// `open_gui`, born in a chosen directory (the wizard's 目录 field);
+    /// the agent underneath inherits it as the session's cwd.
+    pub fn open_gui_at(
+        &self,
+        cwd: &std::path::Path,
+        title: &str,
+        cmd: &[String],
+    ) -> Result<SessionId, String> {
+        gui_host::spawn_gui_host(Some(cwd), title, cmd)
     }
 
     /// Stands a host up for a discovered tmux session so a terminal can
