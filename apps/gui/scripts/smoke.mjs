@@ -2265,6 +2265,28 @@ for line in sys.stdin:
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("echo: hello wizard");
   });
+  // Markdown is the agent's medium, and the fake echoes what it was
+  // told — so one line of it makes the round trip and must arrive
+  // *rendered*. Two assertions, because one cannot tell the two ways
+  // this breaks apart: nothing rendered, or everything rendered. The
+  // user's own bubble keeps the source it was typed in (ChatView head:
+  // an asterisk they meant as an asterisk).
+  // ASCII on purpose: this is test data, not the thing under test
+  // (the NEEDLE rule above).
+  await page.locator("[data-chat-input]").fill("**bold** and *slant*");
+  await page.locator("[data-chat-input]").press("Enter");
+  await until("the agent's markdown arriving rendered", 20_000, async () =>
+    (await page.locator("[data-md] strong").count()) > 0,
+  );
+  const rendered = await page.locator("[data-md]").last().innerText();
+  if (rendered.includes("**")) {
+    throw new Error(`the agent's marks are still on screen: ${rendered}`);
+  }
+  const typed = await page.locator("[data-said]").last().innerText();
+  if (!typed.includes("**bold**")) {
+    throw new Error(`the user's own line must stay verbatim: ${typed}`);
+  }
+
   // The permission round-trip, on the screen's own buttons, in khor's
   // catalog words.
   await page.locator("[data-chat-input]").fill("please ask-permission");

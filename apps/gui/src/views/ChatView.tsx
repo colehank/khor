@@ -18,6 +18,12 @@
 // - **Tool lines never change.** `tool_call_update` is not painted, so
 //   a line shows the call's title and no status — no status is honest
 //   where a stale "running" would be a lie shaped like a fact.
+// - **The agent's text is markdown, the user's is verbatim.** Agents
+//   write markdown and their TUI renders it, so a chat face that showed
+//   the source would be the worse reading of the same words
+//   (`components/Markdown`). The user's own bubble is not rendered: they
+//   typed those characters, and an asterisk they meant as an asterisk
+//   must not come back as emphasis.
 import { takeover as takeoverCall } from "@/api";
 import { useEffect, useRef, useState } from "react";
 
@@ -31,6 +37,7 @@ import {
   fetchHistory,
   type ChatFrame,
 } from "@/api";
+import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
@@ -252,18 +259,17 @@ export function ChatView({
         {items.map((item, i) =>
           item.who === "user" ? (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-1.5 text-sm">
+              <div
+                data-said
+                className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-1.5 text-sm"
+              >
                 {item.text}
               </div>
             </div>
           ) : item.who === "agent" ? (
-            <div key={i} className="whitespace-pre-wrap text-sm">
-              {item.text}
-            </div>
+            <Markdown key={i} text={item.text} className="text-sm" />
           ) : item.who === "thought" ? (
-            <div key={i} className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {item.text}
-            </div>
+            <Markdown key={i} text={item.text} className="text-sm text-muted-foreground" />
           ) : item.who === "tool" ? (
             <div key={i} className="border-l-2 pl-2 text-xs text-muted-foreground">
               {item.title}
