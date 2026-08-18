@@ -424,6 +424,11 @@ tunnel-no-route = "出口连不上要去的地方: {0}"
 borrowing-title = "借 {0} 的网"
 borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
+# The proxied browsing window needs per-window proxy_url, which is macOS
+# 14+ only (Cargo gates the feature by target). Other platforms' proxy
+# paths are on the ledger (platform batch), so opening a page through an
+# exit refuses in words there rather than opening one that leaks direct.
+borrow-webview-macos-only = "从别台的网开网页,现在只有 mac 上能用"
 
 # ── the session surface (node) ──
 name-not-pathable = "这个名字进不了路径: {0}"

@@ -195,6 +195,13 @@ fn pin_web(machine: String, url: String, on: bool) -> Result<(), String> {
 /// the page makes goes out the far machine. Async because the borrow
 /// dials. The window is labelled by the borrow session so it is unique
 /// and closing it is traceable.
+///
+/// **macOS only**, because per-window `proxy_url` is (the Cargo feature
+/// is gated to macOS). Opening one elsewhere without the proxy would leak
+/// the request out this machine's own network — the opposite of a borrow
+/// — so the other platforms refuse in words until the platform batch
+/// wires their proxy paths.
+#[cfg(target_os = "macos")]
 #[tauri::command]
 async fn open_web(
     app: tauri::AppHandle,
@@ -219,6 +226,13 @@ async fn open_web(
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn open_web(machine: String, url: String) -> Result<(), String> {
+    let _ = (machine, url);
+    Err(khor_catalog::msg::BORROW_WEBVIEW_MACOS_ONLY.into())
 }
 
 /// Answers with the ticket **and** the window it is good for: the window

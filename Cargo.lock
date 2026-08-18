@@ -3130,6 +3130,7 @@ dependencies = [
 name = "khor-gui"
 version = "0.1.0"
 dependencies = [
+ "khor-catalog",
  "khor-gui-core",
  "khor-node",
  "serde",
