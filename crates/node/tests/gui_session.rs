@@ -139,6 +139,15 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
     write_frame(&mut conn, &GuiOp::Answer { ask, option: Some(options[0].0.clone()) }).unwrap();
     // (No 忙碌 wait here — see the anchor note above.)
 
+    // The answer comes back as a frame of its own, to every face:
+    // "answered" is a fact about the conversation, not a memory in
+    // whichever face happened to press the button (`gui_host`).
+    let GuiNote::Answered { ask: answered, option } = next_note(&mut conn) else {
+        panic!("the answer is announced")
+    };
+    assert_eq!(answered, ask, "it names the ask it settles");
+    assert_eq!(option.as_deref(), Some(options[0].0.as_str()), "and what was chosen");
+
     // The stub's own account of what crossed the wire, relayed whole.
     let GuiNote::Note(echo) = next_note(&mut conn) else { panic!("the echo chunk") };
     assert!(echo.contains("picked:go"), "{echo}");
@@ -219,14 +228,16 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
                 assert_eq!(stop, "EndTurn");
                 break;
             }
-            GuiNote::Note(_) => {}
+            // `Answered` rides the same broadcast as the ask itself —
+            // both faces see it, which is the point of it existing.
+            GuiNote::Note(_) | GuiNote::Answered { .. } => {}
             other => panic!("history before the turn ended: {}", kind_of(&other)),
         }
     }
     loop {
         match next_note(&mut bystander) {
             GuiNote::Turn(_) => break,
-            GuiNote::Note(_) | GuiNote::Ask { .. } => {}
+            GuiNote::Note(_) | GuiNote::Ask { .. } | GuiNote::Answered { .. } => {}
             other => panic!("history before the turn ended: {}", kind_of(&other)),
         }
     }
@@ -268,5 +279,7 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Gone => "Gone",
         GuiNote::History(_) => "History",
         GuiNote::HistoryEnd => "HistoryEnd",
+        GuiNote::Turning => "Turning",
+        GuiNote::Answered { .. } => "Answered",
     }
 }
