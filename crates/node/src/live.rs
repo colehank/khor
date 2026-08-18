@@ -362,6 +362,47 @@ impl LiveKind {
         Ok(read_pair(&dir)?.1.at_ms)
     }
 
+    /// Stands a host up for a discovered multiplexer session, so the
+    /// terminal can attach to it like any hosted row (docs/handoff tmux
+    /// 接桥). The host runs a **grouped** tmux client
+    /// (`Tmux::grouped_attach_argv` has the judgment), registered under
+    /// the discovered row's own id — the registry row then wins the
+    /// merge, `hosted` turns true, and the whole hosted path (terminal,
+    /// preview, close) applies unchanged. Closing kills khor's client,
+    /// which is a detach; the user's own session is never touched, and
+    /// the discovered row resurfaces on the next sweep.
+    ///
+    /// Idempotent: a second open finds the host and does nothing — two
+    /// clicks must not stand up two clients.
+    pub fn attach_multiplexed(&self, id: &SessionId) -> Result<(), String> {
+        if let Some(dir) = self.dir_of(id) {
+            if crate::host::read_host_file(&dir).is_ok() {
+                return Ok(());
+            }
+        }
+        let leaf = id
+            .0
+            .strip_prefix(&format!("{}/", khor_core::kind::SHELL))
+            .ok_or_else(|| msg::not_a_tmux_row(&id.0))?;
+        let target = crate::adaptor::tmux::tmux_target_of(leaf)
+            .ok_or_else(|| msg::not_a_tmux_row(&id.0))?;
+        let tmux = self.discovery.tmux().ok_or_else(|| msg::not_a_tmux_row(&id.0))?;
+        // Confirmed against a live sweep, not just parsed: the leaf also
+        // carries the session's creation time, so a same-numbered session
+        // on a restarted server does not impersonate the clicked one.
+        let sweep = self.discovery.sweep();
+        let held = sweep
+            .multiplexed
+            .iter()
+            .find(|h| h.found.id() == *id)
+            .ok_or_else(|| msg::tmux_session_gone(&id.0))?;
+        let title = held.found.sighting.title.clone();
+        self.ensure(id, khor_core::kind::SHELL, &title, None, Some(khor_core::category::SHELL))?;
+        let dir = self.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        crate::host::spawn_host(&dir, id, &tmux.grouped_attach_argv(&target), (80, 24))?;
+        Ok(())
+    }
+
     /// Kills the process if it still runs, then forgets the session.
     /// 失败沉底 is a list fact, not a registry fact — closing is how a
     /// settled row leaves the list.

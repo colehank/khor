@@ -149,6 +149,62 @@ pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> R
     proto::decode(&bytes)
 }
 
+/// Answers the `_host`/`_ghost` calling convention **if this process was
+/// started as one**, then never returns; a process started any other way
+/// falls straight through. Every binary that can spawn hosts calls this
+/// first thing in its `main` — [`spawn_host`] re-execs `current_exe()`,
+/// so whichever consumer stood the host up (the CLI, the dev bridge, the
+/// app) must itself answer the convention. The bridge not answering was
+/// found live: a host spawned from it was another bridge, and the
+/// terminal waited on a host.json nobody would ever write.
+pub fn main_if_host(root: std::path::PathBuf) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let outcome = match args.first().map(String::as_str) {
+        Some("_host") => host_args(&root, &args[1..]),
+        Some("_ghost") => ghost_args(&root, &args[1..]),
+        _ => return,
+    };
+    if let Err(e) = outcome {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+    std::process::exit(0);
+}
+
+fn host_args(root: &Path, rest: &[String]) -> Result<(), String> {
+    let (head, cmd) = match rest.iter().position(|a| a == "--") {
+        Some(i) => (&rest[..i], &rest[i + 1..]),
+        None => return Err(msg::HOST_BAD_CONVENTION.into()),
+    };
+    let [sid, cols, rows] = head else {
+        return Err(msg::HOST_BAD_CONVENTION.into());
+    };
+    if cmd.is_empty() {
+        return Err(msg::HOST_BAD_CONVENTION.into());
+    }
+    let size = (
+        cols.parse::<u16>().map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
+        rows.parse::<u16>().map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
+    );
+    host_main(root.to_path_buf(), SessionId(sid.clone()), size, cmd.to_vec())
+}
+
+fn ghost_args(root: &Path, rest: &[String]) -> Result<(), String> {
+    let (head, cmd) = match rest.iter().position(|a| a == "--") {
+        Some(i) => (&rest[..i], &rest[i + 1..]),
+        None => return Err(msg::HOST_BAD_CONVENTION.into()),
+    };
+    let [ready, title] = head else {
+        return Err(msg::HOST_BAD_CONVENTION.into());
+    };
+    crate::gui_host::gui_host_main(
+        root.to_path_buf(),
+        std::path::PathBuf::from(ready),
+        title.clone(),
+        cmd.to_vec(),
+    )
+}
+
 // ── the opener's side ───────────────────────────────────────
 
 /// Spawns the detached host for an already-registered session and waits

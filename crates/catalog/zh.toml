@@ -435,6 +435,15 @@ name-not-pathable = "这个名字进不了路径: {0}"
 machine-name-not-pathable = "这个机器名进不了路径: {0}"
 no-such-machine = "机器不存在: {0}。网里现在有: {1}"
 no-such-session = "没有这个 session: {0}"
+# The tmux attach bridge's two refusals: a row that is not a tmux one
+# has nothing to stand a host up for, and a session the server no longer
+# lists cannot be attached — saying which is which sends the user to the
+# right place (a stale list vs a wrong click).
+not-a-tmux-row = "这不是一个能接上的 tmux 会话: {0}"
+tmux-session-gone = "那个 tmux 会话已经不在了: {0}"
+# The `_host` re-exec convention got malformed arguments — a programming
+# error on the spawning side, never something a user typed.
+host-bad-convention = "宿主参数不合约定"
 no-such-session-because = "没有这个 session: {0}({1})"
 not-a-machine-id = "这不是一个机器 id: {0}"
 cant-make-peers-dir = "建不了 peers 目录: {0}"

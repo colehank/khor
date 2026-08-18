@@ -251,6 +251,10 @@ async fn pair(ticket: String) -> Result<String, String> {
 }
 
 pub fn run() {
+    // If this process was re-exec'd as a session host, be one — the app
+    // spawns hosts through its own binary (`host.rs main_if_host`).
+    khor_node::host::main_if_host(Node::root_from_env());
+
     // The app embeds serve — the desktop is a full node, not a client
     // (one mesh, no client/server split). Running `khor serve` on the
     // same home at the same time is the known conflict; handover is on

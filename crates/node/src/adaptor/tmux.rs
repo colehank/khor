@@ -212,6 +212,30 @@ impl Tmux {
         Tmux { socket: None, binaries: vec![path.to_owned()] }
     }
 
+    /// The command a khor host runs to show this server's session
+    /// `target` without disturbing whoever is already looking at it:
+    /// a **grouped** session (`new-session -t`) gets its own client and
+    /// its own size, so attaching from the app never squeezes the user's
+    /// real tmux client to the smaller window — plain `attach` does
+    /// exactly that. `destroy-unattached` cleans the grouped session up
+    /// the moment our client detaches (the host dying detaches it), so
+    /// nothing lingers in the user's session list.
+    ///
+    /// Runs through the same binary and socket the sweep used — an
+    /// attach against a different server than the one that listed the
+    /// session would "succeed" against the wrong world.
+    pub fn grouped_attach_argv(&self, target: &str) -> Vec<String> {
+        let mut argv = vec![self.binaries.first().cloned().unwrap_or_else(|| "tmux".into())];
+        if let Some(sock) = &self.socket {
+            argv.push("-L".into());
+            argv.push(sock.clone());
+        }
+        for a in ["new-session", "-t", target, ";", "set-option", "destroy-unattached", "on"] {
+            argv.push(a.into());
+        }
+        argv
+    }
+
     fn binaries() -> Vec<String> {
         match std::env::var("KHOR_TMUX") {
             Ok(p) if !p.is_empty() => vec![p],
@@ -461,6 +485,27 @@ fn same_program(a: &str, b: &str) -> bool {
 /// session that lives.
 fn leaf_of(session_id: &str, created_secs: i64) -> String {
     format!("{created_secs}-{}", session_id.trim_start_matches('$'))
+}
+
+/// Whether a khor session leaf is one [`leaf_of`] minted — the one place
+/// that may take the format apart (a second parser is how two readers
+/// drift). `khor open`'s leaves are pure hex with no dash
+/// (`link::fresh_leaf`), so the two mints cannot collide.
+pub fn is_tmux_leaf(leaf: &str) -> bool {
+    tmux_target_of(leaf).is_some()
+}
+
+/// The tmux target (`$<id>`) back out of a leaf, or `None` for a leaf
+/// some other mint produced.
+pub fn tmux_target_of(leaf: &str) -> Option<String> {
+    let (created, id) = leaf.split_once('-')?;
+    if created.is_empty() || id.is_empty() {
+        return None;
+    }
+    if !created.bytes().all(|b| b.is_ascii_digit()) || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("${id}"))
 }
 
 /// The khor session id for a tmux session.

@@ -79,17 +79,17 @@ export function DetailPane({
         // Keyed so switching sessions remounts the chat: its cursor,
         // frames and attachment all belong to one conversation.
         <ChatView key={row.id} id={row.id} />
-      ) : row && row.hosted && row.category === "claude" ? (
+      ) : row && row.attachable && row.category === "claude" ? (
         // A hosted claude gets both faces with a switch; keyed so the
         // choice resets with the session it was made about.
         <HostedAgentDetail key={row.id} id={row.id} />
-      ) : row && row.hosted ? (
-        // A session this machine hosts (shell or agent TUI opened through
-        // khor): attach and paint its live terminal. `hosted` is the
-        // signal, not the kind — a `khor run` or a discovered session
-        // shares the kind but has no host to attach to (`Node::is_hosted`).
-        // Remote hosted sessions are on the ledger (their host is
-        // elsewhere), and fall through to the facts below.
+      ) : row && row.attachable ? (
+        // A session with a terminal to be had: hosted here already, or a
+        // discovered tmux session the bridge stands a host up for on
+        // first open (gui-core `term_open`). `attachable` is the signal,
+        // not the kind — a `khor run` shares the kind but has no host
+        // and no bridge. Remote hosted sessions are on the ledger (their
+        // host is elsewhere), and fall through to the facts below.
         <TerminalPane key={row.id} id={row.id} />
       ) : row && row.category === "claude" ? (
         // A discovered claude session: its recorded past, read from

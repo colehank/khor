@@ -10,6 +10,11 @@ use std::io::Read;
 use khor_node::Node;
 
 fn main() {
+    // First thing, before any bridge behaviour: if this process was
+    // re-exec'd as a session host (`spawn_host` uses current_exe), be
+    // one. Without this a host spawned from the bridge was another
+    // bridge, and terminals waited forever (host.rs `main_if_host`).
+    khor_node::host::main_if_host(khor_node::Node::root_from_env());
     let root = Node::root_from_env();
     let port: u16 = std::env::var("BRIDGE_PORT")
         .ok()

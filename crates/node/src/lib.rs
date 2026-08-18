@@ -960,6 +960,12 @@ impl Node {
         gui_host::spawn_gui_host(title, cmd)
     }
 
+    /// Stands a host up for a discovered tmux session so a terminal can
+    /// attach (`LiveKind::attach_multiplexed` has the whole judgment).
+    pub fn attach_tmux(&self, id: &SessionId) -> Result<(), String> {
+        self.live.attach_multiplexed(id)
+    }
+
     /// The registry dir behind a live session id, for attach clients.
     pub fn session_dir(&self, id: &SessionId) -> Option<PathBuf> {
         self.live.dir_of(id).filter(|d| d.exists())

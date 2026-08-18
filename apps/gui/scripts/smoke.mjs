@@ -161,7 +161,11 @@ const homeEnv = (dir, name) => {
   return e;
 };
 const envA = homeEnv(A, "alpha");
-const envB = homeEnv(B, "beta");
+// beta watches a private tmux server (KHOR_TMUX_SOCKET is the test
+// door): the bridge item stands sessions up on it, and the user's real
+// server is never looked at, let alone attached to.
+const TMUX_SOCK = `khor-smoke-${process.pid}`;
+const envB = { ...homeEnv(B, "beta"), KHOR_TMUX_SOCKET: TMUX_SOCK };
 const envG = homeEnv(G, "gamma");
 
 const children = [];
@@ -2024,6 +2028,43 @@ try {
     (await page.locator(`[data-row="${agentId}"]`).count()) === 0,
   );
 
+  // 24m) a discovered tmux session opens as a live terminal, and closing
+  //      khor's view leaves the user's session standing.
+  //
+  //      A session on beta's private server prints a marker; the sweep
+  //      lists it (nobody opened it through khor), clicking it makes the
+  //      bridge stand a grouped client up under the same id, and the
+  //      marker is on the painted screen. The control is the whole
+  //      point: `khor close` must kill only khor's client — the session
+  //      itself survives on the server, and its discovered row comes
+  //      back.
+  execFileSync("tmux", ["-L", TMUX_SOCK, "new-session", "-d", "-s", "bridgeme", "-x", "80", "-y", "24"], { timeout: 10_000 });
+  execFileSync("tmux", ["-L", TMUX_SOCK, "send-keys", "-t", "bridgeme", "printf 'tmux-bridge-marker\\n'", "Enter"], { timeout: 10_000 });
+  await openLanding("sessions");
+  await until("the discovered tmux row", 20_000, async () =>
+    (await page.locator('[data-title="bridgeme"]').count()) === 1,
+  );
+  const tmuxRowId = await page.locator('[data-title="bridgeme"]').getAttribute("data-row");
+  await page.locator(`[data-row="${tmuxRowId}"] [data-row-open]`).click();
+  await until("the tmux screen painted in the app", 20_000, async () => {
+    const t = await page.locator("[data-terminal]").innerText().catch(() => "");
+    return t.includes("tmux-bridge-marker");
+  });
+  cli(envB, "close", tmuxRowId);
+  // The user's session survives khor's close — only the grouped client
+  // died. `has-session` exits non-zero if it were gone.
+  execFileSync("tmux", ["-L", TMUX_SOCK, "has-session", "-t", "bridgeme"], { timeout: 5_000 });
+  // …and the discovered row returns once the registry entry is gone.
+  await until("the discovered row back after close", 20_000, async () =>
+    (await page.locator('[data-title="bridgeme"]').count()) === 1,
+  );
+  execFileSync("tmux", ["-L", TMUX_SOCK, "kill-session", "-t", "bridgeme"], { timeout: 5_000 });
+  // …and wait for the killed session's row to leave the list before the
+  // next item picks "the first row" — same trap the cat close hit.
+  await until("the killed tmux row gone", 20_000, async () =>
+    (await page.locator('[data-title="bridgeme"]').count()) === 0,
+  );
+
   // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //
@@ -2125,6 +2166,9 @@ try {
 
   console.log("gui smoke: all green");
 } finally {
+  try {
+    execFileSync("tmux", ["-L", TMUX_SOCK, "kill-server"], { timeout: 5_000 });
+  } catch {}
   if (browser) await browser.close().catch(() => {});
   for (const c of children) {
     try {

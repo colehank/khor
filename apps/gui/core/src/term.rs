@@ -195,8 +195,17 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         registry.remove(id);
     }
     let n = Node::open(root.to_path_buf())?;
+    let sid = SessionId(id.to_owned());
+    // A discovered tmux row has no host yet; the bridge stands one up
+    // under this very id (grouped client — `LiveKind::attach_multiplexed`
+    // has the judgment), and from here on it is any hosted session.
+    if !n.is_hosted(&sid)
+        && id.strip_prefix("shell/").is_some_and(khor_node::adaptor::tmux::is_tmux_leaf)
+    {
+        n.attach_tmux(&sid)?;
+    }
     let dir = n
-        .session_dir(&SessionId(id.to_owned()))
+        .session_dir(&sid)
         .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
     let conn = connect(&dir, cols, rows)?;
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;

@@ -509,11 +509,25 @@ impl Discovery {
     pub fn for_root(root: &Path) -> Discovery {
         let home = vendor_home(root);
         let discovery = Discovery::at(&home);
+        // The test door, KHOR_NAME's precedent: a scratch home never
+        // watches the user's real tmux server, but a test (the smoke)
+        // needs a server of its own to be watched — naming a socket here
+        // is opting a private server in, on any home.
+        if let Ok(sock) = std::env::var("KHOR_TMUX_SOCKET") {
+            return discovery.with_tmux(tmux::Tmux::on_socket(&sock));
+        }
         if is_real_home(&home) {
             discovery.with_tmux(tmux::Tmux::default_server())
         } else {
             discovery
         }
+    }
+
+    /// The multiplexer this discovery watches, if any — the attach
+    /// bridge runs its command through the very same server and binary
+    /// the sweep listed sessions from.
+    pub fn tmux(&self) -> Option<&tmux::Tmux> {
+        self.tmux.as_ref()
     }
 
     /// One sweep of every vendor.
