@@ -171,6 +171,7 @@ impl TransferKind {
                 category: Some(khor_core::category::KHOR.to_owned()),
                 last: None,
                 via: None,
+            term: false,
             });
         }
         out

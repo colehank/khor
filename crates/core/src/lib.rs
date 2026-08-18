@@ -538,6 +538,15 @@ pub struct Session {
     /// it is minted with the rest.
     #[serde(default)]
     pub via: Option<String>,
+    /// The home device can stand a terminal up for this row right now:
+    /// it hosts the session already, or the session sits in a local
+    /// multiplexer a host can bridge into. Only the home device can
+    /// answer this (the process and the multiplexer are both there), so
+    /// it rides the row like `category` does. Readers on other devices
+    /// must still gate on locality: the terminal itself does not travel
+    /// (remote attach is on the ledger).
+    #[serde(default)]
+    pub term: bool,
 }
 
 #[cfg(test)]
@@ -555,6 +564,7 @@ mod tests {
             category: Some("claude".to_owned()),
             last: Some("last said".to_owned()),
             via: None,
+            term: true,
         }
     }
 
@@ -604,16 +614,17 @@ mod tests {
     }
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_nine() {
+    fn the_session_frame_is_a_fixed_order_array_of_ten() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x99 = msgpack fixarray of 9. Adding, removing, or reordering a
+        // 0x9a = msgpack fixarray of 10. Adding, removing, or reordering a
         // field must land here first, consciously. Six → seven appended
         // `category`; seven → nine appended `last` and `via` together
-        // (会话行改版批) — always at the tail, never in the middle: a
-        // mid-frame optional desyncs the array on every older end.
-        assert_eq!(bytes[0], 0x99);
-        let (id, kind, title, home, state, unread, category, last, via): (
+        // (会话行改版批); nine → ten appended `term` (会话身份批) —
+        // always at the tail, never in the middle: a mid-frame optional
+        // desyncs the array on every older end.
+        assert_eq!(bytes[0], 0x9a);
+        let (id, kind, title, home, state, unread, category, last, via, term): (
             SessionId,
             Kind,
             String,
@@ -623,9 +634,10 @@ mod tests {
             Option<String>,
             Option<String>,
             Option<String>,
+            bool,
         ) = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(
-            (id, kind, title, home, state, unread, category, last, via),
+            (id, kind, title, home, state, unread, category, last, via, term),
             (
                 session.id,
                 session.kind,
@@ -635,7 +647,8 @@ mod tests {
                 session.unread,
                 session.category,
                 session.last,
-                session.via
+                session.via,
+                session.term
             )
         );
     }

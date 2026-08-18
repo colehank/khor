@@ -441,6 +441,7 @@ no-such-session = "没有这个 session: {0}"
 # right place (a stale list vs a wrong click).
 not-a-tmux-row = "这不是一个能接上的 tmux 会话: {0}"
 tmux-session-gone = "那个 tmux 会话已经不在了: {0}"
+no-terminal-here = "这台机器上现在没有它的终端可接: {0}"
 # The `_host` re-exec convention got malformed arguments — a programming
 # error on the spawning side, never something a user typed.
 host-bad-convention = "宿主参数不合约定"

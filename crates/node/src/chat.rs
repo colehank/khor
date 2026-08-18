@@ -89,6 +89,7 @@ impl ChatKind {
                 khor_sync::chat::MsgBody::Unknown(_) => None,
             }),
             via: None,
+            term: false,
         }
     }
 

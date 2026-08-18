@@ -214,7 +214,38 @@ pub fn spawn_host(
     dir: &Path,
     id: &SessionId,
     cmd: &[String],
+    size: (u16, u16),
+) -> Result<(), String> {
+    spawn_host_with(dir, id, cmd, size, None)
+}
+
+/// A host that is a **lens, not an owner**: it bridges a terminal onto a
+/// process that belongs to somebody else (an agent sitting in the user's
+/// tmux), so it must not claim the row's pid, report words, or record an
+/// ending — the vendor's own files keep answering all three. `made` says
+/// whether the attach minted the registry dir purely to hang this host
+/// on: then the host takes the dir with it when the bridge ends, and the
+/// row goes back to being a discovered one.
+pub fn spawn_viewer_host(
+    dir: &Path,
+    id: &SessionId,
+    cmd: &[String],
+    size: (u16, u16),
+    made: bool,
+) -> Result<(), String> {
+    spawn_host_with(dir, id, cmd, size, Some(if made { "made" } else { "keep" }))
+}
+
+/// How `_host` learns it is a viewer: env rather than argv, so the argv
+/// contract (`host_args`) stays what every existing binary parses.
+const VIEWER_ENV: &str = "KHOR_HOST_VIEWER";
+
+fn spawn_host_with(
+    dir: &Path,
+    id: &SessionId,
+    cmd: &[String],
     (cols, rows): (u16, u16),
+    viewer: Option<&str>,
 ) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
     let mut c = std::process::Command::new(exe);
@@ -227,6 +258,16 @@ pub fn spawn_host(
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    match viewer {
+        Some(v) => {
+            c.env(VIEWER_ENV, v);
+        }
+        None => {
+            // A host spawned by a viewer host's own re-exec must not
+            // inherit viewerhood.
+            c.env_remove(VIEWER_ENV);
+        }
+    }
     #[cfg(unix)]
     unsafe {
         use std::os::unix::process::CommandExt;
@@ -326,7 +367,12 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
     let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
     let kind = id.0.split('/').next().unwrap_or("").to_owned();
-    live.set_pid(&id, std::process::id())?;
+    // A viewer never claims the row (`spawn_viewer_host`): the pid slot,
+    // the words and the ending all stay the vendor's.
+    let viewer = std::env::var(VIEWER_ENV).ok();
+    if viewer.is_none() {
+        live.set_pid(&id, std::process::id())?;
+    }
 
     let pty = native_pty_system()
         .openpty(PtySize { rows: size.1, cols: size.0, pixel_width: 0, pixel_height: 0 })
@@ -450,8 +496,10 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     }
 
     // The six-word face for a shell: 忙碌 = the terminal's foreground
-    // group is not the shell itself.
-    if kind == khor_core::kind::SHELL {
+    // group is not the shell itself. Never for a viewer — its PTY runs a
+    // tmux client, whose foreground says nothing about the session the
+    // row is about.
+    if kind == khor_core::kind::SHELL && viewer.is_none() {
         let live = live.clone();
         let id = id.clone();
         let master = master.clone();
@@ -590,9 +638,24 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     }
 
     // The ending — recorded even if nobody is watching; leniency on the
-    // writes because `close` may have removed the dir already.
+    // writes because `close` may have removed the dir already. A viewer
+    // records nothing (its child ending is a detach, not the session
+    // ending) and instead cleans up after itself: the host marker always,
+    // and the whole dir when the attach minted it — the row then goes
+    // back to being a discovered one, exactly as before the bridge.
     let status = child.wait().map_err(msg::host_child_wait)?;
-    let _ = live.record_exit(&id, status.exit_code() as i32);
+    match &viewer {
+        None => {
+            let _ = live.record_exit(&id, status.exit_code() as i32);
+        }
+        Some(v) => {
+            if v == "made" {
+                let _ = std::fs::remove_dir_all(&dir);
+            } else {
+                let _ = std::fs::remove_file(host_file_path(&dir));
+            }
+        }
+    }
     for _ in 0..20 {
         if output_done.load(Ordering::SeqCst) {
             break;

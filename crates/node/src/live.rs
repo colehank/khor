@@ -376,31 +376,135 @@ impl LiveKind {
     /// clicks must not stand up two clients.
     pub fn attach_multiplexed(&self, id: &SessionId) -> Result<(), String> {
         if let Some(dir) = self.dir_of(id) {
-            if crate::host::read_host_file(&dir).is_ok() {
-                return Ok(());
+            if let Ok(hf) = crate::host::read_host_file(&dir) {
+                if crate::link::pid_alive(hf.host_pid) {
+                    return Ok(());
+                }
+                // A host that died without cleaning up (killed hard):
+                // the marker points at nothing, so clear it and stand a
+                // fresh one up rather than answering "attached" about a
+                // corpse.
+                let _ = fs::remove_file(crate::host::host_file_path(&dir));
             }
         }
-        let leaf = id
-            .0
-            .strip_prefix(&format!("{}/", khor_core::kind::SHELL))
-            .ok_or_else(|| msg::not_a_tmux_row(&id.0))?;
-        let target = crate::adaptor::tmux::tmux_target_of(leaf)
-            .ok_or_else(|| msg::not_a_tmux_row(&id.0))?;
-        let tmux = self.discovery.tmux().ok_or_else(|| msg::not_a_tmux_row(&id.0))?;
-        // Confirmed against a live sweep, not just parsed: the leaf also
-        // carries the session's creation time, so a same-numbered session
-        // on a restarted server does not impersonate the clicked one.
+        let tmux = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0))?;
+        // Confirmed against a live sweep, not just parsed: a tmux leaf
+        // also carries the session's creation time, so a same-numbered
+        // session on a restarted server does not impersonate the clicked
+        // one — and an agent row's route exists only while the sweep can
+        // still see its process inside a session.
         let sweep = self.discovery.sweep();
+        let shell_prefix = format!("{}/", khor_core::kind::SHELL);
+        if let Some(target) = id
+            .0
+            .strip_prefix(&shell_prefix)
+            .filter(|leaf| crate::adaptor::tmux::is_tmux_leaf(leaf))
+            .and_then(crate::adaptor::tmux::tmux_target_of)
+        {
+            // A tmux row names its session outright.
+            let held = sweep
+                .multiplexed
+                .iter()
+                .find(|h| h.found.id() == *id)
+                .ok_or_else(|| msg::tmux_session_gone(&id.0))?;
+            let title = held.found.sighting.title.clone();
+            self.ensure(id, khor_core::kind::SHELL, &title, None, Some(khor_core::category::SHELL))?;
+            let dir = self.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+            crate::host::spawn_host(&dir, id, &tmux.grouped_attach_argv(&target, None), (80, 24))?;
+            return Ok(());
+        }
+        // Any other row reaches its terminal by redoing the fold's
+        // intersection (`rows`): which multiplexer session holds this
+        // row's process. The process is named by the vendor's sighting
+        // for a discovered agent, or by the registry's own pid for a
+        // row khor registered (`khor run` inside a pane). The host stood
+        // up is a **viewer**: a lens on a process that is not its child,
+        // so it must not write words, record endings, or claim the
+        // row's pid (`host::spawn_viewer_host`).
+        let fresh = !self.claims(id);
+        let (pids, title, category, word) =
+            if let Some(found) = sweep.rows.iter().find(|f| f.id() == *id) {
+                (
+                    found.sighting.pids.clone(),
+                    found.sighting.title.clone(),
+                    Some(found.category),
+                    Some(found.sighting.word),
+                )
+            } else if let Ok(dir) = self.existing_dir(id) {
+                let meta = read_meta(&dir)?;
+                let pid = meta.pid.ok_or_else(|| msg::no_terminal_here(&id.0))?;
+                (vec![pid], meta.title, None, None)
+            } else {
+                return Err(msg::no_terminal_here(&id.0));
+            };
         let held = sweep
             .multiplexed
             .iter()
-            .find(|h| h.found.id() == *id)
-            .ok_or_else(|| msg::tmux_session_gone(&id.0))?;
-        let title = held.found.sighting.title.clone();
-        self.ensure(id, khor_core::kind::SHELL, &title, None, Some(khor_core::category::SHELL))?;
+            .find(|h| h.holds.iter().any(|p| pids.contains(p)))
+            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
+        let target = held
+            .found
+            .id()
+            .0
+            .strip_prefix(&shell_prefix)
+            .and_then(crate::adaptor::tmux::tmux_target_of)
+            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
+        let window = tmux.window_holding(&target, &pids, &crate::adaptor::Procs::snapshot());
+        if fresh {
+            self.ensure(id, khor_core::kind::TUI, &title, None, category)?;
+            // `register` opens with a reported 忙碌 — right for a spawn,
+            // wrong here: nothing was spawned, and a reported word would
+            // outrank the vendor's own files at the merge
+            // (`a_word_read_off_the_screen_does_not_cover_what_the_vendor_says`).
+            // Demote the opening word to a screen-grade one so the
+            // sighting keeps deciding.
+            if let Some(w) = word {
+                let _ = self.report(id, w, Source::Screen);
+            }
+        }
         let dir = self.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        crate::host::spawn_host(&dir, id, &tmux.grouped_attach_argv(&target), (80, 24))?;
+        crate::host::spawn_viewer_host(
+            &dir,
+            id,
+            &tmux.grouped_attach_argv(&target, window.as_deref()),
+            (80, 24),
+            fresh,
+        )?;
         Ok(())
+    }
+
+    /// Closes bridge hosts whose tmux session holds a row that lists on
+    /// its own — the cleanup half of the fold in [`LiveKind::rows`]. The
+    /// fold hides such a bridge row the moment it sees one (one running
+    /// process, one row — the agent's); what it cannot do from a listing
+    /// is stop the host process the bridge left running, so that happens
+    /// here, on the serve tick like `Node::reap_borrows`. Killing the
+    /// host is a tmux detach: the user's own session is never touched.
+    pub fn reap_folded_bridges(&self) {
+        let registered = self.registry_rows(&|_| 0);
+        let bridges: Vec<SessionId> = registered
+            .iter()
+            .filter(|r| {
+                r.row.id.0
+                    .strip_prefix(&format!("{}/", khor_core::kind::SHELL))
+                    .is_some_and(crate::adaptor::tmux::is_tmux_leaf)
+            })
+            .map(|r| r.row.id.clone())
+            .collect();
+        if bridges.is_empty() {
+            return;
+        }
+        let sweep = self.discovery.sweep();
+        let mut claimed: Vec<u32> = registered.iter().filter_map(|r| r.pid).collect();
+        claimed.extend(sweep.rows.iter().flat_map(|f| f.sighting.pids.iter().copied()));
+        for id in bridges {
+            let Some(held) = sweep.multiplexed.iter().find(|h| h.found.id() == id) else {
+                continue;
+            };
+            if held.holds.iter().any(|p| claimed.contains(p)) {
+                let _ = self.close_session(&id);
+            }
+        }
     }
 
     /// Kills the process if it still runs, then forgets the session.
@@ -494,19 +598,34 @@ impl LiveKind {
             .filter(|r| !r.word_outranks_disk)
             .map(|r| &r.row.id)
             .collect();
-        // Everything on this list that is a running process. A pid on
-        // record for a process that has already died costs nothing here:
-        // what it is compared against is built from the live process
-        // table, so a dead number can never match.
-        let mut claimed: Vec<u32> = registered.iter().filter_map(|r| r.pid).collect();
+        // Everything on this list that is a running process — and which
+        // row it landed on. A pid on record for a process that has
+        // already died costs nothing here: what it is compared against
+        // is built from the live process table, so a dead number can
+        // never match. The seat matters now, not just membership: a
+        // multiplexer session holding a listed agent used to be merely
+        // dropped, and the link — "that agent's terminal lives in this
+        // tmux session" — was computed and then thrown away. The seat
+        // map is what lets the multiplexed loop below keep it, as the
+        // agent row's `term`.
+        let mut seat_of_pid: std::collections::BTreeMap<u32, usize> =
+            std::collections::BTreeMap::new();
+        for (i, r) in registered.iter().enumerate() {
+            if let Some(pid) = r.pid {
+                seat_of_pid.insert(pid, i);
+            }
+        }
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
-        claimed.extend(sweep.rows.iter().flat_map(|f| f.sighting.pids.iter().copied()));
         for found in sweep.rows {
             let id = found.id();
             let kind = found.kind;
             let sighting = found.sighting;
+            let pids = sighting.pids.clone();
             if let Some(seat) = out.iter().position(|r| r.id == id) {
+                for &p in &pids {
+                    seat_of_pid.insert(p, seat);
+                }
                 // The registered row wins, but it may have been registered
                 // by something that could not name the vendor (a bare
                 // `khor run --tui`). The sweep read that vendor's own
@@ -549,14 +668,59 @@ impl LiveKind {
                 category: Some(found.category.to_owned()),
                 last: None,
                 via: None,
+                term: false,
             });
+            let seat = out.len() - 1;
+            for &p in &pids {
+                seat_of_pid.insert(p, seat);
+            }
         }
-        for held in sweep.multiplexed {
-            if held.holds.iter().any(|p| claimed.contains(p)) {
+        let mut folded: Vec<SessionId> = Vec::new();
+        // Oldest first, so the original session outranks any grouped
+        // twin of it; the leaf leads with the creation epoch, so the
+        // string order is the age order.
+        let mut multiplexed = sweep.multiplexed;
+        multiplexed
+            .sort_by(|a, b| a.found.sighting.vendor_session_id.cmp(&b.found.sighting.vendor_session_id));
+        let mut seen_holds: Vec<u32> = Vec::new();
+        for held in multiplexed {
+            let id = held.found.id();
+            let bridge_seat = out.iter().position(|r| r.id == id);
+            // A grouped session lists the very same panes under a second
+            // session id — measured (`tmux new-session -t base` → two
+            // lines, one pane pid). The bridge's own client is exactly
+            // such a twin, so without this every open terminal face grew
+            // a phantom row beside the session it was showing.
+            if bridge_seat.is_none() && held.holds.iter().any(|p| seen_holds.contains(p)) {
                 continue;
             }
-            let id = held.found.id();
-            if out.iter().any(|r| r.id == id) {
+            seen_holds.extend(held.holds.iter().copied());
+            let seats: Vec<usize> = held
+                .holds
+                .iter()
+                .filter_map(|p| seat_of_pid.get(p).copied())
+                .filter(|s| Some(*s) != bridge_seat)
+                .collect();
+            if !seats.is_empty() {
+                // The old rule ended at "drop the duplicate". The same
+                // judgment now also keeps what it computed: these rows'
+                // terminals live inside this tmux session, so a host can
+                // be bridged in for them (`attach_multiplexed` resolves
+                // the route by redoing this very intersection).
+                for s in seats {
+                    out[s].term = true;
+                }
+                // A bridge row somebody stood up for this same session
+                // (before the fold rule, by clicking the tmux row) is
+                // the duplicate wearing a registry entry: one running
+                // process, one row — the agent's. The bridge host is
+                // reaped separately (`reap_folded_bridges`).
+                if bridge_seat.is_some() {
+                    folded.push(id);
+                }
+                continue;
+            }
+            if bridge_seat.is_some() {
                 continue;
             }
             let sighting = held.found.sighting;
@@ -575,22 +739,42 @@ impl LiveKind {
                 category: Some(held.found.category.to_owned()),
                 last: None,
                 via: None,
+                // A discovered multiplexer session is exactly what the
+                // bridge can attach to.
+                term: true,
             });
         }
+        out.retain(|r| !folded.contains(&r.id));
         // The preview post-pass, one place for every claude-backed row —
-        // discovered, hooked or GUI alike: a row that got nothing better
-        // (no hosted terminal line) and whose vendor keeps a transcript
-        // gets that transcript's newest utterance. Cached by (path,
-        // mtime) inside `last_said`, so a list poll costs stats, not
-        // reads.
+        // discovered, hooked, hosted or GUI alike: whatever the vendor's
+        // transcript last said. **The transcript outranks the hosted
+        // screen line**, not the other way around: an agent TUI's last
+        // non-empty screen line is its chrome ("⏵⏵ bypass permissions
+        // on…"), which is true of the screen and useless as a preview —
+        // the screen line stays only as the fallback for a row whose
+        // transcript nobody can find yet (no hook has spoken, no leaf
+        // matches). The leaf is the vendor's own where a hook recorded
+        // one (`Meta::vendor_leaf` — a khor-minted id names no vendor
+        // file), else the id's leaf, which for discovered rows is the
+        // vendor's id already. Cached by (path, mtime) inside
+        // `last_said`, so a list poll costs stats, not reads.
+        let vendor_leaves: std::collections::BTreeMap<String, String> = registered
+            .iter()
+            .filter_map(|r| r.vendor_leaf.clone().map(|v| (r.row.id.0.clone(), v)))
+            .collect();
+        let claude =
+            crate::adaptor::claude::Claude::at(crate::adaptor::vendor_home(&self.root).join(".claude"));
         for r in out.iter_mut() {
-            if r.last.is_none() && r.category.as_deref() == Some("claude") {
-                if let Some(leaf) = r.id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI)) {
-                    r.last = crate::adaptor::claude::Claude::at(
-                        crate::adaptor::vendor_home(&self.root).join(".claude"),
-                    )
-                    .last_said(leaf);
-                }
+            if r.category.as_deref() != Some("claude") {
+                continue;
+            }
+            let leaf = vendor_leaves.get(&r.id.0).cloned().or_else(|| {
+                r.id.0
+                    .strip_prefix(&format!("{}/", khor_core::kind::TUI))
+                    .map(str::to_owned)
+            });
+            if let Some(said) = leaf.and_then(|l| claude.last_said(&l)) {
+                r.last = Some(said);
             }
         }
         out
@@ -626,6 +810,7 @@ impl LiveKind {
             let (word, at, unread) = face(&e.path(), &meta, &state, watermark(&id.0));
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
+                vendor_leaf: meta.vendor_leaf.clone(),
                 row: Session {
                     id,
                     kind: Kind(meta.kind.clone()),
@@ -637,9 +822,12 @@ impl LiveKind {
                     // The host keeps the terminal's last non-empty line
                     // beside its state; a row with no host keeps `None`
                     // here and may still earn a preview from a
-                    // transcript (`rows`'s post-pass).
+                    // transcript (`rows`'s post-pass — which also
+                    // outranks this line for agent rows).
                     last: crate::host::read_last(&e.path()),
                     via: None,
+                    // A host here is a terminal to be had here.
+                    term: crate::host::read_host_file(&e.path()).is_ok(),
                 },
                 pid: meta.pid,
             });
@@ -677,6 +865,9 @@ struct RegistryRow {
     /// screen, which is the one case where the vendor's own files know
     /// better than the row already on the list.
     word_outranks_disk: bool,
+    /// The vendor's own leaf where a hook recorded one (`Meta`), carried
+    /// so the preview post-pass can find a khor-minted row's transcript.
+    vendor_leaf: Option<String>,
 }
 
 /// Who is still there behind a registry row.
@@ -1426,6 +1617,10 @@ mod tests {
         assert_eq!(rows.len(), 1, "one running process is one row");
         assert_eq!(rows[0].id.0, "tui/11111111-1111-4111-8111");
         assert_eq!(rows[0].category.as_deref(), Some("claude"), "and it is claude's, not a shell");
+        assert!(
+            rows[0].term,
+            "the fold keeps what it computed: this agent's terminal lives in that tmux session"
+        );
 
         // The control: the same session, holding nothing anyone listed.
         let empty = crate::adaptor::tmux::fake_tmux(
@@ -1444,6 +1639,142 @@ mod tests {
         assert_eq!(rows[0].title, "just-a-shell");
         assert_eq!(rows[0].category.as_deref(), Some(khor_core::category::SHELL));
         assert_eq!(rows[0].state.state, State::Idle);
+        assert!(rows[0].term, "a discovered tmux session is exactly what the bridge attaches to");
+        assert!(
+            !rows[1].term,
+            "control: an agent held by no multiplexer has no route to a terminal here"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The fold against a **registry entry**: a bridge row somebody
+    /// stood up for a tmux session (by clicking it before the agent
+    /// inside was listed, or before the fold existed) is the duplicate
+    /// wearing a registry dir — one running process, one row, and the
+    /// row is the agent's, wearing the route.
+    #[test]
+    fn an_old_bridge_row_folds_into_the_agent_row_it_duplicates() {
+        use crate::adaptor::{tmux::Tmux, Discovery, Proc, Procs};
+
+        let root = tmp("bridge-fold");
+        let vendors =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let procs = Procs::of([
+            (
+                3001,
+                Proc { name: "-zsh".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: Some(1) },
+            ),
+            (
+                4001,
+                Proc {
+                    name: "claude".into(),
+                    started_ms: 1_700_000_000_000,
+                    cwd: None,
+                    ppid: Some(3001),
+                },
+            ),
+        ]);
+        let holding = crate::adaptor::tmux::fake_tmux(
+            "bridge-fold",
+            "$7|1786245338|1786245400|3001|0|zsh|with-claude\n",
+        );
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors)
+                .with_procs(procs)
+                .with_tmux(Tmux::at_binary(&holding)),
+        ));
+        // The bridge row, registered the way `attach_multiplexed` would
+        // have registered it for this very session.
+        let bridge = sid("shell/1786245338-7");
+        k.register(&bridge, "shell", "with-claude", None, Some(khor_core::category::SHELL))
+            .unwrap();
+
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "the bridge row stops listing: one process, one row");
+        assert_eq!(rows[0].id.0, "tui/11111111-1111-4111-8111", "and the row is the agent's");
+        assert!(rows[0].term, "wearing the route");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A grouped twin session is furniture, not a second row: tmux lists
+    /// the same panes again under the twin's own id (measured — see the
+    /// comment in `rows`), and the twin a bridge's client creates would
+    /// otherwise appear as a phantom row for exactly as long as someone
+    /// is looking at the terminal face.
+    #[test]
+    fn a_grouped_twin_of_a_listed_session_is_not_a_second_row() {
+        use crate::adaptor::{tmux::Tmux, Discovery, Proc, Procs};
+
+        let root = tmp("tmux-twin");
+        let procs = Procs::of([(
+            3001,
+            Proc { name: "-zsh".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: Some(1) },
+        )]);
+        // The same pane, listed twice: once by the original session,
+        // once by a grouped twin created later.
+        let fake = crate::adaptor::tmux::fake_tmux(
+            "twin",
+            "$7|1786245338|1786245400|3001|0|zsh|base\n\
+             $9|1786245400|1786245400|3001|0|zsh|base-1\n",
+        );
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&fake)),
+        ));
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1, "one set of panes is one row");
+        assert_eq!(rows[0].id.0, "shell/1786245338-7", "and the original session is the row");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The transcript outranks the hosted screen line for an agent row
+    /// (会话身份批): a TUI's last non-empty screen line is its chrome —
+    /// "⏵⏵ bypass permissions on…" — true of the screen, useless as a
+    /// preview. Three rows, one edge each:
+    /// - a row whose id leaf finds a transcript: the transcript wins;
+    /// - a row with no transcript anywhere: the screen line is the
+    ///   honest fallback and stays;
+    /// - a khor-minted row whose transcript is reachable only through
+    ///   the recorded vendor leaf: the vendor leaf is the path.
+    #[test]
+    fn the_transcript_outranks_the_hosted_screen_line() {
+        let root = tmp("preview-precedence");
+        let proj = root.join(".claude/projects/-w");
+        fs::create_dir_all(&proj).unwrap();
+        let uuid = "afafafaf-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        fs::write(
+            proj.join(format!("{uuid}.jsonl")),
+            r#"{"type":"user","message":{"role":"user","content":"from the transcript"}}"#,
+        )
+        .unwrap();
+        let k = kind_at(&root);
+
+        let hooked = crate::adaptor::id_for(uuid);
+        k.register(&hooked, "tui", "one", None, Some("claude")).unwrap();
+        fs::write(k.dir_of(&hooked).unwrap().join("last.txt"), "⏵⏵ bypass permissions on")
+            .unwrap();
+
+        let bare = sid("tui/no-transcript-here");
+        k.register(&bare, "tui", "two", None, Some("claude")).unwrap();
+        fs::write(k.dir_of(&bare).unwrap().join("last.txt"), "$ make test").unwrap();
+
+        let minted = sid("tui/khormint00");
+        k.register(&minted, "tui", "three", None, Some("claude")).unwrap();
+        k.learn_vendor_leaf(&minted, &clean_leaf(uuid)).unwrap();
+        fs::write(k.dir_of(&minted).unwrap().join("last.txt"), "⏵⏵ auto mode on").unwrap();
+
+        let rows = k.rows(|_| 0);
+        let last = |id: &SessionId| rows.iter().find(|r| r.id == *id).unwrap().last.clone();
+        assert_eq!(last(&hooked).as_deref(), Some("from the transcript"));
+        assert_eq!(
+            last(&bare).as_deref(),
+            Some("$ make test"),
+            "no transcript: the screen line is the honest fallback"
+        );
+        assert_eq!(
+            last(&minted).as_deref(),
+            Some("from the transcript"),
+            "a khor-minted row reaches its transcript through the vendor leaf"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

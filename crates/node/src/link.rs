@@ -168,6 +168,10 @@ impl Node {
                         // Reap borrows whose rows were closed since the
                         // last tick, freeing their ports, before syncing.
                         n.reap_borrows().await;
+                        // And bridge hosts whose tmux session now lists
+                        // through its own agent row (the fold in
+                        // `LiveKind::rows` hides them; this stops them).
+                        n.live.reap_folded_bridges();
                         let Ok(_g) = n.sync_gate.try_lock() else { return };
                         let _ = n.sync_with_all(&e).await;
                     });

@@ -178,6 +178,7 @@ mod tests {
                 category: category.map(str::to_owned),
                 last: None,
                 via: None,
+                term: false,
             },
             source: None,
             pinned: false,

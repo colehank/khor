@@ -224,16 +224,48 @@ impl Tmux {
     /// Runs through the same binary and socket the sweep used — an
     /// attach against a different server than the one that listed the
     /// session would "succeed" against the wrong world.
-    pub fn grouped_attach_argv(&self, target: &str) -> Vec<String> {
+    /// `window` narrows the grouped client to one window — the one an
+    /// agent actually sits in. Current-window is per-session inside a
+    /// group, so selecting it here never moves the user's own client.
+    /// (Pane selection and zoom are window-level flags the user's client
+    /// shares, so neither is touched — on the ledger.)
+    pub fn grouped_attach_argv(&self, target: &str, window: Option<&str>) -> Vec<String> {
         let mut argv = vec![self.binaries.first().cloned().unwrap_or_else(|| "tmux".into())];
         if let Some(sock) = &self.socket {
             argv.push("-L".into());
             argv.push(sock.clone());
         }
-        for a in ["new-session", "-t", target, ";", "set-option", "destroy-unattached", "on"] {
+        for a in ["new-session", "-t", target, ";"] {
+            argv.push(a.into());
+        }
+        if let Some(w) = window {
+            for a in ["select-window", "-t", w, ";"] {
+                argv.push(a.into());
+            }
+        }
+        for a in ["set-option", "destroy-unattached", "on"] {
             argv.push(a.into());
         }
         argv
+    }
+
+    /// The window of session `target` whose panes hold any of `wanted`,
+    /// asked of the live server at attach time — the sweep flattens
+    /// panes away, and this is the one moment pane detail matters.
+    /// `None` when tmux will not answer or no window qualifies; the
+    /// caller then attaches without narrowing, which shows the session's
+    /// own current window — not wrong, just wider.
+    pub fn window_holding(&self, target: &str, wanted: &[u32], procs: &Procs) -> Option<String> {
+        let text =
+            self.ask(&["list-panes", "-s", "-t", target, "-F", "#{window_id}|#{pane_pid}"])?;
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let Some((window, pid)) = line.split_once('|') else { continue };
+            let Ok(pid) = pid.trim().parse::<u32>() else { continue };
+            if procs.subtree(&[pid]).iter().any(|p| wanted.contains(p)) {
+                return Some(window.to_owned());
+            }
+        }
+        None
     }
 
     fn binaries() -> Vec<String> {
@@ -289,7 +321,13 @@ impl Tmux {
     /// call. They are one outcome here because they have one meaning:
     /// khor has no tmux rows to add.
     fn list_panes(&self) -> Option<String> {
-        let mut child = self.spawn()?;
+        self.ask(&["list-panes", "-a", "-F", FORMAT])
+    }
+
+    /// One tmux question, same binary resolution and the same deadline
+    /// as the sweep — a wedged server must not freeze whoever asked.
+    fn ask(&self, args: &[&str]) -> Option<String> {
+        let mut child = self.spawn(args)?;
         let deadline = Instant::now() + CALL_DEADLINE;
         loop {
             match child.try_wait() {
@@ -315,22 +353,19 @@ impl Tmux {
         Some(out)
     }
 
-    /// Starts `tmux list-panes` at the first candidate that exists.
+    /// Starts a tmux command at the first candidate binary that exists.
     ///
     /// Only a missing binary moves on to the next one. A tmux that
     /// started and failed has answered — "no server running" is an
     /// answer — and trying `/usr/bin/tmux` after it would be asking a
     /// different program the same question.
-    fn spawn(&self) -> Option<std::process::Child> {
+    fn spawn(&self, args: &[&str]) -> Option<std::process::Child> {
         for binary in &self.binaries {
             let mut c = Command::new(binary);
             if let Some(sock) = &self.socket {
                 c.arg("-L").arg(sock);
             }
-            c.arg("list-panes")
-                .arg("-a")
-                .arg("-F")
-                .arg(FORMAT)
+            c.args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
