@@ -516,12 +516,16 @@ fn open(rest: &[String]) -> Result<(), String> {
     let mut detached = false;
     let mut title: Option<String> = None;
     let mut cmd: Vec<String> = Vec::new();
+    let mut on: Option<String> = None;
     let mut it = rest.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--tui" if cmd.is_empty() => tui = true,
             "--gui" if cmd.is_empty() => gui = true,
             "-d" if cmd.is_empty() => detached = true,
+            "--on" if cmd.is_empty() => {
+                on = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+            }
             "--title" if cmd.is_empty() => {
                 title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
             }
@@ -547,6 +551,19 @@ fn open(rest: &[String]) -> Result<(), String> {
     }
     let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
     let size = tty_size().unwrap_or((80, 24));
+    if let Some(machine) = on {
+        // Opened over there, and **defaults resolved over there** — the
+        // command was left empty on purpose when the user gave none, so
+        // the far machine's own shell answers, not this one's.
+        let far: Vec<String> = if rest.iter().any(|a| a == "--") || !cmd.is_empty() {
+            cmd.clone()
+        } else {
+            Vec::new()
+        };
+        let id = rt()?.block_on(n.open_on(&machine, kind, &title, "", &far, size))?;
+        println!("{}", id.0);
+        return Ok(());
+    }
     let id = n.open_persistent(kind, &title, &cmd, size)?;
     eprintln!("session: {}", id.0);
     if detached {
@@ -562,6 +579,14 @@ fn attach(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     let id = SessionId(sid.clone());
+    // **A session on another machine is reached, not hosted here.** The
+    // row knows whose it is, so the fork is on the row rather than on a
+    // flag: a person types the same verb for both, which is the whole
+    // point of one list holding every machine's sessions.
+    if let Some(machine) = far_machine(&n, &id)? {
+        let (addr, cookie) = rt()?.block_on(n.reach(&machine, &id))?;
+        return attach_at(&n, &id, &addr, &cookie);
+    }
     // The bridge, same door the app's terminal uses: a discovered tmux
     // session — or an agent sitting inside one — has no host until
     // someone attaches, and the CLI is someone (`Node::attach_tmux` has
@@ -806,14 +831,43 @@ fn help(_rest: &[String]) -> Result<(), String> {
 /// out framed, PTY bytes come back raw. Ctrl-\ detaches; the session
 /// stays. One writer thread frames everything so ops never interleave.
 #[cfg(unix)]
-fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
-    use khor_node::host::{connect, write_frame, ClientOp};
-    use std::io::{Read, Write};
-    use std::sync::atomic::{AtomicBool, Ordering};
+/// The machine a session lives on, when that is not this one. `None`
+/// means "mine" — including for a row this machine has never heard of,
+/// which then fails the ordinary local way with the ordinary local
+/// words.
+fn far_machine(n: &Node, id: &SessionId) -> Result<Option<String>, String> {
+    let me = n.device();
+    for view in n.sessions()? {
+        if view.session.id == *id {
+            if view.session.home == me {
+                return Ok(None);
+            }
+            return Ok(view.source.map(|(name, _)| name));
+        }
+    }
+    Ok(None)
+}
 
+fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
     let dir = n
         .session_dir(id)
         .ok_or_else(|| msg::no_such_session(&id.0))?;
+    let hf = khor_node::host::read_host_file(&dir)?;
+    attach_at(n, id, &format!("127.0.0.1:{}", hf.port), &hf.cookie)
+}
+
+/// The attach loop, against an address that is already resolved.
+///
+/// Local and remote share every line below the address: the terminal
+/// protocol is the same one either way, and the only thing a far
+/// session changes is what is on the other end of the socket (a pipe
+/// the resident serve bound, `Node::reach`). Splitting anywhere lower
+/// than this would mean two copies of the raw-mode dance.
+fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), String> {
+    use khor_node::host::{connect_at, write_frame, ClientOp};
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     // isatty decides whether this is a terminal; the size is separate —
     // a pty freshly made by script(1) or a GUI reports 0×0, which is a
     // default-worthy size, not a disqualification.
@@ -821,7 +875,7 @@ fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
         return Err(msg::ATTACH_NEEDS_TTY.into());
     }
     let (cols, rows) = tty_size().unwrap_or((80, 24));
-    let mut stream = connect(&dir, cols, rows)?;
+    let mut stream = connect_at(addr, cookie, cols, rows)?;
     eprintln!("{}", cli::attached(&id.0));
 
     let saved = raw_on()?;

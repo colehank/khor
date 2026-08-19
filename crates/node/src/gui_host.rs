@@ -186,7 +186,7 @@ fn spawn_ghost(
     resume: Option<&str>,
     vendor: Option<&str>,
 ) -> Result<SessionId, String> {
-    let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
+    let exe = crate::self_exe()?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
         std::process::id(),

@@ -264,7 +264,7 @@ fn spawn_host_with(
     viewer: Option<&str>,
     cwd: Option<&Path>,
 ) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
+    let exe = crate::self_exe()?;
     let mut c = std::process::Command::new(exe);
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
@@ -311,9 +311,20 @@ fn spawn_host_with(
 /// the replay and then live PTY bytes. Client ops go back framed.
 pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
     let hf = read_host_file(dir)?;
-    let mut s = TcpStream::connect(("127.0.0.1", hf.port))
-        .map_err(|_| msg::HOST_GONE.to_string())?;
-    write_frame(&mut s, &Hello { cookie: hf.cookie, cols, rows })?;
+    connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
+}
+
+/// The same handshake against an address the caller already has.
+///
+/// **This is the whole of what remote attach adds to this file.** A
+/// session on another machine is reached through a pipe the resident
+/// serve binds locally (`Node::reach`), so what arrives here is still a
+/// TCP address and still the host protocol — the terminal never learns
+/// there is a network under it, which is why nothing else in this file
+/// changes.
+pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
+    let mut s = TcpStream::connect(addr).map_err(|_| msg::HOST_GONE.to_string())?;
+    write_frame(&mut s, &Hello { cookie: cookie.to_owned(), cols, rows })?;
     let w: Welcome = read_frame(&mut s)?;
     if !w.ok {
         return Err(w.why);

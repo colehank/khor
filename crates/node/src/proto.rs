@@ -68,6 +68,30 @@ pub enum Request {
     /// **receiving** side of an offer someone else pushed at it, and
     /// a pull is the puller spending its own disk on its own ask.
     FetchPath { path: String, offset: u64 },
+    /// Open a session **on the asked machine** (docs/KHOR.md 发起:
+    /// 在任意设备开 session). The row is that machine's from birth —
+    /// it runs the process, it owns the registry entry, and the asker
+    /// learns the id from the answer and then sees the row arrive the
+    /// ordinary way ([`Request::Sessions`]).
+    ///
+    /// `cwd` empty means that machine's home. `cmd` empty means its
+    /// login shell. Kept a separate op rather than an [`Request::Act`]
+    /// action because Act names a session that already exists, and this
+    /// one is what makes one.
+    ///
+    /// A khor that predates it answers [`Response::Refused`].
+    Open { kind: String, title: String, cwd: String, cmd: Vec<String>, cols: u16, rows: u16 },
+    /// Where a session's terminal host is listening on the asked
+    /// machine, so a tunnel stream can carry the terminal itself
+    /// (docs/NET.md 借网's pipe, pointed at a loopback port instead of
+    /// the wider network).
+    ///
+    /// **Handing the cookie to a paired device is the pairing
+    /// doctrine, not a hole in it**: 入网即全信 — the same rule that
+    /// lets [`Request::Ls`] list a home directory without an approval
+    /// step. The cookie is what keeps *unpaired* processes on that
+    /// machine out of the socket, and it never leaves the pair.
+    Reach { session: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +128,12 @@ pub enum Response {
     /// move between slices is reading two different files and must
     /// start over, because no digest guards this path.
     PathSlice { total: u64, at_ms: u64, bytes: serde_bytes::ByteBuf },
+    /// A session was opened on the answering machine; `session` is its
+    /// id there. See [`Request::Open`].
+    Opened { session: String },
+    /// Where that session's host listens on the answering machine, and
+    /// the cookie its handshake wants. See [`Request::Reach`].
+    Reached { port: u16, cookie: String },
 }
 
 /// One row of a listed directory. Every field required; whatever a

@@ -245,7 +245,140 @@ impl Node {
                 Ok((id, addr)) => ipc::Reply::Borrowing { session: id.0, addr: addr.to_string() },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::OpenOn { machine, kind, title, cwd, cmd, cols, rows } => {
+                match self.open_on_with(ep, &machine, &kind, &title, &cwd, &cmd, (cols, rows)).await
+                {
+                    Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::ReachOn { machine, session } => {
+                match self.reach_on_with(ep, &machine, &crate::SessionId(session)).await {
+                    Ok((addr, cookie)) => {
+                        ipc::Reply::Reaching { addr: addr.to_string(), cookie }
+                    }
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
+    }
+
+    /// Opens a session on another machine (docs/KHOR.md 发起). The row
+    /// is **that machine's**: it forks the process, it writes the
+    /// registry entry, and the id that comes back is the id every face
+    /// in the network will call it by. Asking this machine to open on
+    /// itself is not an error — the sessions landing lists every
+    /// machine, this one included — and then nothing touches the wire.
+    async fn open_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        kind: &str,
+        title: &str,
+        cwd: &str,
+        cmd: &[String],
+        size: (u16, u16),
+    ) -> Result<crate::SessionId, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            let cwd = if cwd.is_empty() {
+                std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"))
+            } else {
+                std::path::PathBuf::from(cwd)
+            };
+            let cmd = if cmd.is_empty() {
+                vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())]
+            } else {
+                cmd.to_vec()
+            };
+            return self.open_persistent_at(&cwd, kind, title, &cmd, size);
+        }
+        let conn = self.dial_named(ep, &channel).await?;
+        let req = Request::Open {
+            kind: kind.to_owned(),
+            title: title.to_owned(),
+            cwd: cwd.to_owned(),
+            cmd: cmd.to_vec(),
+            cols: size.0,
+            rows: size.1,
+        };
+        match request(&conn, &req).await? {
+            Response::Opened { session } => Ok(crate::SessionId(session)),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// A local address that pipes to another machine's session host, and
+    /// the cookie that host's handshake wants — so the ordinary attach
+    /// client can speak to a terminal on another computer without
+    /// knowing there is a network under it.
+    ///
+    /// One pipe per session, kept: a second attach to the same session
+    /// gets the address the first one bound. The far session's own id is
+    /// the key, because that is what both ends call it.
+    async fn reach_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        session: &crate::SessionId,
+    ) -> Result<(std::net::SocketAddr, String), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            let dir = self.live.dir_of(session).ok_or_else(|| msg::not_a_session_id(&session.0))?;
+            let hf = crate::host::read_host_file(&dir)?;
+            let addr: std::net::SocketAddr = ([127, 0, 0, 1], hf.port).into();
+            return Ok((addr, hf.cookie));
+        }
+        let conn = self.dial_named(ep, &channel).await?;
+        let (port, cookie) = match request(&conn, &Request::Reach { session: session.0.clone() })
+            .await?
+        {
+            Response::Reached { port, cookie } => (port, cookie),
+            Response::Refused { why } => return Err(why),
+            other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        };
+        {
+            let held = self.reaches.lock().await;
+            if let Some((addr, handle)) = held.get(session) {
+                if !handle.is_finished() {
+                    return Ok((*addr, cookie));
+                }
+            }
+        }
+        let borrow = self.tunnel_on(ep, machine).await?;
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| e.to_string())?;
+        let addr = listener.local_addr().map_err(|e| e.to_string())?;
+        let target = format!("127.0.0.1:{port}");
+        let handle = tokio::spawn(async move {
+            let _ = crate::tunnel::serve_fixed(std::sync::Arc::new(borrow), listener, target).await;
+        });
+        self.reaches.lock().await.insert(session.clone(), (addr, handle));
+        Ok((addr, cookie))
+    }
+
+    /// Resolve a machine name to a live connection on `ep`. The recipe
+    /// every request-reply verb repeats — resolved twice on purpose, the
+    /// second time against the table, because two reads can straddle a
+    /// removal.
+    async fn dial_named(
+        &self,
+        ep: &iroh::Endpoint,
+        channel: &str,
+    ) -> Result<iroh::endpoint::Connection, String> {
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(channel)
+            .ok_or_else(|| msg::machine_left_table(channel))?;
+        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
+            .map_err(|e| e.to_string())?;
+        tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
+            .await
+            .map_err(|_| msg::recipient_unreachable_timeout(channel))?
+            .map_err(|e| msg::cant_reach_named(channel, e))
     }
 
     /// Routes an op to the resident serve when one holds this key.
@@ -466,6 +599,58 @@ impl Node {
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Dir { path: path.display().to_string(), entries, truncated })
             }
+            Request::Open { kind, title, cwd, cmd, cols, rows } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Defaults are resolved **here**, on the machine that
+                // will run it: the asker's home and the asker's `$SHELL`
+                // are answers to a question about the wrong computer.
+                let cwd = if cwd.is_empty() {
+                    std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"))
+                } else {
+                    std::path::PathBuf::from(cwd)
+                };
+                let cmd = if cmd.is_empty() {
+                    vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())]
+                } else {
+                    cmd
+                };
+                // Off the reactor for the reason every registry write
+                // is (the `Ls` arm's note): these homes can be on a
+                // network mount, and this one forks a process too.
+                let live = self.live.clone();
+                let category = Self::category_of_started(&kind);
+                let id = tokio::task::spawn_blocking(move || {
+                    let leaf = crate::link::fresh_leaf()?;
+                    let id = crate::SessionId(format!("{kind}/{leaf}"));
+                    live.register(&id, &kind, &title, None, category)?;
+                    let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+                    crate::host::spawn_host_at(&cwd, &dir, &id, &cmd, (cols, rows))?;
+                    Ok::<_, String>(id)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Opened { session: id.0 })
+            }
+            Request::Reach { session } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let id = crate::SessionId(session);
+                let dir = self.live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+                let hf = crate::host::read_host_file(&dir)?;
+                // **A host file outlives its host.** Without this the
+                // asker gets an address whose far end is a closed port,
+                // the pipe drops the connection, and the attach reports
+                // 读不到帧: Connection reset — a sentence about a
+                // socket, for a session that simply ended. Measured
+                // (the probe's `sleep` ran out mid-test).
+                if !crate::link::pid_alive(hf.host_pid) {
+                    return Err(msg::HOST_GONE.into());
+                }
+                Ok(Response::Reached { port: hf.port, cookie: hf.cookie })
+            }
             Request::FetchPath { path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -664,6 +849,71 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
             None => Err(msg::BORROW_NEEDS_SERVE.into()),
+        }
+    }
+
+    /// Opens a session on `machine` (docs/KHOR.md 发起). Routed like
+    /// every one-shot verb: through the resident serve when one holds
+    /// this key, on a bound-and-closed endpoint otherwise — the process
+    /// that opens it is not the one that runs it, so nothing here needs
+    /// to outlive the call.
+    pub async fn open_on(
+        &self,
+        machine: &str,
+        kind: &str,
+        title: &str,
+        cwd: &str,
+        cmd: &[String],
+        size: (u16, u16),
+    ) -> Result<crate::SessionId, String> {
+        let op = ipc::Op::OpenOn {
+            machine: machine.to_owned(),
+            kind: kind.to_owned(),
+            title: title.to_owned(),
+            cwd: cwd.to_owned(),
+            cmd: cmd.to_vec(),
+            cols: size.0,
+            rows: size.1,
+        };
+        if let Some(reply) = self.via_serve(op).await {
+            return match reply? {
+                ipc::Reply::OpenedOn { session } => Ok(crate::SessionId(session)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.open_on_with(&ep, machine, kind, title, cwd, cmd, size).await;
+        ep.close().await;
+        outcome
+    }
+
+    /// Where to speak to a session's terminal, wherever it lives: a
+    /// local address and the cookie behind it. **Needs the resident
+    /// serve** for the same reason a borrow does — the pipe has to
+    /// outlive the verb that asked for it, and only the resident process
+    /// is still there afterwards. A session on this machine answers with
+    /// its own host's port, and then there is no pipe at all.
+    pub async fn reach(
+        &self,
+        machine: &str,
+        session: &crate::SessionId,
+    ) -> Result<(String, String), String> {
+        match self
+            .via_serve(ipc::Op::ReachOn {
+                machine: machine.to_owned(),
+                session: session.0.clone(),
+            })
+            .await
+        {
+            Some(reply) => match reply? {
+                ipc::Reply::Reaching { addr, cookie } => Ok((addr, cookie)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Err(msg::REACH_NEEDS_SERVE.into()),
         }
     }
 

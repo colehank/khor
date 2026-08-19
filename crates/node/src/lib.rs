@@ -134,6 +134,50 @@ pub struct Node {
     /// serve.
     pub(crate) borrows:
         Arc<tokio::sync::Mutex<std::collections::HashMap<SessionId, tokio::task::JoinHandle<()>>>>,
+    /// The pipes this serve holds to **other machines'** session hosts
+    /// (远程 attach), keyed by the session's id over there. One pipe per
+    /// session, however many faces attach through it: a terminal has one
+    /// destination, and a second listener for the same one would be a
+    /// second port for no reason. Empty on a node that is not the
+    /// resident serve.
+    pub(crate) reaches: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<SessionId, (std::net::SocketAddr, tokio::task::JoinHandle<()>)>,
+        >,
+    >,
+}
+
+/// This binary's own path, for the re-exec convention (`_host`,
+/// `_ghost`, `_cagent`).
+///
+/// **An upgrade deletes the file this process is running from.** Linux
+/// then reports `/proc/self/exe` as `<path> (deleted)`, and spawning
+/// that path fails with `ENOENT` — which surfaces as 宿主起不来 about a
+/// session that was never the problem.
+///
+/// Measured, and not a corner: a cluster mounts one home on every
+/// machine, so `~/.local/bin/khor` is one file for all of them.
+/// Installing khor on the second box replaced the binary the *first*
+/// box's resident serve was running, and from that moment that serve
+/// could not open a single session — while answering everything else
+/// perfectly, because a running process keeps its own inode.
+///
+/// After an upgrade the right thing to spawn is the **new** binary at
+/// the same path: that is what the user just installed, and the
+/// alternative (a deleted inode) cannot be spawned at all. When nothing
+/// is there any more, the error says the binary moved rather than
+/// blaming the session.
+pub fn self_exe() -> Result<PathBuf, String> {
+    let raw = std::env::current_exe().map_err(msg::cant_find_self)?;
+    let text = raw.to_string_lossy();
+    let Some(live) = text.strip_suffix(" (deleted)") else {
+        return Ok(raw);
+    };
+    let live = PathBuf::from(live);
+    if live.exists() {
+        return Ok(live);
+    }
+    Err(msg::self_moved(live.display()))
 }
 
 /// One store, one machine.
@@ -230,6 +274,7 @@ impl Node {
             subscribers: Arc::new(Mutex::new(Vec::new())),
             sync_gate: tokio::sync::Mutex::new(()),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         };
         node.register_self()?;
         Ok(node)
@@ -1147,7 +1192,7 @@ impl Node {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
-        let exe = std::env::current_exe().map_err(msg::cant_find_self)?;
+        let exe = crate::self_exe()?;
         gui_host::spawn_gui_host_resume(
             Some(&cwd),
             &title,

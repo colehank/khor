@@ -37,6 +37,14 @@ pub enum Op {
     /// registers a borrow session — all of which must happen in the
     /// process that holds the key, never in the verb. Tail-appended.
     Borrow { machine: String },
+    /// Open a session on another machine (`proto::Request::Open`).
+    /// Tail-appended.
+    OpenOn { machine: String, kind: String, title: String, cwd: String, cmd: Vec<String>, cols: u16, rows: u16 },
+    /// Where another machine's session listens, and a tunnel to it —
+    /// the serve is the only process holding the endpoint, so the pipe
+    /// is bound here and the verb is handed a local address the way a
+    /// borrow hands one. Tail-appended.
+    ReachOn { machine: String, session: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,6 +63,14 @@ pub enum Reply {
     /// local address its proxy listens on — the verb prints the address
     /// because the caller points a browser at it.
     Borrowing { session: String, addr: String },
+    /// Tail-appended with [`Op::OpenOn`]: the id the session got **on
+    /// that machine**, which is the id every face will call it by.
+    OpenedOn { session: String },
+    /// Tail-appended with [`Op::ReachOn`]: a local address that pipes
+    /// to that session's host, and the cookie its handshake wants. The
+    /// address is this machine's; what is on the other end of it is the
+    /// far host's socket (`tunnel`).
+    Reaching { addr: String, cookie: String },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

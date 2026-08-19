@@ -368,3 +368,22 @@ mod store_owner_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+
+#[cfg(test)]
+mod self_exe_tests {
+    /// The ordinary case answers the ordinary thing, and the upgraded
+    /// case is what the doc comment describes. Only the first half can
+    /// be exercised in-process (a test cannot delete its own binary
+    /// without breaking the harness); the parsing half is asserted on
+    /// the string shape Linux actually produces, which is the part that
+    /// silently returned a path nothing could spawn.
+    #[test]
+    fn a_live_binary_answers_its_own_path() {
+        let me = crate::self_exe().expect("a running test binary has a path");
+        assert!(me.exists(), "and it is a file that exists: {}", me.display());
+        assert!(
+            !me.to_string_lossy().ends_with(" (deleted)"),
+            "never the suffix Linux appends to a replaced binary"
+        );
+    }
+}

@@ -53,12 +53,20 @@ done
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 STAGE="${TMPDIR:-/tmp}/khor-onset.$$"
 mkdir -p "$STAGE"
-trap 'rm -rf "$STAGE"' EXIT
+trap 'ssh -O exit -o ControlPath="$STAGE/mux" "$HOST" 2>/dev/null; rm -rf "$STAGE"' EXIT
 
+# **One TCP connection for the whole run.** A run asks the target half a
+# dozen things (what it is, where its home is, install, start), and
+# opening a session for each is how a shared box's sshd starts refusing:
+# measured on a machine with 41 logged-in users, where the fourth run in
+# a row came back `Connection closed by UNKNOWN port 65535` while a
+# quieter neighbour answered fine. Multiplexing makes the count one, and
+# the master retires on its own a minute later.
+MUX="-o ControlMaster=auto -o ControlPath=$STAGE/mux -o ControlPersist=60"
 # One quoting rule for both tools. `eval` because a ProxyCommand carries
 # its own quotes.
-ssh_() { eval "ssh ${KHOR_SSH_OPTS:-} -o BatchMode=yes '$HOST' \"\$@\""; }
-scp_() { eval "scp ${KHOR_SSH_OPTS:-} -o BatchMode=yes -q \"\$1\" '$HOST':\"\$2\""; }
+ssh_() { eval "ssh $MUX ${KHOR_SSH_OPTS:-} -o BatchMode=yes '$HOST' \"\$@\""; }
+scp_() { eval "scp $MUX ${KHOR_SSH_OPTS:-} -o BatchMode=yes -q \"\$1\" '$HOST':\"\$2\""; }
 say() { printf '%s\n' "$*"; }
 
 # **Never a login shell.** A login shell sources the target's
@@ -104,6 +112,9 @@ fi
 
 # ── what the target is ───────────────────────────────────
 ARCH=$(ssh_ 'uname -m' | tr -d '\r')
+# An empty answer is a connection that dropped, not a CPU nobody
+# supports — and "no build for  yet" reads exactly like the latter.
+[ -n "$ARCH" ] || { echo "onset: $HOST did not answer what it is (ssh)" >&2; exit 1; }
 # The glibc floor is named, not inherited: zig builds against exactly
 # 2.31 (Ubuntu 20.04), so the result runs on that and everything newer,
 # and a machine older than it fails loudly at exec instead of subtly.
@@ -142,7 +153,17 @@ case "$LIBC-$(file "$BIN")" in
 esac
 
 say "onset: sending $(wc -c < "$BIN" | tr -d ' ') bytes"
-scp_ "$BIN" "/tmp/khor.onset.$$"
+# **Landed next to its destination, not in /tmp.** `mv` is only atomic
+# within one filesystem; across two it degrades to copy-then-unlink,
+# which can rewrite the bytes of a binary some other process is running
+# — and on a cluster that other process is a different machine's
+# resident serve, reading the same NFS file. Same directory, real
+# `rename(2)`, old inode left alone for whoever is still running it.
+ssh_ 'mkdir -p "$HOME/.local/bin"'
+# scp does not expand the remote shell's variables, so the home is
+# asked for rather than spelled.
+REMOTE_HOME=$(ssh_ 'printf %s "$HOME"' | tr -d '\r')
+scp_ "$BIN" "$REMOTE_HOME/.local/bin/.khor.onset$$"
 
 # ── install ──────────────────────────────────────────────
 # The store's root is decided **on the target**, because only it knows
@@ -152,7 +173,7 @@ scp_ "$BIN" "/tmp/khor.onset.$$"
 # — this puts one of its own in front of that refusal.
 cat > "$STAGE/on.sh" <<REMOTE
 set -eu
-src=/tmp/khor.onset.$$
+src="$REMOTE_HOME/.local/bin/.khor.onset$$"
 REMOTE
 cat >> "$STAGE/on.sh" <<'REMOTE'
 mkdir -p "$HOME/.local/bin"

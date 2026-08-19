@@ -214,6 +214,40 @@ pub async fn serve_proxy(
     }
 }
 
+/// A local port that pipes to **one** fixed target on the far machine.
+///
+/// The borrow proxy speaks HTTP CONNECT because a browser picks a fresh
+/// destination on every request. A terminal has exactly one for the life
+/// of the pipe — the session's host socket — so there is nothing to
+/// parse and nothing to choose, and putting a CONNECT parser in front of
+/// it would mean the attach client had to speak proxy.
+///
+/// Same tunnel, same exit, same status byte: what changes is only who
+/// decides the target, and here it is decided once by the caller.
+pub async fn serve_fixed(
+    borrow: std::sync::Arc<Borrow>,
+    listener: tokio::net::TcpListener,
+    target: String,
+) -> Result<(), String> {
+    loop {
+        let Ok((sock, _)) = listener.accept().await else { return Ok(()) };
+        let borrow = borrow.clone();
+        let target = target.clone();
+        tokio::spawn(async move {
+            match borrow.open(&target).await {
+                Ok((send, recv)) => splice(send, recv, sock).await,
+                // Nothing can be *said* to a plain TCP client — there is
+                // no status byte in the terminal protocol — so dropping
+                // is all there is. It is logged because the difference
+                // between "the exit refused" and "the target is gone"
+                // is invisible from the other side, and one of them is
+                // a bug.
+                Err(why) => eprintln!("{}", msg::tunnel_pipe_failed(&target, why)),
+            }
+        });
+    }
+}
+
 /// Called as the lease crosses between having pipes and having none, so a
 /// borrow row can read 忙碌 while bytes flow and 空闲 while the port waits
 /// (docs/SESSION.md 六词). `true` = now busy, `false` = now idle.

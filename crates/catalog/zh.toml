@@ -102,10 +102,12 @@ usage = """
   log <机器>            看那个窗口的消息
   run [--tui] [--title 名] -- <命令...>
                         临时 session:跟着这个终端活,全程网里可见
-  open [-d] [--tui|--gui] [--title 名] [-- 命令]
+  open [-d] [--tui|--gui] [--on 机器] [--title 名] [-- 命令]
                         持久 session:终端关了还在,能重连(默认接上;-d 只开;
-                        --gui 走 ACP 协议,khor 画对话,给会说这个协议的 agent)
-  attach <session>      接上一个持久 session(Ctrl-\\ 断开)
+                        --gui 走 ACP 协议,khor 画对话,给会说这个协议的 agent;
+                        --on 在别的机器上开,不给命令就用那台自己的 shell)
+  attach <session>      接上一个持久 session(Ctrl-\\ 断开);
+                        行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
@@ -424,6 +426,9 @@ tunnel-no-route = "出口连不上要去的地方: {0}"
 # proxy is long-lived, so it must live in the process that holds the key.
 borrowing-title = "借 {0} 的网"
 borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
+# Same shape, same reason: the pipe to another machine's terminal lives
+# in the resident process, so a one-shot verb has nowhere to put it.
+reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常驻进程里)"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # The proxied browsing window needs per-window proxy_url, which is macOS
 # 14+ only (Cargo gates the feature by target). Other platforms' proxy
@@ -454,6 +459,14 @@ no-such-dir = "没有这个目录: {0}"
 # Two machines sharing one home (a cluster's NFS export is the usual
 # way) would share one identity. Says whose it is and what to do, in
 # that order — the fix is one line and the user has to know which line.
+# The binary this process runs from was deleted and nothing is at its
+# path any more — an upgrade that moved it, usually. Says what to do:
+# the resident process cannot spawn anything until it is restarted from
+# a file that exists.
+# A fixed-target pipe could not open its stream. Only ever seen in a
+# log: the terminal protocol has no room to say it.
+tunnel-pipe-failed = "管子接不到 {0}: {1}"
+self-moved = "khor 自己的程序不在 {0} 了(升级或搬走了),重启 serve"
 store-belongs-to = "这个仓是 {0} 的,这台是 {1}。共用 home 的机器各要一份:给这台设 KHOR_HOME"
 # A link out of an agent's own words whose scheme is not a page. Says
 # what it is rather than "refused": the address is right there and the
