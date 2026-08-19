@@ -714,7 +714,10 @@ fn close(rest: &[String]) -> Result<(), String> {
     let [id] = rest else {
         return Err(USAGE.into());
     };
-    node()?.close(&SessionId(id.clone()))
+    // Routed like `attach`: the row says which machine it lives on, and
+    // the person types the same word either way.
+    let n = node()?;
+    rt()?.block_on(n.close_anywhere(&SessionId(id.clone())))
 }
 
 fn serve(_rest: &[String]) -> Result<(), String> {

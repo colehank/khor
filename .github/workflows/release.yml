@@ -1,0 +1,96 @@
+# One tag, every platform, one place to download from.
+#
+# **Why zigbuild and not the plain runner toolchain.** A binary built on
+# ubuntu-latest carries that image's glibc floor (2.35+), and the
+# machines this ships to are Ubuntu 20.04 (glibc 2.31) — it would
+# install fine and fail at exec. `cargo-zigbuild` names the floor
+# instead of inheriting it, so one artifact runs on 20.04 and on
+# everything newer.
+#
+# **Why not musl, which would have no floor at all.** A fully static
+# binary has no dynamic loader, so it can never `dlopen` a driver
+# library: measured side by side on one machine, the glibc build read
+# `GPU 0% / 2 卡 显存 43.0G/48.0G` and the musl build reported no GPU at
+# all (`crates/node/src/vitals/gpu/nvidia.rs`). "Cannot ask" and "there
+# is none" are the same empty field, so the floor is the cheaper price.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            zig: x86_64-unknown-linux-gnu.2.31
+            asset: khor-linux-x86_64
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            zig: aarch64-unknown-linux-gnu.2.31
+            asset: khor-linux-aarch64
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            zig: ""
+            asset: khor-macos-arm64
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            zig: ""
+            asset: khor-macos-x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      # Only the cross builds need zig; a mac runner builds its own
+      # architectures natively.
+      - if: matrix.zig != ''
+        uses: mlugg/setup-zig@v1
+      - if: matrix.zig != ''
+        run: cargo install cargo-zigbuild --locked
+      - name: build
+        run: |
+          if [ -n "${{ matrix.zig }}" ]; then
+            cargo zigbuild -p khor-cli --bin khor --target "${{ matrix.zig }}" --release
+          else
+            cargo build -p khor-cli --bin khor --target "${{ matrix.target }}" --release
+          fi
+      - name: name it after the platform
+        run: |
+          cp "target/${{ matrix.target }}/release/khor" "${{ matrix.asset }}"
+          shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # A dispatch run builds and stops: cutting a release is what a tag
+    # means, and a button that quietly publishes is a button somebody
+    # presses to "just check the build".
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

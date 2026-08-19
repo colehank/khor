@@ -189,9 +189,9 @@ pub fn self_exe() -> Result<PathBuf, String> {
 /// downstream can detect that — every file looks fine.
 ///
 /// It is not a hypothetical. A lab cluster puts every machine's home on
-/// one NFS export (measured: two of this fleet's boxes both live at
-/// `192.168.10.36:/mnt/storage/data`), so `~/.khor` is the *same
-/// directory* on both — the ordinary case there, not the exotic one.
+/// one NFS export — measured on two boxes that mount the same one, so
+/// `~/.khor` is the *same directory* on both. That is the ordinary case
+/// there, not the exotic one.
 ///
 /// Stamped with the **hostname**, never `KHOR_NAME`: the name is a
 /// label the user may change, and renaming your machine must not lock
@@ -953,6 +953,27 @@ impl Node {
     /// 动作): a device chat deletes payloads it received, a transfer
     /// deletes just its own payload, a live session is terminated and
     /// forgotten.
+    /// Close a row wherever it lives.
+    ///
+    /// **Async, and [`Self::close`] is not** — deliberately. A sync
+    /// function that builds a runtime to do network work panics the
+    /// moment it is called from inside one, which is every caller that
+    /// matters (the serve, the app). So the routing lives here, at the
+    /// door, exactly where `attach`'s does: one list holds every
+    /// machine's sessions, so *which computer is this on* must not be a
+    /// question the person answers before they can close a row — but it
+    /// is a question the **caller** answers, not the primitive.
+    pub async fn close_anywhere(&self, id: &SessionId) -> Result<(), String> {
+        if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
+            if v.session.home != self.device() {
+                if let Some((name, _)) = v.source {
+                    return self.close_on(&name, id).await;
+                }
+            }
+        }
+        self.close(id)
+    }
+
     pub fn close(&self, id: &SessionId) -> Result<(), String> {
         for k in self.kinds() {
             if !k.claims(self, id) {

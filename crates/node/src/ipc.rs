@@ -45,6 +45,8 @@ pub enum Op {
     /// is bound here and the verb is handed a local address the way a
     /// borrow hands one. Tail-appended.
     ReachOn { machine: String, session: String },
+    /// End a session on another machine (`Act` "close"). Tail-appended.
+    CloseOn { machine: String, session: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

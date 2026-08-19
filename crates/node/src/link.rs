@@ -252,6 +252,12 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::CloseOn { machine, session } => {
+                match self.close_on_with(ep, &machine, &crate::SessionId(session)).await {
+                    Ok(()) => ipc::Reply::Accepted { moved: 0 },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::ReachOn { machine, session } => {
                 match self.reach_on_with(ep, &machine, &crate::SessionId(session)).await {
                     Ok((addr, cookie)) => {
@@ -581,6 +587,22 @@ impl Node {
                     "accept" => {
                         let moved = self.accept_local(ep, &crate::SessionId(session)).await?;
                         Ok(Response::Acted { moved })
+                    }
+                    // Closing is the third leg of 在任意设备开: a
+                    // session you can open from anywhere and attach to
+                    // from anywhere, but must walk to the machine to
+                    // end, is a session the network only half holds.
+                    // Run **here**, on the machine that owns the
+                    // process — an Act is never re-routed (this enum's
+                    // rule), so the asker's own close path stays the
+                    // one that refuses rows that are not khor's.
+                    "close" => {
+                        let id = crate::SessionId(session);
+                        let live = self.live.clone();
+                        tokio::task::spawn_blocking(move || live.close_session(&id))
+                            .await
+                            .map_err(|e| e.to_string())??;
+                        Ok(Response::Acted { moved: 0 })
                     }
                     other => Err(msg::unknown_action(other)),
                 }
@@ -914,6 +936,42 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
             None => Err(msg::REACH_NEEDS_SERVE.into()),
+        }
+    }
+
+    /// Ends a session that lives on another machine (`Act` "close").
+    /// The row's own machine runs it — the same rule every Act follows,
+    /// so nothing bounces and the far side's refusals stay its own.
+    pub async fn close_on(&self, machine: &str, session: &crate::SessionId) -> Result<(), String> {
+        let op = ipc::Op::CloseOn { machine: machine.to_owned(), session: session.0.clone() };
+        if let Some(reply) = self.via_serve(op).await {
+            return match reply? {
+                ipc::Reply::Accepted { .. } => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.close_on_with(&ep, machine, session).await;
+        ep.close().await;
+        outcome
+    }
+
+    async fn close_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        session: &crate::SessionId,
+    ) -> Result<(), String> {
+        let (channel, _) = self.resolve(machine)?;
+        let conn = self.dial_named(ep, &channel).await?;
+        let req = Request::Act { session: session.0.clone(), action: "close".into() };
+        match request(&conn, &req).await? {
+            Response::Acted { .. } => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
 
