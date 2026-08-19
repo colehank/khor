@@ -21,6 +21,13 @@
 #   KHOR_VERSION   a tag to install (default: the latest release)
 #   KHOR_REPO      owner/name (default: the one below)
 #   KHOR_NO_SERVE  set to skip starting the resident
+#   KHOR_MIRROR    base URL of a mirror carrying install.sh + the
+#                  release assets, for machines that cannot reach
+#                  GitHub at all (the no-DNS half of a fleet):
+#                    curl -fsSL http://<mirror>/khor/install.sh \
+#                      | KHOR_MIRROR=http://<mirror>/khor sh
+#                  The mirror is plain static files — any box that can
+#                  reach GitHub can host one (scripts/mirror-sync.sh).
 set -eu
 
 REPO="${KHOR_REPO:-colehank/khor}"
@@ -38,7 +45,12 @@ esac
 # Compressed on the wire: the release ships `.gz` because the download
 # is the slow half of an install (measured at ~95 KB/s from the machines
 # this runs on — 8.9 MB instead of 29.7).
-if [ "$VERSION" = latest ]; then
+if [ -n "${KHOR_MIRROR:-}" ]; then
+    # The mirror carries exactly one version (whatever its sync last
+    # pulled), so KHOR_VERSION means nothing here — the checks below
+    # (gzip, magic bytes) still stand between a bad mirror and $BIN_DIR.
+    URL="${KHOR_MIRROR%/}/$ASSET.gz"
+elif [ "$VERSION" = latest ]; then
     URL="https://github.com/$REPO/releases/latest/download/$ASSET.gz"
 else
     URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET.gz"
