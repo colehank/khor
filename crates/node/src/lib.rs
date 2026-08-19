@@ -20,7 +20,6 @@ pub mod mcp;
 pub mod live;
 pub mod proto;
 pub mod transfer;
-pub mod roads;
 pub mod tunnel;
 pub mod usage;
 pub mod vitals;
@@ -705,23 +704,6 @@ impl Node {
         let (_, home) = self.resolve(machine)?;
         let loaded = self.devices_loaded()?;
         loaded.doc.set_pinned(&home.hex(), on)?;
-        let mut store = loaded.store;
-        store.flush(&loaded.doc)?;
-        Ok(())
-    }
-
-    /// Puts a machine into this one's table by hand.
-    ///
-    /// **Not a way into the network** — pairing is that, and it is an
-    /// act both sides take. This is for the acceptance tests, which need
-    /// a machine that exists from one side's point of view and has an
-    /// address only that side can use: the shape of a neighbour on a LAN
-    /// nobody else is on, which is the whole case `crate::roads` is for
-    /// and the one thing a single machine cannot otherwise stage.
-    #[doc(hidden)]
-    pub fn remember(&self, id: &str, name: &str, addrs: &[String]) -> Result<(), String> {
-        let loaded = self.devices_loaded()?;
-        loaded.doc.upsert(id, name, addrs)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())

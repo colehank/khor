@@ -5,4 +5,3 @@
 pub mod endpoint;
 pub mod identity;
 pub mod path;
-pub mod via;
