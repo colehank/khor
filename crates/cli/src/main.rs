@@ -772,7 +772,15 @@ fn mcp(_rest: &[String]) -> Result<(), String> {
     khor_node::mcp::serve_stdio(Node::root_from_env())
 }
 
+/// The verb is the keeper; the serve itself is this same binary re-run
+/// with the inner mark set (`khor_node::keeper` has why — the short of
+/// it: hinton's serve died by signal and said nothing for eleven hours,
+/// and only a process standing outside can log a death like that and
+/// start the next life).
 fn serve(_rest: &[String]) -> Result<(), String> {
+    if !khor_node::keeper::is_inner() {
+        return khor_node::keeper::keep();
+    }
     let n = node()?;
     eprintln!("{}", cli::serve_banner(n.name()));
     rt()?.block_on(n.serve())

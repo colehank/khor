@@ -14,6 +14,7 @@ pub mod files;
 pub mod gui_host;
 pub mod host;
 pub mod ipc;
+pub mod keeper;
 pub mod link;
 pub mod list;
 pub mod mcp;
