@@ -26,10 +26,21 @@
 //! hot loop. A **clean** exit ends the keeper too: intentional shutdown
 //! is not a failure to repair.
 //!
-//! Respawning re-executes [`crate::self_exe`], so after an upgrade
-//! replaces the binary on disk, the very next restart runs the new
-//! version — the keeper is how an upgraded serve comes up without
-//! anybody remembering to bounce it.
+//! # Generations
+//!
+//! Respawning re-executes [`crate::self_exe`], so any restart after an
+//! upgrade runs the new version. But a healthy serve never restarts —
+//! so the keeper also watches the binary on disk (one stat every couple
+//! of seconds) and retires a healthy serve on purpose when the file
+//! changes. Before it does, the new binary must answer `version`: on
+//! 2026-08-19 a 0-byte file wearing the binary's name took two
+//! machines' serve down, and this is the gate that would have refused
+//! it. Nothing that cannot answer gets to serve; the old generation
+//! keeps running and the refusal is one line in the log.
+//!
+//! The keeper itself stays on the old code until its own next start.
+//! It is deliberately too small for that to matter: every feature
+//! lives in the inner serve.
 //!
 //! # Signals
 //!
@@ -62,6 +73,50 @@ const LIVED: std::time::Duration = std::time::Duration::from_secs(60);
 /// enough that a machine recovers within a minute of the cause clearing.
 const BACKOFF_MAX: u64 = 60;
 
+/// How often the keeper checks whether the child is still there.
+const CHILD_POLL: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// How often the keeper glances at the binary on disk: one stat,
+/// cheap enough to do forever, short enough that an upgrade lands
+/// within seconds.
+const SELF_CHECK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// After the keeper's own TERM at a generation change, the old serve
+/// gets this long to leave before SIGKILL.
+const SWAP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// What "the same binary" means on disk: installs replace the file
+/// (new inode), a rewrite in place changes mtime or length. `None`
+/// while the path is momentarily absent (mid-`mv`) — absence is never
+/// a generation.
+fn fingerprint(exe: &std::path::Path) -> Option<(u64, i64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::metadata(exe).ok()?;
+    Some((m.ino(), m.mtime(), m.len()))
+}
+
+/// The new generation proves itself by answering `version` — a
+/// truncated download, an empty file, or somebody else's binary all
+/// fail here, and the running serve is left alone.
+fn preflight(exe: &std::path::Path) -> Result<String, String> {
+    let out = std::process::Command::new(exe)
+        .arg("version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(match out.status.code() {
+            Some(code) => msg::died_with_code(code),
+            None => msg::DIED_UNREADABLY.to_owned(),
+        });
+    }
+    let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if version.is_empty() {
+        return Err(msg::SWAP_NO_ANSWER.to_owned());
+    }
+    Ok(version)
+}
+
 /// The kept child's pid, for the signal handler — which may run at any
 /// instant and can touch nothing but an atomic.
 static CHILD: AtomicI32 = AtomicI32::new(0);
@@ -87,6 +142,7 @@ pub fn keep() -> Result<(), String> {
         libc::signal(libc::SIGINT, forward as libc::sighandler_t);
     }
     let mut backoff = 1u64;
+    let mut running = env!("CARGO_PKG_VERSION").to_owned();
     loop {
         let exe = crate::self_exe()?;
         let mut child = std::process::Command::new(&exe)
@@ -96,8 +152,72 @@ pub fn keep() -> Result<(), String> {
             .map_err(msg::host_wont_start)?;
         CHILD.store(child.id() as i32, Ordering::SeqCst);
         let born = std::time::Instant::now();
-        let status = child.wait().map_err(|e| e.to_string())?;
+        let on_disk = fingerprint(&exe);
+        // A change must hold still for two looks before it counts: a
+        // download writing the file in place is many changes in a row,
+        // and none of them is a generation yet.
+        let mut seen: Option<(u64, i64, u64)> = None;
+        let mut refused: Option<(u64, i64, u64)> = None;
+        let mut swap: Option<String> = None;
+        let mut term_at: Option<std::time::Instant> = None;
+        let mut last_look = std::time::Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                break status;
+            }
+            if let Some(t) = term_at {
+                if t.elapsed() >= SWAP_GRACE {
+                    let _ = child.kill();
+                }
+            }
+            std::thread::sleep(CHILD_POLL);
+            if swap.is_some() || last_look.elapsed() < SELF_CHECK {
+                continue;
+            }
+            last_look = std::time::Instant::now();
+            let Some(now) = fingerprint(&exe) else {
+                seen = None;
+                continue;
+            };
+            if Some(now) == on_disk {
+                seen = None;
+                continue;
+            }
+            if refused == Some(now) {
+                continue;
+            }
+            if seen != Some(now) {
+                seen = Some(now);
+                continue;
+            }
+            let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+            match preflight(&exe) {
+                Ok(next) => {
+                    eprintln!("{}", msg::serve_swapping(&stamp, &running, &next));
+                    swap = Some(next);
+                    term_at = Some(std::time::Instant::now());
+                    let pid = CHILD.load(Ordering::SeqCst);
+                    if pid > 0 {
+                        unsafe {
+                            libc::kill(pid, libc::SIGTERM);
+                        }
+                    }
+                }
+                Err(why) => {
+                    eprintln!("{}", msg::serve_swap_refused(&stamp, &why));
+                    refused = Some(now);
+                }
+            }
+        };
         CHILD.store(0, Ordering::SeqCst);
+        if let Some(next) = swap {
+            // The keeper's own TERM: a handover, not a death and not an
+            // operator's stop — no death line, no backoff, and the exit
+            // code (clean or signal 15) means nothing here.
+            running = next;
+            backoff = 1;
+            continue;
+        }
         if status.success() {
             return Ok(());
         }

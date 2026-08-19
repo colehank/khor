@@ -466,6 +466,15 @@ serve-died-restarting = "[{0}] serve 死了({1}),{2} 秒后再起"
 died-with-code = "退出码 {0}"
 died-by-signal = "信号 {0}"
 died-unreadably = "死因读不出来"
+# A generation change, watched from the same vantage point. The versions
+# are in the line because the log is read beside lines from other
+# lifetimes — "which khor was this" must not need cross-referencing.
+serve-swapping = "[{0}] 磁盘上的 khor 换代({1} → {2}),serve 温和重启"
+# The gate from the 2026-08-19 incident: a 0-byte file wearing the
+# binary's name took two machines' serve down. Nothing that cannot
+# answer `version` gets to serve.
+serve-swap-refused = "[{0}] 磁盘上的 khor 换了但答不出自己的版本,不换代({1})"
+swap-no-answer = "跑得起来但没答版本"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # The proxied browsing window needs per-window proxy_url, which is macOS
 # 14+ only (Cargo gates the feature by target). Other platforms' proxy

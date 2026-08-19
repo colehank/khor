@@ -112,3 +112,89 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
 
     let _ = fs::remove_dir_all(&home);
 }
+
+/// Everything after the stamp is stable; the stamp is not — so grep the
+/// log for the tail. Built from the catalog message itself (no words
+/// spelled here) by formatting with sentinels and slicing them off.
+fn after_stamp(with_sentinel: &str, sentinel: char) -> String {
+    let tail = with_sentinel.split(sentinel).next_back().unwrap();
+    tail.trim_start_matches(']').trim_start().to_owned()
+}
+
+#[test]
+fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
+    let home = root("swap");
+    // The keeper runs from a copy it owns, so replacing "the binary on
+    // disk" replaces the very path its self_exe resolves to — the shape
+    // of a real upgrade — without touching the shared cargo artifact.
+    let bin = home.join("khor-copy");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &bin).unwrap();
+    let log = home.join("serve.log");
+    let mut keeper = Command::new(&bin)
+        .arg("serve")
+        .env("KHOR_HOME", &home)
+        .env("KHOR_NAME", "box")
+        .env_remove("KHOR_SESSION")
+        .stderr(fs::File::create(&log).unwrap())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let _reap = Reaper(keeper.id());
+    wait_for("the first serve to stand up", 20, || inner_pid(&home).is_some());
+    let first = inner_pid(&home).unwrap();
+
+    let read_log = || {
+        let mut said = String::new();
+        fs::File::open(&log).unwrap().read_to_string(&mut said).unwrap();
+        said
+    };
+
+    // Control first: a broken new generation must be refused, and the
+    // running serve must not pay for it. Rename in, like an installer's
+    // `mv` — same inode dance, wrong contents (and not executable,
+    // which is one of the ways a broken install is broken).
+    let junk = home.join("junk");
+    fs::write(&junk, b"not a binary\n").unwrap();
+    fs::rename(&junk, &bin).unwrap();
+    let refused_line = {
+        let m = khor_catalog::msg::serve_swap_refused("\u{1}", "\u{2}");
+        after_stamp(m.split('\u{2}').next().unwrap(), '\u{1}')
+    };
+    wait_for("the refusal to be written down", 20, || read_log().contains(&refused_line));
+    assert_eq!(
+        inner_pid(&home),
+        Some(first),
+        "a refused generation must not cost the running serve its life"
+    );
+    assert!(alive(first), "the old serve must still be there after a refusal");
+
+    // The real thing: a healthy binary lands, the serve hands over.
+    let next = home.join("next");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &next).unwrap();
+    fs::rename(&next, &bin).unwrap();
+    wait_for("the new generation to stand up", 30, || {
+        inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
+    });
+    let second = inner_pid(&home).unwrap();
+    assert!(!alive(first), "the old generation must be gone, not doubled");
+    let v = env!("CARGO_PKG_VERSION");
+    let swap_line = after_stamp(&khor_catalog::msg::serve_swapping("\u{1}", v, v), '\u{1}');
+    assert!(
+        read_log().contains(&swap_line),
+        "the handover must be named in the log: {}",
+        read_log()
+    );
+    // A handover is not a death: the keeper's own TERM must not be
+    // written down as one, or every upgrade reads like a crash.
+    assert!(
+        !read_log().contains(&khor_catalog::msg::died_by_signal(15)),
+        "the keeper's own TERM dressed as a death: {}",
+        read_log()
+    );
+
+    Command::new("kill").args(["-TERM", &keeper.id().to_string()]).status().unwrap();
+    wait_for("the keeper and its serve to leave", 10, || {
+        keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
+    });
+    let _ = fs::remove_dir_all(&home);
+}
