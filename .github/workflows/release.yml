@@ -56,10 +56,16 @@ jobs:
           key: ${{ matrix.target }}
       # Only the cross builds need zig; a mac runner builds its own
       # architectures natively.
+      #
+      # **zig comes from pip, not from a third-party action.** The
+      # toolchain publishes itself as a wheel, and cargo-zigbuild looks
+      # for `python -m ziglang` — so this is one fewer action to trust
+      # and one fewer thing to break when it is renamed (the first cut
+      # of this file died on exactly that).
       - if: matrix.zig != ''
-        uses: mlugg/setup-zig@v1
-      - if: matrix.zig != ''
-        run: cargo install cargo-zigbuild --locked
+        run: |
+          pip3 install ziglang
+          cargo install cargo-zigbuild --locked
       - name: build
         run: |
           if [ -n "${{ matrix.zig }}" ]; then
