@@ -345,11 +345,22 @@ impl Node {
             other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
         };
         {
-            let held = self.reaches.lock().await;
-            if let Some((addr, handle)) = held.get(session) {
-                if !handle.is_finished() {
+            let mut held = self.reaches.lock().await;
+            match held.get(session) {
+                // Same live pipe, same far port: reuse it. One session,
+                // one local port, however many faces attach.
+                Some((addr, far, handle)) if !handle.is_finished() && *far == port => {
                     return Ok((*addr, cookie));
                 }
+                // Either the pipe is gone or it points somewhere that no
+                // longer exists. Its listener has to go with it — a
+                // stale one would keep answering on a port this call is
+                // about to hand out a replacement for.
+                Some((_, _, handle)) => {
+                    handle.abort();
+                    held.remove(session);
+                }
+                None => {}
             }
         }
         let borrow = self.tunnel_on(ep, machine).await?;
@@ -361,7 +372,7 @@ impl Node {
         let handle = tokio::spawn(async move {
             let _ = crate::tunnel::serve_fixed(std::sync::Arc::new(borrow), listener, target).await;
         });
-        self.reaches.lock().await.insert(session.clone(), (addr, handle));
+        self.reaches.lock().await.insert(session.clone(), (addr, port, handle));
         Ok((addr, cookie))
     }
 

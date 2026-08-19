@@ -141,9 +141,20 @@ pub struct Node {
     /// destination, and a second listener for the same one would be a
     /// second port for no reason. Empty on a node that is not the
     /// resident serve.
+    /// **The far port is part of the key, not just the value.** A pipe
+    /// is built for one fixed target (`tunnel::serve_fixed`), and the
+    /// far host's port changes whenever it is stood up again — a host
+    /// that died and got re-bridged, a serve restarted by an upgrade.
+    /// Remembering the pipe without remembering what it points at is
+    /// how every attach after such a restart piped into a closed port
+    /// and reported 读不到帧: Connection reset — a sentence about a
+    /// socket, for a session sitting right there. Measured on turing.
     pub(crate) reaches: Arc<
         tokio::sync::Mutex<
-            std::collections::HashMap<SessionId, (std::net::SocketAddr, tokio::task::JoinHandle<()>)>,
+            std::collections::HashMap<
+                SessionId,
+                (std::net::SocketAddr, u16, tokio::task::JoinHandle<()>),
+            >,
         >,
     >,
 }
