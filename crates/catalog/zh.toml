@@ -443,6 +443,12 @@ borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
 # Same shape, same reason: the pipe to another machine's terminal lives
 # in the resident process, so a one-shot verb has nowhere to put it.
 reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常驻进程里)"
+# A road through a peer is built with iroh, and the transport that needs
+# it is registered while iroh is still being built — so for one moment
+# there is no endpoint to build it on. Said rather than silently
+# swallowed, because it is the difference between "too early" and
+# "that machine cannot be reached".
+road-not-ready = "这条路还没法建:本机的网还没起来"
 # Leaving is one act and the whole network learns it, the same way
 # joining is (docs/SHAPE.md 接入一次即在网里). The second sentence is the
 # way back, said here because the machine being removed is usually the

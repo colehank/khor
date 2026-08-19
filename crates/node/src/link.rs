@@ -47,6 +47,12 @@ const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 /// this.
 const RELAY_HEAD_START: Duration = Duration::from_millis(1500);
 
+/// How long the two roads that need nobody else get before a machine is
+/// asked to carry for us (`khor_net::via`). Longer than the relay's head
+/// start because this one spends somebody else's socket: a machine the
+/// relay was going to find must never cost a neighbour anything.
+const VIA_HEAD_START: Duration = Duration::from_millis(3000);
+
 /// How long a pairing ticket can be used after it is minted.
 ///
 /// A ticket used to be one-time only in the sense that it burned on use;
@@ -113,20 +119,32 @@ impl Node {
     /// seconds. Writes `endpoint.json` so one-shot verbs can find both
     /// the live endpoint and the hand-off port.
     pub async fn serve(self) -> Result<(), String> {
+        // The node is behind an `Arc` from here on because the roads
+        // hold it: a stream through an exit outlives the call that
+        // opened it.
+        let node = std::sync::Arc::new(self);
+        let via_roads = crate::roads::Roads::new(node.clone());
         let ep = std::sync::Arc::new(
-            endpoint::bind(self.secret_key().clone(), self.relays())
-                .await
-                .map_err(|e| e.to_string())?,
+            endpoint::bind_with_roads(
+                node.secret_key().clone(),
+                node.relays(),
+                Some(via_roads.clone()),
+            )
+            .await
+            .map_err(|e| e.to_string())?,
         );
+        // The endpoint the roads will be built on — it could not be
+        // handed over earlier, because building it is what produced it.
+        via_roads.on((*ep).clone());
         let addrs = endpoint::local_addrs(&ep);
         // Own dialing hints go into the table so the snapshot handed to a
         // pairing device already says how to reach us — relay roads
         // included, or a peer behind a hostile network has no way in.
         {
             let mut roads = addrs.clone();
-            roads.extend(self.relays().iter().cloned());
-            let loaded = self.devices_loaded()?;
-            loaded.doc.upsert(self.device_str(), self.name(), &roads)?;
+            roads.extend(node.relays().iter().cloned());
+            let loaded = node.devices_loaded()?;
+            loaded.doc.upsert(node.device_str(), node.name(), &roads)?;
             let mut store = loaded.store;
             store.flush(&loaded.doc)?;
         }
@@ -135,25 +153,26 @@ impl Node {
             .map_err(msg::cant_open_handoff_port)?;
         let cookie = fresh_hex()?;
         let file = EndpointFile {
-            id: self.device_str().to_owned(),
+            id: node.device_str().to_owned(),
             addrs,
             pid: std::process::id(),
-            relays: self.relays().to_vec(),
+            relays: node.relays().to_vec(),
             ipc_port: handoffs.local_addr().map_err(|e| e.to_string())?.port(),
             ipc_cookie: cookie.clone(),
         };
         write_private(
-            &self.root().join(".khor").join("endpoint.json"),
+            &node.root().join(".khor").join("endpoint.json"),
             &serde_json::to_vec(&file).map_err(|e| e.to_string())?,
         )?;
 
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
-        self.sweep_stale_borrows();
+        node.sweep_stale_borrows();
 
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
-        let node = std::sync::Arc::new(self);
+        // (The node went behind an `Arc` at the top of this function,
+        // because the roads registered with the endpoint hold it.)
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         loop {
             tokio::select! {
@@ -164,7 +183,7 @@ impl Node {
                     tokio::spawn(async move {
                         if let Ok(conn) = incoming.await {
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
-                                let _ = n.serve_tunnel(conn).await;
+                                let _ = n.serve_tunnel(conn, &e).await;
                             } else {
                                 let _ = n.handle(conn, &e).await;
                             }
@@ -448,18 +467,105 @@ impl Node {
     /// table mid-session must stop being answered, and reading the doc
     /// each time is what makes the removal bite. The verdict is handed to
     /// `serve_stream`, which puts it on the wire as the status byte.
-    async fn serve_tunnel(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
+    /// Takes `Arc<Self>` rather than `&self` on purpose: each stream is
+    /// served by a task that outlives this call, and the road it holds
+    /// has to keep the node alive for as long as it carries anything.
+    async fn serve_tunnel(
+        self: std::sync::Arc<Self>,
+        conn: iroh::endpoint::Connection,
+        ep: &iroh::Endpoint,
+    ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
         while let Ok((send, recv)) = conn.accept_bi().await {
             let paired = self
                 .devices_loaded()
                 .map(|l| l.doc.get(&remote).is_some())
                 .unwrap_or(false);
+            let (me, ep) = (std::sync::Arc::clone(&self), ep.clone());
             tokio::spawn(async move {
-                let _ = crate::tunnel::serve_stream(send, recv, paired).await;
+                // Owned by the closure, not borrowed: the stream it
+                // serves outlives this loop iteration, and a road that
+                // ended because its lender moved on would be the sort
+                // of failure nobody could read.
+                let where_is = move |far: iroh::EndpointId| {
+                    let (me, ep) = (me.clone(), ep.clone());
+                    Box::pin(async move { me.where_is(&ep, far).await })
+                        as std::pin::Pin<
+                            Box<
+                                dyn std::future::Future<Output = Option<std::net::SocketAddr>>
+                                    + Send,
+                            >,
+                        >
+                };
+                let _ = crate::tunnel::serve_stream(send, recv, paired, &where_is).await;
             });
         }
         Ok(())
+    }
+
+    /// Which machines might carry for `far` — every peer that is not
+    /// this machine and not the target itself.
+    ///
+    /// **Deliberately not "the ones that can reach it".** Nothing here
+    /// knows that; the exits do, and an exit that cannot reach the
+    /// target answers so in a moment. Guessing first would mean keeping
+    /// a table of who-reaches-whom, which is the routing this design
+    /// exists to avoid — iroh probes the candidates in parallel and
+    /// keeps whichever answers.
+    fn exits_for(&self, far: iroh::EndpointId) -> Vec<iroh::EndpointId> {
+        let me = self.device().hex();
+        let hex = far.to_string();
+        self.devices_loaded()
+            .map(|l| {
+                l.doc
+                    .all()
+                    .into_iter()
+                    .filter(|d| d.id != me && d.id != hex)
+                    .filter_map(|d| d.id.parse::<iroh::EndpointId>().ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Where a machine is, **from here** — the question a road exists to
+    /// answer.
+    ///
+    /// Two places to look, and the order matters. A path this machine is
+    /// **already using** is the better answer whenever there is one: it
+    /// is known to work right now, it may be a hole punched straight
+    /// through to a machine out on the internet, and it is the only
+    /// answer at all for a machine that has no address anyone could
+    /// write down. The device table comes second — it holds what a
+    /// machine last said about itself, which for a neighbour on this LAN
+    /// is exactly right and for anyone else may be a port that closed
+    /// hours ago.
+    ///
+    /// **Never a machine this one does not know.** An exit that
+    /// forwarded to strangers would be an open relay wearing khor's
+    /// name; the asker was already checked for pairing, and so is the
+    /// target (`libp2p`'s circuit relay makes the same two checks, for
+    /// the same reason).
+    async fn where_is(
+        &self,
+        ep: &iroh::Endpoint,
+        far: iroh::EndpointId,
+    ) -> Option<std::net::SocketAddr> {
+        let hex = far.to_string();
+        let known = self.devices_loaded().ok()?.doc.get(&hex)?;
+        if let Some(info) = ep.remote_info(far).await {
+            let live = info.addrs().find_map(|a| match a.addr() {
+                iroh::TransportAddr::Ip(sock)
+                    if matches!(a.usage(), iroh::endpoint::TransportAddrUsage::Active) =>
+                {
+                    Some(*sock)
+                }
+                _ => None,
+            });
+            if live.is_some() {
+                return live;
+            }
+        }
+        known.addrs.iter().find_map(|a| a.parse::<std::net::SocketAddr>().ok())
     }
 
     async fn handle(&self, conn: iroh::endpoint::Connection, ep: &iroh::Endpoint) -> Result<(), String> {
@@ -811,6 +917,32 @@ impl Node {
     /// Dials a borrow lease on an endpoint the caller keeps alive — the
     /// resident serve's own. Same dial as [`tunnel_to`], but the `Borrow`
     /// does not own the endpoint, because the serve outlives it.
+    /// A borrow to an exit named by **id**, for `crate::roads`.
+    ///
+    /// Named that way because this is machine talking to machine: the
+    /// road came off the wire as an endpoint id, and turning it into a
+    /// name to look the machine up again would only add a way to fail.
+    pub(crate) async fn tunnel_to_id(
+        &self,
+        ep: &iroh::Endpoint,
+        exit: iroh::EndpointId,
+    ) -> Result<crate::tunnel::Borrow, String> {
+        let hex = exit.to_string();
+        let known = self
+            .devices_loaded()?
+            .doc
+            .get(&hex)
+            .ok_or_else(|| msg::machine_left_table(&hex))?;
+        let conn = self
+            .dial(ep, &known.id, &known.addrs, endpoint::TUNNEL_ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::machine_unreachable_timeout(&known.name),
+                DialFailure::Refused(why) => msg::cant_reach_named(&known.name, why),
+            })?;
+        Ok(crate::tunnel::Borrow::on_shared(conn))
+    }
+
     async fn tunnel_on(
         &self,
         ep: &iroh::Endpoint,
@@ -1926,6 +2058,23 @@ impl Node {
                 }
                 ep.connect(addr, &alpn).await
             });
+        }
+        // And through the machines that might reach it when we cannot
+        // (`khor_net::via`). Last, and only for a target that has an id
+        // we can read: building one of these costs a stream to the exit
+        // and a socket on it, so it is not something to spend on a
+        // machine the first two roads were going to find anyway.
+        if let Ok(far) = id.parse::<iroh::EndpointId>() {
+            for exit in self.exits_for(far) {
+                let road = khor_net::via::Road { exit, far };
+                let addr = iroh::EndpointAddr::new(far)
+                    .with_addrs([iroh::TransportAddr::Custom(road.addr())]);
+                let (ep, alpn) = (ep.clone(), alpn.to_vec());
+                roads.spawn(async move {
+                    tokio::time::sleep(VIA_HEAD_START).await;
+                    ep.connect(addr, &alpn).await
+                });
+            }
         }
 
         let deadline = tokio::time::sleep(DIAL_TIMEOUT);

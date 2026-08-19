@@ -20,6 +20,7 @@ pub mod mcp;
 pub mod live;
 pub mod proto;
 pub mod transfer;
+pub mod roads;
 pub mod tunnel;
 pub mod usage;
 pub mod vitals;

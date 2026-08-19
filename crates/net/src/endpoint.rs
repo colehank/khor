@@ -43,9 +43,28 @@ pub fn configured_relays() -> Vec<String> {
 /// that answers. Self-hosted relays are assumed to run no QUIC address
 /// discovery — assuming it costs a dead-port wait on every connection.
 pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<iroh::Endpoint> {
+    bind_with_roads(secret, extra_relays, None).await
+}
+
+/// `bind`, plus the roads a machine offers through its peers
+/// (`crate::via`).
+///
+/// **Only the resident serve passes one.** A road has to be built before
+/// it carries anything — a stream to the exit, a handshake, a socket on
+/// the far side — and a one-shot verb would spend its whole dial budget
+/// doing that. The same rule the terminal already follows: reaching
+/// through another machine is something the process that stays does.
+pub async fn bind_with_roads(
+    secret: iroh::SecretKey,
+    extra_relays: &[String],
+    exits: Option<std::sync::Arc<dyn crate::via::Exits>>,
+) -> Result<iroh::Endpoint> {
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
         .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()]);
+    if let Some(exits) = exits {
+        builder = builder.add_custom_transport(std::sync::Arc::new(crate::via::Via::new(exits)));
+    }
     let extras: Vec<iroh::RelayConfig> = extra_relays
         .iter()
         .filter_map(|r| r.parse::<iroh::RelayUrl>().ok())

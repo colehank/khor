@@ -37,6 +37,37 @@ pub const REFUSED: u8 = 1;
 /// The target is well-formed but the exit could not reach it.
 pub const NO_ROUTE: u8 = 2;
 
+/// What turns a tunnel stream from a TCP connection into a **road for
+/// somebody else's datagrams** (`khor_net::via`).
+///
+/// It rides the borrow's own handshake rather than a second ALPN because
+/// it *is* the same offer wearing a different shape: "reach a thing my
+/// network can reach and yours cannot". The exit stays a blind pipe —
+/// what crosses it here is somebody's QUIC, encrypted to an identity
+/// this machine does not hold, so the middle sees ciphertext and
+/// nothing else.
+///
+/// **Delivery is by plain UDP**, which is what makes this exactly one
+/// hop: the datagrams leave here addressed to a host, not to another
+/// khor, so there is nothing for a second exit to forward and no loop to
+/// prevent. It is also why the far machine needs no part in this — it
+/// sees a peer at this machine's address and answers there, the way it
+/// would answer anyone.
+///
+/// **What follows the prefix is an endpoint id, not an address.** The
+/// machine asking is by definition the one that cannot reach the far
+/// machine, which makes it the worst placed of the three to say where it
+/// is; the exit knows, and knowing is the whole reason it was asked.
+/// That is also what makes one mechanism serve both directions: a far
+/// machine on this LAN is found in the device table, and one out on the
+/// internet is found in the path this machine already holds open to it.
+pub const UDP_PREFIX: &str = "udp:";
+
+/// A datagram larger than this is not one iroh sent: QUIC keeps its
+/// packets under the path MTU, and the length prefix on this road is a
+/// `u16` besides.
+const DATAGRAM_MAX: usize = 2048;
+
 /// How long the exit waits on the TCP connect to the target before
 /// calling it unreachable. Long enough for a real far host, short
 /// enough that a black hole does not pin the stream.
@@ -131,16 +162,38 @@ pub async fn dial(
 /// pairing, connect, answer with the status byte, then splice bytes both
 /// ways until either side hangs up. `paired` is asked per stream so the
 /// verdict rides the stream that carries it.
+/// Answers "where is this machine, from here" — the question only the
+/// exit can answer, and the reason a road is asked of it at all.
+pub type WhereIs<'a> = &'a (dyn Fn(
+    iroh::EndpointId,
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Option<std::net::SocketAddr>> + Send>,
+> + Send
+              + Sync);
+
 pub async fn serve_stream(
     mut send: SendStream,
     mut recv: RecvStream,
     paired: bool,
+    where_is: WhereIs<'_>,
 ) -> Result<(), String> {
     let target = read_target(&mut recv).await?;
     if !paired {
         let _ = send.write_all(&[REFUSED]).await;
         let _ = send.finish();
         return Ok(());
+    }
+    if let Some(far) = target.strip_prefix(UDP_PREFIX) {
+        let addr = match far.parse::<iroh::EndpointId>() {
+            Ok(far) => where_is(far).await,
+            Err(_) => None,
+        };
+        let Some(addr) = addr else {
+            let _ = send.write_all(&[NO_ROUTE]).await;
+            let _ = send.finish();
+            return Ok(());
+        };
+        return serve_datagrams(send, recv, addr).await;
     }
     let tcp = match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect(&target))
         .await
@@ -156,6 +209,80 @@ pub async fn serve_stream(
     };
     send.write_all(&[OK]).await.map_err(|e| e.to_string())?;
     splice(send, recv, tcp).await;
+    Ok(())
+}
+
+/// One datagram road: everything arriving on the stream goes out of a
+/// socket of ours to `host`, and everything that socket hears back goes
+/// up the stream.
+///
+/// **Only `host` is heard.** The socket is ours and short-lived, but it
+/// is still a socket on a machine with neighbours; a reply is forwarded
+/// only when it came from the address this road was opened for, so the
+/// road cannot be used to inject somebody else's packets into the
+/// dialer's endpoint.
+async fn serve_datagrams(
+    mut send: SendStream,
+    mut recv: RecvStream,
+    target: std::net::SocketAddr,
+) -> Result<(), String> {
+    use tokio::io::AsyncReadExt;
+    // Same family as the target, or the first sendto fails on a machine
+    // that has both stacks.
+    let bind: std::net::SocketAddr = if target.is_ipv4() {
+        ([0, 0, 0, 0], 0).into()
+    } else {
+        (std::net::Ipv6Addr::UNSPECIFIED, 0).into()
+    };
+    let Ok(sock) = tokio::net::UdpSocket::bind(bind).await else {
+        let _ = send.write_all(&[NO_ROUTE]).await;
+        let _ = send.finish();
+        return Ok(());
+    };
+    send.write_all(&[OK]).await.map_err(|e| e.to_string())?;
+
+    let sock = std::sync::Arc::new(sock);
+    let out = sock.clone();
+    // Stream to socket. A short read is the dialer hanging up, which
+    // ends the road: the socket goes with it and the far machine simply
+    // stops hearing from this address.
+    let up = async move {
+        let mut len = [0u8; 2];
+        loop {
+            if recv.read_exact(&mut len).await.is_err() {
+                break;
+            }
+            let n = u16::from_be_bytes(len) as usize;
+            if n > DATAGRAM_MAX {
+                break;
+            }
+            let mut buf = vec![0u8; n];
+            if recv.read_exact(&mut buf).await.is_err() {
+                break;
+            }
+            if out.send_to(&buf, target).await.is_err() {
+                break;
+            }
+        }
+    };
+    // Socket to stream.
+    let down = async move {
+        let mut buf = [0u8; DATAGRAM_MAX];
+        loop {
+            let Ok((n, from)) = sock.recv_from(&mut buf).await else { break };
+            if from != target {
+                continue;
+            }
+            if send.write_all(&(n as u16).to_be_bytes()).await.is_err() {
+                break;
+            }
+            if send.write_all(&buf[..n]).await.is_err() {
+                break;
+            }
+        }
+        let _ = send.finish();
+    };
+    tokio::join!(up, down);
     Ok(())
 }
 

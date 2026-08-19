@@ -45,7 +45,22 @@ rmp-serde = "1"
 # files, so dumb nodes (ssh-only, no process) can carry them.
 loro = "1.13"
 base64 = "0.22"
-iroh = "1.0"
+# `unstable-custom-transports` is what lets a machine offer itself as a
+# road to a machine only it can reach (`khor_net::via`). It is unstable
+# by iroh's own label — no semver guarantee — and that is a cost taken
+# knowingly: the alternative was forwarding khor's own frames, which
+# would have put the middle machine inside the conversation instead of
+# under it, and made khor write the routing iroh already writes.
+iroh = { version = "1.0", features = ["unstable-custom-transports"] }
+# iroh does not re-export the types its own custom-transport trait is
+# written in, so implementing one means naming three of its internal
+# crates directly and keeping them lockstep with it. That coupling is
+# the real price of this seam — larger than the "unstable" label alone
+# suggests, and worth seeing in the manifest rather than discovering at
+# the next upgrade.
+iroh-base = "1.0.3"
+n0-watcher = "1.0.0"
+noq-udp = "1.1.1"
 anyhow = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
