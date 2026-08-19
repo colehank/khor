@@ -16,6 +16,7 @@ pub mod host;
 pub mod ipc;
 pub mod link;
 pub mod list;
+pub mod mcp;
 pub mod live;
 pub mod proto;
 pub mod transfer;
@@ -1114,7 +1115,7 @@ impl Node {
     /// id comes back from the host — it is the vendor's own, and exists
     /// only once the agent has answered (`gui_host` module head).
     pub fn open_gui(&self, title: &str, cmd: &[String]) -> Result<SessionId, String> {
-        gui_host::spawn_gui_host(None, title, cmd, None)
+        gui_host::spawn_gui_host(None, title, cmd, None, false)
     }
 
     /// `open_gui`, born in a chosen directory (the wizard's 目录 field);
@@ -1132,8 +1133,10 @@ impl Node {
         title: &str,
         cmd: &[String],
         vendor: Option<&str>,
+        // `agent`: hand it khor's own verbs (docs/AGENT.md 调度员).
+        agent: bool,
     ) -> Result<SessionId, String> {
-        gui_host::spawn_gui_host(Some(cwd), title, cmd, vendor)
+        gui_host::spawn_gui_host(Some(cwd), title, cmd, vendor, agent)
     }
 
     /// 接管 (批C): the conversation stays; the process presenting it

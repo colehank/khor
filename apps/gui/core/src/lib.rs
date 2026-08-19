@@ -408,7 +408,16 @@ pub fn seen(root: &Path, id: &str) -> Result<(), String> {
 }
 
 pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
-    open(root)?.close(&SessionId(id.to_owned()))
+    // Routed: a row on another machine closes where it runs
+    // (`Node::close_anywhere`). The app's own runtime is the caller's,
+    // so this one is built here the way every blocking door in this
+    // file is.
+    let n = open(root)?;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?
+        .block_on(n.close_anywhere(&SessionId(id.to_owned())))
 }
 
 /// Leaves a line in a machine's window — the call `khor tell` makes.
@@ -527,6 +536,22 @@ pub fn open_session(root: &Path, dir: &str, title: &str, form: &str) -> Result<S
                 // is still passed rather than assumed downstream: the
                 // day there are two, this line is the one that changes.
                 Some(khor_node::adaptor::claude::VENDOR),
+                false,
+            )?;
+            Ok(id.0)
+        }
+        // 调度员 (docs/AGENT.md): the same conversation session, with
+        // khor's own verbs in its hands. Not a new shape — the ruling
+        // says so in its first line — so it differs from `chat` by one
+        // flag and nothing else.
+        "agent" => {
+            let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
+            let id = n.open_gui_at(
+                &path,
+                &title,
+                &[exe.display().to_string(), "_cagent".into()],
+                Some(khor_node::adaptor::claude::VENDOR),
+                true,
             )?;
             Ok(id.0)
         }

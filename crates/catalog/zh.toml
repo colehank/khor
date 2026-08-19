@@ -123,7 +123,8 @@ usage = """
                         khor 自己那几条,做两遍=做一遍)
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
-  sync                  立即和全网各同步一趟"""
+  sync                  立即和全网各同步一趟
+  mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)"""
 this-machine = "(本机)"
 # Marks the option a machine is wearing, in a list of options. Without
 # it `khor face` prints a catalogue and answers "what am I" nowhere —
@@ -467,6 +468,16 @@ no-such-dir = "没有这个目录: {0}"
 # log: the terminal protocol has no room to say it.
 tunnel-pipe-failed = "管子接不到 {0}: {1}"
 self-moved = "khor 自己的程序不在 {0} 了(升级或搬走了),重启 serve"
+# What the scheduler is told about itself, appended to the vendor's own
+# system prompt (docs/AGENT.md). Short on purpose: the tools carry their
+# own descriptions, and a long brief competes with the user's actual
+# request for the model's attention. The one thing prose must say is the
+# thing no tool schema can — that the machines are *somebody's*, and
+# that reading is free while moving is not.
+agent-brief = """你接在 khor 上:一张连着这个人所有设备的网。\
+khor 那组工具是你的手——devices/sessions/ls 是看,随便用;\
+open/close/tell 会在别人的机器上留下痕迹,用之前说清楚你要做什么。\
+这些机器是这个人的,不是测试环境。"""
 store-belongs-to = "这个仓是 {0} 的,这台是 {1}。共用 home 的机器各要一份:给这台设 KHOR_HOME"
 # A link out of an agent's own words whose scheme is not a page. Says
 # what it is rather than "refused": the address is right there and the

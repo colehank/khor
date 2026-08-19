@@ -56,6 +56,12 @@ use tokio::sync::{mpsc, oneshot};
 /// `KHOR_TMUX`'s precedent.
 const CLAUDE_ENV: &str = "KHOR_CLAUDE";
 
+/// Set by the opener when this session is meant to be the network's
+/// scheduler (docs/AGENT.md). Env rather than argv for the reason every
+/// door in this family is: the `_cagent` convention is one word, and
+/// every binary that parses it stays as it is.
+const AGENT_ENV: &str = "KHOR_AGENT";
+
 /// One claude child and the turn in flight against it.
 struct Shim {
     root: PathBuf,
@@ -281,6 +287,7 @@ impl Shim {
             "stdio",
         ])
         .args(tail)
+        .args(khor_tools()?)
         .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -517,4 +524,58 @@ mod wire_tests {
         assert_eq!(json["availableCommands"][0]["name"], "compact");
         assert_eq!(json["availableCommands"][0]["description"], "squeeze the context");
     }
+}
+
+/// The flags that turn this session into **the network's scheduler**
+/// (docs/AGENT.md), when the opener asked for one.
+///
+/// khor's verbs arrive as MCP tools (`khor mcp`) rather than as
+/// prose the model is told to obey: a tool is something the vendor
+/// can gate, name in a permission prompt, and report back — all of
+/// which khor already paints. `--strict-mcp-config` is not a
+/// detail: without it this session would also inherit whatever MCP
+/// servers the user has configured for their own work, which is a
+/// different set of powers than the one they agreed to here.
+///
+/// Off by default. A khor session is an ordinary agent session
+/// unless somebody asked for the other thing.
+fn khor_tools() -> Result<Vec<String>, String> {
+    if std::env::var(AGENT_ENV).is_err() {
+        return Ok(Vec::new());
+    }
+    let exe = crate::self_exe()?;
+    let root = crate::Node::root_from_env();
+    let config = serde_json::json!({
+        "mcpServers": {
+            "khor": {
+                "command": exe.display().to_string(),
+                "args": ["mcp"],
+                // The store is named rather than inherited: this
+                // child is spawned by a host that may itself have
+                // been started with another one, and a scheduler
+                // pointed at the wrong network is worse than one
+                // with no tools at all.
+                "env": { "KHOR_HOME": root.display().to_string() }
+            }
+        }
+    });
+    let path = std::env::temp_dir().join(format!("khor-mcp-{}.json", std::process::id()));
+    std::fs::write(&path, serde_json::to_vec(&config).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let mut args = vec![
+        "--mcp-config".into(),
+        path.display().to_string(),
+        "--strict-mcp-config".into(),
+        "--append-system-prompt".into(),
+        msg::AGENT_BRIEF.into(),
+    ];
+    // 读免批 (docs/AGENT.md). Looking at the network is not an act, and
+    // asking permission for it teaches a person to press 允许 without
+    // reading — which is the same as having no gate on the ones that
+    // matter. The names come from the tool table itself, so a tool
+    // added on the reading side is free the day it lands and one added
+    // on the acting side is gated the day it lands.
+    args.push("--allowedTools".into());
+    args.extend(crate::mcp::free_tools());
+    Ok(args)
 }

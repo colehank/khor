@@ -75,6 +75,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "invite", run: invite },
     Verb { word: "pair", run: pair },
     Verb { word: "sync", run: sync },
+    Verb { word: "mcp", run: mcp },
     Verb { word: "_host", run: host },
     Verb { word: "_ghost", run: ghost },
     Verb { word: "_cagent", run: cagent },
@@ -718,6 +719,15 @@ fn close(rest: &[String]) -> Result<(), String> {
     // the person types the same word either way.
     let n = node()?;
     rt()?.block_on(n.close_anywhere(&SessionId(id.clone())))
+}
+
+/// khor's verbs as an agent's tools (docs/AGENT.md). Speaks MCP on
+/// stdin/stdout, so it is started **by** the agent, not by a person —
+/// but it is a verb rather than a hidden `_word` because pointing your
+/// own claude at khor is a thing to be able to do, and a door nobody
+/// can find is a door that only khor may open.
+fn mcp(_rest: &[String]) -> Result<(), String> {
+    khor_node::mcp::serve_stdio(Node::root_from_env())
 }
 
 fn serve(_rest: &[String]) -> Result<(), String> {

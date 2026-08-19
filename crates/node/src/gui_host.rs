@@ -148,8 +148,13 @@ pub fn spawn_gui_host(
     title: &str,
     cmd: &[String],
     vendor: Option<&str>,
+    // `agent`: hand this session khor's own verbs (docs/AGENT.md
+    // 调度员). Passed rather than read from the environment — mutating
+    // the process environment to reach a child is not thread-safe, and
+    // a GUI answering two openings at once would be exactly that race.
+    agent: bool,
 ) -> Result<SessionId, String> {
-    spawn_ghost(cwd, title, cmd, None, vendor)
+    spawn_ghost(cwd, title, cmd, None, vendor, agent)
 }
 
 /// [`spawn_gui_host`], but resuming an existing vendor session — the
@@ -164,7 +169,7 @@ pub fn spawn_gui_host_resume(
 ) -> Result<SessionId, String> {
     // No vendor: a resume re-seats a row that already has one, and
     // `LiveKind::reopen` does not touch a category anyway.
-    spawn_ghost(cwd, title, cmd, Some(session), None)
+    spawn_ghost(cwd, title, cmd, Some(session), None, false)
 }
 
 /// How `_ghost` learns it resumes: env, not argv — the argv convention
@@ -185,6 +190,7 @@ fn spawn_ghost(
     cmd: &[String],
     resume: Option<&str>,
     vendor: Option<&str>,
+    agent: bool,
 ) -> Result<SessionId, String> {
     let exe = crate::self_exe()?;
     let ready = std::env::temp_dir().join(format!(
@@ -211,6 +217,15 @@ fn spawn_ghost(
         None => {
             c.env_remove(VENDOR_ENV);
         }
+    }
+    // The scheduler flag reaches the shim as `cagent`'s `KHOR_AGENT`.
+    // **Removed when false**, never merely left alone: a host spawned
+    // by a scheduler session inherits its environment, and powers that
+    // arrive by inheritance are powers nobody granted.
+    if agent {
+        c.env("KHOR_AGENT", "1");
+    } else {
+        c.env_remove("KHOR_AGENT");
     }
     c.arg("_ghost")
         .arg(&ready)

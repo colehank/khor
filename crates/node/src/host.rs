@@ -166,6 +166,15 @@ pub fn main_if_host(root: std::path::PathBuf) {
         // host must also be able to *be* the agent it spawns, for the
         // same current_exe reason the two arms above exist.
         Some("_cagent") => crate::cagent::cagent_main(root.clone()),
+        // khor's verbs as an agent's tools (docs/AGENT.md). **Not an
+        // internal `_word`, and here anyway**: the scheduler's MCP
+        // config names `self_exe()`, which in a dev bridge is `bridge`
+        // and in the app is `khor-gui` — so the binary that spawned the
+        // agent has to be able to answer it. Measured the other way
+        // round: the config pointed at `bridge mcp`, `bridge` did not
+        // know the word, and the agent reported — correctly — that
+        // khor's tools did not exist in its session.
+        Some("mcp") => crate::mcp::serve_stdio(root.clone()),
         _ => return,
     };
     if let Err(e) = outcome {
