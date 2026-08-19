@@ -90,6 +90,49 @@ fn read_until(stream: &mut std::net::TcpStream, needle: &str, secs: u64) -> Stri
     panic!("never saw {needle:?} in: {}", String::from_utf8_lossy(&seen));
 }
 
+/// **The host says what terminal it is; it does not pass one on.**
+///
+/// A 持久 session outlives its opener and takes attachers with
+/// different terminals, so "whatever `TERM` the opener had" is not even
+/// a coherent answer — and on a machine where khor installed itself and
+/// runs `serve` as a daemon it is `unknown`, which is not a terminfo
+/// entry. Measured on turing: every tmux bridge stood up there died at
+/// birth (`open terminal failed: missing or unsuitable terminal:
+/// unknown`), and the person clicking the row read 读不到帧:
+/// Connection reset.
+///
+/// The opener is given a bogus `TERM` on purpose. Without it this test
+/// passes on any developer's machine — the ambient `TERM` there is
+/// already `xterm-256color`, so an implementation that simply inherits
+/// would look correct exactly where nobody is affected, and stay broken
+/// exactly where everybody is.
+#[test]
+fn the_child_is_told_what_terminal_it_is_in_not_what_the_opener_had() {
+    let home = std::env::temp_dir().join(format!("khor-term-{}", std::process::id()));
+    let out = khor(&home)
+        .env("TERM", "khor-not-a-real-terminfo-entry")
+        .args(["open", "-d", "--", "sh", "-c", "printf 'TERM=[%s]\\n' \"$TERM\"; sleep 30"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let sid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let dir = home.join(".khor").join("sessions").join(sid.replace('/', "-"));
+
+    // The `sleep` outlives an assertion that panics; a Drop does not.
+    let hf: HostFile =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("host.json")).unwrap()).unwrap();
+    let _reap = Reaper(hf.child_pid);
+
+    let mut s = host::connect(&dir, 100, 30).unwrap();
+    let seen = read_until(&mut s, "TERM=[", 10);
+    assert!(
+        seen.contains("TERM=[xterm-256color]"),
+        "the child must be told khor's own screen model, not the opener's: {seen}"
+    );
+    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 #[test]
 fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     let home = std::env::temp_dir().join(format!("khor-open-{}", std::process::id()));

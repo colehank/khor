@@ -420,6 +420,28 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let mut builder = CommandBuilder::new(&cmd[0]);
     builder.args(&cmd[1..]);
     builder.env("KHOR_SESSION", &id.0);
+    // **The host is the terminal, so the host says what it is.**
+    // Inheriting `TERM` names whatever shell happened to start khor,
+    // and for a 持久 session that is not even a coherent question: the
+    // host outlives its opener and several people with different
+    // terminals attach to the same screen. tmux settles this the same
+    // way — a pane gets a fixed `TERM`, never the client's.
+    //
+    // Measured on turing, where it is not cosmetic: `khor serve` was
+    // started by the installer with no tty, so `TERM` was `unknown`,
+    // and every tmux bridge stood up there died at birth with
+    // `open terminal failed: missing or unsuitable terminal: unknown`.
+    // What reached the person clicking the row was 读不到帧:
+    // Connection reset — a sentence about a socket, for a terminfo
+    // entry. **Any machine that installed itself and runs serve as a
+    // daemon had this**, which is every machine the install story is
+    // written for.
+    //
+    // `xterm-256color` because that is what khor's own screen model
+    // (`vt100`, the same engine the detector reads) actually emulates,
+    // and it is the entry ncurses has shipped everywhere for twenty
+    // years.
+    builder.env("TERM", "xterm-256color");
     // A hosted session is nobody's nested session, whatever process
     // tree the host was spawned from. The markers are claude's, but
     // clearing them costs a shell nothing — and inheriting them costs a
