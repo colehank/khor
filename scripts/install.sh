@@ -1,7 +1,15 @@
 #!/bin/sh
 # Install khor on the machine that runs this, from a published release.
 #
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/khor/main/scripts/install.sh | sh
+#   curl -fsSL https://github.com/colehank/khor/releases/latest/download/install.sh | sh
+#
+# **Fetched from the release, not from `raw.githubusercontent.com`.**
+# Measured from turing: raw timed out after 20s having received nothing,
+# while `api.github.com` answered in 0.59s and a release download in
+# 1.82s — so the one host the old one-liner depended on is exactly the
+# one those machines cannot reach. The binary and the script now come
+# down the same road, which is also the road that is tested every time
+# anybody installs.
 #
 # The whole install story is: **the machine fetches one file and runs
 # it.** No toolchain, no package manager, no root, and nothing that has

@@ -104,6 +104,17 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # The installer ships **as a release asset**, not just as a file in
+      # the tree. The documented one-liner used to fetch it from
+      # `raw.githubusercontent.com`, and that host is unreachable from
+      # the machines this is for — measured from turing: raw timed out
+      # after 20s with 0 bytes, while `api.github.com` answered in 0.59s
+      # and a release download in 1.82s. A distribution route may not
+      # depend on a host its own machines cannot reach.
+      - uses: actions/checkout@v4
+        with:
+          path: src
+      - run: cp src/scripts/install.sh dist/install.sh
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
