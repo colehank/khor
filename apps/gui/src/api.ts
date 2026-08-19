@@ -43,12 +43,23 @@ const bridge = new URLSearchParams(window.location.search).get("bridge");
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) {
+    // The dev bridge answers a refusal as a JSON string, and khor's
+    // refusals are whole sentences meant for a person — handing the raw
+    // body onward puts the encoding's quotation marks around one.
+    const unwrap = (body: string): string => {
+      try {
+        const v: unknown = JSON.parse(body);
+        return typeof v === "string" ? v : body;
+      } catch {
+        return body;
+      }
+    };
     const r = await fetch(`http://127.0.0.1:${bridge}/${cmd}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(args ?? {}),
     });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) throw new Error(unwrap(await r.text()));
     return (await r.json()) as T;
   }
   const { invoke } = await import("@tauri-apps/api/core");

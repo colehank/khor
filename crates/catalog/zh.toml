@@ -390,7 +390,12 @@ offset-out-of-range = "起点越界: {0} > {1}"
 offered-file-wont-open = "出让的文件打不开: {0}"
 cant-read-slice = "读不完这一片: {0}"
 recipient-not-in-table = "收文件的机器不在设备表里: {0}"
-recipient-unreachable-timeout = "连不上 {0}(超时)——收下由那台机器执行,它得在线"
+# A dial that timed out, named. The tail this line used to carry ("收下由
+# 那台机器执行") is about accepting a transfer, and all five callers are
+# plain dials — so a person attaching a terminal was being told about a
+# 收下 they had not asked for. A sentence has to fit whatever the caller
+# was actually doing, and the only thing all five share is the machine.
+machine-unreachable-timeout = "连不上 {0}(超时)——那台机器得在线"
 offerer-unreachable-timeout = "连不上出让方(超时)"
 offerer-unreachable = "连不上出让方: {0}"
 offerer-left-table = "出让方已不在设备表里"

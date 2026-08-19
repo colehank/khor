@@ -383,7 +383,7 @@ impl Node {
             .map_err(|e| e.to_string())?;
         tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| msg::recipient_unreachable_timeout(channel))?
+            .map_err(|_| msg::machine_unreachable_timeout(channel))?
             .map_err(|e| msg::cant_reach_named(channel, e))
     }
 
@@ -805,7 +805,7 @@ impl Node {
             .map_err(|e| e.to_string())?;
         tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, endpoint::TUNNEL_ALPN))
             .await
-            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
             .map_err(|e| msg::cant_reach_named(&channel, e))
     }
 
@@ -1046,7 +1046,7 @@ impl Node {
             .map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
             .map_err(|e| msg::cant_reach_named(&channel, e))?;
         match request(&conn, &Request::Ls { path: path.to_owned() }).await? {
             Response::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
@@ -1141,7 +1141,7 @@ impl Node {
             .map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
             .map_err(|e| msg::cant_reach_named(&channel, e))?;
         let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
         // The change contract: the first slice's (total, mtime) must
@@ -1211,7 +1211,7 @@ impl Node {
             .map_err(|e| e.to_string())?;
         let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
             .await
-            .map_err(|_| msg::recipient_unreachable_timeout(&channel))?
+            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
             .map_err(|e| msg::cant_reach_named(&channel, e))?;
         let resp = request(
             &conn,
