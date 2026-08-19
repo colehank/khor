@@ -115,6 +115,19 @@ jobs:
         with:
           path: src
       - run: cp src/scripts/install.sh dist/install.sh
+      # **The tag and the crate version have to agree**, because the
+      # binary reports the crate version and a fleet is asked "who is
+      # behind" through that number. They sat apart for five releases
+      # (0.1.0 in the tree, v0.1.5 on the tag), which is exactly as
+      # useful as no version at all.
+      - name: tag matches the crate version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          want=$(grep -m1 '^version = ' src/Cargo.toml | cut -d'"' -f2)
+          if [ "$tag" != "$want" ]; then
+            echo "tag $GITHUB_REF_NAME says $tag, Cargo.toml says $want" >&2
+            exit 1
+          fi
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

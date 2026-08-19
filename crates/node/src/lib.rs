@@ -709,6 +709,28 @@ impl Node {
         Ok(())
     }
 
+    /// Shows a machine the door, for the whole network
+    /// (`DeviceDoc::set_gone` has why leaving must travel the way
+    /// joining does, and why it is a tombstone rather than a deletion).
+    ///
+    /// **Refuses this machine by name.** The table being written into is
+    /// the one that would be left, so from the inside the act has no
+    /// meaning — and a machine that removed itself would keep every
+    /// row it holds while becoming a stranger to everyone else, which
+    /// is not "left the network", it is broken in a way with no word
+    /// for it.
+    pub fn forget_device(&self, machine: &str) -> Result<String, String> {
+        let (name, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Err(msg::CANT_FORGET_SELF.into());
+        }
+        let loaded = self.devices_loaded()?;
+        loaded.doc.set_gone(&home.hex(), true)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(name)
+    }
+
     /// The rows only this device can derive — what `Request::Sessions`
     /// answers with. Chat rows are excluded: every device derives those
     /// from the CRDT itself.
@@ -792,7 +814,7 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         fs::create_dir_all(self.vitals_dir()).map_err(msg::cant_make_vitals_dir)?;
-        let report = VitalsReport { at_ms: now_ms(), vitals: *v };
+        let report = VitalsReport { at_ms: now_ms(), vitals: v.clone() };
         link::write_private(
             &self.vitals_dir().join(device_id),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,

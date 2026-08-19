@@ -14,7 +14,12 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+# Kept equal to the release tag — the CI gate in `.github/workflows`
+# refuses a tag that disagrees. Before that gate this number sat at
+# 0.1.0 through five releases, which is the failure it exists to stop:
+# a version that never moves cannot answer "which machine is behind",
+# and that is the only question anybody asks a version for.
+version = "0.1.5"
 edition = "2024"
 
 [workspace.dependencies]

@@ -172,6 +172,7 @@ mod vitals_reading_tests {
             mem: Fill { used: 96, total: 100 },
             disk: Some(Fill { used: 50, total: 100 }),
             gpu: None,
+            version: None,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));

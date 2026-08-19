@@ -112,6 +112,9 @@ const F_NAME: &str = "name";
 const F_ADDRS: &str = "addrs";
 const F_STYLE: &str = "style";
 const F_PINNED: &str = "pinned";
+/// A machine that was shown the door. Written like any other field, so
+/// it travels like any other field — see [`DeviceDoc::set_gone`].
+const F_GONE: &str = "gone";
 
 fn fkey(id: &str, field: &str) -> String {
     let mut k = String::with_capacity(id.len() + 1 + field.len());
@@ -311,6 +314,43 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// Shows a machine the door, network-wide — or takes it back in.
+    ///
+    /// **Leaving is expressed as "not in the table", which is why this
+    /// needs no new gate.** Every door already refuses a machine the
+    /// table does not hold (`msg::NOT_PAIRED`), and [`DeviceDoc::all`]
+    /// — the only way anything reads this doc — skips a machine that is
+    /// `gone`. So the whole of "it can no longer act here" falls out of
+    /// one bit, rather than out of a list of places that must each
+    /// remember to check.
+    ///
+    /// **It propagates, because joining does.** A mesh whose rule is
+    /// 接入一次即在网里 cannot have leaving be a private opinion: a
+    /// machine forgotten on one laptop and still trusted on another is
+    /// not out of the network, it is out of one person's view of it.
+    /// The bit rides the same document the membership does.
+    ///
+    /// A tombstone rather than a deletion, and for the ordinary CRDT
+    /// reason: the removed machine still holds its own copy of this
+    /// document and keeps writing its own row (`Link` records its
+    /// addresses on every start). A row that was merely deleted would
+    /// come back on the next merge; a row marked gone stays gone,
+    /// because nothing that machine writes touches this field.
+    ///
+    /// Pairing clears it — that is what taking a machine back in *is*,
+    /// and it is deliberately not something the machine can do alone.
+    pub fn set_gone(&self, id: &str, on: bool) -> Result<(), String> {
+        if !on && self.field(id, F_GONE).is_none() {
+            return Ok(());
+        }
+        if self.flat(id, F_GONE) == Some(LoroValue::Bool(on)) {
+            return Ok(());
+        }
+        self.write_field(id, F_GONE, on)?;
+        self.inner.commit();
+        Ok(())
+    }
+
     /// Every device, pinned ones first, each group by name.
     ///
     /// **Sorted here, once.** Every face reads the table through this,
@@ -321,6 +361,12 @@ impl DeviceDoc {
         let mut out: Vec<DeviceInfo> = self
             .ids()
             .into_iter()
+            .filter(|id| !self.bool_field(id, F_GONE))
+            // A machine shown the door is not a machine with a flag on
+            // it — it is one this table no longer holds. Filtering here
+            // is what makes that true everywhere at once, `get` and
+            // `by_name` included, since both read through this.
+
             .map(|id| DeviceInfo {
                 name: self.str_field(&id, F_NAME).unwrap_or_default(),
                 addrs: self
@@ -763,6 +809,36 @@ mod tests {
             !read_old_shape(&d, "aa").unwrap().3,
             "…on the old side of the network as well"
         );
+    }
+
+    /// **The point of a tombstone is that the machine cannot undo it by
+    /// existing.** A removed machine keeps its own copy of this document
+    /// and writes its own row on every start (`Link` records its
+    /// addresses there), and those writes merge back. A row that was
+    /// merely deleted would return on the next merge and the removal
+    /// would read as a glitch; the bit has to survive the writes the
+    /// removed machine keeps making.
+    ///
+    /// The first assertion is the control: without it a `set_gone` that
+    /// did nothing at all would pass the one that matters.
+    #[test]
+    fn a_machine_shown_the_door_does_not_come_back_by_writing_its_own_row() {
+        let d = DeviceDoc::new(1).unwrap();
+        d.upsert("aa", "mac", &["1.2.3.4:5".into()]).unwrap();
+        assert!(d.get("aa").is_some(), "control: it was in the table");
+
+        d.set_gone("aa", true).unwrap();
+        assert!(d.get("aa").is_none(), "shown the door means out of the table");
+        assert!(!d.all().iter().any(|x| x.id == "aa"), "…and out of every reading of it");
+
+        // Exactly what that machine's own serve does on every start.
+        d.upsert("aa", "mac", &["9.9.9.9:1".into()]).unwrap();
+        assert!(d.get("aa").is_none(), "writing its own row must not let it back in");
+
+        // And the way back is a pairing, which is somebody else's act.
+        d.set_gone("aa", false).unwrap();
+        let back = d.get("aa").expect("pairing takes a machine back in");
+        assert_eq!(back.addrs, vec!["9.9.9.9:1".to_string()], "with what it last said about itself");
     }
 
     /// Unpinning a machine nobody pinned writes nothing — `khor unpin

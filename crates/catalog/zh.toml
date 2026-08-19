@@ -124,7 +124,10 @@ usage = """
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   sync                  立即和全网各同步一趟
-  mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)"""
+  mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)
+  version               本机装的是哪一版(网里各机器的版本看 devices)
+  forget <机器>          把一台机器请出网:全网都不再认它,它也不再看得见网。
+                        要回来得重新配对(在还认它的那台上出票)"""
 this-machine = "(本机)"
 # Marks the option a machine is wearing, in a list of options. Without
 # it `khor face` prints a catalogue and answers "what am I" nowhere —
@@ -185,6 +188,11 @@ vitals-vram = "显存 {0} / {1}"
 # a machine that has been off since yesterday would otherwise show
 # yesterday's CPU as if it were now (docs/SESSION.md 离线).
 vitals-taken = "{0}前的读数"
+# Which khor that machine runs. Said only when it is known: a machine
+# whose khor predates the field says nothing here, and that silence is
+# itself the answer an upgrade sweep is looking for — the same rule the
+# GPU follows one line up.
+vitals-version = "khor {0}"
 # Never reached since this khor started. Not the same as an old reading,
 # and not 「0%」 either — those send a person to look at different things.
 vitals-never = "还没问到"
@@ -435,6 +443,16 @@ borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
 # Same shape, same reason: the pipe to another machine's terminal lives
 # in the resident process, so a one-shot verb has nowhere to put it.
 reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常驻进程里)"
+# Leaving is one act and the whole network learns it, the same way
+# joining is (docs/SHAPE.md 接入一次即在网里). The second sentence is the
+# way back, said here because the machine being removed is usually the
+# one that cannot be told anything. It names *any* machine still in the
+# network on purpose: the tombstone travels, so "one that still knows
+# it" is a place that stops existing.
+forgot = "请出去了: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
+# You cannot show yourself the door: the table this would be written into
+# is the one being left, so the act has no meaning from the inside.
+cant-forget-self = "这是本机——一台机器不能把自己请出网"
 # The GUI asks for a reach from a synchronous door, so the async call
 # runs on a thread of its own; if that thread dies there is no answer to
 # report and no exception to quote — only the fact that none came.

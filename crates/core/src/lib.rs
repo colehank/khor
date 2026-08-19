@@ -274,7 +274,10 @@ impl Fill {
 /// source are a macOS thermal sensor key and unrelated FFI), so the reading
 /// is taken per platform through in-process APIs rather than by shelling
 /// out: khor expects nothing installed, `nvidia-smi` included.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+/// Not  since it carries a version string — and it never wanted to
+/// be: a reading is a message a machine sent, and messages get moved and
+/// cloned deliberately, not duplicated by accident.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Vitals {
     /// Whole-machine CPU use, 0–100.
     ///
@@ -303,6 +306,26 @@ pub struct Vitals {
     /// disk followed one field earlier.
     #[serde(default)]
     pub gpu: Option<Gpu>,
+    /// Which khor that machine is running.
+    ///
+    /// **It rides with the readings because it is the same kind of
+    /// fact**: something a machine says about itself, on the cadence it
+    /// already says the others on. The alternative — a verb you type at
+    /// one machine — answers about the machine you are standing at,
+    /// which is the one you did not need to ask about.
+    ///
+    /// The question this exists for only appears once machines install
+    /// and upgrade themselves: *which of them did not take the last
+    /// one*. Before that, `khor` came from a build you were watching.
+    ///
+    /// `None` is a real answer and not a bug — it names a peer whose
+    /// khor predates this field, which is exactly the machine an
+    /// upgrade sweep is looking for.
+    ///
+    /// Wire: at the tail with a serde default, the third field in a row
+    /// to follow that discipline.
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 /// What the graphics hardware is doing.
@@ -885,10 +908,39 @@ mod tests {
             mem: Fill { used: 1, total: 2 },
             disk: Some(Fill { used: 5, total: 9 }),
             gpu: None,
+            version: None,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x95, "five fields today");
+        assert_eq!(bytes[0], 0x96, "six fields today");
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
+    }
+
+    /// **Over the wire from a peer that predates the version field.**
+    /// The machine an upgrade sweep is looking for is exactly the one
+    /// running an older khor, so the frame it sends is the one this must
+    /// not choke on — a decoder that dropped the whole reading would
+    /// blank the row of every machine the sweep exists to find.
+    ///
+    /// Built by hand as a five-tuple, and the first assertion is that
+    /// the bytes really are a five-array: without it this could be
+    /// encoding today's struct and proving nothing.
+    #[test]
+    fn a_vitals_frame_from_a_peer_that_predates_versions_decodes_with_none() {
+        let old = (
+            7.5f32,
+            4u32,
+            Fill { used: 2, total: 16 },
+            Some(Fill { used: 1, total: 4 }),
+            Option::<Gpu>::None,
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x95, "the sample must be a five-field frame, or it proves nothing");
+
+        let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(v.version, None, "an older peer said nothing about its version");
+        assert_eq!(v.cpu_pct, 7.5, "…and the rest of the reading survived");
+        assert_eq!((v.cores, v.mem.used, v.mem.total), (4, 2, 16));
+        assert_eq!(v.disk, Some(Fill { used: 1, total: 4 }));
     }
 
     /// The two steps land exactly on 90 and 95 — an off-by-one here is a
@@ -958,9 +1010,10 @@ mod tests {
                 mem: Fill { used: 1, total: 2 },
                 disk: None,
                 gpu: Some(Gpu { util_pct: 48.0, cards: 2, mem }),
+                version: None,
             };
             let bytes = rmp_serde::to_vec(&v).unwrap();
-            assert_eq!(bytes[0], 0x95, "five fields today");
+            assert_eq!(bytes[0], 0x96, "six fields today");
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
     }

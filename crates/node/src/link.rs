@@ -23,6 +23,30 @@ const SYNC_EVERY: Duration = Duration::from_secs(5);
 /// Per-device budget for one sync visit; the far side may simply be off.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long the direct roads get to themselves before the relay road is
+/// opened alongside them (`Node::dial_with`).
+///
+/// **Long enough that a working direct path never involves the relay**,
+/// which is the whole point of having one: a machine on the same LAN
+/// answers in milliseconds, so the second road is never opened for it
+/// and the relay carries nothing it does not have to.
+///
+/// Two earlier shapes were wrong in opposite directions, and both are
+/// worth keeping written down:
+///
+/// - *Splitting `DIAL_TIMEOUT` into 4s + 6s* cut off a direct path that
+///   was merely **slow** — a loaded box, a busy LAN — and pushed it onto
+///   a relay it did not need.
+/// - *Trying the roads one after the other, each with its own budget*
+///   fixed that and put the cost on **every unreachable machine
+///   instead**: a `sync` round pays it once per peer that is off, so a
+///   mesh with two dark machines got a third slower at everything.
+///
+/// Running them side by side costs neither: a machine that is genuinely
+/// off still fails in exactly `DIAL_TIMEOUT`, the same as before any of
+/// this.
+const RELAY_HEAD_START: Duration = Duration::from_millis(1500);
+
 /// How long a pairing ticket can be used after it is minted.
 ///
 /// A ticket used to be one-time only in the sense that it burned on use;
@@ -390,12 +414,10 @@ impl Node {
             .doc
             .by_name(channel)
             .ok_or_else(|| msg::machine_left_table(channel))?;
-        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
-            .map_err(|e| e.to_string())?;
-        tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-            .await
-            .map_err(|_| msg::machine_unreachable_timeout(channel))?
-            .map_err(|e| msg::cant_reach_named(channel, e))
+        self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::machine_unreachable_timeout(channel),
+            DialFailure::Refused(why) => msg::cant_reach_named(channel, why),
+        })
     }
 
     /// Routes an op to the resident serve when one holds this key.
@@ -495,6 +517,12 @@ impl Node {
                 fs::remove_file(&path).map_err(msg::cant_burn_invite)?;
                 let loaded = self.devices_loaded()?;
                 loaded.doc.upsert(remote, &name, &addrs)?;
+                // Taking a machine back in is what pairing *is*, so a
+                // ticket clears the tombstone. Deliberately here and not
+                // on the far side: a machine that was shown the door
+                // cannot let itself back in, it has to be handed a
+                // ticket by somebody already inside.
+                loaded.doc.set_gone(remote, false)?;
                 let mut store = loaded.store;
                 store.flush(&loaded.doc)?;
                 Ok(Response::Paired {
@@ -812,12 +840,10 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
-        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
-            .map_err(|e| e.to_string())?;
-        tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, endpoint::TUNNEL_ALPN))
-            .await
-            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
-            .map_err(|e| msg::cant_reach_named(&channel, e))
+        self.dial(ep, &target.id, &target.addrs, endpoint::TUNNEL_ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+        })
     }
 
     /// Starts a borrow the serve hosts: dials the lease on `ep`, binds a
@@ -1053,12 +1079,10 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
-        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
-            .map_err(|e| e.to_string())?;
-        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-            .await
-            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
-            .map_err(|e| msg::cant_reach_named(&channel, e))?;
+        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+        })?;
         match request(&conn, &Request::Ls { path: path.to_owned() }).await? {
             Response::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
             Response::Refused { why } => Err(why),
@@ -1148,12 +1172,10 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
-        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
-            .map_err(|e| e.to_string())?;
-        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-            .await
-            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
-            .map_err(|e| msg::cant_reach_named(&channel, e))?;
+        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+        })?;
         let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
         // The change contract: the first slice's (total, mtime) must
         // hold for every slice after it — two readings that differ are
@@ -1218,12 +1240,10 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::recipient_not_in_table(&channel))?;
-        let addr = endpoint::dial_addr(&target.id, &target.addrs, self.relays())
-            .map_err(|e| e.to_string())?;
-        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-            .await
-            .map_err(|_| msg::machine_unreachable_timeout(&channel))?
-            .map_err(|e| msg::cant_reach_named(&channel, e))?;
+        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+        })?;
         let resp = request(
             &conn,
             &Request::Act { session: id.0.clone(), action: "accept".into() },
@@ -1261,12 +1281,10 @@ impl Node {
         fs::create_dir_all(dir.join("files")).map_err(msg::cant_make_files_dir)?;
 
         let outcome = async {
-            let addr = endpoint::dial_addr(&home.id, &home.addrs, self.relays())
-                .map_err(|e| e.to_string())?;
-            let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-                .await
-                .map_err(|_| msg::OFFERER_UNREACHABLE_TIMEOUT.to_string())?
-                .map_err(msg::offerer_unreachable)?;
+            let conn = self.dial(ep, &home.id, &home.addrs, ALPN).await.map_err(|e| match e {
+                DialFailure::TimedOut => msg::OFFERER_UNREACHABLE_TIMEOUT.to_string(),
+                DialFailure::Refused(why) => msg::offerer_unreachable(why),
+            })?;
             let mut moved = 0u64;
             for f in files {
                 if payload_path(&dir, f).exists() {
@@ -1401,11 +1419,10 @@ impl Node {
         // it did not think to advertise.
         let mut relays = t.relays.clone();
         relays.extend(self.relays().iter().cloned());
-        let addr = endpoint::dial_addr(&t.id, &t.direct, &relays).map_err(|e| e.to_string())?;
-        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-            .await
-            .map_err(|_| msg::INVITER_UNREACHABLE_TIMEOUT.to_string())?
-            .map_err(msg::inviter_unreachable)?;
+        let conn = self.dial_with(ep, &t.id, &t.direct, &relays, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::INVITER_UNREACHABLE_TIMEOUT.to_string(),
+            DialFailure::Refused(why) => msg::inviter_unreachable(why),
+        })?;
         let resp = request(
             &conn,
             &Request::Pair {
@@ -1473,11 +1490,10 @@ impl Node {
         if d.addrs.is_empty() {
             return Err(msg::NO_ROADS_REPORTED.into());
         }
-        let addr = endpoint::dial_addr(&d.id, &d.addrs, self.relays()).map_err(|e| e.to_string())?;
-        let conn = tokio::time::timeout(DIAL_TIMEOUT, ep.connect(addr, ALPN))
-            .await
-            .map_err(|_| msg::DIAL_TIMED_OUT.to_string())?
-            .map_err(msg::cant_reach_plain)?;
+        let conn = self.dial(ep, &d.id, &d.addrs, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::DIAL_TIMED_OUT.to_string(),
+            DialFailure::Refused(why) => msg::cant_reach_plain(why),
+        })?;
 
         let mut moved = 0usize;
         {
@@ -1847,5 +1863,101 @@ pub(crate) fn pid_alive(pid: u32) -> bool {
         // already means everywhere else in this file.
         let _ = pid;
         true
+    }
+}
+
+/// Why a dial did not produce a connection. Kept apart from the sentence
+/// a person reads: every caller says who it was trying to reach and what
+/// for, and that is the half worth keeping at the call site.
+enum DialFailure {
+    TimedOut,
+    Refused(String),
+}
+
+impl Node {
+    /// One dial to a machine, **and the retry that finds it again after
+    /// it restarts**.
+    ///
+    /// The direct addresses are a hint that expires: they are whatever
+    /// that machine last wrote into the devices table, and a machine
+    /// that restarts its serve binds new ports. So after an upgrade —
+    /// which restarts serve by definition — every road in the table
+    /// leads nowhere, while the relay, reached by identity rather than
+    /// by port, still leads home. Handing iroh both spends the whole
+    /// budget on the dead ones.
+    ///
+    /// Measured on turing: after its serve restarted, this end took
+    /// upwards of ten minutes to find it again, and `khor sync` — the
+    /// obvious cure — cannot help, because **syncing is itself a dial**.
+    /// The fresh address lives inside the thing you need the fresh
+    /// address to reach.
+    ///
+    /// **The two roads run side by side, the relay after a head start**
+    /// (`RELAY_HEAD_START` carries the two shapes this had before and
+    /// what each of them charged to the wrong machine). A machine that
+    /// is off fails in exactly `DIAL_TIMEOUT` — the budget this always
+    /// had — and a machine on the LAN never touches the relay at all.
+    ///
+    /// The relay attempt is a *retry* and not the only attempt, because
+    /// the direct roads are what make a peer on the same LAN fast.
+    async fn dial_with(
+        &self,
+        ep: &iroh::Endpoint,
+        id: &str,
+        direct: &[String],
+        relays: &[String],
+        alpn: &[u8],
+    ) -> Result<iroh::endpoint::Connection, DialFailure> {
+        let bare = |e| DialFailure::Refused(format!("{e}"));
+        let mut roads = tokio::task::JoinSet::new();
+        if !direct.is_empty() {
+            let addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
+            let (ep, alpn) = (ep.clone(), alpn.to_vec());
+            roads.spawn(async move { ep.connect(addr, &alpn).await });
+        }
+        // By identity alone. Nothing here can be stale: a machine's id
+        // is the one thing about it that a restart does not change.
+        {
+            let addr = endpoint::dial_addr(id, &[], relays).map_err(bare)?;
+            let (ep, alpn, wait) = (ep.clone(), alpn.to_vec(), !direct.is_empty());
+            roads.spawn(async move {
+                if wait {
+                    tokio::time::sleep(RELAY_HEAD_START).await;
+                }
+                ep.connect(addr, &alpn).await
+            });
+        }
+
+        let deadline = tokio::time::sleep(DIAL_TIMEOUT);
+        tokio::pin!(deadline);
+        // First road home wins; a road that fails only counts if every
+        // other one does too, so one dead direct address cannot decide
+        // the answer while the relay is still walking.
+        let mut refused: Option<String> = None;
+        loop {
+            tokio::select! {
+                () = &mut deadline => return Err(DialFailure::TimedOut),
+                joined = roads.join_next() => match joined {
+                    Some(Ok(Ok(conn))) => return Ok(conn),
+                    Some(Ok(Err(e))) => refused = Some(e.to_string()),
+                    Some(Err(_)) => {}
+                    None => return Err(match refused {
+                        Some(why) => DialFailure::Refused(why),
+                        None => DialFailure::TimedOut,
+                    }),
+                },
+            }
+        }
+    }
+
+    /// `dial_with`, using this node's own relays — what every verb wants.
+    async fn dial(
+        &self,
+        ep: &iroh::Endpoint,
+        id: &str,
+        direct: &[String],
+        alpn: &[u8],
+    ) -> Result<iroh::endpoint::Connection, DialFailure> {
+        self.dial_with(ep, id, direct, self.relays(), alpn).await
     }
 }

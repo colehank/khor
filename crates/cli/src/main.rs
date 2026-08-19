@@ -76,6 +76,10 @@ const VERBS: &[Verb] = &[
     Verb { word: "pair", run: pair },
     Verb { word: "sync", run: sync },
     Verb { word: "mcp", run: mcp },
+    Verb { word: "version", run: version },
+    Verb { word: "forget", run: forget },
+    Verb { word: "--version", run: version },
+    Verb { word: "-V", run: version },
     Verb { word: "_host", run: host },
     Verb { word: "_ghost", run: ghost },
     Verb { word: "_cagent", run: cagent },
@@ -104,6 +108,8 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
+    ("--version", "the spelling people try before finding the verb"),
+    ("-V", "the short spelling of the same"),
 ];
 
 /// What `khor` alone means. Named so the gate can keep it answerable: a
@@ -215,6 +221,34 @@ fn borrow(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Shows a machine the door, network-wide.
+///
+/// One argument and no flag: this is the same shape as `close`, which
+/// also acts on the word alone — typing the machine's name *is* the
+/// confirmation, and a `--yes` would only teach people to type it.
+fn forget(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(USAGE.into());
+    };
+    let name = node()?.forget_device(machine)?;
+    println!("{}", msg::forgot(&name));
+    Ok(())
+}
+
+/// Which khor this binary is.
+///
+/// **Answering about the machine you are standing at is the small half.**
+/// The question that matters in a mesh whose machines install and upgrade
+/// themselves is *which of them did not take the last upgrade*, and that
+/// is answered by `khor devices` — every machine reports its version
+/// beside its readings (`khor_core::Vitals::version`). This verb exists
+/// because a person on a machine still has to be able to ask it, and
+/// because `--version` is the first thing anybody types.
+fn version(_rest: &[String]) -> Result<(), String> {
+    println!("{}", env!("CARGO_PKG_VERSION"));
+    Ok(())
+}
+
 fn devices(_rest: &[String]) -> Result<(), String> {
     let n = node()?;
     for d in n.devices()? {
@@ -251,6 +285,14 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
         if let Some(m) = g.mem {
             parts.push(cli::vitals_vram(bytes(m.used), bytes(m.total)));
         }
+    }
+    // Which khor that machine runs. Silent when unknown, for the GPU's
+    // reason one block up — and here the silence carries the answer the
+    // question is usually asked for: a machine saying nothing about its
+    // version is running one from before khor reported it, which is to
+    // say it is behind.
+    if let Some(ver) = v.version.as_deref() {
+        parts.push(cli::vitals_version(ver));
     }
     // Said for every reading that was not taken just now — which is every
     // machine but this one, and this one only while it is answering.

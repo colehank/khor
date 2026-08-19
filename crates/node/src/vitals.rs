@@ -110,7 +110,16 @@ pub fn sample(home: &Path) -> Vitals {
     // driver would make every other sampler in the process wait behind
     // it for nothing.
     drop(s);
-    Vitals { cpu_pct, cores, mem, disk, gpu: gpu::sample() }
+    // The version of the binary doing the sampling — which is the one
+    // running on this machine, whatever else is on its disk.
+    Vitals {
+        cpu_pct,
+        cores,
+        mem,
+        disk,
+        gpu: gpu::sample(),
+        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+    }
 }
 
 /// The filesystem a path sits on: the mounted disk whose mount point is

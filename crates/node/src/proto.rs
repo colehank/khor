@@ -276,8 +276,9 @@ mod tests {
             mem: khor_core::Fill { used: 3, total: 4 },
             disk: Some(khor_core::Fill { used: 5, total: 6 }),
             gpu: Some(khor_core::Gpu { util_pct: 12.0, cards: 1, mem: None }),
+            version: Some("9.9.9".to_owned()),
         };
-        let bytes = encode(&Response::Vitals { vitals: sent }).unwrap();
+        let bytes = encode(&Response::Vitals { vitals: sent.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::Vitals { vitals } => assert_eq!(vitals, sent),
             other => panic!("decoded wrong: {other:?}"),
