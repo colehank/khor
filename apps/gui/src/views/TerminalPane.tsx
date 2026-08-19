@@ -80,6 +80,16 @@ export function TerminalPane({ id }: { id: string }) {
   const measureRef = useRef<HTMLSpanElement>(null);
   const [screen, setScreen] = useState<TermScreen | null>(null);
   const [gone, setGone] = useState(false);
+  // Why the terminal never opened, in khor's own words. **Not the same
+  // fact as `gone`**: `gone` means the host this pane was watching
+  // ended, and 这个终端结束了 is true of it; a failed open means there
+  // never was a host to watch, and saying 结束了 about a tmux session
+  // sitting right there sends a person looking for a session that
+  // ended. Every refusal khor makes here is already a sentence written
+  // for a person (宿主没了 / 要 serve 在跑 / the far machine's own
+  // answer), and throwing it away is what flattened all of them into
+  // one wrong word.
+  const [why, setWhy] = useState<string | null>(null);
   // The last screen sequence seen — a poll asking for it gets nothing
   // back when the terminal has not moved.
   const seqRef = useRef(0);
@@ -108,7 +118,9 @@ export function TerminalPane({ id }: { id: string }) {
     const { cols, rows } = fit();
     sentRef.current = { cols, rows };
     let stopped = false;
-    termOpen(id, cols, rows).catch(() => setGone(true));
+    termOpen(id, cols, rows).catch((e: unknown) => {
+      setWhy(String((e as { message?: string })?.message ?? e));
+    });
 
     const tick = () => {
       if (stopped) return;
@@ -195,10 +207,22 @@ export function TerminalPane({ id }: { id: string }) {
       <span ref={measureRef} className="invisible absolute font-mono text-sm leading-tight">
         M
       </span>
-      {gone && (
-        <div data-term-over className="absolute right-2 top-1 text-xs text-muted-foreground">
-          {gui.term_over}
+      {why ? (
+        // Centred, not a corner label: there is no screen behind it to
+        // annotate, and this sentence is the whole of what the pane has
+        // to say.
+        <div
+          data-term-why
+          className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-muted-foreground"
+        >
+          {why}
         </div>
+      ) : (
+        gone && (
+          <div data-term-over className="absolute right-2 top-1 text-xs text-muted-foreground">
+            {gui.term_over}
+          </div>
+        )
       )}
       {screen?.lines.map((runs, row) => (
         <div key={row} className="whitespace-pre" style={{ height: ch }}>

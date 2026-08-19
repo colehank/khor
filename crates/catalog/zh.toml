@@ -430,6 +430,10 @@ borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
 # Same shape, same reason: the pipe to another machine's terminal lives
 # in the resident process, so a one-shot verb has nowhere to put it.
 reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常驻进程里)"
+# The GUI asks for a reach from a synchronous door, so the async call
+# runs on a thread of its own; if that thread dies there is no answer to
+# report and no exception to quote — only the fact that none came.
+reach-thread-died = "接终端的那一趟没回来"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # The proxied browsing window needs per-window proxy_url, which is macOS
 # 14+ only (Cargo gates the feature by target). Other platforms' proxy

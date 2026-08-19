@@ -584,7 +584,7 @@ fn attach(rest: &[String]) -> Result<(), String> {
     // row knows whose it is, so the fork is on the row rather than on a
     // flag: a person types the same verb for both, which is the whole
     // point of one list holding every machine's sessions.
-    if let Some(machine) = far_machine(&n, &id)? {
+    if let Some(machine) = n.far_machine(&id)? {
         let (addr, cookie) = rt()?.block_on(n.reach(&machine, &id))?;
         return attach_at(&n, &id, &addr, &cookie);
     }
@@ -848,19 +848,6 @@ fn help(_rest: &[String]) -> Result<(), String> {
 /// means "mine" — including for a row this machine has never heard of,
 /// which then fails the ordinary local way with the ordinary local
 /// words.
-fn far_machine(n: &Node, id: &SessionId) -> Result<Option<String>, String> {
-    let me = n.device();
-    for view in n.sessions()? {
-        if view.session.id == *id {
-            if view.session.home == me {
-                return Ok(None);
-            }
-            return Ok(view.source.map(|(name, _)| name));
-        }
-    }
-    Ok(None)
-}
-
 fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
     let dir = n
         .session_dir(id)

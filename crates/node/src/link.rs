@@ -660,6 +660,22 @@ impl Node {
                     return Err(msg::NOT_PAIRED.into());
                 }
                 let id = crate::SessionId(session);
+                // The same door a click opens locally: a row with a
+                // route but no host gets one stood up **on the machine
+                // that owns it**, which is the only machine that can.
+                // Without this every discovered tmux session on a Linux
+                // box answered 宿主没了 — a sentence about a process
+                // nobody had asked to exist yet.
+                //
+                // Off the reactor for the Open arm's reason and one
+                // more: resolving the route re-runs the discovery sweep,
+                // which shells out to `ps` and `tmux`.
+                if !self.is_hosted(&id) {
+                    let (live, bridging) = (self.live.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || live.attach_multiplexed(&bridging))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                }
                 let dir = self.live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
                 let hf = crate::host::read_host_file(&dir)?;
                 // **A host file outlives its host.** Without this the

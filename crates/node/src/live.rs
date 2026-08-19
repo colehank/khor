@@ -505,10 +505,22 @@ impl LiveKind {
             } else {
                 return Err(msg::no_terminal_here(&id.0));
             };
-        let held = sweep
-            .multiplexed
+        // **Whose terminal, when one session has two.** `claude -r`
+        // resumes a conversation into a new process while the old one is
+        // still running, and both keep writing under the same
+        // `sessionId` — one row standing for both, by the adaptor's
+        // ruling (`adaptor::claude`'s sweep has the note). That row
+        // already picks the freshest of them for its word and hands its
+        // pids over freshest-first; asking the multiplexer sessions in
+        // *their* order instead handed out whichever route came up
+        // first, so the row could show one process's word over another
+        // process's screen. Measured on this machine: a conversation
+        // five days idle owned the terminal of the one being typed into,
+        // and the session the person had in front of them was reachable
+        // from no row at all.
+        let held = pids
             .iter()
-            .find(|h| h.holds.iter().any(|p| pids.contains(p)))
+            .find_map(|p| sweep.multiplexed.iter().find(|h| h.holds.contains(p)))
             .ok_or_else(|| msg::no_terminal_here(&id.0))?;
         let target = held
             .found
@@ -788,7 +800,15 @@ impl LiveKind {
                 }
                 continue;
             }
-            if bridge_seat.is_some() {
+            if let Some(seat) = bridge_seat {
+                // This row *is* the multiplexer session, wearing a
+                // registry entry from an earlier open. The session is
+                // still on this machine, so a terminal is still to be
+                // had — whether or not the host stood up by that open
+                // outlived it. Without this line the honest `term`
+                // above (which answers about a process) takes the face
+                // away from a session sitting right there.
+                out[seat].term = true;
                 continue;
             }
             let sighting = held.found.sighting;
@@ -894,8 +914,14 @@ impl LiveKind {
                     // outranks this line for agent rows).
                     last: crate::host::read_last(&e.path()),
                     via: None,
-                    // A host here is a terminal to be had here.
-                    term: crate::host::read_host_file(&e.path()).is_ok(),
+                    // A host here is a terminal to be had here — a
+                    // *running* host (`Node::is_hosted` has why the
+                    // file alone cannot answer this). A row whose host
+                    // died but whose process is still sitting in a
+                    // multiplexer earns `term` back in the loop below,
+                    // which is where that route is resolved anyway.
+                    term: crate::host::read_host_file(&e.path())
+                        .is_ok_and(|hf| crate::link::pid_running(hf.host_pid)),
                 },
                 pid: meta.pid,
             });
@@ -1357,6 +1383,56 @@ mod tests {
         )
         .unwrap();
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Failed);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// **A marker file outlives the process it names.** `term` is the
+    /// row's claim that a terminal can be had here, and a host dies with
+    /// the bridge that spawned it while its `host.json` stays on disk.
+    /// Reading only the file's existence made that claim about a corpse,
+    /// and every click on such a row then skipped the re-bridge that
+    /// would have fixed it and connected to a closed port instead
+    /// (`Node::is_hosted` carries the whole story).
+    ///
+    /// The live half is the control, and it is the half that matters: a
+    /// `term` that simply answered false always would pass the negative
+    /// assertion below while taking the terminal away from every hosted
+    /// row on the machine.
+    ///
+    /// No pid on record on purpose — a row with one can earn `term` back
+    /// from the multiplexer fold, which is a different rule and would
+    /// answer this test's question for it.
+    #[test]
+    fn a_host_file_left_behind_by_a_dead_host_is_not_a_terminal() {
+        let root = tmp("stalehost");
+        let k = kind_at(&root);
+        let id = sid("shell/stale1");
+        k.register(&id, "shell", "work", None, None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        let write_host = |host_pid: u32| {
+            fs::write(
+                crate::host::host_file_path(&dir),
+                serde_json::to_vec(&crate::host::HostFile {
+                    port: 1,
+                    cookie: "x".into(),
+                    host_pid,
+                    child_pid: std::process::id(),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        };
+        let term_now = || k.rows(|_| 0).into_iter().find(|r| r.id == id).unwrap().term;
+
+        // Alive by construction: this is the test itself.
+        write_host(std::process::id());
+        assert!(term_now(), "a running host is a terminal to be had");
+
+        write_host(dead_pid());
+        assert!(
+            !term_now(),
+            "the host is gone; the file it left behind must not promise a terminal"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

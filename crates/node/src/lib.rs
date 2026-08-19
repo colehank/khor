@@ -965,14 +965,33 @@ impl Node {
     /// question the person answers before they can close a row — but it
     /// is a question the **caller** answers, not the primitive.
     pub async fn close_anywhere(&self, id: &SessionId) -> Result<(), String> {
-        if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
-            if v.session.home != self.device() {
-                if let Some((name, _)) = v.source {
-                    return self.close_on(&name, id).await;
-                }
-            }
+        if let Some(machine) = self.far_machine(id)? {
+            return self.close_on(&machine, id).await;
         }
         self.close(id)
+    }
+
+    /// Which machine this row lives on, when it is not this one.
+    ///
+    /// **The fork is on the row, not on a flag.** A person types one
+    /// verb and clicks one row for a session wherever it runs, so every
+    /// door that acts on a session asks this one question first and
+    /// then goes local or far — `close_anywhere` here, `attach` in the
+    /// CLI, `term_open` in the app. `None` also covers a row this
+    /// machine simply does not know: acting locally then fails by name
+    /// on a session id, which is the truth, rather than by asking a
+    /// machine that was never named.
+    pub fn far_machine(&self, id: &SessionId) -> Result<Option<String>, String> {
+        let me = self.device();
+        for v in self.sessions()? {
+            if v.session.id == *id {
+                if v.session.home == me {
+                    return Ok(None);
+                }
+                return Ok(v.source.map(|(name, _)| name));
+            }
+        }
+        Ok(None)
     }
 
     pub fn close(&self, id: &SessionId) -> Result<(), String> {
@@ -1314,14 +1333,24 @@ impl Node {
     }
 
     /// Whether this machine hosts this session's terminal — a `host.json`
-    /// in its registry dir. False for a `khor run` (临时, no host process),
-    /// a discovered session (khor never hosted it), and any remote session
-    /// (its host is on another machine). It is the signal for "a terminal
-    /// can attach here": docs/handoff 终端画屏, remote attach on the ledger.
+    /// in its registry dir **naming a process that is still running**.
+    /// False for a `khor run` (临时, no host process), a discovered
+    /// session (khor never hosted it), and any remote session (its host
+    /// is on another machine). It is the signal for "a terminal can
+    /// attach here": docs/handoff 终端画屏.
+    ///
+    /// **The marker file outlives the process it describes.** A host
+    /// dies with the bridge that spawned it and leaves its `host.json`
+    /// on disk; answering from the file's mere existence said yes about
+    /// a corpse, and the caller then skipped the re-bridge that would
+    /// have fixed it (`term::term_open`) to connect to a closed port —
+    /// a live tmux session whose row painted 宿主没了 on every click.
+    /// The question being asked is "is there a terminal to be had here",
+    /// and the pid is the only part of that file which can answer it.
     pub fn is_hosted(&self, id: &SessionId) -> bool {
-        self.live
-            .dir_of(id)
-            .is_some_and(|d| host::read_host_file(&d).is_ok())
+        self.live.dir_of(id).is_some_and(|d| {
+            host::read_host_file(&d).is_ok_and(|hf| link::pid_running(hf.host_pid))
+        })
     }
 
     /// A process reporting its own word — the hook door. 失败 is refused

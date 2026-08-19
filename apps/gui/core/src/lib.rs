@@ -310,10 +310,16 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             let hosted = n.is_hosted(&v.session.id);
             // The row itself says whether its home can stand a terminal
             // up (`Session::term` — hosted, a discovered tmux session,
-            // or an agent sitting inside one); this end only adds the
-            // locality gate, because the terminal does not travel
-            // (remote attach is on the ledger).
-            let attachable = hosted || (v.source.is_none() && v.session.term);
+            // or an agent sitting inside one), and that answer **travels
+            // with the row**: a session on another machine is reached,
+            // not hosted here (`Node::reach` binds a local port onto its
+            // host, and `term_open` connects to that like any address).
+            //
+            // A locality gate used to sit here, from when the terminal
+            // could not travel. It outlived the reason for it, and what
+            // it produced was a row that opened onto the bare facts pane
+            // — which reads, correctly, as "clicking this does nothing".
+            let attachable = hosted || v.session.term;
             SessionRow {
             attachable,
             face: faces.get(&v.session.home.hex()).cloned(),

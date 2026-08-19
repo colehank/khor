@@ -194,6 +194,27 @@ fn terms() -> &'static Mutex<HashMap<String, Arc<Term>>> {
     TERMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// [`Node::reach`] from a synchronous caller, on a thread of its own.
+///
+/// The reach is async and this door is not. Building a runtime on
+/// whatever thread happens to call it works until that caller is itself
+/// async — and a tauri command is — at which point it panics rather than
+/// returning an error anybody can read. A thread costs one click's worth
+/// of nothing and cannot be wrong about where it is.
+fn reach_blocking(root: &Path, machine: &str, id: &SessionId) -> Result<(String, String), String> {
+    let (root, machine, id) = (root.to_path_buf(), machine.to_owned(), id.clone());
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(khor_catalog::msg::runtime_wont_start)?;
+        let n = Node::open(root)?;
+        rt.block_on(n.reach(&machine, &id))
+    })
+    .join()
+    .map_err(|_| khor_catalog::msg::REACH_THREAD_DIED.to_string())?
+}
+
 /// Attaches to the session's host at `cols`×`rows`, idempotently (an
 /// already-open terminal keeps its screen; a dead one is replaced). The
 /// host resizes its PTY to this size, so the whole screen repaints and
@@ -209,19 +230,37 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     }
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
-    // A row this machine does not host yet may still have a terminal to
-    // be had — a discovered tmux session, or an agent sitting inside one
-    // (its row's `term` said so). The bridge stands a host up under this
-    // very id (grouped client — `LiveKind::attach_multiplexed` has the
-    // judgment, including refusing rows with no route), and from here on
-    // it is any hosted session.
-    if !n.is_hosted(&sid) {
-        n.attach_tmux(&sid)?;
-    }
-    let dir = n
-        .session_dir(&sid)
-        .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-    let conn = connect(&dir, cols, rows)?;
+    // **The fork is on the row, not on a flag** (`Node::far_machine`):
+    // one list holds every machine's sessions, so one click has to mean
+    // the same thing wherever the row lives. The CLI's `attach` forks on
+    // this very question, and this door now matches it.
+    let conn = match n.far_machine(&sid)? {
+        // Reached, not hosted here: the resident serve binds a local
+        // port onto the far host, and what arrives is still a TCP
+        // address speaking the host protocol — so everything below this
+        // line is unchanged, and the terminal never learns there is a
+        // network under it (`host::connect_at`).
+        Some(machine) => {
+            let (addr, cookie) = reach_blocking(root, &machine, &sid)?;
+            khor_node::host::connect_at(&addr, &cookie, cols, rows)?
+        }
+        None => {
+            // A row this machine does not host yet may still have a
+            // terminal to be had — a discovered tmux session, or an
+            // agent sitting inside one (its row's `term` said so). The
+            // bridge stands a host up under this very id (grouped
+            // client — `LiveKind::attach_multiplexed` has the judgment,
+            // including refusing rows with no route), and from here on
+            // it is any hosted session.
+            if !n.is_hosted(&sid) {
+                n.attach_tmux(&sid)?;
+            }
+            let dir = n
+                .session_dir(&sid)
+                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
+            connect(&dir, cols, rows)?
+        }
+    };
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
         conn: Mutex::new(conn),
