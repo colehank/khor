@@ -330,3 +330,41 @@ fn a_live_pid_reads_alive_and_an_impossible_one_does_not() {
         "a pid that cannot exist must not read as alive"
     );
 }
+
+#[cfg(test)]
+mod store_owner_tests {
+    /// A store carries the machine it belongs to, and says so when the
+    /// wrong one opens it. Measured need: two boxes of this fleet share
+    /// one NFS home, so `~/.khor` is literally the same directory on
+    /// both — without this they would share one identity and quietly
+    /// fight over one registry.
+    #[test]
+    fn a_store_belongs_to_the_machine_that_made_it() {
+        let root = std::env::temp_dir().join(format!("khor-owner-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        // A fresh store gets stamped, and opening it again is fine.
+        crate::Node::open(root.clone()).expect("a fresh store opens");
+        let stamp = root.join(".khor").join("owner");
+        let owner = std::fs::read_to_string(&stamp).unwrap();
+        assert!(!owner.trim().is_empty(), "the store records its machine");
+        crate::Node::open(root.clone()).expect("the same machine opens it again");
+
+        // Somebody else's store is refused, and the refusal names both.
+        std::fs::write(&stamp, "some-other-box").unwrap();
+        let err = match crate::Node::open(root.clone()) {
+            Err(e) => e,
+            Ok(_) => panic!("another machine's store must be refused"),
+        };
+        assert!(err.contains("some-other-box"), "it names the owner: {err}");
+        assert!(err.contains("KHOR_HOME"), "and what to do about it: {err}");
+
+        // The name is a label, not the claim: renaming must not lock a
+        // machine out of its own store.
+        std::fs::write(&stamp, gethostname::gethostname().to_string_lossy().to_string()).unwrap();
+        crate::Node::open_as(root.clone(), "renamed-machine").expect("a rename is not a move");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

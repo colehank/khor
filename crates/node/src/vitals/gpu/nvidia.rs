@@ -14,6 +14,27 @@
 //! this module's control rather than its implementation, exactly as
 //! `ioreg` is on the macOS side.
 //!
+//! # One build cannot ask at all, and that is an install decision
+//!
+//! **A fully static binary has no dynamic loader**, so `libloading` — and
+//! therefore NVML — can never open anything. Measured side by side on one
+//! machine at one moment (two RTX A5000, driver 580.126.09): the
+//! glibc-linked build reported `GPU 0% / 2 卡 显存 43.0G / 48.0G`, the
+//! `x86_64-unknown-linux-musl` build reported no GPU line at all.
+//!
+//! Both answers are this module's `None`, and that is the problem: the
+//! rule below ("every failure lands on an absent field") is what makes
+//! absence safe, and it holds only while absence means *this machine has
+//! no card*. A static build turns it into *this build cannot ask*, on a
+//! machine with two of them — the neighbouring value the ledger keeps
+//! warning about, arriving through the linker instead of through a
+//! branch.
+//!
+//! It is not fixed here, because it cannot be: no branch inside this file
+//! can make a static binary dlopen. It is fixed **where the build is
+//! chosen** — `scripts/onset.sh` ships the glibc build by default and
+//! refuses to send a static one to a machine whose driver is installed.
+//!
 //! # Every failure lands on an absent field
 //!
 //! No driver, no card, a card that will not answer, a library that is not

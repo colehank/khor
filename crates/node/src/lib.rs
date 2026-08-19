@@ -136,6 +136,45 @@ pub struct Node {
         Arc<tokio::sync::Mutex<std::collections::HashMap<SessionId, tokio::task::JoinHandle<()>>>>,
 }
 
+/// One store, one machine.
+///
+/// The identity key **is** the machine on this network, so two machines
+/// opening one store are one device wearing two live nodes: two
+/// residents writing one registry, two claims to the same rows, and a
+/// device list that cannot say which of them anything is on. Nothing
+/// downstream can detect that — every file looks fine.
+///
+/// It is not a hypothetical. A lab cluster puts every machine's home on
+/// one NFS export (measured: two of this fleet's boxes both live at
+/// `192.168.10.36:/mnt/storage/data`), so `~/.khor` is the *same
+/// directory* on both — the ordinary case there, not the exotic one.
+///
+/// Stamped with the **hostname**, never `KHOR_NAME`: the name is a
+/// label the user may change, and renaming your machine must not lock
+/// you out of your own store. Two homes on one machine (the test
+/// fleet's three) stamp the same host and none of them refuse.
+fn claim_store(root: &std::path::Path) -> Result<(), String> {
+    let dir = root.join(".khor");
+    let stamp = dir.join("owner");
+    let here = gethostname::gethostname().to_string_lossy().to_string();
+    match std::fs::read_to_string(&stamp) {
+        Ok(owner) => {
+            let owner = owner.trim();
+            if !owner.is_empty() && owner != here {
+                return Err(msg::store_belongs_to(owner, &here));
+            }
+            Ok(())
+        }
+        Err(_) => {
+            // Written on the way in, before the key exists: a store that
+            // gets a key without a stamp is a store the next machine
+            // cannot tell apart from its own.
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            std::fs::write(&stamp, &here).map_err(|e| e.to_string())
+        }
+    }
+}
+
 impl Node {
     /// Opens the node rooted at `root`, named after the hostname (or
     /// `KHOR_NAME` when set — tests and same-machine dual instances).
@@ -147,6 +186,7 @@ impl Node {
 
     /// Opens with an explicit machine name (pre-cleaning).
     pub fn open_as(root: PathBuf, name: &str) -> Result<Node, String> {
+        claim_store(&root)?;
         let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
             .map_err(|e| e.to_string())?;
         let public = key.public();

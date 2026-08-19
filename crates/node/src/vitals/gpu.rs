@@ -46,7 +46,7 @@
 //! | platform | how | verified |
 //! |---|---|---|
 //! | macOS | IOKit registry, in process | on this machine, against `ioreg` |
-//! | Linux + NVIDIA | NVML, loaded at run time | **no** — see `nvidia.rs` |
+//! | Linux + NVIDIA | NVML, loaded at run time | yes — two RTX A5000, `nvidia.rs` |
 //! | Linux + AMD | — | not written |
 //! | Windows | — | not written |
 //!

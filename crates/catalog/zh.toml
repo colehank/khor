@@ -451,6 +451,10 @@ cagent-one-session = "这个垫片只装一个会话"
 cagent-not-started = "会话还没开始"
 cagent-no-pipe = "接不到 claude 的输出"
 no-such-dir = "没有这个目录: {0}"
+# Two machines sharing one home (a cluster's NFS export is the usual
+# way) would share one identity. Says whose it is and what to do, in
+# that order — the fix is one line and the user has to know which line.
+store-belongs-to = "这个仓是 {0} 的,这台是 {1}。共用 home 的机器各要一份:给这台设 KHOR_HOME"
 # A link out of an agent's own words whose scheme is not a page. Says
 # what it is rather than "refused": the address is right there and the
 # face shows it, so the person decides.
