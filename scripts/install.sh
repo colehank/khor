@@ -27,10 +27,13 @@ case "$(uname -s)-$(uname -m)" in
     *) echo "khor: no build for $(uname -s)-$(uname -m) yet" >&2; exit 1 ;;
 esac
 
+# Compressed on the wire: the release ships `.gz` because the download
+# is the slow half of an install (measured at ~95 KB/s from the machines
+# this runs on — 8.9 MB instead of 29.7).
 if [ "$VERSION" = latest ]; then
-    URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+    URL="https://github.com/$REPO/releases/latest/download/$ASSET.gz"
 else
-    URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
+    URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET.gz"
 fi
 
 echo "khor: fetching $ASSET ($VERSION)"
@@ -41,15 +44,21 @@ mkdir -p "$BIN_DIR"
 # process is running. On a cluster that other process is a different
 # machine's khor, reading the same NFS file.
 TMP="$BIN_DIR/.khor.download.$$"
-trap 'rm -f "$TMP"' EXIT
+trap 'rm -f "$TMP" "$TMP.gz"' EXIT
+# Downloaded then decompressed, never piped through gzip: a plain `sh`
+# has no `pipefail`, so a failed download would reach gzip as an empty
+# stream and the install would report a corrupt archive instead of a
+# network that did not answer.
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$URL" -o "$TMP"
+    curl -fsSL "$URL" -o "$TMP.gz"
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TMP" "$URL"
+    wget -qO "$TMP.gz" "$URL"
 else
     echo "khor: needs curl or wget to fetch a release" >&2
     exit 1
 fi
+gzip -dc "$TMP.gz" > "$TMP" || { echo "khor: $URL is not a gzip (wrong tag?)" >&2; exit 1; }
+rm -f "$TMP.gz"
 # A release asset that is not a program is usually GitHub's HTML for a
 # tag that does not exist, and `chmod +x` on it would install a page.
 case "$(head -c 4 "$TMP" | od -An -tx1 | tr -d ' \n')" in

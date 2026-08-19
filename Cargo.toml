@@ -123,3 +123,17 @@ regex = "1"
 # License: MIT OR Apache-2.0 (checked before use, not after).
 toml = "0.8"
 tracing = "0.1"
+
+# The release profile exists for one measured reason: **the install
+# path is a download over a slow link.** From the machines this ships
+# to, the asset came down at ~95 KB/s — a 29.7 MB binary is five
+# minutes of somebody watching a progress bar, and the first thing a
+# new machine does is watch it.
+#
+# `strip` is the big one (debug symbols are most of that number), `lto`
+# and one codegen unit buy the rest and cost only CI time, which is
+# nobody's afternoon.
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

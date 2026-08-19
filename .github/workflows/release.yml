@@ -73,16 +73,24 @@ jobs:
           else
             cargo build -p khor-cli --bin khor --target "${{ matrix.target }}" --release
           fi
+      # **Shipped compressed, because the link is the slow part.**
+      # Measured from the machines this installs onto: ~95 KB/s, which
+      # makes a 29.7 MB binary five minutes of watching a progress bar
+      # — and watching it is the first thing a new machine does. The
+      # release profile's `strip` takes it to 20.2 MB and gzip to 8.9,
+      # so the same install is ninety seconds. `gzip` is on every box
+      # that has a shell, so this costs the installer one pipe.
       - name: name it after the platform
         run: |
           cp "target/${{ matrix.target }}/release/khor" "${{ matrix.asset }}"
-          shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          gzip -9 "${{ matrix.asset }}"
+          shasum -a 256 "${{ matrix.asset }}.gz" > "${{ matrix.asset }}.gz.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
           path: |
-            ${{ matrix.asset }}
-            ${{ matrix.asset }}.sha256
+            ${{ matrix.asset }}.gz
+            ${{ matrix.asset }}.gz.sha256
 
   publish:
     needs: build
