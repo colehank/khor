@@ -769,6 +769,26 @@ impl Node {
         Ok(Response::Slice { total: offer.size, bytes: serde_bytes::ByteBuf::from(buf) })
     }
 
+    /// Where a transfer's payloads land, one path per offered file.
+    /// For saying: accept's answer must name the landing, or the next
+    /// person greps the disk for it — the 2026-08-19 install incident
+    /// started exactly there.
+    pub fn transfer_landing(
+        &self,
+        id: &crate::SessionId,
+    ) -> Result<Vec<std::path::PathBuf>, String> {
+        let Some(msg_id) = id.0.strip_prefix("transfer/") else {
+            return Err(msg::no_such_transfer(&id.0));
+        };
+        let (channel, m) = self.find_transfer(msg_id)?;
+        let crate::MsgBody::Files(files) = &m.body else {
+            return Err(msg::no_such_transfer(&id.0));
+        };
+        let dir = chat::channel_dir(self.root(), &channel)
+            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
+        Ok(files.iter().map(|f| crate::transfer::payload_path(&dir, f)).collect())
+    }
+
     /// Approves a transfer and pulls its payload from home. Resumes from
     /// an existing partial; verifies the blake3 digest before the payload
     /// gets its real name. Returns bytes actually moved this run. Routed
@@ -1100,6 +1120,13 @@ impl Node {
         path: &str,
         dir: &std::path::Path,
     ) -> Result<(u64, std::path::PathBuf), String> {
+        // A relative dir crosses the ipc boundary as a bare string, and
+        // the resident serve would resolve it in *its* cwd — the caller
+        // would then read "落在 ./x" about a file that landed somewhere
+        // else entirely (2026-08-19, the netprobe pull). The caller's
+        // "." becomes absolute before it leaves this process.
+        let dir = std::path::absolute(dir).map_err(|e| e.to_string())?;
+        let dir = dir.as_path();
         if let Some(reply) = self
             .via_serve(ipc::Op::Pull {
                 machine: machine.to_owned(),

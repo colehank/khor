@@ -98,6 +98,30 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         "the dot-name must not survive a finished pull"
     );
 
+    // A relative landing dir means "relative to the caller", and the
+    // reported dest says so absolutely — a serve with a different cwd
+    // once landed a pull in *its* directory while the caller read
+    // "落在 ./x" (2026-08-19). `../..` from the crate dir is target/,
+    // which is gitignored, so a panicking run litters nothing tracked.
+    let rel = std::path::PathBuf::from(format!("../../target/pull-rel-{}", std::process::id()));
+    fs::create_dir_all(&rel).unwrap();
+    let (rel_moved, rel_dest) = timeout(
+        Duration::from_secs(30),
+        b.pull_path("alpha", browse.join("dataset.bin").to_str().unwrap(), &rel),
+    )
+    .await
+    .expect("the relative pull must not hang")
+    .unwrap();
+    assert_eq!(rel_moved, big.len() as u64);
+    assert!(rel_dest.is_absolute(), "the landing must be told absolutely: {rel_dest:?}");
+    assert_eq!(
+        rel_dest,
+        std::path::absolute(rel.join("dataset.bin")).unwrap(),
+        "and it must be the caller's dir, not somebody else's cwd"
+    );
+    assert_eq!(fs::read(&rel_dest).unwrap(), big, "same bytes at the said place");
+    fs::remove_dir_all(&rel).unwrap();
+
     // Pulling onto an existing name refuses before any byte moves —
     // overwriting is the one irreversible act on this path.
     let err = timeout(

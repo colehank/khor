@@ -496,12 +496,24 @@ fn send(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The landing prints for the same reason `pull`'s does: the payload's
+/// path was chosen silently, and a file that arrived somewhere unsaid
+/// is a file someone will go looking for.
 fn accept(rest: &[String]) -> Result<(), String> {
     let [id] = rest else {
         return Err(USAGE.into());
     };
-    let moved = rt()?.block_on(node()?.accept(&SessionId(id.clone())))?;
-    println!("{}", cli::pulled(moved));
+    let n = node()?;
+    let sid = SessionId(id.clone());
+    let moved = rt()?.block_on(n.accept(&sid))?;
+    match n.transfer_landing(&sid).as_deref() {
+        Ok([one]) => println!("{}", cli::pulled_to(moved, one.display())),
+        Ok([first, ..]) => println!(
+            "{}",
+            cli::pulled_to(moved, first.parent().unwrap_or(first).display())
+        ),
+        _ => println!("{}", cli::pulled(moved)),
+    }
     Ok(())
 }
 

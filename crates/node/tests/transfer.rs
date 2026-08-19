@@ -83,6 +83,11 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let MsgBody::Files(files) = &m.body else { unreachable!() };
     let f = &files[0];
     assert_eq!(fs::read(payload_path(&dir, f)).unwrap(), payload, "bytes must be verbatim");
+    assert_eq!(
+        b.transfer_landing(&tid).unwrap(),
+        vec![payload_path(&dir, f)],
+        "the landing must be nameable — accept's answer prints it"
+    );
 
     let rows = b.sessions().unwrap();
     let row = &rows.iter().find(|v| v.session.id == tid).unwrap().session;
