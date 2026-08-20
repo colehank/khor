@@ -14,3 +14,9 @@ tokio.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# The relay-restart acceptance (批23) embeds a real relay it can kill
+# and resurrect — the aliyun one is shared infrastructure, and a test
+# that reboots it saws the branch the whole fleet dials on (2026-08-20,
+# three reboots = 40 minutes of "unreachable" that was really the
+# bridge). Version-locked to the workspace iroh.
+iroh-relay = { version = "1.0.3", features = ["server"] }
