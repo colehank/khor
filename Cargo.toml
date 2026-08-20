@@ -19,7 +19,7 @@ members = [
 # 0.1.0 through five releases, which is the failure it exists to stop:
 # a version that never moves cannot answer "which machine is behind",
 # and that is the only question anybody asks a version for.
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 
 [workspace.dependencies]
