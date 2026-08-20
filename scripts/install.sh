@@ -94,12 +94,16 @@ if ! grep -qs 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null; then
     echo "khor: added ~/.local/bin to PATH in ~/.profile"
 fi
 
-"$BIN_DIR/khor" id
-
 # One store, one machine. A cluster mounts one home everywhere, so
 # `~/.khor` can already belong to a different box; khor refuses to open
 # somebody else's store, and this puts one of this machine's own in
-# front of that refusal.
+# front of that refusal. **Before** the `khor id` below, not after: id
+# opens a store too, and with a bare ssh environment (no KHOR_HOME) it
+# used to hit the owner's store, get refused, and take the whole
+# install down with set -e — 2026-08-20, hinton, the same script that
+# had worked the day before from inside a khor session whose
+# environment carried KHOR_HOME. Who runs a script decides what it
+# sees, so the script now decides for itself first.
 ROOT="$HOME"
 if [ -f "$HOME/.khor/owner" ] && [ "$(cat "$HOME/.khor/owner")" != "$(hostname)" ]; then
     ROOT="$HOME/.khor-hosts/$(hostname)"
@@ -109,6 +113,8 @@ if [ -f "$HOME/.khor/owner" ] && [ "$(cat "$HOME/.khor/owner")" != "$(hostname)"
         printf 'export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"\n' >> "$HOME/.profile"
     fi
 fi
+
+KHOR_HOME="$ROOT" "$BIN_DIR/khor" id
 
 [ -n "${KHOR_NO_SERVE:-}" ] && exit 0
 
