@@ -252,6 +252,80 @@ async function until(what, ms, f, step = 400) {
 // replaced leaves an **empty** box for `press` to Enter on, and an
 // empty box says nothing at all — which reads downstream as "the agent
 // never answered". Seen twice in five runs before this existed.
+// What a stuck hang/stop looks like from every side at once, gathered
+// only when the wait already failed.
+//
+// **A timeout on "the turn ended" is true of every layer and points at
+// none.** The chain is 面 → bridge → gui_host → `khor _cagent` → the
+// fake → interrupt → `result:interrupted` → `Turn`, and b6 has it at
+// 250 rounds with nothing lost below the browser — so the reading has
+// to say *which* link, or the next occurrence teaches as little as the
+// last one did.
+//
+// Four readings, and each one rules out a different half:
+//
+// - `hanging` absent — the line never reached the agent. Whatever was
+//   stopped was not a running turn: test debris, not the product.
+// - `hanging` present, `interrupt` absent — the stop did not leave
+//   khor. A real person's stop button would be just as mute.
+// - both present, no `turn` frame in the backend's own list — claude
+//   was interrupted and the answer was lost on the way back.
+// - both present, a `turn` frame sitting in that list — it came back
+//   and **the face did not use it**, which is the only one of the four
+//   that lives in this app's own code.
+//
+// The last two are the split that needs the backend read: `chat_poll`
+// from `since: 0` is a pure read of an append-only list and takes
+// nothing from the app's own cursor, so asking costs nothing and
+// disturbs nothing.
+async function frameKinds(page, id) {
+  return page.evaluate(
+    async ([port, sid]) => {
+      const r = await fetch(`http://127.0.0.1:${port}/chat_poll`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: sid, since: 0 }),
+      });
+      if (!r.ok) throw new Error(`chat_poll refused: ${await r.text()}`);
+      return JSON.parse(await r.text()).frames.map((f) => f.kind);
+    },
+    [BRIDGE_PORT, id],
+  );
+}
+
+async function hangReading(page, dir, title, before) {
+  const mark = (f) => {
+    const at = join(dir, f);
+    return existsSync(at) ? JSON.stringify(readFileSync(at, "utf8")) : "absent";
+  };
+  const id = await page
+    .locator(`[data-title="${title}"]`)
+    .getAttribute("data-row")
+    .catch(() => null);
+  let since = "no row to ask about";
+  let all = since;
+  if (id) {
+    const kinds = await frameKinds(page, id).catch((e) => String(e));
+    if (Array.isArray(kinds)) {
+      all = kinds.join(",") || "(none)";
+      since = kinds.slice(before).join(",") || "(none)";
+    } else {
+      all = kinds;
+      since = kinds;
+    }
+  }
+  const stopButton = await page.locator("[data-chat-stop]").count();
+  const thinking = await page.locator("[data-chat-thinking]").count();
+  return [
+    "hang/stop reading:",
+    `  fake.hanging   = ${mark("fake.hanging")}`,
+    `  fake.interrupt = ${mark("fake.interrupt")}`,
+    `  since the stop = ${since}`,
+    `  whole stream   = ${all}`,
+    `  on screen      = stop x${stopButton}, thinking x${thinking}`,
+  ].join("\n");
+}
+
 async function say(page, text) {
   const box = page.locator("[data-chat-input]");
   for (let i = 0; i < 5; i += 1) {
@@ -358,12 +432,24 @@ for line in sys.stdin:
     if "hang" in text:
         # The turn that does not end on its own: it ends when the shim
         # relays the client's stop as the control protocol's interrupt.
+        #
+        # The two marks are for the hang/stop flake (lane-acp-b6's
+        # three-way split, read by \`hangReading\` below). They say what
+        # this process actually saw, which is the one thing no assertion
+        # on the screen can tell: whether the line arrived at all, and
+        # whether the stop came back down as an interrupt. The prompt
+        # text is written into them rather than a fixed word, so a mark
+        # left by an earlier round is recognisable as one.
+        with open("fake.hanging", "w") as f:
+            f.write(text)
         while True:
             line = sys.stdin.readline()
             if not line:
                 break
             c = json.loads(line)
             if c.get("type") == "control_request" and c.get("request", {}).get("subtype") == "interrupt":
+                with open("fake.interrupt", "w") as f:
+                    f.write(text)
                 break
         emit({"type": "result", "subtype": "interrupted", "session_id": sid})
         continue
@@ -3194,10 +3280,28 @@ for line in sys.stdin:
   await until("the box closed and a way out beside it", 20_000, async () =>
     (await page.locator("[data-chat-stop]").count()) === 1,
   );
+  //      **The frame count before the click is what makes the last two
+  //      readings separable.** The backend's list is everything this
+  //      conversation ever received — four turns by now — so "a turn
+  //      frame is in there" is true whether or not this stop produced
+  //      one. What answers the question is the tail after this instant.
+  const hangRow = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  const framesAtStop = (await frameKinds(page, hangRow).catch(() => [])).length;
   await page.locator("[data-chat-stop]").click();
-  await until("the turn ended and the box back", 20_000, async () =>
-    (await page.locator("[data-chat-stop]").count()) === 0,
-  );
+  //      **This is the wait that flakes** (about two runs in seven), and
+  //      the reading is attached here rather than chased with a loop of
+  //      its own: the occurrence is already happening on its own in
+  //      every ordinary run, so what was missing was never a reproducer,
+  //      only a note of which link gave way. See `hangReading`.
+  try {
+    await until("the turn ended and the box back", 20_000, async () =>
+      (await page.locator("[data-chat-stop]").count()) === 0,
+    );
+  } catch (e) {
+    throw new Error(
+      `${e.message}\n${await hangReading(page, wizDir, "wizard-one", framesAtStop)}`,
+    );
+  }
   // The proof that the *turn* ended and not the session: it takes
   // another line. A pane that merely repainted would fail here.
   await say(page, "after the stop");
