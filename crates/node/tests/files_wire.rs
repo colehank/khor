@@ -3,6 +3,18 @@
 //! and must see exactly what alpha's disk holds. The control half: an
 //! unpaired key sending the same ops is refused — "it worked" on the
 //! paired path proves nothing unless the unpaired one truly does not.
+//!
+//! # The clock here is issue #73's, not this file's subject
+//!
+//! Every deadline below is sized to swallow one full first-touch stall
+//! (#73: 20-40s per process on this machine, the comment in
+//! `wait_for_endpoint_file` has the mechanism). **Uniformly**, because
+//! which call pays it is not deterministic — on 2026-08-21 `pair`
+//! cleared 15s here while `sync_now` blew 20s, and a per-call guess
+//! would be exactly that. The runtime is multi-thread for the other
+//! half of #73: that stall is *synchronous*, and on a current-thread
+//! runtime it freezes tokio's clock, so every timeout in the file
+//! silently stretches with it and a real hang stops looking like one.
 
 use std::fs;
 use std::path::PathBuf;
@@ -23,17 +35,30 @@ fn root(tag: &str) -> PathBuf {
 }
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
+    // 90s, not 10 (issue #73, sampled 2026-08-20; re-confirmed on this
+    // machine 2026-08-21 — this file's one real-connection test timed out
+    // at `sync_now` for this reason and no other). On a Mac operated over
+    // ssh, a freshly compiled test binary is a new face to macOS: its
+    // first network-stack touch (interface enumeration,
+    // SystemConfiguration) hangs **20-40s per process**, waiting on an
+    // authorization prompt nobody can ever click.
+    //
+    // What the budgets here are distinguishing themselves from: a real
+    // hang, which is unbounded. 90s against a measured 40s ceiling is
+    // rather more than double — deliberately, because a timeout that
+    // never fires costs nothing when the test passes, and a flaky red
+    // costs a person a trip to find out it was the machine.
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("serve should write endpoint.json within 10s");
+    .expect("serve should write endpoint.json");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_refused() {
     let ra = root("a");
     let rb = root("b");
@@ -44,7 +69,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     let a = Node::open_as(ra.clone(), "alpha").unwrap();
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let ticket = a.invite().unwrap();
-    timeout(Duration::from_secs(15), b.pair(&ticket))
+    timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -57,7 +82,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     fs::write(browse.join("Banana"), b"xy").unwrap();
 
     let (at, rows, truncated) = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         b.ls_of("alpha", browse.to_str().unwrap()),
     )
     .await
@@ -70,7 +95,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
 
     // A relative path is refused across the real wire too — the refusal
     // must survive the trip, not just the unit test.
-    let err = timeout(Duration::from_secs(15), b.ls_of("alpha", "some/where"))
+    let err = timeout(Duration::from_secs(60), b.ls_of("alpha", "some/where"))
         .await
         .expect("must not hang")
         .unwrap_err();
@@ -85,7 +110,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     let dl = rb.join("landed");
     fs::create_dir_all(&dl).unwrap();
     let (moved, dest) = timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(60),
         b.pull_path("alpha", browse.join("dataset.bin").to_str().unwrap(), &dl),
     )
     .await
@@ -106,7 +131,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     let rel = std::path::PathBuf::from(format!("../../target/pull-rel-{}", std::process::id()));
     fs::create_dir_all(&rel).unwrap();
     let (rel_moved, rel_dest) = timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(60),
         b.pull_path("alpha", browse.join("dataset.bin").to_str().unwrap(), &rel),
     )
     .await
@@ -125,7 +150,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     // Pulling onto an existing name refuses before any byte moves —
     // overwriting is the one irreversible act on this path.
     let err = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         b.pull_path("alpha", browse.join("dataset.bin").to_str().unwrap(), &dl),
     )
     .await
@@ -136,7 +161,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
 
     // A directory is not a file, and the refusal crosses the wire.
     let err = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         b.pull_path("alpha", browse.join("zoo").to_str().unwrap(), &dl),
     )
     .await
@@ -155,7 +180,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         .find(|d| d.name == "alpha")
         .expect("pairing put alpha in beta's table");
     let resp = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         raw_request(
             iroh::SecretKey::generate(),
             &alpha_info.id,
@@ -171,7 +196,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         other => panic!("an unpaired ls must be refused, got {other:?}"),
     }
     let resp = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         raw_request(
             iroh::SecretKey::generate(),
             &alpha_info.id,
@@ -194,7 +219,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     // over the same pump as every replicated decision — pin here,
     // listed there.
     b.pin_dir("alpha", browse.to_str().unwrap(), true).unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -208,7 +233,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     // A web page pinned against alpha as its exit travels the same pump —
     // the fourth pins table, keyed URL-and-machine (docs/NET.md 借网).
     b.pin_web("alpha", "https://example.com/read", true).unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();

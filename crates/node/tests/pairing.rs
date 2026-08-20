@@ -2,6 +2,18 @@
 //! machine, real UDP, plus the control groups — what must not connect
 //! really doesn't. Every await is under a timeout: a control that hangs
 //! proves nothing.
+//!
+//! # The clock here is issue #73's, not this file's subject
+//!
+//! Every deadline below is sized to swallow one full first-touch stall
+//! (#73: 20-40s per process on this machine, the comment in
+//! `wait_for_endpoint_file` has the mechanism). **Uniformly**, because
+//! which call pays it is not deterministic — on 2026-08-21 `pair`
+//! cleared 15s here while `sync_now` blew 20s, and a per-call guess
+//! would be exactly that. The runtime is multi-thread for the other
+//! half of #73: that stall is *synchronous*, and on a current-thread
+//! runtime it freezes tokio's clock, so every timeout in the file
+//! silently stretches with it and a real hang stops looking like one.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -18,17 +30,30 @@ fn root(tag: &str) -> PathBuf {
 }
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
+    // 90s, not 10 (issue #73, sampled 2026-08-20; re-confirmed on this
+    // machine 2026-08-21 — this file's two real-connection tests both
+    // timed out at `sync_now` for this reason and no other). On a Mac operated over
+    // ssh, a freshly compiled test binary is a new face to macOS: its
+    // first network-stack touch (interface enumeration,
+    // SystemConfiguration) hangs **20-40s per process**, waiting on an
+    // authorization prompt nobody can ever click.
+    //
+    // What the budgets here are distinguishing themselves from: a real
+    // hang, which is unbounded. 90s against a measured 40s ceiling is
+    // rather more than double — deliberately, because a timeout that
+    // never fires costs nothing when the test passes, and a flaky red
+    // costs a person a trip to find out it was the machine.
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("serve should write endpoint.json within 10s");
+    .expect("serve should write endpoint.json");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     let ra = root("a");
     let rb = root("b");
@@ -43,7 +68,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     let ticket = a.invite().unwrap();
 
     let b = Node::open_as(rb.clone(), "beta").unwrap();
-    let peer_name = timeout(Duration::from_secs(15), b.pair(&ticket))
+    let peer_name = timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -58,7 +83,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
 
     // beta writes into alpha's window and pushes; alpha's serve merges.
     b.tell("alpha", "from beta").unwrap();
-    let outcomes = timeout(Duration::from_secs(20), b.sync_now())
+    let outcomes = timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -78,7 +103,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
 
     // The other direction: alpha notes to self, beta pulls it.
     a.tell("alpha", "back from alpha").unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -115,7 +140,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     assert!(row_b.session.unread > 0, "the outside line should count as unread on beta");
 
     // It syncs over and is unread on alpha too (control for the clear).
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -126,7 +151,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // Seen is a decision that travels: beta looks, and alpha's badge
     // clears without anyone touching alpha.
     b.seen(&row_b.session.id).unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -138,7 +163,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // A burned token pairs nobody: gamma replays beta's ticket.
     let rc = root("c");
     let c = Node::open_as(rc.clone(), "gamma").unwrap();
-    let err = timeout(Duration::from_secs(15), c.pair(&ticket))
+    let err = timeout(Duration::from_secs(60), c.pair(&ticket))
         .await
         .expect("refusal must not hang either")
         .unwrap_err();
@@ -157,7 +182,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         store.flush(&loaded.doc).unwrap();
     }
     // …and the far side still refuses by name.
-    let outcomes = timeout(Duration::from_secs(20), c.sync_now())
+    let outcomes = timeout(Duration::from_secs(60), c.sync_now())
         .await
         .expect("refusal must not hang either")
         .unwrap();
@@ -185,7 +210,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
 /// was minted, not by waiting fifteen minutes and not by reaching around
 /// the check: the dial, the request, the refusal and the word all go
 /// through the path a real expired ticket would.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     let ra = root("exp-a");
     let rb = root("exp-b");
@@ -205,7 +230,7 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     std::fs::write(&record, minted.to_string()).unwrap();
 
     let b = Node::open_as(rb.clone(), "beta").unwrap();
-    let err = timeout(Duration::from_secs(15), b.pair(&stale))
+    let err = timeout(Duration::from_secs(60), b.pair(&stale))
         .await
         .expect("a refusal must not hang")
         .unwrap_err();
@@ -220,7 +245,7 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
 
     // The control: a fresh ticket, same machines, same link.
     let fresh = a.invite().unwrap();
-    let name = timeout(Duration::from_secs(15), b.pair(&fresh))
+    let name = timeout(Duration::from_secs(60), b.pair(&fresh))
         .await
         .expect("pairing must not hang")
         .unwrap();
