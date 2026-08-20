@@ -25,7 +25,11 @@ fn root(tag: &str) -> PathBuf {
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    // 90s and multi-thread for the same reason as transfer.rs: a fresh
+    // test binary's first network-stack touch hangs 20-40s on this
+    // ssh-operated Mac (#73), synchronously — on current_thread that
+    // froze tokio's clock and every timeout below quietly stretched.
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -34,7 +38,7 @@ async fn wait_for_endpoint_file(root: &PathBuf) {
     .expect("serve should write endpoint.json within 10s");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let ra = root("a");
     let rb = root("b");
@@ -51,17 +55,17 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let g = Node::open_as(rg.clone(), "gamma").unwrap();
 
     let t1 = a.invite().unwrap();
-    timeout(Duration::from_secs(15), b.pair(&t1))
+    timeout(Duration::from_secs(45), b.pair(&t1))
         .await
         .expect("pairing must not hang")
         .unwrap();
     let t2 = a.invite().unwrap();
-    timeout(Duration::from_secs(15), g.pair(&t2))
+    timeout(Duration::from_secs(45), g.pair(&t2))
         .await
         .expect("pairing must not hang")
         .unwrap();
     // beta learns gamma through the table before gamma ever dials it.
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(45), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -71,11 +75,11 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let src = ra.join("plan.pdf");
     fs::write(&src, &payload).unwrap();
     let tid = a.send("beta", &src).unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(45), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
-    timeout(Duration::from_secs(20), g.sync_now())
+    timeout(Duration::from_secs(45), g.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -116,7 +120,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     assert_eq!(again, 0, "a payload already landed moves nothing");
 
     // After a fresh sync the third device sees the outcome word.
-    timeout(Duration::from_secs(20), g.sync_now())
+    timeout(Duration::from_secs(45), g.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -136,7 +140,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let gamma_key =
         khor_net::identity::load_or_create(&rg.join(".khor").join("identity.key")).unwrap();
     let resp = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(45),
         raw_request(
             gamma_key,
             &beta_info.id,
@@ -154,7 +158,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
 
     // An unpaired key gets nothing — Act is gated like everything else.
     let resp = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(45),
         raw_request(
             iroh::SecretKey::generate(),
             &beta_info.id,

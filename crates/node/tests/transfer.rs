@@ -21,8 +21,16 @@ fn root(tag: &str) -> PathBuf {
 }
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
+    // 90s, not 10: on a Mac operated over ssh, a freshly compiled test
+    // binary is a new face to macOS — its first network-stack touch
+    // (interface enumeration, SystemConfiguration) hangs 20-40s per
+    // process, waiting on an authorization prompt nobody can ever click
+    // (#73, sampled 2026-08-20).
+    // That hang is synchronous, which is also why these tests run on a
+    // multi-thread runtime: on current_thread it froze tokio's clock
+    // and every timeout in here silently stretched with it.
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -31,7 +39,7 @@ async fn wait_for_endpoint_file(root: &PathBuf) {
     .expect("serve should write endpoint.json within 10s");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let ra = root("a");
     let rb = root("b");
@@ -41,7 +49,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let a = Node::open_as(ra.clone(), "alpha").unwrap();
     let ticket = a.invite().unwrap();
     let b = Node::open_as(rb.clone(), "beta").unwrap();
-    timeout(Duration::from_secs(15), b.pair(&ticket))
+    timeout(Duration::from_secs(45), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -53,7 +61,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let tid = a.send("beta", &src).unwrap();
 
     // The summary reaches beta on a sync; not one payload byte does.
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(45), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();

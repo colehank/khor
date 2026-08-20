@@ -45,6 +45,37 @@ pub fn configured_relays() -> Vec<String> {
 pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<iroh::Endpoint> {
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
+        // Compiled-in Mozilla roots instead of the operating system's:
+        // the system route reads the macOS Keychain, and on a Mac
+        // operated over ssh that read hangs 25-40 seconds — every
+        // process's FIRST bind paid it (measured 2026-08-20: khor's
+        // own test binaries at 36-43s per process, while the verdict
+        // hid because the hang is synchronous and froze single-thread
+        // tokio timers with it, #73). These roots only verify outward
+        // TLS (https relays, pkarr, DoH); iroh's own encryption never
+        // touched the Keychain in the first place.
+        .ca_tls_config(iroh::tls::CaTlsConfig::embedded())
+        // Explicit public nameservers instead of "read the system's":
+        // on macOS the system route goes through SCDynamicStore, whose
+        // ApplicationBundleID lookup hung 40 SECONDS per process for
+        // unbundled binaries — measured with `sample` on 2026-08-20,
+        // the whole of #73's frozen-timer mystery (the hang is
+        // synchronous, so it froze single-threaded tokio clocks too).
+        // khor's own relays are IPs and need no DNS at all; these
+        // servers only resolve n0's relay/lookup names where they are
+        // reachable. The cost — a network whose ONLY nameserver is an
+        // internal one loses n0 name resolution — is on the ledger.
+        .dns_resolver(
+            iroh::dns::DnsResolver::builder()
+                .with_nameserver("223.5.5.5:53".parse().unwrap(), iroh::dns::DnsProtocol::Udp)
+                .with_nameserver("8.8.8.8:53".parse().unwrap(), iroh::dns::DnsProtocol::Udp)
+                .with_nameserver("1.1.1.1:53".parse().unwrap(), iroh::dns::DnsProtocol::Udp)
+                .with_nameserver(
+                    "[2400:3200::1]:53".parse().unwrap(),
+                    iroh::dns::DnsProtocol::Udp,
+                )
+                .build(),
+        )
         .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()]);
     let extras: Vec<iroh::RelayConfig> = extra_relays
         .iter()
