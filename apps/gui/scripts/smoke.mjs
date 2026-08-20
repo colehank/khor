@@ -2304,6 +2304,38 @@ for line in sys.stdin:
     (await page.locator('[data-chip="dev:beta"]').count()) === 0,
   );
 
+  // 24d) browser 的 omnibox (批③ 四笔): the exit is a chip, the address
+  //      is text, and the candidates are the pinned pages — the one
+  //      list of addresses this app actually has.
+  //
+  //      **Enter is deliberately not pressed here.** Submitting opens a
+  //      page through a real borrow, on the browser of whoever is
+  //      running this — the same reason 24b below never clicks a link.
+  //      What is checked is that the box offers the right things; that
+  //      the open itself works is `tunnel_wire`'s.
+  await openLanding("browser");
+  await until("the browser pane's box", 10_000, async () =>
+    (await page.locator("[data-omnibox]").count()) === 1,
+  );
+  const webInput = page.locator("[data-omni-input]");
+  await webInput.click();
+  await webInput.fill("beta");
+  await until("beta offered as an exit", 10_000, async () =>
+    (await page.locator('[data-omni-item="dev:beta"]').count()) === 1,
+  );
+  await webInput.press("Enter");
+  await until("beta as the exit chip", 15_000, async () =>
+    (await page.locator('[data-chip="dev:beta"]').count()) === 1,
+  );
+  //      Before any page is pinned there is nothing to complete with,
+  //      and the box says so by offering nothing — 24b pins one below,
+  //      and the candidate is asserted there where the pin provably
+  //      exists.
+  await page.locator('[data-chip-remove="dev:beta"]').click();
+  await until("off the exit again", 10_000, async () =>
+    (await page.locator('[data-chip="dev:beta"]').count()) === 0,
+  );
+
   // 24b) the browser landing keeps pages: picking a machine opens the
   //      address bar (whose placeholder names the exit, so the user
   //      knows a page leaves through it), pinning a typed page makes a
@@ -2344,9 +2376,25 @@ for line in sys.stdin:
   await until("the pinned page in the shortcut list", 10_000, async () =>
     (await page.locator(`[data-pinned-web="${url}"]`).count()) === 1,
   );
+  // …and the omnibox offers it as a completion (批③ 四笔). Asserted
+  // here because this is where a pin provably exists — the candidates
+  // are the pinned pages and nothing else, so before this point there
+  // was correctly nothing to offer. Typed, not pressed: Enter would
+  // dial.
+  await openExit();
+  await until("the exit chip", 10_000, async () =>
+    (await page.locator("[data-chip]").count()) === 1,
+  );
+  await page.locator("[data-omni-input]").click();
+  await page.locator("[data-omni-input]").fill(url.slice(0, url.length - 2));
+  await until("the pinned page offered as a completion", 10_000, async () =>
+    (await page.locator(`[data-omni-item="${url}"]`).count()) === 1,
+  );
+  await page.locator("[data-omni-input]").fill("");
+  await page.keyboard.press("Escape");
+
   // Unpin from its exit — reached by the device row, not the shortcut,
   // so opening it never dials.
-  await openExit();
   await until("the address bar back", 10_000, async () =>
     (await page.locator(`[data-unpin-web="${url}"]`).count()) === 1,
   );

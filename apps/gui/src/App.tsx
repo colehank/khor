@@ -5,6 +5,8 @@ import {
   fetchHooks,
   fetchSessions,
   fetchUsage,
+  fetchWebPins,
+  openWeb,
   installHooks,
   markSeen,
   pinDevice,
@@ -14,6 +16,7 @@ import {
   type HooksState,
   type SessionRow,
   type Usage,
+  type WebPinRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import {
@@ -607,6 +610,47 @@ export default function App() {
     ];
   }, [devices, filesMachine, pathEntries, pathDir]);
 
+  // The browser pane's box: an exit machine, then an address on it.
+  //
+  // The same two roles as files — a chip that names the machine, and
+  // text that is the thing to open. The candidates are the pinned pages
+  // (`khor_node::webpins`), which is the one list of addresses this app
+  // actually has; it does not remember what anybody typed, because a
+  // history nobody asked for is a surface with its own rules.
+  const [webPins, setWebPins] = useState<WebPinRow[]>([]);
+  useEffect(() => {
+    if (landing !== "browser") return;
+    let stopped = false;
+    fetchWebPins()
+      .then((pins) => {
+        if (!stopped) setWebPins(pins);
+      })
+      .catch(() => {});
+    return () => {
+      stopped = true;
+    };
+  }, [landing, surf]);
+  const surfMachine = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
+  const browserAxes = useMemo<OmniAxis[]>(() => {
+    const machines: OmniAxis = {
+      key: "dev:",
+      label: gui.devices_tab,
+      candidates: devices.map((d) => ({ key: `dev:${d.name}`, label: d.name, face: d.face })),
+    };
+    if (!surfMachine) return [machines];
+    return [
+      machines,
+      {
+        key: "web:",
+        label: gui.browser_tab,
+        role: "text",
+        // Keyed by the address, because the address *is* the completed
+        // text; the name is what a person reads it by.
+        candidates: webPins.map((w) => ({ key: w.url, label: w.name || w.url })),
+      },
+    ];
+  }, [devices, surfMachine, webPins]);
+
   const chooseArrange = useCallback((key: string) => {
     setArrangeBy(key);
     // Kept even if storage refuses (private mode, quota): the choice
@@ -730,8 +774,24 @@ export default function App() {
         filter={
           sessions
             ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord }
-            : landing === "files"
+            : landing === "browser"
               ? {
+                  options: [],
+                  chosen: surf && surfMachine ? [`dev:${surfMachine.name}`] : [],
+                  onToggle: (key) => {
+                    const name = key.slice("dev:".length);
+                    const found = devices.find((d) => d.name === name);
+                    if (!found || (surf && surf.device === found.id)) {
+                      setSurf(null);
+                      setScreen("list");
+                      return;
+                    }
+                    setSurf({ device: found.id, url: null });
+                    setScreen("detail");
+                  },
+                }
+              : landing === "files"
+                ? {
                   // No menu of its own — the files box has one axis and
                   // it is navigation, not narrowing. The shape is the
                   // filter's because the chip mechanism reads it; the
@@ -755,14 +815,32 @@ export default function App() {
                 }
               : undefined
         }
-        axes={sessions ? sessionAxes : landing === "files" ? filesAxes : undefined}
+        axes={
+          sessions
+            ? sessionAxes
+            : landing === "files"
+              ? filesAxes
+              : landing === "browser"
+                ? browserAxes
+                : undefined
+        }
         onSubmit={
           landing === "files" && browse
             ? (text) => {
                 setBrowse({ device: browse.device, path: text });
                 setScreen("detail");
               }
-            : undefined
+            : landing === "browser" && surf && surfMachine
+              ? (text) => {
+                  // Opening a page is a real act on this machine's own
+                  // browser — the pane it lands in is where its outcome
+                  // is said (BrowserPane), so this only starts it.
+                  if (!text.trim()) return;
+                  setSurf({ device: surf.device, url: text });
+                  setScreen("detail");
+                  openWeb(surfMachine.name, text).catch(() => {});
+                  }
+                : undefined
         }
         arrange={
           sessions
