@@ -1243,6 +1243,25 @@ impl Node {
         gui_host::spawn_gui_host(None, title, cmd, None, false)
     }
 
+    /// [`Self::open_gui`], for an agent the user registered by name
+    /// (批⑥). The name rides to the row as its
+    /// [`khor_core::Session::category`] — **the user's own answer to
+    /// "whose session is this"**, which is not the guess khor refuses
+    /// to make from a command line (`gui_host`'s vendor door, and the
+    /// wizard's 智能体 field before it).
+    ///
+    /// A row opened without a registration keeps no category at all:
+    /// an ad-hoc command names nothing khor may put on a row, and an
+    /// honest gap is the answer there (docs/SESSION.md 认不出就不落词).
+    pub fn open_gui_as(
+        &self,
+        title: &str,
+        cmd: &[String],
+        agent: &str,
+    ) -> Result<SessionId, String> {
+        gui_host::spawn_gui_host(None, title, cmd, Some(agent), false)
+    }
+
     /// `open_gui`, born in a chosen directory (the wizard's 目录 field);
     /// the agent underneath inherits it as the session's cwd.
     ///

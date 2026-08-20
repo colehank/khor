@@ -102,13 +102,19 @@ usage = """
   log <机器>            看那个窗口的消息
   run [--tui] [--title 名] -- <命令...>
                         临时 session:跟着这个终端活,全程网里可见
-  open [-d] [--tui|--gui] [--on 机器] [--title 名] [-- 命令]
+  open [-d] [--tui|--gui] [--agent 名字] [--on 机器] [--title 名] [-- 命令]
                         持久 session:终端关了还在,能重连(默认接上;-d 只开;
                         --gui 走 ACP 协议,khor 画对话,给会说这个协议的 agent;
-                        --on 在别的机器上开,不给命令就用那台自己的 shell)
+                        --agent 用登记过的那个 agent(见 agents),自带 --gui;
+                        --on 在别的机器上开,不给命令就用那台自己的 shell;
+                        --gui 目前只在本机起得来,配 --on 会被拒)
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
+  agents [add <名字> -- <命令...> | rm <名字>]
+                        登记会说 ACP 的 agent:不带参数看登记过哪些。
+                        登记一次全网都认得(命令在不在各机器上,起的时候才知道);
+                        claude、codex、khor、shell 这四个名字 khor 自己在用
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   pin [-m|-d] <session|机器|机器 路径>
@@ -271,6 +277,25 @@ hooks-restart-claude = "已经在跑的 claude 要重开才一定读得到"
 # to equal once-removed.
 hooks-removed = "卸掉了: {0}"
 hooks-none-to-remove = "本来就没装,没动"
+# The agent registry (批⑥). An empty list says how to fill it, because
+# an empty listing and a broken one look the same otherwise — and the
+# one line a person needs next is the one they cannot guess.
+#
+# The registration is spelled back as the command they typed rather than
+# as the launch JSON it is stored in: the JSON is what starts the agent,
+# and reading it back is reading an implementation.
+agents-none = "还没登记过 agent: khor agents add <名字> -- <命令...>"
+agents-added = "登记好了: {0}"
+agents-forgotten = "不再登记: {0}"
+# Forgetting a name nobody registered is not an error — the caller asked
+# for a world without it, and that is the world. But it must not print
+# 「不再登记」 either, or a typo reads as a success.
+agents-was-not-there = "本来就没登记过: {0}"
+# An agent that has to run *somewhere*, and `--on` names another
+# machine. Refused out loud rather than ignored: a flag that is accepted
+# and does nothing is a session quietly opened on the wrong machine, and
+# nothing on the screen says so.
+gui-not-on-another-machine = "--gui 还不能配 --on:对话宿主只在本机起得来"
 # Said on stderr when a ticket is minted: the ticket itself goes to
 # stdout so it can be piped, and the window is something the person has
 # to know without it landing in whatever they paste.
@@ -508,6 +533,12 @@ name-not-pathable = "这个名字进不了路径: {0}"
 machine-name-not-pathable = "这个机器名进不了路径: {0}"
 no-such-machine = "机器不存在: {0}。网里现在有: {1}"
 no-such-session = "没有这个 session: {0}"
+# A name nobody registered. Names what *is* registered, `no-such-machine`'s
+# rule: the commonest reason to be here is a typo, and a list of the real
+# names answers it without a second command. When nothing is registered
+# at all the CLI says so instead — 「登记过的有: 」 with nothing after it
+# is not a sentence.
+no-such-agent = "没登记过这个 agent: {0}。登记过的有: {1}"
 # The tmux attach bridge's two refusals: a row that is not a tmux one
 # has nothing to stand a host up for, and a session the server no longer
 # lists cannot be attached — saying which is which sends the user to the

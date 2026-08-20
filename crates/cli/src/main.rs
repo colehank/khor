@@ -65,6 +65,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "open", run: open },
     Verb { word: "attach", run: attach },
     Verb { word: "takeover", run: takeover },
+    Verb { word: "agents", run: agents },
     Verb { word: "state", run: state },
     Verb { word: "seen", run: seen },
     Verb { word: "pin", run: pin },
@@ -575,6 +576,7 @@ fn open(rest: &[String]) -> Result<(), String> {
     let mut title: Option<String> = None;
     let mut cmd: Vec<String> = Vec::new();
     let mut on: Option<String> = None;
+    let mut agent: Option<String> = None;
     let mut it = rest.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -584,6 +586,14 @@ fn open(rest: &[String]) -> Result<(), String> {
             "--on" if cmd.is_empty() => {
                 on = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
             }
+            // A registered ACP agent, by the name its owner gave it
+            // (批⑥). Implies `--gui`: a registration says how to start
+            // something that speaks the protocol, and there is no other
+            // channel for it.
+            "--agent" if cmd.is_empty() => {
+                agent = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                gui = true;
+            }
             "--title" if cmd.is_empty() => {
                 title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
             }
@@ -591,19 +601,59 @@ fn open(rest: &[String]) -> Result<(), String> {
             _ => cmd.push(a.clone()),
         }
     }
+    let n = node()?;
+    // The registration decides the command and the row's 类; a name
+    // nobody registered is refused **by name**, with the registry's own
+    // sentence, rather than falling back to the shell — a typo that
+    // opens a shell session is a session on the wrong thing.
+    let vendor = match &agent {
+        Some(name) => {
+            let spec = n.agent(name)?.ok_or_else(|| {
+                let known = n.agents().unwrap_or_default();
+                if known.is_empty() {
+                    // 「登记过的有: 」 with nothing after it is not a
+                    // sentence — and "you have none yet" is a different
+                    // situation with a different next step.
+                    cli::AGENTS_NONE.to_owned()
+                } else {
+                    let names: Vec<&str> = known.iter().map(|(n, _)| n.as_str()).collect();
+                    msg::no_such_agent(name, &names.join(cli::NAME_SEPARATOR))
+                }
+            })?;
+            cmd = vec![spec.launch()];
+            Some(name.clone())
+        }
+        None => None,
+    };
     if cmd.is_empty() {
         cmd = vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())];
     }
-    let n = node()?;
-    let title = title.unwrap_or_else(|| {
-        std::path::Path::new(&cmd[0])
+    let title = title.unwrap_or_else(|| match &agent {
+        // A launch JSON has no file name worth reading; the name the
+        // person gave the agent is the one they will recognise.
+        Some(name) => name.clone(),
+        None => std::path::Path::new(&cmd[0])
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| cmd[0].clone())
+            .unwrap_or_else(|| cmd[0].clone()),
     });
     if gui {
+        // **Refused out loud, not ignored.** `--on` used to fall
+        // through this branch untouched, so `--gui --on turing` opened
+        // a conversation on *this* machine and said nothing — a flag
+        // that is accepted and does nothing is worse than one that is
+        // rejected, because the screen agrees with the person.
+        if on.is_some() {
+            return Err(cli::GUI_NOT_ON_ANOTHER_MACHINE.into());
+        }
         // No terminal exists to attach to; the id is the deliverable.
-        let id = n.open_gui(&title, &cmd)?;
+        let id = match &vendor {
+            // The name is the user's own answer to "whose session is
+            // this" — being told is not the guess `Session::category`
+            // forbids (`gui_host`'s vendor door).
+            Some(v) => n.open_gui_as(&title, &cmd, v)?,
+            None => n.open_gui(&title, &cmd)?,
+        };
         println!("{}", id.0);
         return Ok(());
     }
@@ -825,6 +875,58 @@ fn quit(rest: &[String]) -> Result<(), String> {
         println!("{}", msg::quit_hosts(hosts));
     }
     Ok(())
+}
+
+/// The ACP agent registry (`khor_sync::agents`): what this person has
+/// told khor about, said once and true on every machine.
+///
+/// Three modes on one word, `hooks`'s shape. `add` takes the command
+/// after `--` as argv rather than as one string: a path with a space in
+/// it survives that and does not survive re-splitting, and argv is
+/// exactly what the child is spawned from.
+fn agents(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    match rest.split_first() {
+        None => {
+            let listed = n.agents()?;
+            if listed.is_empty() {
+                // An empty registry and a broken one look identical;
+                // this line is the difference, and it is also the one
+                // thing a person cannot guess.
+                println!("{}", cli::AGENTS_NONE);
+            }
+            for (name, spec) in listed {
+                println!("{name}\t{}", spec.typed());
+            }
+            Ok(())
+        }
+        Some((word, tail)) if word == "add" => {
+            // `--` is optional in the same way `open`'s is: everything
+            // after the name is the command either way, and a person
+            // who typed the separator should not be told they are
+            // wrong for it.
+            let (name, argv) = tail.split_first().ok_or_else(|| USAGE.to_string())?;
+            let argv: Vec<String> =
+                argv.iter().filter(|a| a.as_str() != "--").cloned().collect();
+            n.register_agent(name, &argv)?;
+            println!("{}", cli::agents_added(name));
+            Ok(())
+        }
+        Some((word, tail)) if word == "rm" => {
+            let [name] = tail else { return Err(USAGE.into()) };
+            // Said before the removal, because after it the answer is
+            // the same either way — and a typo that prints 「不再登记」
+            // reads as a success.
+            let had = n.agent(name)?.is_some();
+            n.forget_agent(name)?;
+            println!(
+                "{}",
+                if had { cli::agents_forgotten(name) } else { cli::agents_was_not_there(name) }
+            );
+            Ok(())
+        }
+        Some(_) => Err(USAGE.into()),
+    }
 }
 
 /// Three shapes, one verb: asking is the default because it is the safe
