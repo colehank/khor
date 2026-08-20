@@ -118,6 +118,8 @@ usage = """
                         取消置顶
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
+  quit                  收摊:停掉本机的 serve 和所有 session 宿主
+                        (文件都留着,再 serve 就都回来)
   hooks [install|uninstall]
                         看钩子装没装;install 装上、uninstall 卸掉(都只碰
                         khor 自己那几条,做两遍=做一遍)
@@ -475,6 +477,12 @@ serve-swapping = "[{0}] 磁盘上的 khor 换代({1} → {2}),serve 温和重启
 # answer `version` gets to serve.
 serve-swap-refused = "[{0}] 磁盘上的 khor 换了但答不出自己的版本,不换代({1})"
 swap-no-answer = "跑得起来但没答版本"
+# quit speaks in what happened, not what was asked: a serve that was
+# not running is worth saying out loud, or the quiet success reads as
+# "stopped something".
+quit-serve-stopped = "serve 停了"
+quit-no-serve = "serve 本来就没在跑"
+quit-hosts = "收了 {0} 个 session 宿主"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # The proxied browsing window needs per-window proxy_url, which is macOS
 # 14+ only (Cargo gates the feature by target). Other platforms' proxy

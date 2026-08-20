@@ -1333,6 +1333,80 @@ impl Node {
         outcome
     }
 
+    /// Winds this machine's khor down: the serve (keeper and inner
+    /// both) and every session host with a live recorded pid. Processes
+    /// only — every file stays, and the next `khor serve` (or the
+    /// guardian's next boot pull-up) brings it all back.
+    ///
+    /// Kills go by **recorded pid**, never by name: on a shared machine
+    /// a name matches somebody else's khor too (账本: 后台进程怎么起就
+    /// 怎么收). Returns (whether a serve was told to stop, how many
+    /// session hosts were).
+    pub fn quit(&self) -> Result<(bool, usize), String> {
+        let dot = self.root().join(".khor");
+        // The serve's front door is the keeper: its pid is in
+        // serve.pid (written at its own birth), TERM forwards to the
+        // inner, and a clean stop stays stopped — nothing resurrects
+        // it but the guardian's next boot.
+        let keeper = fs::read_to_string(dot.join("serve.pid"))
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .filter(|&p| pid_running(p));
+        let inner = self.endpoint_file()?.map(|e| e.pid);
+        let served = keeper.is_some() || inner.is_some();
+        if let Some(pid) = keeper {
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            }
+        } else if let Some(pid) = inner {
+            // A serve from before the pid file, or started by hand:
+            // the endpoint names the inner, and its process group is
+            // the keeper's session (setsid at birth groups exactly the
+            // pair) — the group signal reaches both without guessing
+            // anybody's ppid. TERM straight at the inner would only
+            // teach the keeper to respawn it.
+            unsafe {
+                let group = libc::getpgid(pid as libc::pid_t);
+                if group > 0 {
+                    libc::kill(-group, libc::SIGTERM);
+                } else {
+                    libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                }
+            }
+        }
+        if served {
+            // Let both lives leave before sweeping hosts, so the
+            // count below cannot race a keeper mid-handover.
+            for _ in 0..30 {
+                let keeper_gone = keeper.is_none_or(|p| !pid_running(p));
+                let inner_gone = inner.is_none_or(|p| !pid_running(p));
+                if keeper_gone && inner_gone {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        let mut hosts = 0usize;
+        if let Ok(entries) = fs::read_dir(crate::live::sessions_dir(self.root())) {
+            for entry in entries.flatten() {
+                let Ok(hf) = crate::host::read_host_file(&entry.path()) else {
+                    continue;
+                };
+                if !pid_running(hf.host_pid) {
+                    continue;
+                }
+                hosts += 1;
+                unsafe {
+                    // The child's group first (the shell or agent under
+                    // the pty), then the host — the order `close` uses.
+                    libc::kill(-(hf.child_pid as libc::pid_t), libc::SIGTERM);
+                    libc::kill(hf.host_pid as libc::pid_t, libc::SIGTERM);
+                }
+            }
+        }
+        Ok((served, hosts))
+    }
+
     /// Creates a one-time pairing ticket. Needs `khor serve` running —
     /// the ticket carries the live endpoint's addresses.
     ///

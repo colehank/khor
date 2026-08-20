@@ -71,6 +71,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "unpin", run: unpin },
     Verb { word: "close", run: close },
     Verb { word: "serve", run: serve },
+    Verb { word: "quit", run: quit },
     Verb { word: "hooks", run: hooks },
     Verb { word: "invite", run: invite },
     Verb { word: "pair", run: pair },
@@ -791,11 +792,33 @@ fn mcp(_rest: &[String]) -> Result<(), String> {
 /// start the next life).
 fn serve(_rest: &[String]) -> Result<(), String> {
     if !khor_node::keeper::is_inner() {
+        // The keeper's own pid, where `khor quit` and the installer
+        // both look. serve-up writes the same number when it is the
+        // parent; this write is for the starts nobody scripted (a GUI,
+        // a hand, a foreground terminal).
+        let dot = Node::root_from_env().join(".khor");
+        let _ = std::fs::create_dir_all(&dot);
+        let _ = std::fs::write(dot.join("serve.pid"), std::process::id().to_string());
         return khor_node::keeper::keep();
     }
     let n = node()?;
     eprintln!("{}", cli::serve_banner(n.name()));
     rt()?.block_on(n.serve())
+}
+
+/// Processes only, files stay — the opposite end of `close`, which is
+/// per-session and deletes what that session received. The next
+/// `khor serve` (or the guardian's next boot) brings everything back.
+fn quit(rest: &[String]) -> Result<(), String> {
+    let [] = rest else {
+        return Err(USAGE.into());
+    };
+    let (served, hosts) = node()?.quit()?;
+    println!("{}", if served { msg::QUIT_SERVE_STOPPED } else { msg::QUIT_NO_SERVE });
+    if hosts > 0 {
+        println!("{}", msg::quit_hosts(hosts));
+    }
+    Ok(())
 }
 
 /// Three shapes, one verb: asking is the default because it is the safe
