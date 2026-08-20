@@ -626,6 +626,26 @@ half-a-frame = "帧读了一半: {0}"
 cant-find-self = "找不到自己的可执行文件: {0}"
 host-wont-start = "宿主起不来: {0}"
 host-never-ready = "宿主没在 5 秒内就位"
+# The conversation host's own wait, which is thirty seconds rather than
+# five: an ACP agent has to boot and answer two requests before it can
+# say a session exists. A separate key rather than a shared one with the
+# number taken out — a timeout a person is staring at is more useful
+# with the number in it, and the two waits are genuinely different
+# lengths.
+#
+# **This is now the "it really did hang" answer and nothing else.**
+# Every way an agent can decline out loud has its own sentence below, so
+# reaching this one means no answer of any kind arrived.
+ghost-never-ready = "对话宿主没在 30 秒内就位"
+# The three ways an agent can decline to open a session
+# (`khor_acp::Refusal`). One sentence each, because the remedies have
+# nothing to do with each other: log in / this agent is too new for this
+# khor / the command is wrong or it is not an ACP agent at all. Each
+# carries the agent's own words, which is evidence and not the sentence
+# — an agent may say nothing at all, and 「起不来: 」 is not a message.
+agent-wants-a-login = "这个 agent 要先登录才能开会话(它说: {0})"
+agent-speaks-another-acp = "这个 agent 说的 ACP 是第 {0} 版,khor 说的是第 1 版"
+agent-wont-talk = "这个 agent 没起来,或者它不说 ACP: {0}"
 host-gone = "宿主没了——session 可能已收场,看 khor sessions"
 cant-open-pty = "开不了 PTY: {0}"
 child-has-no-pid = "孩子没有 pid"

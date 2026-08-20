@@ -66,6 +66,15 @@ pub enum ChatFrame {
     Turn { stop: String },
     /// The conversation is over; no more frames follow.
     Gone,
+    /// What the agent on the other end can do — told once, when this
+    /// face attaches (`khor_node::gui_host::GuiNote::Agent`).
+    ///
+    /// `replays` is the one a face must act on: an agent that does not
+    /// replay answers a history request with an empty bracket, which is
+    /// **the same bracket** a brand-new conversation answers with. A
+    /// pane that only watched the answer would paint "nothing was said
+    /// here" for an agent whose past simply cannot be fetched.
+    Agent { name: Option<String>, replays: bool },
 }
 
 /// What a poll answers: the frames since the cursor, the next cursor,
@@ -114,6 +123,7 @@ fn frame_of(note: GuiNote) -> ChatFrame {
         GuiNote::Turning => ChatFrame::Turning,
         GuiNote::Turn(stop) => ChatFrame::Turn { stop },
         GuiNote::Gone => ChatFrame::Gone,
+        GuiNote::Agent { name, replays } => ChatFrame::Agent { name, replays },
     }
 }
 

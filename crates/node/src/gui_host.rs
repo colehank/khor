@@ -138,6 +138,17 @@ pub enum GuiNote {
     /// buttons on a permission that was settled minutes ago, and
     /// pressing one answers a request that already has an answer.
     Answered { ask: u64, option: Option<String> },
+    /// What the agent on the other end said it can do, told to a face
+    /// the moment it attaches (`khor_acp::Facts`). Tail-appended.
+    ///
+    /// **`replays` is here because its absence has no shape of its
+    /// own.** An agent that cannot replay answers a history request
+    /// with nothing, and nothing is exactly what a conversation where
+    /// no one has spoken yet looks like — so a face with only the
+    /// answer to go on paints "no past" for both, and one of those two
+    /// is a lie. Told rather than inferred: the capability is on the
+    /// handshake, which happened before any face existed.
+    Agent { name: Option<String>, replays: bool },
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -251,9 +262,46 @@ fn spawn_ghost(
             let _ = std::fs::remove_file(&ready);
             return Ok(SessionId(id.trim().to_owned()));
         }
+        // The ghost's own account of why there is no session. Without
+        // it the only thing this loop can say is that thirty seconds
+        // passed — so an agent that refused in the first half second
+        // for a reason it stated plainly ("log in first") was reported
+        // as a host that never came up. The ghost's stderr goes to
+        // /dev/null and its exit code is not waited on; a file beside
+        // the marker is the one channel that already exists here.
+        if let Ok(why) = std::fs::read_to_string(&refusal_path(&ready)) {
+            let _ = std::fs::remove_file(refusal_path(&ready));
+            return Err(why);
+        }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    Err(msg::HOST_NEVER_READY.into())
+    Err(msg::GHOST_NEVER_READY.into())
+}
+
+/// Where the ghost writes why it will never be ready. Beside the marker
+/// rather than instead of it: "there is a session" and "there is not,
+/// because…" are two different messages, and a reader that had to tell
+/// them apart by parsing one file would have to guess at a session id
+/// that happened to look like a sentence.
+fn refusal_path(ready: &std::path::Path) -> std::path::PathBuf {
+    let mut p = ready.as_os_str().to_owned();
+    p.push(".why");
+    std::path::PathBuf::from(p)
+}
+
+/// khor's sentence for one [`khor_acp::Refusal`].
+///
+/// **The kind picks the sentence; the agent's own words ride along as
+/// evidence.** All three used to be one string, and the commonest of
+/// them — an agent that runs fine and wants a login — read exactly like
+/// a typo in the command, which sends a person to re-check something
+/// that was never wrong.
+fn refusal_words(r: &khor_acp::Refusal) -> String {
+    match r {
+        khor_acp::Refusal::Login(said) => msg::agent_wants_a_login(said),
+        khor_acp::Refusal::Version(said) => msg::agent_speaks_another_acp(said),
+        khor_acp::Refusal::Wont(said) => msg::agent_wont_talk(said),
+    }
 }
 
 struct Fanout {
@@ -296,12 +344,15 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                 None => khor_acp::start(&command, cwd).await,
             }
         })
-        // The agent's own words, for now. Which *kind* of refusal it
-        // was is on `Refusal` and still unread here — the opener has
-        // nowhere to show it yet, and inventing khor's sentence in the
-        // ghost, whose stderr goes to /dev/null, would put it where
-        // nobody can read it either.
-        .map_err(|r| r.said().to_owned())?;
+        // The opener is waiting on a file, and this is the only moment
+        // that knows why there will never be one. Written before
+        // returning, so the wait ends at the refusal rather than at its
+        // own timeout thirty seconds later.
+        .map_err(|r| {
+            let why = refusal_words(&r);
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            why
+        })?;
 
     // The vendor's uuid is the id — the whole merge story hangs on this
     // line (module head).
@@ -411,6 +462,13 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         // replayed and live updates indistinguishably).
         let mut replay_wanted: Vec<u64> = Vec::new();
         let mut in_turn: Option<tokio::task::JoinHandle<()>> = None;
+        // Read once here rather than off the handle at each use: this
+        // is what the handshake said, and it cannot change while the
+        // connection lives.
+        let agent_note = GuiNote::Agent {
+            name: handle.facts().name.clone(),
+            replays: handle.facts().replays,
+        };
         let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
         let handle = Arc::new(handle);
         loop {
@@ -453,6 +511,11 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                 // `Replay` is for, and the row already carries the word.
                 who = joined_rx.recv() => {
                     if let Some(who) = who {
+                        // First, because everything else a face does
+                        // with this conversation depends on it — most
+                        // of all whether asking for the past means
+                        // anything.
+                        fanout.send_to(who, &agent_note);
                         if in_turn.is_some() {
                             fanout.send_to(who, &GuiNote::Turning);
                         }
@@ -510,6 +573,16 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     }
                     Some((_, GuiOp::Close)) => break None,
                     Some((who, GuiOp::Replay)) => {
+                        // **The capability decides what a face is
+                        // told, never whether the agent is asked.** An
+                        // agent that under-advertises is a real animal
+                        // — this repo's own stub was one for months,
+                        // implementing `session/load` while claiming
+                        // nothing — and skipping the request on its say
+                        // so would withhold a past it actually has. So
+                        // the load always goes out; `GuiNote::Agent` is
+                        // what keeps an empty answer from reading as an
+                        // empty conversation.
                         if in_turn.is_some() {
                             replay_wanted.push(who);
                         } else if let Err(e) = replay_to(&handle, &mut events, &fanout, who).await {

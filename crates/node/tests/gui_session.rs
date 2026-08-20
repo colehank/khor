@@ -56,6 +56,19 @@ fn wait_for(root: &PathBuf, id: &SessionId, want: State) -> Option<(State, Optio
     last
 }
 
+/// The id, once the host has one. Spelled out rather than inlined a
+/// third time.
+fn wait_for_ready(ready: &std::path::Path) -> SessionId {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(ready) {
+            return SessionId(text.trim().to_owned());
+        }
+        assert!(Instant::now() < deadline, "the host never wrote the ready file");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 fn next_note(conn: &mut TcpStream) -> GuiNote {
     conn.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
     read_frame::<GuiNote>(conn).expect("a frame within fifteen seconds")
@@ -115,6 +128,15 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
     write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
+
+    // **The first thing a face is told is what this agent can do.**
+    // Before anything else, because whether asking for the past means
+    // anything depends on it — and the answer to that question looks
+    // the same either way (`GuiNote::Agent`).
+    let GuiNote::Agent { replays, .. } = next_note(&mut conn) else {
+        panic!("a face is told the agent's facts before anything else")
+    };
+    assert!(replays, "the stub advertises load_session");
 
     // One turn, asserted at its **stable anchors** only: 空闲 before,
     // 待批 while the ask waits on us, 完成 after. The two 忙碌 reports
@@ -200,9 +222,23 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
 
     let mut attach = || -> TcpStream {
         let mut c = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
+        // A read deadline before the first read, not at the first
+        // `next_note`: a frame that stops arriving must make this test
+        // **fail**, and a blocking socket with no timeout makes it hang
+        // instead — which reads on a terminal as a slow test rather
+        // than as a broken one, and cannot be told from an infinite
+        // loop. Found by tearing the announcement out to check this
+        // suite noticed: it did not fail, it stopped.
+        c.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
         write_frame(&mut c, &Hello { cookie: hf.cookie.clone(), cols: 0, rows: 0 }).unwrap();
         let w: Welcome = read_frame(&mut c).unwrap();
         assert!(w.ok, "{}", w.why);
+        // Every face gets the agent's facts first (the test above pins
+        // that); here it is only drained so the frames this test is
+        // about line up.
+        let GuiNote::Agent { .. } = read_frame::<GuiNote>(&mut c).unwrap() else {
+            panic!("the facts come first")
+        };
         c
     };
     let mut asker = attach();
@@ -281,5 +317,119 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::HistoryEnd => "HistoryEnd",
         GuiNote::Turning => "Turning",
         GuiNote::Answered { .. } => "Answered",
+        GuiNote::Agent { .. } => "Agent",
     }
+}
+
+/// The stub with one of its switches thrown, as a single argv element:
+/// `gui_host_main` joins the command with spaces, and the protocol
+/// crate reads a leading `{` as launch JSON — which is the only way to
+/// hand a child an environment through a command *string*.
+fn stub_with(key: &str, value: &str) -> Vec<String> {
+    vec![serde_json::json!({
+        "command": stub_path().to_string_lossy(),
+        "env": { key: value },
+    })
+    .to_string()]
+}
+
+/// **An agent that cannot replay says so, and its empty history stays
+/// distinguishable from an empty conversation.**
+///
+/// The two are byte-identical on the wire — an empty `HistoryEnd`
+/// bracket either way — so the only thing that can tell them apart is
+/// the fact announced up front. Without it a face paints "nothing was
+/// said here" over a past that merely cannot be fetched, which is the
+/// neighbouring answer rather than the missing one.
+#[test]
+fn an_agent_that_cannot_replay_is_not_a_conversation_with_nothing_in_it() {
+    let root = std::env::temp_dir().join(format!("khor-guihost-noreplay-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+    let host = {
+        let (root, ready) = (root.clone(), ready.clone());
+        let cmd = stub_with("KHOR_STUB_REPLAYS", "0");
+        std::thread::spawn(move || gui_host_main(root, ready, "stub".into(), cmd))
+    };
+    let id = wait_for_ready(&ready);
+    let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
+    let hf = read_host_file(&k.dir_of(&id).unwrap()).expect("a host file");
+    let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
+    write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
+    let w: Welcome = read_frame(&mut conn).unwrap();
+    assert!(w.ok, "{}", w.why);
+
+    let GuiNote::Agent { replays, .. } = next_note(&mut conn) else {
+        panic!("the facts come first")
+    };
+    assert!(!replays, "this stub advertises no load_session, and the face must be told");
+
+    // Asking anyway closes the bracket rather than hanging — a face
+    // that asks before reading the fact must not be left waiting.
+    write_frame(&mut conn, &GuiOp::Replay).unwrap();
+    match next_note(&mut conn) {
+        GuiNote::HistoryEnd => {}
+        other => panic!("an unanswerable replay still closes its bracket, got {}", kind_of(&other)),
+    }
+
+    write_frame(&mut conn, &GuiOp::Close).unwrap();
+    host.join().expect("the host thread ends").expect("cleanly");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// **A refusal leaves the ghost as words, on disk, at once.**
+///
+/// The opener waits on a file and nothing else: the ghost is detached,
+/// its stderr goes to /dev/null and its exit code is never collected.
+/// So an agent that declined in half a second — for a reason it stated
+/// plainly — used to be reported thirty seconds later as a host that
+/// never came up, which sends a person to look at khor instead of at
+/// the thing that actually said no.
+///
+/// The literal `.why` is here on purpose: this asserts the reason is
+/// *left behind*, not merely returned. A ghost that only returned it
+/// would pass every in-process assertion and tell the opener nothing.
+#[test]
+fn an_agent_that_wants_a_login_says_so_where_the_opener_is_looking() {
+    let root = std::env::temp_dir().join(format!("khor-guihost-login-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+    let cmd = stub_with("KHOR_STUB_LOGIN", "1");
+    let why = gui_host_main(root.clone(), ready.clone(), "stub".into(), cmd)
+        .expect_err("an agent demanding a login opens no session");
+
+    let expected = khor_catalog::msg::agent_wants_a_login("Authentication required");
+    assert_eq!(why, expected, "the login refusal gets its own sentence, not a generic one");
+    assert_eq!(
+        std::fs::read_to_string(root.join("ready.why")).ok(),
+        Some(expected),
+        "and it is on disk beside the marker, which is all the opener can read"
+    );
+    assert!(!ready.exists(), "no session id was written: there is no session");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// The control for the one above: a command that is not an ACP agent at
+/// all must not borrow the login sentence. Without this, mapping every
+/// refusal to `Login` would pass that test.
+#[test]
+fn a_command_that_is_not_an_agent_does_not_borrow_the_login_sentence() {
+    let root = std::env::temp_dir().join(format!("khor-guihost-nocmd-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+    let why = gui_host_main(
+        root.clone(),
+        ready.clone(),
+        "nothing".into(),
+        vec!["/nonexistent/khor-no-such-agent".to_owned()],
+    )
+    .expect_err("there is no such binary");
+    assert!(
+        why.starts_with(khor_catalog::msg::agent_wont_talk("").trim_end_matches(':')),
+        "a missing binary reads as one, not as a login: {why}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }
