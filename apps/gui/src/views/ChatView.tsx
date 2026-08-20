@@ -38,9 +38,10 @@ import {
   fetchHistory,
   type ChatFrame,
 } from "@/api";
+import { IconBack } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { word } from "@/words";
@@ -216,9 +217,18 @@ export function ChatView({
   // on purpose: the host sends no receipt for an answer, and the turn
   // moving on is the only confirmation the protocol has.
   const [answered, setAnswered] = useState<Set<number>>(new Set());
+  // Where the reader is standing, and whether anything landed while they
+  // were away. Two facts, not one: leaving the tail is the reader's own
+  // doing and needs no announcement, while text arriving behind their
+  // back does — and a single flag would have to pick one of those to
+  // lie about. Both are cleared by arriving at the bottom, which is the
+  // only way this pair can go to zero (docs/UX.md 角标可归零).
+  const [away, setAway] = useState(false);
+  const [fresh, setFresh] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const liveCount = useRef(0);
+  const box = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let stopped = false;
@@ -283,11 +293,36 @@ export function ChatView({
   }, [id, still]);
 
   // Follow the stream only while the reader is at the tail — new frames
-  // must not yank someone who scrolled up into the past.
+  // must not yank someone who scrolled up into the past. What they get
+  // instead is the control below saying something landed.
   useEffect(() => {
     const el = scroller.current;
-    if (el && nearBottom.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (nearBottom.current) el.scrollTop = el.scrollHeight;
+    else setFresh(true);
   }, [frames, says]);
+
+  // The box is as tall as what has been typed into it, up to the ceiling
+  // `--chat-box` sets. Measured rather than declared: `field-sizing`
+  // would do this in CSS and the desktop shell's WKWebView does not have
+  // it (`ui/textarea`). The height is cleared first because `scrollHeight`
+  // of an already-tall box is its own old height — without that line the
+  // box grows and never shrinks back.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text, still, gone]);
+
+  const toBottom = () => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    nearBottom.current = true;
+    setAway(false);
+    setFresh(false);
+  };
 
   const say = () => {
     const line = text.trim();
@@ -315,13 +350,31 @@ export function ChatView({
   };
 
   const items = fold(frames, says);
+  // A turn is running and nothing has come back from it yet. Painted as
+  // 忙碌 in the state's own markup — the same `data-word`/`data-word-text`
+  // pair the session row wears, so it inherits the doctrine rather than
+  // restating it: no hue, the breath keyframe, and the reduced-motion
+  // guard that leaves the word standing still and legible (app.css).
+  // Reusing the word is also why no seventh one gets invented here: this
+  // is 忙碌 in the conversation, not a new thing called "thinking".
+  //
+  // The condition is "the last thing painted is the user's own line",
+  // not a timer: the moment any chunk, thought or tool line lands, the
+  // stream itself is the indicator and a second one would be noise.
+  const waiting =
+    inTurn && (items.length === 0 || items[items.length - 1].who === "user");
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
+        data-chat-scroll
         onScroll={(e) => {
           const el = e.currentTarget;
-          nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          nearBottom.current = near;
+          setAway(!near);
+          if (near) setFresh(false);
         }}
         className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3"
       >
@@ -394,6 +447,38 @@ export function ChatView({
             </div>
           ),
         )}
+        {waiting && (
+          <div data-chat-thinking data-word="busy" className="text-xs">
+            <span data-word-text style={{ color: "var(--state-busy)" }}>
+              {word("busy")}
+            </span>
+          </div>
+        )}
+      </div>
+      {/* The way back to the tail. It hangs over the conversation rather
+          than inside it: a strip that took a row of its own would move
+          the text under it every time somebody scrolled. Absent at the
+          bottom — that is what makes it able to go to zero, and it is
+          why the fresh flag is cleared in the same breath. */}
+      {away && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            data-chat-bottom
+            data-fresh={fresh}
+            className="pointer-events-auto shadow"
+            onClick={toBottom}
+          >
+            {/* The back chevron, turned to point the way this goes.
+                Turned rather than drawn again: a second glyph would be
+                the same shape at a different stroke ratio the first time
+                somebody redrew it by eye (icons.tsx — one family). */}
+            <IconBack className="-rotate-90" />
+            {fresh ? gui.chat_new_below : gui.chat_to_bottom}
+          </Button>
+        </div>
+      )}
       </div>
       {/* A recorded past has no channel to speak into: no input, and
           the only thing its footer can say is that the record is
@@ -456,13 +541,17 @@ export function ChatView({
         {gone ? (
           <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_over}</div>
         ) : (
-          // While a turn runs the box is closed and the way out sits
+          // While a turn runs the send is refused and the way out sits
           // next to it: a turn that never ends used to leave 关闭 the
           // session as the only exit, which throws the conversation
           // away to get rid of one stuck line (found live — an agent's
           // request to its own API never came back, and the row read
           // 忙碌 for as long as anyone waited).
-          <div className="relative flex items-center gap-2">
+          //
+          // Bottom-aligned, not centred: the box is the only thing in
+          // this row that changes height, and centring would walk the
+          // two buttons up the screen line by line as somebody typed.
+          <div className="relative flex items-end gap-2">
             {/* The agent's own commands, above the box that will carry
                 them. Absolute so opening it does not push the
                 conversation up — a list that moves the text you are
@@ -497,16 +586,30 @@ export function ChatView({
                 ))}
               </div>
             )}
-            <Input
+            {/* The box is never closed while the conversation is alive.
+                It used to be `disabled` for the length of a turn, which
+                threw away the one thing there is to do while waiting:
+                write the next line. What a running turn takes away is
+                the *sending*, and the control beside it says so by being
+                unpressable — a disabled box says the same thing about
+                the wrong half. */}
+            <Textarea
+              ref={box}
               data-chat-input
+              rows={1}
               value={text}
               placeholder={gui.chat_input}
-              disabled={inTurn}
               onChange={(e) => {
                 setText(e.target.value);
                 setPick(0);
               }}
               onKeyDown={(e) => {
+                // Composition first, and before every branch below: mid-
+                // 组词 the Enter that picks a candidate is the IME's, and
+                // a face that read it would send a half-typed word and
+                // eat the choice. `isComposing` rather than keyCode 229
+                // because the menu's arrows need the same guard and only
+                // Enter ever carried that code.
                 if (e.nativeEvent.isComposing) return;
                 if (menu.length > 0) {
                   // While the menu is open the keys belong to it: Enter
@@ -532,10 +635,30 @@ export function ChatView({
                     return;
                   }
                 }
-                if (e.key === "Enter") say();
+                // Enter sends, Shift+Enter breaks the line. Prevented
+                // either way once it is Enter-without-shift: when the
+                // turn refuses the send, the alternative is a newline
+                // appearing as the answer to a press that meant "go",
+                // which reads as the box having eaten the line.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  say();
+                }
               }}
-              className={cn("min-w-0 flex-1", inTurn && "opacity-60")}
+              className="min-w-0 flex-1"
             />
+            {/* Sending has a control of its own now that Enter is no
+                longer the only way to reach it — a box you can type into
+                during a turn needs somewhere to show that the sending is
+                the part that is unavailable. */}
+            <Button
+              size="sm"
+              data-chat-send
+              disabled={inTurn || !text.trim()}
+              onClick={say}
+            >
+              {gui.send_it}
+            </Button>
             {inTurn && (
               <Button
                 size="sm"

@@ -248,6 +248,25 @@ async function say(page, text) {
   for (let i = 0; i < 5; i += 1) {
     await box.fill(text);
     if ((await box.inputValue()) === text) {
+      // A running turn refuses the send while leaving the box open to
+      // type into (批①). The box no longer being disabled is what makes
+      // this wait necessary: without it a line pressed into a busy pane
+      // goes nowhere quietly, and whatever assertion comes next times
+      // out describing the wrong failure.
+      //
+      // It waits on the *turn* being over — the stop control is only
+      // there while one runs — and deliberately not on the send button's
+      // own `disabled`. That button is itself under test below (the send
+      // must be visibly unavailable mid-turn); a helper that read the
+      // very thing being tested would go vacuous exactly when that broke
+      // — and a vacuous wait does not fail here, it lets a line be
+      // pressed into a busy pane and fails somewhere later, describing
+      // the wrong thing. The first spelling of this helper did read that
+      // button, and the red-proof for the send rule landed on a
+      // different assertion because of it.
+      await page.waitForFunction(() => !document.querySelector("[data-chat-stop]"), null, {
+        timeout: 60_000,
+      });
       await box.press("Enter");
       return;
     }
@@ -2448,6 +2467,236 @@ for line in sys.stdin:
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("echo: after the stop");
   });
+
+  // 25e) 对话面基础 (批①). Four things, all on the live conversation
+  //      above — the same fake claude, the same real bridge:
+  //      a) the box composes: Shift+Enter breaks the line, Enter sends,
+  //         the box grows with what is in it and stops at the ceiling
+  //         tokens.css sets, and an Enter that belongs to an IME's
+  //         composition is not a send;
+  //      b) a running turn takes the *sending*, not the typing: the box
+  //         still accepts a draft, the send says so by being
+  //         unpressable, a pressed Enter changes nothing, and the draft
+  //         is still there — character for character — when the turn is
+  //         over;
+  //      c) a turn that has produced nothing yet says so in the
+  //         conversation, wearing 忙碌's own paint and breath, and stays
+  //         legible under prefers-reduced-motion;
+  //      d) leaving the tail offers the way back, says when something
+  //         landed behind the reader's back, does not yank them, and
+  //         goes to zero on arrival.
+  const boxSel = "[data-chat-input]";
+  const boxHeight = () => page.locator(boxSel).evaluate((el) => el.clientHeight);
+  const saidCount = () => page.locator("[data-said]").count();
+
+  // a) One line, then two. The height is the assertion that it is the
+  //    *box* that took the break: a textarea that ignored the newline
+  //    would hold the same string on one row.
+  await page.locator(boxSel).fill("");
+  const oneRow = await boxHeight();
+  const beforeBreak = await saidCount();
+  await page.locator(boxSel).click();
+  await page.keyboard.type("first row");
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.type("second row");
+  const twoRowText = await page.locator(boxSel).inputValue();
+  if (!twoRowText.includes("\n")) {
+    throw new Error(`Shift+Enter must break the line: ${JSON.stringify(twoRowText)}`);
+  }
+  if ((await saidCount()) !== beforeBreak) {
+    throw new Error("Shift+Enter must not send");
+  }
+  const twoRows = await boxHeight();
+  if (!(twoRows > oneRow)) {
+    throw new Error(`the box must grow with what is typed: ${oneRow} -> ${twoRows}`);
+  }
+  // …and stops. The ceiling is read off the token, never written here:
+  // a number copied into this file would keep passing after the token
+  // moved.
+  const ceiling = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--chat-box")),
+  );
+  await page.locator(boxSel).fill(Array.from({ length: 40 }, (_, i) => `row ${i}`).join("\n"));
+  const capped = await boxHeight();
+  if (!(capped > twoRows)) {
+    throw new Error(`forty rows must be taller than two: ${twoRows} -> ${capped}`);
+  }
+  if (!(capped <= ceiling)) {
+    throw new Error(`the box must stop at --chat-box (${ceiling}), it reached ${capped}`);
+  }
+
+  // The composing Enter belongs to the IME picking a candidate, not to
+  // this box. Asserted through a dispatched keydown carrying
+  // `isComposing` — and the *same* dispatch is then proven to send when
+  // it is not composing, because a negative assertion whose probe was
+  // never shown alive is only a spelling of "nothing happened".
+  const composed = "composing row";
+  await page.locator(boxSel).fill(composed);
+  const beforeIme = await saidCount();
+  const fireEnter = (composing) =>
+    page.locator(boxSel).evaluate((el, isComposing) => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing }));
+    }, composing);
+  await fireEnter(true);
+  await new Promise((r) => setTimeout(r, 500));
+  if ((await saidCount()) !== beforeIme) {
+    throw new Error("an Enter raised mid-composition must not send");
+  }
+  if ((await page.locator(boxSel).inputValue()) !== composed) {
+    throw new Error("an Enter raised mid-composition must leave the box alone");
+  }
+  await fireEnter(false);
+  await until("the same dispatch sending once it is not composing", 20_000, async () =>
+    (await saidCount()) > beforeIme,
+  );
+  await until("the composed line reaching the agent", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes(`echo: ${composed}`);
+  });
+
+  // b) + c) on one hanging turn: the fake answers nothing until the
+  //    stop reaches it, which is exactly the window both judgments are
+  //    about.
+  await say(page, "hang for a while");
+  await until("the turn running", 20_000, async () =>
+    (await page.locator("[data-chat-stop]").count()) === 1,
+  );
+  const draft = "written while it was busy";
+  await page.locator(boxSel).fill(draft);
+  if ((await page.locator(boxSel).inputValue()) !== draft) {
+    throw new Error("the box must still take text while a turn runs");
+  }
+  if (!(await page.locator("[data-chat-send]").isDisabled())) {
+    throw new Error("a turn must make the send visibly unavailable, not silently inert");
+  }
+  const midTurn = await saidCount();
+  await page.locator(boxSel).press("Enter");
+  await new Promise((r) => setTimeout(r, 600));
+  if ((await saidCount()) !== midTurn) {
+    throw new Error("Enter must not send while the turn refuses it");
+  }
+  if ((await page.locator(boxSel).inputValue()) !== draft) {
+    throw new Error("a refused line must stay in the box, not be swallowed");
+  }
+
+  // c) The waiting mark, in 忙碌's own clothes. The colour is compared
+  //    against a probe wearing the token — neither the hue nor the word
+  //    is written in this file.
+  await until("the waiting mark while the turn has said nothing", 15_000, async () =>
+    (await page.locator("[data-chat-thinking]").count()) === 1,
+  );
+  const breathing = await page.locator("[data-chat-thinking] [data-word-text]").evaluate((el) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--state-busy)";
+    document.body.appendChild(probe);
+    const want = getComputedStyle(probe).color;
+    probe.remove();
+    const s = getComputedStyle(el);
+    return { color: s.color, want, animation: s.animationName, text: el.textContent };
+  });
+  if (breathing.color !== breathing.want) {
+    throw new Error(`the waiting mark must take busy's paint: ${breathing.color} vs ${breathing.want}`);
+  }
+  if (breathing.animation === "none") {
+    throw new Error("busy breathes — the waiting mark must carry the same keyframe");
+  }
+  // The word is the state machine's own, not a seventh one invented for
+  // this pane: what it says must be what a 忙碌 *row* says. Read off a
+  // row rather than off anything in this pane — the mark wears the same
+  // `data-word` attribute, so a selector that could match itself would
+  // compare the thing to itself and pass on any word at all.
+  let busyWord = "";
+  await until("a row reading busy while its turn hangs", 20_000, async () => {
+    busyWord = await page
+      .locator('[data-row][data-word="busy"] [data-word-text]')
+      .first()
+      .innerText()
+      .catch(() => "");
+    return busyWord.trim().length > 0;
+  });
+  if (!busyWord || (breathing.text ?? "").trim() !== busyWord.trim()) {
+    throw new Error(`the waiting mark must say what a busy row says: ${breathing.text} vs ${busyWord}`);
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const stilled = await page.locator("[data-chat-thinking] [data-word-text]").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { animation: s.animationName, opacity: s.opacity, w: el.getBoundingClientRect().width };
+  });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  if (stilled.animation !== "none") {
+    throw new Error("reduced motion must stop the breath");
+  }
+  if (Number(stilled.opacity) !== 1 || stilled.w === 0) {
+    throw new Error(`stopped is not the same as gone: ${JSON.stringify(stilled)}`);
+  }
+
+  await page.locator("[data-chat-stop]").click();
+  await until("the turn ended", 20_000, async () =>
+    (await page.locator("[data-chat-stop]").count()) === 0,
+  );
+  if ((await page.locator(boxSel).inputValue()) !== draft) {
+    throw new Error("the draft must outlive the turn character for character");
+  }
+  await until("the waiting mark gone with the turn", 10_000, async () =>
+    (await page.locator("[data-chat-thinking]").count()) === 0,
+  );
+  // And it was a draft, not a corpse: it sends.
+  await page.locator(boxSel).press("Enter");
+  await until("the draft going out once the turn was over", 20_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes(`echo: ${draft}`);
+  });
+
+  // d) The tail. First give the conversation a past worth scrolling
+  //    into — with the *pane* asked whether it overflows, since a
+  //    scroll assertion on a pane that fits is vacuous and green.
+  const roll = page.locator("[data-chat-scroll]");
+  const fits = () => roll.evaluate((el) => el.scrollHeight <= el.clientHeight + 40);
+  for (let i = 0; i < 12 && (await fits()); i += 1) {
+    const filler = `filler ${i} ${"x".repeat(200)}`;
+    await say(page, filler);
+    await until(`filler ${i} answered`, 20_000, async () => {
+      const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+      return t.includes(`echo: ${filler}`);
+    });
+  }
+  if (await fits()) {
+    throw new Error("the conversation never outgrew its pane — every assertion below would be vacuous");
+  }
+  if ((await page.locator("[data-chat-bottom]").count()) !== 0) {
+    throw new Error("at the tail there is nothing to go back to");
+  }
+  // Let the stream settle, or a frame landing between the scroll and
+  // the read would make "nothing has arrived" a lie about timing.
+  await new Promise((r) => setTimeout(r, 1_500));
+  await roll.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await until("the way back to the tail, once away from it", 10_000, async () =>
+    (await page.locator("[data-chat-bottom]").count()) === 1,
+  );
+  const wordAway = await page.locator("[data-chat-bottom]").innerText();
+  if ((await page.locator("[data-chat-bottom]").getAttribute("data-fresh")) !== "false") {
+    throw new Error("leaving the tail is the reader's own doing — it is not news");
+  }
+  await say(page, "arrived while away");
+  await until("the control saying something landed", 20_000, async () =>
+    (await page.locator('[data-chat-bottom][data-fresh="true"]').count()) === 1,
+  );
+  const wordFresh = await page.locator("[data-chat-bottom]").innerText();
+  if (wordFresh.trim() === wordAway.trim()) {
+    throw new Error(`the two reasons to press it must not read the same: ${wordFresh}`);
+  }
+  // …and the reader is still standing where they were: the whole point
+  // of the control is that arriving text does not move anybody.
+  const stoodAt = await roll.evaluate((el) => el.scrollTop);
+  if (stoodAt > 20) {
+    throw new Error(`new frames must not yank a reader who scrolled up (scrollTop ${stoodAt})`);
+  }
+  await page.locator("[data-chat-bottom]").click();
+  await until("the way back gone once it is back", 10_000, async () =>
+    (await page.locator("[data-chat-bottom]").count()) === 0,
+  );
 
   // The permission round-trip, on the screen's own buttons, in khor's
   // catalog words.

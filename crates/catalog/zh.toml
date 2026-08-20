@@ -753,6 +753,16 @@ chat-no-record = "没有找到这段对话的记录"
 # boundary with 失败. Sits beside the input because the input is what
 # it gives back.
 chat-stop = "停止"
+# The way back to the tail, and what it says when something arrived
+# while the reader was up in the past. One control, two words: where it
+# takes you never changes, so a second control would be two buttons
+# doing one thing — but "there is new text down there" and "you are
+# simply not at the bottom" are two different reasons to press it, and a
+# control that read the same in both would make the arrival silent.
+# Both vanish at the bottom, which is what makes this able to go to zero
+# (docs/UX.md 角标可归零).
+chat-to-bottom = "回到底部"
+chat-new-below = "下面有新的"
 # The files pane. 上一级 is a place to go, not a "back": the list on
 # the left never left, so the only direction this pane owns is up the
 # tree. An empty directory says so — silence would read as broken.

@@ -82,6 +82,12 @@
   /* ── layout ───────────────────────────────────────── */
   --rail-w: 56px;
   --list-w: 288px;
+  /* How tall the chat box may grow before it starts scrolling itself.
+   * Not a control height: those three are what a control *is*, and this
+   * is a ceiling a growing box stops at. Without a ceiling a pasted
+   * essay eats the conversation it is being written into; without the
+   * growth the box lies about how much has been typed. */
+  --chat-box: 160px;
   --avatar: 32px;
   /* A machine's face on its own card. Its own token rather than a class
    * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`
@@ -205,6 +211,7 @@
   --spacing-ctl-lg: var(--ctl-lg);
   --spacing-rail: var(--rail-w);
   --spacing-list: var(--list-w);
+  --spacing-chat-box: var(--chat-box);
   --spacing-avatar: var(--avatar);
   --spacing-avatar-lg: var(--avatar-lg);
   --spacing-avatar-xl: var(--avatar-xl);
