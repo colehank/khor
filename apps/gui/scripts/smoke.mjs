@@ -1402,6 +1402,17 @@ for line in sys.stdin:
   if ((await page.locator("[data-row][data-pinned=true]").count()) !== pinnedBefore) {
     throw new Error("the press probe pressed something for real");
   }
+  //      A row answers a press too — it is the most-pressed thing here —
+  //      with the dim and **without** the give: a full-width strip
+  //      scaling reads as the layout slipping, not as a press. Both
+  //      halves asserted, or "it does nothing" would pass the first.
+  const rowPress = await pressing(page.locator("[data-row] [data-row-open]").first());
+  if (!(rowPress.held.opacity < rowPress.resting.opacity)) {
+    throw new Error(`a row must answer a press: ${JSON.stringify(rowPress)}`);
+  }
+  if (rowPress.held.scale !== 1) {
+    throw new Error(`a row must not scale under a press: ${rowPress.held.transform}`);
+  }
 
   //      …and under reduced motion the give goes while the dim stays.
   //      Both halves: "nothing moved" is also what a broken probe says,
@@ -1454,6 +1465,21 @@ for line in sys.stdin:
   const movedFrames = await stopWatching();
   if (movedFrames === 0) {
     throw new Error("rows teleported: no row carried a transform while the order changed");
+  }
+  //      …and the move is a **transition**, not a keyframe animation.
+  //      That is what makes it interruptible: a transition retargets to
+  //      a new value mid-flight, while an animation has to be torn down
+  //      and restarted — and a second reorder landing on a running one
+  //      is the ordinary case here, not the exotic one.
+  const howItMoves = await page.locator("[data-row]").first().evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { transition: s.transitionProperty, animation: s.animationName };
+  });
+  if (!howItMoves.transition.includes("transform")) {
+    throw new Error(`rows must move by a transition on transform: ${howItMoves.transition}`);
+  }
+  if (howItMoves.animation !== "none") {
+    throw new Error(`a keyframe animation cannot be redirected mid-flight: ${howItMoves.animation}`);
   }
   // …and it goes back to nothing. A FLIP that forgets to release leaves
   // the list permanently offset, which looks like a layout bug rather
@@ -3129,6 +3155,50 @@ for line in sys.stdin:
   await until("the reported row naming its machine", 15_000, async () =>
     (await page.locator("[data-detail-device]").count()) === 1,
   );
+  //      …and wearing that machine's face — **the same picture the row
+  //      wears**, compared rather than merely counted: one machine, one
+  //      face, wherever it appears.
+  const headerFace = page.locator("[data-detail-machine] [data-face]");
+  if ((await headerFace.count()) !== 1) throw new Error("probe dead: no face on the detail header");
+  if (
+    (await faceOf(headerFace)) !==
+    (await faceOf(page.locator(`[data-row="${fromElsewhere}"] [data-face]`).first()))
+  ) {
+    throw new Error("the header and the row paint one session's machine two different ways");
+  }
+  //      The confirm says what *this kind* of close does. Read off two
+  //      rows of different kinds and compared to each other — neither
+  //      sentence is spelled here, and a single generic warning would
+  //      make these two equal.
+  const warningFor = async (rowId) => {
+    await page.locator(`[data-row="${rowId}"] [data-row-open]`).click();
+    await until("a detail with a close", 15_000, async () =>
+      (await page.locator("[data-close-session]").count()) === 1,
+    );
+    await page.locator("[data-close-session]").click();
+    await until("its confirm", 10_000, async () =>
+      (await page.locator("[data-close-warn]").count()) === 1,
+    );
+    const said = (await page.locator("[data-close-warn]").innerText()).trim();
+    await page.locator("[data-close-back]").click();
+    return said;
+  };
+  const kindOf = (rowId) =>
+    page.locator(`[data-row="${rowId}"]`).evaluate((el) => el.dataset.row.split("/")[0]);
+  const otherKind = (
+    await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row))
+  ).find((r) => r.split("/")[0] !== wizId.split("/")[0]);
+  if (!otherKind) {
+    throw new Error("probe dead: every row is the same kind, so the split cannot be seen");
+  }
+  const [warnWizard, warnOther] = [await warningFor(wizId), await warningFor(otherKind)];
+  if (!warnWizard || !warnOther) throw new Error("a confirm must say something");
+  if (warnWizard === warnOther) {
+    throw new Error(
+      `one sentence for two kinds: ${await kindOf(wizId)} and ${await kindOf(otherKind)} both say ` +
+        `${JSON.stringify(warnWizard)} — the confirm must say what this close does`,
+    );
+  }
   // **A close that fails is asserted where a failure is certain**, which
   // is section 26 with the backend taken away — not here on a row from
   // another machine. That was this block's first draft and the premise
@@ -3169,6 +3239,17 @@ for line in sys.stdin:
   }
   // …and going through with it ends the session for real — the same
   // ending `khor close` produces, which is what this used to call.
+  //
+  // **Done on the narrow face on purpose.** Wide, the detail empties by
+  // itself the moment the row leaves the list, so nothing here would
+  // notice a shell that kept pointing at the dead session. Narrow is
+  // one screen at a time: staying on a detail screen with nothing in it
+  // and no list behind it is a dead end a person reaches by pressing
+  // 关闭, and it is the only face on which that can be seen.
+  await page.setViewportSize({ width: 390, height: 720 });
+  await until("the narrow detail of the row about to be closed", 10_000, async () =>
+    (await page.locator("[data-back]").count()) === 1,
+  );
   await page.locator("[data-close-session]").click();
   await until("the confirm again", 10_000, async () =>
     (await page.locator("[data-close-confirm]").count()) === 1,
@@ -3180,6 +3261,25 @@ for line in sys.stdin:
     }
     return (await page.locator(`[data-row="${wizId}"]`).count()) === 0;
   });
+  //      …and the shell lets go of it: back on the list, with no detail
+  //      screen left standing over a session that no longer exists.
+  await until("the narrow shell back on the list", 15_000, async () =>
+    (await page.locator("[data-list]").count()) === 1 &&
+    (await page.locator("[data-back]").count()) === 0,
+  );
+  //      The pane's controls went with the row, too — a detail still
+  //      offering 关闭 and 复制 id for a dead session is a face pointing
+  //      at nothing.
+  if (
+    (await page.locator("[data-close-session]").count()) !== 0 ||
+    (await page.locator("[data-copy-id]").count()) !== 0
+  ) {
+    throw new Error("the detail still offers actions for a session that is gone");
+  }
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await until("back on the wide face", 10_000, async () =>
+    (await page.locator("[data-row]").count()) > 0,
+  );
 
   // **A terminal-form session is named before it exists.** The row
   // wears the vendor's own uuid — 26 characters of it, the lossy

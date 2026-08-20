@@ -49,6 +49,18 @@ input[type="search"]::-webkit-search-decoration {
   opacity: 0.86;
 }
 
+/* A list row is pressable too, and it is the most-pressed thing here —
+ * but it gets the dim without the give. A full-width strip scaling by
+ * three percent does not read as a press, it reads as the layout
+ * slipping: the give is legible because a control is small enough for
+ * its whole outline to move at once. Same tokens, same timing, one
+ * channel instead of two — the vocabulary is shared, the amount is not.
+ */
+[data-row-open]:active {
+  opacity: 0.86;
+  transition: opacity var(--dur-120) var(--ease-out);
+}
+
 /* Where a row's FLIP lands (`SessionsList` `useRowFlip`). The rule
  * lives here rather than in the inline style the hook writes, because
  * the hook's job is to say *where a row came from* and this says *how

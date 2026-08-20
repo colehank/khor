@@ -825,19 +825,37 @@ chat-stop = "停止"
 # (docs/UX.md 角标可归零).
 chat-to-bottom = "回到底部"
 chat-new-below = "下面有新的"
-# Ending a session, from the pane that is showing it. The sentence says
-# the one thing that cannot be taken back — a process somewhere stops —
-# and deliberately does not enumerate what else happens, because that
-# differs by kind (a transfer keeps its row, a conversation does not) and
-# a confirm that lists cases is a confirm nobody reads.
+# Ending a session, from the pane that is showing it. **One sentence per
+# kind, because 关闭 does genuinely different things** — read off the
+# three `KindSurface::close` implementations rather than guessed:
 #
-# **It does not promise the close will work.** Whether a row can be
+#   live (shell/tui/gui/borrow) — `LiveKind::close_session` kills the
+#     child's process group and then the host. A process stops.
+#   chat — `ChatKind::close_channel` deletes the `files/` directory of
+#     that device channel. The messages stay; the received files do not.
+#   transfer — `TransferKind::close` deletes that transfer's payloads,
+#     **and the row survives** (its summary lives in the CRDT and falls
+#     back to 待批). Said out loud, because a row that stays after a
+#     close reads as the close having failed.
+#
+# A confirm that said only "关掉它" would be true of all three and
+# useful for none: the thing a person is deciding is what they are about
+# to lose, and that is the part that differs.
+close-warn-live = "关掉它,它正在跑的进程会停下"
+close-warn-chat = "关掉它,从这台机器收下的文件会删掉,聊天记录还在"
+close-warn-transfer = "关掉它,这次传下来的文件会删掉;这一行会留着"
+# A kind khor has no sentence for. Kinds are an open set
+# (`khor_core::kind` — new ones must appear without touching that
+# crate), so this is the honest answer for one that arrives later:
+# it says the part that is true of every close and claims nothing else.
+close-warn = "关掉它,这一步撤不回来"
+#
+# **None of them promises the close will work.** Whether a row can be
 # closed at all is `Node::close`'s judgment: a session khor merely
-# discovered is not khor's to end, and a remote one has no path yet.
-# Both refuse in whole sentences of their own, and those are what the
-# pane shows — this face asks rather than deciding in advance, which is
-# the same rule that keeps it from re-deriving a state.
-close-session-warn = "关掉它,它正在跑的东西会停下"
+# discovered is not khor's to end, and a remote one routes to the
+# machine it lives on. Refusals come back as whole sentences and those
+# are what the pane shows — this face asks rather than deciding in
+# advance, the same rule that keeps it from re-deriving a state.
 # The id, as a thing to paste. It is not implementation leaking into the
 # copy: this is the string `khor` prints and the one a person hands to
 # another machine, so it is the row's public name and worth a control.

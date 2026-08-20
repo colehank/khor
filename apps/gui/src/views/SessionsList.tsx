@@ -70,6 +70,20 @@ export function visibleSessions(rows: SessionRow[], query: string, words: string
  * two paints either way, and at zero duration that is a flicker instead
  * of a move.
  */
+/** How far a row is currently displaced from where it is laid out —
+    the translateY of whatever transform it is wearing, mid-animation or
+    not. `none` is the resting case and matrices are what the computed
+    style hands back, so both are read rather than assumed. */
+function offsetOf(row: HTMLElement): number {
+  const t = getComputedStyle(row).transform;
+  if (!t || t === "none") return 0;
+  try {
+    return new DOMMatrixReadOnly(t).m42;
+  } catch {
+    return 0;
+  }
+}
+
 function useRowFlip(deps: string) {
   const box = useRef<HTMLDivElement>(null);
   const was = useRef(new Map<string, number>());
@@ -88,8 +102,18 @@ function useRowFlip(deps: string) {
       // out of — it arrived, which is a different event and not this
       // one's to narrate.
       if (still || before === undefined || before === top) continue;
+      // **Where the row is *seen*, not where it is laid out.** A second
+      // reorder can land while the first is still running, and then the
+      // row is mid-flight: its layout position is `before` but the eye
+      // is looking at `before + carried`. Starting the new move from the
+      // layout position would snap it back that far first, which is the
+      // jump FLIP exists to remove — so the leftover is carried into the
+      // new offset and the animation redirects from wherever it had got
+      // to. This is also why the motion is a transition rather than a
+      // keyframe animation: a transition to a new value simply retargets.
+      const carried = offsetOf(row);
       row.style.transition = "none";
-      row.style.transform = `translateY(${before - top}px)`;
+      row.style.transform = `translateY(${before - top + carried}px)`;
       requestAnimationFrame(() => {
         row.style.transition = "";
         row.style.transform = "";

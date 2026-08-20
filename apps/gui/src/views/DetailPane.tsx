@@ -5,6 +5,7 @@ import {
   takeoverTerm as takeoverTermCall,
   type SessionRow,
 } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -134,15 +135,40 @@ function CopyId({ id }: { id: string }) {
 }
 
 /**
+ * What 关闭 will actually do to this row, in that row's own terms.
+ *
+ * The three sentences are the three `KindSurface::close` bodies: a live
+ * session's process group is killed, a device chat's received files are
+ * deleted, a transfer's payloads are deleted **and its row stays**. A
+ * single sentence covering all three would be true of each and useful
+ * for none — what a person is deciding is what they are about to lose.
+ *
+ * The default is not a fallback for a mistake. Kinds are an open set by
+ * design (`khor_core::kind`: "new kinds must appear without touching
+ * this crate"), so a kind with no sentence here is one that arrived
+ * later, and the honest thing to say about it is only the part that is
+ * true of every close.
+ */
+function closeWarning(kind: string): string {
+  if (kind === "chat") return gui.close_warn_chat;
+  if (kind === "transfer") return gui.close_warn_transfer;
+  if (kind === "shell" || kind === "tui" || kind === "gui" || kind === "borrow") {
+    return gui.close_warn_live;
+  }
+  return gui.close_warn;
+}
+
+/**
  * Ending the session this pane is showing.
  *
  * **The button does not decide whether the close is possible.** A
- * discovered session is not khor's to end and a remote one has no path
- * yet — both are `Node::close`'s judgment, and both refuse in a whole
- * sentence written for a person ("不是 khor 起的,关不了它;去它自己的窗口
- * 里退"). Guessing the same rule here would be this face re-deriving a
- * backend judgment, and it would go stale the day remote close lands.
- * So it asks, and prints what comes back.
+ * discovered session is not khor's to end, and a remote one routes to
+ * the machine it lives on — both are `Node::close`'s judgment, and a
+ * refusal comes back as a whole sentence written for a person ("不是
+ * khor 起的,关不了它;去它自己的窗口里退"). Guessing the same rule here
+ * would be this face re-deriving a backend judgment, and it would go
+ * stale the day one of those paths changes. So it asks, and prints what
+ * comes back.
  *
  * The confirm takes a strip of its own under the header rather than
  * squeezing into it: the sentence is the point, and a warning truncated
@@ -185,7 +211,9 @@ function useCloseSession(row: SessionRow | null) {
           data-close-confirm
           className="flex flex-none items-center gap-2 border-b px-3 py-1.5 text-sm"
         >
-          <span className="min-w-0 flex-1 text-muted-foreground">{gui.close_session_warn}</span>
+          <span data-close-warn className="min-w-0 flex-1 text-muted-foreground">
+            {closeWarning(row.kind)}
+          </span>
           <Button
             size="sm"
             data-close-go
@@ -327,16 +355,21 @@ export function DetailPane({
                 {word(row.word)}
               </span>
             </span>
-            {/* Which machine it came from — only ever on a reported row,
-                because that is the only row that carries the fact. A row
-                living here says nothing, exactly as it says nothing in
-                the list; naming this machine on it would be inventing a
-                fact to fill a slot. */}
-            {row.source && (
-              <span data-detail-device className="flex-none truncate text-sm text-muted-foreground">
-                {gui.from_device(row.source.device)}
-              </span>
-            )}
+            {/* Which machine this session is on. **The face is always
+                there, the name only on a reported row** — and that is
+                one rule, not two: the face is the machine's identity and
+                every row carries one, while the *name* is the offline
+                axis and only a row another device told us about has it.
+                It is exactly what the list shows, which is the point —
+                one machine, one face, wherever it appears. */}
+            <span data-detail-machine className="flex flex-none items-center gap-1.5">
+              <MachineAvatar face={row.face} className="size-kind-mark" />
+              {row.source && (
+                <span data-detail-device className="truncate text-sm text-muted-foreground">
+                  {gui.from_device(row.source.device)}
+                </span>
+              )}
+            </span>
             <span className="min-w-0 flex-1" />
             <CopyId id={row.id} />
             {close.button}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   fetchDevices,
@@ -251,6 +251,9 @@ export default function App() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The selected id, once it has actually been seen on the list — see
+      the effect below for why "selected" alone is not enough. */
+  const wasListed = useRef<string | null>(null);
   // The open machine, kept apart from the open session for the same
   // reason each pane keeps its own query: they are two selections in two
   // places, and one variable would have opening a machine close the
@@ -463,6 +466,35 @@ export default function App() {
   );
 
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
+  // A session that is gone stops being the selected one, and on the
+  // narrow face the screen goes back to the list.
+  //
+  // **Without this the close leaves a lie standing**: `selectedRow`
+  // falls to null on its own, so the wide face already empties — but the
+  // *selection* would still name a dead id, and the narrow face would sit
+  // on a detail screen with nothing in it and no list to see, which is a
+  // dead end reachable by pressing 关闭.
+  //
+  // **Only a selection that was actually on the list gets cleared**, and
+  // that is not belt-and-braces: the wizard selects the session it just
+  // opened, and the row for it does not exist until the next poll — a
+  // rule that read "selected but not in the list" as "gone" threw that
+  // selection away a second after making it, and the fresh conversation
+  // came up empty. Measured, on this very run.
+  //
+  // An empty list is likewise not evidence: a poll that answered with
+  // nothing is a backend blink, not everything closing at once.
+  useEffect(() => {
+    if (!selected || rows.length === 0) return;
+    if (rows.some((r) => r.id === selected)) {
+      wasListed.current = selected;
+      return;
+    }
+    if (wasListed.current !== selected) return;
+    wasListed.current = null;
+    setSelected(null);
+    setScreen("list");
+  }, [rows, selected]);
   const blockedOrUnread = rows.reduce(
     (n, r) => n + (r.word === "blocked" ? 1 : 0) + (r.unread > 0 ? 1 : 0),
     0,
