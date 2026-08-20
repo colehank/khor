@@ -3233,6 +3233,63 @@ for line in sys.stdin:
     return seen.includes("'/tmp/a b.txt'") && seen.includes("'/tmp/it'\\''s.txt'");
   });
 
+  // 24q) F 键 (批⑤): a function key reaches the program as the bytes
+  //      that program expects.
+  //
+  //      The terminal in view is a `cat`, so whatever arrives at the tty
+  //      is echoed straight back — which makes the assertion about what
+  //      **left this app**, not about what it drew. `ESC` echoes as
+  //      `^[`, so an F5 that arrived whole reads as `^[[15~`.
+  await page.locator("[data-terminal]").click();
+  await page.keyboard.press("F5");
+  await until("F5 arriving as its own escape sequence", 10_000, async () =>
+    (await page.locator("[data-terminal]").innerText()).includes("^[[15~"),
+  );
+
+  // 24r) 选择复制 (批⑤): what lands on the clipboard is the text, not
+  //      the padding.
+  //
+  //      **The control is the first half of this.** Every cell is
+  //      painted, empty ones included, so a row in the DOM ends in a
+  //      run of spaces — asserted here before the copy, because
+  //      "the clipboard has no trailing spaces" is otherwise true of a
+  //      clipboard that got nothing at all.
+  //      `textContent`, not `innerText`: the second one is what the
+  //      layout would show a reader, and it folds away the very padding
+  //      being measured — the first attempt at this probe read `""` off
+  //      a row that is eighty spaces wide.
+  const { row: paddedRow, text: padded } = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-terminal] div")];
+    const at = rows.findIndex((d) => (d.textContent ?? "").trim().length > 0);
+    return { row: at, text: at < 0 ? "" : rows[at].textContent };
+  });
+  if (paddedRow < 0 || !/ {3}$/.test(padded)) {
+    throw new Error(`probe dead: a painted row should end in padding, got ${JSON.stringify(padded)}`);
+  }
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: `http://localhost:${VITE_PORT}`,
+  });
+  const copied = await page.evaluate(async (at) => {
+    const row = document.querySelectorAll("[data-terminal] div")[at];
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand("copy");
+    sel.removeAllRanges();
+    return navigator.clipboard.readText();
+  }, paddedRow);
+  if (!copied.trim()) {
+    throw new Error("probe dead: nothing reached the clipboard at all");
+  }
+  if (/[ \t]$/.test(copied)) {
+    throw new Error(`the clipboard kept the terminal's padding: ${JSON.stringify(copied)}`);
+  }
+  if (copied.trimEnd() !== padded.trimEnd()) {
+    throw new Error(`the copy changed more than the padding: ${JSON.stringify(copied)} vs ${JSON.stringify(padded)}`);
+  }
+
   // 24p) 没人看的时候不轮询 (批⑤): a window in the background costs
   //      almost nothing, and comes back current at once.
   //

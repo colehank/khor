@@ -81,6 +81,24 @@ function keyBytes(e: React.KeyboardEvent): string | null {
     Delete: "\x1b[3~",
     PageUp: "\x1b[5~",
     PageDown: "\x1b[6~",
+    // The function keys, in the table xterm actually uses rather than
+    // the one it looks like it should. F1–F4 are SS3 (`ESC O`) and the
+    // rest are CSI with a number — **and the numbers skip 16 and 22**,
+    // a historical gap that is not a typo here. A terminal that sends
+    // its own tidier numbering is a terminal whose F6 arrives as
+    // somebody else's key.
+    F1: "\x1bOP",
+    F2: "\x1bOQ",
+    F3: "\x1bOR",
+    F4: "\x1bOS",
+    F5: "\x1b[15~",
+    F6: "\x1b[17~",
+    F7: "\x1b[18~",
+    F8: "\x1b[19~",
+    F9: "\x1b[20~",
+    F10: "\x1b[21~",
+    F11: "\x1b[23~",
+    F12: "\x1b[24~",
   };
   if (k in named) return named[k];
   if (k.length === 1) return k;
@@ -281,15 +299,40 @@ export function TerminalPane({ id }: { id: string }) {
     termKey(id, bytes).catch(() => {});
   };
 
-  // Paste goes to the PTY, not the page. Selection needs no such care —
-  // this grid is DOM text, so select-and-copy just work (the reason
-  // mandala had to intercept Cmd+C was a canvas with no text in it).
+  // Paste goes to the PTY, not the page. Selection is the other half and
+  // has its own note above `onCopy` — it needs less care than this, not
+  // none.
   //
   // **Sent as a paste, not as keystrokes.** A program that asked for
   // bracketed paste gets the text marked as one lump; one that did not
   // gets exactly what it got before. Which of those it is belongs to the
   // screen the registry already keeps, so it is decided there — this
   // only says what kind of event this was (`term_paste`).
+  // What a selection copies. **The grid is DOM text, so selecting and
+  // copying already work** — the reason mandala had to intercept Cmd+C
+  // was a canvas with nothing in it to select. What does not come free
+  // is the shape of what lands on the clipboard: every cell is painted,
+  // including the empty ones, so a line with five characters on it
+  // copies as five characters and seventy-five spaces. Paste that into
+  // anything and the padding comes too.
+  //
+  // Trailing blanks only, and only at the end of a line: what a terminal
+  // pads with is on the right, and a space inside a line is somebody's
+  // text. This is what every terminal does on copy, and doing it here
+  // rather than at paste time keeps it out of the way of the program on
+  // the other side.
+  const onCopy = (e: React.ClipboardEvent) => {
+    const picked = window.getSelection()?.toString() ?? "";
+    if (!picked) return;
+    const tidy = picked
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+$/, ""))
+      .join("\n");
+    if (tidy === picked) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", tidy);
+  };
+
   const onPaste = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData("text");
     if (!text) return;
@@ -304,6 +347,7 @@ export function TerminalPane({ id }: { id: string }) {
       data-terminal
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onCopy={onCopy}
       onPaste={onPaste}
       ref={boxRef}
       className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-bg)] p-1 font-mono text-sm leading-tight text-[var(--term-fg)] outline-none"
