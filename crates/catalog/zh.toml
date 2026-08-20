@@ -489,6 +489,13 @@ quit-hosts = "收了 {0} 个 session 宿主"
 # keeper stands it back up with fresh ears.
 serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了,退下换一双(keeper 会再起)"
 serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任,退场"
+# 76's preventive half: on a network filesystem, replacing the binary
+# can kill the running keeper on another machine (SIGBUS suspicion), so
+# the keeper re-execs from a local copy and nothing khor keeps running
+# executes off the network disk.
+serve-shielding = "[{0}] {1} 在网络盘上——keeper 搬进本地副本再跑,那边换文件砸不到这边跑着的进程"
+serve-shield-failed = "[{0}] 本地副本没做成({1}),就在原地跑"
+serve-copy-swept = "[{0}] 本地副本被清掉了(多半是 /tmp 清理器),拷一份新的交棒"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # The proxied browsing window needs per-window proxy_url, which is macOS
 # 14+ only (Cargo gates the feature by target). Other platforms' proxy

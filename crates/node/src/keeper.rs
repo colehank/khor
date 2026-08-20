@@ -42,6 +42,23 @@
 //! It is deliberately too small for that to matter: every feature
 //! lives in the inner serve.
 //!
+//! # The shield (#76)
+//!
+//! On an NFS home, replacing the binary can kill the *running* keeper
+//! on another machine — silently, twice observed (2026-08-20, SIGBUS
+//! suspicion: the text pages of a running image faulting against a
+//! replaced file). So a keeper whose binary sits on a network
+//! filesystem copies itself to the local disk and re-execs from the
+//! copy before doing anything else: same pid (serve.pid, `khor quit`,
+//! systemd's PIDFile all keep working), same argv, one extra env var
+//! ([`SHIELD_FROM`]) remembering the install path — which stays the
+//! watched path, so upgrades land exactly as before, except each new
+//! generation is also copied local before it is preflighted and
+//! spawned. Nothing khor keeps running executes off the network disk.
+//!
+//! `KHOR_SHIELD=1` forces the shield on any filesystem (how the tests
+//! reach it from a local disk); `KHOR_SHIELD=0` forbids it.
+//!
 //! # Signals
 //!
 //! The pid file written by the installer holds the **keeper's** pid, so
@@ -62,6 +79,147 @@ pub const INNER_ENV: &str = "KHOR_SERVE_KEPT";
 /// Whether this process is the kept serve itself.
 pub fn is_inner() -> bool {
     std::env::var_os(INNER_ENV).is_some()
+}
+
+/// Set on the shielded keeper by its own pre-exec self: the install
+/// path — the one to watch for new generations — which `current_exe`
+/// no longer answers once the process runs from a local copy.
+const SHIELD_FROM: &str = "KHOR_SHIELD_FROM";
+
+/// "1" shields on any filesystem (tests), "0" never shields; unset
+/// means "shield exactly when the binary sits on a network mount".
+const SHIELD_ENV: &str = "KHOR_SHIELD";
+
+/// Whether this path lives on a filesystem where replacing a file can
+/// hurt processes already running from it (#76). Unknown reads as
+/// local: the shield is medicine, not a default.
+#[cfg(target_os = "linux")]
+fn on_network_fs(path: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    let mut st: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(c.as_ptr(), &mut st) } != 0 {
+        return false;
+    }
+    // NFS, SMB2, CIFS, Lustre, Ceph, BeeGFS, 9p.
+    matches!(
+        st.f_type as u64,
+        0x6969 | 0xFE534D42 | 0xFF534D42 | 0x0BD0_0BD0 | 0x00C3_6400 | 0x1983_0326 | 0x0102_1997
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn on_network_fs(path: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    let mut st: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(c.as_ptr(), &mut st) } != 0 {
+        return false;
+    }
+    let name = unsafe { std::ffi::CStr::from_ptr(st.f_fstypename.as_ptr()) };
+    matches!(name.to_bytes(), b"nfs" | b"smbfs" | b"afpfs" | b"webdav")
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn on_network_fs(_path: &std::path::Path) -> bool {
+    false
+}
+
+/// Where this install's local copies live: per-user (a shared /tmp) and
+/// per-install-path (two stores may share one machine in the tests).
+fn shield_dir(watched: &std::path::Path) -> std::path::PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    watched.hash(&mut h);
+    let uid = unsafe { libc::getuid() };
+    std::env::temp_dir().join(format!("khor-shield-{uid}-{:016x}", h.finish()))
+}
+
+/// Copies the watched binary to the local disk and returns the copy's
+/// path, named after the generation's fingerprint. Copy-then-rename so
+/// a torn write never wears a finished name; the unlink first because
+/// overwriting a file in place is the very harm the shield exists to
+/// avoid (a running image survives an unlink, not a rewrite). Old
+/// generations are swept by age — running images survive that too.
+fn local_copy(watched: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let dir = shield_dir(watched);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let stale = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > std::time::Duration::from_secs(7 * 24 * 3600));
+            if stale {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let dst = dir.join(match fingerprint(watched) {
+        Some((ino, mtime, len)) => format!("khor-{ino:x}-{mtime:x}-{len:x}"),
+        None => format!("khor-{}", std::process::id()),
+    });
+    let tmp = dir.join(format!(".copy-{}", std::process::id()));
+    std::fs::copy(watched, &tmp).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&dst);
+    std::fs::rename(&tmp, &dst).map_err(|e| e.to_string())?;
+    Ok(dst)
+}
+
+/// #76's preventive half. Returns the path to WATCH for new
+/// generations — the install path — after having moved this process
+/// onto a local copy when that path lives on a network filesystem.
+/// The move is an exec: same pid, same args; on any failure the keeper
+/// says so once and serves from where it is, shieldless.
+fn shield() -> Result<std::path::PathBuf, String> {
+    if let Some(orig) = std::env::var_os(SHIELD_FROM) {
+        return Ok(std::path::PathBuf::from(orig));
+    }
+    let exe = crate::self_exe()?;
+    let wanted = match std::env::var(SHIELD_ENV).ok().as_deref() {
+        Some("0") => false,
+        Some(_) => true,
+        None => on_network_fs(&exe),
+    };
+    if !wanted {
+        return Ok(exe);
+    }
+    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+    match local_copy(&exe) {
+        Ok(copy) => {
+            eprintln!("{}", msg::serve_shielding(&stamp, exe.display()));
+            use std::os::unix::process::CommandExt;
+            let err = std::process::Command::new(&copy)
+                .args(std::env::args_os().skip(1))
+                .env(SHIELD_FROM, &exe)
+                .exec();
+            // exec returns only on failure.
+            eprintln!("{}", msg::serve_shield_failed(&stamp, err));
+            Ok(exe)
+        }
+        Err(why) => {
+            eprintln!("{}", msg::serve_shield_failed(&stamp, &why));
+            Ok(exe)
+        }
+    }
+}
+
+/// What a stable new generation is taken FROM: behind the shield, a
+/// fresh local copy of it (preflighted as the copy, spawned as the
+/// copy); shieldless, the watched path itself.
+fn take_generation(
+    watched: &std::path::Path,
+    shielded: bool,
+) -> Result<(String, std::path::PathBuf), String> {
+    let from = if shielded { local_copy(watched)? } else { watched.to_path_buf() };
+    let version = preflight(&from)?;
+    Ok((version, from))
 }
 
 /// A child that lived at least this long was up for real, and its death
@@ -137,6 +295,12 @@ extern "C" fn forward(sig: libc::c_int) {
 /// Runs the serve under the keeper, forever. Returns only when the serve
 /// ends cleanly (exit 0) or a child cannot even be spawned.
 pub fn keep() -> Result<(), String> {
+    // Before anything else: off the network disk (#76). On success this
+    // is an exec and the pid survives it; either way `watched` is the
+    // install path — where upgrades land — and `source` is what serves.
+    let watched = shield()?;
+    let shielded = std::env::var_os(SHIELD_FROM).is_some();
+    let mut source = crate::self_exe()?;
     unsafe {
         libc::signal(libc::SIGTERM, forward as libc::sighandler_t);
         libc::signal(libc::SIGINT, forward as libc::sighandler_t);
@@ -144,21 +308,20 @@ pub fn keep() -> Result<(), String> {
     let mut backoff = 1u64;
     let mut running = env!("CARGO_PKG_VERSION").to_owned();
     loop {
-        let exe = crate::self_exe()?;
-        let mut child = std::process::Command::new(&exe)
+        let mut child = std::process::Command::new(&source)
             .args(std::env::args_os().skip(1))
             .env(INNER_ENV, "1")
             .spawn()
             .map_err(msg::host_wont_start)?;
         CHILD.store(child.id() as i32, Ordering::SeqCst);
         let born = std::time::Instant::now();
-        let on_disk = fingerprint(&exe);
+        let on_disk = fingerprint(&watched);
         // A change must hold still for two looks before it counts: a
         // download writing the file in place is many changes in a row,
         // and none of them is a generation yet.
         let mut seen: Option<(u64, i64, u64)> = None;
         let mut refused: Option<(u64, i64, u64)> = None;
-        let mut swap: Option<String> = None;
+        let mut swap: Option<(String, std::path::PathBuf)> = None;
         let mut term_at: Option<std::time::Instant> = None;
         let mut last_look = std::time::Instant::now();
         let status = loop {
@@ -175,7 +338,26 @@ pub fn keep() -> Result<(), String> {
                 continue;
             }
             last_look = std::time::Instant::now();
-            let Some(now) = fingerprint(&exe) else {
+            // The local copy this generation runs from can be swept by
+            // a /tmp cleaner while the watched install is unchanged;
+            // hand over to a fresh copy of the same generation before
+            // spawns start failing. If even that copy cannot be made,
+            // fall back to serving straight off the watched path.
+            if source != watched && fingerprint(&source).is_none() {
+                let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                eprintln!("{}", msg::serve_copy_swept(&stamp));
+                let next = local_copy(&watched).unwrap_or_else(|_| watched.clone());
+                swap = Some((running.clone(), next));
+                term_at = Some(std::time::Instant::now());
+                let pid = CHILD.load(Ordering::SeqCst);
+                if pid > 0 {
+                    unsafe {
+                        libc::kill(pid, libc::SIGTERM);
+                    }
+                }
+                continue;
+            }
+            let Some(now) = fingerprint(&watched) else {
                 seen = None;
                 continue;
             };
@@ -191,10 +373,10 @@ pub fn keep() -> Result<(), String> {
                 continue;
             }
             let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-            match preflight(&exe) {
-                Ok(next) => {
+            match take_generation(&watched, shielded) {
+                Ok((next, from)) => {
                     eprintln!("{}", msg::serve_swapping(&stamp, &running, &next));
-                    swap = Some(next);
+                    swap = Some((next, from));
                     term_at = Some(std::time::Instant::now());
                     let pid = CHILD.load(Ordering::SeqCst);
                     if pid > 0 {
@@ -210,11 +392,12 @@ pub fn keep() -> Result<(), String> {
             }
         };
         CHILD.store(0, Ordering::SeqCst);
-        if let Some(next) = swap {
+        if let Some((next, from)) = swap {
             // The keeper's own TERM: a handover, not a death and not an
             // operator's stop — no death line, no backoff, and the exit
             // code (clean or signal 15) means nothing here.
             running = next;
+            source = from;
             backoff = 1;
             continue;
         }

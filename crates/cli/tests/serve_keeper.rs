@@ -200,6 +200,80 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
 }
 
 #[test]
+fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
+    // #76: on an NFS home, replacing the binary killed the RUNNING
+    // keeper on another machine — silently, twice. The medicine: a
+    // keeper whose binary sits on a network disk re-execs from a local
+    // copy, so the install path can be replaced without touching any
+    // running image. KHOR_SHIELD=1 forces that verdict on a local disk;
+    // everything downstream must keep working through the exec — the
+    // pid (TERM below lands on the pre-exec id, which is what serve.pid
+    // holds), the disk watch, and the handover.
+    let home = root("shield");
+    let bin = home.join("khor-copy");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &bin).unwrap();
+    let log = home.join("serve.log");
+    let mut keeper = Command::new(&bin)
+        .arg("serve")
+        .env("KHOR_HOME", &home)
+        .env("KHOR_NAME", "box")
+        .env("KHOR_SHIELD", "1")
+        .env_remove("KHOR_SESSION")
+        .stderr(fs::File::create(&log).unwrap())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let _reap = Reaper(keeper.id());
+    wait_for("the serve to stand up", 20, || inner_pid(&home).is_some());
+    let first = inner_pid(&home).unwrap();
+
+    let read_log = || {
+        let mut said = String::new();
+        fs::File::open(&log).unwrap().read_to_string(&mut said).unwrap();
+        said
+    };
+    // The shield names itself before the exec; the stable text is what
+    // follows the path argument.
+    let shield_line = khor_catalog::msg::serve_shielding("\u{1}", "\u{2}")
+        .split('\u{2}')
+        .next_back()
+        .unwrap()
+        .to_owned();
+    assert!(
+        read_log().contains(&shield_line),
+        "KHOR_SHIELD=1 must be heard and named: {}",
+        read_log()
+    );
+
+    // The handover still works from behind the shield: replace the
+    // watched install path, and the new generation must stand up —
+    // proof the keeper kept watching the install path rather than the
+    // copy it runs from.
+    let next = home.join("next");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &next).unwrap();
+    fs::rename(&next, &bin).unwrap();
+    wait_for("the new generation to stand up", 30, || {
+        inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
+    });
+    let second = inner_pid(&home).unwrap();
+    assert!(!alive(first), "the old generation must be gone, not doubled");
+    assert!(
+        !read_log().contains(&khor_catalog::msg::died_by_signal(15)),
+        "a shielded handover is still a handover, not a death: {}",
+        read_log()
+    );
+
+    // The exec kept the pid: TERM at the pre-exec id must still stop
+    // everything — serve.pid, `khor quit` and systemd's PIDFile all
+    // point there.
+    Command::new("kill").args(["-TERM", &keeper.id().to_string()]).status().unwrap();
+    wait_for("the keeper and its serve to leave", 10, || {
+        keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
+    });
+    let _ = fs::remove_dir_all(&home);
+}
+
+#[test]
 fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
     // 2026-08-20 (#76): a keeper died silently on an NFS binary swap
     // and its inner squatted for an hour — healthy-looking, holding
