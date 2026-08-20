@@ -651,12 +651,18 @@ for line in sys.stdin:
   await page.keyboard.press("Escape");
   await until("the filter menu to close", 5_000, async () => (await menu.count()) === 0);
 
+  // A filter option is keyed by the node's own **group key** (批③): the
+  // menu ticks on three axes now, and a state word and a machine could
+  // otherwise collide on a bare value. `state:` is the prefix
+  // `khor_node::list` groups states under, so the row's own word plus
+  // that prefix names the option without this file spelling either.
   const tickWord = async (w) => {
+    const option = `[data-filter-option="state:${w}"]`;
     if ((await menu.count()) === 0) await page.locator("[data-pane-filter]").click();
     await until(`the ${w} option in the filter menu`, 5_000, async () =>
-      (await page.locator(`[data-filter-option="${w}"]`).count()) === 1,
+      (await page.locator(option).count()) === 1,
     );
-    await page.locator(`[data-filter-option="${w}"]`).click();
+    await page.locator(option).click();
     await page.keyboard.press("Escape");
     await until("the filter menu to close", 5_000, async () => (await menu.count()) === 0);
   };
@@ -669,6 +675,81 @@ for line in sys.stdin:
     }
     await tickWord(w);
     await until("every row back", 5_000, async () => (await sessionRows.count()) === allRows);
+  }
+
+  // 8b) 三轴筛选 (批③ 一笔): the same menu now ticks machines and
+  //     categories, on the node's own group keys.
+  //
+  //     **The machine axis is the one worth proving.** It reads each
+  //     row's `home`, not its `source` — `source` is the offline axis
+  //     and is absent on rows that live here, so an axis built on it
+  //     would silently exclude this machine, which is the one people
+  //     filter by first. So: tick *this* machine, and the rows that
+  //     survive must be exactly the rows that are not from elsewhere.
+  const axisOptions = async (axis) => {
+    if ((await menu.count()) === 0) await page.locator("[data-pane-filter]").click();
+    await until(`the ${axis} options`, 5_000, async () =>
+      (await page.locator(`[data-filter-option^="${axis}"]`).count()) > 0,
+    );
+    return page
+      .locator(`[data-filter-option^="${axis}"]`)
+      .evaluateAll((els) => els.map((e) => e.dataset.filterOption));
+  };
+  const machineKeys = await axisOptions("dev:");
+  await page.keyboard.press("Escape");
+  await until("the filter menu to close", 5_000, async () => (await menu.count()) === 0);
+  if (machineKeys.length < 2) {
+    throw new Error(
+      `only ${machineKeys.length} machine on the axis — a machine filter cannot be told ` +
+        `from a no-op: ${JSON.stringify(machineKeys)}`,
+    );
+  }
+  const tickKey = async (key) => {
+    if ((await menu.count()) === 0) await page.locator("[data-pane-filter]").click();
+    await until(`the ${key} option`, 5_000, async () =>
+      (await page.locator(`[data-filter-option="${key}"]`).count()) === 1,
+    );
+    await page.locator(`[data-filter-option="${key}"]`).click();
+    await page.keyboard.press("Escape");
+    await until("the filter menu to close", 5_000, async () => (await menu.count()) === 0);
+  };
+  // **Asserted against the fact each row carries, not against a count.**
+  // The first spelling of this compared "rows kept" with "rows with no
+  // `data-source`", which is a guess about which rows are this
+  // machine's — and it failed while the axis was working, because a
+  // live list's counts move between two measurements. `data-home` is
+  // the fact the filter reads, so ask each surviving row for it.
+  let narrowed = 0;
+  for (const key of machineKeys) {
+    const machine = key.slice("dev:".length);
+    await tickKey(key);
+    const homes = await page
+      .locator("[data-row]")
+      .evaluateAll((els) => els.map((e) => e.dataset.home));
+    // **At least one row, or the check above is vacuously true.** Every
+    // key on this axis was minted from a row that carries it, so a key
+    // that keeps nothing means the filter is reading a different fact
+    // than the one the candidates came from — which is exactly what
+    // building the axis on `source` would look like: the machines that
+    // reported still match, and this machine's own key quietly matches
+    // no row at all.
+    if (homes.length === 0) {
+      throw new Error(`ticking ${key} kept no rows, but that key came from a row`);
+    }
+    if (homes.some((h) => h !== machine)) {
+      throw new Error(
+        `ticking ${key} left rows from elsewhere: ${JSON.stringify([...new Set(homes)])}`,
+      );
+    }
+    if (homes.length < allRows) narrowed += 1;
+    await tickKey(key);
+    await until("every row back", 10_000, async () => (await sessionRows.count()) === allRows);
+  }
+  // …and at least one of them actually removed something. All three
+  // keeping every row would satisfy the loop above and mean the filter
+  // does nothing — the shape of a no-op that passes.
+  if (narrowed === 0) {
+    throw new Error("no machine on the axis narrowed the list; the filter is a no-op");
   }
 
   // 9) turn ends on alpha → done + unread on beta; clicking the row is

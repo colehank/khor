@@ -49,6 +49,44 @@ export function groupLabel(group: string): string {
   return group.startsWith("dev:") ? group.slice("dev:".length) : group;
 }
 
+/**
+ * The three axes a session list can be filtered on, in the node's own
+ * spelling (`khor_node::list` — `GROUP_STATE` / `GROUP_DEVICE` /
+ * `GROUP_CATEGORY`).
+ *
+ * **Nothing here is a vocabulary this app invented.** The node already
+ * mints these keys to group by, `groupLabel` above already reads them,
+ * and a filter is the same question a grouping answers — so a ticked
+ * filter and a group heading are the same string, and there is no second
+ * spelling that can drift from the first.
+ */
+export const AXES = ["state:", "dev:", "cat:"] as const;
+export type Axis = (typeof AXES)[number];
+
+/**
+ * Which axis a ticked key belongs to.
+ *
+ * **A key with no prefix is a state word**, and that rule is doing two
+ * jobs at once: it is how the axis is read off a key, and it is the
+ * whole of the compatibility with what an older app wrote — this
+ * preference used to be a list of bare state keys, so a stored value
+ * from before the other two axes existed parses as what it always meant.
+ * One line instead of a migration, and it keeps working in the other
+ * direction too (an older app reading a newer store sees keys it does
+ * not know and, per its own rule, simply matches no rows on them).
+ */
+export function axisOf(key: string): Axis {
+  const found = AXES.find((a) => key.startsWith(a));
+  return found ?? "state:";
+}
+
+/** The value inside a ticked key — the state word, machine name, or
+    category name. An unprefixed key is the whole value (see `axisOf`). */
+export function valueOf(key: string): string {
+  const a = AXES.find((x) => key.startsWith(x));
+  return a ? key.slice(a.length) : key;
+}
+
 /** How long ago, in the catalog's units. */
 export function ago(ms: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));

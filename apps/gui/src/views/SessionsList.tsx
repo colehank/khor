@@ -7,7 +7,7 @@ import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago, groupLabel, word } from "@/words";
+import { ago, axisOf, groupLabel, valueOf, word } from "@/words";
 
 /** The corner mark on a row's face: the shape is `sessionMark`'s one
     judgment; this only sizes it. */
@@ -36,14 +36,50 @@ function KindMark({ kind, category }: { kind: string; category: string | null })
  * so a local row is not findable by this machine's name, because the row
  * never says it.
  */
-export function visibleSessions(rows: SessionRow[], query: string, words: string[]) {
+export function visibleSessions(rows: SessionRow[], query: string, ticked: string[]) {
   const q = query.trim().toLowerCase();
-  return rows.filter(
-    (r) =>
-      (words.length === 0 || words.includes(r.word)) &&
-      (q === "" ||
-        `${r.title} ${r.id} ${r.source?.device ?? ""}`.toLowerCase().includes(q)),
-  );
+  // **AND across axes, OR within one.** Both halves are decisions, not
+  // defaults: ticking 忙碌 and 待批 means "either of these two", while
+  // ticking 忙碌 and a machine means "busy ones on that machine". The
+  // OR half is also what this list has always done with the state
+  // words, so the two new axes join the rule rather than changing it.
+  const wanted = new Map<string, Set<string>>();
+  for (const key of ticked) {
+    const axis = axisOf(key);
+    const set = wanted.get(axis) ?? new Set<string>();
+    set.add(valueOf(key));
+    wanted.set(axis, set);
+  }
+  // What the row answers on each axis, in the node's own terms: the
+  // state key it sent, the machine it lives on, and the category — with
+  // the empty string for "could not tell", which is exactly the key the
+  // node groups those rows under (`cat:` with nothing after it).
+  const answers = (r: SessionRow): Record<string, string> => ({
+    "state:": r.word,
+    "dev:": r.home,
+    "cat:": r.category ?? "",
+  });
+  return rows.filter((r) => {
+    const on = answers(r);
+    for (const [axis, set] of wanted) if (!set.has(on[axis] ?? "")) return false;
+    return (
+      q === "" || `${r.title} ${r.id} ${r.source?.device ?? ""}`.toLowerCase().includes(q)
+    );
+  });
+}
+
+/** How far a row is currently displaced from where it is laid out —
+    the translateY of whatever transform it is wearing, mid-animation or
+    not. `none` is the resting case and matrices are what the computed
+    style hands back, so both are read rather than assumed. */
+function offsetOf(row: HTMLElement): number {
+  const t = getComputedStyle(row).transform;
+  if (!t || t === "none") return 0;
+  try {
+    return new DOMMatrixReadOnly(t).m42;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -70,20 +106,6 @@ export function visibleSessions(rows: SessionRow[], query: string, words: string
  * two paints either way, and at zero duration that is a flicker instead
  * of a move.
  */
-/** How far a row is currently displaced from where it is laid out —
-    the translateY of whatever transform it is wearing, mid-animation or
-    not. `none` is the resting case and matrices are what the computed
-    style hands back, so both are read rather than assumed. */
-function offsetOf(row: HTMLElement): number {
-  const t = getComputedStyle(row).transform;
-  if (!t || t === "none") return 0;
-  try {
-    return new DOMMatrixReadOnly(t).m42;
-  } catch {
-    return 0;
-  }
-}
-
 function useRowFlip(deps: string) {
   const box = useRef<HTMLDivElement>(null);
   const was = useRef(new Map<string, number>());
@@ -195,12 +217,17 @@ export function SessionsList({
               an anchor rather than only as painted text — verification
               asserts on data attributes, never on the words, which
               belong to the catalog. Absent on rows that live here,
-              which is the same fact `source` itself carries. */}
+              which is the same fact `source` itself carries.
+              `data-home` is its sibling and a **different fact**: which
+              machine the session lives on, present on every row
+              (`SessionRow::home`). The machine filter reads that one —
+              an axis built on `source` would be missing this machine. */}
           <div
           data-row={r.id}
           data-word={r.word}
           data-pinned={r.pinned}
           data-source={r.source?.device}
+          data-home={r.home}
           data-title={r.title}
           className={cn(
             "flex w-full items-center pr-2 hover:bg-secondary",

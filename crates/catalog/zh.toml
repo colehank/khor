@@ -742,6 +742,19 @@ search-sessions = "搜索会话"
 # is a build error by design (one text, one name).
 search-devices = "搜索设备"
 filter = "筛选"
+# The filter menu's axis headings. It ticks on three axes now (状态 /
+# 设备 / 类别), and a flat checkbox list with no headings reads as one
+# set — ticking a machine and a state would look like two of a kind
+# when they are two questions.
+#
+# **The machine axis borrows `devices-tab` rather than growing a word of
+# its own.** It is the same word for the same things, and one text may
+# not carry two names in a section (the build refuses it) — which is the
+# rule doing its job: a second name for 设备 is exactly the drift this
+# file exists to stop. The arrange section right above says 按设备, so
+# one axis reads the same in both halves of one menu.
+axis-state = "状态"
+axis-category = "类别"
 # How the list is laid out. One heading and four choices, sharing the
 # filter's menu because both answer "what am I looking at" — the
 # difference is that ticking words removes rows and this rearranges

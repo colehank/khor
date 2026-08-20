@@ -12,6 +12,8 @@
 //
 // Every control carries a name from the catalog. A control the eye reads
 // by its shape still has to say what it is out loud.
+import { Fragment } from "react";
+
 import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,8 +30,15 @@ import {
 import { Input } from "@/components/ui/input";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
-    word this layer invented — see `PaneBar`'s filter prop. */
-export type FilterOption = { key: string; label: string };
+    word this layer invented — see `PaneBar`'s filter prop.
+
+    `axis` names the heading this option belongs under. The menu starts
+    a heading where it **changes between neighbouring options** — the
+    same way `SessionsList` starts a group heading, and for the same
+    reason: the caller declares which axis each option is on, this only
+    notices the boundary. An axis with no options therefore cannot draw
+    a heading over nothing. */
+export type FilterOption = { key: string; label: string; axis?: string };
 
 export type PaneAction = { key: string; label: string; onSelect: () => void };
 
@@ -132,18 +141,25 @@ export function PaneBar({
                 <DropdownMenuSeparator />
               </>
             )}
-            {filter.options.map((o) => (
-              <DropdownMenuCheckboxItem
-                key={o.key}
-                data-filter-option={o.key}
-                checked={filter.chosen.includes(o.key)}
-                onCheckedChange={() => filter.onToggle(o.key)}
-                // Ticking one is rarely the whole thought; closing the
-                // menu on the first tick makes the second one a chore.
-                onSelect={(e) => e.preventDefault()}
-              >
-                {o.label}
-              </DropdownMenuCheckboxItem>
+            {filter.options.map((o, i) => (
+              <Fragment key={o.key}>
+                {o.axis && o.axis !== filter.options[i - 1]?.axis && (
+                  <>
+                    {i > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuLabel data-filter-axis={o.axis}>{o.axis}</DropdownMenuLabel>
+                  </>
+                )}
+                <DropdownMenuCheckboxItem
+                  data-filter-option={o.key}
+                  checked={filter.chosen.includes(o.key)}
+                  onCheckedChange={() => filter.onToggle(o.key)}
+                  // Ticking one is rarely the whole thought; closing the
+                  // menu on the first tick makes the second one a chore.
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {o.label}
+                </DropdownMenuCheckboxItem>
+              </Fragment>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>

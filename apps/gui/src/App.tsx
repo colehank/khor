@@ -35,7 +35,7 @@ import {
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
-import { word } from "@/words";
+import { axisOf, groupLabel, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { FilesPane } from "@/views/FilesPane";
 import { PinnedDirs } from "@/views/PinnedDirs";
@@ -509,11 +509,40 @@ export default function App() {
   // now also covers a tick restored from storage before any row has
   // arrived, the one case where the ticked key is guaranteed to be
   // missing from `rows`.
+  //
+  // **Three axes now, and they are the node's own** (`khor_node::list`
+  // groups by exactly these). A ticked key is a group key, so a filter
+  // and a heading are the same string and cannot drift apart; the axis
+  // heading is what `PaneBar` starts a section on.
+  //
+  // The machine axis reads `home` rather than `source`: `source` is the
+  // offline axis and is absent on rows that live here, so an axis built
+  // on it would be missing this machine — the one people reach for
+  // first (`SessionRow::home` says the rest).
   const wordOptions = useMemo(() => {
-    const keys: string[] = [];
-    for (const r of rows) if (!keys.includes(r.word)) keys.push(r.word);
-    for (const w of words.sessions) if (!keys.includes(w)) keys.push(w);
-    return keys.map((key) => ({ key, label: word(key) }));
+    const seen = (pick: (r: SessionRow) => string, axis: string, label: (v: string) => string) => {
+      const values: string[] = [];
+      for (const r of rows) {
+        const v = pick(r);
+        if (!values.includes(v)) values.push(v);
+      }
+      // A ticked key stays on the list after its last row leaves, or the
+      // tick becomes impossible to undo — which also covers a tick
+      // restored from storage before any row has arrived, the one case
+      // where the ticked key is guaranteed to be missing from `rows`.
+      for (const key of words.sessions) {
+        if (axisOf(key) === axis && !values.includes(valueOf(key))) values.push(valueOf(key));
+      }
+      return values.map((v) => ({ key: `${axis}${v}`, label: label(v) }));
+    };
+    return [
+      ...seen((r) => r.word, "state:", word).map((o) => ({ ...o, axis: gui.axis_state })),
+      ...seen((r) => r.home, "dev:", (v) => v).map((o) => ({ ...o, axis: gui.devices_tab })),
+      ...seen((r) => r.category ?? "", "cat:", (v) => groupLabel(`cat:${v}`)).map((o) => ({
+        ...o,
+        axis: gui.axis_category,
+      })),
+    ];
   }, [rows, words]);
 
   const chooseArrange = useCallback((key: string) => {

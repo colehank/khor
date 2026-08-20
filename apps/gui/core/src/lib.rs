@@ -84,6 +84,24 @@ pub struct SessionRow {
     /// mini avatar. `None` with `via` set draws a blank, not an invented
     /// face (Avatar.tsx's rule).
     pub via_face: Option<Avatar>,
+    /// Which machine this session lives on, by the name people call it.
+    ///
+    /// **Not the same fact as `source`.** `source` is the offline axis:
+    /// it is set only on rows another device reported, so the rows that
+    /// live here carry none — which is right for "how old is this
+    /// report" and wrong for "which machine is this on". Filtering by
+    /// machine needs the second question answered for *every* row,
+    /// including this machine's own, or the axis is missing exactly the
+    /// machine people reach for first and reads as broken.
+    ///
+    /// The device table's name, falling back to the id's hex — the same
+    /// pair `list::place_of` builds for the device arrangement, so one
+    /// machine is named the same in a chip and in a group heading.
+    ///
+    /// Derived here rather than in the frontend for the reason `face`
+    /// is: the id→name table is the node's, and a screen that resolved
+    /// it itself would be a second copy that can disagree.
+    pub home: String,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -304,6 +322,10 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
     // Derived once per list, not once per row: a face is a pure function
     // of (id, reported style), and one machine owns many rows.
     let faces = faces_by_id(&n)?;
+    // The same id→name table `Node::sessions_arranged` hands the
+    // arranger, built once here for the same reason the faces are.
+    let machines: HashMap<String, String> =
+        n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
     Ok(n.sessions_arranged(mode)?
         .into_iter()
         .map(|a| {
@@ -323,6 +345,10 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             let attachable = hosted || v.session.term;
             SessionRow {
             attachable,
+            home: machines
+                .get(&v.session.home.hex())
+                .cloned()
+                .unwrap_or_else(|| v.session.home.hex()),
             face: faces.get(&v.session.home.hex()).cloned(),
             hosted,
             via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
