@@ -112,6 +112,108 @@ fi
 
 [ -n "${KHOR_NO_SERVE:-}" ] && exit 0
 
+# ---- the one way a serve actually starts, everywhere -----------------
+# khor-serve-up is idempotent (a live pid file means "already up", so
+# running it twice is running it once) and host-aware (the owner-file
+# dance above, replayed at start time — a shared NFS home runs this
+# same file on every host). Every guardian below is only a way to get
+# this script run at boot; the keeper inside `khor serve` does the rest.
+UP="$BIN_DIR/khor-serve-up"
+cat > "$UP" <<'SERVEUP'
+#!/bin/sh
+# Start this host's khor serve unless it is already running.
+set -u
+BIN="$(dirname "$0")/khor"
+R="$HOME"
+if [ -f "$HOME/.khor/owner" ] && [ "$(cat "$HOME/.khor/owner")" != "$(hostname)" ]; then
+    R="$HOME/.khor-hosts/$(hostname)"
+fi
+PIDF="$R/.khor/serve.pid"
+mkdir -p "$R/.khor"
+if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+    exit 0
+fi
+# setsid where it exists (Linux); launchd/nohup orphaning does the same
+# job on macOS, which has no setsid.
+if command -v setsid >/dev/null 2>&1; then
+    KHOR_HOME="$R" setsid nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
+else
+    KHOR_HOME="$R" nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
+fi
+echo $! > "$PIDF"
+SERVEUP
+chmod +x "$UP"
+
+# ---- a guardian, so the serve outlives a reboot ----------------------
+# The keeper (inside `khor serve`) already survives crashes and swaps
+# generations; the one thing it cannot survive is the machine itself
+# rebooting. Pick the best boot-hook the current privileges allow —
+# detected, not asked (defaults over settings).
+GUARDIAN="nothing — run khor-serve-up after a reboot"
+case "$(uname -s)" in
+Darwin)
+    PL="$HOME/Library/LaunchAgents/io.github.colehank.khor.plist"
+    mkdir -p "$(dirname "$PL")"
+    cat > "$PL" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>Label</key><string>io.github.colehank.khor</string>
+    <key>ProgramArguments</key><array><string>$UP</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>AbandonProcessGroup</key><true/>
+</dict></plist>
+PLIST
+    launchctl bootstrap "gui/$(id -u)" "$PL" 2>/dev/null || true
+    GUARDIAN="launchd (LaunchAgent, no root needed)"
+    ;;
+Linux)
+    if command -v systemctl >/dev/null 2>&1 && [ "$(id -u)" = 0 ]; then
+        cat > /etc/systemd/system/khor-serve.service <<UNIT
+[Unit]
+Description=khor serve (boot pull-up; the keeper inside handles the rest)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=$HOME
+ExecStart=$UP
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+        systemctl daemon-reload
+        systemctl enable khor-serve.service >/dev/null 2>&1
+        GUARDIAN="systemd (system unit khor-serve.service)"
+    elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+        mkdir -p "$HOME/.config/systemd/user"
+        cat > "$HOME/.config/systemd/user/khor-serve.service" <<UNIT
+[Unit]
+Description=khor serve (boot pull-up; the keeper inside handles the rest)
+
+[Service]
+Type=oneshot
+ExecStart=$UP
+
+[Install]
+WantedBy=default.target
+UNIT
+        systemctl --user daemon-reload
+        systemctl --user enable khor-serve.service >/dev/null 2>&1
+        # Without lingering the unit only fires at login — same promise
+        # as the .profile line below, just tidier. With it, at boot.
+        loginctl enable-linger "$(id -un)" >/dev/null 2>&1 \
+            && GUARDIAN="systemd (user unit, lingering on: starts at boot)" \
+            || GUARDIAN="systemd (user unit: starts at your first login)"
+    fi
+    # Belt and suspenders for every non-root tier: the first person to
+    # log in after a reboot becomes the restart button.
+    if [ "$(id -u)" != 0 ] && ! grep -qs 'khor-serve-up' "$HOME/.profile" 2>/dev/null; then
+        printf '[ -x "$HOME/.local/bin/khor-serve-up" ] && "$HOME/.local/bin/khor-serve-up" >/dev/null 2>&1 || true\n' >> "$HOME/.profile"
+    fi
+    ;;
+esac
+
 PIDF="$ROOT/.khor/serve.pid"
 mkdir -p "$ROOT/.khor"
 # Stopped by its own pid file, never by name: `pkill -f khor` on a
@@ -120,11 +222,11 @@ if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
     kill "$(cat "$PIDF")" 2>/dev/null || true
     sleep 1
 fi
-KHOR_HOME="$ROOT" setsid nohup "$BIN_DIR/khor" serve >> "$ROOT/.khor/serve.log" 2>&1 &
-echo $! > "$PIDF"
+"$UP"
 sleep 2
 if kill -0 "$(cat "$PIDF")" 2>/dev/null; then
     echo "khor: serve is up (pid $(cat "$PIDF"), store $ROOT)"
+    echo "khor: reboots handled by $GUARDIAN"
 else
     echo "khor: serve died on start — tail of $ROOT/.khor/serve.log:" >&2
     tail -5 "$ROOT/.khor/serve.log" >&2
