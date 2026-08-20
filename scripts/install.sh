@@ -150,6 +150,7 @@ chmod +x "$UP"
 # rebooting. Pick the best boot-hook the current privileges allow —
 # detected, not asked (defaults over settings).
 GUARDIAN="nothing — run khor-serve-up after a reboot"
+GUARDIAN_SET=""
 case "$(uname -s)" in
 Darwin)
     PL="$HOME/Library/LaunchAgents/io.github.colehank.khor.plist"
@@ -191,6 +192,7 @@ UNIT
         systemctl daemon-reload
         systemctl enable khor-serve.service >/dev/null 2>&1
         GUARDIAN="systemd (system unit khor-serve.service)"
+        GUARDIAN_SET=1
     elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
         mkdir -p "$HOME/.config/systemd/user"
         cat > "$HOME/.config/systemd/user/khor-serve.service" <<UNIT
@@ -217,11 +219,24 @@ UNIT
         loginctl enable-linger "$(id -un)" >/dev/null 2>&1 \
             && GUARDIAN="systemd (user unit, lingering on: starts at boot)" \
             || GUARDIAN="systemd (user unit: starts at your first login)"
+        GUARDIAN_SET=1
     fi
     # Belt and suspenders for every non-root tier: the first person to
-    # log in after a reboot becomes the restart button.
-    if [ "$(id -u)" != 0 ] && ! grep -qs 'khor-serve-up' "$HOME/.profile" 2>/dev/null; then
-        printf '[ -x "$HOME/.local/bin/khor-serve-up" ] && "$HOME/.local/bin/khor-serve-up" >/dev/null 2>&1 || true\n' >> "$HOME/.profile"
+    # log in after a reboot becomes the restart button. Written to BOTH
+    # files when .bash_profile exists — bash logins read .bash_profile
+    # and then never look at .profile, so a line only in .profile is a
+    # line bash users never run (hinton, 2026-08-20: LOGIN-PULLUP-FAILED
+    # for exactly this reason).
+    if [ "$(id -u)" != 0 ]; then
+        for RC in "$HOME/.profile" "$HOME/.bash_profile"; do
+            [ "$RC" = "$HOME/.bash_profile" ] && [ ! -f "$RC" ] && continue
+            if ! grep -qs 'khor-serve-up' "$RC" 2>/dev/null; then
+                printf '[ -x "$HOME/.local/bin/khor-serve-up" ] && "$HOME/.local/bin/khor-serve-up" >/dev/null 2>&1 || true\n' >> "$RC"
+            fi
+        done
+        if [ -z "${GUARDIAN_SET:-}" ]; then
+            GUARDIAN="your first login (.profile/.bash_profile line)"
+        fi
     fi
     ;;
 esac
