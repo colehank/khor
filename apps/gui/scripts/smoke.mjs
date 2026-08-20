@@ -125,7 +125,16 @@
 // what the other face prints — the catalog owns the text, this script
 // owns the comparison.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, existsSync, writeFileSync, copyFileSync, chmodSync } from "node:fs";
+import {
+  mkdirSync,
+  rmSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  copyFileSync,
+  chmodSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -2942,6 +2951,77 @@ for line in sys.stdin:
     return seen.includes("'/tmp/a b.txt'") && seen.includes("'/tmp/it'\\''s.txt'");
   });
 
+  // 24o) 拖文件到**另一台机器**的终端 (批④ 四笔): the files travel, and
+  //      what gets pasted is where they came to rest over there.
+  //
+  //      **The path is the whole point, and it is the one thing that
+  //      cannot be worked out on this side.** beta knows the file as
+  //      `<scratch>/drop-me.txt`; typing that into a shell running on
+  //      alpha names nothing. So the drop sends the file, has alpha
+  //      take it in, and pastes the path alpha answered with — which
+  //      is checked here against alpha's actual disk, not against a
+  //      path this script also computed.
+  //
+  //      alpha hosts the session for real (`khor open -d`, a live `cat`
+  //      that echoes whatever is pasted into it) and beta's GUI reaches
+  //      it the way any far terminal is reached. Nothing here is a
+  //      stand-in but the OS drag itself, which 24n explains.
+  const farId = cli(envA, "open", "-d", "--title", "farbox", "--", "cat").trim();
+  await until("alpha's own session in beta's list", 90_000, async () =>
+    (await page.locator(`[data-row="${farId}"]`).count()) === 1,
+  );
+  await page.locator(`[data-row="${farId}"] [data-row-open]`).click();
+  await until("a terminal reached on alpha", 30_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  const dropSrc = join(SCRATCH, "drop-me.txt");
+  const dropBody = `farbox-24o-${process.pid}`;
+  writeFileSync(dropSrc, dropBody);
+  const farFiles = join(A, ".khor/chat/alpha/files");
+  await page.evaluate(
+    async ([port, id, paths]) => {
+      const r = await fetch(`http://127.0.0.1:${port}/term_drop`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, paths }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+    },
+    [BRIDGE_PORT, farId, [dropSrc]],
+  );
+  //      ① The bytes really crossed. Read off alpha's disk, so this
+  //      says the far machine pulled rather than that this one asked.
+  const landedName = await until("the file itself on alpha", 60_000, () => {
+    const here = existsSync(farFiles) ? readdirSync(farFiles) : [];
+    return here.find((f) => f.endsWith("-drop-me.txt") && !f.startsWith("."));
+  });
+  const landedPath = join(farFiles, landedName);
+  if (readFileSync(landedPath, "utf8") !== dropBody) {
+    throw new Error(`alpha's copy is not the file that was sent: ${landedPath}`);
+  }
+  //      ② The paste names *that* file. Whitespace is stripped from
+  //      both sides because an 80-column terminal wraps a long path
+  //      across rows, and a line break inside a path is the screen's
+  //      doing, not the paste's.
+  //
+  //      The negative half rides with the positive one on purpose: if
+  //      the paste never arrived at all, "beta's own path is absent"
+  //      would pass while proving nothing (账本: 否定式断言之前先证明
+  //      测法还活着). Here the same read has to show alpha's path
+  //      present, so an empty screen fails the pair.
+  const flat = (t) => t.replace(/\s+/g, "");
+  await until("alpha's own path pasted into alpha's terminal", 30_000, async () => {
+    const seen = flat(await page.locator("[data-terminal]").innerText());
+    if (seen.includes(flat(dropSrc))) {
+      throw new Error("the terminal was handed beta's path — that file does not exist on alpha");
+    }
+    return seen.includes(flat(landedPath));
+  });
+  //      The session on alpha ends here; the `cat` inside it is a real
+  //      process on a real machine and nothing else in this run would
+  //      come back for it.
+  cli(envA, "close", farId);
+
   // Put the pane back where 24k expects to find it: this block borrowed
   // the detail to look at two other terminals.
   await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();
@@ -3263,31 +3343,40 @@ for line in sys.stdin:
   // row rather than off anything in this pane — the mark wears the same
   // `data-word` attribute, so a selector that could match itself would
   // compare the thing to itself and pass on any word at all.
-  let busyWord = "";
-  await until("a row reading busy while its turn hangs", 20_000, async () => {
-    busyWord = await page
-      .locator('[data-row][data-word="busy"] [data-word-text]')
-      .first()
-      .innerText()
-      .catch(() => "");
-    return busyWord.trim().length > 0;
-  });
-  if (!busyWord || (breathing.text ?? "").trim() !== busyWord.trim()) {
+  // …and the detail header says the same thing (批②). **Both read in
+  // one call, and that is not tidiness.** These were two reads a moment
+  // apart, and the moment was inside a window that closes on its own:
+  // when the hanging turn ended between them the header had already
+  // moved to 完成 while the row word in hand still said 忙碌, and the
+  // run failed reporting a disagreement that never existed at any
+  // single instant (账本: 要比较的数字必须一次调用取完).
+  //
+  // **Retried rather than snapshot, and still not vacuous.** The loop
+  // insists the pair agree *and* that the row is the busy one, so a
+  // window that has already closed keeps retrying and times out saying
+  // so — it cannot pass by finding 完成 on both sides. That matters:
+  // the first draft of the header half asserted on a quiet row, where a
+  // header hard-coded to 空闲 agreed with it and passed, measured on a
+  // break planted to make it fail. A word that only ever matches the
+  // default is not a word being read off the row.
+  const busyPair = await until(
+    "the row and the header saying the same busy word inside one hanging turn",
+    20_000,
+    async () => {
+      const got = await page.evaluate(() => {
+        const row = document.querySelector('[data-row][data-word="busy"] [data-word-text]');
+        const head = document.querySelector("[data-detail-header] [data-word-text]");
+        return {
+          row: row?.textContent?.trim() ?? "",
+          head: head?.textContent?.trim() ?? "",
+        };
+      });
+      return got.row && got.row === got.head ? got : null;
+    },
+  );
+  const busyWord = busyPair.row;
+  if ((breathing.text ?? "").trim() !== busyWord) {
     throw new Error(`the waiting mark must say what a busy row says: ${breathing.text} vs ${busyWord}`);
-  }
-  // …and so does the detail header (批②). **Checked here, in the one
-  // window where the state is provably not the resting one.** The first
-  // draft asserted this on a quiet row, where a header hard-coded to
-  // 空闲 agreed with it and the assertion passed — measured, on a break
-  // planted to make it fail. A word that only ever matches the default
-  // is not a word being read off the row.
-  const headerBusy = (
-    await page.locator("[data-detail-header] [data-word-text]").innerText()
-  ).trim();
-  if (headerBusy !== busyWord.trim()) {
-    throw new Error(
-      `the header must say what the row says about one session: ${headerBusy} vs ${busyWord}`,
-    );
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
   const stilled = await page.locator("[data-chat-thinking] [data-word-text]").evaluate((el) => {
@@ -3783,14 +3872,26 @@ for line in sys.stdin:
   }
   const sentFile = join(SCRATCH, "corner-note.txt");
   writeFileSync(sentFile, "a file worth a line in the corner\n");
-  cli(envA, "send", "beta", sentFile);
-  let transferRow = null;
-  await until("the transfer row reaching beta", 30_000, async () => {
-    transferRow = (
-      await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row))
-    ).find((r) => r.startsWith("transfer/"));
-    return Boolean(transferRow);
-  });
+  //      **The id comes from the verb that made it, not from scanning
+  //      the list for a transfer.** The list holds more than one by now
+  //      — 24o's drop put one there — and "the first row whose id starts
+  //      with transfer/" quietly picked that older, already finished one
+  //      instead. Accepting it moved nothing, no word changed, and the
+  //      corner stayed empty: a failure that reads exactly like the
+  //      feature being broken. (Measured: that is how this section first
+  //      went red after 24o was added.)
+  //      `\S+` and not a hex pattern: a transfer id is
+  //      `transfer/<peer>-<ms>-<seq>`, and a character class that
+  //      stopped at the first dash produced a real-looking id for a row
+  //      that does not exist — which times out reading exactly like the
+  //      sync being slow. `transfer/` is a code constant
+  //      (`TransferKind::session_id`), so this matches on khor's own
+  //      shape rather than on a sentence that gets translated.
+  const transferRow = cli(envA, "send", "beta", sentFile).match(/transfer\/\S+/)?.[0];
+  if (!transferRow) throw new Error("khor send did not name the transfer it made");
+  await until("the transfer row reaching beta", 30_000, async () =>
+    (await page.locator(`[data-row="${transferRow}"]`).count()) === 1,
+  );
   //      **A row that was already there does not announce itself.** The
   //      strip has now seen this row sitting at 待批 and stayed empty —
   //      which is the half that keeps it from being full at startup.

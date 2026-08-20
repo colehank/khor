@@ -223,7 +223,7 @@ fn handle(
                 .and_then(|v| v.as_array())
                 .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
                 .unwrap_or_default();
-            khor_gui_core::term::term_drop(&arg("id")?, &paths)?;
+            khor_gui_core::term::term_drop(root, &arg("id")?, &paths)?;
             Ok("null".to_owned())
         }
         "term_resize" => {

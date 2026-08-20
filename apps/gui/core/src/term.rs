@@ -390,13 +390,76 @@ pub fn shell_quote(path: &str) -> String {
     out
 }
 
+/// Sends files to a machine and has it take them in, answering with
+/// where they landed **over there**.
+///
+/// Its own thread with its own runtime, for the reason
+/// [`reach_blocking`] spells out: this is called from a tauri command,
+/// which is already async, and a nested runtime panics instead of
+/// returning something a person can read.
+///
+/// **The sync in the middle is not optional and not a cadence tweak.**
+/// `send` writes the offer into this machine's copy of the chat
+/// document; the machine being asked to accept looks the transfer up in
+/// *its* copy, and without a push it has never heard of it and refuses
+/// by name. The CLI's `send` leaves that to the serve's own rhythm
+/// because an offer is content to wait for a person — this one cannot,
+/// because the same gesture that sends is the gesture that accepts.
+fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
+    let (root, machine, paths) = (root.to_path_buf(), machine.to_owned(), paths.to_vec());
+    std::thread::spawn(move || -> Result<Vec<String>, String> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(khor_catalog::msg::runtime_wont_start)?;
+        let n = Node::open(root)?;
+        let mut sent = Vec::with_capacity(paths.len());
+        for p in &paths {
+            sent.push(n.send(&machine, Path::new(p))?);
+        }
+        rt.block_on(n.sync_now())?;
+        let mut landed = Vec::with_capacity(sent.len());
+        for id in &sent {
+            let (_, where_it_is) = rt.block_on(n.accept(id))?;
+            if where_it_is.is_empty() {
+                // The files did arrive — this is the far machine
+                // declining to say where, which is what a khor from
+                // before that field on the wire does
+                // (`khor_node::proto::Response::Acted`). Said out loud
+                // rather than pasting nothing: a drop that types
+                // nothing into the terminal is the 做了但没变化 failure,
+                // and a guessed path would be worse — it would be a
+                // path that does not exist over there.
+                return Err(khor_catalog::msg::LANDED_UNSAID.to_owned());
+            }
+            landed.extend(where_it_is);
+        }
+        Ok(landed)
+    })
+    .join()
+    .map_err(|_| khor_catalog::msg::DELIVER_THREAD_DIED.to_owned())?
+}
+
 /// Files dropped onto a terminal: their paths, quoted, as one paste.
 ///
 /// A paste and not typing, which is what [`term_paste`] buys — a path
 /// with a newline in it typed straight in is a command the shell runs,
 /// and that is exactly the shape a dropped file can have.
-pub fn term_drop(id: &str, paths: &[String]) -> Result<(), String> {
-    let text = paths.iter().map(|p| shell_quote(p)).collect::<Vec<_>>().join(" ");
+///
+/// **The fork is on the row, not on a flag** (`Node::far_machine`), the
+/// same question [`term_open`] asks. A terminal running on another
+/// machine cannot be handed a path from this one: that string names a
+/// file the far shell has no way to open, and pasting it would produce
+/// a command that looks right and fails. So the files travel first, and
+/// what gets pasted is where they came to rest over there.
+pub fn term_drop(root: &Path, id: &str, paths: &[String]) -> Result<(), String> {
+    let n = Node::open(root.to_path_buf())?;
+    let sid = SessionId(id.to_owned());
+    let here = match n.far_machine(&sid)? {
+        Some(machine) => deliver_blocking(root, &machine, paths)?,
+        None => paths.to_vec(),
+    };
+    let text = here.iter().map(|p| shell_quote(p)).collect::<Vec<_>>().join(" ");
     term_paste(id, &text)
 }
 

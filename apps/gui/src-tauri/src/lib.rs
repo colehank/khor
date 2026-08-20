@@ -189,9 +189,16 @@ fn term_paste(id: String, text: String) -> Result<(), String> {
 /// Files dropped on a terminal: their paths, shell-quoted, pasted in
 /// (`term::term_drop`). The quoting is the registry's because it is
 /// about the shell's syntax, and one wrong escape is a command.
+///
+/// The root rides along because the terminal may not be on this
+/// machine: a drop onto a far session sends the files there first and
+/// pastes where they landed, and finding that out is a node's job.
+/// The command's own arguments are unchanged, so nothing above this
+/// line — the frontend, the bridge's table — learns there is a network
+/// under it.
 #[tauri::command]
 fn term_drop(id: String, paths: Vec<String>) -> Result<(), String> {
-    khor_gui_core::term::term_drop(&id, &paths)
+    khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths)
 }
 
 #[tauri::command]

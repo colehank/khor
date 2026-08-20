@@ -484,6 +484,15 @@ cant-forget-self = "这是本机——一台机器不能把自己请出网"
 # runs on a thread of its own; if that thread dies there is no answer to
 # report and no exception to quote — only the fact that none came.
 reach-thread-died = "接终端的那一趟没回来"
+# Same shape as the reach above, for the drop that carries files to
+# another machine before it can paste anything.
+deliver-thread-died = "送文件的那一趟没回来"
+# The files got there — this is the receiving machine not saying where
+# they landed, which is what a khor from before that field on the wire
+# answers. Named as the far machine's age rather than as a failure,
+# because retrying here changes nothing and the person's next move is
+# on that machine, not this one.
+landed-unsaid = "文件送到了,但那台机器没说落在哪(它的 khor 比这台旧),所以没有路径可粘"
 # What the keeper writes about a death it watched. A process killed by a
 # signal writes nothing itself — only something standing outside can say
 # how it went, which is the keeper's whole reason to exist. Timestamped

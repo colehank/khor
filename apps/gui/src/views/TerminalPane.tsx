@@ -101,6 +101,12 @@ export function TerminalPane({ id }: { id: string }) {
   // answer), and throwing it away is what flattened all of them into
   // one wrong word.
   const [why, setWhy] = useState<string | null>(null);
+  // Why the last drop produced no paste, in khor's own words. Kept on
+  // screen until a drop works, because a failure that cleared itself
+  // was not reported (docs/UX.md 失败就地说) — and this one has a
+  // reason a person can act on: the far machine's khor is older than
+  // the field that says where files landed.
+  const [dropWhy, setDropWhy] = useState<string | null>(null);
   // The last screen sequence seen — a poll asking for it gets nothing
   // back when the terminal has not moved.
   const seqRef = useRef(0);
@@ -204,7 +210,16 @@ export function TerminalPane({ id }: { id: string }) {
           const inside =
             at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom;
           if (!inside || e.payload.paths.length === 0) return;
-          termDrop(id, e.payload.paths).catch(() => {});
+          // **A cross-machine drop takes as long as the files take**:
+          // the paste only appears once they are over there, and what
+          // narrates the wait is the transfer's own row — the corner
+          // strip picks it up because it is a process the node already
+          // has a state for (`use-status-bar`), so there is nothing to
+          // invent here.
+          setDropWhy(null);
+          termDrop(id, e.payload.paths).catch((err: unknown) => {
+            setDropWhy(String((err as { message?: string })?.message ?? err));
+          });
         });
         if (stopped) un();
         else drop = un;
@@ -276,11 +291,20 @@ export function TerminalPane({ id }: { id: string }) {
           {why}
         </div>
       ) : (
-        gone && (
-          <div data-term-over className="absolute right-2 top-1 text-xs text-muted-foreground">
-            {gui.term_over}
-          </div>
-        )
+        <div className="pointer-events-none absolute right-2 top-1 flex flex-col items-end gap-1 text-xs">
+          {gone && (
+            <div data-term-over className="text-muted-foreground">
+              {gui.term_over}
+            </div>
+          )}
+          {/* Held to the pane's own width so a sentence wraps here
+              instead of pushing the screen sideways. */}
+          {dropWhy && (
+            <div data-term-drop-why className="max-w-72 text-right text-destructive">
+              {dropWhy}
+            </div>
+          )}
+        </div>
       )}
       {screen?.lines.map((runs, row) => (
         <div key={row} className="whitespace-pre" style={{ height: ch }}>
