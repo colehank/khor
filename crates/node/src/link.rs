@@ -215,7 +215,7 @@ impl Node {
         // process does not hold; clear them before answering anyone.
         self.sweep_stale_borrows();
 
-        // Watch this runtime for a handler that blocks it (批⑦ / #73:
+        // Watch this runtime for a handler that blocks it (#87 / #73:
         // `crate::reactor` has why a wall clock could not tell that
         // from an ordinary wait). Started here rather than at open:
         // there is no reactor to stall until there is a serve.
