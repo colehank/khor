@@ -45,9 +45,15 @@
 //! # The shield (#76)
 //!
 //! On an NFS home, replacing the binary can kill the *running* keeper
-//! on another machine — silently, twice observed (2026-08-20, SIGBUS
-//! suspicion: the text pages of a running image faulting against a
-//! replaced file). So a keeper whose binary sits on a network
+//! on another machine — silently, twice observed and then proven by
+//! experiment (2026-08-20): a cross-client rename-over frees the old
+//! inode server-side (silly-rename only protects the client doing the
+//! unlink), memory pressure later evicts the clean text pages, and the
+//! next execution of a cold page refaults against a stale file handle
+//! — ESTALE, SIGBUS, not a word in any log. Same-machine replacement
+//! is safe (the .nfs corpse keeps the inode alive), which is why lab
+//! reproductions on one machine kept coming back 5/5 green. So a
+//! keeper whose binary sits on a network
 //! filesystem copies itself to the local disk and re-execs from the
 //! copy before doing anything else: same pid (serve.pid, `khor quit`,
 //! systemd's PIDFile all keep working), same argv, one extra env var
