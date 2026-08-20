@@ -22,33 +22,55 @@ fn root(tag: &str) -> PathBuf {
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("serve should write endpoint.json within 10s");
+    .expect("serve should write endpoint.json");
 }
 
 /// One machine's reading reaches another, and the trip does not stall
 /// the connection it rides on.
 ///
-/// **Two failures, one test, and they cannot be separated here.** The
-/// interesting one is the second: `vitals::sample` blocks — measured at
-/// 1.9 s on the first call in a process, most of it the one-time disk
-/// enumeration — and calling it inline in the request handler stalled
-/// QUIC long enough that a twenty-second sync timed out. That is what
-/// the timeout below catches, and it caught it for real (two unrelated
+/// **Two failures, one test.** The interesting one is the second:
+/// `vitals::sample` blocks — measured at 1.9 s on the first call in a
+/// process, most of it the one-time disk enumeration — and calling it
+/// inline in the request handler stalled QUIC long enough that a
+/// twenty-second sync timed out. It caught that for real (two unrelated
 /// avatar tests went red before it existed). The first failure — no
-/// reading arriving at all — is what the assertions catch.
+/// reading arriving at all — is what the assertions below catch.
+///
+/// # The guard no longer watches a clock, because a clock cannot see it
+///
+/// It used to be the sync's own twenty-second timeout. **A wall clock
+/// measures a block and a wait added together**, so anything slow read
+/// as the bug — and on this machine something slow really did arrive:
+/// #73's first-touch authorization stall (20-40 s, nothing to do with
+/// khor) landed on that very sync. Measured 2026-08-21: bind 21 ms,
+/// dial 1.1 s, the guarded sync 37 s, and nothing in the tree could say
+/// which of the two the 37 s was. Widening the timeout would have
+/// buried both.
+///
+/// So the guard is now [`khor_node::reactor`], which measures the
+/// property itself: the worst gap between ticks on the serve's runtime.
+/// A synchronous block starves the ticker; an `await` does not. That is
+/// the line the clock could not draw, and it is **sharper** — a stall
+/// of one second fails here, where the old shape needed twenty.
+///
+/// **What it no longer watches**, said out loud: whether the sync
+/// finishes at all. An unreachable peer, a route that vanished, a
+/// handler that awaits forever — those are caught by the ninety-second
+/// wall clock below, which is now hygiene rather than the guard, and
+/// they are no longer reported as "a sample stalled the reactor".
 ///
 /// The default `#[tokio::test]` runtime is single-threaded, and that is
 /// deliberate rather than incidental: a blocking call on a multi-threaded
 /// runtime may be absorbed by another worker and never show. **The
 /// cheapest reactor to stall is the one with a single thread**, so this
-/// stays as it is; a `flavor = "multi_thread"` here would quietly turn
-/// the guard off.
+/// stays as it is — the watch above sees nothing on any other flavour,
+/// so this design **keeps** that judgment rather than overturning it.
 #[tokio::test]
 async fn a_machine_reports_its_readings_without_stalling_the_link() {
     let ra = root("a");
@@ -73,14 +95,29 @@ async fn a_machine_reports_its_readings_without_stalling_the_link() {
     );
 
     let ticket = alpha.invite().unwrap();
-    timeout(Duration::from_secs(15), beta.pair(&ticket))
+    timeout(Duration::from_secs(60), beta.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
-    timeout(Duration::from_secs(20), beta.sync_now())
+    // The measurement window opens here: everything before it —
+    // binding, pairing, and whatever #73 charged for the process's
+    // first touch of the network stack — is somebody else's stall and
+    // none of this test's business.
+    khor_node::reactor::forget();
+    timeout(Duration::from_secs(90), beta.sync_now())
         .await
-        .expect("sync must not hang — a sample taken on the reactor is what makes it")
+        .expect("the sync must finish — hygiene, not the guard (module head)")
         .unwrap();
+    // **The guard.** One second, because the bug's own signature is a
+    // single 1.9 s sample and this has to sit below it with room, while
+    // staying well above what an ordinary scheduling hiccup costs on a
+    // busy machine.
+    let stalled = khor_node::reactor::worst_stall_ms();
+    assert!(
+        stalled < 1000,
+        "the serve's reactor was unavailable for {stalled} ms — a handler is blocking it \
+         (the sample belongs on a blocking thread, not inline)"
+    );
 
     let (v, age) = beta
         .vitals_of(&alpha_id)
