@@ -752,6 +752,109 @@ for line in sys.stdin:
     throw new Error("no machine on the axis narrowed the list; the filter is a no-op");
   }
 
+  // 8c) omnibox 芯片 (批③ 二笔): the box and the menu are two faces of
+  //     one state, and the chip is a token.
+  const omni = page.locator("[data-omnibox]");
+  const omniInput = page.locator("[data-omni-input]");
+  if ((await omni.count()) !== 1) throw new Error("probe dead: the sessions pane has no omnibox");
+  if ((await page.locator("[data-chip]").count()) !== 0) {
+    throw new Error("probe dead: a chip is already on before anything was ticked");
+  }
+  //     **One source of truth, both directions.** Tick in the menu → the
+  //     chip appears; take the chip off → the tick is gone. Two lists
+  //     that each remembered their own idea of "what is filtered" would
+  //     pass one of these and fail the other, which is the whole reason
+  //     both are asserted.
+  const chipWord = wordsOnScreen[0];
+  await tickWord(chipWord);
+  await until("the ticked word arriving as a chip", 10_000, async () =>
+    (await page.locator(`[data-chip="state:${chipWord}"]`).count()) === 1,
+  );
+  await page.locator(`[data-chip-remove="state:${chipWord}"]`).click();
+  await until("the chip leaving", 10_000, async () =>
+    (await page.locator(`[data-chip="state:${chipWord}"]`).count()) === 0,
+  );
+  await page.locator("[data-pane-filter]").click();
+  await until("the menu", 5_000, async () => (await menu.count()) === 1);
+  const stillTicked = await page
+    .locator(`[data-filter-option="state:${chipWord}"]`)
+    .getAttribute("aria-checked");
+  await page.keyboard.press("Escape");
+  await until("the filter menu to close", 5_000, async () => (await menu.count()) === 0);
+  if (stillTicked === "true") {
+    throw new Error("taking the chip off left the menu still ticked — two states, not one");
+  }
+
+  //     Typing narrows the candidates, Enter makes a chip, and the text
+  //     that found it goes with it.
+  await omniInput.click();
+  await until("the candidate menu", 5_000, async () =>
+    (await page.locator("[data-omni-menu]").count()) === 1,
+  );
+  // How many there are with nothing typed — the control for "typing
+  // narrowed something".
+  const flatCandidates = await page.locator("[data-omni-item]").count();
+  const machineName = machineKeys[0].slice("dev:".length);
+  await omniInput.fill(machineName);
+  await until(`the ${machineName} candidate`, 10_000, async () =>
+    (await page.locator(`[data-omni-item="${machineKeys[0]}"]`).count()) === 1,
+  );
+  //     …and it narrowed: a menu that offered everything regardless of
+  //     what was typed would satisfy the line above.
+  const offeredNow = await page.locator("[data-omni-item]").count();
+  if (offeredNow >= flatCandidates) {
+    throw new Error(
+      `typing narrowed nothing: ${offeredNow} candidates offered, ${flatCandidates} in total`,
+    );
+  }
+  //     An Enter raised mid-composition belongs to the IME. Dispatched
+  //     the same way the chat box's was, and the same dispatch is then
+  //     shown to work when it is not composing — a negative assertion
+  //     whose probe was never shown alive says nothing.
+  await omniInput.evaluate((el) => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }));
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  if ((await page.locator(`[data-chip="${machineKeys[0]}"]`).count()) !== 0) {
+    throw new Error("an Enter raised mid-composition must not commit a chip");
+  }
+  await omniInput.press("Enter");
+  await until("the candidate becoming a chip", 10_000, async () =>
+    (await page.locator(`[data-chip="${machineKeys[0]}"]`).count()) === 1,
+  );
+  if ((await omniInput.inputValue()) !== "") {
+    throw new Error("the text that found the chip must go with it");
+  }
+
+  //     Backspace on an empty box takes the last chip **whole**. Two
+  //     chips on, because "one chip left" is also what removing half of
+  //     something would look like on a screen.
+  await tickWord(chipWord);
+  await until("two chips", 10_000, async () => (await page.locator("[data-chip]").count()) === 2);
+  await omniInput.press("Backspace");
+  await until("one chip left", 10_000, async () => (await page.locator("[data-chip]").count()) === 1);
+  const leftover = await page.locator("[data-chip]").getAttribute("data-chip");
+  if (leftover !== machineKeys[0]) {
+    throw new Error(`backspace took the wrong chip: ${leftover} left, expected ${machineKeys[0]}`);
+  }
+  await omniInput.press("Backspace");
+  await until("no chips", 10_000, async () => (await page.locator("[data-chip]").count()) === 0);
+  await until("every row back", 10_000, async () => (await sessionRows.count()) === allRows);
+
+  //     **The devices pane has no chips**, and that is the design's own
+  //     reverse check rather than a special case: it declares no axes,
+  //     so the box has nothing to offer and stays the plain one.
+  await openLanding("devices");
+  await until("the devices pane", 10_000, async () => (await page.locator("[data-device]").count()) > 0);
+  if ((await page.locator("[data-omnibox]").count()) !== 0) {
+    throw new Error("the devices pane grew chips it has no axis for");
+  }
+  if ((await page.locator("[data-pane-search]").count()) !== 1) {
+    throw new Error("probe dead: the devices pane lost its search box entirely");
+  }
+  await openLanding("sessions");
+  await until("rows back on the sessions pane", 10_000, async () => (await sessionRows.count()) === allRows);
+
   // 9) turn ends on alpha → done + unread on beta; clicking the row is
   //    seen; the loop closes: badge clears here, alpha turns idle there.
   feedHook(envA, "Stop");

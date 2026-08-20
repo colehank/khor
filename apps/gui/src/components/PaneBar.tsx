@@ -15,6 +15,7 @@
 import { Fragment } from "react";
 
 import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
+import { Omnibox, type OmniAxis } from "@/components/Omnibox";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -51,6 +52,7 @@ export function PaneBar({
   query,
   onQuery,
   filter,
+  axes,
   actions,
   actionsLabel,
   filterLabel,
@@ -67,6 +69,13 @@ export function PaneBar({
    * (docs/UX.md 状态呈现), so it must not enumerate states either.
    */
   filter?: { options: FilterOption[]; chosen: string[]; onToggle: (key: string) => void };
+  /**
+   * The axes the search box can narrow by, when the pane has any. Given
+   * together with `filter`, because the two are one state: the chips in
+   * the box and the ticks in the menu are the same keys, and the pane
+   * hands both faces the same array.
+   */
+  axes?: OmniAxis[];
   filterLabel?: string;
   /**
    * How the list is laid out. Shares the filter's menu because both
@@ -91,20 +100,38 @@ export function PaneBar({
   return (
     <div
       data-pane-bar
-      className="flex h-ctl-lg flex-none items-center gap-1 border-b px-2"
+      // `min-h`, not `h`: chips make the box taller than one row, and a
+      // bar with a fixed height would clip them or squeeze the list.
+      className="flex min-h-ctl-lg flex-none items-center gap-1 border-b px-2"
     >
-      <div className="relative min-w-0 flex-1">
-        <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          data-pane-search
-          type="search"
-          aria-label={searchLabel}
-          placeholder={searchLabel}
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          className="border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0"
+      {/* **One search slot, two shapes.** A pane that has axes to narrow
+          by gets the omnibox; one that does not gets the plain box it
+          always had. Not a second control and not a second box — the
+          alternative is what this file's head warns about, two search
+          fields that look alike and behave differently. */}
+      {axes && axes.length > 0 && filter ? (
+        <Omnibox
+          label={searchLabel}
+          query={query}
+          onQuery={onQuery}
+          axes={axes}
+          chosen={filter.chosen}
+          onToggle={filter.onToggle}
         />
-      </div>
+      ) : (
+        <div className="relative min-w-0 flex-1">
+          <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            data-pane-search
+            type="search"
+            aria-label={searchLabel}
+            placeholder={searchLabel}
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            className="border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0"
+          />
+        </div>
+      )}
 
       {filter && filterLabel && (
         <DropdownMenu>

@@ -24,6 +24,7 @@ import {
   IconSessions,
 } from "@/components/icons";
 import { KhorMark } from "@/components/KhorMark";
+import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { Button } from "@/components/ui/button";
 import {
@@ -545,6 +546,29 @@ export default function App() {
     ];
   }, [rows, words]);
 
+  // The same options, grouped into the axes the search box offers.
+  // **Derived from `wordOptions` rather than gathered again**: the chips
+  // and the menu ticks are then not merely kept in step, they are one
+  // list read two ways, and there is no second gathering that can come
+  // back with something else.
+  const sessionAxes = useMemo<OmniAxis[]>(() => {
+    const byAxis = new Map<string, OmniAxis>();
+    for (const o of wordOptions) {
+      const axis = axisOf(o.key);
+      const seat = byAxis.get(axis) ?? { key: axis, label: o.axis, candidates: [] };
+      seat.candidates.push({
+        key: o.key,
+        label: o.label,
+        // A machine wears its face here as it does everywhere else; the
+        // other two axes have no face to wear, and an invented one is
+        // worse than none (Avatar.tsx's rule).
+        face: axis === "dev:" ? (devices.find((d) => d.name === valueOf(o.key))?.face ?? null) : undefined,
+      });
+      byAxis.set(axis, seat);
+    }
+    return [...byAxis.values()];
+  }, [wordOptions, devices]);
+
   const chooseArrange = useCallback((key: string) => {
     setArrangeBy(key);
     // Kept even if storage refuses (private mode, quota): the choice
@@ -670,6 +694,7 @@ export default function App() {
             ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord }
             : undefined
         }
+        axes={sessions ? sessionAxes : undefined}
         arrange={
           sessions
             ? {

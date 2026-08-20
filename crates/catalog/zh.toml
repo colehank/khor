@@ -755,6 +755,10 @@ filter = "筛选"
 # one axis reads the same in both halves of one menu.
 axis-state = "状态"
 axis-category = "类别"
+# The chip's own control, on the search box. A chip is one token — it
+# goes whole or not at all — so this names taking it off, and it is the
+# pointer's way of doing what backspace does from the keyboard.
+remove = "去掉"
 # How the list is laid out. One heading and four choices, sharing the
 # filter's menu because both answer "what am I looking at" — the
 # difference is that ticking words removes rows and this rearranges
