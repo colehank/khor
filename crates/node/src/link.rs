@@ -21,36 +21,49 @@ use crate::{ipc, Node};
 /// How often the serve loop syncs with everyone.
 const SYNC_EVERY: Duration = Duration::from_secs(5);
 
-/// How many all-dead sync rounds make the serve conclude its own ears
-/// are broken. 24 rounds at [`SYNC_EVERY`] is about two minutes —
-/// long enough that a peer rebooting or a relay blipping never trips
-/// it, short beside the 50 minutes a deaf endpoint actually cost
-/// (2026-08-20: a healthy-looking serve went both-ways unreachable
-/// while a fresh endpoint on the same box echoed through the same
-/// relay in seconds; the cure was always a restart, so the serve now
-/// prescribes it to itself — the keeper stands it back up with fresh
-/// ears).
-const DEAF_ROUNDS: u32 = 24;
+/// How long every road-having device must have kept failing before the
+/// serve concludes its own ears are broken. Wall clock, not rounds: a
+/// round is not a fixed [`SYNC_EVERY`] — when everyone is unreachable
+/// each visit waits out its dial budget, and the old "24 rounds ≈ two
+/// minutes" arithmetic measured eight real minutes (2026-08-20). Two
+/// minutes is long enough that a peer rebooting or a relay blipping
+/// never trips it, short beside the 50 minutes a deaf endpoint
+/// actually cost (2026-08-20: a healthy-looking serve went both-ways
+/// unreachable while a fresh endpoint on the same box echoed through
+/// the same relay in seconds; the cure was always a restart, so the
+/// serve prescribes it to itself — the keeper stands it back up with
+/// fresh ears).
+const DEAF_AFTER: Duration = Duration::from_secs(120);
 
 /// The exit code of a serve that concluded it had gone deaf. Non-zero
 /// on purpose: a clean exit would tell the keeper to stay down.
 pub const DEAF_EXIT: i32 = 86;
 
-/// The deafness ledger: counts consecutive sync rounds in which every
-/// device that HAS roads failed. Devices without roads never count —
-/// they cannot be dialed on the best of days — so a mesh of one, or a
-/// table of one-shot pairings, never trips this.
+/// The deafness ledger: remembers when the silence began — the first
+/// of an unbroken run of sync rounds in which every device that HAS
+/// roads failed. Devices without roads never count — they cannot be
+/// dialed on the best of days — so a mesh of one, or a table of
+/// one-shot pairings, never trips this.
 struct DeafWatch {
-    rounds: u32,
+    deaf_since: Option<std::time::Instant>,
 }
 
 impl DeafWatch {
     fn new() -> Self {
-        Self { rounds: 0 }
+        Self { deaf_since: None }
     }
 
     /// Feeds one pump's outcomes; true means "conclude deafness".
     fn observe(&mut self, outcomes: &[(String, Result<String, String>)]) -> bool {
+        self.observe_at(outcomes, std::time::Instant::now())
+    }
+
+    /// The clock comes in as an argument so the tests need not sleep.
+    fn observe_at(
+        &mut self,
+        outcomes: &[(String, Result<String, String>)],
+        now: std::time::Instant,
+    ) -> bool {
         let mut candidates = 0u32;
         let mut failures = 0u32;
         for (_, verdict) in outcomes {
@@ -64,11 +77,11 @@ impl DeafWatch {
             }
         }
         if candidates == 0 || failures < candidates {
-            self.rounds = 0;
+            self.deaf_since = None;
             return false;
         }
-        self.rounds += 1;
-        self.rounds >= DEAF_ROUNDS
+        let since = *self.deaf_since.get_or_insert(now);
+        now.duration_since(since) >= DEAF_AFTER
     }
 }
 /// Per-device budget for one sync visit; the far side may simply be off.
@@ -271,12 +284,12 @@ impl Node {
                         // unreachable while the process looks healthy
                         // (批23). Every observed cure was a restart, so
                         // when everyone with a road has been dead for
-                        // DEAF_ROUNDS straight, prescribe it: exit, and
+                        // DEAF_AFTER straight, prescribe it: exit, and
                         // the keeper stands up a fresh endpoint.
                         if deaf.lock().expect("deaf watch poisoned").observe(&out) {
                             let stamp =
                                 jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                            eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_ROUNDS));
+                            eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
                             std::process::exit(DEAF_EXIT);
                         }
                     });
@@ -2146,11 +2159,13 @@ impl Node {
 
 #[cfg(test)]
 mod deafness {
-    //! The DeafWatch alone: pure counting, no sockets. The end-to-end
-    //! half of 批23's verdict is clinical — the fix was deployed onto a
-    //! serve that was actually deaf at the time (2026-08-20, Mac).
+    //! The DeafWatch alone: pure verdicts on an injected clock — no
+    //! sockets, no sleeping. The end-to-end half of 批23's verdict is
+    //! clinical — the fix was deployed onto a serve that was actually
+    //! deaf at the time (2026-08-20, Mac).
 
     use super::*;
+    use std::time::Instant;
 
     fn all_dead() -> Vec<(String, Result<String, String>)> {
         vec![
@@ -2160,27 +2175,47 @@ mod deafness {
     }
 
     #[test]
-    fn deafness_is_concluded_at_the_threshold_and_not_before() {
+    fn deafness_is_concluded_by_elapsed_time_and_not_before() {
         let mut w = DeafWatch::new();
-        for round in 1..=DEAF_ROUNDS {
-            let verdict = w.observe(&all_dead());
-            assert_eq!(verdict, round == DEAF_ROUNDS, "round {round}");
-        }
+        let t0 = Instant::now();
+        assert!(!w.observe_at(&all_dead(), t0), "the first failing round starts the clock");
+        assert!(
+            !w.observe_at(&all_dead(), t0 + DEAF_AFTER - Duration::from_secs(1)),
+            "one second short of the budget is not deafness"
+        );
+        assert!(w.observe_at(&all_dead(), t0 + DEAF_AFTER), "the budget spent in silence is");
     }
 
     #[test]
-    fn one_answer_resets_the_count() {
+    fn one_answer_resets_the_clock() {
         let mut w = DeafWatch::new();
-        for _ in 0..DEAF_ROUNDS - 1 {
-            assert!(!w.observe(&all_dead()));
-        }
+        let t0 = Instant::now();
+        assert!(!w.observe_at(&all_dead(), t0));
         let mut mixed = all_dead();
         mixed.push(("c".into(), Ok("synced".into())));
-        assert!(!w.observe(&mixed), "an answered round is not deafness");
-        for round in 1..=DEAF_ROUNDS {
-            let verdict = w.observe(&all_dead());
-            assert_eq!(verdict, round == DEAF_ROUNDS, "the count must restart from zero");
-        }
+        assert!(
+            !w.observe_at(&mixed, t0 + DEAF_AFTER * 2),
+            "an answered round is not deafness, however late it lands"
+        );
+        let t1 = t0 + DEAF_AFTER * 3;
+        assert!(!w.observe_at(&all_dead(), t1), "the clock must restart after the answer");
+        assert!(!w.observe_at(&all_dead(), t1 + DEAF_AFTER - Duration::from_secs(1)));
+        assert!(w.observe_at(&all_dead(), t1 + DEAF_AFTER));
+    }
+
+    #[test]
+    fn few_but_slow_rounds_still_read_as_deafness() {
+        // Rounds are not SYNC_EVERY apart when everyone is down: each
+        // visit waits out its dial budget, so two rounds can span many
+        // minutes. The verdict follows the wall clock, not the round
+        // count — the retired 24-round rule measured eight minutes.
+        let mut w = DeafWatch::new();
+        let t0 = Instant::now();
+        assert!(!w.observe_at(&all_dead(), t0));
+        assert!(
+            w.observe_at(&all_dead(), t0 + DEAF_AFTER * 4),
+            "the second round already lands past the budget"
+        );
     }
 
     #[test]
@@ -2188,9 +2223,11 @@ mod deafness {
         let mut w = DeafWatch::new();
         let roadless: Vec<(String, Result<String, String>)> =
             vec![("ghost".into(), Err(msg::NO_ROADS_REPORTED.into()))];
-        for _ in 0..DEAF_ROUNDS * 2 {
-            assert!(!w.observe(&roadless), "a device with no roads cannot count");
-            assert!(!w.observe(&[]), "a mesh of one has nobody to miss");
+        let t0 = Instant::now();
+        for i in 0..48u32 {
+            let now = t0 + DEAF_AFTER * i;
+            assert!(!w.observe_at(&roadless, now), "a device with no roads cannot count");
+            assert!(!w.observe_at(&[], now), "a mesh of one has nobody to miss");
         }
     }
 }

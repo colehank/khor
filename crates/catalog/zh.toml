@@ -487,7 +487,7 @@ quit-hosts = "收了 {0} 个 session 宿主"
 # bidirectionally unreachable while its process looks perfectly healthy.
 # Every observed cure was a restart, so it prescribes itself one; the
 # keeper stands it back up with fresh ears.
-serve-gone-deaf = "[{0}] 连续 {1} 轮谁都联系不上——耳朵大概坏了,退下换一双(keeper 会再起)"
+serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了,退下换一双(keeper 会再起)"
 serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任,退场"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # The proxied browsing window needs per-window proxy_url, which is macOS
