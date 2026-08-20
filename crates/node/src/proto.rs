@@ -11,12 +11,56 @@
 //! is the one that has not upgraded — which is the ordinary state of a
 //! network people update one machine at a time.
 //!
-//! Where that cost is not acceptable, the shape change rides a **new
-//! variant reached only by a peer that asked in new words**, the way
-//! [`Response::PathSlice`] exists instead of a field on
-//! [`Response::Slice`]. Reach for that when the answer matters to a
-//! peer that might be old; a tail default is for when losing the field
-//! is losing nothing.
+//! **That one-way property is pinned once, for the whole tree**, in the
+//! test named above. It is a fact about this codec and not about any
+//! one frame, so a second copy of it on a second type would catch
+//! nothing the first does not — and one fact written four times rots
+//! at three of them.
+//!
+//! # Which of the three ways a shape change goes
+//!
+//! **First ask whether the *request* can change words.** A peer that
+//! asks in new words has told you what it can read, and the answer
+//! never reaches an old one at all — [`Response::PathSlice`] exists
+//! instead of a field on [`Response::Slice`] for exactly that. It is
+//! better than either choice below, and it is the one people skip
+//! because appending is quicker to type.
+//!
+//! Otherwise the question is **not how much the new field matters**.
+//! An older peer does not lose the field, it refuses the whole frame —
+//! so what to weigh is the frame's absence, not the field's:
+//!
+//! > **When an older peer refuses this whole frame, is what it then
+//! > shows any different from what it shows on success?**
+//!
+//! Answer it by walking every consumer of that request down to its
+//! error branch and naming what that branch paints:
+//!
+//! - **Different** — a reading whose age keeps climbing, an empty
+//!   state, a refusal a person reads — then a tail default is fine.
+//!   The loss lands somewhere that already knows how to say "I cannot
+//!   tell".
+//! - **The same** — a default painted as fact, a swallowed error that
+//!   leaves a stale value looking current, a count that quietly stays
+//!   zero — then it needs a new variant. Appending there builds a
+//!   silent failure, which is the shape most of this tree's rules
+//!   exist to prevent.
+//!
+//! Note which way that cuts: a *request/response* failure is loud (the
+//! verb reports it) and a *broadcast* failure is quiet, so sorting by
+//! frame class would protect the one that protects itself. What saves
+//! khor's broadcasts is not their class but that they ride a freshness
+//! axis (docs/SESSION.md), which makes the silence visible — and that
+//! is a property of the consumer, which is why the question asks about
+//! the consumer.
+//!
+//! **Say the answer before appending: name the consumer's error branch
+//! and what it paints. A sentence that will not come is not a small
+//! thing to skip — it is the check not having happened.**
+//!
+//! And say it *beforehand*, because **this debt cannot be repaid, only
+//! avoided**: a field removed later breaks the newer peers instead, so
+//! an append has no retreat, only a second break.
 
 use serde::{Deserialize, Serialize};
 

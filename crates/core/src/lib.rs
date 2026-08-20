@@ -277,6 +277,17 @@ impl Fill {
 /// Not  since it carries a version string — and it never wanted to
 /// be: a reading is a message a machine sent, and messages get moved and
 /// cloned deliberately, not duplicated by accident.
+///
+/// **Three fields have been appended at the tail here — and what that
+/// costs an older peer is the whole reading, not the field it has not
+/// heard of** (`khor_node::proto`'s head has the mechanism and the
+/// question to ask before a fourth). It is acceptable *here* for one
+/// reason worth writing down rather than rediscovering: a reading
+/// carries the moment it was taken, so a peer that refuses the frame
+/// keeps painting the last one it could read **with an age that goes on
+/// climbing**. The failure is visible, which is the whole test — on a
+/// frame whose consumer had no such axis, the same three appends would
+/// have been three silent lies.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Vitals {
     /// Whole-machine CPU use, 0–100.
