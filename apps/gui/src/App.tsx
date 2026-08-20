@@ -807,7 +807,19 @@ export default function App() {
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
-          <div className="min-h-0 flex-1 overflow-hidden">
+          {/* `key` is what makes the arrival visible: a CSS animation
+              runs when an element is inserted, and without a changing
+              key React would reuse this box and the new screen would
+              simply appear inside it. The key is the screen, not the
+              row — moving between two sessions is not a place change,
+              and re-keying on the row would replay the slide (and
+              remount a live terminal) every time the list is clicked.
+              `data-screen` is what app.css keys the direction off. */}
+          <div
+            key={mark ? "mark" : screen}
+            data-screen={mark ? "mark" : screen}
+            className="min-h-0 flex-1 overflow-hidden"
+          >
             {mark ? markPlace : screen === "detail" && detail ? detail : list}
           </div>
           {rail}

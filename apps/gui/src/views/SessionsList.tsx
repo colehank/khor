@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -46,6 +46,63 @@ export function visibleSessions(rows: SessionRow[], query: string, words: string
   );
 }
 
+/**
+ * Rows walk to their new places instead of teleporting there.
+ *
+ * The list re-sorts under the reader — a session turns 待批 and floats,
+ * a pin lands, a machine reports in — and on a 2s poll the whole order
+ * changes between two frames with nothing to say which row went where.
+ * FLIP is the answer that needs no bookkeeping: measure where every row
+ * *was*, let React paint where they now are, then put each one back
+ * where it started and release it in the same tick.
+ *
+ * **`offsetTop`, not `getBoundingClientRect`**: the list is inside a
+ * scroller, and a rect is relative to the viewport — scrolling one pixel
+ * would read as every row having moved and set the whole list walking.
+ *
+ * **Rows only, never the headings.** A group heading is a boundary the
+ * rows themselves declare (it exists because a row carried it), so a
+ * heading is not a thing that moves — it appears and disappears, and
+ * animating that would be animating an idea rather than an object.
+ *
+ * Under `prefers-reduced-motion` the whole measurement is skipped, not
+ * merely given a zero duration: setting a transform and removing it is
+ * two paints either way, and at zero duration that is a flicker instead
+ * of a move.
+ */
+function useRowFlip(deps: string) {
+  const box = useRef<HTMLDivElement>(null);
+  const was = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const now = new Map<string, number>();
+    for (const row of el.querySelectorAll<HTMLElement>("[data-row]")) {
+      const id = row.dataset.row;
+      if (!id) continue;
+      const top = row.offsetTop;
+      now.set(id, top);
+      const before = was.current.get(id);
+      // A row that was not on screen last time has no "from" to come
+      // out of — it arrived, which is a different event and not this
+      // one's to narrate.
+      if (still || before === undefined || before === top) continue;
+      row.style.transition = "none";
+      row.style.transform = `translateY(${before - top}px)`;
+      requestAnimationFrame(() => {
+        row.style.transition = "";
+        row.style.transform = "";
+      });
+    }
+    was.current = now;
+    // `deps` is the order as a string: the rows arrive as new objects on
+    // every poll, so identity says nothing, and the only change worth
+    // measuring for is one that moved somebody.
+  }, [deps]);
+  return box;
+}
+
 // Order and words come from the node untouched: the list never
 // re-derives a judgment the backend already made (docs/UX.md). That
 // includes the order pinned rows arrive in — `Node::sessions` floats
@@ -70,6 +127,7 @@ export function SessionsList({
   pinFailed: Set<string>;
 }) {
   const shown = visibleSessions(rows, query, words);
+  const box = useRowFlip(shown.map((r) => r.id).join("\n"));
   if (shown.length === 0) {
     // "Nothing here" and "nothing matched" are different facts, and the
     // wrong one is a lie the user has no way to catch: someone who
@@ -82,7 +140,7 @@ export function SessionsList({
     );
   }
   return (
-    <div>
+    <div ref={box}>
       {shown.map((r, i) => (
         <Fragment key={r.id}>
           {/* A heading starts where the group changes between

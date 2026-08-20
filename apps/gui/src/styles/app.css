@@ -24,6 +24,76 @@ input[type="search"]::-webkit-search-decoration {
   appearance: none;
 }
 
+/* The press. Every control this app draws answers a finger the same
+ * way, so it is one rule on shadcn's own slot rather than a class each
+ * caller remembers to add.
+ *
+ * **Two channels, and that is what makes the reduced-motion case an
+ * equivalent rather than a removal**: the give is motion and the dim is
+ * not. Under `reduce` the scale goes and the dim stays, so a press is
+ * still answered — a control that acknowledged nothing would be the
+ * 做了但没变化 failure docs/UX.md forbids, arrived at by way of an
+ * accessibility setting.
+ *
+ * `:not(:disabled)` because a control that cannot act must not look
+ * like it did.
+ */
+[data-slot="button"] {
+  transition:
+    transform var(--dur-120) var(--ease-out),
+    opacity var(--dur-120) var(--ease-out);
+}
+
+[data-slot="button"]:active:not(:disabled) {
+  transform: scale(var(--press));
+  opacity: 0.86;
+}
+
+/* Where a row's FLIP lands (`SessionsList` `useRowFlip`). The rule
+ * lives here rather than in the inline style the hook writes, because
+ * the hook's job is to say *where a row came from* and this says *how
+ * long it takes to get back* — one is a measurement, the other is the
+ * app's motion vocabulary, and the reduced-motion guard below only has
+ * one place to reach. `ease-move` rather than `ease-out`: this is an
+ * object changing places, not a thing arriving.
+ */
+[data-row] {
+  transition: transform var(--dur-240) var(--ease-move);
+}
+
+/* The narrow face is one screen at a time, so moving between the list
+ * and a detail is a place change and gets said as one. The incoming
+ * screen comes from the side it conceptually lies on: a detail is
+ * "further in" and enters from the right, the list is "back out" and
+ * enters from the left. Percentages, not pixels — the distance is a
+ * fraction of the screen that is moving, at any width.
+ *
+ * Only the arriving screen animates. The leaving one is already gone
+ * (the shell swaps them, `App`), and faking an exit would mean keeping
+ * a dead pane mounted — on this pane that means a live terminal or a
+ * chat attachment held open to be looked at while it slides away. */
+@keyframes screen-in-from-right {
+  from {
+    transform: translateX(4%);
+    opacity: 0;
+  }
+}
+
+@keyframes screen-in-from-left {
+  from {
+    transform: translateX(-4%);
+    opacity: 0;
+  }
+}
+
+[data-screen="detail"] {
+  animation: screen-in-from-right var(--dur-240) var(--ease-out);
+}
+
+[data-screen="list"] {
+  animation: screen-in-from-left var(--dur-240) var(--ease-out);
+}
+
 /* Busy takes no hue — it breathes (mandala's state doctrine). */
 @keyframes breath {
   0%,
@@ -42,5 +112,29 @@ input[type="search"]::-webkit-search-decoration {
 @media (prefers-reduced-motion: reduce) {
   [data-word="busy"] [data-word-text] {
     animation: none;
+  }
+
+  /* The give goes, the dim stays — see the press rule above for why
+     that split is the point rather than a leftover. */
+  [data-slot="button"] {
+    transition: none;
+  }
+  [data-slot="button"]:active:not(:disabled) {
+    transform: none;
+  }
+
+  /* A place change with no travel. The screen still swaps; what goes is
+     the sliding, and there is nothing to replace it with — arriving
+     somewhere else *is* the feedback here, and it is already visible. */
+  [data-screen] {
+    animation: none;
+  }
+
+  /* Rows take their new places without walking there. The measuring in
+     `SessionsList` is skipped outright rather than given a zero
+     duration: a transform applied and then removed is still two
+     paints, and the row would flicker. */
+  [data-row] {
+    transition: none;
   }
 }

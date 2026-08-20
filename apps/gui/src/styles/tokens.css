@@ -116,6 +116,13 @@
   --kind-mark: 14px;
   --kind-mark-glyph: 11px;
 
+  /* How far a control gives under a press. Small on purpose: this is
+     feedback, not an animation to watch — at 0.9 the button reads as
+     rejecting the click, and anything above 0.98 cannot be seen at
+     control sizes. Kept here rather than in the utility so the whole
+     app presses by one number. */
+  --press: 0.97;
+
   /* ── motion (mandala's tokens, verbatim) ──────────── */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-move: cubic-bezier(0.3, 0.9, 0.28, 1);

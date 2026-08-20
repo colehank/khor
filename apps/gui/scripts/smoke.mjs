@@ -584,7 +584,7 @@ for line in sys.stdin:
 
   // 6) the reported row reaches beta's GUI, busy, with its source; and
   //    the CLI line for the same row carries the same display word.
-  const row = page.locator("[data-word]", { hasText: "proj" });
+  const row = page.locator("[data-row]", { hasText: "proj" });
   await until("the alpha row in beta's GUI", 30_000, async () => (await row.count()) === 1);
   if ((await row.getAttribute("data-word")) !== "busy") throw new Error("row should be busy");
   const guiWord = (await row.locator("[data-word-text]").innerText()).trim();
@@ -597,7 +597,7 @@ for line in sys.stdin:
   // 7) searching the session pane, same shape as the devices one: a term
   //    only one row answers to, then the control that clearing brings the
   //    rest back.
-  const sessionRows = page.locator("[data-word]");
+  const sessionRows = page.locator("[data-row]");
   const sessionSearch = page.locator("[data-pane-search]");
   const allRows = await sessionRows.count();
   if (allRows < 2) throw new Error(`need more than one row to tell a filter from a no-op; saw ${allRows}`);
@@ -698,15 +698,24 @@ for line in sys.stdin:
   //    positively on purpose: the blank branch renders no <svg> at all,
   //    so "there is an svg in every row" *is* "no row fell back to a
   //    placeholder", with no negative selector to spell wrong.
-  const rowCount = await page.locator("[data-word]").count();
-  const facedRows = await page.locator("[data-word] [data-face] svg").count();
+  //
+  //    **`[data-row]`, not `[data-word]`.** This file used the second as
+  //    a synonym for "a session row" for as long as rows were the only
+  //    thing that showed a state word; the detail header shows one now
+  //    (批②, and it wears the same attribute on purpose — that is what
+  //    makes the colour and the breath the doctrine's rather than a
+  //    second copy). The synonym then counted the header as a row with
+  //    no face and this read "4 of 5", which is a true sentence about a
+  //    selector and a false one about the app.
+  const rowCount = await page.locator("[data-row]").count();
+  const facedRows = await page.locator("[data-row] [data-face] svg").count();
   if (rowCount === 0 || facedRows !== rowCount) {
     throw new Error(`rows with a painted face: ${facedRows} of ${rowCount}`);
   }
   //    …and what it painted is the derivation, not an empty canvas: the
   //    canvas side is one of the two the core ships, and the ground rect
   //    carries a hex color from the palette.
-  const rowFace = page.locator("[data-word] [data-face] svg").first();
+  const rowFace = page.locator("[data-row] [data-face] svg").first();
   const viewBox = await rowFace.getAttribute("viewBox");
   if (viewBox !== "0 0 80 80" && viewBox !== "0 0 36 36") {
     throw new Error(`a face's canvas is neither 80 nor 36: ${viewBox}`);
@@ -1227,7 +1236,7 @@ for line in sys.stdin:
   // 17) faces of the shell: wide has a detail header but no back;
   //     narrow, after entering a detail, has the back button.
   await openLanding("sessions");
-  await until("rows on the session list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
+  await until("rows on the session list", 10_000, async () => (await page.locator("[data-row]").count()) > 0);
   await row.locator("[data-row-open]").click();
   if ((await page.locator("[data-detail-header]").count()) !== 1) throw new Error("probe dead: no detail header");
   if ((await page.locator("[data-back]").count()) !== 0) throw new Error("back button on the wide face");
@@ -1237,7 +1246,7 @@ for line in sys.stdin:
   await until("narrow detail with back", 10_000, async () => (await page.locator("[data-back]").count()) === 1);
   await page.locator("[data-back]").click();
   await until("back to the narrow list", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
-  await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-word]").count()) > 0);
+  await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-row]").count()) > 0);
   // All four landings are reachable down here too — the narrow rail is
   // the only way to any of them — **and the mark is among them now.**
   //
@@ -1292,6 +1301,182 @@ for line in sys.stdin:
   await until("the narrow pin to float its row", 10_000, async () => (await narrowIds())[0] === narrowTarget);
   await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
   await until("the narrow row to go back", 10_000, async () => (await narrowIds())[0] !== narrowTarget);
+
+  // 18b) 手感三件套 (批②). Three motions, each asserted through what it
+  //      actually leaves in the computed style rather than by watching
+  //      it — and each with its reduced-motion case, because a guard
+  //      nobody measures is a guard that quietly stops covering.
+  //
+  //      The place change first: on the narrow face, going into a detail
+  //      and coming back out are the only two place changes this app
+  //      has, and they arrive from the side they lie on.
+  const screenAnim = async () => {
+    // Said out loud rather than left to a locator timeout: without the
+    // attribute there is no screen to ask about, and "waiting for
+    // [data-screen]" reads like a slow app instead of a missing one.
+    if ((await page.locator("[data-screen]").count()) !== 1) {
+      throw new Error("probe dead: the narrow shell names no screen to animate");
+    }
+    return page.locator("[data-screen]").evaluate((el) => ({
+      screen: el.dataset.screen,
+      animation: getComputedStyle(el).animationName,
+    }));
+  };
+  await openLanding("sessions");
+  await until("rows on the narrow list", 10_000, async () => (await page.locator("[data-row]").count()) > 0);
+  const intoDetail = page.locator("[data-row] [data-row-open]").first();
+  await intoDetail.click();
+  await until("the narrow detail", 10_000, async () => (await page.locator("[data-back]").count()) === 1);
+  const arrived = await screenAnim();
+  if (arrived.screen !== "detail" || arrived.animation !== "screen-in-from-right") {
+    throw new Error(`a detail must arrive from the right: ${JSON.stringify(arrived)}`);
+  }
+  await page.locator("[data-back]").click();
+  await until("back on the narrow list", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
+  const wentBack = await screenAnim();
+  if (wentBack.screen !== "list" || wentBack.animation !== "screen-in-from-left") {
+    throw new Error(`going back must come from the left: ${JSON.stringify(wentBack)}`);
+  }
+
+  //      The press. Measured with the button held down, and released
+  //      **somewhere else** so nothing is actually clicked — otherwise
+  //      this assertion would have to pick a control whose action it can
+  //      afford, and the one it could afford would stop being the one
+  //      people press.
+  //      **Measured after the transition has run, not the instant the
+  //      button goes down.** Mid-transition `getComputedStyle` reports
+  //      the interpolated value, and the mere existence of a transition
+  //      turns `transform` from "none" into a matrix — so a probe that
+  //      sampled immediately would call `matrix(1,0,0,1,0,0)` a press
+  //      and pass on a rule that scaled by nothing at all. Measured:
+  //      the first spelling of this did exactly that, and only the
+  //      opacity half caught it.
+  const pressing = async (locator) => {
+    const box = await locator.boundingBox();
+    if (!box) throw new Error("probe dead: the control has no box to press");
+    const style = () =>
+      locator.evaluate((el) => {
+        const s = getComputedStyle(el);
+        // The x scale out of the matrix; "none" stays itself.
+        const m = /matrix\(([-\d.]+)/.exec(s.transform);
+        return { transform: s.transform, scale: m ? Number(m[1]) : 1, opacity: Number(s.opacity) };
+      });
+    const resting = await style();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await settle();
+    const held = await style();
+    // Away first, then up: a press released off the control is not a
+    // click, so measuring one costs nothing.
+    await page.mouse.move(5, 5);
+    await page.mouse.up();
+    await settle();
+    return { resting, held };
+  };
+  // What a press should measure, read off the token rather than written
+  // here — a number copied into this file keeps passing after the token
+  // moves.
+  const pressScale = await page.evaluate(() =>
+    Number(getComputedStyle(document.documentElement).getPropertyValue("--press")),
+  );
+  if (!(pressScale > 0 && pressScale < 1)) {
+    throw new Error(`--press is not a give: ${pressScale}`);
+  }
+  const pin = page.locator("[data-row] [data-row-pin]").first();
+  const pinnedBefore = await page.locator("[data-row][data-pinned=true]").count();
+  const press = await pressing(pin);
+  if (press.resting.scale !== 1) {
+    throw new Error(`probe dead: the control is already scaled at rest: ${press.resting.transform}`);
+  }
+  if (Math.abs(press.held.scale - pressScale) > 0.005) {
+    throw new Error(
+      `a press must give by --press (${pressScale}), it gave ${press.held.scale}`,
+    );
+  }
+  if (!(press.held.opacity < press.resting.opacity)) {
+    throw new Error(
+      `a press must also dim, or reduced motion leaves nothing behind: ` +
+        `${press.resting.opacity} -> ${press.held.opacity}`,
+    );
+  }
+  if ((await page.locator("[data-row][data-pinned=true]").count()) !== pinnedBefore) {
+    throw new Error("the press probe pressed something for real");
+  }
+
+  //      …and under reduced motion the give goes while the dim stays.
+  //      Both halves: "nothing moved" is also what a broken probe says,
+  //      and a press that answered with nothing at all would be the
+  //      做了但没变化 failure arrived at through an accessibility
+  //      setting.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const still = await pressing(pin);
+  const stillScreen = await screenAnim();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  if (still.held.scale !== 1) {
+    throw new Error(`reduced motion must take the give away: ${still.held.transform}`);
+  }
+  if (!(still.held.opacity < still.resting.opacity)) {
+    throw new Error(`reduced motion must keep the press answered: ${JSON.stringify(still)}`);
+  }
+  if (stillScreen.animation !== "none") {
+    throw new Error(`reduced motion must take the slide away: ${stillScreen.animation}`);
+  }
+
+  //      The reordering. A pin floats its row, which moves every row it
+  //      passed — and FLIP is the difference between rows walking there
+  //      and the list being a different list between two frames. Counted
+  //      off the computed transform on a rAF loop: the animation is 240
+  //      ms and the assertion is that it happened at all.
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await openLanding("sessions");
+  await until("rows back on the wide face", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
+  const watchTransforms = () =>
+    page.evaluate(() => {
+      window.__moved = 0;
+      const tick = () => {
+        for (const el of document.querySelectorAll("[data-row]")) {
+          if (getComputedStyle(el).transform !== "none") window.__moved += 1;
+        }
+        window.__movedRaf = requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  const stopWatching = () =>
+    page.evaluate(() => {
+      cancelAnimationFrame(window.__movedRaf);
+      return window.__moved;
+    });
+  const rowIds = () => page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  const flipTarget = (await rowIds())[2];
+  await watchTransforms();
+  await page.locator(`[data-row="${flipTarget}"] [data-row-pin]`).click();
+  await until("the pinned row to lead", 20_000, async () => (await rowIds())[0] === flipTarget);
+  const movedFrames = await stopWatching();
+  if (movedFrames === 0) {
+    throw new Error("rows teleported: no row carried a transform while the order changed");
+  }
+  // …and it goes back to nothing. A FLIP that forgets to release leaves
+  // the list permanently offset, which looks like a layout bug rather
+  // than a motion one.
+  await until("the rows to settle back to no transform", 10_000, async () =>
+    page.evaluate(
+      () =>
+        [...document.querySelectorAll("[data-row]")].every(
+          (el) => getComputedStyle(el).transform === "none",
+        ),
+    ),
+  );
+  // The same reorder under reduced motion moves nobody. The probe is
+  // known alive: it just counted frames on the press above.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await watchTransforms();
+  await page.locator(`[data-row="${flipTarget}"] [data-row-pin]`).click();
+  await until("the pin to come off", 20_000, async () => (await rowIds())[0] !== flipTarget);
+  const stillFrames = await stopWatching();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  if (stillFrames !== 0) {
+    throw new Error(`reduced motion must not walk the rows: ${stillFrames} frames moved`);
+  }
 
   // 19) search reaches the machine a row came from.
   //
@@ -2617,6 +2802,20 @@ for line in sys.stdin:
   if (!busyWord || (breathing.text ?? "").trim() !== busyWord.trim()) {
     throw new Error(`the waiting mark must say what a busy row says: ${breathing.text} vs ${busyWord}`);
   }
+  // …and so does the detail header (批②). **Checked here, in the one
+  // window where the state is provably not the resting one.** The first
+  // draft asserted this on a quiet row, where a header hard-coded to
+  // 空闲 agreed with it and the assertion passed — measured, on a break
+  // planted to make it fail. A word that only ever matches the default
+  // is not a word being read off the row.
+  const headerBusy = (
+    await page.locator("[data-detail-header] [data-word-text]").innerText()
+  ).trim();
+  if (headerBusy !== busyWord.trim()) {
+    throw new Error(
+      `the header must say what the row says about one session: ${headerBusy} vs ${busyWord}`,
+    );
+  }
   await page.emulateMedia({ reducedMotion: "reduce" });
   const stilled = await page.locator("[data-chat-thinking] [data-word-text]").evaluate((el) => {
     const s = getComputedStyle(el);
@@ -2905,10 +3104,82 @@ for line in sys.stdin:
     return t.includes("the fake's own past");
   });
 
-  cli(envB, "close", wizId);
-  await until("the wizard row gone", 20_000, async () =>
-    (await page.locator(`[data-row="${wizId}"]`).count()) === 0,
+  // 25h) 详情头的事实 + 关会话入口 (批②). The header says what the row
+  //      is, and offers the two things a person does with a session
+  //      they are looking at: take its name, or end it.
+  //
+  //      The state word is asserted up in 25e instead, in the window
+  //      where a turn is hanging and the word is provably 忙碌 — here
+  //      every row is resting, and a header that always said 空闲 would
+  //      pass. That is not a hypothetical: it was this block's first
+  //      draft, and planting exactly that break left the run green.
+  //
+  //      The machine is there only when the row carries one. Both
+  //      halves, because "absent" is also what a broken selector says:
+  //      this row lives here and names no machine, and a reported row
+  //      elsewhere in this same list does.
+  if ((await page.locator("[data-detail-device]").count()) !== 0) {
+    throw new Error("a session living on this machine must not name one");
+  }
+  const fromElsewhere = (
+    await page.locator("[data-row][data-source]").evaluateAll((els) => els.map((e) => e.dataset.row))
+  )[0];
+  if (!fromElsewhere) throw new Error("probe dead: no reported row to check the other half with");
+  await page.locator(`[data-row="${fromElsewhere}"] [data-row-open]`).click();
+  await until("the reported row naming its machine", 15_000, async () =>
+    (await page.locator("[data-detail-device]").count()) === 1,
   );
+  // **A close that fails is asserted where a failure is certain**, which
+  // is section 26 with the backend taken away — not here on a row from
+  // another machine. That was this block's first draft and the premise
+  // was wrong: `close_anywhere` *routes* to the machine a session lives
+  // on, so closing a reported row is an ordinary close that works, and
+  // the assertion sat waiting for a refusal that was never coming.
+
+  //      Back on the wizard's own row: the id is takeable, and the
+  //      close asks first.
+  await page.locator(`[data-row="${wizId}"] [data-row-open]`).click();
+  await until("the wizard row again", 15_000, async () =>
+    (await page.locator("[data-copy-id]").count()) === 1,
+  );
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const beforeCopy = await page.locator("[data-copy-id]").innerText();
+  await page.locator("[data-copy-id]").click();
+  await until("the copy saying it happened", 10_000, async () => {
+    const now = await page.locator("[data-copy-id]").innerText();
+    return now !== beforeCopy;
+  });
+  // What actually landed on the clipboard, not what the button claims.
+  const pasted = await page.evaluate(() => navigator.clipboard.readText());
+  if (pasted !== wizId) {
+    throw new Error(`the copy must put the row's own id there: ${JSON.stringify(pasted)}`);
+  }
+  // The confirm is a real gate: backing out leaves the session running.
+  await page.locator("[data-close-session]").click();
+  await until("the confirm on the wizard row", 10_000, async () =>
+    (await page.locator("[data-close-confirm]").count()) === 1,
+  );
+  await page.locator("[data-close-back]").click();
+  await until("the confirm dismissed", 10_000, async () =>
+    (await page.locator("[data-close-confirm]").count()) === 0,
+  );
+  await settle();
+  if ((await page.locator(`[data-row="${wizId}"]`).count()) !== 1) {
+    throw new Error("backing out of the confirm must not close the session");
+  }
+  // …and going through with it ends the session for real — the same
+  // ending `khor close` produces, which is what this used to call.
+  await page.locator("[data-close-session]").click();
+  await until("the confirm again", 10_000, async () =>
+    (await page.locator("[data-close-confirm]").count()) === 1,
+  );
+  await page.locator("[data-close-go]").click();
+  await until("the wizard row gone", 20_000, async () => {
+    if (await page.locator("[data-close-error]").count()) {
+      throw new Error(await page.locator("[data-close-error]").innerText());
+    }
+    return (await page.locator(`[data-row="${wizId}"]`).count()) === 0;
+  });
 
   // **A terminal-form session is named before it exists.** The row
   // wears the vendor's own uuid — 26 characters of it, the lossy
@@ -3027,6 +3298,39 @@ for line in sys.stdin:
     .locator("[data-row-pin]")
     .evaluateAll((els) => els.filter((e) => e.dataset.pinFailed === "true").length);
   if (others !== 1) throw new Error(`${others} buttons wear the failure face; exactly one was pressed`);
+
+  // 26b) 关会话失败也就地说 (批②). The same backend-away window, because
+  //      this is the only place a close is *certain* to fail: whether a
+  //      given row can be closed is `Node::close`'s judgment and the
+  //      pane deliberately does not pre-empt it, so with the backend up
+  //      there is no row this script can be sure will refuse.
+  //
+  //      The control is the strip's own absence beforehand: a report
+  //      that was already on screen would prove nothing about the
+  //      press.
+  await page.locator(`[data-row="${failTarget}"] [data-row-open]`).click();
+  await until("a detail to close from", 10_000, async () =>
+    (await page.locator("[data-close-session]").count()) === 1,
+  );
+  if ((await page.locator("[data-close-error]").count()) !== 0) {
+    throw new Error("a close was reported failed before one was asked for");
+  }
+  await page.locator("[data-close-session]").click();
+  await until("the confirm", 10_000, async () =>
+    (await page.locator("[data-close-confirm]").count()) === 1,
+  );
+  await page.locator("[data-close-go]").click();
+  await until("the failure said on the pane that asked", 15_000, async () =>
+    (await page.locator("[data-close-error]").count()) === 1,
+  );
+  if (!(await page.locator("[data-close-error]").innerText()).trim()) {
+    throw new Error("the failure must be a sentence, not an empty strip");
+  }
+  // The confirm goes when it fails — leaving it up would read as the
+  // close still being on offer, on a backend that cannot take it.
+  if ((await page.locator("[data-close-confirm]").count()) !== 0) {
+    throw new Error("a failed close must not leave its confirm standing");
+  }
 
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);

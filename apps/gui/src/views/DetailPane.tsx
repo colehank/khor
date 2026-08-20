@@ -1,6 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { takeoverTerm as takeoverTermCall, type SessionRow } from "@/api";
+import {
+  closeSession,
+  takeoverTerm as takeoverTermCall,
+  type SessionRow,
+} from "@/api";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -92,6 +96,132 @@ function ChatToTerm({ row }: { row: SessionRow }) {
   );
 }
 
+/**
+ * The row's id, as a thing to hand to somebody: `khor` prints this
+ * string and people paste it between machines, so the pane that shows
+ * the session offers it rather than making them read it off a list.
+ *
+ * The button reports its own outcome, the pin's rule: a clipboard write
+ * can be refused (an unfocused document, a webview without permission),
+ * and a copy that silently did nothing looks exactly like one that
+ * worked — until somebody pastes. The word goes back to the offer after
+ * a beat, because "复制好了" is about the press and not about the row.
+ */
+function CopyId({ id }: { id: string }) {
+  const [said, setSaid] = useState<"copied" | "failed" | null>(null);
+  useEffect(() => {
+    if (!said) return;
+    const t = window.setTimeout(() => setSaid(null), 2_000);
+    return () => window.clearTimeout(t);
+  }, [said]);
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      data-copy-id
+      data-said={said ?? undefined}
+      className="flex-none data-[said=failed]:text-state-failed"
+      onClick={() => {
+        navigator.clipboard.writeText(id).then(
+          () => setSaid("copied"),
+          () => setSaid("failed"),
+        );
+      }}
+    >
+      {said === "copied" ? gui.copied : said === "failed" ? gui.copy_failed : gui.copy_id}
+    </Button>
+  );
+}
+
+/**
+ * Ending the session this pane is showing.
+ *
+ * **The button does not decide whether the close is possible.** A
+ * discovered session is not khor's to end and a remote one has no path
+ * yet — both are `Node::close`'s judgment, and both refuse in a whole
+ * sentence written for a person ("不是 khor 起的,关不了它;去它自己的窗口
+ * 里退"). Guessing the same rule here would be this face re-deriving a
+ * backend judgment, and it would go stale the day remote close lands.
+ * So it asks, and prints what comes back.
+ *
+ * The confirm takes a strip of its own under the header rather than
+ * squeezing into it: the sentence is the point, and a warning truncated
+ * to fit beside a title is a warning nobody reads.
+ */
+function useCloseSession(row: SessionRow | null) {
+  const [confirming, setConfirming] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The row is the subject: moving to another session must not leave
+  // this one's confirm — or its refusal — standing over a row it was
+  // never about.
+  useEffect(() => {
+    setConfirming(false);
+    setClosing(false);
+    setError(null);
+  }, [row?.id]);
+  // Two pieces because they sit in two places: the control belongs on
+  // the header's line, the sentence needs a line of its own. A hook
+  // rather than two components so there is still exactly one piece of
+  // state behind them.
+  const button = !row ? null : (
+    <Button
+        size="sm"
+        variant="ghost"
+        data-close-session
+        className="flex-none"
+        onClick={() => {
+          setError(null);
+          setConfirming(true);
+        }}
+    >
+      {gui.close}
+    </Button>
+  );
+  const strip = !row ? null : (
+    <>
+      {confirming && (
+        <div
+          data-close-confirm
+          className="flex flex-none items-center gap-2 border-b px-3 py-1.5 text-sm"
+        >
+          <span className="min-w-0 flex-1 text-muted-foreground">{gui.close_session_warn}</span>
+          <Button
+            size="sm"
+            data-close-go
+            disabled={closing}
+            onClick={() => {
+              setClosing(true);
+              closeSession(row.id)
+                .then(() => {
+                  // Nothing to paint on success: the row leaves the
+                  // list on its next poll and this pane goes with it.
+                  setConfirming(false);
+                })
+                .catch((e) => {
+                  setError(String(e instanceof Error ? e.message : e));
+                  setClosing(false);
+                  setConfirming(false);
+                });
+            }}
+          >
+            {gui.close}
+          </Button>
+          <Button size="sm" variant="ghost" data-close-back onClick={() => setConfirming(false)}>
+            {gui.back}
+          </Button>
+        </div>
+      )}
+      {error && (
+        <div data-close-error className="flex-none border-b px-3 py-1.5 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+    </>
+  );
+  return { button, strip };
+}
+
 /** The face switch, for a session with two faces to switch between.
     Which two they are depends on the row: a hosted agent has a live
     terminal and a recorded conversation; a conversation khor holds has
@@ -166,6 +296,7 @@ export function DetailPane({
   narrow: boolean;
   onBack: () => void;
 }) {
+  const close = useCloseSession(row);
   return (
     <section className="flex h-full min-w-0 flex-col">
       <header data-detail-header className="flex h-ctl-lg flex-none items-center gap-2 border-b px-3">
@@ -177,8 +308,42 @@ export function DetailPane({
             <IconBack />
           </Button>
         )}
-        <span className="truncate font-semibold">{row ? row.title || row.id : ""}</span>
+        {/* `min-w-0` is what lets it actually truncate: a flex child
+            will not shrink below its content without it, so on the
+            narrow face the title would push the facts and the two
+            controls off the end of the header instead of clipping
+            itself. */}
+        <span className="min-w-0 truncate font-semibold">{row ? row.title || row.id : ""}</span>
+        {row && (
+          <>
+            {/* The state, in the same clothes the row wears it in — the
+                same `data-word` pair, so the colour, the breath and the
+                reduced-motion guard are the doctrine's and not a second
+                copy of it (app.css). Two places, one fact, one word:
+                what must never differ between a list and a detail is
+                what they say about the same thing (docs/UX.md). */}
+            <span data-word={row.word} className="flex-none text-sm">
+              <span data-word-text style={{ color: `var(--state-${row.word})` }}>
+                {word(row.word)}
+              </span>
+            </span>
+            {/* Which machine it came from — only ever on a reported row,
+                because that is the only row that carries the fact. A row
+                living here says nothing, exactly as it says nothing in
+                the list; naming this machine on it would be inventing a
+                fact to fill a slot. */}
+            {row.source && (
+              <span data-detail-device className="flex-none truncate text-sm text-muted-foreground">
+                {gui.from_device(row.source.device)}
+              </span>
+            )}
+            <span className="min-w-0 flex-1" />
+            <CopyId id={row.id} />
+            {close.button}
+          </>
+        )}
       </header>
+      {close.strip}
       {row && row.kind === "gui" ? (
         // Keyed so switching sessions remounts the chat: its cursor,
         // frames and attachment all belong to one conversation. The

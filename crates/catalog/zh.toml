@@ -774,6 +774,28 @@ chat-stop = "停止"
 # (docs/UX.md 角标可归零).
 chat-to-bottom = "回到底部"
 chat-new-below = "下面有新的"
+# Ending a session, from the pane that is showing it. The sentence says
+# the one thing that cannot be taken back — a process somewhere stops —
+# and deliberately does not enumerate what else happens, because that
+# differs by kind (a transfer keeps its row, a conversation does not) and
+# a confirm that lists cases is a confirm nobody reads.
+#
+# **It does not promise the close will work.** Whether a row can be
+# closed at all is `Node::close`'s judgment: a session khor merely
+# discovered is not khor's to end, and a remote one has no path yet.
+# Both refuse in whole sentences of their own, and those are what the
+# pane shows — this face asks rather than deciding in advance, which is
+# the same rule that keeps it from re-deriving a state.
+close-session-warn = "关掉它,它正在跑的东西会停下"
+# The id, as a thing to paste. It is not implementation leaking into the
+# copy: this is the string `khor` prints and the one a person hands to
+# another machine, so it is the row's public name and worth a control.
+# Three words for one button, the pin's rule — the one shown names what
+# just happened, so a copy that silently did nothing cannot pass for a
+# copy that worked.
+copy-id = "复制 id"
+copied = "复制好了"
+copy-failed = "复制不了"
 # The files pane. 上一级 is a place to go, not a "back": the list on
 # the left never left, so the only direction this pane owns is up the
 # tree. An empty directory says so — silence would read as broken.
