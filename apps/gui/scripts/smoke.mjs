@@ -3769,6 +3769,57 @@ for line in sys.stdin:
   );
 
 
+  // 25j) 右下角状态栏 (批④ 三笔): what is happening that nobody is
+  //      watching, and nothing else.
+  //
+  //      Driven by a **real transfer** — alpha sends beta a file over
+  //      the real link, beta accepts, and the row walks 待批 → 完成. The
+  //      strip is fed off those rows, so this also proves the two
+  //      admission rules against something that actually happened
+  //      rather than against a fixture.
+  await openLanding("sessions");
+  if ((await page.locator("[data-statusbar]").count()) !== 0) {
+    throw new Error("probe dead: the corner is already occupied before anything happened");
+  }
+  const sentFile = join(SCRATCH, "corner-note.txt");
+  writeFileSync(sentFile, "a file worth a line in the corner\n");
+  cli(envA, "send", "beta", sentFile);
+  let transferRow = null;
+  await until("the transfer row reaching beta", 30_000, async () => {
+    transferRow = (
+      await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row))
+    ).find((r) => r.startsWith("transfer/"));
+    return Boolean(transferRow);
+  });
+  //      **A row that was already there does not announce itself.** The
+  //      strip has now seen this row sitting at 待批 and stayed empty —
+  //      which is the half that keeps it from being full at startup.
+  await settle();
+  if ((await page.locator("[data-statusbar]").count()) !== 0) {
+    throw new Error("a transfer nobody touched put itself in the corner");
+  }
+  //      Now it moves, and the corner says so.
+  cli(envB, "accept", transferRow);
+  await until("the corner reporting the transfer", 30_000, async () =>
+    (await page.locator(`[data-status-item="${transferRow}"]`).count()) === 1,
+  );
+  //      Every line in there is a process-class fact with a row behind
+  //      it — never a click's outcome. Checked as an invariant rather
+  //      than by trying to push a click result in, because the rule is
+  //      "only these get in", not "that one is kept out".
+  const inCorner = await page
+    .locator("[data-status-item]")
+    .evaluateAll((els) => els.map((e) => e.dataset.statusItem));
+  if (inCorner.some((k) => !k.startsWith("transfer/"))) {
+    throw new Error(`the corner took something that is not a process: ${JSON.stringify(inCorner)}`);
+  }
+  //      …and it goes to zero on its own. **Absent, not empty**: the
+  //      whole strip stops rendering, so there is no box left saying
+  //      nothing.
+  await until("the corner emptying itself", 20_000, async () =>
+    (await page.locator("[data-statusbar]").count()) === 0,
+  );
+
   // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //

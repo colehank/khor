@@ -29,6 +29,7 @@ import {
 import { KhorMark } from "@/components/KhorMark";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
+import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -39,6 +40,7 @@ import {
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { usePathCandidates } from "@/hooks/use-path-candidates";
+import { useStatusBar } from "@/hooks/use-status-bar";
 import { cn } from "@/lib/utils";
 import { axisOf, groupLabel, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -470,6 +472,9 @@ export default function App() {
     [refresh, markPin],
   );
 
+  // What is happening that nobody is watching — see the hook for the
+  // two rules about what may appear here.
+  const status = useStatusBar(rows);
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
   // A session that is gone stops being the selected one, and on the
   // narrow face the screen goes back to the list.
@@ -1057,6 +1062,7 @@ export default function App() {
           </div>
           {rail}
           {sheets}
+          <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       ) : (
         <div className="flex h-dvh">
@@ -1070,6 +1076,7 @@ export default function App() {
             </>
           )}
           {sheets}
+          <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       )}
     </TooltipProvider>

@@ -106,6 +106,16 @@ input[type="search"]::-webkit-search-decoration {
   animation: screen-in-from-left var(--dur-240) var(--ease-out);
 }
 
+/* A line arriving in the corner comes from the corner it lives in —
+ * the same keyframe the narrow detail uses, because it is the same
+ * statement (something arrived from over there) and a second set of
+ * frames would be a second vocabulary for one idea. Shorter than a
+ * place change: this is a notice, not a journey.
+ */
+[data-status-item] {
+  animation: screen-in-from-right var(--dur-180) var(--ease-out);
+}
+
 /* Busy takes no hue — it breathes (mandala's state doctrine). */
 @keyframes breath {
   0%,
@@ -148,5 +158,11 @@ input[type="search"]::-webkit-search-decoration {
      paints, and the row would flicker. */
   [data-row] {
     transition: none;
+  }
+
+  /* The corner line still appears — it is the whole point — it just
+     does not travel to get there. */
+  [data-status-item] {
+    animation: none;
   }
 }
