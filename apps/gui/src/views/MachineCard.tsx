@@ -259,6 +259,21 @@ function Readings({ row }: { row: DeviceRow }) {
           )}
         </>
       )}
+      {/* Which khor that machine runs. It rides with the readings
+          because it is the same kind of fact — something a machine says
+          about itself, on the cadence it already says the others on
+          (`Vitals::version`) — and it is drawn with no bar because it
+          divides by nothing.
+
+          **Silent when unknown, and that silence is the answer**: a peer
+          whose khor predates this field says nothing here, and that is
+          exactly the machine an upgrade sweep is looking for. Printing
+          a placeholder would hide the one row worth finding. */}
+      {v.version && (
+        <div data-vitals-unit="version" className="text-sm text-muted-foreground">
+          {cli.vitals_version(v.version)}
+        </div>
+      )}
       {/* Printed on every reading that was not taken to answer this very
           call — which is every machine but this one. A number with no age
           beside it is read as the present. */}
