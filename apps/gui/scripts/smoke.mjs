@@ -599,6 +599,14 @@ for line in sys.stdin:
                 break
         emit({"type": "result", "subtype": "interrupted", "session_id": sid})
         continue
+    if text.startswith("flood-"):
+        # A burst bigger than the frame cap, in one turn and faster than
+        # any poll: this is what makes the trim reachable at all (the
+        # real shape of it is a streaming agent, one frame per chunk).
+        for i in range(int(text.split("-")[1])):
+            emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"flood {i}"}]}})
+        emit({"type": "result", "subtype": "success", "session_id": sid})
+        continue
     if "ask-permission" in text:
         emit({"type": "control_request", "request_id": "req-1",
               "request": {"subtype": "can_use_tool", "tool_name": "Write", "display_name": "Write",
@@ -658,7 +666,18 @@ for line in sys.stdin:
   // beta: the bridge is the app backend — embedded serve pumps sync and
   // holds this key's endpoint, which is what lets the GUI mint and
   // accept tickets without a terminal.
-  const bridge = run(BRIDGE, [], { ...envB, BRIDGE_PORT: String(BRIDGE_PORT) }, "bridge");
+  // **The frame cap, turned down to where a test can reach it.** It is
+  // an operations knob (`khor_gui_core::chat::frame_cap`), and this run
+  // is its first customer: at the shipped twenty thousand the trim — and
+  // the recovery that hangs off it — is code nothing ever executes. Two
+  // hundred is still far above any ordinary exchange here, so only the
+  // section that deliberately floods crosses it.
+  const bridge = run(
+    BRIDGE,
+    [],
+    { ...envB, BRIDGE_PORT: String(BRIDGE_PORT), KHOR_CHAT_FRAME_CAP: "200" },
+    "bridge",
+  );
   let bridgeGone = null;
   bridge.on("exit", (code) => (bridgeGone = `bridge exited with ${code}`));
   // It says so on stdout once it has the port. If it died instead — the
@@ -4158,6 +4177,59 @@ for line in sys.stdin:
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("verdict:allow");
   });
+  // 25k) 帧上限的恢复 (批⑤): a conversation that overflowed one
+  //      attachment's frame list comes back whole instead of coming
+  //      back with a hole.
+  //
+  //      **This is the path that had never run once.** The cap ships at
+  //      twenty thousand, so nothing in ordinary use reaches it, and the
+  //      three lines that recover from it were written and never
+  //      executed — the kind of code whose failure is silence (a
+  //      conversation quietly missing its middle, which nobody reports
+  //      as a bug, they just stop trusting the app). The knob turned
+  //      down at startup is what makes it reachable; the burst below is
+  //      what crosses it.
+  //
+  //      The evidence is a **request the face would not otherwise
+  //      make**: a replay is asked for on attach and never again by
+  //      itself, so one arriving now can only be the recovery deciding
+  //      its own picture is no longer backed by anything.
+  const replaysAsked = [];
+  const countReplays = (r) => {
+    if (r.url().endsWith("/chat_replay")) replaysAsked.push(Date.now());
+  };
+  page.on("request", countReplays);
+  await say(page, "flood-600");
+  await until("the far end of the burst on screen", 40_000, async () =>
+    (await chatText()).includes("flood 599"),
+  );
+  if (replaysAsked.length === 0) {
+    throw new Error("the cap was crossed and nothing asked for the past back — the recovery never ran");
+  }
+  //      …and what it recovered is a conversation, not an empty pane.
+  //
+  //      **This second half does not test the clear, and saying so is
+  //      the point.** The obvious break — recover but skip
+  //      `setPaint(BLANK)` — was run, and this stayed green. Two
+  //      reasons, both measured: `absorb` *replaces* the past when a
+  //      `history_end` lands rather than appending, so a second replay
+  //      can never stack; and this stand-in does not replay its own
+  //      turns (`session/load` returns only the line it wrote on its
+  //      way up), so the clear has nothing visible to take away. The
+  //      clear's real work is on the live half, and with an agent that
+  //      replays for real it would be the difference between a middle
+  //      restored and a middle missing. What is gated here is that the
+  //      recovery *runs* and leaves a conversation behind; the content
+  //      half waits for a stand-in that answers a load.
+  await until("the recorded past back on screen, once", 30_000, async () => {
+    const t = await chatText();
+    return t.split(RECORDED).length - 1 === 1;
+  });
+  if (!(await chatText()).includes("flood 599")) {
+    throw new Error("the recovery took the newest frames with it — those were never lost");
+  }
+  page.off("request", countReplays);
+
   // 25d) 接管, the other way (唯一本体 read backwards): the terminal
   //      face of a conversation khor holds is not a terminal — it is
   //      where the conversation moves into one. The row keeps its id

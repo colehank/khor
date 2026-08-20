@@ -117,11 +117,39 @@ pub struct ChatBatch {
 /// slower than two thousand frames a second. That is not a promise it
 /// cannot happen; it is why the `lost` path is written rather than
 /// assumed unreachable.
-const FRAME_CAP: usize = 20_000;
-/// What a trim leaves behind. Trimming in one bite rather than one frame
-/// per push keeps the cost amortised — a `drain` from the front is the
-/// length of what remains.
-const FRAME_KEEP: usize = 16_000;
+const FRAME_CAP_DEFAULT: usize = 20_000;
+
+/// How many frames one attachment keeps, `KHOR_CHAT_FRAME_CAP` if it is
+/// set and sane.
+///
+/// **An operations knob, and verification is only its first customer.**
+/// How much memory a face may spend on one conversation is the kind of
+/// thing a small machine will eventually want to say something about,
+/// and this repo already hands those to the environment. That it also
+/// makes the trim reachable in a test is the reason it exists *now*
+/// rather than later — said plainly here, because a knob whose only
+/// caller is a test is a knob that gets deleted by the next person to
+/// read it.
+///
+/// Read once: a cap that changed under a running attachment would move
+/// the floor beneath a cursor mid-conversation.
+pub fn frame_cap() -> usize {
+    static CAP: OnceLock<usize> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("KHOR_CHAT_FRAME_CAP")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .filter(|&n| n > 1)
+            .unwrap_or(FRAME_CAP_DEFAULT)
+    })
+}
+
+/// What a trim leaves behind: four fifths of the cap. Trimming in one
+/// bite rather than one frame per push keeps the cost amortised — a
+/// `drain` from the front is the length of what remains.
+fn frame_keep() -> usize {
+    (frame_cap() * 4 / 5).max(1)
+}
 
 /// The frames one attachment has collected, and how many it has let go.
 ///
@@ -149,8 +177,8 @@ impl Frames {
 
     fn push(&mut self, f: ChatFrame) {
         self.held.push(f);
-        if self.held.len() > FRAME_CAP {
-            let go = self.held.len() - FRAME_KEEP;
+        if self.held.len() > frame_cap() {
+            let go = self.held.len() - frame_keep();
             self.held.drain(..go);
             self.dropped += go as u64;
         }
@@ -376,11 +404,11 @@ mod frame_cap_tests {
     #[test]
     fn a_cursor_survives_the_front_being_dropped() {
         let mut f = Frames::default();
-        for n in 0..FRAME_CAP as u64 + 1 {
+        for n in 0..frame_cap() as u64 + 1 {
             f.push(numbered(n));
         }
-        assert_eq!(f.dropped, (FRAME_CAP + 1 - FRAME_KEEP) as u64, "one trim, one bite");
-        assert_eq!(f.held.len(), FRAME_KEEP);
+        assert_eq!(f.dropped, (frame_cap() + 1 - frame_keep()) as u64, "one trim, one bite");
+        assert_eq!(f.held.len(), frame_keep());
 
         // A reader at the very front: what it missed is gone, and it is
         // told so rather than handed the tail as if it were the whole.
