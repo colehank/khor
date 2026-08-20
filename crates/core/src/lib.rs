@@ -274,7 +274,7 @@ impl Fill {
 /// source are a macOS thermal sensor key and unrelated FFI), so the reading
 /// is taken per platform through in-process APIs rather than by shelling
 /// out: khor expects nothing installed, `nvidia-smi` included.
-/// Not  since it carries a version string — and it never wanted to
+/// Not `Copy` since it carries a version string — and it never wanted to
 /// be: a reading is a message a machine sent, and messages get moved and
 /// cloned deliberately, not duplicated by accident.
 ///
