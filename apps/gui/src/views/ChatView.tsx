@@ -356,6 +356,21 @@ export function ChatView({
         .then((batch) => {
           if (stopped) return;
           cursor = batch.next;
+          // **The past this face was holding is no longer backed by
+          // anything.** The attachment's frame list is capped
+          // (`khor_gui_core::chat::FRAME_CAP`), and this says the trim
+          // reached past where this reader had got to — so the paint,
+          // which was built by absorbing those frames one at a time, is
+          // now a picture with a hole in it that nothing will fill.
+          //
+          // Rebuilt the way a face that never saw them would: clear, and
+          // ask for history. The frames in *this* batch are still
+          // absorbed below, because they are the newest and the replay
+          // lands in `past` regardless of when it arrives.
+          if (batch.lost) {
+            setPaint(BLANK);
+            chatReplay(id).catch(() => {});
+          }
           if (batch.frames.length) {
             if (batch.frames.some((f) => f.kind === "turn" || f.kind === "gone")) {
               setInTurn(false);

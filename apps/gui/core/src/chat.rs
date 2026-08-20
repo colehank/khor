@@ -92,12 +92,75 @@ pub struct ChatBatch {
     #[ts(type = "number")]
     pub next: u64,
     pub gone: bool,
+    /// Frames older than this cursor are gone, so what arrived here is
+    /// not the whole of what was missed. A face that sees this must ask
+    /// for history rather than trust its own paint — see [`FRAME_CAP`].
+    pub lost: bool,
+}
+
+/// How many frames one attachment keeps.
+///
+/// **It has to be bounded, and bounding it has to be honest.** A
+/// streaming agent emits a frame per chunk; a conversation left open all
+/// day is an unbounded list nobody empties. But the list is also what a
+/// *second* pane on the same conversation rebuilds its paint from
+/// (`chat_open` answers `false` and that face polls from zero), so
+/// dropping the front is dropping somebody's past.
+///
+/// Hence the pair: the oldest go, and the batch says `lost` to any
+/// reader whose cursor was among them. The recovery is the one that
+/// already exists — ask for history, exactly as a fresh attachment does
+/// — so a trimmed list costs a replay and never a wrong picture.
+///
+/// Twenty thousand at roughly a couple of hundred bytes a frame is a
+/// few megabytes, and reaching it unseen would take a face polling
+/// slower than two thousand frames a second. That is not a promise it
+/// cannot happen; it is why the `lost` path is written rather than
+/// assumed unreachable.
+const FRAME_CAP: usize = 20_000;
+/// What a trim leaves behind. Trimming in one bite rather than one frame
+/// per push keeps the cost amortised — a `drain` from the front is the
+/// length of what remains.
+const FRAME_KEEP: usize = 16_000;
+
+/// The frames one attachment has collected, and how many it has let go.
+///
+/// **The cursor counts frames, not positions.** A face holds a number
+/// and asks for everything after it; if that number were an index into
+/// a list whose front can disappear, a trim would silently hand it
+/// somebody else's frames. Counting every frame the attachment ever had
+/// keeps the number meaning one thing for as long as the attachment
+/// lives.
+#[derive(Default)]
+struct Frames {
+    held: Vec<ChatFrame>,
+    dropped: u64,
+}
+
+impl Frames {
+    /// Where a reader's cursor lands in what is still held, and whether
+    /// anything it had not seen is already gone.
+    fn since(&self, cursor: u64) -> (usize, bool) {
+        (
+            (cursor.saturating_sub(self.dropped) as usize).min(self.held.len()),
+            cursor < self.dropped,
+        )
+    }
+
+    fn push(&mut self, f: ChatFrame) {
+        self.held.push(f);
+        if self.held.len() > FRAME_CAP {
+            let go = self.held.len() - FRAME_KEEP;
+            self.held.drain(..go);
+            self.dropped += go as u64;
+        }
+    }
 }
 
 struct Chat {
     /// The write half. One lock per op so frames never interleave.
     conn: Mutex<TcpStream>,
-    frames: Mutex<Vec<ChatFrame>>,
+    frames: Mutex<Frames>,
     gone: AtomicBool,
     /// How many opens hold this attachment. React mounts an effect,
     /// cleans it up, and mounts again — two holders of one id, in an
@@ -158,7 +221,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let chat = Arc::new(Chat {
         conn: Mutex::new(conn),
-        frames: Mutex::new(Vec::new()),
+        frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
     });
@@ -191,11 +254,15 @@ fn chat_of(id: &str) -> Result<Arc<Chat>, String> {
 pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
     let chat = chat_of(id)?;
     let frames = chat.frames.lock().unwrap();
-    let from = (since as usize).min(frames.len());
+    // Everything this reader has not seen, in the list's own terms: its
+    // cursor counts frames from the beginning of the attachment, and
+    // `dropped` is how far the front has moved since.
+    let (from, lost) = frames.since(since);
     Ok(ChatBatch {
-        frames: frames[from..].to_vec(),
-        next: frames.len() as u64,
+        frames: frames.held[from..].to_vec(),
+        next: frames.dropped + frames.held.len() as u64,
         gone: chat.gone.load(Ordering::Relaxed),
+        lost,
     })
 }
 
@@ -279,4 +346,73 @@ pub fn chat_leave(id: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod frame_cap_tests {
+    use super::*;
+
+    /// Each frame carries its own number, so an assertion can name
+    /// *which* frame came back rather than only how many.
+    fn numbered(n: u64) -> ChatFrame {
+        ChatFrame::Turn { stop: n.to_string() }
+    }
+
+    fn stop_of(f: &ChatFrame) -> &str {
+        match f {
+            ChatFrame::Turn { stop } => stop,
+            other => panic!("not a numbered frame: {other:?}"),
+        }
+    }
+
+    /// **A cursor keeps meaning the same thing after the front is
+    /// trimmed**, which is the whole reason it counts frames instead of
+    /// indexing a list.
+    ///
+    /// The assertion is on *identity*, not on counts: a cursor that
+    /// forgot to account for the dropped frames would still return a
+    /// plausible number of them, just the wrong ones — and a wrong
+    /// picture of a conversation is exactly what nobody would notice.
+    #[test]
+    fn a_cursor_survives_the_front_being_dropped() {
+        let mut f = Frames::default();
+        for n in 0..FRAME_CAP as u64 + 1 {
+            f.push(numbered(n));
+        }
+        assert_eq!(f.dropped, (FRAME_CAP + 1 - FRAME_KEEP) as u64, "one trim, one bite");
+        assert_eq!(f.held.len(), FRAME_KEEP);
+
+        // A reader at the very front: what it missed is gone, and it is
+        // told so rather than handed the tail as if it were the whole.
+        let (from, lost) = f.since(0);
+        assert!(lost, "a cursor older than the trim must be told it lost frames");
+        assert_eq!(stop_of(&f.held[from]), f.dropped.to_string(), "and gets the oldest still held");
+
+        // A reader that kept up: no loss, and it lands exactly on the
+        // frame it has not seen.
+        let caught_up = f.dropped + 5;
+        let (from, lost) = f.since(caught_up);
+        assert!(!lost);
+        assert_eq!(stop_of(&f.held[from]), caught_up.to_string());
+
+        // The end: nothing new, and nothing lost.
+        let end = f.dropped + f.held.len() as u64;
+        let (from, lost) = f.since(end);
+        assert!(!lost);
+        assert_eq!(from, f.held.len(), "a cursor at the end reads an empty slice");
+    }
+
+    /// Below the cap nothing moves — so the test above is measuring the
+    /// trim rather than something the type does all the time.
+    #[test]
+    fn an_untrimmed_list_drops_nothing() {
+        let mut f = Frames::default();
+        for n in 0..10u64 {
+            f.push(numbered(n));
+        }
+        assert_eq!(f.dropped, 0);
+        let (from, lost) = f.since(4);
+        assert!(!lost);
+        assert_eq!(stop_of(&f.held[from]), "4");
+    }
 }
