@@ -245,6 +245,7 @@ fn handle(
             &arg("form")?,
             &opt_str("agent")?.unwrap_or_default(),
         )?),
+        "agents" => to_json(&khor_gui_core::agents(root)?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),
