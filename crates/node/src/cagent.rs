@@ -485,7 +485,9 @@ async fn answer_permission(
 /// A replayed utterance in the very shapes the live stream uses — and
 /// the same choices `gui-core`'s `history()` makes, so a session's past
 /// reads identically whether it was loaded here or read from disk.
-fn replayed(u: crate::adaptor::claude::Utterance) -> SessionUpdate {
+/// `pub(crate)`: the codex shim replays through the same mapping, so
+/// the two vendors' pasts read alike too.
+pub(crate) fn replayed(u: crate::adaptor::claude::Utterance) -> SessionUpdate {
     use crate::adaptor::claude::Utterance;
     match u {
         Utterance::User(t) => SessionUpdate::UserMessageChunk(ContentChunk::new(

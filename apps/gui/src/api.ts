@@ -78,10 +78,15 @@ export const fetchUsage = () => call<Usage>("usage");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
-/** The wizard (会话身份批B): a fresh claude session in `dir`, as a
-    conversation ("chat") or a terminal ("term"). Answers the new row's id. */
-export const openSession = (dir: string, title: string, form: "chat" | "term") =>
-  call<string>("open_session", { dir, title, form });
+/** The wizard (会话身份批B): a fresh agent session in `dir`, as a
+    conversation ("chat") or a terminal ("term"), for the chosen agent
+    (claude or codex — codex is chat-only, 批8). Answers the new row's id. */
+export const openSession = (
+  dir: string,
+  title: string,
+  form: "chat" | "term",
+  agent: "claude" | "codex",
+) => call<string>("open_session", { dir, title, form, agent });
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the

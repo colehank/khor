@@ -9,6 +9,7 @@
 
 pub mod adaptor;
 pub mod cagent;
+pub mod codexagent;
 pub mod chat;
 pub mod files;
 pub mod gui_host;

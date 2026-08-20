@@ -84,6 +84,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "_host", run: host },
     Verb { word: "_ghost", run: ghost },
     Verb { word: "_cagent", run: cagent },
+    Verb { word: "_codexagent", run: codexagent },
     Verb { word: "help", run: help },
     Verb { word: "--help", run: help },
     Verb { word: "-h", run: help },
@@ -106,6 +107,7 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     ("_host", "internal: the host process `open` spawns, whose arguments are a calling convention"),
     ("_ghost", "internal: the GUI-session host `open --gui` spawns; same convention, ACP instead of a PTY"),
     ("_cagent", "internal: khor's own claude ACP shim; the agent a claude GUI session runs (`cagent` module head)"),
+    ("_codexagent", "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)"),
     ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
@@ -707,6 +709,10 @@ fn takeover(rest: &[String]) -> Result<(), String> {
 
 fn cagent(_rest: &[String]) -> Result<(), String> {
     khor_node::cagent::cagent_main(Node::root_from_env())
+}
+
+fn codexagent(_rest: &[String]) -> Result<(), String> {
+    khor_node::codexagent::codexagent_main(Node::root_from_env())
 }
 
 fn state(rest: &[String]) -> Result<(), String> {

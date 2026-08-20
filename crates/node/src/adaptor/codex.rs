@@ -156,6 +156,69 @@ impl Codex {
     }
 }
 
+impl Codex {
+    /// The rollout that belongs to this thread id — names carry the
+    /// uuid, so no file is opened to find it.
+    pub fn rollout_path(&self, uuid: &str) -> Option<PathBuf> {
+        self.rollouts().into_iter().map(|r| r.path).find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(uuid_in_name)
+                .is_some_and(|u| u == uuid)
+        })
+    }
+
+    /// The working directory the rollout's own first line records —
+    /// what a takeover resumes into, wherever the resumer stands.
+    pub fn recorded_cwd(&self, uuid: &str) -> Option<PathBuf> {
+        let meta = read_meta(&self.rollout_path(uuid)?)?;
+        meta.cwd.map(PathBuf::from)
+    }
+
+    /// The conversation as the rollout tells it, in the shared replay
+    /// shapes ([`super::claude::Utterance`] — one mapping, two vendors,
+    /// so both pasts read alike). `event_msg` lines carry the words
+    /// (`user_message` / `agent_message`); tool acts are the
+    /// `response_item` call lines. Reasoning is encrypted in the file
+    /// and stays unread.
+    pub fn transcript(&self, uuid: &str) -> Result<Vec<super::claude::Utterance>, String> {
+        use super::claude::Utterance;
+        use std::io::BufRead;
+        let path = self
+            .rollout_path(uuid)
+            .ok_or_else(|| khor_catalog::msg::takeover_no_record(uuid))?;
+        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for line in std::io::BufReader::new(file).lines() {
+            let Ok(line) = line else { break };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            match v["type"].as_str() {
+                Some("event_msg") => {
+                    let p = &v["payload"];
+                    match (p["type"].as_str(), p["message"].as_str()) {
+                        (Some("user_message"), Some(m)) => out.push(Utterance::User(m.to_owned())),
+                        (Some("agent_message"), Some(m)) => out.push(Utterance::Agent(m.to_owned())),
+                        _ => {}
+                    }
+                }
+                Some("response_item") => {
+                    let p = &v["payload"];
+                    if matches!(
+                        p["type"].as_str(),
+                        Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
+                    ) {
+                        if let Some(name) = p["name"].as_str() {
+                            out.push(Utterance::Tool(name.to_owned()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// This vendor's name, which is also the category its rows carry — and,
 /// since `crate::usage`, the category its spending carries too. Named
 /// once for the reason [`super::claude::VENDOR`] gives: two spellings of

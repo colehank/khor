@@ -166,6 +166,7 @@ pub fn main_if_host(root: std::path::PathBuf) {
         // host must also be able to *be* the agent it spawns, for the
         // same current_exe reason the two arms above exist.
         Some("_cagent") => crate::cagent::cagent_main(root.clone()),
+        Some("_codexagent") => crate::codexagent::codexagent_main(root.clone()),
         // khor's verbs as an agent's tools (docs/AGENT.md). **Not an
         // internal `_word`, and here anyway**: the scheduler's MCP
         // config names `self_exe()`, which in a dev bridge is `bridge`

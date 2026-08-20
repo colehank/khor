@@ -505,14 +505,35 @@ pub fn takeover_term(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.takeover_term(&SessionId(id.to_owned()))
 }
 
-/// Opens a fresh claude session where the wizard pointed (会话身份批B:
-/// 建 session 四字段 — 目录、智能体、形式、名字; claude only this
-/// batch). The two forms are the user ruling's two channels: `chat`
-/// hosts khor's own claude shim behind the GUI host (`_cagent` — zero
-/// dependencies, the skin ruling), `term` hosts the claude TUI. Either
-/// way the session is born standing in the chosen directory, and its
-/// row id is claude's own uuid (chat) or a khor mint (term).
-pub fn open_session(root: &Path, dir: &str, title: &str, form: &str) -> Result<String, String> {
+/// Opens a fresh agent session where the wizard pointed (会话身份批B:
+/// 建 session 四字段 — 目录、智能体、形式、名字). The two forms are the
+/// user ruling's two channels: `chat` hosts khor's own vendor shim
+/// behind the GUI host (`_cagent` / `_codexagent` — zero dependencies,
+/// the skin ruling), `term` hosts the vendor's TUI. Either way the
+/// session is born standing in the chosen directory, and its row id is
+/// the vendor's own uuid (chat) or a khor mint (term).
+///
+/// `agent` is the wizard's 智能体 answer: claude (or blank — every
+/// caller older than 批8) or codex. Codex is chat-only this batch: its
+/// TUI has no probed way to be named before it exists (`--session-id`
+/// has no codex twin), and a row khor cannot pre-name is the one kind
+/// it cannot take over.
+pub fn open_session(
+    root: &Path,
+    dir: &str,
+    title: &str,
+    form: &str,
+    agent: &str,
+) -> Result<String, String> {
+    match agent {
+        "" | khor_node::adaptor::claude::VENDOR => {}
+        khor_node::adaptor::codex::VENDOR => {
+            if form != "chat" {
+                return Err(khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY.into());
+            }
+        }
+        other => return Err(khor_catalog::msg::wizard_unknown_agent(other)),
+    }
     let n = open(root)?;
     let home = std::env::home_dir();
     let path = match dir.trim() {
@@ -528,21 +549,26 @@ pub fn open_session(root: &Path, dir: &str, title: &str, form: &str) -> Result<S
     let title = if title.trim().is_empty() {
         path.file_name()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "claude".to_owned())
+            .unwrap_or_else(|| if agent.is_empty() { "claude".to_owned() } else { agent.to_owned() })
     } else {
         title.trim().to_owned()
     };
     match form {
         "chat" => {
             let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
+            // The wizard's 智能体 field, passed rather than assumed
+            // downstream — this is the line the old comment promised
+            // would change the day there were two.
+            let (shim, vendor) = if agent == khor_node::adaptor::codex::VENDOR {
+                ("_codexagent", khor_node::adaptor::codex::VENDOR)
+            } else {
+                ("_cagent", khor_node::adaptor::claude::VENDOR)
+            };
             let id = n.open_gui_at(
                 &path,
                 &title,
-                &[exe.display().to_string(), "_cagent".into()],
-                // The wizard's 智能体 field. One vendor today, and it
-                // is still passed rather than assumed downstream: the
-                // day there are two, this line is the one that changes.
-                Some(khor_node::adaptor::claude::VENDOR),
+                &[exe.display().to_string(), shim.into()],
+                Some(vendor),
                 false,
             )?;
             Ok(id.0)

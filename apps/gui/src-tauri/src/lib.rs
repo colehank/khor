@@ -260,15 +260,22 @@ fn takeover_term(id: String) -> Result<(), String> {
     khor_gui_core::takeover_term(&Node::root_from_env(), &id)
 }
 
-/// The wizard's door (会话身份批B): a fresh claude session, born in the
-/// chosen directory, as a conversation (`chat`) or a terminal (`term`).
+/// The wizard's door (会话身份批B): a fresh agent session, born in the
+/// chosen directory, as a conversation (`chat`) or a terminal (`term`);
+/// `agent` is the wizard's 智能体 answer (claude when absent).
 #[tauri::command]
-fn open_session(dir: String, title: Option<String>, form: String) -> Result<String, String> {
+fn open_session(
+    dir: String,
+    title: Option<String>,
+    form: String,
+    agent: Option<String>,
+) -> Result<String, String> {
     khor_gui_core::open_session(
         &Node::root_from_env(),
         &dir,
         title.as_deref().unwrap_or(""),
         &form,
+        agent.as_deref().unwrap_or(""),
     )
 }
 

@@ -243,6 +243,7 @@ fn handle(
             &arg("dir")?,
             &opt_str("title")?.unwrap_or_default(),
             &arg("form")?,
+            &opt_str("agent")?.unwrap_or_default(),
         )?),
         "invite" => to_json(&khor_gui_core::invite(root)?),
         "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
