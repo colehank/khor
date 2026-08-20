@@ -712,6 +712,16 @@ new-session = "新会话"
 new-session-dir = "目录"
 new-session-name = "名字"
 new-session-agent = "智能体"
+# Said under the 智能体 buttons **only when nothing is registered and
+# the registry really answered** (批⑥). Without it the open position is
+# invisible to anyone who never opens a terminal: two buttons look like
+# the whole world, and the one thing they cannot guess is that there is
+# a way to add a third.
+#
+# Not shown while the answer is still coming, and not shown when it
+# failed — "you have none" and "we could not ask" are different facts,
+# and the second one has its own line.
+new-session-more-agents = "别的 agent 用 khor agents add 接进来"
 chat-readonly = "只读——它正在自己的终端里跑"
 takeover = "接管"
 takeover-busy = "它正忙,接管会打断这一轮;那边的终端会结束,对话从这里继续"

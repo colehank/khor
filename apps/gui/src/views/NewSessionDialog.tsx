@@ -49,6 +49,12 @@ export function NewSessionDialog({
   const [form, setForm] = useState<"chat" | "term">("chat");
   const [agent, setAgent] = useState("claude");
   const [known, setKnown] = useState<AgentRow[]>([]);
+  // **Whether the registry answered**, which is not the same as it
+  // being empty. Without this bit the dialog paints "you have not
+  // registered any" during the moment before the answer arrives —
+  // an empty list and an unanswered question look identical, and only
+  // one of them is a fact about this person.
+  const [listed, setListed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
 
@@ -63,11 +69,16 @@ export function NewSessionDialog({
     setForm("chat");
     setAgent("claude");
     setKnown([]);
+    setListed(false);
     setError(null);
     setOpening(false);
     let live = true;
     fetchAgents()
-      .then((rows) => live && setKnown(rows))
+      .then((rows) => {
+        if (!live) return;
+        setKnown(rows);
+        setListed(true);
+      })
       // **A registry that could not be read is not an empty registry.**
       // Swallowing this would paint "you have registered nothing",
       // which is a different fact with a different next step — and the
@@ -147,6 +158,15 @@ export function NewSessionDialog({
                 </Button>
               ))}
             </div>
+            {listed && known.length === 0 && (
+              // Only once the registry has answered that it is empty.
+              // The open position is otherwise invisible to anyone who
+              // never opens a terminal: two buttons look like the whole
+              // world, and a third is the one thing they cannot guess.
+              <span data-new-session-more-agents className="text-xs text-muted-foreground">
+                {gui.new_session_more_agents}
+              </span>
+            )}
           </label>
           <div className="flex gap-1">
             <Button
