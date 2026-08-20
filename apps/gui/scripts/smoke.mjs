@@ -134,6 +134,7 @@ import {
   readdirSync,
   copyFileSync,
   chmodSync,
+  symlinkSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -142,9 +143,50 @@ import { chromium } from "playwright-core";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
-const KHOR = join(repo, "target/debug/khor");
-const BRIDGE = join(repo, "target/debug/bridge");
+// **What this run tests is a snapshot, never the live tree.** Both faces
+// of the same hazard have been measured on this machine:
+//
+// - a `cargo build` from another lane replaces `target/debug/khor` mid
+//   run, and the serve says so out loud (「磁盘上的 khor 换代」) and
+//   restarts itself under the assertions;
+// - vite serves `apps/gui/src` **live**, so another lane saving a
+//   component hot-reloads the page the browser is halfway through —
+//   and that one leaves no message at all. It reads as a random
+//   assertion failing on a page that came back half-drawn, which is
+//   the harder of the two to recognise because nothing announces it.
+//
+// So the binaries are copied and the frontend source is copied, and
+// everything below runs out of this trip's own directory. `node_modules`
+// is symlinked rather than copied: it is large, it is not what anybody
+// edits mid-run, and a link to it still resolves from the snapshot.
+const BUILT_KHOR = join(repo, "target/debug/khor");
+const BUILT_BRIDGE = join(repo, "target/debug/bridge");
 const SCRATCH = process.env.SMOKE_DIR ?? join(repo, "target/gui-smoke");
+const RUN = join(SCRATCH, "run");
+const KHOR = join(RUN, "khor");
+const BRIDGE = join(RUN, "bridge");
+const GUI_RUN = join(RUN, "gui");
+/** What vite needs and nothing else — no `node_modules` (linked), no
+    `dist`, no rust crates.
+
+    The last entry is the one import in this app that reaches outside
+    `src` (`KhorMark`'s glyph, which lives with the tauri icons). It is
+    named rather than solved by copying `src-tauri` wholesale, which is
+    a rust crate with build output in it.
+
+    **A new escaping import would break the snapshot, and it says so.**
+    This one was found exactly that way: the first assertion came back
+    inside a minute with `the rail has nothing … console: 500`, and the
+    dev server's log named the file and the line. That is the whole
+    reason the rail check is first. */
+const GUI_PARTS = [
+  "index.html",
+  "vite.config.ts",
+  "tsconfig.json",
+  "package.json",
+  "src",
+  "src-tauri/icons/src/mandala-glass.svg",
+];
 const A = join(SCRATCH, "alpha");
 const B = join(SCRATCH, "beta");
 const G = join(SCRATCH, "gamma");
@@ -180,10 +222,10 @@ const envB = { ...homeEnv(B, "beta"), KHOR_TMUX_SOCKET: TMUX_SOCK, KHOR_CLAUDE: 
 const envG = homeEnv(G, "gamma");
 
 const children = [];
-function run(cmd, args, env, name) {
+function run(cmd, args, env, name, cwd) {
   // detached = own process group, so cleanup can kill the whole tree —
   // killing an npx wrapper alone orphans the real server underneath.
-  const c = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const c = spawn(cmd, args, { env, cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
   c.stderr.on("data", (d) => process.stderr.write(`[${name}] ${d}`));
   children.push(c);
   return c;
@@ -480,6 +522,26 @@ try {
   killStrays();
   rmSync(SCRATCH, { recursive: true, force: true });
   mkdirSync(SCRATCH, { recursive: true });
+
+  // Take the snapshot before anything is started, so every process
+  // below is looking at this trip's own copy (see the constants).
+  mkdirSync(GUI_RUN, { recursive: true });
+  for (const [built, here] of [
+    [BUILT_KHOR, KHOR],
+    [BUILT_BRIDGE, BRIDGE],
+  ]) {
+    if (!existsSync(built)) {
+      throw new Error(`${built} is not built — cargo build -p khor-cli -p khor-gui-core --bins`);
+    }
+    copyFileSync(built, here);
+    chmodSync(here, 0o755);
+  }
+  for (const part of GUI_PARTS) {
+    const to = join(GUI_RUN, part);
+    mkdirSync(dirname(to), { recursive: true });
+    execFileSync("/bin/cp", ["-R", join(gui, part), to]);
+  }
+  symlinkSync(join(gui, "node_modules"), join(GUI_RUN, "node_modules"));
   // The fake claude the shim drives in 25c: canned stream-json, the
   // same frames the real probes recorded (cli/tests/cagent.rs's twin).
   writeFileSync(
@@ -610,7 +672,13 @@ for line in sys.stdin:
     return bridgeReady;
   });
   await until("beta endpoint.json", 15_000, () => existsSync(join(B, ".khor/endpoint.json")));
-  const vite = run("npx", ["vite", "--port", String(VITE_PORT), "--strictPort"], { ...process.env, PATH: process.env.PATH }, "vite");
+  const vite = run(
+    "npx",
+    ["vite", "--port", String(VITE_PORT), "--strictPort"],
+    { ...process.env, PATH: process.env.PATH },
+    "vite",
+    GUI_RUN,
+  );
   vite.stdout.on("data", () => {});
   await until("vite up", 30_000, async () => {
     const r = await fetch(`http://localhost:${VITE_PORT}/`).catch(() => null);
@@ -621,6 +689,17 @@ for line in sys.stdin:
   const page = await browser.newPage({ viewport: { width: 1080, height: 720 } });
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
+  // **`pageerror` is not everything the page can tell you.** It fires
+  // for uncaught exceptions and nothing else — a module that failed to
+  // load, a rejected promise nobody caught, a React warning: all of
+  // those reach the console and none of them reach that handler. Kept
+  // separate from `pageErrors` on purpose: this one is a hint for a
+  // failure message, not a gate, because the console carries things a
+  // healthy run is allowed to say.
+  const consoleErrors = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") consoleErrors.push(m.text().slice(0, 300));
+  });
   await page.goto(`http://localhost:${VITE_PORT}/?bridge=${BRIDGE_PORT}`);
 
   const listPane = page.locator("[data-list]");
@@ -658,7 +737,8 @@ for line in sys.stdin:
     if (missing.length) {
       throw new Error(
         `the rail has ${got.length ? got.join(", ") : "nothing"}, missing ${missing.join(", ")}` +
-          (pageErrors.length ? ` — the page threw: ${pageErrors.join(" | ")}` : " — no page error"),
+          (pageErrors.length ? ` — the page threw: ${pageErrors.join(" | ")}` : " — no page error") +
+          (consoleErrors.length ? ` — console: ${consoleErrors.join(" | ")}` : ""),
       );
     }
     return true;
