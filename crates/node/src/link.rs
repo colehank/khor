@@ -234,6 +234,21 @@ impl Node {
                     }
                 }
                 _ = ticker.tick() => {
+                    // A kept serve whose keeper is gone must leave: an
+                    // orphan holds the endpoint key, so the guardian's
+                    // next serve would knock it off (one live endpoint
+                    // per key) and the pid file already points at a
+                    // corpse. Whatever killed the keeper — 2026-08-20
+                    // it died silently on an NFS binary swap (#76) —
+                    // every path converges on "the shop stands empty
+                    // for the next keeper". Kept serves only: a GUI or
+                    // foreground serve is init's child by design.
+                    if crate::keeper::is_inner() && unsafe { libc::getppid() } == 1 {
+                        let stamp =
+                            jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                        eprintln!("{}", msg::serve_orphaned(&stamp));
+                        std::process::exit(1);
+                    }
                     // Off the accept loop: an unreachable device stalls a
                     // visit for DIAL_TIMEOUT, and a serve that goes deaf
                     // for that long fails everyone else. Skip when the

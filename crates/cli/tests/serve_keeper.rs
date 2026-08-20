@@ -198,3 +198,41 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     });
     let _ = fs::remove_dir_all(&home);
 }
+
+#[test]
+fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
+    // 2026-08-20 (#76): a keeper died silently on an NFS binary swap
+    // and its inner squatted for an hour — healthy-looking, holding
+    // the endpoint key, in the way of every next serve. The inner must
+    // notice it was orphaned (ppid becomes 1) and leave on its own.
+    let home = root("orphan");
+    let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
+        .arg("serve")
+        .env("KHOR_HOME", &home)
+        .env("KHOR_NAME", "box")
+        .env_remove("KHOR_SESSION")
+        .stderr(fs::File::create(home.join("serve.log")).unwrap())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let _reap = Reaper(keeper.id());
+    wait_for("the serve to stand up", 20, || inner_pid(&home).is_some());
+    let inner = inner_pid(&home).unwrap();
+
+    // The keeper dies the way it did in the field: no forwarding, no
+    // last words — straight to KILL.
+    Command::new("kill").args(["-9", &keeper.id().to_string()]).status().unwrap();
+    keeper.wait().unwrap();
+
+    // The inner notices on its own tick and leaves — nobody signals it.
+    wait_for("the orphaned inner to leave by itself", 15, || !alive(inner));
+    let mut said = String::new();
+    fs::File::open(home.join("serve.log")).unwrap().read_to_string(&mut said).unwrap();
+    let expected = {
+        let m = khor_catalog::msg::serve_orphaned("\u{1}");
+        m.split('\u{1}').next_back().unwrap().trim_start_matches(']').trim_start().to_owned()
+    };
+    assert!(said.contains(&expected), "the departure must be named: {said}");
+
+    let _ = fs::remove_dir_all(&home);
+}
