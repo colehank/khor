@@ -75,6 +75,11 @@ pub enum ChatFrame {
     /// pane that only watched the answer would paint "nothing was said
     /// here" for an agent whose past simply cannot be fetched.
     Agent { name: Option<String>, replays: bool },
+    /// An op this face sent that did not take effect
+    /// (`khor_node::gui_host::GuiNote::Refused`), and why — as a
+    /// **key**, looked up at the last moment like every other word.
+    /// Sent to the face that sent the op and to nobody else.
+    Refused { why: String },
 }
 
 /// What a poll answers: the frames since the cursor, the next cursor,
@@ -124,6 +129,7 @@ fn frame_of(note: GuiNote) -> ChatFrame {
         GuiNote::Turn(stop) => ChatFrame::Turn { stop },
         GuiNote::Gone => ChatFrame::Gone,
         GuiNote::Agent { name, replays } => ChatFrame::Agent { name, replays },
+        GuiNote::Refused { why } => ChatFrame::Refused { why },
     }
 }
 

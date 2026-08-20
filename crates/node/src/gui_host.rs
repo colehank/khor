@@ -149,6 +149,33 @@ pub enum GuiNote {
     /// is a lie. Told rather than inferred: the capability is on the
     /// handshake, which happened before any face existed.
     Agent { name: Option<String>, replays: bool },
+    /// An op that did not take effect, told to **the face that sent it
+    /// and to nobody else**. Tail-appended.
+    ///
+    /// The two refusals this covers used to be a bare `continue` and a
+    /// bare no-op: a face said something and the host dropped it in
+    /// silence, so the screen agreed with the person while nothing had
+    /// happened. One face cannot reach either (its own `inTurn` blocks
+    /// a second line), but **two faces on one session can**, and there
+    /// the loss compounds: the dropped `Say` never produces a `Turn`,
+    /// so the stop that follows finds no turn and is dropped too, and
+    /// the box never comes back.
+    ///
+    /// `why` is a **key, not a sentence**: keys travel the wire and
+    /// words are looked up at the last moment (`zh.toml`'s own rule).
+    /// A sentence here would freeze today's wording into the protocol
+    /// and reach a face that cannot translate it.
+    Refused { why: String },
+}
+
+/// The two keys [`GuiNote::Refused`] travels under. Constants rather
+/// than literals at the two call sites: the face matches on them, and a
+/// typo on either end is a refusal that arrives wearing no reason.
+pub mod refused {
+    /// A turn is already running, so the line did not go in.
+    pub const TURN_IN_FLIGHT: &str = "turn-in-flight";
+    /// There is no turn to stop.
+    pub const NO_TURN: &str = "no-turn";
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -525,10 +552,18 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     }
                 }
                 op = ops_rx.recv() => match op {
-                    Some((_, GuiOp::Say(text))) => {
+                    Some((who, GuiOp::Say(text))) => {
                         if in_turn.is_some() {
                             // One turn at a time; a queue would answer
                             // "who said what when" wrongly on every face.
+                            // **Said back, though.** Dropping it in
+                            // silence let a second face paint a line
+                            // that never went anywhere — and then its
+                            // stop found no turn and was dropped too.
+                            fanout.send_to(
+                                who,
+                                &GuiNote::Refused { why: refused::TURN_IN_FLIGHT.to_owned() },
+                            );
                             continue;
                         }
                         let _ = live.report(&id, State::Busy, Source::Reported);
@@ -561,7 +596,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                             let _ = live.report(&id, State::Busy, Source::Reported);
                         }
                     }
-                    Some((_, GuiOp::Stop)) => {
+                    Some((who, GuiOp::Stop)) => {
                         // The cancel goes to the agent, not to the task:
                         // aborting the join handle here would leave the
                         // agent still working with nobody reading it.
@@ -569,6 +604,15 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         // its own `Turn` note.
                         if in_turn.is_some() {
                             let _ = handle.cancel();
+                        } else {
+                            // Nothing to stop. A face that got here is
+                            // holding a stop button over a turn that is
+                            // already over, and silence would leave it
+                            // holding it.
+                            fanout.send_to(
+                                who,
+                                &GuiNote::Refused { why: refused::NO_TURN.to_owned() },
+                            );
                         }
                     }
                     Some((_, GuiOp::Close)) => break None,

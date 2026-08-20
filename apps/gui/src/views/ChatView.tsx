@@ -201,6 +201,17 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     }
     return false;
   }
+  if (frame.kind === "refused") {
+    // A line of the conversation's own, because that is where the
+    // person is looking when it happens — and it says which of the two
+    // it was: one means wait, the other means the turn is already over.
+    const said =
+      frame.why === "turn-in-flight"
+        ? gui.chat_refused_turn_in_flight
+        : gui.chat_refused_no_turn;
+    out.push({ who: "sys", text: said });
+    return true;
+  }
   if (frame.kind === "turn") {
     // 中断 gets a line; the calm endings are the list row's to say.
     if (frame.stop !== "EndTurn" && frame.stop !== "Cancelled") {
@@ -304,6 +315,8 @@ export function ChatView({
   const box = useRef<HTMLTextAreaElement>(null);
   /** How long to wait before asking again, and the way to stop waiting. */
   const pace = useRef(IDLE_MS);
+  /** The last line handed to the host, until it says what became of it. */
+  const sent = useRef("");
   const pollNow = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -350,6 +363,32 @@ export function ChatView({
             // and what it types is dropped (one turn at a time is the
             // host's rule — `gui_host` `GuiNote::Turning`).
             if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
+            // A refused line never reached the agent, so this face is
+            // not in a turn — and the words are given back rather than
+            // retyped. Only into an empty box: whatever was typed in
+            // the meantime is newer than this and outranks it.
+            if (batch.frames.some((f) => f.kind === "refused")) {
+              setInTurn(false);
+              const back = sent.current;
+              sent.current = "";
+              if (back) {
+                // **Taken back off the screen.** It was painted the
+                // moment it was typed, as though it had gone; it did
+                // not go, and leaving it there is the transcript
+                // claiming this person said something they did not.
+                // Only the tail, and only if it is still that line —
+                // anything after it belongs to somebody else's turn.
+                setPaint((prev) => {
+                  const last = prev.live[prev.live.length - 1];
+                  if (!last || last.who !== "user" || last.text !== back) return prev;
+                  return { ...prev, live: prev.live.slice(0, -1) };
+                });
+                // And handed back, so it need not be retyped. Only into
+                // an empty box: whatever was typed since is newer than
+                // this and outranks it.
+                setText((now) => (now.trim() ? now : back));
+              }
+            }
             for (const f of batch.frames) {
               const list = commandsIn(f);
               if (list) setCommands(list);
@@ -445,6 +484,11 @@ export function ChatView({
     // same reason — saying happens now, so it goes after everything
     // that has arrived and before everything that has not.
     setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: line }] }));
+    // Kept until the host either takes it or refuses it: a refused line
+    // was painted here a moment ago as though it had gone, and handing
+    // it back is the difference between "it did not go in" and "it did
+    // not go in and you get to type it again".
+    sent.current = line;
     chatSay(id, line).catch(() => setInTurn(false));
   };
 

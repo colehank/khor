@@ -318,6 +318,7 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Turning => "Turning",
         GuiNote::Answered { .. } => "Answered",
         GuiNote::Agent { .. } => "Agent",
+        GuiNote::Refused { .. } => "Refused",
     }
 }
 
