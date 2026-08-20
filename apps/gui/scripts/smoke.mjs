@@ -391,6 +391,90 @@ function killStrays() {
   }
 }
 
+// Winding the run down, on every way out there is.
+//
+// **Three passes, and each one exists because the one before it cannot
+// see something.** `children` are this script's own, killed by process
+// group. `khor quit` reaches what khor started and this script never
+// held: a session host is detached by design — a session outliving the
+// app is the product working — so nothing in the loop above is its
+// parent. And the sweep at the end catches what was **born during the
+// two steps before it**: a `bridge _ghost` turned up after every run,
+// green ones included, with the birth time of the moment the run ended
+// — the app handing its sessions off on the way out, racing the sweep
+// that had already run. It does not listen on any port, so a check by
+// port never saw it; it dies on a plain TERM, so the signal was never
+// the problem. Hence the wait and the second look.
+let cleanedUp = false;
+async function cleanup() {
+  if (cleanedUp) return;
+  cleanedUp = true;
+  // Said out loud, because the run that most needs this to have
+  // happened is the one that was interrupted — and "did the cleanup
+  // even run" is otherwise unanswerable from the log.
+  process.stderr.write("smoke: winding down\n");
+  // **Children first, browser last, and the order is the fix.** The
+  // browser used to be closed first, and a `close()` that never
+  // resolved held everything behind it: measured on an interrupted run,
+  // which exited leaving the bridge and vite alive on their ports.
+  // Ranked by what survives this process — the detached ones hold
+  // ports and memory on a machine other people are using, while the
+  // browser is playwright's own child and the least of the problem.
+  for (const c of children) {
+    try {
+      process.kill(-c.pid, "SIGTERM");
+    } catch {}
+  }
+  await new Promise((r) => setTimeout(r, 500));
+  for (const c of children) {
+    try {
+      process.kill(-c.pid, "SIGKILL");
+    } catch {}
+  }
+  // Ask each home to wind itself down the way a person would, rather
+  // than hunting its processes: `khor quit` stops that home's serve and
+  // every session host it recorded a pid for, by pid — which is the
+  // house rule for stopping anything (账本: 后台进程怎么起就怎么收).
+  for (const [dir, env] of [
+    [A, envA],
+    [B, envB],
+    [G, envG],
+  ]) {
+    if (!existsSync(dir)) continue;
+    try {
+      execFileSync(KHOR, ["quit"], { env, timeout: 15_000, stdio: "ignore" });
+    } catch {}
+  }
+  try {
+    // Quiet: this run may never have started a tmux server, and its
+    // complaint about a missing socket on the way out reads like
+    // something went wrong.
+    execFileSync("tmux", ["-L", TMUX_SOCK, "kill-server"], { timeout: 5_000, stdio: "ignore" });
+  } catch {}
+  killStrays();
+  await new Promise((r) => setTimeout(r, 700));
+  killStrays();
+  // On a leash: everything that matters is already down, so a browser
+  // that will not close must not keep this process alive.
+  if (browser) {
+    await Promise.race([
+      browser.close().catch(() => {}),
+      new Promise((r) => setTimeout(r, 3_000)),
+    ]);
+  }
+}
+
+// **A run that is interrupted is the run most likely to leave things
+// behind**, and `finally` does not cover it: node's default handler for
+// these signals ends the process without unwinding. Ctrl-C on a smoke
+// that is twenty assertions deep used to leave a serve, a bridge and a
+// browser running on a machine other people are working on.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    void cleanup().finally(() => process.exit(130));
+  });
+}
+
 let browser;
 try {
   killStrays();
@@ -547,6 +631,38 @@ for line in sys.stdin:
       (await listPane.getAttribute("aria-label")) === (await railItem(tab).getAttribute("aria-label")),
     );
   };
+
+  // 0) **The app came up whole.** First assertion in the file, before
+  //    anything is clicked, because everything after it reads one piece
+  //    of a screen that is assumed to exist: a face that mounted half of
+  //    itself fails later, somewhere unrelated, as "this button is
+  //    missing" — and the reader goes looking for the button.
+  //
+  //    The four landings are the cheapest whole-app fact there is (they
+  //    are `LANDINGS` in `App.tsx`, all present from the first day, none
+  //    of them conditional). If they are all there, React mounted and
+  //    the catalog resolved.
+  //
+  //    **The page's own exceptions ride the failure message.** They are
+  //    otherwise only read at the very end of the run, which for a crash
+  //    at mount is four thousand lines too late — and a run that fails
+  //    an assertion first never gets there at all. An empty rail plus a
+  //    thrown error is a crash; an empty rail alone is a slow or absent
+  //    backend, and those two send a reader to opposite ends of the
+  //    tree.
+  await until("all four landings on the rail", 30_000, async () => {
+    const got = await page
+      .locator("[data-rail-item][data-landing]")
+      .evaluateAll((els) => els.map((e) => e.dataset.landing));
+    const missing = ["sessions", "devices", "files", "browser"].filter((k) => !got.includes(k));
+    if (missing.length) {
+      throw new Error(
+        `the rail has ${got.length ? got.join(", ") : "nothing"}, missing ${missing.join(", ")}` +
+          (pageErrors.length ? ` — the page threw: ${pageErrors.join(" | ")}` : " — no page error"),
+      );
+    }
+    return true;
+  });
 
   // 1) joining from the GUI. The control first: alpha is not in beta's
   //    table, so whatever makes it appear below can only be the join.
@@ -4159,24 +4275,5 @@ for line in sys.stdin:
 
   console.log("gui smoke: all green");
 } finally {
-  try {
-    execFileSync("tmux", ["-L", TMUX_SOCK, "kill-server"], { timeout: 5_000 });
-  } catch {}
-  if (browser) await browser.close().catch(() => {});
-  for (const c of children) {
-    try {
-      process.kill(-c.pid, "SIGTERM");
-    } catch {}
-  }
-  await new Promise((r) => setTimeout(r, 500));
-  for (const c of children) {
-    try {
-      process.kill(-c.pid, "SIGKILL");
-    } catch {}
-  }
-  // The detached ones are nobody's child, so the loops above cannot see
-  // them. Swept here too, not only on the way in: a run that leaves
-  // hosts alive leaves them holding ports and memory for however long
-  // it is until somebody runs the suite again.
-  killStrays();
+  await cleanup();
 }
