@@ -109,6 +109,10 @@ function keyBytes(e: React.KeyboardEvent): string | null {
     one surface where a person is watching characters appear. */
 const LIVE_MS = 50;
 
+/** …and how often while somebody is reading back through history, where
+    nothing moves unless output arrives. */
+const READING_MS = 250;
+
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -145,6 +149,20 @@ export function TerminalPane({ id }: { id: string }) {
   const hidden = useHidden();
   const pace = useRef(LIVE_MS);
   const pollNow = useRef<() => void>(() => {});
+  // How many lines above the live screen this pane is looking, and how
+  // much history there is to look at. Refs as well as state: the poll
+  // loop reads them at every tick and must not be rebuilt to see a new
+  // value (that would re-attach the terminal).
+  const [back, setBackAt] = useState(0);
+  const [freshBelow, setFreshBelow] = useState(false);
+  const backRef = useRef(0);
+  const depthRef = useRef(0);
+  const setBack = useCallback((n: number) => {
+    const at = Math.max(0, Math.min(n, depthRef.current));
+    backRef.current = at;
+    setBackAt(at);
+    if (at === 0) setFreshBelow(false);
+  }, []);
 
   const fit = useCallback((): { cols: number; rows: number } => {
     const box = boxRef.current;
@@ -172,9 +190,31 @@ export function TerminalPane({ id }: { id: string }) {
 
     const tick = () => {
       if (stopped) return;
-      termPoll(id, seqRef.current)
+      termPoll(id, seqRef.current, backRef.current)
         .then((b) => {
           if (stopped) return;
+          // **Holding the reader's place while output keeps arriving.**
+          // The view is an offset from the bottom, so every line that
+          // scrolls off moves the content under a fixed offset by one.
+          // Growing history by the same amount puts it back.
+          //
+          // It holds until the buffer is full. After that `depth` stops
+          // growing — lines fall off the top as fast as they arrive —
+          // and a program still printing will slide the view under
+          // somebody reading it. Anchoring properly needs the emulator
+          // to name a line, and `vt100` has no such name.
+          const grew = b.depth - depthRef.current;
+          depthRef.current = b.depth;
+          if (backRef.current > 0) {
+            if (grew > 0) {
+              setBack(b.back + grew);
+              setFreshBelow(true);
+            } else if (b.back !== backRef.current) {
+              // Clamped: there was less history than was asked for, and
+              // the answer is where it really landed.
+              setBack(b.back);
+            }
+          }
           if (b.screen) {
             setScreen(b.screen);
             seqRef.current = b.seq;
@@ -235,11 +275,17 @@ export function TerminalPane({ id }: { id: string }) {
   // single poll answers with the current one, so skipping a hundred
   // polls costs nothing but freshness.
   useEffect(() => {
-    const next = hidden ? HIDDEN_MS : LIVE_MS;
+    // Reading history is not watching output: the view up there only
+    // changes when something arrives, and while scrolled back every
+    // poll ships a whole grid (the answer depends on where the reader
+    // is standing, so it cannot be skipped by sequence alone). Coming
+    // back to the bottom is a *shorter* pace and takes effect at once,
+    // by the same rule the conversation uses.
+    const next = hidden ? HIDDEN_MS : back > 0 ? READING_MS : LIVE_MS;
     const shorter = next < pace.current;
     pace.current = next;
     if (shorter) pollNow.current();
-  }, [hidden]);
+  }, [hidden, back]);
 
   // Files dropped on this pane land as shell-quoted paths at the cursor
   // (iTerm2's behaviour, 批④).
@@ -292,10 +338,33 @@ export function TerminalPane({ id }: { id: string }) {
     };
   }, [id]);
 
+  // A wheel moves through history, in lines rather than pixels — the
+  // grid has no pixels to scroll, it is repainted from wherever the
+  // reader is standing.
+  const onWheel = (e: React.WheelEvent) => {
+    const lines = Math.round(e.deltaY / (cellRef.current.h || 16));
+    if (lines === 0) return;
+    setBack(backRef.current - lines);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // **Shift+Page is this app's, plain Page is the program's.** Full
+    // screen programs use PageUp for their own paging, and a terminal
+    // that ate it would break `less` to add a feature. Shift is the
+    // shared convention for "I mean the terminal, not what is in it".
+    if (e.shiftKey && (e.key === "PageUp" || e.key === "PageDown")) {
+      e.preventDefault();
+      const page = Math.max(1, sentRef.current.rows - 1);
+      setBack(backRef.current + (e.key === "PageUp" ? page : -page));
+      return;
+    }
     const bytes = keyBytes(e);
     if (bytes === null) return;
     e.preventDefault();
+    // Typing puts the reader back at the live screen: the answer to
+    // what they type appears there, and a terminal that left them in
+    // the past would look like it had ignored them.
+    setBack(0);
     termKey(id, bytes).catch(() => {});
   };
 
@@ -347,6 +416,7 @@ export function TerminalPane({ id }: { id: string }) {
       data-terminal
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onWheel={onWheel}
       onCopy={onCopy}
       onPaste={onPaste}
       ref={boxRef}
@@ -390,6 +460,24 @@ export function TerminalPane({ id }: { id: string }) {
             </div>
           )}
         </div>
+      )}
+      {/* The way back down, and the only sign that anything arrived
+          while the reader was up here. Two sentences on one control:
+          "something came in" and "you are simply not at the bottom" are
+          different reasons to press it, and one word for both would
+          make the arrival silent. It is the same pair the conversation
+          wears, from the same two words. Absent at the bottom, which is
+          what lets it go to zero. */}
+      {back > 0 && (
+        <button
+          type="button"
+          data-term-bottom
+          data-fresh={freshBelow}
+          onClick={() => setBack(0)}
+          className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-popover px-3 py-1 text-xs shadow-md"
+        >
+          {freshBelow ? gui.new_below : gui.to_bottom}
+        </button>
       )}
       {screen?.lines.map((runs, row) => (
         <div key={row} className="whitespace-pre" style={{ height: ch }}>

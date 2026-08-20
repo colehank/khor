@@ -3290,6 +3290,106 @@ for line in sys.stdin:
     throw new Error(`the copy changed more than the padding: ${JSON.stringify(copied)} vs ${JSON.stringify(padded)}`);
   }
 
+  // 24s) 回看 (批⑤): what scrolled past is still there, the reader
+  //      keeps their place, and there is a way back down.
+  //
+  //      **On a khor-hosted terminal, and that is not incidental.** The
+  //      panes above are tmux sessions, and tmux runs on the *alternate
+  //      screen* — which `vt100` gives no scrollback at all
+  //      (`Grid::new(size, 0)` for the alternate grid). That is the
+  //      right behaviour and matches every real terminal: you do not
+  //      scroll a terminal back into tmux, tmux has its own copy mode.
+  //      It is also exactly how the first draft of this section fooled
+  //      itself — it drove the tmux pane and read "nothing moved" as
+  //      the feature being broken. The negative half at the end pins
+  //      the tmux case so nobody later "fixes" it.
+  const sbRow = cli(envB, "open", "-d", "--title", "sbbox", "--", "cat").trim();
+  await until("the khor-hosted terminal in the list", 30_000, async () =>
+    (await page.locator(`[data-row="${sbRow}"]`).count()) === 1,
+  );
+  await page.locator(`[data-row="${sbRow}"] [data-row-open]`).click();
+  await until("its terminal open", 30_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  //      Two hundred numbered lines pasted into the `cat` it is running:
+  //      it echoes them, so the terminal has more history than screen —
+  //      the only state in which any of this means anything.
+  const sbLines = Array.from({ length: 200 }, (_, i) => `sb-line-${i + 1}`).join("\n") + "\n";
+  const pasteVia = async (id, text) =>
+    page.evaluate(
+      async ([port, sid, body]) => {
+        const r = await fetch(`http://127.0.0.1:${port}/term_paste`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: sid, text: body }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+      },
+      [BRIDGE_PORT, id, text],
+    );
+  await pasteVia(sbRow, sbLines);
+  const termText = () => page.locator("[data-terminal]").innerText();
+  //      Which of the block's lines are on screen, as numbers — asking
+  //      "does it contain sb-line-1" is how the first draft of this
+  //      fooled itself a second time: after four pages back the visible
+  //      lines were in the fifties, and a pattern written for one- and
+  //      two-digit numbers called that "no history".
+  const onScreen = async () =>
+    [...(await termText()).matchAll(/sb-line-(\d+)/g)].map((m) => Number(m[1]));
+  await until("the tail of the pasted block on screen", 20_000, async () =>
+    (await onScreen()).includes(200),
+  );
+  //      **The control for everything below**: the top of that block is
+  //      off the screen. Without it, "scrolling back showed an earlier
+  //      line" would also pass on a terminal that never scrolled.
+  const atBottom = await onScreen();
+  if (atBottom.includes(1)) {
+    throw new Error("probe dead: the whole block fits on screen, so there is nothing to scroll back to");
+  }
+  if ((await page.locator("[data-term-bottom]").count()) !== 0) {
+    throw new Error("probe dead: the way-back-down shows while the view is at the bottom");
+  }
+  await page.locator("[data-terminal]").click();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+PageUp");
+  await until("history above the live screen", 20_000, async () => {
+    const seen = await onScreen();
+    // Moved, and moved *upward*: the newest line is gone and what shows
+    // is older than anything that showed before.
+    return seen.length > 0 && !seen.includes(200) && Math.min(...seen) < Math.min(...atBottom);
+  });
+  await until("the way back down offered", 10_000, async () =>
+    (await page.locator("[data-term-bottom]").count()) === 1,
+  );
+  await page.locator("[data-term-bottom]").click();
+  await until("the live screen again, and the control gone", 20_000, async () => {
+    const seen = await onScreen();
+    return seen.includes(200) && (await page.locator("[data-term-bottom]").count()) === 0;
+  });
+  cli(envB, "close", sbRow);
+
+  //      …and the tmux pane has none of this, on purpose. Asserted so
+  //      that the difference stays a decision rather than becoming a
+  //      bug report — and proven live first, because "the control did
+  //      not appear" is also what a terminal that never got the key
+  //      would show.
+  await page.locator(`[data-title="pasteplain"] [data-row-open]`).click();
+  await until("the tmux pane's terminal", 20_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  await pasteVia(await page.locator('[data-title="pasteplain"]').getAttribute("data-row"), sbLines);
+  await until("the tmux pane holding the same block", 20_000, async () =>
+    (await termText()).includes("sb-line-200"),
+  );
+  await page.locator("[data-terminal]").click();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+PageUp");
+  await settle();
+  if ((await page.locator("[data-term-bottom]").count()) !== 0) {
+    throw new Error("a terminal on the alternate screen must not offer a scrollback it does not have");
+  }
+  if (!(await termText()).includes("sb-line-200")) {
+    throw new Error("the tmux pane's view moved — it has no history to move into");
+  }
+
   // 24p) 没人看的时候不轮询 (批⑤): a window in the background costs
   //      almost nothing, and comes back current at once.
   //

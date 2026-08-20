@@ -666,7 +666,7 @@ export function ChatView({
                 the same shape at a different stroke ratio the first time
                 somebody redrew it by eye (icons.tsx — one family). */}
             <IconBack className="-rotate-90" />
-            {fresh ? gui.chat_new_below : gui.chat_to_bottom}
+            {fresh ? gui.new_below : gui.to_bottom}
           </Button>
         </div>
       )}

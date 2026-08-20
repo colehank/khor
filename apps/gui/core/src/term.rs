@@ -13,6 +13,19 @@
 //! The emulation is `vt100`, the same engine the detector reads
 //! (`crates/detect`): one terminal model for both "what does it say" and
 //! "what does it look like", so they can never disagree.
+//!
+//! **Scrollback lives here, in the emulator, and dies with the
+//! attachment.** Closing the pane and opening it again builds a new
+//! parser with an empty history — measured against the alternative and
+//! chosen: what a person reaches back for is almost always the thing
+//! that just scrolled past, and that is inside this attachment.
+//!
+//! **The alternative is written down because it is on the shelf, not
+//! missing**: the host could keep the raw bytes and answer a request for
+//! history, which would survive re-attaching and follow you to another
+//! machine. It needs a new op, a wire format, and an answer to "how much
+//! does the host keep" — a different size of job, and deliberately not
+//! this one.
 
 use std::collections::HashMap;
 use std::net::TcpStream;
@@ -72,6 +85,15 @@ pub struct TermScreen {
     pub lines: Vec<Vec<TermRun>>,
 }
 
+/// How many lines above the screen this app keeps to look back at.
+///
+/// Two thousand at eighty columns is a couple of megabytes per open
+/// terminal, which a desktop does not notice; the half saved by keeping
+/// a thousand only ever shows up as "why is it gone" the one time
+/// somebody reaches for it (领队裁定 2026-08-21). A machine holding
+/// twenty terminals open at once would be the reason to revisit it.
+pub const SCROLLBACK: usize = 2000;
+
 /// What a poll answers: the current screen if it changed since the
 /// cursor (`None` if not — an unchanged terminal costs nothing to skip),
 /// the next cursor, and whether the attachment ended (a goodbye and a
@@ -82,6 +104,19 @@ pub struct TermBatch {
     #[ts(type = "number")]
     pub seq: u64,
     pub gone: bool,
+    /// Where the answer was actually taken from, in lines above the
+    /// live screen. **Not simply what was asked for**: a request to go
+    /// back further than there is history is clamped, and a face that
+    /// painted its own number instead of this one would show somebody
+    /// standing five hundred lines up in a terminal that has twenty.
+    #[ts(type = "number")]
+    pub back: usize,
+    /// How many lines of history exist right now. It grows as output
+    /// scrolls off, which is what lets a face hold its place: the view
+    /// is an offset from the *bottom*, so a line arriving moves the
+    /// content under a fixed offset by one.
+    #[ts(type = "number")]
+    pub depth: usize,
 }
 
 /// The attributes that make two cells one run. Not sent — it is the key
@@ -174,6 +209,15 @@ struct Term {
     gone: AtomicBool,
     /// Open count, for React's double-mount, exactly as chat explains.
     holds: AtomicUsize,
+    /// Where the last answer was taken from. **A screen is worth
+    /// sending when the view moved, and the sequence number cannot say
+    /// that** — coming back down to the live screen changes no bytes,
+    /// so a poll judged on `seq` alone answers "nothing new" and the
+    /// face goes on painting the history it was looking at. Kept per
+    /// attachment rather than per reader: with two panes at different
+    /// offsets it only means an extra screen now and then, which is
+    /// cheap and never wrong.
+    last_back: AtomicUsize,
 }
 
 /// A lock that outlives a panic on the other side. A reader thread that
@@ -264,10 +308,11 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
         conn: Mutex::new(conn),
-        parser: Mutex::new(vt100::Parser::new(rows, cols, 0)),
+        parser: Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK)),
         seq: AtomicU64::new(0),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
+        last_back: AtomicUsize::new(0),
     });
     let reader = term.clone();
     std::thread::spawn(move || {
@@ -288,7 +333,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                     let mut g = plock(&reader.parser);
                     if catch_unwind(AssertUnwindSafe(|| g.process(&buf[..n]))).is_err() {
                         let (rows, cols) = g.screen().size();
-                        *g = vt100::Parser::new(rows, cols, 0);
+                        *g = vt100::Parser::new(rows, cols, SCROLLBACK);
                         drop(g);
                         let mut conn = plock(&reader.conn);
                         let _ = write_frame(&mut *conn, &ClientOp::Resize { cols, rows });
@@ -314,11 +359,32 @@ fn term_of(id: &str) -> Result<Arc<Term>, String> {
 
 /// The screen since `since` — the whole current screen if the sequence
 /// moved, nothing if it did not. Instant either way.
-pub fn term_poll(id: &str, since: u64) -> Result<TermBatch, String> {
+pub fn term_poll(id: &str, since: u64, back: usize) -> Result<TermBatch, String> {
     let term = term_of(id)?;
     let seq = term.seq.load(Ordering::Relaxed);
-    let screen = (seq != since).then(|| snapshot(plock(&term.parser).screen()));
-    Ok(TermBatch { screen, seq, gone: term.gone.load(Ordering::Relaxed) })
+    // **One lock for the whole look, and the parser is left where it was
+    // found.** Reading history is done by moving the emulator's own view
+    // and reading the cells through it, so the move, the read and the
+    // move back happen without letting go — two panes on one session
+    // share this parser (the registry is keyed by session id), and a
+    // window left shifted is the other pane's screen scrolled away by
+    // somebody it never heard of.
+    let mut g = plock(&term.parser);
+    let screen = g.screen_mut();
+    // The clamp is the emulator's, so the depth is read by asking for
+    // more than can exist and seeing where it lands.
+    screen.set_scrollback(usize::MAX);
+    let depth = screen.scrollback();
+    screen.set_scrollback(back);
+    let at = screen.scrollback();
+    // A screen is worth sending when the terminal moved, whenever the
+    // reader is looking at history at all (the view then depends on
+    // where they stand, not only on what arrived), and on the one move
+    // that changes neither: coming back down to the live screen.
+    let moved = at != term.last_back.swap(at, Ordering::Relaxed);
+    let shot = (seq != since || at > 0 || moved).then(|| snapshot(g.screen()));
+    g.screen_mut().set_scrollback(0);
+    Ok(TermBatch { screen: shot, seq, gone: term.gone.load(Ordering::Relaxed), back: at, depth })
 }
 
 /// Keystrokes, as the bytes a terminal would send — the face translates

@@ -193,9 +193,14 @@ export const openWeb = (machine: string, url: string) =>
 export const termOpen = (id: string, cols: number, rows: number) =>
   call<null>("term_open", { id, cols, rows });
 /** The current screen if it changed since `since`, else none — a
-    terminal is a state, so a poll wants the latest whole screen. */
-export const termPoll = (id: string, since: number) =>
-  call<TermBatch>("term_poll", { id, since });
+    terminal is a state, so a poll wants the latest whole screen.
+
+    `back` is how many lines above the live screen to look, and the
+    answer carries where it actually landed: asking to go further than
+    there is history is clamped, and the clamped number is the one to
+    believe. */
+export const termPoll = (id: string, since: number, back: number) =>
+  call<TermBatch>("term_poll", { id, since, back });
 /** Keystrokes as the bytes a terminal sends; the face maps keys to
     bytes, the backend stays a pipe. */
 export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });

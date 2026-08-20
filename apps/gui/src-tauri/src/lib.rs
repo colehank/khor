@@ -170,8 +170,8 @@ fn term_open(id: String, cols: u16, rows: u16) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn term_poll(id: String, since: u64) -> Result<khor_gui_core::term::TermBatch, String> {
-    khor_gui_core::term::term_poll(&id, since)
+fn term_poll(id: String, since: u64, back: usize) -> Result<khor_gui_core::term::TermBatch, String> {
+    khor_gui_core::term::term_poll(&id, since, back)
 }
 
 #[tauri::command]

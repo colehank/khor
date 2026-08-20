@@ -879,8 +879,11 @@ chat-stop = "停止"
 # control that read the same in both would make the arrival silent.
 # Both vanish at the bottom, which is what makes this able to go to zero
 # (docs/UX.md 角标可归零).
-chat-to-bottom = "回到底部"
-chat-new-below = "下面有新的"
+# Named for what they say, not for the pane that first needed them: the
+# terminal's scrollback wears the same pair, and a key called `chat-*`
+# on a terminal is how a reader ends up grepping for the wrong surface.
+to-bottom = "回到底部"
+new-below = "下面有新的"
 # An op this face sent that the host did not take (#88). Two keys travel
 # the wire (`gui_host::refused`), two sentences live here — **not one
 # vague "没生效"**, because the two have different next steps: wait, or

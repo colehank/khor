@@ -208,7 +208,11 @@ fn handle(
             khor_gui_core::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
             Ok("null".to_owned())
         }
-        "term_poll" => to_json(&khor_gui_core::term::term_poll(&arg("id")?, num("since")?)?),
+        "term_poll" => to_json(&khor_gui_core::term::term_poll(
+            &arg("id")?,
+            num("since")?,
+            num("back")? as usize,
+        )?),
         "term_key" => {
             khor_gui_core::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())
