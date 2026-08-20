@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
+import { usePathCandidates } from "@/hooks/use-path-candidates";
 import { cn } from "@/lib/utils";
 import { axisOf, groupLabel, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -569,6 +570,43 @@ export default function App() {
     return [...byAxis.values()];
   }, [wordOptions, devices]);
 
+  // The files pane's box: one machine, then a path on it.
+  //
+  // **The chip is not a filter, and nothing here had to change for that
+  // to be true.** It is the same mechanism — a candidate committed
+  // becomes a chip — and only what `onToggle` does differs: this one
+  // *replaces*, because a path belongs to one disk and two machines at
+  // once is not a thing to browse. The pane's subject is `browse`, which
+  // is the state the pane already had; the chip is that state's face,
+  // not a copy of it.
+  const filesMachine = browse ? (devices.find((d) => d.id === browse.device) ?? null) : null;
+  const { entries: pathEntries, dir: pathDir } = usePathCandidates(
+    filesMachine?.name ?? null,
+    queries.files,
+  );
+  const filesAxes = useMemo<OmniAxis[]>(() => {
+    const machines: OmniAxis = {
+      key: "dev:",
+      label: gui.devices_tab,
+      candidates: devices.map((d) => ({ key: `dev:${d.name}`, label: d.name, face: d.face })),
+    };
+    if (!filesMachine) return [machines];
+    // Only directories complete: a file is where a path stops, so
+    // offering one as a segment to continue from would be offering a
+    // step that cannot be taken.
+    return [
+      machines,
+      {
+        key: "path:",
+        label: gui.files_tab,
+        role: "text",
+        candidates: pathEntries
+          .filter((e) => e.dir)
+          .map((e) => ({ key: `${pathDir}${e.name}/`, label: `${e.name}/` })),
+      },
+    ];
+  }, [devices, filesMachine, pathEntries, pathDir]);
+
   const chooseArrange = useCallback((key: string) => {
     setArrangeBy(key);
     // Kept even if storage refuses (private mode, quota): the choice
@@ -688,13 +726,44 @@ export default function App() {
         searchLabel={sessions ? gui.search_sessions : gui.search_devices}
         query={queries[landing]}
         onQuery={setQuery}
-        filterLabel={gui.filter}
+        filterLabel={sessions ? gui.filter : undefined}
         filter={
           sessions
             ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord }
+            : landing === "files"
+              ? {
+                  // No menu of its own — the files box has one axis and
+                  // it is navigation, not narrowing. The shape is the
+                  // filter's because the chip mechanism reads it; the
+                  // `filterLabel` below is what decides whether a menu
+                  // is drawn at all, and files passes none.
+                  options: [],
+                  chosen: browse && filesMachine ? [`dev:${filesMachine.name}`] : [],
+                  onToggle: (key) => {
+                    const name = key.slice("dev:".length);
+                    const found = devices.find((d) => d.name === name);
+                    if (!found || (browse && browse.device === found.id)) {
+                      // Taking the chip off is leaving the machine: back
+                      // to the landing, which is the pinned shortcuts.
+                      setBrowse(null);
+                      setScreen("list");
+                      return;
+                    }
+                    setBrowse({ device: found.id, path: "" });
+                    setScreen("detail");
+                  },
+                }
+              : undefined
+        }
+        axes={sessions ? sessionAxes : landing === "files" ? filesAxes : undefined}
+        onSubmit={
+          landing === "files" && browse
+            ? (text) => {
+                setBrowse({ device: browse.device, path: text });
+                setScreen("detail");
+              }
             : undefined
         }
-        axes={sessions ? sessionAxes : undefined}
         arrange={
           sessions
             ? {

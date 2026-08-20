@@ -53,6 +53,7 @@ export function PaneBar({
   onQuery,
   filter,
   axes,
+  onSubmit,
   actions,
   actionsLabel,
   filterLabel,
@@ -76,6 +77,9 @@ export function PaneBar({
    * hands both faces the same array.
    */
   axes?: OmniAxis[];
+  /** Enter on free text, where the pane can act on it (files opens the
+      path). Panes that only narrow a list pass none — see `Omnibox`. */
+  onSubmit?: (text: string) => void;
   filterLabel?: string;
   /**
    * How the list is laid out. Shares the filter's menu because both
@@ -117,6 +121,7 @@ export function PaneBar({
           axes={axes}
           chosen={filter.chosen}
           onToggle={filter.onToggle}
+          onSubmit={onSubmit}
         />
       ) : (
         <div className="relative min-w-0 flex-1">

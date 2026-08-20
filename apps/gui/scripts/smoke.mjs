@@ -1354,8 +1354,18 @@ for line in sys.stdin:
     ["device", "dev:"],
     ["state", "state:"],
   ]) {
+    // **Wait for the headings to *change*, not merely to exist.** The
+    // list keeps the previous mode's headings until the rows come back
+    // under the new one, so "there are two or more headings" is true the
+    // instant the click lands — and what gets read then belongs to the
+    // mode before. The three prefixes are disjoint, so a change is a
+    // safe thing to wait for and the assertion below still has teeth.
+    const stale = (await groupKeys()).join();
     await chooseArrange(mode);
-    await until(`${mode} headings`, 15_000, async () => (await groupKeys()).length >= 2);
+    await until(`${mode} headings`, 15_000, async () => {
+      const now = await groupKeys();
+      return now.length >= 2 && now.join() !== stale;
+    });
     const keys = await groupKeys();
     if (!keys.every((k) => k.startsWith(prefix))) {
       throw new Error(`${mode} produced headings that are not its own: ${keys}`);
@@ -2223,6 +2233,76 @@ for line in sys.stdin:
       throw new Error(`only ${n} of three machine rows open their second step on the ${tab} pane`);
     }
   }
+
+  // 24c) files 的 omnibox (批③ 三笔): the machine is a chip and the rest
+  //      is a path on it.
+  //
+  //      **Same mechanism as the sessions chips, different meaning** —
+  //      here a chip names the thing the pane acts on rather than
+  //      narrowing a list, and nothing in the box knows the difference:
+  //      only what the pane does with a commit differs.
+  const omniDir = join(SCRATCH, "omni-files");
+  mkdirSync(join(omniDir, "inner"), { recursive: true });
+  writeFileSync(join(omniDir, "inner", "omni-marker.txt"), "x");
+  await openLanding("files");
+  await until("the files pane", 10_000, async () => (await page.locator("[data-omnibox]").count()) === 1);
+  const filesInput = page.locator("[data-omni-input]");
+  await filesInput.click();
+  await until("machines offered", 10_000, async () =>
+    (await page.locator('[data-omni-item^="dev:"]').count()) > 0,
+  );
+  await filesInput.fill("beta");
+  await until("beta offered", 10_000, async () =>
+    (await page.locator('[data-omni-item="dev:beta"]').count()) === 1,
+  );
+  await filesInput.press("Enter");
+  await until("beta as a chip, and its disk open", 15_000, async () =>
+    (await page.locator('[data-chip="dev:beta"]').count()) === 1 &&
+    (await page.locator("[data-files-list]").count()) === 1,
+  );
+
+  //      **Typing inside one directory must not ask again.** That is the
+  //      whole of the anti-flicker rule: candidates are keyed by the
+  //      directory, so narrowing within one is local and there is no
+  //      second answer to arrive late and replace the list. Counted off
+  //      the network, because "it looked smooth" is not a measurement.
+  const lsCalls = () =>
+    page.evaluate(
+      () =>
+        performance.getEntriesByType("resource").filter((e) => e.name.endsWith("/ls")).length,
+    );
+  await filesInput.fill(`${omniDir}/`);
+  await until("the inner directory offered", 15_000, async () =>
+    (await page.locator(`[data-omni-item="${omniDir}/inner/"]`).count()) === 1,
+  );
+  await page.evaluate(() => performance.clearResourceTimings());
+  for (const s of ["i", "in", "inn", "inne"]) {
+    await filesInput.fill(`${omniDir}/${s}`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const asked = await lsCalls();
+  if (asked > 0) {
+    throw new Error(`typing inside one directory asked the machine ${asked} more times`);
+  }
+  //      …and the probe is alive: leaving the directory does ask.
+  await filesInput.fill(`${omniDir}/inner/`);
+  await until("a new directory being asked about", 10_000, async () => (await lsCalls()) > 0);
+
+  //      Enter opens what was typed, for real — the marker file is on
+  //      beta's actual disk, and nothing here put it on the screen but
+  //      a real `ls` of a real path.
+  await filesInput.fill(`${omniDir}/inner`);
+  await filesInput.press("Enter");
+  await until("the typed path really opened", 20_000, async () =>
+    (await page.locator('[data-file="omni-marker.txt"]').count()) === 1,
+  );
+  //      Taking the chip off leaves the machine — back to the landing,
+  //      which is the pinned shortcuts rather than somebody's disk.
+  await page.locator('[data-chip-remove="dev:beta"]').click();
+  await until("back off the machine", 10_000, async () =>
+    (await page.locator("[data-files-list]").count()) === 0 &&
+    (await page.locator('[data-chip="dev:beta"]').count()) === 0,
+  );
 
   // 24b) the browser landing keeps pages: picking a machine opens the
   //      address bar (whose placeholder names the exit, so the user

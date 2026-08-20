@@ -38,8 +38,29 @@ import { cn } from "@/lib/utils";
     key (`dev:turing`); `label` is what a person reads. */
 export type Candidate = { key: string; label: string; face?: Avatar | null };
 
-/** One axis of narrowing, with the candidates it offers right now. */
-export type OmniAxis = { key: string; label: string; candidates: Candidate[] };
+/**
+ * One axis the box can offer, with the candidates it has right now.
+ *
+ * **`role` is the whole of the filter/navigation split**, and it lives
+ * here rather than in the mechanism: chips, candidates and the keyboard
+ * are the same either way, and what differs is only what committing one
+ * *means*.
+ *
+ * - `chip` (the default): the candidate becomes a chip. What that chip
+ *   then does — narrow a list, or name the thing the pane acts on — is
+ *   the caller's `onToggle`, which is why a filter axis and a navigation
+ *   axis need no different machinery here. A pane that wants one chip at
+ *   a time simply replaces instead of appending.
+ * - `text`: the candidate is a **completion**, not a chip. Committing it
+ *   writes it into the box, because half a path is a real thing to keep
+ *   typing and half a filter is not.
+ */
+export type OmniAxis = {
+  key: string;
+  label: string;
+  candidates: Candidate[];
+  role?: "chip" | "text";
+};
 
 export function Omnibox({
   label,
@@ -48,6 +69,7 @@ export function Omnibox({
   axes,
   chosen,
   onToggle,
+  onSubmit,
 }: {
   /** Names the box and stands in as its placeholder — the pane's, not
       this component's, for the same reason the plain box took it. */
@@ -58,6 +80,13 @@ export function Omnibox({
   /** The keys currently on: the filter's array, not a copy. */
   chosen: string[];
   onToggle: (key: string) => void;
+  /**
+   * Enter with nothing to choose from: the box has been typed into and
+   * the person means "go". Only a pane that can *do* something with free
+   * text passes one — where the box only narrows a list, the list is
+   * already narrowed and there is nothing left for Enter to do.
+   */
+  onSubmit?: (text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState(0);
@@ -66,12 +95,22 @@ export function Omnibox({
   // Everything not already on, filtered by what has been typed — matched
   // on the **label**, because that is the string the person is looking
   // at. Matching the key would mean typing `dev:` to find a machine.
+  //
+  // **The two roles match differently, and that is not a detail.** A
+  // chip is *found*: you remember part of a machine's name and type it,
+  // so a substring of the label is the right test. A completion is
+  // *continued*: what is in the box is the beginning of the answer, so
+  // the test is whether the candidate starts with it. Matching a
+  // completion by substring would offer `/a/b/inner/` for the text
+  // `/x/y/inn` — a path on a branch nobody is standing on.
   const q = query.trim().toLowerCase();
   const offered = axes
     .map((a) => ({
       ...a,
-      candidates: a.candidates.filter(
-        (c) => !chosen.includes(c.key) && (q === "" || c.label.toLowerCase().includes(q)),
+      candidates: a.candidates.filter((c) =>
+        a.role === "text"
+          ? c.key.toLowerCase().startsWith(q)
+          : !chosen.includes(c.key) && (q === "" || c.label.toLowerCase().includes(q)),
       ),
     }))
     .filter((a) => a.candidates.length > 0);
@@ -84,11 +123,22 @@ export function Omnibox({
     setPick(0);
   }, [query]);
 
+  /** Which axis a candidate came from — committing means two different
+      things on the two roles, and the candidate alone does not say. */
+  const axisOfCandidate = (key: string) =>
+    axes.find((a) => a.candidates.some((c) => c.key === key));
+
   const commit = (key: string) => {
-    onToggle(key);
-    // The text was the way to find the chip; once it is a chip the text
-    // has done its job, and leaving it would go on filtering by it.
-    onQuery("");
+    if (axisOfCandidate(key)?.role === "text") {
+      // A completion, not a chip: it goes into the box so typing can
+      // carry on from it. The key *is* the completed text.
+      onQuery(key);
+    } else {
+      onToggle(key);
+      // The text was the way to find the chip; once it is a chip the
+      // text has done its job, and leaving it would go on filtering.
+      onQuery("");
+    }
     setPick(0);
     box.current?.focus();
   };
@@ -172,16 +222,39 @@ export function Omnibox({
               onToggle(chosen[chosen.length - 1]);
               return;
             }
-            if (!open || flat.length === 0) return;
+            if (flat.length === 0) {
+              // Nothing to choose from, so Enter belongs to the pane: a
+              // path typed out in full offers no completion and still
+              // has to be openable.
+              if (e.key === "Enter" && onSubmit) {
+                e.preventDefault();
+                onSubmit(query);
+              }
+              return;
+            }
+            if (!open) return;
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               const step = e.key === "ArrowDown" ? 1 : flat.length - 1;
               setPick((p) => (Math.min(p, flat.length - 1) + step) % flat.length);
               return;
             }
-            if (e.key === "Enter" || e.key === "Tab") {
+            // **Tab completes, Enter goes.** On a chip axis the two are
+            // one act — a chip is finished the moment it is chosen. On a
+            // text axis they are not: Tab fills in the segment under the
+            // cursor and leaves the caret to keep typing, Enter means
+            // the text as it stands is the thing to open. Folding them
+            // together would make it impossible to open anything whose
+            // name is a prefix of something else.
+            if (e.key === "Tab") {
               e.preventDefault();
               commit(flat[at].key);
+              return;
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (axisOfCandidate(flat[at].key)?.role === "text") onSubmit?.(query);
+              else commit(flat[at].key);
               return;
             }
             if (e.key === "Escape") {
