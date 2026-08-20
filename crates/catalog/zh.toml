@@ -539,6 +539,11 @@ no-such-session = "没有这个 session: {0}"
 # at all the CLI says so instead — 「登记过的有: 」 with nothing after it
 # is not a sentence.
 no-such-agent = "没登记过这个 agent: {0}。登记过的有: {1}"
+# The same refusal when the registry is empty. Its own sentence rather
+# than the one above with nothing after the colon: "you have not named
+# any yet" and "not that one" are different situations with different
+# next steps, and the first one has to say where names come from.
+no-agents-registered = "还没登记过任何 agent(用 khor agents add 登记一个)"
 # The tmux attach bridge's two refusals: a row that is not a tmux one
 # has nothing to stand a host up for, and a session the server no longer
 # lists cannot be attached — saying which is which sends the user to the
@@ -603,6 +608,13 @@ takeover-no-record = "没有它的对话记录,接管不了: {0}"
 # know, so the boundary is readable instead of being a guess.
 no-terminal-form = "接不进终端: khor 只认得 claude 和 codex 在终端里接着说的写法,这行对不上它们任何一个: {0}"
 wizard-codex-chat-only = "codex 这批只有对话形式"
+# The two forms a registered agent (批⑥) cannot take, each saying which
+# limit it hit rather than sharing one vague "only chat". They are
+# genuinely different walls: one is about starting it, the other about
+# handing it khor's verbs, and a person who wants the second is not
+# helped by being told about the first.
+wizard-registered-no-terminal = "登记的 agent 没有终端形式:khor 只认得 claude 和 codex 在终端里怎么开"
+wizard-registered-no-scheduler = "登记的 agent 还当不了调度员:khor 的动词是按 claude 和 codex 各自的配置递进去的,协议自己那扇门还没接"
 wizard-unknown-agent = "不认识的智能体: {0}"
 takeover-wont-die = "那边的进程没退,接管中止: {0}"
 already-a-chat = "它已经是对话形式了: {0}"

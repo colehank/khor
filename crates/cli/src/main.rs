@@ -608,18 +608,11 @@ fn open(rest: &[String]) -> Result<(), String> {
     // opens a shell session is a session on the wrong thing.
     let vendor = match &agent {
         Some(name) => {
-            let spec = n.agent(name)?.ok_or_else(|| {
-                let known = n.agents().unwrap_or_default();
-                if known.is_empty() {
-                    // 「登记过的有: 」 with nothing after it is not a
-                    // sentence — and "you have none yet" is a different
-                    // situation with a different next step.
-                    cli::AGENTS_NONE.to_owned()
-                } else {
-                    let names: Vec<&str> = known.iter().map(|(n, _)| n.as_str()).collect();
-                    msg::no_such_agent(name, &names.join(cli::NAME_SEPARATOR))
-                }
-            })?;
+            // The refusal lives on `Node`, not here: the wizard has to
+            // refuse the same way, and a judgment written in two faces
+            // grows two (docs/KHOR.md — the faces are equivalent
+            // because they are one call).
+            let spec = n.agent_or_refuse(name)?;
             cmd = vec![spec.launch()];
             Some(name.clone())
         }

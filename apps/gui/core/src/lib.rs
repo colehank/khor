@@ -531,6 +531,66 @@ pub fn takeover_term(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.takeover_term(&SessionId(id.to_owned()))
 }
 
+/// One registered ACP agent, for the wizard's 智能体 list (批⑥).
+///
+/// The command is spelled the way the person typed it rather than as
+/// the launch JSON it is stored in: this is a label under a name, and
+/// reading the JSON back would be reading an implementation.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct AgentRow {
+    pub name: String,
+    pub command: String,
+}
+
+/// Every ACP agent this person has named (`khor_sync::agents`), sorted.
+///
+/// khor's own two are **not** in here: they are not registrations, they
+/// have shims of their own, and a wizard that listed them from the same
+/// place would have to invent entries nobody made. The face puts them
+/// beside this list, which is what they are.
+pub fn agents(root: &Path) -> Result<Vec<AgentRow>, String> {
+    Ok(open(root)?
+        .agents()?
+        .into_iter()
+        .map(|(name, spec)| AgentRow { name, command: spec.typed() })
+        .collect())
+}
+
+/// Which agent the wizard's 智能体 answer names.
+///
+/// The two khor ships are variants rather than strings because they
+/// each have a shim of their own and a form the other cannot take; a
+/// registered one carries the name the person gave it, which becomes
+/// the row's [`khor_core::Session::category`] — **the user saying whose
+/// session this is**, which is not the guess khor refuses to make from
+/// a command line.
+enum Picked {
+    Claude,
+    Codex,
+    Registered(String, khor_node::AgentSpec),
+}
+
+impl Picked {
+    /// What to run, and what the row will say it is.
+    ///
+    /// khor's own two run khor's own shims (零依赖, the skin ruling); a
+    /// registered agent runs the command it was registered with, as the
+    /// launch JSON the protocol crate reads — one spelling from the
+    /// registry to the child, so there is no translation step to drift.
+    fn launch(&self) -> Result<(Vec<String>, String), String> {
+        let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
+            let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
+            Ok((vec![exe.display().to_string(), shim.to_owned()], vendor.to_owned()))
+        };
+        match self {
+            Picked::Claude => mine("_cagent", khor_node::adaptor::claude::VENDOR),
+            Picked::Codex => mine("_codexagent", khor_node::adaptor::codex::VENDOR),
+            Picked::Registered(name, spec) => Ok((vec![spec.launch()], name.clone())),
+        }
+    }
+}
+
 /// Opens a fresh agent session where the wizard pointed (会话身份批B:
 /// 建 session 四字段 — 目录、智能体、形式、名字). The two forms are the
 /// user ruling's two channels: `chat` hosts khor's own vendor shim
@@ -551,19 +611,36 @@ pub fn open_session(
     form: &str,
     agent: &str,
 ) -> Result<String, String> {
-    match agent {
-        "" | khor_node::adaptor::claude::VENDOR => {}
-        khor_node::adaptor::codex::VENDOR => {
-            // Conversation forms only (chat, and the scheduler riding
-            // it): the TUI form needs a pre-nameable session, and a
-            // bare thread/start writes no rollout to resume (probed).
-            if form == "term" {
-                return Err(khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY.into());
-            }
-        }
-        other => return Err(khor_catalog::msg::wizard_unknown_agent(other)),
-    }
     let n = open(root)?;
+    // **The 智能体 answer is an open position now** (批⑥): the two khor
+    // ships, plus anything the person registered. A name khor does not
+    // know is not a programmer's error any more — it is a lookup, and
+    // it refuses through `Node::agent_or_refuse`, which is the very
+    // call the CLI makes, so both faces refuse in one voice.
+    let picked = match agent {
+        "" | khor_node::adaptor::claude::VENDOR => Picked::Claude,
+        khor_node::adaptor::codex::VENDOR => Picked::Codex,
+        name => Picked::Registered(name.to_owned(), n.agent_or_refuse(name)?),
+    };
+    // Which forms this agent can take, each refusal naming the wall it
+    // hit. A registered agent has two it cannot pass, and they are
+    // different walls: khor has no spelling for starting it in a
+    // terminal, and no way to hand it khor's verbs — a person who
+    // wanted the second is not helped by being told about the first.
+    match (&picked, form) {
+        // The TUI form needs a pre-nameable session, and a bare
+        // thread/start writes no rollout to resume (probed).
+        (Picked::Codex, "term") => {
+            return Err(khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY.into())
+        }
+        (Picked::Registered(..), "term") => {
+            return Err(khor_catalog::msg::WIZARD_REGISTERED_NO_TERMINAL.into())
+        }
+        (Picked::Registered(..), "agent") => {
+            return Err(khor_catalog::msg::WIZARD_REGISTERED_NO_SCHEDULER.into())
+        }
+        _ => {}
+    }
     let home = std::env::home_dir();
     let path = match dir.trim() {
         "" | "~" => home.clone().ok_or_else(|| khor_catalog::msg::no_such_dir("~"))?,
@@ -584,22 +661,8 @@ pub fn open_session(
     };
     match form {
         "chat" => {
-            let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
-            // The wizard's 智能体 field, passed rather than assumed
-            // downstream — this is the line the old comment promised
-            // would change the day there were two.
-            let (shim, vendor) = if agent == khor_node::adaptor::codex::VENDOR {
-                ("_codexagent", khor_node::adaptor::codex::VENDOR)
-            } else {
-                ("_cagent", khor_node::adaptor::claude::VENDOR)
-            };
-            let id = n.open_gui_at(
-                &path,
-                &title,
-                &[exe.display().to_string(), shim.into()],
-                Some(vendor),
-                false,
-            )?;
+            let (cmd, vendor) = picked.launch()?;
+            let id = n.open_gui_at(&path, &title, &cmd, Some(&vendor), false)?;
             Ok(id.0)
         }
         // 调度员 (docs/AGENT.md): the same conversation session, with
@@ -607,19 +670,8 @@ pub fn open_session(
         // says so in its first line — so it differs from `chat` by one
         // flag and nothing else.
         "agent" => {
-            let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
-            let (shim, vendor) = if agent == khor_node::adaptor::codex::VENDOR {
-                ("_codexagent", khor_node::adaptor::codex::VENDOR)
-            } else {
-                ("_cagent", khor_node::adaptor::claude::VENDOR)
-            };
-            let id = n.open_gui_at(
-                &path,
-                &title,
-                &[exe.display().to_string(), shim.into()],
-                Some(vendor),
-                true,
-            )?;
+            let (cmd, vendor) = picked.launch()?;
+            let id = n.open_gui_at(&path, &title, &cmd, Some(&vendor), true)?;
             Ok(id.0)
         }
         "term" => {
@@ -669,4 +721,97 @@ pub fn invite(root: &Path) -> Result<Ticket, String> {
 pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
     let node = open(root)?;
     node.pair(ticket).await
+}
+
+#[cfg(test)]
+mod wizard_agent_tests {
+    use super::*;
+
+    fn root(tag: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("khor-wizard-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    /// **The 智能体 answer is an open position, and it refuses by name.**
+    ///
+    /// The refusal used to be `wizard_unknown_agent` — a programmer's
+    /// error, because the wizard could only send one of two words. Now
+    /// anything can arrive, so it is a lookup, and the sentence has to
+    /// be the registry's: naming what *is* registered is what turns a
+    /// typo into a one-step fix instead of a second command.
+    ///
+    /// It is the same call the CLI makes (`Node::agent_or_refuse`) —
+    /// asserted here rather than trusted, because "the faces are
+    /// equivalent" is a claim about a shared function, and a copy would
+    /// satisfy every other assertion in this file.
+    #[test]
+    fn a_name_nobody_registered_is_refused_the_way_the_command_line_refuses_it() {
+        let r = root("unknown");
+        let n = khor_node::Node::open(r.clone()).unwrap();
+        n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
+
+        let why = open_session(&r, "~", "", "chat", "zedd").expect_err("no such registration");
+        assert_eq!(
+            why,
+            n.agent_or_refuse("zedd").unwrap_err(),
+            "the wizard refuses in the registry's own words, not its own"
+        );
+        assert!(why.contains("zed"), "and the refusal names what is registered: {why}");
+        let _ = std::fs::remove_dir_all(&r);
+    }
+
+    /// **The two forms a registered agent cannot take say which wall
+    /// they hit, and they are different walls.**
+    ///
+    /// Enumerated, and asserted to *differ from each other and from
+    /// codex's* — the neighbouring-answer trap is the whole risk here:
+    /// three refusals collapsed into one "只有对话形式" would be true
+    /// of all of them and useful for none, and `is_err()` cannot see
+    /// the difference.
+    #[test]
+    fn a_registered_agent_is_refused_the_two_forms_it_cannot_take() {
+        let r = root("forms");
+        let n = khor_node::Node::open(r.clone()).unwrap();
+        n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
+
+        let term = open_session(&r, "~", "", "term", "zed").expect_err("no terminal form");
+        let sched = open_session(&r, "~", "", "agent", "zed").expect_err("no scheduler form");
+        assert_eq!(term, khor_catalog::msg::WIZARD_REGISTERED_NO_TERMINAL);
+        assert_eq!(sched, khor_catalog::msg::WIZARD_REGISTERED_NO_SCHEDULER);
+        assert_ne!(term, sched, "starting it and arming it are different walls");
+        assert_ne!(
+            term,
+            khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY,
+            "and neither of them is codex's refusal, which is about a different limit"
+        );
+        let _ = std::fs::remove_dir_all(&r);
+    }
+
+    /// khor's own two keep every form they had. The control for the
+    /// pair above: a rule that refused `term` for everything would pass
+    /// both of them.
+    #[test]
+    fn the_two_khor_ships_keep_the_forms_they_had() {
+        let r = root("builtin");
+        let _n = khor_node::Node::open(r.clone()).unwrap();
+        // Refused for what it *is*, not for the form — codex is
+        // chat-only and claude is not, which is the pre-批⑥ shape and
+        // must survive the open position.
+        assert_eq!(
+            open_session(&r, "~", "", "term", "codex").expect_err("codex has no terminal form"),
+            khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY
+        );
+        // claude's `term` is not refused on the agent axis at all: it
+        // gets as far as the directory, which is the next question.
+        let claude_term = open_session(&r, "/nonexistent/khor-no-such-dir", "", "term", "claude")
+            .expect_err("that directory does not exist");
+        assert_eq!(
+            claude_term,
+            khor_catalog::msg::no_such_dir("/nonexistent/khor-no-such-dir"),
+            "claude+term is refused by the directory, never by the form"
+        );
+        let _ = std::fs::remove_dir_all(&r);
+    }
 }

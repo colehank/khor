@@ -42,7 +42,11 @@ use khor_catalog::msg;
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
-use khor_sync::agents::{agents_dir, AgentDoc, Spec as AgentSpec};
+use khor_sync::agents::{agents_dir, AgentDoc};
+/// How one registered ACP agent starts (`khor_sync::agents::Spec`).
+/// Re-exported because `Node::agents` hands it out, and a type a public
+/// method returns that callers cannot name is a method they cannot use.
+pub use khor_sync::agents::Spec as AgentSpec;
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
 use khor_sync::pins::{pins_dir, PinDoc};
@@ -535,6 +539,34 @@ impl Node {
     /// One of them, or `None` for a name nobody registered.
     pub fn agent(&self, name: &str) -> Result<Option<AgentSpec>, String> {
         Ok(self.agents_loaded()?.doc.get(name))
+    }
+
+    /// The registration behind a name, or a refusal that **names what
+    /// is registered**.
+    ///
+    /// One function because the CLI and the wizard have to refuse the
+    /// same way, and a judgment written twice grows two (docs/KHOR.md:
+    /// the two faces are equivalent because they are the same call).
+    /// The list is in the sentence for `no_such_machine`'s reason — the
+    /// commonest way to be here is a typo, and the real names answer it
+    /// without a second command.
+    ///
+    /// An empty registry gets its own sentence rather than the list
+    /// one with nothing after the colon: "you have not named any yet"
+    /// and "not that one" are different situations with different next
+    /// steps, and 「登记过的有: 」 trailing into nothing is not a
+    /// sentence.
+    pub fn agent_or_refuse(&self, name: &str) -> Result<AgentSpec, String> {
+        let loaded = self.agents_loaded()?;
+        if let Some(spec) = loaded.doc.get(name) {
+            return Ok(spec);
+        }
+        let known = loaded.doc.all();
+        if known.is_empty() {
+            return Err(msg::NO_AGENTS_REGISTERED.into());
+        }
+        let names: Vec<&str> = known.iter().map(|(n, _)| n.as_str()).collect();
+        Err(msg::no_such_agent(name, names.join(khor_catalog::cli::NAME_SEPARATOR)))
     }
 
     /// Names khor answers to itself, which nobody may register on top

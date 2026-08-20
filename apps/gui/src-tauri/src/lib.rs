@@ -279,6 +279,14 @@ fn open_session(
     )
 }
 
+/// The wizard's 智能体 list (批⑥): every ACP agent this person named.
+/// khor's own two are not in it — they are not registrations, and the
+/// face puts them beside this list rather than inside it.
+#[tauri::command]
+fn agents() -> Result<Vec<khor_gui_core::AgentRow>, String> {
+    khor_gui_core::agents(&Node::root_from_env())
+}
+
 #[tauri::command]
 fn invite() -> Result<khor_gui_core::Ticket, String> {
     khor_gui_core::invite(&Node::root_from_env())
@@ -351,6 +359,7 @@ pub fn run() {
             pin_web,
             open_web,
             open_session,
+            agents,
             takeover,
             takeover_term,
             invite,

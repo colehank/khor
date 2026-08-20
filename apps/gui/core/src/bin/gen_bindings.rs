@@ -11,6 +11,9 @@ fn main() {
     khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
+    // Not reachable through any row above: the wizard asks for the
+    // agent list on its own, so nothing embeds it.
+    khor_gui_core::AgentRow::export_all_to(&dir).expect("export AgentRow");
     // Not reachable through any row above: the spending answer is asked
     // for on its own, so nothing embeds it and `export_all_to` would
     // never walk into it.
