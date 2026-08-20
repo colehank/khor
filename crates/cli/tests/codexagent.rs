@@ -47,6 +47,7 @@ for line in sys.stdin:
         pass
     elif method == "thread/start":
         open("fake.mode", "w").write("new")
+        open("fake.params", "w").write(json.dumps(m["params"]))
         emit({"jsonrpc": "2.0", "id": m["id"], "result": {"thread": {"id": SID}}})
         note("thread/started", {"thread": {"id": SID}})
     elif method == "thread/resume":
@@ -106,11 +107,20 @@ for line in sys.stdin:
     unsafe {
         std::env::set_var("KHOR_HOME", dir.join("home"));
         std::env::set_var("KHOR_CODEX", &fake);
+        // Scheduler powers arrive only when the opener grants them —
+        // an inherited KHOR_AGENT would be a power nobody granted.
+        std::env::remove_var("KHOR_AGENT");
     }
 
     let exe = env!("CARGO_BIN_EXE_khor");
     let (handle, mut events) =
         khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd")).await.unwrap();
+
+    // An ordinary session carries no scheduler config.
+    let params: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.params")).unwrap())
+            .unwrap();
+    assert!(params.get("config").is_none(), "no KHOR_AGENT, no tools: {params}");
 
     // The session id is codex's own thread uuid — 同源: the rollout on
     // disk wears the same name.

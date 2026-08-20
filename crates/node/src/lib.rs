@@ -1219,15 +1219,29 @@ impl Node {
                 return Err(msg::already_a_chat(&id.0));
             }
         }
-        let home = adaptor::vendor_home(&self.root).join(".claude");
-        let claude = adaptor::claude::Claude::at(home);
-        let full = claude
-            .full_session_id(leaf)
-            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
-        let cwd = claude
-            .recorded_cwd(leaf)
-            .or_else(std::env::home_dir)
-            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        // Whose conversation is this? The store that resolves the leaf
+        // answers — a vendor's transcript dir is its own registry, and
+        // the protocol has no wire question for this yet (`crates/acp`'s
+        // edge survey: session/list is an unadopted draft).
+        let vhome = adaptor::vendor_home(&self.root);
+        let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
+        let (full, cwd, shim) = if let Some(full) = claude.full_session_id(leaf) {
+            let cwd = claude
+                .recorded_cwd(leaf)
+                .or_else(std::env::home_dir)
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+            (full, cwd, "_cagent")
+        } else {
+            let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+            let full = codex
+                .full_session_id(leaf)
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+            let cwd = codex
+                .recorded_cwd(&full)
+                .or_else(std::env::home_dir)
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+            (full, cwd, "_codexagent")
+        };
         let sighting = self.live.sighting_of(id);
         let title = sighting
             .as_ref()
@@ -1274,7 +1288,7 @@ impl Node {
         gui_host::spawn_gui_host_resume(
             Some(&cwd),
             &title,
-            &[exe.display().to_string(), "_cagent".into()],
+            &[exe.display().to_string(), shim.into()],
             &full,
         )?;
         // The reborn row wears the vendor's uuid. A khor-minted row was
@@ -1314,15 +1328,30 @@ impl Node {
             .0
             .strip_prefix(&format!("{}/", khor_core::kind::TUI))
             .ok_or_else(|| msg::takeover_no_record(&id.0))?;
-        let home = adaptor::vendor_home(&self.root).join(".claude");
-        let claude = adaptor::claude::Claude::at(home);
-        let full = claude
-            .full_session_id(leaf)
-            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
-        let cwd = claude
-            .recorded_cwd(leaf)
-            .or_else(std::env::home_dir)
-            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        // The same store-resolves-it vendor fork as `takeover`, plus
+        // each vendor's own resume spelling: claude takes a flag,
+        // codex a subcommand (`codex resume <uuid>`, probed 0.146.1).
+        let vhome = adaptor::vendor_home(&self.root);
+        let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
+        let (cwd, resume) = if let Some(full) = claude.full_session_id(leaf) {
+            let cwd = claude
+                .recorded_cwd(leaf)
+                .or_else(std::env::home_dir)
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+            let bin = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
+            (cwd, vec![bin, "--resume".into(), full])
+        } else {
+            let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+            let full = codex
+                .full_session_id(leaf)
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+            let cwd = codex
+                .recorded_cwd(&full)
+                .or_else(std::env::home_dir)
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+            let bin = std::env::var("KHOR_CODEX").unwrap_or_else(|_| "codex".into());
+            (cwd, vec![bin, "resume".into(), full])
+        };
         let dir = self.live.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
 
         // End the conversation's body. The ghost writes itself as both
@@ -1345,14 +1374,7 @@ impl Node {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
-        let vendor = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
-        host::spawn_host_at(
-            &cwd,
-            &dir,
-            id,
-            &[vendor, "--resume".into(), full],
-            (80, 24),
-        )?;
+        host::spawn_host_at(&cwd, &dir, id, &resume, (80, 24))?;
         self.live.reseat(id, khor_core::kind::TUI, &title, None)
     }
 
@@ -1501,8 +1523,20 @@ impl Node {
         // (`live::Meta::vendor_leaf`). A discovered row has no record
         // and needs none — its leaf *is* the vendor's.
         let leaf = self.live.vendor_leaf_of(id).unwrap_or_else(|| leaf.to_owned());
-        adaptor::claude::Claude::at(adaptor::vendor_home(&self.root).join(".claude"))
-            .transcript(&leaf)
+        let vhome = adaptor::vendor_home(&self.root);
+        let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
+        match claude.transcript(&leaf) {
+            Ok(t) => Ok(t),
+            // The other store's turn — the takeover fork's rule:
+            // whoever resolves the leaf owns the session.
+            Err(claude_why) => {
+                let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+                match codex.full_session_id(&leaf) {
+                    Some(full) => codex.transcript(&full),
+                    None => Err(claude_why),
+                }
+            }
+        }
     }
 
     /// Adds khor's hooks to claude's settings, leaving the rest of that

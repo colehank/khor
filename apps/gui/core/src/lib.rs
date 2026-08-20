@@ -528,7 +528,10 @@ pub fn open_session(
     match agent {
         "" | khor_node::adaptor::claude::VENDOR => {}
         khor_node::adaptor::codex::VENDOR => {
-            if form != "chat" {
+            // Conversation forms only (chat, and the scheduler riding
+            // it): the TUI form needs a pre-nameable session, and a
+            // bare thread/start writes no rollout to resume (probed).
+            if form == "term" {
                 return Err(khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY.into());
             }
         }
@@ -579,11 +582,16 @@ pub fn open_session(
         // flag and nothing else.
         "agent" => {
             let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
+            let (shim, vendor) = if agent == khor_node::adaptor::codex::VENDOR {
+                ("_codexagent", khor_node::adaptor::codex::VENDOR)
+            } else {
+                ("_cagent", khor_node::adaptor::claude::VENDOR)
+            };
             let id = n.open_gui_at(
                 &path,
                 &title,
-                &[exe.display().to_string(), "_cagent".into()],
-                Some(khor_node::adaptor::claude::VENDOR),
+                &[exe.display().to_string(), shim.into()],
+                Some(vendor),
                 true,
             )?;
             Ok(id.0)

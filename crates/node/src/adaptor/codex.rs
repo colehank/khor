@@ -157,6 +157,20 @@ impl Codex {
 }
 
 impl Codex {
+    /// The vendor's **full** thread id behind a lossy khor leaf — the
+    /// rollout's own filename (`claude::full_session_id`'s twin: a row
+    /// id truncates the uuid, resume wants the whole thing, and the
+    /// file is the one place that never forgot it). This answering at
+    /// all is also the vendor verdict: whichever store resolves a leaf
+    /// owns the session (`Node::takeover`'s fork).
+    pub fn full_session_id(&self, leaf: &str) -> Option<String> {
+        self.rollouts().into_iter().find_map(|r| {
+            let name = r.path.file_name()?.to_str()?;
+            let uuid = uuid_in_name(name)?;
+            (crate::live::clean_leaf(uuid) == leaf).then(|| uuid.to_owned())
+        })
+    }
+
     /// The rollout that belongs to this thread id — names carry the
     /// uuid, so no file is opened to find it.
     pub fn rollout_path(&self, uuid: &str) -> Option<PathBuf> {
@@ -506,5 +520,49 @@ mod tests {
         assert_eq!(gamma.rows.len(), 1);
         assert_eq!(gamma.rows[0].title, "gamma");
         assert_eq!(gamma.rows[0].word, State::Busy);
+    }
+
+    #[test]
+    fn a_lossy_leaf_resolves_to_its_rollout_and_the_past_reads_back() {
+        // The takeover fork's premise (`Node::takeover`): whichever
+        // store resolves a leaf owns the session — so resolution must
+        // answer for its own uuids and stay silent for strangers'.
+        let home = std::env::temp_dir().join(format!("khor-codex-adaptor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let day = home.join("sessions/2026/08/20");
+        std::fs::create_dir_all(&day).unwrap();
+        let full = "01a01e00-0000-7000-8000-0000000000aa";
+        std::fs::write(
+            day.join(format!("rollout-2026-08-20T00-00-00-{full}.jsonl")),
+            concat!(
+                r#"{"type":"session_meta","payload":{"session_id":"x","cwd":"/somewhere/deep"}}"#,
+                "\n",
+                r#"{"type":"event_msg","payload":{"type":"user_message","message":"hello from the file"}}"#,
+                "\n",
+                r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"shell"}}"#,
+                "\n",
+                r#"{"type":"event_msg","payload":{"type":"agent_message","message":"answered"}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let codex = Codex::at(home.clone());
+        let leaf = crate::live::clean_leaf(full);
+        assert_eq!(codex.full_session_id(&leaf).as_deref(), Some(full));
+        assert!(
+            codex.full_session_id("0000000000000000000000ff").is_none(),
+            "a stranger's leaf resolves nowhere — that silence IS the vendor verdict"
+        );
+        assert_eq!(codex.recorded_cwd(full), Some(std::path::PathBuf::from("/somewhere/deep")));
+        let past = codex.transcript(full).unwrap();
+        use crate::adaptor::claude::Utterance;
+        assert!(
+            matches!(&past[0], Utterance::User(t) if t == "hello from the file"),
+            "{past:?}"
+        );
+        assert!(matches!(&past[1], Utterance::Tool(n) if n == "shell"), "{past:?}");
+        assert!(matches!(&past[2], Utterance::Agent(t) if t == "answered"), "{past:?}");
+        assert_eq!(past.len(), 3, "codex's bookkeeping lines must not leak into the past");
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

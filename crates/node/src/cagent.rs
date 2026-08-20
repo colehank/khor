@@ -60,7 +60,7 @@ const CLAUDE_ENV: &str = "KHOR_CLAUDE";
 /// scheduler (docs/AGENT.md). Env rather than argv for the reason every
 /// door in this family is: the `_cagent` convention is one word, and
 /// every binary that parses it stays as it is.
-const AGENT_ENV: &str = "KHOR_AGENT";
+pub(crate) const AGENT_ENV: &str = "KHOR_AGENT";
 
 /// One claude child and the turn in flight against it.
 struct Shim {

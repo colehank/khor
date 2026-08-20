@@ -18,6 +18,21 @@
 //! writing). Every adapter surveyed speaks v1; `initialize` carries the
 //! version so a v2 upgrade is a negotiation change, not a rewrite.
 //!
+//! # Where the protocol's edge actually is (surveyed 2026-08-20)
+//!
+//! `session/load` (v1) IS history: the agent replays the whole past as
+//! `session/update`s — khor's takeover rides it. What stays outside
+//! the stable protocol: enumerating sessions (`session/list` is an
+//! unaccepted RFD, answered by a *running* agent, with on-disk
+//! persistence explicitly left undefined and no known adopters),
+//! no-replay resume and fork (v2 alpha / draft), choosing and spawning
+//! the agent binary (client-side by the protocol's own starting line),
+//! and reading a dead agent's history without spawning anything —
+//! which is exactly what khor's adaptors do for discovery, usage and
+//! the recorded-past view. If `session/list` lands and vendors adopt
+//! it, "whose session is this id" becomes askable over the wire; until
+//! then the vendor fork lives in the adaptors, one file-format each.
+//!
 //! # Which way this can be wrong
 //!
 //! Everything here is request/response over one child process — there

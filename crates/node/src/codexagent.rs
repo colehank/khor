@@ -41,9 +41,7 @@
 //! reason. Codex's hook runs, MCP startup notices, rate-limit feeds
 //! and skills bookkeeping stay its own. Codex has no slash-command
 //! list, so no `available_commands_update` rides the first turn — an
-//! empty "/" menu is the honest answer. The 调度员 flag (`KHOR_AGENT`)
-//! is not wired for codex this batch: the MCP-config door exists in
-//! `thread/start` but is unprobed, and 不拿假件糊.
+//! empty "/" menu is the honest answer.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -294,9 +292,9 @@ impl Shim {
     async fn start_codex(self: &Arc<Self>, cwd: &std::path::Path) -> Result<String, String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
-        let started = self
-            .request("thread/start", serde_json::json!({ "cwd": cwd.display().to_string() }))
-            .await?;
+        let mut params = serde_json::json!({ "cwd": cwd.display().to_string() });
+        scheduler_into(&mut params)?;
+        let started = self.request("thread/start", params).await?;
         let sid = started["thread"]["id"]
             .as_str()
             .ok_or_else(|| msg::codexagent_bad_answer("thread/start"))?
@@ -316,12 +314,10 @@ impl Shim {
     ) -> Result<(), String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
-        let resumed = self
-            .request(
-                "thread/resume",
-                serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() }),
-            )
-            .await?;
+        let mut params =
+            serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() });
+        scheduler_into(&mut params)?;
+        let resumed = self.request("thread/resume", params).await?;
         if resumed["thread"]["id"].as_str() != Some(sid) {
             return Err(msg::codexagent_bad_answer("thread/resume"));
         }
@@ -436,6 +432,43 @@ impl Shim {
         let stdin = guard.as_mut().ok_or(msg::CAGENT_NOT_STARTED)?;
         writeln!(stdin, "{v}").map_err(|e| e.to_string())
     }
+}
+
+/// The 调度员 half (docs/AGENT.md), codex spelling: when the opener set
+/// `KHOR_AGENT`, khor's verbs reach the session as an MCP server
+/// injected through `thread/start`'s config override (probed
+/// 2026-08-20: the khor server came up "ready" and the model listed
+/// `mcp__khor__*` by name), and the brief rides `developerInstructions`
+/// (`--append-system-prompt`'s twin — additive, unlike
+/// `baseInstructions` which replaces codex's own).
+///
+/// One honest difference from the claude shim: codex has no
+/// `--strict-mcp-config` twin — the override MERGES into the servers
+/// the user configured in their own config.toml rather than replacing
+/// them (probed: the user's other servers loaded beside khor's). Those
+/// are servers the user pointed at codex sessions themselves, so a
+/// khor-opened codex session wields what their own codex wields; the
+/// claude strictness guards a different door.
+fn scheduler_into(params: &mut serde_json::Value) -> Result<(), String> {
+    if std::env::var(crate::cagent::AGENT_ENV).is_err() {
+        return Ok(());
+    }
+    let exe = crate::self_exe()?;
+    let root = crate::Node::root_from_env();
+    params["config"] = serde_json::json!({
+        "mcp_servers": {
+            "khor": {
+                "command": exe.display().to_string(),
+                "args": ["mcp"],
+                // The store is named rather than inherited (`cagent`'s
+                // `khor_tools` has why: a scheduler pointed at the
+                // wrong network is worse than one with no tools).
+                "env": { "KHOR_HOME": root.display().to_string() }
+            }
+        }
+    });
+    params["developerInstructions"] = serde_json::Value::String(msg::AGENT_BRIEF.to_owned());
+    Ok(())
 }
 
 /// The codex→ACP pump: every server frame, routed. The permission
