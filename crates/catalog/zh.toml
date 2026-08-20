@@ -524,6 +524,17 @@ cagent-not-started = "会话还没开始"
 cagent-no-pipe = "接不到 claude 的输出"
 codexagent-no-pipe = "接不到 codex 的输出"
 codexagent-bad-answer = "codex 对 {0} 的回答不是垫片认得的形状"
+# Registering an ACP agent (批⑥, `khor_sync::agents`). The name becomes
+# the row's 类, so two of these guard a name khor already answers to —
+# and the reserved one says which names those are rather than just "换
+# 一个", because the list is short and a person cannot guess it.
+#
+# 「记账那半只认 khor 自己认得的」is the honest half of the reason: a
+# session filed under `claude` would look covered by the claude line in
+# 用量, which counts only what the claude adaptor read off disk.
+agent-name-blank = "得给它起个名字"
+agent-name-reserved = "这个名字 khor 自己在用: {0}(claude、codex、khor、shell 都留着)"
+agent-needs-a-command = "得说清它怎么起:khor agents add <名字> -- <命令...>"
 no-such-dir = "没有这个目录: {0}"
 # Two machines sharing one home (a cluster's NFS export is the usual
 # way) would share one identity. Says whose it is and what to do, in

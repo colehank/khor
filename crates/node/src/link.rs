@@ -643,6 +643,9 @@ impl Node {
                 } else if doc == "webpins" {
                     let mut loaded = self.webpins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "agents" {
+                    let mut loaded = self.agents_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
                         .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
@@ -1723,6 +1726,19 @@ impl Node {
         {
             let mut loaded = self.webpins_loaded()?;
             if let Ok(n) = self.rounds(&conn, "webpins", &mut loaded).await {
+                moved += n;
+            }
+        }
+        // The agent registry (批⑥): an agent named on one machine is
+        // offerable on every machine, which is the whole reason it is a
+        // document. Best effort on the same footing as the two pin
+        // tables above — a peer that predates the registry refuses the
+        // doc by name, and that refusal must not cost the rounds behind
+        // it; it only means that machine offers what it was told
+        // locally.
+        {
+            let mut loaded = self.agents_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "agents", &mut loaded).await {
                 moved += n;
             }
         }

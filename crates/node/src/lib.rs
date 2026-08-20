@@ -42,6 +42,7 @@ use khor_catalog::msg;
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
+use khor_sync::agents::{agents_dir, AgentDoc, Spec as AgentSpec};
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
 use khor_sync::pins::{pins_dir, PinDoc};
@@ -520,6 +521,76 @@ impl Node {
 
     pub(crate) fn webpins_loaded(&self) -> Result<Loaded<WebPinDoc>, String> {
         load(&webpins_dir(&self.root), self.peer)
+    }
+
+    pub(crate) fn agents_loaded(&self) -> Result<Loaded<AgentDoc>, String> {
+        load(&agents_dir(&self.root), self.peer)
+    }
+
+    /// Every ACP agent this person has named, by name (`khor_sync::agents`).
+    pub fn agents(&self) -> Result<Vec<(String, AgentSpec)>, String> {
+        Ok(self.agents_loaded()?.doc.all())
+    }
+
+    /// One of them, or `None` for a name nobody registered.
+    pub fn agent(&self, name: &str) -> Result<Option<AgentSpec>, String> {
+        Ok(self.agents_loaded()?.doc.get(name))
+    }
+
+    /// Names khor answers to itself, which nobody may register on top
+    /// of.
+    ///
+    /// **This is not tidiness — it is the one way the open registry can
+    /// break an existing judgment.** A registration's name becomes its
+    /// rows' [`khor_core::Session::category`], and that field means the
+    /// same thing in [`khor_core::UsageDay`]: an agent a person called
+    /// `claude` would file its sessions into claude's group, have its
+    /// row preview looked up in claude's transcripts, and — the
+    /// expensive one — appear to be covered by the `claude` line in the
+    /// spending panel, which counts only what the claude adaptor read.
+    /// That is a confident wrong answer in the exact place
+    /// `Session::category` exists to prevent one.
+    ///
+    /// Enumerated rather than derived. A rule ("no vendor names") would
+    /// need a list of vendors to be a rule at all, and the list is what
+    /// this is.
+    pub const RESERVED_AGENT_NAMES: &'static [&'static str] = &[
+        adaptor::claude::VENDOR,
+        adaptor::codex::VENDOR,
+        khor_core::category::KHOR,
+        khor_core::category::SHELL,
+    ];
+
+    /// Registers an agent under `name`, replacing any registration
+    /// under the same one.
+    ///
+    /// Refuses a blank name as well as a reserved one: an empty
+    /// category collides with the group key that means "nobody could
+    /// tell whose this is" (`crate::list::GROUP_CATEGORY`), so the one
+    /// row that is an admission of ignorance would collect rows that
+    /// are not.
+    pub fn register_agent(&self, name: &str, argv: &[String]) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(msg::AGENT_NAME_BLANK.into());
+        }
+        if Self::RESERVED_AGENT_NAMES.contains(&name) {
+            return Err(msg::agent_name_reserved(name));
+        }
+        let spec = AgentSpec::from_argv(argv).ok_or(msg::AGENT_NEEDS_A_COMMAND)?;
+        let loaded = self.agents_loaded()?;
+        loaded.doc.set(name, &spec)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Forgets one. A name nobody registered is not an error — the
+    /// caller asked for a world without it, and that is the world.
+    pub fn forget_agent(&self, name: &str) -> Result<(), String> {
+        let loaded = self.agents_loaded()?;
+        loaded.doc.remove(name.trim())?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
     }
 
     /// Raises a session's seen watermark and persists it. The watermark

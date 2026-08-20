@@ -174,6 +174,75 @@ fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// **Every name khor already answers to is refused, one by one.**
+///
+/// Enumerated rather than stated as a property, because the property
+/// version ("registering a reserved name fails") is also satisfied by a
+/// registry that refuses *everything* — and by one that refuses only
+/// the first name somebody thought of. The control at the bottom is the
+/// other half: an ordinary name must still go through, or this gate
+/// would be passing for the wrong reason.
+///
+/// What it guards is not tidiness. A registration's name becomes its
+/// rows' `category`, which is the same word `UsageDay::category` uses:
+/// an agent called `claude` would file its sessions into claude's
+/// group, have its row preview hunted for in claude's transcripts, and
+/// look covered by the `claude` line in the spending panel — which
+/// counts only what the claude adaptor read off disk.
+#[test]
+fn the_names_khor_answers_to_are_not_up_for_registration() {
+    let r = root("agents-reserved");
+    let n = Node::open(r.clone()).unwrap();
+    let argv = vec!["some-acp-agent".to_owned()];
+    for name in ["claude", "codex", "khor", "shell"] {
+        let refused = n.register_agent(name, &argv);
+        assert!(refused.is_err(), "{name} is khor's own word, it must not be registrable");
+        assert!(
+            refused.unwrap_err().contains(name),
+            "the refusal must name the name — a person cannot guess this list"
+        );
+        assert_eq!(n.agent(name).unwrap(), None, "and nothing was written under it");
+    }
+    // The control: without this, refusing every name on earth passes
+    // every assertion above.
+    n.register_agent("gemini", &argv).unwrap();
+    // Read back through a **second** Node on the same store, because
+    // "registered" is a claim about disk: this control is what caught
+    // the registry never being flushed at all, with all four refusals
+    // above passing while nothing was ever written.
+    let again = Node::open(r.clone()).unwrap();
+    assert_eq!(
+        again.agent("gemini").unwrap().map(|s| s.typed()),
+        Some("some-acp-agent".to_owned()),
+        "an ordinary name registers, and survives being read by another process"
+    );
+    // And the list itself is the four, not "some reserved names": a
+    // vendor dropped from it is a hole nobody would notice until a row
+    // landed in the wrong group.
+    assert_eq!(
+        Node::RESERVED_AGENT_NAMES,
+        &["claude", "codex", "khor", "shell"],
+        "the reserved list is exactly khor's own four words"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// A name that is only whitespace, and a registration with no command,
+/// are refused for two different reasons — and the blank name is the
+/// one with teeth: an empty category collides with the group key that
+/// means "nobody could tell whose this is" (`list::GROUP_CATEGORY`), so
+/// the one group that is an admission of ignorance would start
+/// collecting rows that are not.
+#[test]
+fn a_registration_needs_both_a_name_and_a_command() {
+    let r = root("agents-blank");
+    let n = Node::open(r.clone()).unwrap();
+    assert!(n.register_agent("   ", &["x".to_owned()]).is_err(), "a blank name names nothing");
+    assert!(n.register_agent("ok", &[]).is_err(), "a registration with no command starts nothing");
+    assert!(n.agents().unwrap().is_empty(), "neither wrote anything");
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// The gap above closes the moment the vendor speaks for itself: a
 /// claude hook naming a session is claude saying "this one is mine".
 #[test]
