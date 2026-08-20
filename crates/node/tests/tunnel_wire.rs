@@ -8,6 +8,19 @@
 //! against the very serve beta just tunnelled through — so the refusal
 //! is the pairing gate, not a dead endpoint.
 
+//!
+//! # The clock here is issue #73's, not this file's subject
+//!
+//! Every deadline below is sized to swallow one full first-touch stall
+//! (#73: 20-40s per process on this machine — the comment in
+//! `wait_for_endpoint_file` has the mechanism). **Uniformly**, because
+//! which call pays it is not deterministic: measured 2026-08-21, a bind
+//! cost 21ms and a dial 1.1s while the first real sync cost 37s. The
+//! runtime is multi-thread for the other half of #73: that stall is
+//! *synchronous*, and on a current-thread runtime it freezes tokio's
+//! clock, so every timeout in the file silently stretches with it and a
+//! real hang stops looking like one.
+
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -28,14 +41,26 @@ fn root(tag: &str) -> PathBuf {
 }
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
+    // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
+    // test in this directory timed out for it on 2026-08-21). On a Mac
+    // operated over ssh, a freshly compiled test binary is a new face to
+    // macOS: its first network-stack touch (interface enumeration,
+    // SystemConfiguration) hangs **20-40s per process**, waiting on an
+    // authorization prompt nobody can ever click.
+    //
+    // What the budgets in this file are distinguishing themselves from:
+    // a real hang, which is unbounded. 90s against a measured 40s
+    // ceiling is more than double, deliberately — a timeout that never
+    // fires costs nothing when the test passes, and a flaky red costs a
+    // person a trip to find out it was the machine.
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("serve should write endpoint.json within 10s");
+    .expect("serve should write endpoint.json");
 }
 
 /// A TCP echo server: every byte in comes straight back out. Stands in
@@ -56,7 +81,7 @@ async fn echo_server() -> String {
     addr
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused() {
     let ra = root("a");
     let rb = root("b");
@@ -67,7 +92,7 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
     let a = Node::open_as(ra.clone(), "alpha").unwrap();
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let ticket = a.invite().unwrap();
-    timeout(Duration::from_secs(15), b.pair(&ticket))
+    timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -78,17 +103,17 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
     // byte-identical — a single write-and-read cannot prove the splice
     // survives a stream that fills and drains.
     let payload: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
-    let borrow = timeout(Duration::from_secs(15), b.tunnel_to("alpha"))
+    let borrow = timeout(Duration::from_secs(60), b.tunnel_to("alpha"))
         .await
         .expect("dialling the tunnel must not hang")
         .unwrap();
-    let (mut send, mut recv) = timeout(Duration::from_secs(15), borrow.open(&echo))
+    let (mut send, mut recv) = timeout(Duration::from_secs(60), borrow.open(&echo))
         .await
         .expect("opening the pipe must not hang")
         .expect("a paired open to a reachable target must succeed");
     send.write_all(&payload).await.unwrap();
     send.finish().unwrap();
-    let back = timeout(Duration::from_secs(15), recv.read_to_end(MAX_FRAME))
+    let back = timeout(Duration::from_secs(60), recv.read_to_end(MAX_FRAME))
         .await
         .expect("reading the echo must not hang")
         .unwrap();
@@ -96,7 +121,7 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
 
     // A second pipe on the same lease reaches a dead port: the exit's
     // network answers, not ours, and the status byte says so.
-    let err = timeout(Duration::from_secs(15), borrow.open("127.0.0.1:1"))
+    let err = timeout(Duration::from_secs(60), borrow.open("127.0.0.1:1"))
         .await
         .expect("must not hang")
         .unwrap_err();
@@ -115,7 +140,7 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
         .find(|d| d.name == "alpha")
         .expect("pairing put alpha in beta's table");
     let status = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         raw_tunnel(iroh::SecretKey::generate(), &alpha_info.id, &alpha_info.addrs, &echo),
     )
     .await
@@ -142,7 +167,7 @@ async fn read_until(sock: &mut tokio::net::TcpStream, needle: &[u8]) -> Vec<u8> 
     got
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -155,7 +180,7 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     let a = Node::open_as(ra.clone(), "alpha").unwrap();
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let ticket = a.invite().unwrap();
-    timeout(Duration::from_secs(15), b.pair(&ticket))
+    timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -163,7 +188,7 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     let echo = echo_server().await;
 
     // beta stands up its local proxy in front of one lease to alpha.
-    let borrow = timeout(Duration::from_secs(15), b.tunnel_to("alpha"))
+    let borrow = timeout(Duration::from_secs(60), b.tunnel_to("alpha"))
         .await
         .expect("dialling the tunnel must not hang")
         .unwrap();
@@ -190,7 +215,7 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     );
     client.write_all(b"ping through the exit").await.unwrap();
     let mut back = [0u8; 21];
-    timeout(Duration::from_secs(15), client.read_exact(&mut back))
+    timeout(Duration::from_secs(60), client.read_exact(&mut back))
         .await
         .expect("the echo must not hang")
         .unwrap();
@@ -248,7 +273,7 @@ async fn wait_borrow_state(node: &Node, want: khor_core::State) -> bool {
     false
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
     let ra = root("sa");
     let rb = root("sb");
@@ -263,7 +288,7 @@ async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let ticket = a.invite().unwrap();
     // Routed through beta's serve (both hold their keys), like every verb.
-    timeout(Duration::from_secs(15), b.pair(&ticket))
+    timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -272,7 +297,7 @@ async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
 
     // The borrow is hosted by beta's serve — b.borrow hands off, gets back
     // the session and the proxy address the serve bound.
-    let (session, addr) = timeout(Duration::from_secs(20), b.borrow("alpha"))
+    let (session, addr) = timeout(Duration::from_secs(60), b.borrow("alpha"))
         .await
         .expect("borrow must not hang")
         .unwrap();

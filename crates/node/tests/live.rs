@@ -5,6 +5,19 @@
 //! missing-ending rule, remote close refused by name, and Act kept off
 //! live sessions at the wire. Every await under a timeout.
 
+//!
+//! # The clock here is issue #73's, not this file's subject
+//!
+//! Every deadline below is sized to swallow one full first-touch stall
+//! (#73: 20-40s per process on this machine — the comment in
+//! `wait_for_endpoint_file` has the mechanism). **Uniformly**, because
+//! which call pays it is not deterministic: measured 2026-08-21, a bind
+//! cost 21ms and a dial 1.1s while the first real sync cost 37s. The
+//! runtime is multi-thread for the other half of #73: that stall is
+//! *synchronous*, and on a current-thread runtime it freezes tokio's
+//! clock, so every timeout in the file silently stretches with it and a
+//! real hang stops looking like one.
+
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -24,17 +37,29 @@ fn root(tag: &str) -> PathBuf {
 }
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
+    // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
+    // test in this directory timed out for it on 2026-08-21). On a Mac
+    // operated over ssh, a freshly compiled test binary is a new face to
+    // macOS: its first network-stack touch (interface enumeration,
+    // SystemConfiguration) hangs **20-40s per process**, waiting on an
+    // authorization prompt nobody can ever click.
+    //
+    // What the budgets in this file are distinguishing themselves from:
+    // a real hang, which is unbounded. 90s against a measured 40s
+    // ceiling is more than double, deliberately — a timeout that never
+    // fires costs nothing when the test passes, and a flaky red costs a
+    // person a trip to find out it was the machine.
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("serve should write endpoint.json within 10s");
+    .expect("serve should write endpoint.json");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     let ra = root("a");
     let rb = root("b");
@@ -45,7 +70,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     let a = Node::open_as(ra.clone(), "alpha").unwrap();
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let ticket = a.invite().unwrap();
-    timeout(Duration::from_secs(15), b.pair(&ticket))
+    timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
@@ -66,7 +91,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     }
 
     // beta is not home: its row can only be a report, and says so.
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -87,7 +112,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     // The turn ends; the seen loop closes across devices: beta looks,
     // the watermark replicates, home derives 空闲, beta sees 空闲.
     a.report_state(&id, State::Done).unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -99,7 +124,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         "turn done, unread on every device"
     );
     b.seen(&id).unwrap();
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -127,7 +152,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         .unwrap()
         .session;
     assert_eq!(row.state.state, State::Failed, "a dead process with no recorded ending");
-    timeout(Duration::from_secs(20), b.sync_now())
+    timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -145,7 +170,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     let beta_key =
         khor_net::identity::load_or_create(&rb.join(".khor").join("identity.key")).unwrap();
     let resp = timeout(
-        Duration::from_secs(15),
+        Duration::from_secs(60),
         util::raw_request(
             beta_key,
             &alpha_info.id,

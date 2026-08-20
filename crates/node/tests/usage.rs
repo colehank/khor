@@ -47,14 +47,27 @@ fn output_of(u: &khor_core::Usage) -> u64 {
 }
 
 async fn wait_for_endpoint_file(root: &PathBuf) {
+    // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
+    // test in this directory timed out for it on 2026-08-21). On a Mac
+    // operated over ssh, a freshly compiled test binary is a new face to
+    // macOS: its first network-stack touch hangs **20-40s per process**,
+    // waiting on an authorization prompt nobody can ever click. What
+    // these budgets distinguish themselves from is a real hang, which is
+    // unbounded.
+    //
+    // **The runtime above is deliberately left single-threaded**, unlike
+    // the four plain wire tests that took this same treatment. The note
+    // on the test below spells out why the cheapest reactor to stall is
+    // the one with a single thread; that judgment is older than #73 and
+    // #73 does not touch it. Only the clock moved here.
     let path = root.join(".khor").join("endpoint.json");
-    timeout(Duration::from_secs(10), async {
+    timeout(Duration::from_secs(90), async {
         while !path.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("serve should write endpoint.json within 10s");
+    .expect("serve should write endpoint.json");
 }
 
 /// One machine's spending reaches another, is that machine's own, and
@@ -105,11 +118,11 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
     assert_eq!(mine_age, 0, "this machine reads on demand, so its answer has no age");
 
     let ticket = alpha.invite().unwrap();
-    timeout(Duration::from_secs(15), beta.pair(&ticket))
+    timeout(Duration::from_secs(60), beta.pair(&ticket))
         .await
         .expect("pairing must not hang")
         .unwrap();
-    timeout(Duration::from_secs(20), beta.sync_now())
+    timeout(Duration::from_secs(60), beta.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
