@@ -213,6 +213,10 @@ fn handle(
             khor_gui_core::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())
         }
+        "term_paste" => {
+            khor_gui_core::term::term_paste(&arg("id")?, &arg("text")?)?;
+            Ok("null".to_owned())
+        }
         "term_resize" => {
             khor_gui_core::term::term_resize(&arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
             Ok("null".to_owned())

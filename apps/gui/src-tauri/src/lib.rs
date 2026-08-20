@@ -179,6 +179,13 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
 }
 
+/// Pasted text, wrapped by the terminal registry according to what the
+/// program running in there asked for (`term::term_paste`).
+#[tauri::command]
+fn term_paste(id: String, text: String) -> Result<(), String> {
+    khor_gui_core::term::term_paste(&id, &text)
+}
+
 #[tauri::command]
 fn term_resize(id: String, cols: u16, rows: u16) -> Result<(), String> {
     khor_gui_core::term::term_resize(&id, cols, rows)
@@ -353,6 +360,7 @@ pub fn run() {
             term_open,
             term_poll,
             term_key,
+            term_paste,
             term_resize,
             term_leave,
             web_pins,

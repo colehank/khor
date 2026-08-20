@@ -187,6 +187,13 @@ export const termPoll = (id: string, since: number) =>
 /** Keystrokes as the bytes a terminal sends; the face maps keys to
     bytes, the backend stays a pipe. */
 export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });
+/** Pasted text, as a paste rather than as keystrokes. The wrapping is
+    the registry's to decide — it holds the screen that knows whether the
+    program asked for bracketed paste (`khor_gui_core::term::term_paste`),
+    and a face that wrapped it here would be guessing at somebody else's
+    mode. */
+export const termPaste = (id: string, text: string) =>
+  call<null>("term_paste", { id, text });
 export const termResize = (id: string, cols: number, rows: number) =>
   call<null>("term_resize", { id, cols, rows });
 export const termLeave = (id: string) => call<null>("term_leave", { id });

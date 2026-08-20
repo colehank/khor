@@ -329,6 +329,41 @@ pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
     write_frame(&mut *conn, &ClientOp::Input(bytes))
 }
 
+/// A paste, wrapped the way the program in there asked for it to be.
+///
+/// **The screen already knows, so nothing has to be guessed.** A program
+/// that wants pasted text marked as pasted turns on DECSET 2004, and
+/// `vt100` tracks that on the very screen this module keeps in order to
+/// paint (`Screen::bracketed_paste`). So the decision is made where the
+/// fact is, and the face says "this is a paste" instead of assembling
+/// bytes it has no way to be right about — the same split that keeps it
+/// from re-deriving a state.
+///
+/// **Why a paste is not just typing.** Sent plain, a path containing a
+/// newline is not text arriving in a prompt, it is a command the shell
+/// runs; a path containing a tab may be completed into something else
+/// again. Bracketed paste is what lets the program treat the whole run
+/// as one lump of text — which is also what makes dropping a file into
+/// a terminal safe enough to offer at all (批④).
+///
+/// A program that has *not* asked keeps the old behaviour exactly: the
+/// bytes go through bare, because wrapping them for a reader that does
+/// not know the escape would paste the escape.
+pub fn term_paste(id: &str, text: &str) -> Result<(), String> {
+    let term = term_of(id)?;
+    let bracketed = plock(&term.parser).screen().bracketed_paste();
+    let mut bytes = Vec::new();
+    if bracketed {
+        bytes.extend_from_slice(b"\x1b[200~");
+    }
+    bytes.extend_from_slice(text.as_bytes());
+    if bracketed {
+        bytes.extend_from_slice(b"\x1b[201~");
+    }
+    let mut conn = plock(&term.conn);
+    write_frame(&mut *conn, &ClientOp::Input(bytes))
+}
+
 /// A resize: the PTY is told (so programs repaint at the new size) and
 /// the local screen is set to match, so the bytes that repaint arrive
 /// into a screen already the right shape.

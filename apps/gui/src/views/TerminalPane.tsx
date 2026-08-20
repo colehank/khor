@@ -5,7 +5,16 @@
 // nothing about the contents (docs/UX.md 状态呈现).
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
-import { termKey, termLeave, termOpen, termPoll, termResize, type TermColor, type TermScreen } from "@/api";
+import {
+  termKey,
+  termLeave,
+  termOpen,
+  termPaste,
+  termPoll,
+  termResize,
+  type TermColor,
+  type TermScreen,
+} from "@/api";
 import { gui } from "@/gen/catalog";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of the
@@ -175,12 +184,17 @@ export function TerminalPane({ id }: { id: string }) {
   // Paste goes to the PTY, not the page. Selection needs no such care —
   // this grid is DOM text, so select-and-copy just work (the reason
   // mandala had to intercept Cmd+C was a canvas with no text in it).
-  // Bracketed paste is on the ledger; until then the bytes go plain.
+  //
+  // **Sent as a paste, not as keystrokes.** A program that asked for
+  // bracketed paste gets the text marked as one lump; one that did not
+  // gets exactly what it got before. Which of those it is belongs to the
+  // screen the registry already keeps, so it is decided there — this
+  // only says what kind of event this was (`term_paste`).
   const onPaste = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData("text");
     if (!text) return;
     e.preventDefault();
-    termKey(id, text).catch(() => {});
+    termPaste(id, text).catch(() => {});
   };
 
   const { w: cw, h: ch } = cellRef.current;

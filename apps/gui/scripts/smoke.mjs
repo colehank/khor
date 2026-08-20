@@ -1932,8 +1932,19 @@ for line in sys.stdin:
   //     library and not just through this screen. Read structurally:
   //     the marked lines are the ones carrying a third field, and the
   //     words themselves belong to the catalog, not to this script.
+  const wornBefore = await faceOf(railFace);
   await sheet.locator(`[data-face-option="${otherPalette}"][data-axis="palette"]`).click();
-  await until("the factory palette back", 15_000, async () => (await markedFaces()).length === 3);
+  //     **Wait for the face this machine wears to change, not only for
+  //     the sheet to settle.** The marks come from the sheet's own
+  //     answer and the rail's face comes round on the device poll, so
+  //     "three options are marked" is true a beat before the rail has
+  //     caught up — and what gets compared then is the *previous* face.
+  //     The two are read together below, so waiting for the slower one
+  //     is what makes the comparison mean anything.
+  await until("the factory palette back, and worn", 20_000, async () => {
+    const marks = await markedFaces();
+    return marks.length === 3 && (await faceOf(railFace)) !== wornBefore;
+  });
   //     …and the three marked options still paint what this machine
   //     wears. Re-asserted here and not only at the top, because up
   //     there the machine wore the factory style and every axis sat on
@@ -2814,6 +2825,97 @@ for line in sys.stdin:
     await new Promise((r) => setTimeout(r, 300));
     return (await page.locator("[data-terminal]").innerText()).includes(paneMarker);
   });
+  // 24m) bracketed paste (批④ 前置): a paste is sent as a paste, and the
+  //      wrapping is the running program's choice rather than this app's.
+  //
+  //      **Both halves, on two real terminals.** One runs `cat -v` bare;
+  //      the other turns DECSET 2004 on first. `cat -v` is what makes
+  //      the answer readable — it prints the escape rather than acting
+  //      on it, so the marks are visible as `^[[200~` instead of being
+  //      swallowed by khor's own parser on the way back.
+  //
+  //      Without the negative half this would pass on an app that
+  //      wrapped everything, which is the failure that matters: a
+  //      program that never asked would be handed an escape it does not
+  //      know and would paste it as text.
+  //      `cat` is the reader on purpose: it does nothing to its input,
+  //      and the tty's own echo prints ESC as `^[`, so the marks show up
+  //      as text. A shell would be the wrong witness — readline
+  //      *understands* bracketed paste and strips the marks, so the
+  //      screen would look identical either way.
+  //
+  //      **Which program is running is checked, not assumed.** The whole
+  //      command goes to tmux as one string (it runs it through a
+  //      shell); passing it as separate arguments left a plain shell
+  //      running instead, and then the negative half could not fail
+  //      because the shell was swallowing the very marks it was there
+  //      to notice. Measured — a planted "always wrap" break went green.
+  const pasteText = "paste-marker-24m";
+  for (const [name, cmd] of [
+    ["pasteplain", "cat"],
+    ["pastebrack", "printf '\\033[?2004h'; cat"],
+  ]) {
+    execFileSync(
+      "tmux",
+      ["-L", TMUX_SOCK, "new-session", "-d", "-s", name, "-x", "80", "-y", "24", cmd],
+      { timeout: 10_000 },
+    );
+    await until(`${name} running cat`, 10_000, () => {
+      const now = execFileSync(
+        "tmux",
+        ["-L", TMUX_SOCK, "list-panes", "-t", name, "-F", "#{pane_current_command}"],
+        { encoding: "utf8", timeout: 5_000 },
+      ).trim();
+      if (now !== "cat") throw new Error(`probe dead: ${name} is running ${now}, not cat`);
+      return true;
+    });
+  }
+  await openLanding("sessions");
+  const pasteInto = async (title) => {
+    await until(`the ${title} row`, 25_000, async () =>
+      (await page.locator(`[data-title="${title}"] [data-row-open]`).count()) === 1,
+    );
+    await page.locator(`[data-title="${title}"] [data-row-open]`).click();
+    await until(`${title}'s terminal`, 20_000, async () =>
+      (await page.locator("[data-terminal]").count()) === 1,
+    );
+    // Dispatched as a real paste event: the pane's own handler is what
+    // decides this is a paste rather than typing, and that is the thing
+    // under test.
+    await page.locator("[data-terminal]").evaluate((el, text) => {
+      const data = new DataTransfer();
+      data.setData("text", text);
+      el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    }, pasteText);
+    await until(`${title} echoing the paste`, 20_000, async () =>
+      (await page.locator("[data-terminal]").innerText()).includes(pasteText),
+    );
+    return page.locator("[data-terminal]").innerText();
+  };
+  //      **This half is NOT red-proven, and that is worth knowing before
+  //      trusting it.** A planted "always wrap" break left it green: the
+  //      marks do not become visible on this pane in this rig even when
+  //      they are sent, so the check cannot see the difference it is
+  //      written to see. It is kept because the property is real and the
+  //      line costs nothing — but it is not coverage, and whoever makes
+  //      it observable should red-prove it then.
+  const plainEcho = await pasteInto("pasteplain");
+  if (plainEcho.includes("[200~")) {
+    throw new Error(`a program that never asked for bracketed paste was sent the marks: ${plainEcho.slice(-120)}`);
+  }
+  const brackEcho = await pasteInto("pastebrack");
+  if (!brackEcho.includes("[200~") || !brackEcho.includes("[201~")) {
+    throw new Error(
+      `a program that asked for bracketed paste did not get the marks: ${brackEcho.slice(-120)}`,
+    );
+  }
+  // Put the pane back where 24k expects to find it: this block borrowed
+  // the detail to look at two other terminals.
+  await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();
+  await until("the held agent's pane again", 20_000, async () =>
+    (await page.locator("[data-view-chat]").count()) === 1,
+  );
+
   // 24k) 接管 (批C): the read-only face offers it, the confirm warns,
   //      and the go moves the conversation's body — the TUI process
   //      dies (the pane WAS the process, so the tmux session goes with
@@ -3497,11 +3599,20 @@ for line in sys.stdin:
   };
   const kindOf = (rowId) =>
     page.locator(`[data-row="${rowId}"]`).evaluate((el) => el.dataset.row.split("/")[0]);
+  // **A different kind is not the same thing as a different close.**
+  // `shell`, `tui`, `gui` and `borrow` are all live sessions — closing
+  // any of them stops a process, so they share a sentence *correctly*,
+  // and an assertion that demanded two prefixes differ would call that
+  // a bug. What differs is the three `KindSurface::close` bodies, so the
+  // comparison is against a device chat, whose close deletes received
+  // files instead. Measured: the first spelling of this compared `tui`
+  // with `shell` the moment a plain tmux session appeared in the list,
+  // and failed on behaviour that is right.
   const otherKind = (
     await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row))
-  ).find((r) => r.split("/")[0] !== wizId.split("/")[0]);
+  ).find((r) => r.startsWith("chat/"));
   if (!otherKind) {
-    throw new Error("probe dead: every row is the same kind, so the split cannot be seen");
+    throw new Error("probe dead: no device chat in the list, so the split cannot be seen");
   }
   const [warnWizard, warnOther] = [await warningFor(wizId), await warningFor(otherKind)];
   if (!warnWizard || !warnOther) throw new Error("a confirm must say something");
