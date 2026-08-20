@@ -1,6 +1,22 @@
 //! Wire frames between nodes. msgpack: field order is wire order, new
 //! fields go at the tail with serde defaults, `skip_serializing_if` is
 //! banned — a mid-frame optional desyncs the array on every older end.
+//!
+//! **That rule buys one direction, not two, and the second half was
+//! measured rather than assumed** (`a_tail_field_reaches_an_older_peer_
+//! one_way_only`). A tail default lets *this* end read an older peer's
+//! shorter frame. It does not let an older peer read this end's longer
+//! one: it refuses the whole frame. So appending a field is safe for
+//! the reader and a break for the writer, and the machine that suffers
+//! is the one that has not upgraded — which is the ordinary state of a
+//! network people update one machine at a time.
+//!
+//! Where that cost is not acceptable, the shape change rides a **new
+//! variant reached only by a peer that asked in new words**, the way
+//! [`Response::PathSlice`] exists instead of a field on
+//! [`Response::Slice`]. Reach for that when the answer matters to a
+//! peer that might be old; a tail default is for when losing the field
+//! is losing nothing.
 
 use serde::{Deserialize, Serialize};
 
@@ -106,8 +122,24 @@ pub enum Response {
     /// progress without a separate stat round; end = offset + len == total.
     Slice { total: u64, bytes: serde_bytes::ByteBuf },
     SessionRows { rows: Vec<khor_core::Session> },
-    /// An Act ran to completion; for accept, bytes moved.
-    Acted { moved: u64 },
+    /// An Act ran to completion; for accept, bytes moved and where each
+    /// file landed **on the machine that ran it** — absolute, in the
+    /// offer's order.
+    ///
+    /// `landed` names every file in the offer, including one already
+    /// present that moved no bytes: the asker wants somewhere to point,
+    /// and "already here" is a reason to have a path rather than to
+    /// lack one. It cannot be worked out at the asking end — the name
+    /// on disk carries a digest prefix and the directory is the far
+    /// machine's — so an empty one means *nobody said*, which is what
+    /// an older khor and a close both send, and a caller that needs a
+    /// path must say so out loud instead of guessing one that does not
+    /// exist.
+    Acted {
+        moved: u64,
+        #[serde(default)]
+        landed: Vec<String>,
+    },
     /// One reading, taken when this frame was built.
     Vitals { vitals: khor_core::Vitals },
     /// What that machine has spent. See [`Request::Usage`].
@@ -234,6 +266,100 @@ mod tests {
         let theirs = encode(&Request::Sessions).unwrap();
         assert!(matches!(decode::<Request>(&theirs), Ok(Request::Sessions)));
         assert!(matches!(decode::<OlderRequest>(&theirs), Ok(OlderRequest::Sessions)));
+    }
+
+    /// **A tail-appended field reaches an older peer one way only**, and
+    /// this pins both halves — the half that is a guarantee and the half
+    /// that is not.
+    ///
+    /// The rule at the top of this file says new fields ride the tail
+    /// with a serde default. Measured, that buys exactly one direction:
+    /// this end reads an older peer's frame and defaults what is
+    /// missing. The other direction does not decode at all —
+    /// `rmp_serde` answers `array had incorrect length, expected 1` and
+    /// the whole frame is refused.
+    ///
+    /// **What that costs is worth saying plainly, because the act still
+    /// happens.** An older asker tells a newer machine to accept: the
+    /// files really move, and then the answer is unreadable to the one
+    /// who asked. It is told the transfer failed, and it is wrong.
+    /// Loud rather than silent — nothing is misread as something else —
+    /// but not compatible, and the doc comments on `Vitals::disk`,
+    /// `Vitals::gpu` and `Vitals::version` (three tail-appends already
+    /// shipped) each say only the half that works.
+    ///
+    /// The way out, when that cost has to go, is written a few variants
+    /// up: [`Response::PathSlice`] exists rather than a field on
+    /// `Slice` precisely so a changed shape only ever reaches a peer
+    /// that asked in the new words. That is a bigger move than a
+    /// default, and this test is here so the choice is made with the
+    /// measurement in hand rather than from the rule alone.
+    ///
+    /// **The template's first step does not transfer, and copying it
+    /// would have made this test unfailable.** `the_avatar_nonce_…` in
+    /// mandala proves its sample is genuinely old by asserting the
+    /// field's *name* is absent from the bytes. This codec never writes
+    /// field names — a struct is a msgpack array and position is the
+    /// only thing carrying identity — so `!bytes.contains("landed")` is
+    /// true of every frame this program can build, the new one
+    /// included. What proves the sample old here is that its array is
+    /// one element shorter, so that is what is asserted.
+    #[test]
+    fn a_tail_field_reaches_an_older_peer_one_way_only() {
+        /// What `Acted` was before the landing paths — spelled out
+        /// rather than borrowed, because a sample built from today's
+        /// type is today's type tested against itself. The variants
+        /// before it ride along so this enum is what khor shipped,
+        /// whichever way the codec identifies a variant.
+        #[derive(Debug, Serialize, Deserialize)]
+        enum OlderResponse {
+            Paired { name: String, devices: String },
+            Synced { version: String, changes: String, items: u64 },
+            Refused { why: String },
+            Slice { total: u64, bytes: serde_bytes::ByteBuf },
+            SessionRows { rows: Vec<khor_core::Session> },
+            Acted { moved: u64 },
+        }
+
+        let old = encode(&OlderResponse::Acted { moved: 7 }).unwrap();
+        let new = encode(&Response::Acted { moved: 7, landed: Vec::new() }).unwrap();
+        assert!(
+            old.len() < new.len(),
+            "the old sample must be a shorter frame, or it is not the old shape at all"
+        );
+
+        // ① The guarantee: an older peer's frame decodes here, the
+        // absent field reads as nothing said, and `moved` still lands
+        // in `moved` — the part a desynced array would take out.
+        match decode::<Response>(&old).expect("an older peer's frame must still decode") {
+            Response::Acted { moved, landed } => {
+                assert_eq!(moved, 7);
+                assert!(landed.is_empty(), "a peer that said nothing must read as nothing said");
+            }
+            other => panic!("decoded wrong: {other:?}"),
+        }
+
+        // ② The half that is not a guarantee. Asserted rather than
+        // assumed: the day this codec is made tolerant of a long array,
+        // this line goes red and the rule at the top of the file can be
+        // rewritten to promise both directions.
+        let mine = encode(&Response::Acted {
+            moved: 9,
+            landed: vec!["/home/a/files/ab12-notes.txt".to_owned()],
+        })
+        .unwrap();
+        let refused = decode::<OlderResponse>(&mine);
+        assert!(
+            refused.is_err(),
+            "if an older peer can now read a longer frame, the tail rule promises more than it did: {refused:?}"
+        );
+        // And the same peer's own frame still decodes, so the failure
+        // above is about the extra element and not about these two
+        // enums having drifted apart in some other way.
+        assert!(matches!(
+            decode::<OlderResponse>(&old),
+            Ok(OlderResponse::Acted { moved: 7 })
+        ));
     }
 
     /// A spending answer survives the round trip whole, **including the

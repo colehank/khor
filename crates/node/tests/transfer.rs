@@ -75,7 +75,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     assert!(!payload_bytes_present, "no byte may move before approval");
 
     // Approval pulls all slices, verifies, lands.
-    let moved = timeout(Duration::from_secs(60), b.accept(&tid))
+    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("accept must not hang")
         .unwrap();
@@ -114,7 +114,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // only the missing tail, and the result is still verbatim.
     fs::remove_file(payload_path(&dir, f)).unwrap();
     fs::write(partial_path(&dir, f), &payload[..100_000]).unwrap();
-    let moved = timeout(Duration::from_secs(60), b.accept(&tid))
+    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("accept must not hang")
         .unwrap();
@@ -138,7 +138,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         "wrong bytes must fail the digest: {err}"
     );
     assert!(!partial_path(&dir, f).exists(), "the poisoned partial must be discarded");
-    let moved = timeout(Duration::from_secs(60), b.accept(&tid))
+    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("accept must not hang")
         .unwrap();

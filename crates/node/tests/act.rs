@@ -16,6 +16,23 @@ use tokio::time::timeout;
 mod util;
 use util::raw_request;
 
+/// How long a pairing or a sync may take before it counts as hung.
+///
+/// **Raised from 45s because the machine, not the code, was failing
+/// it.** This file's own `wait_for_endpoint_file` already explains why
+/// (#73: a fresh test binary's first network-stack touch hangs 20-40s
+/// on this ssh-operated Mac) and already answers it with 90s — but the
+/// pair and sync steps kept 45, and with three nodes each paying that
+/// toll one of them went over about half the time. Measured on
+/// 2026-08-21: red twice at 45s on the same sync, green at 150s in 82s
+/// total, with nothing between the runs but the number.
+///
+/// It still guards what it was written to guard. The assertion is *must
+/// not hang* — a deadlock or a lost frame never finishes at any number
+/// — and a step that needs two minutes on this machine is slow, which
+/// this suite has never been in the business of failing anyone for.
+const PATIENCE: u64 = 120;
+
 fn root(tag: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("khor-act-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
@@ -55,17 +72,17 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let g = Node::open_as(rg.clone(), "gamma").unwrap();
 
     let t1 = a.invite().unwrap();
-    timeout(Duration::from_secs(45), b.pair(&t1))
+    timeout(Duration::from_secs(PATIENCE), b.pair(&t1))
         .await
         .expect("pairing must not hang")
         .unwrap();
     let t2 = a.invite().unwrap();
-    timeout(Duration::from_secs(45), g.pair(&t2))
+    timeout(Duration::from_secs(PATIENCE), g.pair(&t2))
         .await
         .expect("pairing must not hang")
         .unwrap();
     // beta learns gamma through the table before gamma ever dials it.
-    timeout(Duration::from_secs(45), b.sync_now())
+    timeout(Duration::from_secs(PATIENCE), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -75,11 +92,11 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let src = ra.join("plan.pdf");
     fs::write(&src, &payload).unwrap();
     let tid = a.send("beta", &src).unwrap();
-    timeout(Duration::from_secs(45), b.sync_now())
+    timeout(Duration::from_secs(PATIENCE), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
-    timeout(Duration::from_secs(45), g.sync_now())
+    timeout(Duration::from_secs(PATIENCE), g.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -99,7 +116,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     );
 
     // gamma approves; the pull runs on beta, the payload comes off alpha.
-    let moved = timeout(Duration::from_secs(60), g.accept(&tid))
+    let (moved, said) = timeout(Duration::from_secs(60), g.accept(&tid))
         .await
         .expect("a routed accept must not hang")
         .unwrap();
@@ -111,16 +128,29 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
         .find(|p| !p.file_name().unwrap().to_string_lossy().starts_with('.'))
         .expect("the payload should land on beta");
     assert_eq!(fs::read(&landed).unwrap(), payload, "bytes verbatim on the recipient");
+    // The path came back across two hops to a machine that has no such
+    // file and no such directory — so this compares what the wire said
+    // against what is on beta's disk, which is the only way to tell a
+    // travelled answer from one gamma computed under its own root.
+    assert_eq!(
+        said,
+        vec![landed.display().to_string()],
+        "the recipient's own path must travel back to the device that asked"
+    );
 
     // Approving twice is idempotent — the second run moves nothing.
-    let again = timeout(Duration::from_secs(60), g.accept(&tid))
+    let (again, said_again) = timeout(Duration::from_secs(60), g.accept(&tid))
         .await
         .expect("a repeated accept must not hang")
         .unwrap();
     assert_eq!(again, 0, "a payload already landed moves nothing");
+    // …and still says where it is. A file that arrived on an earlier
+    // run is no less present, and a caller pointing something at it
+    // would otherwise be told nothing on every run but the first.
+    assert_eq!(said_again, said, "an already-landed payload still names its path");
 
     // After a fresh sync the third device sees the outcome word.
-    timeout(Duration::from_secs(45), g.sync_now())
+    timeout(Duration::from_secs(PATIENCE), g.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
@@ -140,7 +170,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let gamma_key =
         khor_net::identity::load_or_create(&rg.join(".khor").join("identity.key")).unwrap();
     let resp = timeout(
-        Duration::from_secs(45),
+        Duration::from_secs(PATIENCE),
         raw_request(
             gamma_key,
             &beta_info.id,
@@ -158,7 +188,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
 
     // An unpaired key gets nothing — Act is gated like everything else.
     let resp = timeout(
-        Duration::from_secs(45),
+        Duration::from_secs(PATIENCE),
         raw_request(
             iroh::SecretKey::generate(),
             &beta_info.id,

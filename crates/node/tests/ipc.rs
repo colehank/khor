@@ -105,7 +105,7 @@ async fn one_shot_verbs_ride_the_resident_serve() {
     let rows = b.sessions().unwrap();
     let row = &rows.iter().find(|v| v.session.id == tid).expect("the summary should make a row").session;
     assert_eq!(row.state.state, State::Blocked);
-    let moved = timeout(Duration::from_secs(60), b.accept(&tid))
+    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("routed accept must not hang")
         .unwrap();

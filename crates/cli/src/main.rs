@@ -509,10 +509,23 @@ fn accept(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     let sid = SessionId(id.clone());
-    let moved = rt()?.block_on(n.accept(&sid))?;
-    match n.transfer_landing(&sid).as_deref() {
-        Ok([one]) => println!("{}", cli::pulled_to(moved, one.display())),
-        Ok([first, ..]) => println!(
+    let (moved, landed) = rt()?.block_on(n.accept(&sid))?;
+    // Where the files are is the **receiving** machine's answer, not a
+    // path worked out here. This verb routes when the row belongs to
+    // another machine (`accept_with`), and the path this end would
+    // compute is a real-looking one under this root that nothing was
+    // ever written to. `transfer_landing` remains only as the fallback
+    // for a resident serve too old to say (`proto::Response::Acted`) —
+    // and that case is this machine's own transfer, where the two
+    // answers agree.
+    let landing: Vec<std::path::PathBuf> = if landed.is_empty() {
+        n.transfer_landing(&sid).unwrap_or_default()
+    } else {
+        landed.iter().map(std::path::PathBuf::from).collect()
+    };
+    match landing.as_slice() {
+        [one] => println!("{}", cli::pulled_to(moved, one.display())),
+        [first, ..] => println!(
             "{}",
             cli::pulled_to(moved, first.parent().unwrap_or(first).display())
         ),

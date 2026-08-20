@@ -53,7 +53,17 @@ pub enum Op {
 pub enum Reply {
     Paired { name: String },
     Synced { outcomes: Vec<(String, Result<String, String>)> },
-    Accepted { moved: u64 },
+    /// Bytes moved, and where each file landed — the serve is the one
+    /// holding the endpoint, so it is the only end that learns the
+    /// paths and this is the only way back to the verb that asked.
+    /// `landed` is tail-appended: a resident serve from an older khor
+    /// answers without it, and the caller reads that as *nobody said*
+    /// (`proto::Response::Acted`).
+    Accepted {
+        moved: u64,
+        #[serde(default)]
+        landed: Vec<String>,
+    },
     Refused { why: String },
     /// Tail-appended with [`Op::Ls`].
     Dir { path: String, entries: Vec<crate::proto::DirEntry>, truncated: bool },

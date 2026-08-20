@@ -349,7 +349,7 @@ impl Node {
             }
             ipc::Op::Accept { session } => {
                 match self.accept_with(ep, &crate::SessionId(session)).await {
-                    Ok(moved) => ipc::Reply::Accepted { moved },
+                    Ok((moved, landed)) => ipc::Reply::Accepted { moved, landed },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -378,7 +378,9 @@ impl Node {
             }
             ipc::Op::CloseOn { machine, session } => {
                 match self.close_on_with(ep, &machine, &crate::SessionId(session)).await {
-                    Ok(()) => ipc::Reply::Accepted { moved: 0 },
+                    // A close borrows this reply for its "done" — no
+                    // bytes and no paths, which is what both empties say.
+                    Ok(()) => ipc::Reply::Accepted { moved: 0, landed: Vec::new() },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -727,8 +729,9 @@ impl Node {
                 }
                 match action.as_str() {
                     "accept" => {
-                        let moved = self.accept_local(ep, &crate::SessionId(session)).await?;
-                        Ok(Response::Acted { moved })
+                        let (moved, landed) =
+                            self.accept_local(ep, &crate::SessionId(session)).await?;
+                        Ok(Response::Acted { moved, landed })
                     }
                     // Closing is the third leg of 在任意设备开: a
                     // session you can open from anywhere and attach to
@@ -744,7 +747,10 @@ impl Node {
                         tokio::task::spawn_blocking(move || live.close_session(&id))
                             .await
                             .map_err(|e| e.to_string())??;
-                        Ok(Response::Acted { moved: 0 })
+                        // Nothing moved and nothing landed: closing
+                        // has no files, and an empty list is the frame's
+                        // own word for "nobody said a path".
+                        Ok(Response::Acted { moved: 0, landed: Vec::new() })
                     }
                     other => Err(msg::unknown_action(other)),
                 }
@@ -894,12 +900,18 @@ impl Node {
 
     /// Approves a transfer and pulls its payload from home. Resumes from
     /// an existing partial; verifies the blake3 digest before the payload
-    /// gets its real name. Returns bytes actually moved this run. Routed
-    /// through the resident serve when one holds the key.
-    pub async fn accept(&self, id: &crate::SessionId) -> Result<u64, String> {
+    /// gets its real name. Routed through the resident serve when one
+    /// holds the key.
+    ///
+    /// Returns bytes actually moved this run, and where the files are
+    /// **on the machine that received them** — which is this one only
+    /// when the transfer was addressed here. See
+    /// [`crate::proto::Response::Acted`] for why the paths travel
+    /// instead of being worked out at this end.
+    pub async fn accept(&self, id: &crate::SessionId) -> Result<(u64, Vec<String>), String> {
         if let Some(reply) = self.via_serve(ipc::Op::Accept { session: id.0.clone() }).await {
             return match reply? {
-                ipc::Reply::Accepted { moved } => Ok(moved),
+                ipc::Reply::Accepted { moved, landed } => Ok((moved, landed)),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -1357,7 +1369,11 @@ impl Node {
     /// Accept on an endpoint the caller owns: pulls locally when this
     /// machine is the recipient, otherwise routes the action to the
     /// recipient's serve — 动作从哪台设备发都行 (docs/SESSION.md).
-    async fn accept_with(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
+    async fn accept_with(
+        &self,
+        ep: &iroh::Endpoint,
+        id: &crate::SessionId,
+    ) -> Result<(u64, Vec<String>), String> {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
@@ -1380,7 +1396,7 @@ impl Node {
         )
         .await?;
         match resp {
-            Response::Acted { moved } => Ok(moved),
+            Response::Acted { moved, landed } => Ok((moved, landed)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -1389,7 +1405,11 @@ impl Node {
     /// The pull itself, only ever on the recipient machine. Never
     /// re-routes an incoming Act — what lands wrong is refused, or two
     /// serves could bounce one forever.
-    async fn accept_local(&self, ep: &iroh::Endpoint, id: &crate::SessionId) -> Result<u64, String> {
+    async fn accept_local(
+        &self,
+        ep: &iroh::Endpoint,
+        id: &crate::SessionId,
+    ) -> Result<(u64, Vec<String>), String> {
         use crate::transfer::{payload_path, pulling_marker};
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
@@ -1416,8 +1436,15 @@ impl Node {
                 DialFailure::Refused(why) => msg::offerer_unreachable(why),
             })?;
             let mut moved = 0u64;
+            // Where each file ends up, whether or not this run is what
+            // put it there: the asker is pointing something at these
+            // paths, and a file that was already here is no less
+            // present for having arrived earlier.
+            let mut landed = Vec::with_capacity(files.len());
             for f in files {
-                if payload_path(&dir, f).exists() {
+                let dest = payload_path(&dir, f);
+                if dest.exists() {
+                    landed.push(dest.display().to_string());
                     continue;
                 }
                 let marker = pulling_marker(&dir, f);
@@ -1426,8 +1453,9 @@ impl Node {
                 let pulled = pull_one(&conn, &dir, f).await;
                 let _ = fs::remove_file(&marker);
                 moved += pulled?;
+                landed.push(dest.display().to_string());
             }
-            Ok(moved)
+            Ok((moved, landed))
         }
         .await;
         if outcome.is_ok() {
