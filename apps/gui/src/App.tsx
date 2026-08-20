@@ -38,6 +38,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
+import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useNarrow } from "@/hooks/use-narrow";
 import { usePathCandidates } from "@/hooks/use-path-candidates";
 import { useStatusBar } from "@/hooks/use-status-bar";
@@ -314,6 +315,10 @@ export default function App() {
   const [hooks, setHooks] = useState<HooksState | null>(null);
   const [hooksFailed, setHooksFailed] = useState(false);
 
+  // Nobody looking, nobody paying: this is three calls every two
+  // seconds, and it is the app's whole heartbeat.
+  const hidden = useHidden();
+
   useEffect(() => {
     let live = true;
     const tick = () => {
@@ -328,14 +333,19 @@ export default function App() {
         .catch(() => live && setStale(true));
     };
     tick();
-    const t = setInterval(tick, POLL_MS);
+    const t = setInterval(tick, hidden ? HIDDEN_MS : POLL_MS);
     return () => {
       live = false;
       clearInterval(t);
     };
     // Re-subscribed when the arrangement changes: the new order comes
     // from the node, so switching modes is a fetch, never a re-sort.
-  }, [arrangeBy]);
+    //
+    // **And when the window is looked at again**, which is the same
+    // shape: this effect already asks once before it sets its interval,
+    // so coming back is a fresh answer immediately rather than after a
+    // wait — no extra wiring, and nothing to remember to clear.
+  }, [arrangeBy, hidden]);
 
   useEffect(() => {
     if (!mark) return;
@@ -346,6 +356,10 @@ export default function App() {
         .catch(() => {});
     };
     tick();
+    // Left alone by the hidden pace on purpose: its beat already **is**
+    // the hidden beat, and it only runs while the panel showing it is
+    // open. Adding the flag here would buy nothing and cost a refetch —
+    // the expensive kind — on every switch back to the window.
     const t = setInterval(tick, USAGE_POLL_MS);
     return () => {
       live = false;

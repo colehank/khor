@@ -43,6 +43,7 @@ import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
+import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
 import { word } from "@/words";
 
@@ -314,6 +315,7 @@ export function ChatView({
   const nearBottom = useRef(true);
   const box = useRef<HTMLTextAreaElement>(null);
   /** How long to wait before asking again, and the way to stop waiting. */
+  const hidden = useHidden();
   const pace = useRef(IDLE_MS);
   /** The last line handed to the host, until it says what became of it. */
   const sent = useRef("");
@@ -429,17 +431,23 @@ export function ChatView({
     };
   }, [id, still]);
 
-  // The two paces. Speeding up takes effect at once — waiting out a
-  // whole idle gap to notice a turn started would hand back the latency
-  // the fast pace exists to remove. Slowing down does not need a kick:
-  // the wait already in flight is the last fast one, and the next is
-  // scheduled at the idle length. **That is what makes this able to go
-  // back to zero** — there is no state to remember to clear, the pace
-  // is read fresh at each scheduling.
+  // The paces, and one rule covering all of them: **a shorter pace has
+  // to take effect at once, a longer one never does.** Waiting out a
+  // whole gap to notice a turn started hands back the latency the fast
+  // pace exists to remove, and the same is true of coming back to a
+  // window that has been dawdling at ten seconds. Slowing down needs no
+  // kick — the wait already in flight is the last fast one, and the next
+  // is scheduled at the new length.
+  //
+  // **That is what makes this able to go back to zero**: nothing
+  // remembers a pace, it is read fresh at each scheduling, so a state
+  // that has gone away simply stops being read.
   useEffect(() => {
-    pace.current = inTurn ? LIVE_MS : IDLE_MS;
-    if (inTurn) pollNow.current();
-  }, [inTurn]);
+    const next = hidden ? HIDDEN_MS : inTurn ? LIVE_MS : IDLE_MS;
+    const shorter = next < pace.current;
+    pace.current = next;
+    if (shorter) pollNow.current();
+  }, [inTurn, hidden]);
 
   // Follow the stream only while the reader is at the tail — new frames
   // must not yank someone who scrolled up into the past. What they get

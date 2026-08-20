@@ -3,7 +3,7 @@
 // a cell grid; this pane paints the grid, sizes the PTY to the space it
 // has, and turns key events into the bytes a terminal sends. It judges
 // nothing about the contents (docs/UX.md 状态呈现).
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   onBridge,
@@ -18,6 +18,7 @@ import {
   type TermScreen,
 } from "@/api";
 import { gui } from "@/gen/catalog";
+import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of the
     app's theme. 0–7 normal, 8–15 bright. */
@@ -86,6 +87,10 @@ function keyBytes(e: React.KeyboardEvent): string | null {
   return null;
 }
 
+/** How often a visible terminal asks for its screen. Fast: this is the
+    one surface where a person is watching characters appear. */
+const LIVE_MS = 50;
+
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -114,6 +119,14 @@ export function TerminalPane({ id }: { id: string }) {
   const cellRef = useRef<{ w: number; h: number }>({ w: 8, h: 16 });
   // The size last sent, so a resize observer does not spam identical ones.
   const sentRef = useRef<{ cols: number; rows: number }>({ cols: 0, rows: 0 });
+  // How often to ask for the screen. **A ref and a self-scheduling wait
+  // rather than an interval**, because the pace has to change without
+  // this pane re-attaching: the attachment lives in the same effect, and
+  // re-running it to change a number would drop the terminal and open it
+  // again on every switch between windows.
+  const hidden = useHidden();
+  const pace = useRef(LIVE_MS);
+  const pollNow = useRef<() => void>(() => {});
 
   const fit = useCallback((): { cols: number; rows: number } => {
     const box = boxRef.current;
@@ -152,7 +165,17 @@ export function TerminalPane({ id }: { id: string }) {
         })
         .catch(() => {});
     };
-    const poll = window.setInterval(tick, 50);
+    let timer = 0;
+    const loop = () => {
+      tick();
+      if (!stopped) timer = window.setTimeout(loop, pace.current);
+    };
+    pollNow.current = () => {
+      if (stopped) return;
+      window.clearTimeout(timer);
+      loop();
+    };
+    loop();
 
     // Coalesced to one fit per frame (mandala's TerminalView judgment):
     // dragging a window fires ResizeObserver tens of times a second, and
@@ -175,12 +198,30 @@ export function TerminalPane({ id }: { id: string }) {
 
     return () => {
       stopped = true;
-      window.clearInterval(poll);
+      window.clearTimeout(timer);
+      pollNow.current = () => {};
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
       termLeave(id).catch(() => {});
     };
   }, [id, fit]);
+
+  // Twenty polls a second is what a terminal costs to look at; nobody
+  // looking is nobody paying. The same rule the conversation follows: a
+  // shorter pace takes effect at once (a screen ten seconds stale on
+  // return is the wrong thing to come back to), a longer one waits out
+  // the beat already in flight.
+  //
+  // **Nothing is lost by not asking.** What is polled here is a screen,
+  // not a stream — the host keeps the terminal's whole state and a
+  // single poll answers with the current one, so skipping a hundred
+  // polls costs nothing but freshness.
+  useEffect(() => {
+    const next = hidden ? HIDDEN_MS : LIVE_MS;
+    const shorter = next < pace.current;
+    pace.current = next;
+    if (shorter) pollNow.current();
+  }, [hidden]);
 
   // Files dropped on this pane land as shell-quoted paths at the cursor
   // (iTerm2's behaviour, 批④).

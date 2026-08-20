@@ -3233,6 +3233,72 @@ for line in sys.stdin:
     return seen.includes("'/tmp/a b.txt'") && seen.includes("'/tmp/it'\\''s.txt'");
   });
 
+  // 24p) 没人看的时候不轮询 (批⑤): a window in the background costs
+  //      almost nothing, and comes back current at once.
+  //
+  //      **Headless Chrome is never hidden**, measured two ways before
+  //      settling for a double: a second tab brought to the front leaves
+  //      the first one `visible`, and CDP's `Page.setWebLifecycleState`
+  //      set to `frozen` does not move it either. So the state is set
+  //      the only way left — override the property, fire the real event.
+  //
+  //      That double covers the whole of what this app owns: the
+  //      listener, the pace each poller reads, and the kick on the way
+  //      back. What it does not cover is whether a real browser fires
+  //      `visibilitychange` when its window goes behind another — which
+  //      is the browser's contract, not this app's, and there is nothing
+  //      in a headless run that could check it either way.
+  //
+  //      Counted at the wire rather than by reading a number out of the
+  //      app: what is being claimed is that the *calls stop*, and the
+  //      calls are the only honest evidence of that.
+  const bridgeHits = [];
+  const countHits = (r) => {
+    if (r.url().includes(`127.0.0.1:${BRIDGE_PORT}`)) bridgeHits.push(Date.now());
+  };
+  page.on("request", countHits);
+  const hitsOver = async (ms) => {
+    const from = bridgeHits.length;
+    await new Promise((r) => setTimeout(r, ms));
+    return bridgeHits.length - from;
+  };
+  const setHidden = (on) =>
+    page.evaluate((hide) => {
+      Object.defineProperty(document, "hidden", { value: hide, configurable: true });
+      Object.defineProperty(document, "visibilityState", {
+        value: hide ? "hidden" : "visible",
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, on);
+
+  //      A terminal is mounted from 24n, so this window is polling at
+  //      its fastest — which is what makes the drop below mean anything.
+  const busyHits = await hitsOver(2_000);
+  if (busyHits < 20) {
+    throw new Error(`probe dead: a watched window with a terminal made only ${busyHits} calls in 2s`);
+  }
+  await setHidden(true);
+  if (!(await page.evaluate(() => document.hidden))) {
+    throw new Error("probe dead: the page did not take the hidden state at all");
+  }
+  const quietHits = await hitsOver(3_000);
+  //      At the hidden beat the heartbeat's three calls and the
+  //      terminal's one land at most once each in this window.
+  if (quietHits > 5) {
+    throw new Error(`a window nobody is looking at made ${quietHits} calls in 3s (was ${busyHits} in 2s)`);
+  }
+  //      **And it comes back current, not on the next beat.** Ten
+  //      seconds of a stale screen on return is its own failure — the
+  //      one the kick exists for, and the half a pause alone would not
+  //      have.
+  const hitsWhileAway = bridgeHits.length;
+  await setHidden(false);
+  await until("a fresh answer the moment the window is looked at again", 2_000, async () =>
+    bridgeHits.length > hitsWhileAway,
+  );
+  page.off("request", countHits);
+
   // 24o) 拖文件到**另一台机器**的终端 (批④ 四笔): the files travel, and
   //      what gets pasted is where they came to rest over there.
   //
