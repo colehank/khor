@@ -3308,6 +3308,7 @@ dependencies = [
  "agent-client-protocol",
  "khor-acp",
  "khor-catalog",
+ "khor-core",
  "khor-node",
  "libc",
  "serde_json",

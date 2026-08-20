@@ -17,5 +17,8 @@ libc.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# The real-agent gate reaches into the session store to find the host
+# socket, the way a face does (`tests/agents.rs`).
+khor-core.workspace = true
 khor-acp = { path = "../acp" }
 agent-client-protocol = "2"
