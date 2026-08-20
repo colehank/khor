@@ -175,7 +175,13 @@ Description=khor serve (boot pull-up; the keeper inside handles the rest)
 After=network-online.target
 
 [Service]
-Type=oneshot
+# forking + PIDFile so systemd adopts the keeper that khor-serve-up
+# leaves behind. Type=oneshot swept the cgroup on deactivation and
+# silently killed it — caught on a real reboot (2026-08-20 11:16:04,
+# "Deactivated successfully" and the keeper was gone). launchd needed
+# the same medicine, spelled AbandonProcessGroup.
+Type=forking
+PIDFile=$ROOT/.khor/serve.pid
 Environment=HOME=$HOME
 ExecStart=$UP
 
@@ -192,7 +198,13 @@ UNIT
 Description=khor serve (boot pull-up; the keeper inside handles the rest)
 
 [Service]
-Type=oneshot
+# Same forking+PIDFile medicine as the system unit (oneshot sweeps the
+# keeper with the cgroup). One caveat this file cannot fix: on a shared
+# NFS home this unit file is shared between hosts while PIDFile is this
+# host's — whichever host installed last wins the path, and the
+# .profile line below covers the other.
+Type=forking
+PIDFile=$ROOT/.khor/serve.pid
 ExecStart=$UP
 
 [Install]
