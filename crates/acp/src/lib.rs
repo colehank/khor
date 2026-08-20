@@ -64,8 +64,74 @@ use agent_client_protocol::schema::v1::{
     StopReason, TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo};
+use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo, ErrorCode};
 use tokio::sync::{mpsc, oneshot};
+
+/// What the handshake said about the agent on the other end.
+///
+/// `initialize`'s answer used to be thrown away here, which was
+/// affordable only while every agent khor spoke to was one khor wrote
+/// (both shims advertise `load_session`). An agent the user named can
+/// advertise anything, and **a capability nobody read does not go
+/// missing — it turns into its neighbour**: an agent that cannot replay
+/// paints an empty past, which is pixel-identical to a conversation
+/// where nothing was ever said.
+///
+/// Deliberately not the protocol's own `AgentCapabilities`: this is the
+/// subset khor acts on, and a field here is a promise that some face
+/// changes because of it.
+#[derive(Debug, Clone)]
+pub struct Facts {
+    /// The agent replays its own past (`session/load`). When false,
+    /// [`Handle::replay`] is not worth asking and a face must say the
+    /// past is unavailable rather than paint an empty one.
+    pub replays: bool,
+    /// The agent's own name for itself, when it gives one. Never used
+    /// to decide anything — khor's answer to "whose session is this"
+    /// is the user's, not the agent's self-description.
+    pub name: Option<String>,
+}
+
+/// Why no session exists.
+///
+/// Three kinds because a person does three different things about them,
+/// and one string for all of them meant the commonest of the three —
+/// "this agent wants you to log in first" — arrived wearing the same
+/// sentence as a typo in the command.
+///
+/// The words are the caller's: this crate carries the agent's own
+/// message as evidence ([`Refusal::said`]) and names which kind it is;
+/// choosing what a person reads is khor's judgment, not the protocol's.
+#[derive(Debug)]
+pub enum Refusal {
+    /// `auth_required` (-32000): the agent runs, speaks, and refuses to
+    /// open a session until somebody logs in. The one refusal whose fix
+    /// is not in khor's hands.
+    Login(String),
+    /// The agent answered `initialize` with a version this client does
+    /// not speak. Carries what it said it speaks.
+    ///
+    /// Unchecked, this is not an error at all until later: the protocol
+    /// has an agent answer with the highest version it supports, so the
+    /// handshake "succeeds" and the *first real request* fails — the
+    /// shape that costs the most to diagnose, because everything up to
+    /// it looked healthy.
+    Version(String),
+    /// Everything else: the command did not start, it does not speak
+    /// the protocol, it died, it said no.
+    Wont(String),
+}
+
+impl Refusal {
+    /// The agent's own words, verbatim. Evidence for a face to show
+    /// under khor's sentence — never a substitute for one, since an
+    /// agent may say nothing at all.
+    pub fn said(&self) -> &str {
+        match self {
+            Refusal::Login(s) | Refusal::Version(s) | Refusal::Wont(s) => s,
+        }
+    }
+}
 
 /// What the connection tells the caller, in protocol shape.
 #[derive(Debug)]
@@ -116,6 +182,7 @@ pub struct Handle {
     /// the same cwd the session was opened with (the real adapter
     /// refuses a mismatch).
     cwd: PathBuf,
+    facts: Facts,
     /// Dropping this ends the connection's main task, which drops the
     /// transport, which kills the agent's process group.
     _close: oneshot::Sender<()>,
@@ -160,6 +227,14 @@ impl Handle {
     pub fn session(&self) -> &SessionId {
         &self.session
     }
+
+    /// What the handshake said this agent can do. Read it before
+    /// offering a person something the agent cannot deliver — asking
+    /// and swallowing the error looks identical to succeeding at
+    /// nothing ([`Facts`]).
+    pub fn facts(&self) -> &Facts {
+        &self.facts
+    }
 }
 
 /// Starts `command` as an ACP agent and opens one session in `cwd`.
@@ -170,7 +245,7 @@ impl Handle {
 pub async fn start(
     command: &str,
     cwd: PathBuf,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), String> {
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     start_with(command, cwd, None).await
 }
 
@@ -183,7 +258,7 @@ pub async fn start_resume(
     command: &str,
     cwd: PathBuf,
     session: &str,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), String> {
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     start_with(command, cwd, Some(session.to_owned())).await
 }
 
@@ -191,10 +266,11 @@ async fn start_with(
     command: &str,
     cwd: PathBuf,
     resume: Option<String>,
-) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), String> {
-    let agent = AcpAgent::from_str(command).map_err(|e| e.to_string())?;
+) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
+    let agent = AcpAgent::from_str(command).map_err(|e| Refusal::Wont(e.to_string()))?;
     let (events_tx, events_rx) = mpsc::unbounded_channel::<Event>();
-    let (ready_tx, ready_rx) = oneshot::channel::<(ConnectionTo<Agent>, SessionId)>();
+    type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts), Refusal>;
+    let (ready_tx, ready_rx) = oneshot::channel::<Opened>();
     let (close_tx, close_rx) = oneshot::channel::<()>();
 
     let notes = events_tx.clone();
@@ -230,29 +306,23 @@ async fn start_with(
                 agent_client_protocol::on_receive_request!(),
             )
             .connect_with(agent, |connection: ConnectionTo<Agent>| async move {
-                connection
-                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
-                    .block_task()
-                    .await?;
-                let session = match resume {
-                    Some(sid) => {
-                        let sid = SessionId::new(sid);
-                        connection
-                            .send_request(LoadSessionRequest::new(sid.clone(), cwd))
-                            .block_task()
-                            .await?;
-                        sid
-                    }
-                    None => {
-                        connection
-                            .send_request(NewSessionRequest::new(cwd))
-                            .block_task()
-                            .await?
-                            .session_id
-                    }
-                };
+                let opened = open_one(&connection, resume, cwd).await;
+                // The refusal has to leave through the ready channel,
+                // because the alternative is what this used to do: fail
+                // out of the closure, land the text on `Event::Closed`
+                // — a receiver the caller never got, since it only
+                // arrives with the Handle — and answer the caller with
+                // a sentence about a channel. Every way an agent can
+                // decline then read as "it ended", and the opener's own
+                // timeout became the only thing a person ever saw.
+                let refused = opened.as_ref().err().map(|r| r.said().to_owned());
                 if let Some(tx) = ready_tx.take() {
-                    let _ = tx.send((connection.clone(), session));
+                    let _ = tx.send(
+                        opened.map(|(session, facts)| (connection.clone(), session, facts)),
+                    );
+                }
+                if let Some(said) = refused {
+                    return Err(agent_client_protocol::util::internal_error(said));
                 }
                 // Park until the Handle goes away **or the agent's side
                 // of the pipe does**. The crate treats a clean incoming
@@ -277,9 +347,69 @@ async fn start_with(
         let _ = closed.send(Event::Closed(outcome.err().map(|e| e.to_string())));
     });
 
-    let (conn, session) = ready_rx
+    let (conn, session, facts) = ready_rx
         .await
-        .map_err(|_| "the agent ended before a session existed".to_owned())?;
+        .map_err(|_| Refusal::Wont("the agent ended before a session existed".to_owned()))??;
     let _ = events_tx.send(Event::Ready { session: session.clone() });
-    Ok((Handle { conn, session, cwd: home, _close: close_tx }, events_rx))
+    Ok((Handle { conn, session, cwd: home, facts, _close: close_tx }, events_rx))
+}
+
+/// The handshake and the one session, or the reason there is neither.
+///
+/// Split out of the connection closure so every exit is a [`Refusal`]
+/// with a kind on it: inside the closure the natural spelling is `?`,
+/// which flattens all three kinds into one protocol error and loses
+/// exactly the distinction this exists to keep.
+async fn open_one(
+    connection: &ConnectionTo<Agent>,
+    resume: Option<String>,
+    cwd: PathBuf,
+) -> Result<(SessionId, Facts), Refusal> {
+    let hello = connection
+        .send_request(InitializeRequest::new(ProtocolVersion::V1))
+        .block_task()
+        .await
+        .map_err(refusal)?;
+    // **Version is negotiated, not assumed.** The protocol has the
+    // agent answer with the version it will actually speak, which need
+    // not be the one asked for; an unchecked mismatch is a handshake
+    // that succeeds and a first request that cannot, with nothing in
+    // between to look at.
+    if hello.protocol_version != ProtocolVersion::V1 {
+        return Err(Refusal::Version(hello.protocol_version.to_string()));
+    }
+    let facts = Facts {
+        replays: hello.agent_capabilities.load_session,
+        name: hello.agent_info.map(|i| i.name),
+    };
+    let session = match resume {
+        Some(sid) => {
+            let sid = SessionId::new(sid);
+            connection
+                .send_request(LoadSessionRequest::new(sid.clone(), cwd))
+                .block_task()
+                .await
+                .map_err(refusal)?;
+            sid
+        }
+        None => {
+            connection
+                .send_request(NewSessionRequest::new(cwd))
+                .block_task()
+                .await
+                .map_err(refusal)?
+                .session_id
+        }
+    };
+    Ok((session, facts))
+}
+
+/// One JSON-RPC error, sorted. Only `auth_required` gets its own kind:
+/// it is the only code in the protocol whose remedy belongs to the
+/// person rather than to khor.
+fn refusal(e: agent_client_protocol::Error) -> Refusal {
+    match e.code {
+        ErrorCode::AuthRequired => Refusal::Login(e.message),
+        _ => Refusal::Wont(e.message),
+    }
 }

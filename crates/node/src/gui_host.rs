@@ -296,7 +296,12 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                 None => khor_acp::start(&command, cwd).await,
             }
         })
-        .map_err(|e| e.to_string())?;
+        // The agent's own words, for now. Which *kind* of refusal it
+        // was is on `Refusal` and still unread here — the opener has
+        // nowhere to show it yet, and inventing khor's sentence in the
+        // ghost, whose stderr goes to /dev/null, would put it where
+        // nobody can read it either.
+        .map_err(|r| r.said().to_owned())?;
 
     // The vendor's uuid is the id — the whole merge story hangs on this
     // line (module head).

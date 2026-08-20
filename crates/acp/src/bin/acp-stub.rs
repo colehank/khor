@@ -6,20 +6,48 @@
 //! (two options: `go`, `stop`), then a final chunk that **names the
 //! outcome it received** — which is what lets a test assert the answer
 //! actually crossed the wire instead of asserting its own bookkeeping.
+//!
+//! # The switches, and why a stub needs to be able to lie
+//!
+//! The default stub is a *well-behaved* agent, and khor's two shims are
+//! well-behaved too — so every agent the tests ever met could replay,
+//! spoke v1, and needed no login. The behaviours worth guarding are all
+//! on the other side of that: an agent that says it cannot replay, one
+//! that answers with a version this client does not speak, one that
+//! demands a login. Each is one environment variable, off by default,
+//! so the well-behaved path stays the one the other tests exercise:
+//!
+//! | variable | the stub then |
+//! |---|---|
+//! | `KHOR_STUB_REPLAYS=0` | advertises no `load_session`, and refuses `session/load` |
+//! | `KHOR_STUB_VERSION=<n>` | answers `initialize` with version `n`, whatever was asked |
+//! | `KHOR_STUB_LOGIN=1` | answers `session/new` with `auth_required` (-32000) |
+//!
+//! `KHOR_STUB_REPLAYS` does **both** halves on purpose: an agent that
+//! advertises a capability it does not have, or hides one it does, is a
+//! third thing to test and not what these switches are for. What they
+//! reproduce is an honest agent with less to offer.
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ContentChunk, InitializeRequest, InitializeResponse, LoadSessionRequest,
-    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PermissionOption,
-    PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, SessionNotification, SessionUpdate, StopReason, TextContent,
-    ToolCallUpdate, ToolCallUpdateFields,
+    AgentCapabilities, ContentBlock, ContentChunk, InitializeRequest, InitializeResponse,
+    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
+    StopReason, TextContent, ToolCallUpdate, ToolCallUpdateFields,
 };
+use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Stdio};
 
 fn chunk(text: &str) -> SessionUpdate {
     SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
         text.to_owned(),
     ))))
+}
+
+/// Whether this stub replays its past. On unless told otherwise — the
+/// existing tests were written against an agent that does.
+fn replays() -> bool {
+    std::env::var("KHOR_STUB_REPLAYS").as_deref() != Ok("0")
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -29,12 +57,29 @@ async fn main() -> agent_client_protocol::Result<()> {
         .name("acp-stub")
         .on_receive_request(
             async move |request: InitializeRequest, responder, _connection| {
-                responder.respond(InitializeResponse::new(request.protocol_version))
+                // The version answered is the agent's to choose — which
+                // is exactly why a client must read it back.
+                let version = match std::env::var("KHOR_STUB_VERSION") {
+                    Ok(n) => ProtocolVersion::from(n.parse::<u16>().unwrap_or(0)),
+                    Err(_) => request.protocol_version,
+                };
+                responder.respond(
+                    InitializeResponse::new(version)
+                        .agent_capabilities(AgentCapabilities::new().load_session(replays())),
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |_request: NewSessionRequest, responder, _connection| {
+                if std::env::var("KHOR_STUB_LOGIN").is_ok() {
+                    // The real spelling: `auth_required` is a code, not
+                    // a phrase, and a client that matched on words
+                    // would pass this test and fail every real agent.
+                    return responder.respond_with_error(
+                        agent_client_protocol::Error::auth_required(),
+                    );
+                }
                 responder.respond(NewSessionResponse::new("stub-session-1"))
             },
             agent_client_protocol::on_receive_request!(),
@@ -44,6 +89,10 @@ async fn main() -> agent_client_protocol::Result<()> {
             // out **before** the response — which is the ordering the
             // real adapter honours and khor_acp::Handle::replay leans on.
             async move |request: LoadSessionRequest, responder, connection| {
+                if !replays() {
+                    return responder
+                        .respond_with_error(agent_client_protocol::Error::method_not_found());
+                }
                 let session = request.session_id.clone();
                 for text in ["played back: one", "played back: two"] {
                     connection
