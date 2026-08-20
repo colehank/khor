@@ -433,3 +433,57 @@ fn a_command_that_is_not_an_agent_does_not_borrow_the_login_sentence() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// **A conversation with an agent khor did not ship cannot move into a
+/// terminal, and says why in the right words** (批⑥).
+///
+/// It was already refused before this test existed — but with
+/// 「没有它的对话记录」, which is the refusal for a *claude or codex*
+/// row whose transcript went missing. On a generic agent that sentence
+/// sends a person looking for a file that was never supposed to exist:
+/// there is no vendor CLI khor knows how to resume and no transcript in
+/// a format it reads, and the limit is khor's rather than the disk's.
+///
+/// The neighbouring-answer trap in miniature: the refusal was correct
+/// and its words were not, which is the half a `is_err()` assertion
+/// cannot see. So this asserts the sentence.
+#[test]
+fn a_generic_agents_conversation_says_it_has_no_terminal_form() {
+    let root = std::env::temp_dir().join(format!("khor-guihost-noterm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+    let host = {
+        let (root, ready) = (root.clone(), ready.clone());
+        let cmd = vec![stub_path().to_string_lossy().to_string()];
+        std::thread::spawn(move || gui_host_main(root, ready, "stub".into(), cmd))
+    };
+    let id = wait_for_ready(&ready);
+
+    let node = khor_node::Node::open(root.clone()).expect("a node on this store");
+    let why = node.takeover_term(&id).expect_err("a stub has no terminal form");
+    assert_eq!(
+        why,
+        khor_catalog::msg::no_terminal_form(&id.0),
+        "the refusal names khor's own limit, not a missing file"
+    );
+    assert_ne!(
+        why,
+        khor_catalog::msg::takeover_no_record(&id.0),
+        "and it is not the sentence for a vendor row whose record went missing"
+    );
+
+    // Still a live conversation afterwards: a refusal must not have
+    // been half a takeover. `GuiOp::Close` rather than `close_session`
+    // — the host file names this test process (module head).
+    let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
+    let hf = read_host_file(&k.dir_of(&id).unwrap()).expect("the host is still there");
+    let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host still listens");
+    conn.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
+    write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
+    let w: Welcome = read_frame(&mut conn).unwrap();
+    assert!(w.ok, "{}", w.why);
+    write_frame(&mut conn, &GuiOp::Close).unwrap();
+    host.join().expect("the host thread ends").expect("cleanly");
+    let _ = std::fs::remove_dir_all(&root);
+}

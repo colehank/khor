@@ -1432,9 +1432,16 @@ impl Node {
             (cwd, vec![bin, "--resume".into(), full])
         } else {
             let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+            // **Neither vendor knows this row**, which since 批⑥ is a
+            // thing that happens on purpose: a session opened with an
+            // agent the user registered has no vendor CLI khor knows
+            // how to resume, and no transcript in a format khor reads.
+            // Saying 「没有它的对话记录」 here would send a person to
+            // look for a file that was never supposed to exist — the
+            // limit is in khor, and the sentence has to say so.
             let full = codex
                 .full_session_id(leaf)
-                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+                .ok_or_else(|| msg::no_terminal_form(&id.0))?;
             let cwd = codex
                 .recorded_cwd(&full)
                 .or_else(std::env::home_dir)

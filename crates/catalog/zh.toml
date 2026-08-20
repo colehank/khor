@@ -594,6 +594,14 @@ store-belongs-to = "这个仓是 {0} 的,这台是 {1}。共用 home 的机器�
 # face shows it, so the person decides.
 not-a-page = "这不是一个网页地址: {0}"
 takeover-no-record = "没有它的对话记录,接管不了: {0}"
+# 接管 read backwards — a conversation moving into a terminal — when khor
+# has no way to spell that for this agent. **Not「没有它的对话记录」**,
+# which is the same refusal one direction earlier and sends a person to
+# look for a file that was never supposed to exist: a generic ACP agent
+# (批⑥) has no vendor CLI khor knows how to resume, and that is a limit
+# in khor rather than something missing on disk. Names the two it does
+# know, so the boundary is readable instead of being a guess.
+no-terminal-form = "接不进终端: khor 只认得 claude 和 codex 在终端里接着说的写法,这行对不上它们任何一个: {0}"
 wizard-codex-chat-only = "codex 这批只有对话形式"
 wizard-unknown-agent = "不认识的智能体: {0}"
 takeover-wont-die = "那边的进程没退,接管中止: {0}"
