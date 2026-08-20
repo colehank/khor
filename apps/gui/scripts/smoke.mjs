@@ -2909,6 +2909,39 @@ for line in sys.stdin:
       `a program that asked for bracketed paste did not get the marks: ${brackEcho.slice(-120)}`,
     );
   }
+  // 24n) 拖文件进终端 (批④ 二笔): the path arrives quoted.
+  //
+  //      **The OS drag itself is not driven here and cannot be.** tauri
+  //      takes the drop before the webview sees it, so the paths come on
+  //      a tauri event that does not exist in this browser at all — the
+  //      gesture is a user-acceptance item. Everything on both sides of
+  //      it is automated: the quoting has its own Rust tests against a
+  //      real `sh`, and the op the gesture calls is driven here for
+  //      real, into a real terminal.
+  const dropped = ["/tmp/a b.txt", "/tmp/it's.txt"];
+  await page.locator(`[data-title="pasteplain"] [data-row-open]`).click();
+  await until("pasteplain's terminal again", 20_000, async () =>
+    (await page.locator("[data-terminal]").count()) === 1,
+  );
+  await page.evaluate(
+    async ([port, id, paths]) => {
+      const r = await fetch(`http://127.0.0.1:${port}/term_drop`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, paths }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+    },
+    [BRIDGE_PORT, await page.locator('[data-title="pasteplain"]').getAttribute("data-row"), dropped],
+  );
+  //      A space must not split the path into two arguments, and an
+  //      apostrophe must not end the quoting early — the two ways a
+  //      dropped filename turns into something else.
+  await until("the dropped paths arriving quoted", 20_000, async () => {
+    const seen = await page.locator("[data-terminal]").innerText();
+    return seen.includes("'/tmp/a b.txt'") && seen.includes("'/tmp/it'\\''s.txt'");
+  });
+
   // Put the pane back where 24k expects to find it: this block borrowed
   // the detail to look at two other terminals.
   await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();

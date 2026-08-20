@@ -186,6 +186,14 @@ fn term_paste(id: String, text: String) -> Result<(), String> {
     khor_gui_core::term::term_paste(&id, &text)
 }
 
+/// Files dropped on a terminal: their paths, shell-quoted, pasted in
+/// (`term::term_drop`). The quoting is the registry's because it is
+/// about the shell's syntax, and one wrong escape is a command.
+#[tauri::command]
+fn term_drop(id: String, paths: Vec<String>) -> Result<(), String> {
+    khor_gui_core::term::term_drop(&id, &paths)
+}
+
 #[tauri::command]
 fn term_resize(id: String, cols: u16, rows: u16) -> Result<(), String> {
     khor_gui_core::term::term_resize(&id, cols, rows)
@@ -361,6 +369,7 @@ pub fn run() {
             term_poll,
             term_key,
             term_paste,
+            term_drop,
             term_resize,
             term_leave,
             web_pins,

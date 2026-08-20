@@ -364,6 +364,42 @@ pub fn term_paste(id: &str, text: &str) -> Result<(), String> {
     write_frame(&mut *conn, &ClientOp::Input(bytes))
 }
 
+/// One path, written so a POSIX shell reads back exactly that path.
+///
+/// **Single quotes and nothing else.** Inside them every byte is
+/// literal — spaces, `$`, backticks, `*`, newlines, semicolons — so
+/// there is one rule instead of a list of characters somebody has to
+/// remember to keep in step with the shell. The single quote is the one
+/// character a single-quoted string cannot hold, and it is closed,
+/// escaped, and reopened (`'\''`).
+///
+/// This is the whole reason dropping a file into a terminal is safe to
+/// offer: an unquoted path with a space in it is two arguments, and one
+/// with a newline is a second command.
+pub fn shell_quote(path: &str) -> String {
+    let mut out = String::with_capacity(path.len() + 2);
+    out.push('\'');
+    for c in path.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Files dropped onto a terminal: their paths, quoted, as one paste.
+///
+/// A paste and not typing, which is what [`term_paste`] buys — a path
+/// with a newline in it typed straight in is a command the shell runs,
+/// and that is exactly the shape a dropped file can have.
+pub fn term_drop(id: &str, paths: &[String]) -> Result<(), String> {
+    let text = paths.iter().map(|p| shell_quote(p)).collect::<Vec<_>>().join(" ");
+    term_paste(id, &text)
+}
+
 /// A resize: the PTY is told (so programs repaint at the new size) and
 /// the local screen is set to match, so the bytes that repaint arrive
 /// into a screen already the right shape.
@@ -443,5 +479,77 @@ mod tests {
         let s = feed(b"\x1b[2;3HX");
         assert_eq!(s.lines[1][0].text.chars().nth(2), Some('X'));
         assert_eq!((s.cursor_row, s.cursor_col), (1, 3));
+    }
+}
+
+#[cfg(test)]
+mod quoting_tests {
+    use super::shell_quote;
+
+    /// **The shell is the oracle, not my idea of the shell.** Every case
+    /// is fed back through a real `sh` and the bytes it prints must be
+    /// the path that went in — so this checks the rule that actually
+    /// governs, rather than checking my quoting against my own reading
+    /// of it. A hand-written table of "these characters are dangerous"
+    /// is exactly the thing that goes stale without anybody noticing.
+    fn survives_a_real_shell(path: &str) {
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("printf %s {}", shell_quote(path)))
+            .output()
+            .expect("sh must run");
+        assert!(out.status.success(), "sh refused {:?}", shell_quote(path));
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            path,
+            "the shell read {:?} back as something else",
+            path,
+        );
+    }
+
+    #[test]
+    fn a_quoted_path_reaches_the_shell_as_itself() {
+        for path in [
+            "/tmp/plain.txt",
+            "/tmp/with a space.txt",
+            "/tmp/it's got a quote.txt",
+            "/tmp/two''quotes.txt",
+            "/tmp/a\nnewline.txt",
+            "/tmp/$HOME-is-not-expanded",
+            "/tmp/`backtick`.txt",
+            "/tmp/semi;colon && echo pwned",
+            "/tmp/star*glob?.txt",
+            "/tmp/中文 路径.txt",
+            "/tmp/tab\there.txt",
+            "",
+        ] {
+            survives_a_real_shell(path);
+        }
+    }
+
+    /// The dangerous one on its own, said out loud: a path that would be
+    /// a second command if it went in bare must come back as one string.
+    #[test]
+    fn a_path_that_looks_like_a_command_stays_a_path() {
+        let nasty = "/tmp/x; rm -rf /tmp/should-not-happen";
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("printf %s {}", shell_quote(nasty)))
+            .output()
+            .expect("sh must run");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), nasty);
+    }
+
+    /// Several files are several arguments, not one run-on word.
+    #[test]
+    fn each_dropped_path_is_its_own_argument() {
+        let quoted: Vec<String> =
+            ["/tmp/a b.txt", "/tmp/c.txt"].iter().map(|p| shell_quote(p)).collect();
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("for a in {}; do printf '[%s]' \"$a\"; done", quoted.join(" ")))
+            .output()
+            .expect("sh must run");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "[/tmp/a b.txt][/tmp/c.txt]");
     }
 }

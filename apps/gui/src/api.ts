@@ -43,6 +43,18 @@ export type {
 
 const bridge = new URLSearchParams(window.location.search).get("bridge");
 
+/**
+ * Running against the dev bridge rather than inside the app.
+ *
+ * Exported because a few things exist **only in the app shell**, and the
+ * honest thing is to not set them up at all in the browser rather than
+ * to set them up and watch them never fire. The file drop is the first:
+ * tauri intercepts OS drops before the webview sees them, so the paths
+ * arrive on a tauri event that the browser has no equivalent of — an
+ * HTML5 `drop` there would hand back a `File` with no path on it.
+ */
+export const onBridge = bridge !== null;
+
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) {
     // The dev bridge answers a refusal as a JSON string, and khor's
@@ -194,6 +206,12 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
     mode. */
 export const termPaste = (id: string, text: string) =>
   call<null>("term_paste", { id, text });
+/** Files dropped on a terminal. The paths go over as they are and the
+    quoting happens in the registry — shell syntax is not something a
+    face should be assembling, and one wrong escape turns a filename
+    into a command (`khor_gui_core::term::term_drop`). */
+export const termDrop = (id: string, paths: string[]) =>
+  call<null>("term_drop", { id, paths });
 export const termResize = (id: string, cols: number, rows: number) =>
   call<null>("term_resize", { id, cols, rows });
 export const termLeave = (id: string) => call<null>("term_leave", { id });

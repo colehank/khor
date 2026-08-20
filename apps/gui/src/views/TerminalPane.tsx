@@ -6,6 +6,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import {
+  onBridge,
+  termDrop,
   termKey,
   termLeave,
   termOpen,
@@ -173,6 +175,48 @@ export function TerminalPane({ id }: { id: string }) {
       termLeave(id).catch(() => {});
     };
   }, [id, fit]);
+
+  // Files dropped on this pane land as shell-quoted paths at the cursor
+  // (iTerm2's behaviour, 批④).
+  //
+  // **Only in the app, and that is not a shortcut.** tauri intercepts OS
+  // drops before the webview sees them, so the real paths arrive on a
+  // tauri event and the HTML5 `drop` never fires with anything useful —
+  // in the browser a dropped file is a `File` object with no path at
+  // all. Setting a listener up there would be a listener that never
+  // fires, which reads like a feature that is present and broken.
+  //
+  // The position is checked against this pane's own box: the event is
+  // the window's, not this element's, so without it a drop anywhere in
+  // the app would type into whatever terminal happened to be mounted.
+  useLayoutEffect(() => {
+    if (onBridge) return;
+    let drop: (() => void) | undefined;
+    let stopped = false;
+    void (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const un = await getCurrentWebview().onDragDropEvent((e) => {
+          if (e.payload.type !== "drop") return;
+          const box = boxRef.current?.getBoundingClientRect();
+          const at = e.payload.position;
+          if (!box || !at) return;
+          const inside =
+            at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom;
+          if (!inside || e.payload.paths.length === 0) return;
+          termDrop(id, e.payload.paths).catch(() => {});
+        });
+        if (stopped) un();
+        else drop = un;
+      } catch {
+        // No tauri here. Nothing to listen to and nothing to say.
+      }
+    })();
+    return () => {
+      stopped = true;
+      drop?.();
+    };
+  }, [id]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const bytes = keyBytes(e);
