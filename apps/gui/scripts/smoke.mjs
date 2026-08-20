@@ -2698,6 +2698,139 @@ for line in sys.stdin:
     (await page.locator("[data-chat-bottom]").count()) === 0,
   );
 
+  // 25f) 变速轮询 (批① d): the pane asks fast while a turn runs and
+  //      slows back down when it ends. **Counted off the network, not
+  //      off a flag the pane sets about itself**: the polls are real
+  //      requests, and a pane that only claimed to have changed pace
+  //      would pass an attribute check and fail this one.
+  const pollsInASecond = async () => {
+    await page.evaluate(() => performance.clearResourceTimings());
+    await new Promise((r) => setTimeout(r, 1_000));
+    return page.evaluate(
+      () =>
+        performance
+          .getEntriesByType("resource")
+          .filter((e) => e.name.includes("/chat_poll")).length,
+    );
+  };
+  await say(page, "hang for a while");
+  await until("a turn to be fast for", 20_000, async () =>
+    (await page.locator("[data-chat-stop]").count()) === 1,
+  );
+  const fastPolls = await pollsInASecond();
+  await page.locator("[data-chat-stop]").click();
+  await until("the turn over", 20_000, async () =>
+    (await page.locator("[data-chat-stop]").count()) === 0,
+  );
+  // One extra beat: the wait already in flight when the turn ended was
+  // scheduled at the fast length, so the first second after is a
+  // mixture. What is asserted is the pace it settles at.
+  await new Promise((r) => setTimeout(r, 1_000));
+  const calmPolls = await pollsInASecond();
+  if (fastPolls < 10) {
+    throw new Error(`a running turn must be followed closely: ${fastPolls} polls in a second`);
+  }
+  if (calmPolls > 4) {
+    throw new Error(`the pace must fall back when the turn ends: ${calmPolls} polls in a second`);
+  }
+  // …and it must still be polling. Zero would also satisfy the line
+  // above, and would mean a conversation that never notices anything
+  // again — the failure this cadence could most easily hide.
+  if (calmPolls === 0) {
+    throw new Error("falling back is not stopping: an idle pane still asks");
+  }
+
+  // 25g) 增量 fold 的两条边 (批① d). The picture is no longer refolded
+  //      from the whole conversation, so the two things the old fold got
+  //      right by construction have to be asserted:
+  //
+  //      the said line stays where it was said — between the answer
+  //      before it and the answer to it — rather than collecting at one
+  //      end, which is what an append that ignored order would look
+  //      like on a screen and never on a type.
+  const chatText = () =>
+    page.locator("[data-chat-scroll]").evaluate((el) => el.textContent ?? "");
+  await say(page, "anchor one");
+  await until("the first anchor answered", 20_000, async () =>
+    (await chatText()).includes("echo: anchor one"),
+  );
+  await say(page, "anchor two");
+  await until("the second anchor answered", 20_000, async () =>
+    (await chatText()).includes("echo: anchor two"),
+  );
+  const anchored = await chatText();
+  const order = ["anchor one", "echo: anchor one", "anchor two", "echo: anchor two"].map((s) =>
+    anchored.indexOf(s),
+  );
+  if (order.some((i) => i < 0)) {
+    throw new Error(`probe dead: an anchor is missing — ${JSON.stringify(order)}`);
+  }
+  for (let i = 1; i < order.length; i += 1) {
+    if (order[i] <= order[i - 1]) {
+      throw new Error(`a said line must stay where it was said: ${JSON.stringify(order)}`);
+    }
+  }
+
+  //      …and a replay replaces the past rather than stacking onto it.
+  //      Asked for twice through the real op, because that is what a
+  //      reconnect does. The first one must visibly paint something —
+  //      otherwise the second's "nothing changed" is the answer a dead
+  //      probe gives.
+  const replayRow = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  if (!replayRow) throw new Error("probe dead: the wizard's row has no id to replay");
+  const replay = () =>
+    page.evaluate(
+      async ([port, id]) => {
+        const r = await fetch(`http://127.0.0.1:${port}/chat_replay`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+      },
+      [BRIDGE_PORT, replayRow],
+    );
+  // The needle is the one line the fake writes into claude's own
+  // transcript on its way up, and `session/load` is where the host gets
+  // a past from (`gui_host` `replay_to`) — so counting it counts copies
+  // of the replayed past and nothing else.
+  const RECORDED = "the fake's own past";
+  const copiesOfThePast = async () => (await chatText()).split(RECORDED).length - 1;
+  // The past is already on screen: this pane asked for a replay when it
+  // attached, and that is the first copy. Asserted rather than assumed,
+  // because everything below is about that number not moving, and a
+  // number that started at zero would never move either.
+  const copies = await copiesOfThePast();
+  if (copies !== 1) {
+    throw new Error(`probe dead: the recorded past should be painted once, it is ${copies}`);
+  }
+  // Now ask again, the way a reconnect does. Several times, and the
+  // count is checked after each: a replay can legitimately arrive with
+  // no history at all (`replay_to` drains the agent's load with
+  // `try_recv`, so one answered a moment later sends only `HistoryEnd`)
+  // and that empties the past — the old fold did the same, its "last
+  // complete replay" being an empty one. An empty arrival says nothing
+  // about stacking, so what is required is that at least one of these
+  // landed, and that none of them ever made a second copy.
+  let landedAgain = false;
+  let most = copies;
+  for (let i = 0; i < 4; i += 1) {
+    await replay();
+    await new Promise((r) => setTimeout(r, 1_500));
+    const now = await copiesOfThePast();
+    most = Math.max(most, now);
+    if (now >= 1) landedAgain = true;
+    if (now > 1) break;
+  }
+  if (!landedAgain) {
+    throw new Error("probe dead: every replay arrived empty, so stacking was never tested");
+  }
+  if (most > 1) {
+    throw new Error(
+      `history is a state, not a stream: replaying again left ${most} copies of the past`,
+    );
+  }
+
   // The permission round-trip, on the screen's own buttons, in khor's
   // catalog words.
   await say(page, "please ask-permission");

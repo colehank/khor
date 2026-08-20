@@ -25,7 +25,7 @@
 //   typed those characters, and an asterisk they meant as an asterisk
 //   must not come back as emphasis.
 import { takeover as takeoverCall } from "@/api";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   chatAnswer,
@@ -45,6 +45,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { word } from "@/words";
+
+/**
+ * How often to ask for frames, while a turn runs and while none does.
+ *
+ * **The cadence is the whole of the latency.** The registry's reader
+ * thread already holds a frame the instant it arrives and `chat_poll`
+ * answers with whatever is there (`khor_gui_core::chat` module head),
+ * so nothing is ever lost between polls — the wait only decides how
+ * long a frame sits in Rust before a screen asks for it. Measured
+ * before this change, at 400ms: median 195–248 ms from the agent
+ * emitting a chunk to it being painted, which is half the gap, the
+ * signature of arrivals landing uniformly inside it.
+ *
+ * 50 is not a guess: `TerminalPane` has polled at 50 on both transports
+ * for as long as terminals have worked here, and a poll with nothing to
+ * say costs a lock and an empty slice.
+ *
+ * The idle pace is *slower* than the 400 it replaces. A conversation
+ * with no turn running produces nothing to see, and the pane that is
+ * paying for the fast pace is the one with something happening in it.
+ */
+const LIVE_MS = 50;
+const IDLE_MS = 500;
 
 /** One painted item, folded from the protocol's chunks. */
 type Item =
@@ -66,8 +89,33 @@ type Item =
   | { who: "sys"; text: string }
   | { who: "seal" };
 
-/** A line said from this face, pinned to where the live stream stood. */
-type Said = { afterLive: number; text: string };
+/**
+ * The painting, kept as items rather than as frames.
+ *
+ * **Nothing here is recomputed from the whole conversation.** Each poll
+ * folds only the frames it carried into what is already painted, which
+ * is what lets the cadence be fast: refolding thousands of frames is
+ * affordable eight times a minute and not twenty times a second.
+ *
+ * The two halves are not a tidiness: history is a *state* and the live
+ * stream is a *stream*. A replay arriving twice (a reconnect, a second
+ * asker on this attachment) must replace the past, never stack it —
+ * so the past is rebuilt whole from `arriving` when its end marker
+ * lands, and `live` is never touched by that. One still arriving keeps
+ * the previous picture until then.
+ *
+ * They are also two arrays rather than one because text merges only
+ * within an array: the old fold pushed a `seal` between them to stop a
+ * replayed line and a live one running together, and two arrays say
+ * the same thing without an item that exists to be filtered out.
+ */
+type Painting = {
+  past: Item[];
+  arriving: ChatFrame[];
+  live: Item[];
+};
+
+const BLANK: Painting = { past: [], arriving: [], live: [] };
 
 type Update = {
   sessionUpdate?: string;
@@ -80,20 +128,21 @@ type Update = {
   availableCommands?: { name?: string; description?: string }[];
 };
 
-/** The agent's own command list, as of the newest update carrying one.
+/** The agent's own command list, if this frame carries one.
     A list, not a merge: the agent republishes the whole set (claude's
     垫片 turns each init frame's `slash_commands` into one of these), so
-    the last word is the truth. */
-function commandsOf(frames: ChatFrame[]): { name: string; description: string }[] {
-  let out: { name: string; description: string }[] = [];
-  for (const f of frames) {
-    const u = updateOf(f);
-    if (u?.sessionUpdate !== "available_commands_update") continue;
-    out = (u.availableCommands ?? [])
-      .map((c) => ({ name: c.name ?? "", description: c.description ?? "" }))
-      .filter((c) => c.name);
-  }
-  return out;
+    the last frame to carry one is the truth and this simply replaces.
+
+    Read per frame rather than by scanning the conversation: the scan
+    was a second full pass over every frame ever received, run on every
+    render — it cost as much as the fold and answered a question only
+    one frame in a thousand changes. */
+function commandsIn(frame: ChatFrame): { name: string; description: string }[] | null {
+  const u = updateOf(frame);
+  if (u?.sessionUpdate !== "available_commands_update") return null;
+  return (u.availableCommands ?? [])
+    .map((c) => ({ name: c.name ?? "", description: c.description ?? "" }))
+    .filter((c) => c.name);
 }
 
 function updateOf(frame: ChatFrame): Update | null {
@@ -108,81 +157,105 @@ function textOf(u: Update): string {
   return u.content?.type === "text" ? (u.content.text ?? "") : "";
 }
 
-function fold(frames: ChatFrame[], says: Said[]): Exclude<Item, { who: "seal" }>[] {
-  const out: Item[] = [];
-  const chunk = (who: "user" | "agent" | "thought", text: string) => {
-    if (!text) return;
+/**
+ * Folds one frame into `out`, in place. Answers whether it painted
+ * anything — a `Turning` or a `Gone` carries no picture, and a poll
+ * that only brought those must not hand React a new array.
+ *
+ * Items are replaced rather than edited (`{ ...last, text: … }`): the
+ * array is what React is given, and an object mutated inside it is a
+ * change React has no way to see.
+ */
+function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
+  const chunk = (who: "user" | "agent" | "thought", text: string): boolean => {
+    if (!text) return false;
     const last = out[out.length - 1];
-    if (last && last.who === who && "text" in last) last.text += text;
-    else out.push({ who, text });
+    if (last && last.who === who && "text" in last) {
+      out[out.length - 1] = { ...last, text: last.text + text };
+    } else {
+      out.push({ who, text });
+    }
+    return true;
   };
-  const eat = (frame: ChatFrame, paintUser: boolean) => {
-    if (frame.kind === "ask") {
-      out.push({
-        who: "ask",
-        ask: frame.ask,
-        title: frame.title,
-        options: frame.options,
-        answer: null,
-      });
-      return;
+  if (frame.kind === "ask") {
+    out.push({
+      who: "ask",
+      ask: frame.ask,
+      title: frame.title,
+      options: frame.options,
+      answer: null,
+    });
+    return true;
+  }
+  if (frame.kind === "answered") {
+    // The answer lands on the ask it settles, wherever that sits — the
+    // host may have re-sent the ask to this face long after it was
+    // raised (`gui_host` — a face that arrives mid-ask). Searching only
+    // the live half is not a shortcut: a replay carries no asks, so an
+    // ask is never in the past.
+    const at = out.findIndex((i) => i.who === "ask" && i.ask === frame.ask);
+    const seat = at < 0 ? null : out[at];
+    if (seat && seat.who === "ask") {
+      out[at] = { ...seat, answer: frame.option ?? "" };
+      return true;
     }
-    if (frame.kind === "answered") {
-      // The answer lands on the ask it settles, wherever that sits —
-      // the host may have re-sent the ask to this face long after it
-      // was raised (`gui_host` — a face that arrives mid-ask).
-      const seat = out.find((i) => i.who === "ask" && i.ask === frame.ask);
-      if (seat && seat.who === "ask") seat.answer = frame.option ?? "";
-      return;
+    return false;
+  }
+  if (frame.kind === "turn") {
+    // 中断 gets a line; the calm endings are the list row's to say.
+    if (frame.stop !== "EndTurn" && frame.stop !== "Cancelled") {
+      out.push({ who: "sys", text: word("errored") });
     }
-    if (frame.kind === "turn") {
-      // 中断 gets a line; the calm endings are the list row's to say.
-      if (frame.stop !== "EndTurn" && frame.stop !== "Cancelled") {
-        out.push({ who: "sys", text: word("errored") });
-      }
-      out.push({ who: "seal" });
-      return;
-    }
-    const u = updateOf(frame);
-    if (!u) return;
-    switch (u.sessionUpdate) {
-      case "agent_message_chunk":
-        chunk("agent", textOf(u));
-        break;
-      case "agent_thought_chunk":
-        chunk("thought", textOf(u));
-        break;
-      case "user_message_chunk":
-        if (paintUser) chunk("user", textOf(u));
-        break;
-      case "tool_call":
-        out.push({ who: "tool", title: u.title ?? "" });
-        break;
-      // tool_call_update, plan, and the rest: unpainted (module head).
-    }
-  };
+    // The seal stops the next turn's first words running into this
+    // turn's last ones. It is filtered out before painting.
+    out.push({ who: "seal" });
+    return true;
+  }
+  const u = updateOf(frame);
+  if (!u) return false;
+  switch (u.sessionUpdate) {
+    case "agent_message_chunk":
+      return chunk("agent", textOf(u));
+    case "agent_thought_chunk":
+      return chunk("thought", textOf(u));
+    case "user_message_chunk":
+      return paintUser ? chunk("user", textOf(u)) : false;
+    case "tool_call":
+      out.push({ who: "tool", title: u.title ?? "" });
+      return true;
+    // tool_call_update, plan, and the rest: unpainted (module head).
+    default:
+      return false;
+  }
+}
 
-  // History is a state, not a stream: replayed twice (a reconnect, a
-  // second asker on this attachment) it must replace itself, never
-  // stack. Only the last *complete* replay paints — one still arriving
-  // keeps the previous picture until its end marker lands.
-  const past: ChatFrame[][] = [[]];
+/** One poll's worth of frames, folded into the picture. Answers the
+    same object when nothing was painted, so React stops there. */
+function absorb(paint: Painting, frames: ChatFrame[]): Painting {
+  let { past, arriving, live } = paint;
+  let moved = false;
   for (const f of frames) {
-    if (f.kind === "history") past[past.length - 1].push(f);
-    else if (f.kind === "history_end") past.push([]);
+    if (f.kind === "history") {
+      if (arriving === paint.arriving) arriving = arriving.slice();
+      arriving.push(f);
+      continue;
+    }
+    if (f.kind === "history_end") {
+      // The replacement. A replay that arrived empty replaces with an
+      // empty past, which is the honest answer for a conversation with
+      // no record — not a reason to keep painting the old one.
+      const rebuilt: Item[] = [];
+      for (const h of arriving) eat(rebuilt, h, true);
+      past = rebuilt;
+      arriving = [];
+      moved = true;
+      continue;
+    }
+    if (live === paint.live) live = live.slice();
+    if (eat(live, f, false)) moved = true;
   }
-  const whole = past.length > 1 ? past[past.length - 2] : [];
-  for (const f of whole) eat(f, true);
-  out.push({ who: "seal" });
-  const live = frames.filter((f) => f.kind !== "history" && f.kind !== "history_end");
-  let at = 0;
-  for (const f of live) {
-    for (const s of says) if (s.afterLive === at) out.push({ who: "user", text: s.text });
-    eat(f, false);
-    at += 1;
-  }
-  for (const s of says) if (s.afterLive >= at) out.push({ who: "user", text: s.text });
-  return out.filter((i): i is Exclude<Item, { who: "seal" }> => i.who !== "seal");
+  if (!moved && arriving === paint.arriving) return paint;
+  return { past, arriving, live };
 }
 
 /**
@@ -202,8 +275,9 @@ export function ChatView({
       (批C 接管): "busy" warns the confirm that a turn will be cut. */
   takeover?: "busy" | "calm";
 }) {
-  const [frames, setFrames] = useState<ChatFrame[]>([]);
-  const [says, setSays] = useState<Said[]>([]);
+  const [paint, setPaint] = useState<Painting>(BLANK);
+  /** The agent's own commands, as of the last frame that carried a set. */
+  const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
   const [gone, setGone] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [taking, setTaking] = useState(false);
@@ -227,8 +301,10 @@ export function ChatView({
   const [fresh, setFresh] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
-  const liveCount = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
+  /** How long to wait before asking again, and the way to stop waiting. */
+  const pace = useRef(IDLE_MS);
+  const pollNow = useRef<() => void>(() => {});
 
   useEffect(() => {
     let stopped = false;
@@ -236,7 +312,7 @@ export function ChatView({
     if (still) {
       fetchHistory(id)
         .then((frames) => {
-          if (!stopped) setFrames(frames);
+          if (!stopped) setPaint((prev) => absorb(prev, frames));
         })
         .catch(() => {
           if (!stopped) setGone(true);
@@ -245,15 +321,27 @@ export function ChatView({
         stopped = true;
       };
     }
-    const tick = () =>
+    // A self-scheduling wait rather than an interval, because the wait
+    // changes length: an interval would have to be torn down and rebuilt
+    // to change pace, and two of them briefly overlapping is two polls
+    // racing on one cursor.
+    let timer: number | null = null;
+    let asking = false;
+    const tick = () => {
+      if (stopped) return;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      // A poll already in the air will schedule the next one itself;
+      // calling in on top of it would fork the loop in two.
+      if (asking) return;
+      asking = true;
       chatPoll(id, cursor)
         .then((batch) => {
           if (stopped) return;
           cursor = batch.next;
           if (batch.frames.length) {
-            liveCount.current += batch.frames.filter(
-              (f) => f.kind !== "history" && f.kind !== "history_end",
-            ).length;
             if (batch.frames.some((f) => f.kind === "turn" || f.kind === "gone")) {
               setInTurn(false);
             }
@@ -262,14 +350,24 @@ export function ChatView({
             // and what it types is dropped (one turn at a time is the
             // host's rule — `gui_host` `GuiNote::Turning`).
             if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
-            setFrames((prev) => prev.concat(batch.frames));
+            for (const f of batch.frames) {
+              const list = commandsIn(f);
+              if (list) setCommands(list);
+            }
+            setPaint((prev) => absorb(prev, batch.frames));
           }
           if (batch.gone) setGone(true);
         })
         .catch(() => {
           // A poll that misses answers on the next tick; a chat that
           // never opened is `gone` below.
+        })
+        .finally(() => {
+          asking = false;
+          if (!stopped) timer = window.setTimeout(tick, pace.current);
         });
+    };
+    pollNow.current = tick;
     // An unreachable host is an over conversation, not an error of this
     // pane's own: the host holds the agent, so no host means no one to
     // talk to (`gui_host` — the host file's pids are one process).
@@ -284,13 +382,25 @@ export function ChatView({
       .catch(() => {
         if (!stopped) setGone(true);
       });
-    const timer = setInterval(tick, 400);
     return () => {
       stopped = true;
-      clearInterval(timer);
+      if (timer !== null) window.clearTimeout(timer);
+      pollNow.current = () => {};
       chatLeave(id).catch(() => {});
     };
   }, [id, still]);
+
+  // The two paces. Speeding up takes effect at once — waiting out a
+  // whole idle gap to notice a turn started would hand back the latency
+  // the fast pace exists to remove. Slowing down does not need a kick:
+  // the wait already in flight is the last fast one, and the next is
+  // scheduled at the idle length. **That is what makes this able to go
+  // back to zero** — there is no state to remember to clear, the pace
+  // is read fresh at each scheduling.
+  useEffect(() => {
+    pace.current = inTurn ? LIVE_MS : IDLE_MS;
+    if (inTurn) pollNow.current();
+  }, [inTurn]);
 
   // Follow the stream only while the reader is at the tail — new frames
   // must not yank someone who scrolled up into the past. What they get
@@ -300,7 +410,7 @@ export function ChatView({
     if (!el) return;
     if (nearBottom.current) el.scrollTop = el.scrollHeight;
     else setFresh(true);
-  }, [frames, says]);
+  }, [paint]);
 
   // The box is as tall as what has been typed into it, up to the ceiling
   // `--chat-box` sets. Measured rather than declared: `field-sizing`
@@ -329,7 +439,12 @@ export function ChatView({
     if (!line || inTurn || gone) return;
     setText("");
     setInTurn(true);
-    setSays((prev) => [...prev, { afterLive: liveCount.current, text: line }]);
+    // Painted first-hand, at the end of the live half (module head).
+    // It used to be pinned to a count of live frames and slotted back
+    // in by the fold; appended here it lands in the same place for the
+    // same reason — saying happens now, so it goes after everything
+    // that has arrived and before everything that has not.
+    setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: line }] }));
     chatSay(id, line).catch(() => setInTurn(false));
   };
 
@@ -337,7 +452,6 @@ export function ChatView({
   // typed so far. Open only while the box holds a single slash-word —
   // a space means the command is chosen and what follows is its
   // argument, which is the agent's business and not this menu's.
-  const commands = commandsOf(frames);
   const slash = /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : null;
   const menu =
     slash === null ? [] : commands.filter((c) => c.name.toLowerCase().startsWith(slash));
@@ -349,7 +463,17 @@ export function ChatView({
     setPick(0);
   };
 
-  const items = fold(frames, says);
+  // The past then the live half, with the seals dropped. Recomputed
+  // only when the picture actually moved — `absorb` answers the same
+  // object otherwise, so a poll that brought nothing paintable stops
+  // here rather than walking the list again.
+  const items = useMemo(
+    () =>
+      [...paint.past, ...paint.live].filter(
+        (i): i is Exclude<Item, { who: "seal" }> => i.who !== "seal",
+      ),
+    [paint],
+  );
   // A turn is running and nothing has come back from it yet. Painted as
   // 忙碌 in the state's own markup — the same `data-word`/`data-word-text`
   // pair the session row wears, so it inherits the doctrine rather than
