@@ -3414,6 +3414,7 @@ dependencies = [
  "base64 0.22.1",
  "khor-catalog",
  "loro",
+ "serde",
  "serde_json",
 ]
 
