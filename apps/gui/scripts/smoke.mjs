@@ -2484,8 +2484,13 @@ for line in sys.stdin:
   //     from `khor devices` printing the same reading — an independent
   //     witness, with the age line counted on both sides because the CLI
   //     prints it inside the same run of cells.
-  if ((await page.locator("[data-vitals-bar]").count()) === 0) {
-    throw new Error("no reading drew a bar");
+  //     Named for what it is: the filled arc of a ring. It was
+  //     `data-vitals-bar` while the readings were bars, and the shape
+  //     changed (批⑨) — the fact asserted did not. It points at the arc
+  //     itself rather than at a wrapper, so "a gauge drew" cannot be
+  //     answered by a box that would have been there either way.
+  if ((await page.locator("[data-ring-fill]").count()) === 0) {
+    throw new Error("no reading drew its gauge");
   }
   await sameNumberOfReadings("alpha", envB);
 
@@ -2552,9 +2557,24 @@ for line in sys.stdin:
   if ((await gpuRow.count()) !== 1) {
     throw new Error("no GPU reading on this machine's card, and every Mac has one to read");
   }
+  //     **The sentence is on the back of the reading now** (批⑨): the
+  //     front is a gauge, and the exact quantity turns over. So it is
+  //     turned over the way a person turns it over — which asserts one
+  //     thing more than the old reading of the whole unit did, that the
+  //     sentence is *reachable* rather than merely present in the
+  //     markup. And it is read off the element that holds only the
+  //     sentence, instead of off a box whose text happened to be the
+  //     sentence and nothing else.
+  await gpuRow.click();
+  const gpuDetail = page.locator('[data-vitals-detail="gpu"]');
+  await until(
+    "the GPU reading turned over",
+    5_000,
+    async () => (await gpuDetail.innerText()).trim().length > 0,
+  );
   const sentence = (s) => s.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
   const cardCount = (s) => s.match(/\d+/g)?.[1];
-  const onCard = await gpuRow.innerText();
+  const onCard = await gpuDetail.innerText();
   const inTerminal = cliReadings("beta", envB).find((p) => sentence(p) === sentence(onCard));
   if (!inTerminal) {
     throw new Error(

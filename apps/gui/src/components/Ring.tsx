@@ -100,6 +100,11 @@ function Arc({
       />
       {filled != null && filled > 0 && (
         <circle
+          // The arc that carries the reading. Named because something
+          // outside has to be able to ask "did a gauge actually draw",
+          // and the honest answer is this element — a wrapper would be
+          // present whether or not there was anything to show.
+          data-ring-fill
           cx={cx}
           cy={cx}
           r={r}

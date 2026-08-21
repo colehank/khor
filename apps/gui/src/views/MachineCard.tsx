@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { DeviceRow, HooksState, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring, RING_SIZE } from "@/components/Ring";
@@ -230,11 +232,13 @@ function Readings({ row }: { row: DeviceRow }) {
     <div data-vitals className="flex flex-wrap gap-row pt-pane">
       <Unit
         name="cpu"
+        word={cli.vitals_name_cpu}
         label={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
         fraction={v.cpu_pct / 100}
       />
       <Unit
         name="mem"
+        word={cli.vitals_name_mem}
         label={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
         fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
         strain={row.vitals.mem_strain}
@@ -242,6 +246,7 @@ function Readings({ row }: { row: DeviceRow }) {
       {v.disk ? (
         <Unit
           name="disk"
+          word={cli.vitals_name_disk}
           label={cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total))}
           fraction={v.disk.total > 0 ? v.disk.used / v.disk.total : null}
           strain={row.vitals.disk_strain}
@@ -257,7 +262,7 @@ function Readings({ row }: { row: DeviceRow }) {
         // neighbours, where a lone line of text would have read as a
         // different *kind* of thing rather than the same kind with
         // nothing in it.
-        <Unit name="disk" label={cli.vitals_disk_unknown} fraction={null} unknown />
+        <Unit name="disk" word={cli.vitals_name_disk} label={cli.vitals_disk_unknown} fraction={null} unknown />
       )}
       {/* **Absent rather than explained**, which is the opposite of the
           disk right above, and the asymmetry is the judgment. khor's home
@@ -271,12 +276,14 @@ function Readings({ row }: { row: DeviceRow }) {
         <>
           <Unit
             name="gpu"
+            word={cli.vitals_name_gpu}
             label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
             fraction={v.gpu.util_pct / 100}
           />
           {v.gpu.mem && (
             <Unit
               name="vram"
+              word={cli.vitals_name_vram}
               label={cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
               fraction={v.gpu.mem.total > 0 ? v.gpu.mem.used / v.gpu.mem.total : null}
             />
@@ -335,14 +342,31 @@ function gaugeColor(strain: Strain | null | undefined): string {
   return strain ? "var(--strain)" : "var(--muted-foreground)";
 }
 
+/**
+ * One reading, as a gauge that turns over.
+ *
+ * **Three facts, two faces.** The arc is roughly how full, the middle is
+ * exactly how much, and the sentence khor's own terminal prints — with
+ * the denominator, the core count, the bytes — is on the back. Put all
+ * three on the front and the front stops being a gauge and becomes a
+ * paragraph; drop the sentence and the card starts saying less than the
+ * terminal does about the same machine.
+ *
+ * **A real button**: it answers the keyboard, it says which way it is
+ * facing, and it carries the sentence as its accessible name so that
+ * nobody has to turn it over to be told the fact.
+ */
 function Unit({
   name,
+  word,
   label,
   fraction,
   strain,
   unknown,
 }: {
   name: string;
+  /** The reading's name on its own, for under the ring. */
+  word: string;
   label: string;
   /** `null` when there is no denominator to divide by, and then only the
       track is drawn — a full circle of arc would read as "this is at
@@ -354,28 +378,46 @@ function Unit({
   /** This reading could not be taken at all, as opposed to being zero. */
   unknown?: boolean;
 }) {
+  const [flipped, setFlipped] = useState(false);
+  // A percentage, because the arc is one and the two should agree at a
+  // glance. The exact quantity — bytes, cores, cards — is the back's job.
+  const value = fraction === null ? null : `${Math.round(fraction * 100)}%`;
   return (
-    <div className="flex flex-col items-center gap-in" style={{ minWidth: RING_SIZE }}>
-      {/* `data-vitals-bar` rides the gauge, not a bar: smoke knows "a
-          reading drew its gauge" by this name, and the shape changed
-          while the fact it asserts did not. Worth renaming the day
-          somebody is editing that file anyway. */}
-      <span data-vitals-bar={fraction === null ? undefined : ""}>
-        <Ring fraction={fraction} color={gaugeColor(strain)} />
+    <button
+      type="button"
+      data-metric
+      data-flipped={flipped}
+      data-vitals-unit={name}
+      data-vitals-unknown={unknown ? "" : undefined}
+      aria-pressed={flipped}
+      // The sentence, not "CPU" — a name that reads out the short form
+      // would make a screen reader turn the card over for the number.
+      aria-label={label}
+      onClick={() => setFlipped((on) => !on)}
+      className="rounded-md p-in"
+      style={{ minWidth: RING_SIZE }}
+    >
+      <span data-metric-faces>
+        <span data-metric-face="front" className="flex flex-col items-center gap-in">
+          <Ring fraction={fraction} color={gaugeColor(strain)}>
+            {value}
+          </Ring>
+          <span className="text-aux text-muted-foreground">{word}</span>
+        </span>
+        {/* **The attribute marks the sentence itself**, not the unit
+            around it: it is what `khor devices` prints word for word, and
+            it is compared as text — so it has to name exactly the
+            sentence and not a box that also holds a number in a ring. */}
+        <span
+          data-metric-face="back"
+          data-vitals-detail={name}
+          data-strain={strain ?? undefined}
+          className="grid place-items-center text-center text-aux text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-medium"
+        >
+          {label}
+        </span>
       </span>
-      {/* **The attribute sits on the sentence, not on the column.** It is
-          what `khor devices` prints, word for word, and smoke compares
-          the two as text — so it has to mark exactly the sentence and
-          not a box that also contains a number in a ring. */}
-      <div
-        data-vitals-unit={name}
-        data-vitals-unknown={unknown ? "" : undefined}
-        data-strain={strain ?? undefined}
-        className="text-aux text-center text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-medium"
-      >
-        {label}
-      </div>
-    </div>
+    </button>
   );
 }
 

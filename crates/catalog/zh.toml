@@ -197,6 +197,15 @@ age-days = "{0} 天"
 vitals-cpu = "CPU {0}% / {1} 核"
 vitals-mem = "内存 {0} / {1}"
 vitals-disk = "磁盘 {0} / {1}"
+# The same readings' names on their own, for the face of a ring: the arc
+# is the gauge, the middle holds the value, and the name goes under it.
+# **The sentence above and the name here are never on screen together** —
+# the sentence is what the ring turns over to show, so this is not the
+# same words printed twice, it is the short form and the long form of one
+# reading, each on the side that has room for it.
+vitals-name-cpu = "CPU"
+vitals-name-mem = "内存"
+vitals-name-disk = "磁盘"
 # The disk khor's home sits on could not be identified. It gets a word
 # rather than being left out, because a missing line and a machine that
 # could not answer read the same otherwise — and 「0 / 0」 would read as
@@ -210,10 +219,12 @@ vitals-disk-unknown = "磁盘 说不上"
 # announcing that on every desktop without a card is noise reporting a
 # non-event. So the whole line is simply absent (khor_core::Gpu).
 vitals-gpu = "GPU {0}% / {1} 卡"
+vitals-name-gpu = "GPU"
 # Video memory, summed over the cards. Absent on unified-memory machines,
 # where those bytes are already counted in 「内存」 above and a second line
 # would put the same memory on screen twice under another name.
 vitals-vram = "显存 {0} / {1}"
+vitals-name-vram = "显存"
 # How old the reading is. **Printed on every reading that is not this
 # machine's own**, because a number with no age is read as the present:
 # a machine that has been off since yesterday would otherwise show

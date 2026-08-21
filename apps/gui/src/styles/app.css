@@ -58,6 +58,52 @@
   background-color: var(--rail-on);
 }
 
+/* A reading turns over.
+ *
+ * The arc says roughly how full, the middle says exactly how much, and
+ * the sentence khor's own terminal prints — with the denominator, the
+ * core count, the bytes — is on the back. Three facts, two faces, and
+ * the front stays a gauge rather than a paragraph.
+ *
+ * **Why `visibility` and not only `backface-visibility`.** A rotated
+ * backface stops being *seen*, but its text is still text: it stays in
+ * `innerText`, it stays in the accessibility tree, and anything reading
+ * the unit gets both faces concatenated. So the away face is also made
+ * `hidden`, on a delay of half the turn so it disappears behind the edge
+ * rather than blinking out in the open.
+ *
+ * That is not only tidiness — `smoke.mjs` compares this card's sentence
+ * against `khor devices` word for word, and a unit that reports both of
+ * its faces at once says something neither face says. */
+[data-metric] {
+  perspective: var(--flip-depth);
+}
+
+[data-metric-faces] {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform var(--dur-420) var(--ease-move);
+}
+
+[data-metric][data-flipped="true"] [data-metric-faces] {
+  transform: rotateY(180deg);
+}
+
+[data-metric-face] {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  transition: visibility 0s linear calc(var(--dur-420) / 2);
+}
+
+[data-metric-face="back"] {
+  transform: rotateY(180deg);
+}
+
+[data-metric][data-flipped="false"] [data-metric-face="back"],
+[data-metric][data-flipped="true"] [data-metric-face="front"] {
+  visibility: hidden;
+}
+
 /* `type=search` is the right semantics — screen readers announce it, and
    Escape clears — but WebKit hangs its own clear glyph inside the box.
    That glyph belongs to no family we drew, which is the one thing the
@@ -207,5 +253,16 @@ input[type="search"]::-webkit-search-decoration {
      does not travel to get there. */
   [data-status-item] {
     animation: none;
+  }
+
+  /* A reading still turns over — that is the whole affordance — it just
+     swaps instead of rotating. The face swap has to become instant too,
+     or the delay that used to hide it mid-turn would leave half a second
+     of neither face showing. */
+  [data-metric-faces] {
+    transition: none;
+  }
+  [data-metric-face] {
+    transition: none;
   }
 }

@@ -299,6 +299,12 @@
   --kind-mark: 14px;
   --kind-mark-glyph: 11px;
 
+  /* How deep the box a reading turns over inside is. Shallower and the
+     turn skews hard enough to read as the card tipping; deeper and there
+     is no perspective left, so it reads as a cross-fade rather than as a
+     thing with two sides. */
+  --flip-depth: 600px;
+
   /* How far a control gives under a press. Small on purpose: this is
      feedback, not an animation to watch — at 0.9 the button reads as
      rejecting the click, and anything above 0.98 cannot be seen at
