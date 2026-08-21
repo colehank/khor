@@ -11,7 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "pretest": "npm run gen",
     "test": "node scripts/check-px.mjs && node scripts/check-icons.mjs && tsc --noEmit",
-    "rail": "node scripts/check-rail.mjs"
+    "rail": "node scripts/check-rail.mjs",
+    "palette": "node scripts/check-palette.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

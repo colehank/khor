@@ -8,7 +8,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  // The focus ring is an **outline with an offset**, not the stock
+  // `ring-1` sitting flush against the edge. Measured reason: the ring
+  // and the primary button are the same colour — both are the theme's
+  // ink (light) or paper (dark) — so a ring drawn tight against that
+  // button contrasts 1.00 with it and cannot be seen at all. That was
+  // true of the brand green it replaces too, in *both* themes, so this
+  // is not a new problem introduced by the palette change; it is one the
+  // palette change stopped hiding behind a colour that was unreadable
+  // anyway.
+  //
+  // An outline rather than `ring-offset-*`: the gap an outline leaves is
+  // transparent, so it shows whatever the button actually sits on. A
+  // ring offset has to be *told* its colour, and a button on a card
+  // would then get a gap painted in the page's colour instead of the
+  // card's — right in the one place the ring is hardest to see.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {

@@ -4,6 +4,36 @@
  * doctrine — busy takes no hue (it breathes), green belongs to done,
  * blocked is the app's only cold color, red sinks with failed.
  *
+ * ── what the brand green is for, and what it is not ──────────
+ *
+ * **The green never carries text, and never means "press me."** It held
+ * both jobs and could do neither: `#93b04d` has a relative luminance of
+ * .378, which caps its contrast against *pure white* at 2.45 — so white
+ * on green measured 2.45, and no change of backdrop could have fixed it
+ * because there is no lighter backdrop than white. The same green was
+ * `--ring`, at 2.39 against the card, under the 3.0 a non-text graphic
+ * needs: a keyboard user could not see where they were. It was also
+ * saying two different things at once — "this is the main action" and
+ * "this session is done" — which is one job too many for one colour.
+ *
+ * So green keeps three posts and gives up the fourth:
+ *
+ *   identity — the avatar palettes and the app's own mark. The values
+ *              live in `crates/core/src/avatar.rs`; `--lq1..3` below
+ *              mirror them for reference and nothing in this stylesheet
+ *              consumes them.
+ *   state    — 完成, and only that one of the six words.
+ *   soft fill— `--accent`: a tint to lie *behind* something, never to
+ *              be read as a shape or a word.
+ *   ~~action~~ gone. The main action is ink on paper (`--primary`),
+ *              which is also the only thing on either theme with
+ *              contrast to spare.
+ *
+ * **Why it needs writing down rather than just doing**: a colour with no
+ * job left becomes decoration, and decoration drifts back into whatever
+ * the next screen feels like using it for. These three posts are the
+ * whole list.
+ *
  * Pages never invent a number: utilities come from this theme, and the
  * px gate (scripts/check-px.mjs) turns a stray pixel literal into a
  * build error. Dark follows the system — no toggle (docs/UX.md 设置). */
@@ -23,7 +53,10 @@
   --card-foreground: rgba(26, 26, 20, 0.94);
   --popover: #fcfcfa;
   --popover-foreground: rgba(26, 26, 20, 0.94);
-  --primary: #93b04d;
+  /* Ink, not the brand green — see the green doctrine at the top of this
+     file. White on this measures 17.47; white on the green it replaces
+     measured 2.45, which was the whole reason. */
+  --primary: #1a1a14;
   --primary-foreground: #ffffff;
   --secondary: rgba(26, 26, 20, 0.06);
   --secondary-foreground: rgba(26, 26, 20, 0.78);
@@ -35,7 +68,21 @@
   --destructive-foreground: #ffffff;
   --border: rgba(26, 26, 20, 0.1);
   --input: rgba(26, 26, 20, 0.1);
-  --ring: #93b04d;
+  /* The focus ring, ink for the same reason and to the same reading.
+   *
+   * **Written out rather than `var(--primary)`**, though the two happen
+   * to coincide today: they answer to different questions — one is "what
+   * does the main action look like", the other is "can a keyboard user
+   * see where they are" — and a future tint of the action must not
+   * silently take the focus ring with it.
+   *
+   * Its old value was the brand green at 2.39 against the card. Worth
+   * recording that the light theme was not the only broken one: the ring
+   * and the primary button were **the same colour in both themes**, so a
+   * ring drawn tight against that button measured 1.00 — invisible on
+   * precisely the control that matters most, dark theme included. The
+   * gap that fixes that is on the button (`ui/button.tsx`), not here. */
+  --ring: #1a1a14;
   --radius: 10px;
 
   /* ── the liquid family — the brand's greens ───────── */
@@ -276,8 +323,11 @@
     --card-foreground: rgba(238, 238, 231, 0.96);
     --popover: #191917;
     --popover-foreground: rgba(238, 238, 231, 0.96);
-    --primary: #b7cf75;
-    --primary-foreground: #1a1a14;
+    /* Paper, the mirror of light's ink: an ink button cannot be seen on a
+       dark ground, so this is the one thing in the palette whose two
+       themes are opposites rather than shades. Measures 16.46. */
+    --primary: #eeeee7;
+    --primary-foreground: #0f0f0e;
     --secondary: rgba(244, 244, 239, 0.07);
     --secondary-foreground: rgba(238, 238, 231, 0.72);
     --muted: rgba(244, 244, 239, 0.07);
@@ -288,7 +338,7 @@
     --destructive-foreground: #1a1a14;
     --border: rgba(238, 238, 231, 0.08);
     --input: rgba(238, 238, 231, 0.08);
-    --ring: #b7cf75;
+    --ring: #eeeee7;
 
     --lq1: #f2f6cb;
     --lq2: #dce9a6;

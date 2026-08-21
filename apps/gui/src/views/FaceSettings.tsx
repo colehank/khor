@@ -96,11 +96,18 @@ function FaceOption({
       onClick={onPick}
       className={cn(
         "flex-col gap-1 rounded-md px-2 py-2 text-xs text-muted-foreground",
-        // The brand color marks the current one, the same way the rail
-        // marks the landing you are on — one mark for "this is where
-        // you are", not a second vocabulary. The ring carries it as
-        // well as the text, because on this screen the thing being
-        // looked at is a picture and the word underneath is small.
+        // Full ink marks the current one, the same way the rail marks
+        // the landing you are on — one mark for "this is where you are",
+        // not a second vocabulary. **It used to say "the brand color"
+        // and that is no longer what this paints**: green stopped
+        // carrying text app-wide (see the doctrine at the top of
+        // `tokens.css`), and the rail stopped using it for selection at
+        // the same time, so the sentence was false in both of its
+        // halves while the code under it stayed correct.
+        //
+        // The ring carries the mark as well as the text, because on this
+        // screen the thing being looked at is a picture and the word
+        // underneath is small.
         on && "text-primary ring-2 ring-primary",
       )}
     >
