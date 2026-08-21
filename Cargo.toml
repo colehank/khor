@@ -52,11 +52,21 @@ iroh = "1.0"
 # rustls rather than the platform stack because iroh already brings
 # rustls in — a second TLS implementation for one GET would be paid for
 # on every build and every platform.
-# No `system-proxy` on purpose: this machine (and plenty of others)
-# export `http_proxy` for other reasons, and a quota read silently
-# routed through somebody's proxy is a credential sent somewhere the
-# user did not choose. Direct, or not at all.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+# `system-proxy` **after being wrong about it once.** The first version
+# left it off, reasoning that a credential should not be silently routed
+# through somebody's proxy. That reasoning does not survive contact with
+# a real machine: on this one `https_proxy` is not an interception, it is
+# *how the machine reaches the internet* — DNS hands back a fake address
+# from the tunnel's own range and only the tunnel knows what to do with
+# it, so a client that ignores the setting does not go direct, it goes
+# nowhere (measured: 35s to a timeout against example.com, while `curl`
+# on the same box answered in 1.2s).
+#
+# And the premise was wrong too: `claude` itself honours these variables,
+# so the credential's own tool already travels that path. khor refusing
+# it protected nothing and only made khor the one client that could not
+# work here.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "system-proxy"] }
 anyhow = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
