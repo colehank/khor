@@ -103,12 +103,14 @@ const GROUP_GAP = 8.0;
  * neighbour in the middle would leave that assertion green while the
  * palette silently stopped meaning what it says.
  *
- * **Light only.** The dark theme's order is interleaved today — a quiet
- * word sits brighter than two loud ones — and that is a known open
- * decision, not something this file should freeze in place by asserting
- * it. Its gap is printed instead, so nobody has to rediscover it.
+ * **Both themes, one order.** It was light-only while the dark theme was
+ * still interleaved — a quiet word brighter than two loud ones — and
+ * this file printed that rather than asserting it, because a gate that
+ * goes red over something nobody was asked to change is a gate people
+ * learn to skip. That was fixed (#96b), so the exception is gone with
+ * the state that justified it.
  */
-const LIGHT_ORDER = ["idle", "busy", "errored", "done", "blocked", "failed"];
+const ORDER = ["idle", "busy", "errored", "done", "blocked", "failed"];
 
 /** CIE L* of an already-composited colour. */
 function lstar(rgb) {
@@ -300,22 +302,16 @@ try {
         : Math.min(...loud) - Math.max(...quiet);
     console.log(`${scheme}: group gap ΔL* ${gap.toFixed(1)}`);
 
-    if (scheme === "light") {
-      if (gap < GROUP_GAP) {
-        fail(
-          `light: the quiet pair is only ΔL* ${gap.toFixed(1)} from the four that want you, under ` +
-            `${GROUP_GAP} — a difference that has to be compared side by side to be seen`,
-        );
-      }
-      const order = [...readings].sort((a, b) => a.worst - b.worst).map((r) => r.word);
-      if (order.join() !== LIGHT_ORDER.join()) {
-        fail(`light: the six words read ${order.join(" < ")}, not ${LIGHT_ORDER.join(" < ")}`);
-      }
-    } else if (gap < GROUP_GAP) {
-      // Printed, never failed: the dark theme was deliberately left
-      // alone (its own decision, not this batch's), and a red gate for a
-      // state nobody was asked to change is a gate people learn to skip.
-      console.log(`dark: (interleaved — a quiet word outshines a loud one; open decision, untouched)`);
+    if (gap < GROUP_GAP) {
+      fail(
+        `${scheme}: the quiet pair is only ΔL* ${gap.toFixed(1)} from the four that want you, under ` +
+          `${GROUP_GAP} — a difference that has to be compared side by side to be seen` +
+          (gap < 0 ? " (negative: the two groups are interleaved)" : ""),
+      );
+    }
+    const order = [...readings].sort((a, b) => a.worst - b.worst).map((r) => r.word);
+    if (order.join() !== ORDER.join()) {
+      fail(`${scheme}: the six words read ${order.join(" < ")}, not ${ORDER.join(" < ")}`);
     }
 
     // The one post green kept that still touches text: the word 完成,

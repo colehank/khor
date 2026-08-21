@@ -423,16 +423,43 @@
     --lq2: #dce9a6;
     --lq3: #b7cf75;
 
+    /* ── the same separation as light, arrived at from the other side ──
+     * The light theme pushed the four that call you *down* in lightness
+     * because its floor was the 4.5 a word answers to. Here the loud
+     * four go *up*, for the mirror reason — on a dark ground more
+     * contrast is lighter, not darker.
+     *
+     * **What was wrong here was not the range, it was the order.** These
+     * six spanned 4.55–9.11, which reads as plenty; but 忙碌 — a word
+     * that asks nothing — sat *brighter* than both 失败 and 待批, and
+     * the two groups were interleaved rather than separated (group gap
+     * −3.1). A wide range hid it.
+     *
+     * Same target as light, 8 in L*, and the same reason it is stated in
+     * L* rather than in contrast: L* is near enough perceptually uniform
+     * that one threshold means the same thing at both ends of the scale,
+     * which is exactly what a contrast ratio does not do. Measured: 8.4.
+     *
+     * **The four are packed tightly on purpose.** Two points of lightness
+     * between them is enough because they are not telling each other
+     * apart by lightness — that is the hue's job, and the hues are
+     * doctrine. Lightness here is doing one job only: separating the two
+     * that ask for nothing from the four that do.
+     *
+     * 失败 pays for this: at L* 81 sRGB cannot hold a saturated red, so
+     * its chroma drops about a fifth and it lands a lighter coral. That
+     * is a gamut fact rather than a choice — the alternative was leaving
+     * it dimmer than 忙碌, which is the bug. */
     --state-busy: var(--muted-foreground);
-    --state-blocked: #01aac6;
-    --state-done: #cfe08a;
-    --state-errored: #e3c06b;
+    --state-blocked: #4fd4f0;
+    --state-done: #b6c671;
+    --state-errored: #d7b55f;
     /* Lightened from #d4756b, which measured **4.07** on a selected
        row — under the 4.5 a word answers to, and nobody had reported
        it: the halo work only ever measured these against the card,
        where it reads 5.50. Ten percent toward paper, which keeps it the
        same red and clears the floor at 4.62. */
-    --state-failed: #d8837a;
+    --state-failed: #ffb8ad;
     /* .55 against 忙碌's .55 — see the light block; on this theme the
        ceiling is 待批 at 4.70 rather than 忙碌, so this sits under it. */
     --state-idle: rgba(238, 238, 231, 0.55);
