@@ -1,0 +1,15 @@
+[package]
+name = "khor-web"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+khor-catalog.workspace = true
+khor-gui-core = { path = "../../apps/gui/core" }
+khor-node.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+# The same server the dev bridge uses, run differently: workers instead
+# of one loop (`serve` module head has the measurement). Already in the
+# lock file by way of khor-gui-core, so naming it here costs no package.
+tiny_http = "0.12"

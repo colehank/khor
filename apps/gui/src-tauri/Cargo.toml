@@ -14,6 +14,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 khor-gui-core = { path = "../core" }
 khor-node.workspace = true
+# The browser face, started beside the embedded serve. The app is the
+# resident on a desktop that has one, and a face that only `khor serve`
+# could raise would be absent on exactly the machines somebody sits at.
+khor-web = { path = "../../../crates/web" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -8,6 +8,7 @@ members = [
     "crates/net",
     "crates/sync",
     "crates/node",
+    "crates/web",
     "crates/cli",
     "apps/gui/core",
     "apps/gui/src-tauri",

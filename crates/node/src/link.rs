@@ -1871,6 +1871,34 @@ impl Node {
         Ok(set)
     }
 
+    /// The addresses a **live** serve says this machine has, or `None`
+    /// when nothing is serving.
+    ///
+    /// Both halves of that sentence are the answer to a question
+    /// somebody asks before printing a link to hand to another device:
+    /// which address to print, and whether anything is listening at it
+    /// (`khor web`). Read off `endpoint.json` rather than off the
+    /// interfaces, so it is the same set khor already tells the network
+    /// to dial — an address khor itself does not believe in is not one
+    /// to put in front of a person.
+    ///
+    /// The ports are the endpoint's own and are dropped: a consumer is
+    /// asking where this machine *is*, not where this one socket is.
+    pub fn local_ips(&self) -> Result<Option<Vec<std::net::IpAddr>>, String> {
+        let Some(file) = self.endpoint_file()? else {
+            return Ok(None);
+        };
+        let mut ips: Vec<std::net::IpAddr> = Vec::new();
+        for a in &file.addrs {
+            if let Ok(sock) = a.parse::<std::net::SocketAddr>() {
+                if !ips.contains(&sock.ip()) {
+                    ips.push(sock.ip());
+                }
+            }
+        }
+        Ok(Some(ips))
+    }
+
     fn endpoint_file(&self) -> Result<Option<EndpointFile>, String> {
         let path = self.root().join(".khor").join("endpoint.json");
         let Ok(text) = fs::read_to_string(&path) else {
@@ -1888,8 +1916,14 @@ impl Node {
 }
 
 /// 16 random bytes as hex — invite tokens, hand-off cookies, session
-/// leaves.
-pub(crate) fn fresh_hex() -> Result<String, String> {
+/// leaves, the web face's key.
+///
+/// Public because the last of those is minted outside this crate
+/// (`khor_web`), and a capability that has to be guessed in 2^128 tries
+/// is one fact: a second implementation of it somewhere else is a
+/// second chance to get the width wrong. `LEAF_HEX` below has the
+/// birthday arithmetic that settled 128.
+pub fn fresh_hex() -> Result<String, String> {
     let mut raw = [0u8; 16];
     getrandom::fill(&mut raw).map_err(msg::no_entropy)?;
     Ok(raw.iter().map(|b| format!("{b:02x}")).collect())
@@ -1943,7 +1977,12 @@ pub(crate) fn fresh_leaf() -> Result<String, String> {
 
 /// Owner-only from the first byte: the hand-off cookie in endpoint.json
 /// is a capability, and create-then-chmod would leave a readable window.
-pub(crate) fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+///
+/// Public for the same reason as [`fresh_hex`] — the web face's key is
+/// written outside this crate and must land with the same permissions
+/// on the same machines, including the shared ones where 0600 is the
+/// whole defence against the account next door.
+pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let _ = fs::remove_file(path);
     let mut opts = fs::OpenOptions::new();

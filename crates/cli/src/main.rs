@@ -72,6 +72,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "unpin", run: unpin },
     Verb { word: "close", run: close },
     Verb { word: "serve", run: serve },
+    Verb { word: "web", run: web },
     Verb { word: "quit", run: quit },
     Verb { word: "hooks", run: hooks },
     Verb { word: "invite", run: invite },
@@ -865,7 +866,196 @@ fn serve(_rest: &[String]) -> Result<(), String> {
     }
     let n = node()?;
     eprintln!("{}", cli::serve_banner(n.name()));
+    start_web_face(&Node::root_from_env());
     rt()?.block_on(n.serve())
+}
+
+/// Brings up the browser face beside the resident, and **keeps serving
+/// if it cannot come up**.
+///
+/// A busy port must not cost this machine its place in the mesh —
+/// syncing, answering peers and hosting sessions are what a node is
+/// for, and none of them needs a browser. So the failure is loud on
+/// stderr and not fatal.
+///
+/// That leaves a state where the node is up and the face is not, which
+/// is why `khor web` asks the address a real question before printing
+/// it rather than assuming this succeeded (`khor_web::answers_at`).
+fn start_web_face(root: &std::path::Path) {
+    match khor_web::listen(root.to_path_buf(), khor_web::port()) {
+        Ok(face) => eprintln!("{}", cli::web_banner(face.addr)),
+        Err(e) => eprintln!("{e}"),
+    }
+}
+
+/// The browser face's link — the same GUI the app shows, opened from a
+/// phone or anybody's laptop on this network.
+///
+/// **It starts nothing.** The face belongs to the resident (`serve`),
+/// because "open it and the mesh is there" has to be true at the moment
+/// somebody reaches for their phone, and a face that waits for a person
+/// to run a command is absent exactly then. So this verb hands out the
+/// key and the address, and refuses to print a link when nothing is
+/// listening rather than printing one that fails in the browser.
+///
+/// `--new` mints a fresh key, which is also how a link is taken back:
+/// there is no list of issued links to revoke one from, and there does
+/// not need to be — the key *is* the link.
+fn web(rest: &[String]) -> Result<(), String> {
+    let fresh = match rest {
+        [] => false,
+        [flag] if flag == "--new" => true,
+        _ => return Err(USAGE.into()),
+    };
+    let root = Node::root_from_env();
+    let key = if fresh {
+        khor_web::key::rotate(&root)?
+    } else {
+        khor_web::key::ensure(&root)?
+    };
+    if fresh {
+        println!("{}", msg::WEB_FACE_ROTATED);
+    }
+    // Rotating is a local act and has already happened; only the
+    // printing of an address depends on somebody being up to answer it.
+    let port = khor_web::port();
+    let Some(ips) = node()?.local_ips()? else {
+        return Err(msg::WEB_FACE_NOT_SERVING.to_owned());
+    };
+    let Some(ip) = khor_web::best_address(&ips) else {
+        return Err(msg::WEB_FACE_NOT_SERVING.to_owned());
+    };
+    // **The address about to be printed is the address that gets
+    // probed.** Checking loopback instead would pass on a Mac whose
+    // firewall has not been told about khor — loopback is exempt from
+    // it and nothing else is — and the verb would hand somebody a link
+    // that their phone silently cannot open.
+    if !khor_web::answers_at(std::net::SocketAddr::new(ip, port)) {
+        return Err(msg::web_face_down(std::net::SocketAddr::new(ip, port)));
+    }
+    let url = khor_web::link(ip, port, &key);
+    println!("{}", msg::WEB_FACE_HERE);
+    println!("  {url}");
+    print!("{}", web_qr(&url));
+    println!("{}", msg::WEB_FACE_KEY_NOTE);
+    Ok(())
+}
+
+/// The link as a scannable block, for the phone that is going to open it.
+///
+/// **Colors, not characters.** A terminal renderer that prints `██` for
+/// a dark module is betting on the reader having a light background; on
+/// a dark one every module is inverted and most scanners refuse. So each
+/// module carries its own black or white, and the code scans out of any
+/// terminal.
+///
+/// Two rows per line through the upper half block: a character cell is
+/// about twice as tall as it is wide, so one module per cell would come
+/// out stretched, and stretched is the other way a code fails to scan.
+fn web_qr(url: &str) -> String {
+    let Ok(code) = qrcode::QrCode::new(url.as_bytes()) else {
+        // A URL too long to encode is not a reason to withhold the link
+        // that was already printed above.
+        return String::new();
+    };
+    let width = code.width();
+    let modules = code.to_colors();
+    // The quiet zone is part of the symbol, not decoration: without a
+    // light margin a scanner cannot find the finder patterns.
+    let quiet = 4usize;
+    let dark = |x: isize, y: isize| -> bool {
+        if x < 0 || y < 0 || x as usize >= width || y as usize >= width {
+            return false;
+        }
+        modules[y as usize * width + x as usize] == qrcode::Color::Dark
+    };
+    let span = width + quiet * 2;
+    let mut out = String::new();
+    let mut row = 0isize;
+    while row < span as isize {
+        for col in 0..span as isize {
+            let (x, y) = (col - quiet as isize, row - quiet as isize);
+            let upper = dark(x, y);
+            let lower = dark(x, y + 1);
+            // Foreground paints the upper half, background the lower.
+            let fg = if upper { "30" } else { "97" };
+            let bg = if lower { "40" } else { "107" };
+            out.push_str(&format!("\x1b[{fg};{bg}m\u{2580}"));
+        }
+        out.push_str("\x1b[0m\n");
+        row += 2;
+    }
+    out
+}
+
+#[cfg(test)]
+mod web_qr_tests {
+    use super::web_qr;
+
+    /// Reads the painted block back into modules. Dark is black — `30`
+    /// on top, `40` underneath — and everything this test knows about
+    /// the picture, a scanner knows too.
+    fn read_back(block: &str) -> Vec<Vec<bool>> {
+        let mut rows: Vec<Vec<bool>> = Vec::new();
+        for line in block.lines() {
+            let (mut upper, mut lower) = (Vec::new(), Vec::new());
+            for cell in line.trim_end_matches("\x1b[0m").split('\x1b').skip(1) {
+                let Some(codes) = cell.strip_prefix('[').and_then(|c| c.split_once('m')).map(|(c, _)| c)
+                else {
+                    continue;
+                };
+                let Some((fg, bg)) = codes.split_once(';') else { continue };
+                upper.push(fg == "30");
+                lower.push(bg == "40");
+            }
+            rows.push(upper);
+            rows.push(lower);
+        }
+        rows
+    }
+
+    /// **The picture is the code.** The half-block packing is the part
+    /// written here rather than by the library, and every way it can be
+    /// wrong — inverted colors, rows paired off by one, a quiet zone on
+    /// three sides — produces a block that still *looks* like a QR code
+    /// in a terminal and cannot be scanned. So the block is read back
+    /// and compared module for module against what the encoder said.
+    #[test]
+    fn the_painted_block_is_the_same_code_the_encoder_made() {
+        let url = "http://192.168.1.20:5467/?k=9516d9585187f1e2e7d7b6793c46f905";
+        let code = qrcode::QrCode::new(url.as_bytes()).expect("a URL this size encodes");
+        let width = code.width();
+        let modules = code.to_colors();
+        let quiet = 4;
+
+        let painted = read_back(&web_qr(url));
+        assert!(painted.len() >= width + quiet * 2, "the block is shorter than the symbol");
+        for y in 0..width {
+            for x in 0..width {
+                assert_eq!(
+                    painted[y + quiet][x + quiet],
+                    modules[y * width + x] == qrcode::Color::Dark,
+                    "module ({x},{y}) came out wrong — the picture is not this code"
+                );
+            }
+        }
+        // The margin, on all four sides. A scanner needs it to find the
+        // finder patterns, and it is the easiest half of this to drop.
+        for y in 0..quiet {
+            assert!(painted[y].iter().all(|d| !d), "row {y} of the quiet zone is not blank");
+        }
+        for row in painted.iter().take(width + quiet).skip(quiet) {
+            assert!(row[..quiet].iter().all(|d| !d), "the left margin is not blank");
+            assert!(row[width + quiet..].iter().all(|d| !d), "the right margin is not blank");
+        }
+    }
+
+    /// A code that cannot be made costs the link nothing: the address is
+    /// printed before this is called, and a person can still type it.
+    #[test]
+    fn an_unencodable_link_is_no_picture_rather_than_no_link() {
+        assert_eq!(web_qr(&"x".repeat(10_000)), "");
+    }
 }
 
 /// Processes only, files stay — the opposite end of `close`, which is

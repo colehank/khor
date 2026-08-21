@@ -3310,7 +3310,9 @@ dependencies = [
  "khor-catalog",
  "khor-core",
  "khor-node",
+ "khor-web",
  "libc",
+ "qrcode",
  "serde_json",
  "tokio",
 ]
@@ -3342,6 +3344,7 @@ dependencies = [
  "khor-catalog",
  "khor-gui-core",
  "khor-node",
+ "khor-web",
  "serde",
  "serde_json",
  "tauri",
@@ -3417,6 +3420,18 @@ dependencies = [
  "loro",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "khor-web"
+version = "0.1.13"
+dependencies = [
+ "khor-catalog",
+ "khor-gui-core",
+ "khor-node",
+ "serde_json",
+ "tiny_http",
+ "tokio",
 ]
 
 [[package]]
@@ -5086,6 +5101,12 @@ checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quick-xml"

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
-  onBridge,
+  inApp,
   termDrop,
   termKey,
   termLeave,
@@ -301,7 +301,7 @@ export function TerminalPane({ id }: { id: string }) {
   // the window's, not this element's, so without it a drop anywhere in
   // the app would type into whatever terminal happened to be mounted.
   useLayoutEffect(() => {
-    if (onBridge) return;
+    if (!inApp) return;
     let drop: (() => void) | undefined;
     let stopped = false;
     void (async () => {

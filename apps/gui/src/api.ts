@@ -1,6 +1,9 @@
-// The one transport seam. In the app, calls go over tauri IPC; in the
-// browser (verification), the same commands go to the dev bridge — the
-// real backend behind an HTTP skin, never a hand-written mock.
+// The one transport seam. Three ways in, one set of commands
+// (`khor_gui_core::api`): the app talks tauri IPC, browser verification
+// talks to the dev bridge, and a phone talks to the web face this page
+// was served from. Never a hand-written mock — the backend is the same
+// Rust in all three.
+import { msg } from "./gen/catalog";
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
@@ -41,43 +44,101 @@ export type {
   AgentRow,
 };
 
-const bridge = new URLSearchParams(window.location.search).get("bridge");
+const params = new URLSearchParams(window.location.search);
+const bridge = params.get("bridge");
 
 /**
- * Running against the dev bridge rather than inside the app.
+ * Inside the desktop app's webview.
  *
  * Exported because a few things exist **only in the app shell**, and the
- * honest thing is to not set them up at all in the browser rather than
- * to set them up and watch them never fire. The file drop is the first:
- * tauri intercepts OS drops before the webview sees them, so the paths
- * arrive on a tauri event that the browser has no equivalent of — an
- * HTML5 `drop` there would hand back a `File` with no path on it.
+ * honest thing is to not set them up at all elsewhere rather than to set
+ * them up and watch them never fire. The file drop is the first: tauri
+ * intercepts OS drops before the webview sees them, so the paths arrive
+ * on a tauri event that a browser has no equivalent of — an HTML5 `drop`
+ * there would hand back a `File` with no path on it.
+ *
+ * **This used to be called `onBridge`**, back when "not the app" and
+ * "the dev bridge" were the same thing. They stopped being the same
+ * thing the moment a phone could open this page, and a name that only
+ * described one of two cases is the kind that sends the next person
+ * grepping to the wrong file (`chat-*` → `to-bottom`, same lesson).
+ * Asked positively, too: this is the one of the three that is true when
+ * tauri's own IPC global is present, rather than a guess from the
+ * absence of something else.
  */
-export const onBridge = bridge !== null;
+export const inApp = "__TAURI_INTERNALS__" in window;
+
+/**
+ * The web face's key, taken off the link once and kept.
+ *
+ * `khor web` prints an address with `?k=…` on it; the address bar is a
+ * thing that gets screenshotted, bookmarked and read over a shoulder,
+ * so the key comes off it on the first paint and the URL is rewritten
+ * without it. What is left is a clean address that still works, because
+ * the key is in storage.
+ *
+ * **`localStorage`, not `sessionStorage`**: the promise is that a phone
+ * bookmarks this and it opens. A key that died with the tab would mean
+ * digging out the original link every time, and the person would end up
+ * bookmarking the version *with* the key in it — which is the thing
+ * this is trying to avoid.
+ */
+const KEY_HELD = "khor.web.key";
+const webKey: string | null = (() => {
+  const fromLink = params.get("k");
+  if (fromLink === null) return window.localStorage.getItem(KEY_HELD);
+  window.localStorage.setItem(KEY_HELD, fromLink);
+  const clean = new URL(window.location.href);
+  clean.searchParams.delete("k");
+  window.history.replaceState(null, "", clean.toString());
+  return fromLink;
+})();
+
+// khor answers a refusal as a JSON string, and its refusals are whole
+// sentences meant for a person — handing the raw body onward puts the
+// encoding's quotation marks around one.
+const unwrap = (body: string): string => {
+  try {
+    const v: unknown = JSON.parse(body);
+    return typeof v === "string" ? v : body;
+  } catch {
+    return body;
+  }
+};
+
+async function post<T>(url: string, headers: Record<string, string>, args?: Record<string, unknown>): Promise<T> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(args ?? {}),
+  });
+  if (!r.ok) throw new Error(unwrap(await r.text()));
+  return (await r.json()) as T;
+}
+
+/**
+ * This browser reached the face but was never given a key.
+ *
+ * A distinct state rather than one more failed request: **every poll in
+ * this app swallows its errors**, because a poll that threw on a blip
+ * would take a screen down for a network hiccup. So without this, the
+ * only symptom of arriving without a key is a screen where nothing ever
+ * appears — which is what a broken khor looks like too. Measured that
+ * way first (`scripts/web-face.mjs`), which is why it is knowable here,
+ * synchronously, before anything renders.
+ */
+export const missingWebKey = !inApp && bridge === null && webKey === null;
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (bridge) {
-    // The dev bridge answers a refusal as a JSON string, and khor's
-    // refusals are whole sentences meant for a person — handing the raw
-    // body onward puts the encoding's quotation marks around one.
-    const unwrap = (body: string): string => {
-      try {
-        const v: unknown = JSON.parse(body);
-        return typeof v === "string" ? v : body;
-      } catch {
-        return body;
-      }
-    };
-    const r = await fetch(`http://127.0.0.1:${bridge}/${cmd}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(args ?? {}),
-    });
-    if (!r.ok) throw new Error(unwrap(await r.text()));
-    return (await r.json()) as T;
+  if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
+  if (inApp) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<T>(cmd, args);
   }
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<T>(cmd, args);
+  // The web face. Same origin — the page came from here — so the
+  // address is relative and no CORS is involved in either direction.
+  if (webKey === null) throw new Error(msg.web_no_key);
+  return post<T>(`/api/${cmd}`, { authorization: `Bearer ${webKey}` }, args);
 }
 
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and

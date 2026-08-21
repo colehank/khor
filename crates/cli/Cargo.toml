@@ -10,7 +10,23 @@ path = "src/main.rs"
 [dependencies]
 khor-node.workspace = true
 khor-catalog.workspace = true
+# The browser face. The resident starts it and `khor web` hands out its
+# key — CLI and GUI are the same door (docs/KHOR.md CLI 与 GUI 等价), so
+# the face cannot be a thing only the app can raise.
+khor-web = { path = "../web" }
 tokio.workspace = true
+# The link as a picture, because the alternative is a person typing 32
+# hex digits into a phone. That is not a nicety: a key nobody can enter
+# is a face nobody opens, so the code is part of the door working.
+#
+# `default-features = false` drops its `image` feature, and the measured
+# cost of that is **exactly one package** (Cargo.lock 773 -> 774,
+# counted off the diff, not estimated). Only the module matrix is used;
+# the drawing is ours, because a scannable code in a terminal needs
+# explicit colors rather than characters whose meaning depends on the
+# reader's background (`web_qr`).
+# License: MIT OR Apache-2.0 (checked before use, not after).
+qrcode = { version = "0.14.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

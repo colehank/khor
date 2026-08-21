@@ -124,6 +124,10 @@ usage = """
                         取消置顶
   close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
+                        (顺带把网页脸也开在局域网上,见 web)
+  web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
+                        脸是 serve 开的,这条只发钥匙;链接里带钥匙,别贴进
+                        会同步的文档。--new 换一把,之前发出去的链接全作废
   quit                  收摊:停掉本机的 serve 和所有 session 宿主
                         (文件都留着,再 serve 就都回来)
   hooks [install|uninstall]
@@ -246,6 +250,7 @@ dir-truncated = "目录太大,只列出前 {0} 条"
 borrowing = "借着 {0} 的网,代理口在 {1};把浏览器或 HTTPS_PROXY 指过来。收口: khor close {2}"
 broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
 serve-banner = "khor serve: {0} 在听,配对与同步都归它"
+web-banner = "网页脸在 {0} 听着;要链接跑 khor web"
 # `khor hooks`. The file is named on every run, installing or not: khor
 # is writing into something the user owns, and "which file" is the first
 # thing they need to be able to check.
@@ -714,6 +719,27 @@ cant-write-pty = "写不了 PTY: {0}"
 cant-listen-loopback = "听不了本机口: {0}"
 wrong-cookie = "暗号不对"
 host-child-wait = "等不到孩子结束: {0}"
+
+# ── the web face (khor-web) ──
+# 拒绝的话要说清「怎么才对」,因为读到它的人多半在另一台设备上,
+# 手边没有这台机器的终端——只说「不行」等于让他回去猜。
+web-cant-listen = "网页脸起不来,{0} 口占着了: {1}。换一个口:设 KHOR_WEB_PORT 再 khor serve"
+web-no-such-page = "网页脸没有这一页: {0}"
+web-bad-host = "网页脸只认地址,不认名字,而这个请求报的是「{0}」。\n  用 khor web 打印的那个链接;要是你自己搭了反向代理,那条路这一版不支持"
+web-bad-origin = "这个请求是另一个页面({0})发的,网页脸只答自己那一张"
+web-no-key = "这个链接没带钥匙。在那台机器上跑 khor web,用它打印的链接打开"
+web-wrong-key = "钥匙不对。多半是那台机器换过钥匙了——旧链接就此作废,跑一次 khor web 拿新的"
+web-no-key-yet = "这台机器还没有网页脸的钥匙(serve 没起来过?)。先 khor serve,再 khor web"
+web-key-empty = "网页脸的钥匙文件是空的: {0}。删掉它,重启 serve 会重新发一把"
+web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
+# khor web 自己的输出。链接是要被人抄到另一台设备上的,所以它自己一行。
+web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
+web-face-key-note = "链接里带着钥匙,别往同步的文档里贴。换一把:khor web --new"
+web-face-rotated = "换了一把新钥匙,之前发出去的链接全都作废了。"
+web-face-not-serving = "serve 没在跑,所以现在没人在听这个地址。先 khor serve"
+# serve 活着但脸没起来——和上一条分开,因为该做的事不一样:上一条是「去起 serve」,
+# 这一条是「去看 serve 的输出,那个口八成被占了」。合成一句会把人支去做错的事。
+web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条链接发出去也是打不开的。\n  两种常见原因:那个口被别的东西占着(看一眼 serve 的输出,或设 KHOR_WEB_PORT 换口),\n  或者系统防火墙没放行 khor——macOS 第一次会弹框问「是否允许接受传入连接」,\n  点过「拒绝」或者没人在跟前点,它就会像这样:握手连得上,数据一个字节也不给"
 
 [gui]
 sessions-tab = "会话"

@@ -344,6 +344,16 @@ pub fn run() {
         });
     });
 
+    // The browser face rides with the resident, and the app is the
+    // resident on a desktop somebody is sitting at. Not fatal if it
+    // cannot bind: a busy port must not cost this machine its place in
+    // the mesh, and `khor web` checks a live socket before printing a
+    // link rather than trusting that this succeeded.
+    match khor_web::listen(Node::root_from_env(), khor_web::port()) {
+        Ok(face) => eprintln!("khor web face: {}", face.addr),
+        Err(e) => eprintln!("{e}"),
+    }
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             sessions,
