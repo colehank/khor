@@ -47,6 +47,16 @@ rmp-serde = "1"
 loro = "1.13"
 base64 = "0.22"
 iroh = "1.0"
+# The only outbound HTTP khor makes: Anthropic's usage endpoint, read
+# with the credential Claude Code already stored (crates/node/src/quota.rs).
+# rustls rather than the platform stack because iroh already brings
+# rustls in — a second TLS implementation for one GET would be paid for
+# on every build and every platform.
+# No `system-proxy` on purpose: this machine (and plenty of others)
+# export `http_proxy` for other reasons, and a quota read silently
+# routed through somebody's proxy is a credential sent somewhere the
+# user did not choose. Direct, or not at all.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 anyhow = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }

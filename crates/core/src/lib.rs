@@ -685,6 +685,68 @@ pub struct Usage {
     pub unreadable: u64,
 }
 
+/// Which subscription window a quota reading is about.
+///
+/// **A key, not a label.** The words live in `crates/catalog` and are
+/// looked up where they are painted, the same rule the six state words
+/// follow — a Rust file that spelled the window's name would be the one
+/// place that wording could not be changed from.
+///
+/// The set is open in practice and closed here on purpose: a window this
+/// build has never heard of is dropped by the parser rather than carried
+/// as an unnamed number, because a percentage with no idea what it is a
+/// percentage *of* is worse than no row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaWindowKind {
+    FiveHour,
+    SevenDay,
+    SevenDaySonnet,
+    SevenDayOpus,
+}
+
+/// How full one subscription window is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct QuotaWindow {
+    pub kind: QuotaWindowKind,
+    /// 0–100, clamped at the parser. A number outside that range is a
+    /// misread rather than a fuller-than-full window.
+    pub used_pct: f32,
+    /// When this window rolls over, unix seconds. `None` once the moment
+    /// has passed — a reset time in the past is not a fact about the
+    /// future, and the reading beside it has already been zeroed.
+    pub resets_at: Option<i64>,
+}
+
+/// What this machine's Claude subscription has left.
+///
+/// **Read through the user's own Claude Code login, and the interface has
+/// to say so.** The credential was stored so that `claude` could run;
+/// using it to answer a second question widens what it was given for,
+/// and the user agreed to that widening knowing it (ruling 2026-08-21).
+/// What they agreed to is not a secret khor keeps — a number appearing
+/// with no account behind it reads as khor's own knowledge, which it is
+/// not, so whichever screen paints this says whose login it came
+/// through.
+///
+/// **Never replicated.** Like [`Vitals`] this is asked for and cached
+/// with the moment it was taken; unlike Vitals it is not even a fact
+/// about the machine — it is a fact about an *account*, and the same
+/// account seen from two machines is one quota, not two.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Quota {
+    /// Windows the endpoint reported, in the order [`QuotaWindowKind`]
+    /// declares them. Empty is a real answer — an account the endpoint
+    /// reports no window limits for is not an error.
+    pub windows: Vec<QuotaWindow>,
+    /// When this reading was taken, unix seconds. `None` means "just
+    /// now, this call". **Not decoration**: a served cache entry and a
+    /// fresh fetch look identical otherwise, and 18% from ten minutes
+    /// ago is a different sentence from 18% now — the same axis
+    /// [`VitalsReading`] carries, applied to an account.
+    pub as_of: Option<i64>,
+}
+
 /// One line of preview out of arbitrary said text, for
 /// [`Session::last`]: whitespace runs (newlines included) collapse to
 /// single spaces, and the result is cut at a character boundary. The
