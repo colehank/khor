@@ -68,6 +68,54 @@ const GRAPHIC_FLOOR = 3.0;
  */
 const WORDS = ["busy", "blocked", "done", "errored", "failed", "idle"];
 
+/**
+ * The two that sit still, and the four that want you.
+ *
+ * The split is the doctrine, not a grouping invented here: 空闲 is
+ * nothing happening and 忙碌 is the machine working for you — neither
+ * asks for anything. The other four each want a person to do something.
+ */
+const QUIET = ["idle", "busy"];
+
+/**
+ * How far apart the two groups must read, in L*.
+ *
+ * **In L\* and not in contrast ratio**, because contrast ratio is not
+ * perceptually uniform — the same 0.5 means one thing near 4.5 and
+ * another near 9 — and what is being asserted here is whether a person
+ * can *see* a difference.
+ *
+ * 8 rather than 1: 1 is what two samples need when held side by side,
+ * and these never are. They appear on separate rows with other content
+ * between them, so the comparison is from memory, which needs several
+ * times the threshold. 8 is about one step of a ten-step tonal ramp —
+ * the smallest step that can be named without something to compare to.
+ *
+ * They spanned 3.0 in total before 批⑨b/⑨c: the whole palette on one
+ * lightness, telling six things apart by hue alone.
+ */
+const GROUP_GAP = 8.0;
+
+/**
+ * The order, quietest first — asserted whole, not just at the ends.
+ *
+ * "空闲 is the faintest" only guards one end; a word pushed past its
+ * neighbour in the middle would leave that assertion green while the
+ * palette silently stopped meaning what it says.
+ *
+ * **Light only.** The dark theme's order is interleaved today — a quiet
+ * word sits brighter than two loud ones — and that is a known open
+ * decision, not something this file should freeze in place by asserting
+ * it. Its gap is printed instead, so nobody has to rediscover it.
+ */
+const LIGHT_ORDER = ["idle", "busy", "errored", "done", "blocked", "failed"];
+
+/** CIE L* of an already-composited colour. */
+function lstar(rgb) {
+  const y = luminance(rgb);
+  return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (y * 24389) / 27;
+}
+
 function luminance([r, g, b]) {
   const lin = (c) => {
     const s = c / 255;
@@ -234,6 +282,40 @@ try {
     const faintest = readings.reduce((a, b) => (a.worst <= b.worst ? a : b));
     if (faintest.word !== "idle") {
       fail(`${scheme}: ${faintest.word} is now fainter than 空闲 — the six words changed order`);
+    }
+
+    // How far the quiet pair sits from the four that want you, measured
+    // on the ground where they sit closest.
+    const worstGround = grounds.reduce((a, b) =>
+      contrast(flatten(parse(t.words.idle), a), a) <= contrast(flatten(parse(t.words.idle), b), b) ? a : b,
+    );
+    const lightnessOf = (w) => lstar(flatten(parse(t.words[w]), worstGround));
+    const quiet = QUIET.map(lightnessOf);
+    const loud = WORDS.filter((w) => !QUIET.includes(w)).map(lightnessOf);
+    // Light darkens the loud ones, dark brightens them, so the gap is
+    // signed by theme; take it in the direction that theme moves.
+    const gap =
+      scheme === "light"
+        ? Math.min(...quiet) - Math.max(...loud)
+        : Math.min(...loud) - Math.max(...quiet);
+    console.log(`${scheme}: group gap ΔL* ${gap.toFixed(1)}`);
+
+    if (scheme === "light") {
+      if (gap < GROUP_GAP) {
+        fail(
+          `light: the quiet pair is only ΔL* ${gap.toFixed(1)} from the four that want you, under ` +
+            `${GROUP_GAP} — a difference that has to be compared side by side to be seen`,
+        );
+      }
+      const order = [...readings].sort((a, b) => a.worst - b.worst).map((r) => r.word);
+      if (order.join() !== LIGHT_ORDER.join()) {
+        fail(`light: the six words read ${order.join(" < ")}, not ${LIGHT_ORDER.join(" < ")}`);
+      }
+    } else if (gap < GROUP_GAP) {
+      // Printed, never failed: the dark theme was deliberately left
+      // alone (its own decision, not this batch's), and a red gate for a
+      // state nobody was asked to change is a gate people learn to skip.
+      console.log(`dark: (interleaved — a quiet word outshines a loud one; open decision, untouched)`);
     }
 
     // The one post green kept that still touches text: the word 完成,

@@ -90,12 +90,38 @@
   --lq2: #bcd47b;
   --lq3: #93b04d;
 
-  /* ── the six words (mandala's doctrine) ───────────── */
+  /* ── the six words (mandala's doctrine) ─────────────
+   * **The four that call you sit a lightness apart from the two that do
+   * not, and that separation is the token's whole job here.**
+   *
+   * They used to span 3.0 in L* — the entire palette on one lightness,
+   * differing only in hue — so "the quiet one" and "the one that wants
+   * you" read as the same weight and only the colour told them apart.
+   * Which meant the six words, this product's most valuable signal,
+   * were carrying their meaning on the one channel a person is worst at
+   * comparing across rows they cannot see at once.
+   *
+   * These four are pushed down in lightness until the gap is 8.2, and
+   * **only lightness moved**: hue angle and chroma are held (solved in
+   * OKLCH), because which hue means what is doctrine — 待批 is the only
+   * cold one, 完成 is green, 中断 amber, 失败 red.
+   *
+   * **Down rather than up, and there was no choice about that.** The
+   * floor is 4.5, the two quiet words already sit on it, so the only
+   * direction with room is darker. Light theme's ink reaches past 10
+   * against paper; underneath there is nothing.
+   *
+   * Why 8: L* is near enough perceptually uniform to reason in, and 1
+   * is what two samples need to differ by when held side by side. These
+   * never are — they appear on separate rows with content in between,
+   * so the comparison is from memory, which needs several times the
+   * threshold. 8 is about one step of a ten-step tonal ramp: the
+   * smallest step that can be named on its own. */
   --state-busy: var(--muted-foreground); /* no hue; it breathes */
-  --state-blocked: #016f82;              /* the only cold color */
-  --state-done: #546f1c;                 /* green = go collect */
-  --state-errored: #8a6212;
-  --state-failed: #b23a2e;               /* red sinks, no badge */
+  --state-blocked: #005a6c;              /* the only cold color */
+  --state-done: #425b00;                 /* green = go collect */
+  --state-errored: #754f00;
+  --state-failed: #992017;               /* red sinks, no badge */
   /* **The faintest of the six, and still readable — those are two
    * requirements, not one.** These are not decoration: each of them is
    * painted straight onto a row as the word itself
