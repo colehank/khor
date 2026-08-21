@@ -1,9 +1,11 @@
 import type { DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { NestedRing, RING_SIZE_ROW } from "@/components/Ring";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { vitalsTracks } from "@/lib/vitals";
 
 /** Search matches the name people call the machine and the id they
     paste — the two strings the row itself shows. */
@@ -138,15 +140,35 @@ export function DevicesList({
     branches above differ in whether they answer a click and in nothing
     else a reader can see. */
 function Identity({ row }: { row: DeviceRow }) {
+  const tracks = vitalsTracks(row);
   return (
     <>
       <MachineAvatar face={row.face} className="size-avatar" />
+      {/* This machine's readings as one stack — **a row's worth of them
+          in the space of the face beside it.** The vocabulary is the
+          point: a number in the middle is one measure, a hollow set of
+          rings is several, so a reader can tell which kind of thing they
+          are looking at before reading either.
+
+          **Same diameter as the face, deliberately.** They are two facts
+          about one machine, and the moment one circle is bigger, size
+          starts claiming that one of them matters more. What separates
+          them is form — solid artwork against hollow tracks — not scale.
+
+          Absent when the machine has never been reached: a stack of
+          empty tracks would answer "we asked, and it is all zero", which
+          is a different thing from not having asked. */}
+      {tracks && (
+        <span data-vitals-stack className="flex-none">
+          <NestedRing tracks={tracks} size={RING_SIZE_ROW} />
+        </span>
+      )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate">
+        <span className="block truncate text-fact">
           {row.name}
           {row.me ? ` ${cli.this_machine}` : ""}
         </span>
-        <span className="block truncate text-sm text-muted-foreground">{row.id.slice(0, 12)}</span>
+        <span className="block truncate text-aux text-muted-foreground">{row.id.slice(0, 12)}</span>
       </span>
     </>
   );

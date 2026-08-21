@@ -56,6 +56,23 @@ export const TRACK_OPACITY = 0.35;
  */
 export const RING_SIZE = 64;
 
+/**
+ * The diameter a ring takes **inside a list row**, where it sits beside
+ * this machine's face.
+ *
+ * **Equal to `--avatar` on purpose, and that is the single-diameter rule
+ * being kept rather than broken.** Two circles on one row are two facts
+ * about one machine; the moment one is bigger, size starts claiming one
+ * of them matters more, which is exactly what the rule guards against.
+ * What tells them apart is *form*, not scale — the face is a solid piece
+ * of artwork, the ring is hollow and has several tracks, and "hollow and
+ * many = a stack" is the vocabulary this file already speaks.
+ *
+ * It is written here as a number and there as a length, so `check-rail`
+ * measures the two boxes on a real row and fails if they ever drift.
+ */
+export const RING_SIZE_ROW = 32;
+
 /** Stroke for a single-track ring. Fixed, because the diameter is. */
 const STROKE = 5.5;
 

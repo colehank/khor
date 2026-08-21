@@ -205,6 +205,27 @@ input[type="search"]::-webkit-search-decoration {
   animation: screen-in-from-right var(--dur-180) var(--ease-out);
 }
 
+/* The state of a session, drawn around the face of the machine it is on.
+ *
+ * **One channel, one thing.** The corner mark says *what* this session
+ * is and nothing else now; this says *how it is*; the word at the row's
+ * end says it in letters. That last one is not optional — state may
+ * never be colour alone — and it is why this can be a colour at all.
+ *
+ * The mark used to carry both at once, shape and state together. It read
+ * fine and it was wrong for the same reason a brand green that also
+ * meant "press me" was wrong: one signal answering two questions cannot
+ * be changed for one of them without lying about the other.
+ *
+ * Its own element rather than a shadow on the face's box, because the
+ * halo has to be able to breathe on its own — see below — and opacity is
+ * the only channel a box-shadow cannot animate by itself. */
+[data-halo] {
+  box-shadow:
+    0 0 0 var(--halo-gap) var(--card),
+    0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-color);
+}
+
 /* Busy takes no hue — it breathes (mandala's state doctrine). */
 @keyframes breath {
   0%,
@@ -216,12 +237,17 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-[data-word="busy"] [data-word-text] {
+[data-word="busy"] [data-word-text],
+[data-halo="busy"] {
   animation: breath calc(var(--dur-420) * 6) var(--ease-move) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-word="busy"] [data-word-text] {
+  /* Busy stops breathing and stays exactly as legible: it still has no
+     hue, the ring is still there, and the word at the row's end still
+     says 忙碌. The breath was never the thing carrying the fact. */
+  [data-word="busy"] [data-word-text],
+  [data-halo="busy"] {
     animation: none;
   }
 

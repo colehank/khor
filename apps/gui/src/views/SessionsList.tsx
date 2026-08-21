@@ -241,22 +241,43 @@ export function SessionsList({
             className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left"
           >
             {/* The machine's face carries the row (one per machine, what
-                the eye scans by), and its corner wears the kind mark:
-                shape says what this session is, colour says how it is —
-                one mark answering two things (mandala's .wsbrand rule).
-                The word itself stays at the row's end: state must never
-                be colour alone. The mark sits on a solid punch-out, or
-                the transparent brand strokes dissolve into the face. */}
+                the eye scans by). Around it, a halo in the state's own
+                colour; on its corner, the kind mark; at the row's end,
+                the word.
+
+                **Three channels, three questions, one each.** The halo
+                says how it is, the mark says what it is, the word says it
+                in letters. The mark used to say both — its comment here
+                read "shape says what this session is, colour says how it
+                is — one mark answering two things" — and that is exactly
+                the shape of the mistake the palette ruling took apart on
+                the brand green: **one signal answering two questions
+                cannot be changed for one of them without lying about the
+                other.** So the mark went neutral the day the halo landed.
+
+                The word stays regardless: state may never be colour
+                alone, which is also what lets the halo *be* a colour.
+
+                The mark sits on a solid punch-out, or the transparent
+                brand strokes dissolve into the face. */}
             {/* `flex`, not inline: an inline wrap grows the baseline's few
                 pixels under the face and the mark's corner offset bites
                 into that gap instead of the face (mandala's .badged-face
                 fix, the flex spelling of display:block+line-height:0). */}
             <span className="relative flex flex-none">
               <MachineAvatar face={r.face} className="size-avatar" />
+              {/* Behind nothing and in front of nothing — it paints
+                  outside the face's box entirely (`app.css`), so it can
+                  neither cover the artwork nor be covered by it. */}
+              <span
+                data-halo={r.word}
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{ "--halo-color": `var(--state-${r.word})` } as React.CSSProperties}
+              />
               <span
                 data-kind-mark={r.category ?? r.kind}
-                className="absolute -bottom-0.5 -right-0.5 grid size-kind-mark place-items-center rounded-sm bg-card"
-                style={{ color: `var(--state-${r.word})` }}
+                className="absolute -bottom-0.5 -right-0.5 grid size-kind-mark place-items-center rounded-sm bg-card text-muted-foreground"
               >
                 <KindMark kind={r.kind} category={r.category} />
               </span>

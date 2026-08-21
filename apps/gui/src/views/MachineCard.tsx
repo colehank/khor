@@ -6,6 +6,7 @@ import { Ring, RING_SIZE } from "@/components/Ring";
 import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
+import { gaugeColor } from "@/lib/vitals";
 import { ago, hopWord } from "@/words";
 
 /**
@@ -317,45 +318,6 @@ function Readings({ row }: { row: DeviceRow }) {
   );
 }
 
-/**
- * What colour a gauge draws in.
- *
- * **Neutral unless the node said otherwise, and there is no ramp.** A
- * busy CPU is a machine doing the work you asked for, not a warning, so
- * utilisation carries no hue at all; only 内存 and 磁盘 have a "full" to
- * be near, and only they can be handed a `Strain`.
- *
- * **The colour is not computed here, and that is the point.** mandala's
- * ring grades `used / total` into four colours in the frontend. khor
- * decided that question in Rust (`Strain`, whose own doc says the
- * thresholds are a judgment and must not live in a screen, because two
- * frontends eyeballing the same two numbers disagree about the same
- * machine) — so this reads the word it was handed and paints it.
- *
- * **One hue, and the step up is weight, not a second colour.** That is a
- * standing user ruling: 中断 owns amber and 失败 owns red, and a 95%
- * disk wearing either would dress a machine as a session. tight →
- * critical is carried by the label's own `font-medium`, which is where
- * it already lived — one escalation channel, not two.
- */
-function gaugeColor(strain: Strain | null | undefined): string {
-  return strain ? "var(--strain)" : "var(--muted-foreground)";
-}
-
-/**
- * One reading, as a gauge that turns over.
- *
- * **Three facts, two faces.** The arc is roughly how full, the middle is
- * exactly how much, and the sentence khor's own terminal prints — with
- * the denominator, the core count, the bytes — is on the back. Put all
- * three on the front and the front stops being a gauge and becomes a
- * paragraph; drop the sentence and the card starts saying less than the
- * terminal does about the same machine.
- *
- * **A real button**: it answers the keyboard, it says which way it is
- * facing, and it carries the sentence as its accessible name so that
- * nobody has to turn it over to be told the fact.
- */
 function Unit({
   name,
   word,

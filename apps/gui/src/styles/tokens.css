@@ -299,6 +299,19 @@
   --kind-mark: 14px;
   --kind-mark-glyph: 11px;
 
+  /* The ring of state around a machine's face on a session row, and the
+   * clear space between the two.
+   *
+   * **The gap is not decoration — it is what keeps two edges from eating
+   * each other.** The face already carries a hairline (`--avatar-edge`)
+   * whose whole job is to stop a pale palette dissolving into the paper;
+   * a halo drawn flush against it would read as one thick two-tone
+   * border, and on the worst palettes it is the hairline that would
+   * disappear. The gap is painted in the card's own colour, so the two
+   * marks stay two marks whatever the face is wearing. */
+  --halo-gap: 2px;
+  --halo-w: 2px;
+
   /* How deep the box a reading turns over inside is. Shallower and the
      turn skews hard enough to read as the card tipping; deeper and there
      is no perspective left, so it reads as a cross-fade rather than as a
