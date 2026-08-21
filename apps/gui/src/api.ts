@@ -117,7 +117,18 @@ async function post<T>(url: string, headers: Record<string, string>, args?: Reco
 }
 
 /**
- * This browser reached the face but was never given a key.
+ * This page is the web face — served to a browser that is neither the
+ * app nor a verification run.
+ *
+ * The third of the three, and the only one named by elimination. That is
+ * not laziness: the other two announce themselves (tauri's IPC global,
+ * a `bridge` in the query), and a page khor served carries no mark of
+ * its own to check.
+ */
+export const onWebFace = !inApp && bridge === null;
+
+/**
+ * …and it was never given a key.
  *
  * A distinct state rather than one more failed request: **every poll in
  * this app swallows its errors**, because a poll that threw on a blip
@@ -125,9 +136,9 @@ async function post<T>(url: string, headers: Record<string, string>, args?: Reco
  * only symptom of arriving without a key is a screen where nothing ever
  * appears — which is what a broken khor looks like too. Measured that
  * way first (`scripts/web-face.mjs`), which is why it is knowable here,
- * synchronously, before anything renders.
+ * synchronously, before anything renders (`main.tsx`).
  */
-export const missingWebKey = !inApp && bridge === null && webKey === null;
+export const missingWebKey = onWebFace && webKey === null;
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
@@ -243,12 +254,31 @@ export const pinDir = (machine: string, path: string, on: boolean) =>
 export const fetchWebPins = () => call<WebPinRow[]>("web_pins");
 export const pinWeb = (machine: string, url: string, on: boolean) =>
   call<null>("pin_web", { machine, url, on });
-/** Opens a page through a machine's network. In the app the tauri skin
-    builds the proxied window and this resolves once it is up; over the
-    dev bridge there is no window, so the same call answers where the
-    proxy listens (the borrow) and the window half is the app's alone. */
-export const openWeb = (machine: string, url: string) =>
-  call<WebBorrow | null>("open_web", { machine, url });
+/**
+ * Opens a page through a machine's network — **except on the web face,
+ * which says why it cannot.**
+ *
+ * In the app the tauri skin builds the proxied window and this resolves
+ * once it is up; over the dev bridge there is no window, so the same
+ * call answers where the proxy listens and the window half is the app's
+ * alone.
+ *
+ * A phone has neither. What a borrow hands back is a proxy port on the
+ * khor machine, and using it means pointing a whole browser at that
+ * proxy — the app sets its window's `proxy_url`, and a page cannot
+ * point itself at anything. So there is nothing this face could do with
+ * the answer.
+ *
+ * Refused before the call rather than after, because the call is not
+ * free: it opens a real borrow session on the far machine, and one
+ * nobody can use is one nobody thinks to close. "Started something and
+ * nothing happened" is the worst of the three possible answers — the
+ * other two are doing it and saying why not.
+ */
+export const openWeb = (machine: string, url: string) => {
+  if (onWebFace) return Promise.reject(new Error(msg.web_borrow_needs_app));
+  return call<WebBorrow | null>("open_web", { machine, url });
+};
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match, so the screen repaints whole. */
 export const termOpen = (id: string, cols: number, rows: number) =>

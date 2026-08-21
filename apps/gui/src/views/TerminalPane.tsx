@@ -347,6 +347,76 @@ export function TerminalPane({ id }: { id: string }) {
     setBack(backRef.current - lines);
   };
 
+  // **A drag is the wheel, on a screen that has no wheel.** Without
+  // this the scrollback exists on a phone and nothing can reach it:
+  // `onWheel` is the only way back through history and a touch screen
+  // never sends one. Same units and the same direction of travel —
+  // pulling the screen down walks backwards, which is where the older
+  // lines are.
+  const dragFrom = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    dragFrom.current = e.touches[0]?.clientY ?? null;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const y = e.touches[0]?.clientY;
+    if (y === undefined || dragFrom.current === null) return;
+    const lines = Math.round((y - dragFrom.current) / (cellRef.current.h || 16));
+    if (lines === 0) return;
+    // Carried forward rather than reset, so a slow drag accumulates
+    // instead of rounding to nothing on every frame.
+    dragFrom.current = y;
+    setBack(backRef.current + lines);
+  };
+
+  /**
+   * Where a phone's keys come from.
+   *
+   * **A `div` cannot raise a soft keyboard.** iOS and Android open one
+   * for an input, a textarea or a contenteditable, and for nothing
+   * else — so this pane, which listens for `keydown` on a focusable
+   * `div`, was *read-only on every phone* while looking completely
+   * normal in every desktop screenshot. A field is the only way in.
+   *
+   * It stays out of the way: no pointer events, one pixel, invisible.
+   * Focused only on a touch, so a mouse still selects text on the grid
+   * the way it always has and the desktop path is unchanged.
+   */
+  const keys = useRef<HTMLTextAreaElement>(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    // **The default action is what takes it back.** Focusing the field
+    // here is not enough: this `div` carries `tabIndex={0}`, so the
+    // browser's own handling of the press moves focus onto it a moment
+    // later and the keyboard never opens. Measured that way — the
+    // handler ran, `pointerType` really was `touch`, and the focused
+    // element afterwards was the grid.
+    //
+    // Only on the touch branch, so a mouse still presses, focuses and
+    // selects exactly as before.
+    e.preventDefault();
+    keys.current?.focus();
+  };
+
+  /**
+   * What a soft keyboard actually sends.
+   *
+   * On a phone most keys arrive as `keydown` with `key: "Unidentified"`
+   * — `keyBytes` answers `null`, nothing is preventDefault'd, and the
+   * character lands in the field instead. That is the split this relies
+   * on: anything `keyBytes` recognised never reaches here, and anything
+   * it did not shows up as text. Autocorrect and word suggestions come
+   * through the same door, which is why the whole value is sent rather
+   * than one character.
+   */
+  const onInput = () => {
+    const field = keys.current;
+    if (!field?.value) return;
+    const typed = field.value;
+    field.value = "";
+    setBack(0);
+    termKey(id, typed).catch(() => {});
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     // **Shift+Page is this app's, plain Page is the program's.** Full
     // screen programs use PageUp for their own paging, and a terminal
@@ -419,8 +489,15 @@ export function TerminalPane({ id }: { id: string }) {
       onWheel={onWheel}
       onCopy={onCopy}
       onPaste={onPaste}
+      onPointerDown={onPointerDown}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
       ref={boxRef}
-      className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-bg)] p-1 font-mono text-sm leading-tight text-[var(--term-fg)] outline-none"
+      // `touch-none`: the browser's own idea of a drag here is to scroll
+      // the page, and there is no page to scroll — the grid is repainted
+      // from wherever the reader is standing, so the gesture has to
+      // reach `onTouchMove` instead of being spent on the viewport.
+      className="relative min-h-0 flex-1 touch-none overflow-hidden bg-[var(--term-bg)] p-1 font-mono text-sm leading-tight text-[var(--term-fg)] outline-none"
       style={
         {
           // The terminal owns its own two colours; they follow the theme
@@ -430,6 +507,21 @@ export function TerminalPane({ id }: { id: string }) {
         } as React.CSSProperties
       }
     >
+      {/* The only thing on this screen a phone will open a keyboard for.
+          `aria-hidden` because it is a mechanism, not a control: the
+          grid beside it is what a reader is reading. */}
+      <textarea
+        ref={keys}
+        data-term-keys
+        aria-hidden
+        tabIndex={-1}
+        onInput={onInput}
+        autoCapitalize="off"
+        autoCorrect="off"
+        autoComplete="off"
+        spellCheck={false}
+        className="pointer-events-none absolute h-px w-px resize-none border-0 p-0 opacity-0"
+      />
       {/* An off-screen glyph in the exact font, measured for the cell box
           before anything is painted. */}
       <span ref={measureRef} className="invisible absolute font-mono text-sm leading-tight">

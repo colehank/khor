@@ -15,7 +15,7 @@
 // Env: KHOR_BIN (default target/debug/khor), WEB_PORT (default 5468 —
 // next door to the product's 5467, so a developer's own face can be up
 // at the same time).
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -128,6 +128,83 @@ async function main() {
     throw new Error(`the refusal does not say what to do: ${refusal.slice(0, 200)}`);
   }
   ok("a browser with no key is told what to run, in a sentence");
+
+  // ── the phone's own three, on a live terminal ──
+  //
+  // `cat` because it echoes: what comes back on the grid is proof the
+  // bytes reached the pty, not proof that a field accepted a keystroke.
+  execFileSync(KHOR, ["open", "-d", "--title", "termcat", "--", "cat"], { env });
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  const row = await until("the terminal session to appear", 30_000, async () => {
+    const r = page.locator('[data-row]').filter({ hasText: "termcat" });
+    return (await r.count()) > 0 ? r.first() : null;
+  });
+  await row.tap();
+  await until("the terminal pane", 30_000, async () =>
+    (await page.locator("[data-terminal]").count()) > 0 ? true : null,
+  );
+
+  // 5. **A phone can type into it at all.** A `div` raises no soft
+  //    keyboard; only a field does, so a tap has to land focus on one.
+  await page.locator("[data-terminal]").tap();
+  const focused = await page.evaluate(() => ({
+    tag: document.activeElement?.tagName ?? "(none)",
+    isField: document.activeElement?.hasAttribute("data-term-keys") ?? false,
+  }));
+  if (!focused.isField) {
+    throw new Error(`tapping the terminal focused ${focused.tag}, not the field`);
+  }
+  ok("a tap puts focus where a soft keyboard can appear");
+
+  // 6. …and what that field receives reaches the shell. This is the
+  //    event a soft keyboard actually produces: text arriving in the
+  //    field, not a `keydown` anyone can name.
+  const typed = `hello-from-a-phone-${process.pid}`;
+  await page.evaluate((text) => {
+    const field = document.querySelector("[data-term-keys]");
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }, typed + "\r");
+  await until("the shell to echo it back", 30_000, async () =>
+    (await page.locator("[data-terminal]").innerText()).includes(typed) ? true : null,
+  );
+  ok("what the field receives reaches the pty — the shell echoed it back");
+
+  // 7. **Scrollback is reachable by dragging.** `onWheel` is the only
+  //    other way back through history and a touch screen never sends
+  //    one, so without this the 2000 lines 批⑤ added exist and cannot
+  //    be looked at from a phone.
+  for (let i = 0; i < 60; i++) {
+    await page.evaluate((text) => {
+      const field = document.querySelector("[data-term-keys]");
+      field.value = text;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }, `line-${i}\r`);
+  }
+  await until("the screen to fill", 30_000, async () =>
+    (await page.locator("[data-terminal]").innerText()).includes("line-59") ? true : null,
+  );
+  const box = await page.locator("[data-terminal]").boundingBox();
+  const midX = box.x + box.width / 2;
+  await page.touchscreen.tap(midX, box.y + box.height / 2);
+  // A drag downwards walks backwards, which is where the older lines are.
+  await page.evaluate(({ x, y1, y2 }) => {
+    const pane = document.querySelector("[data-terminal]");
+    const touch = (type, y) =>
+      pane.dispatchEvent(
+        new TouchEvent(type, {
+          bubbles: true,
+          touches: type === "touchend" ? [] : [new Touch({ identifier: 1, target: pane, clientX: x, clientY: y })],
+        }),
+      );
+    touch("touchstart", y1);
+    touch("touchmove", y2);
+    touch("touchend", y2);
+  }, { x: midX, y1: box.y + 20, y2: box.y + box.height - 20 });
+  await until("the pane to say it is no longer at the bottom", 10_000, async () =>
+    (await page.locator("[data-term-bottom]").count()) > 0 ? true : null,
+  );
+  ok("dragging walks back through the scrollback");
 
   console.log(`\nweb face: all green (${done.length} checks)`);
 }
