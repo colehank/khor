@@ -28,6 +28,16 @@ fn usage() -> Result<khor_node::Usage, String> {
     khor_gui_core::usage(&Node::root_from_env())
 }
 
+/// The subscription's remaining windows. Answers a shape carrying its own
+/// trouble rather than a `Result`, because "khor could not ask" is one of
+/// the things this reading has to be able to say out loud — five of them,
+/// each with a different next step (`khor_node::quota`), and a `Result`
+/// would flatten them into one error string on the way to the face.
+#[tauri::command]
+async fn quota() -> khor_gui_core::QuotaAnswer {
+    khor_gui_core::quota().await
+}
+
 #[tauri::command]
 fn seen(id: String) -> Result<(), String> {
     khor_gui_core::seen(&Node::root_from_env(), &id)
@@ -359,6 +369,7 @@ pub fn run() {
             sessions,
             devices,
             usage,
+            quota,
             seen,
             close_session,
             tell,
