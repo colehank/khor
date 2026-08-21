@@ -120,6 +120,47 @@
   --rail-ink: rgba(26, 26, 20, 0.72);
   --icon-body: 0.7;
 
+  /* The block behind whichever item is open.
+   *
+   * **Its own colour rather than `--secondary`**, which the ghost button
+   * already spends on hover (`ui/button.tsx`). Were they the same, an
+   * item you are merely pointing at would be indistinguishable from the
+   * one that is actually open, and the rail would read as having two
+   * selected items for as long as the mouse was in it. Measured against
+   * the ground the rail sits on: hover 1.13, open 1.27 — the open one
+   * has to be the heavier of the two, or the pointer would outshout the
+   * place you are actually in.
+   *
+   * Neutral rather than the brand green, for three reasons that agree.
+   *
+   * **It cannot be read.** `--primary` measures 2.39 against the light
+   * card and **cannot** reach 3.0 against any light background at all —
+   * its luminance caps the ratio at 2.45 — so a green glyph is
+   * physically incapable of being what makes "open" legible on this
+   * theme. The block carries the substance and the ink carries the
+   * weight instead.
+   *
+   * **It is already spoken for.** The six words above give green to
+   * 完成, and a rail that spends it on "you are here" is spending a
+   * state's colour on a place.
+   *
+   * **And it is now the rule rather than this rail's exception.** The
+   * palette question this raised was taken up and settled the same day:
+   * green stops carrying text and stops meaning "press me" anywhere in
+   * the app, keeping identity (the avatar family), state (完成), and
+   * soft fills — one colour, one job. The app-wide half of that (the
+   * primary button going to ink, and `--ring`, which measures the same
+   * 2.39 and is why a keyboard user cannot presently see where they
+   * are) is a separate change that had not landed when this was
+   * written. This block is the first instance of the rule, arrived at
+   * before it — which is why the argument above is made from
+   * measurements rather than from the rule.
+   *
+   * No `--color-` mapping on purpose: the rule that applies this has to
+   * sit outside Tailwind's layer in order to beat hover, and a utility
+   * cannot do that. See `app.css`. */
+  --rail-on: rgba(26, 26, 20, 0.12);
+
   /* ── control heights: three, no fourth ────────────── */
   --ctl-sm: 24px;
   --ctl-md: 30px;
@@ -145,7 +186,22 @@
    * one is wrong on sight rather than merely off by a step. Four,
    * because a fifth would have to name a relation these do not cover —
    * and if one ever does, it earns its own line here rather than an
-   * arbitrary number at the call site. */
+   * arbitrary number at the call site.
+   *
+   * **This is a vocabulary, not a sweep.** Existing call sites move over
+   * as they are touched; a pass over every `gap-*` in the app would put
+   * one lane's formatting into everybody else's hunks for no reading
+   * anybody asked for.
+   *
+   * **And these join the family `cn()` cannot override.** They become
+   * `--spacing-*` utilities, tailwind-merge does not recognise the names
+   * as sizes, so `p-in` passed to a component that already sets `px-4`
+   * leaves *both* classes in the markup and the stylesheet's emission
+   * order picks the winner. It is safe from a call site (the caller's
+   * class is emitted later); it is not safe *against* a vendored
+   * component's own padding. That was measured the hard way on the rail
+   * button: 44px wide became 60, six of them overflowed a 390px narrow
+   * rail, and the app's mark was shrunk to nothing. */
   --gap-in: 8px;     /* inside one thing: glyphs in a group, a control's parts */
   --gap-row: 12px;   /* between the parts of one row */
   --gap-group: 18px; /* between groups that must not read as one list */
@@ -255,6 +311,7 @@
     /* Only the ink flips; `--icon-body` is a ratio and stays one number
        for both themes — see the light block for why that is the point. */
     --rail-ink: rgba(238, 238, 231, 0.72);
+    --rail-on: rgba(238, 238, 231, 0.12);
   }
 }
 

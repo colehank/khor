@@ -207,10 +207,19 @@ function RailItem({
   badge?: number;
   onClick?: () => void;
   /**
-   * Extra styling for one item. **Exists for the mark**, whose glyph is
-   * an image: the selected look below is a text colour, which tints a
-   * drawn glyph and does nothing at all to a picture — so that one item
-   * has to say it a second way.
+   * Extra styling for one item. **Exists for the mark**, which is not a
+   * fifth landing and therefore has to sit a group's distance from the
+   * four that are. It is a margin rather than a gap because the gap
+   * between rail items belongs to the nav, and one item cannot change
+   * it for itself.
+   *
+   * It used to exist for the opposite kind of reason: the mark's glyph
+   * is a picture, the selected look was a text colour, and a text colour
+   * tints a drawn glyph while doing nothing at all to a picture — so
+   * that one item said "I am open" its own way, and ended up the only
+   * item in the rail with a block behind it while being the only one
+   * that is not a place to go. Every item wears the block now
+   * (`app.css`), so that reason is gone and this carries only spacing.
    */
   className?: string;
   children: React.ReactNode;
@@ -224,8 +233,42 @@ function RailItem({
       data-on={on}
       onClick={onClick}
       className={cn(
-        "group relative h-auto flex-col gap-0 rounded-md p-in text-rail-ink",
-        on && "text-primary hover:text-primary",
+        // Two deliberate choices in one string, both measured.
+        //
+        // **`px-2 py-2`, not the spacing tokens** — the one place in
+        // this rail that does not speak in them. `cn()` is
+        // tailwind-merge, and tailwind-merge does not read `in` as a
+        // padding, so `p-in` does not displace the vendored button's own
+        // `px-4`: both survive into the markup and the winner is
+        // whichever the stylesheet emitted last. Cost when that was
+        // tried here: every rail item went from 44 wide to 60, and the
+        // six of them no longer fit a phone's rail.
+        //
+        // **`shrink-0`** — what a rail out of room does about it. A row
+        // that overflows shrinks its items, and this row's items hold a
+        // button's padding but no text, so the first thing to give is
+        // the mark's `<img>`: it went to **width 0** while the rail
+        // reported no overflow at all, which is a missing app icon that
+        // nothing on screen and no layout inspection would report.
+        // (`flex-none` on the image itself was tried and is not the fix:
+        // it holds the height, because height is the column button's
+        // main axis, and the width still went to nothing.) With this,
+        // the same squeeze overflows the rail visibly instead —
+        // measured, and both outcomes are asserted in
+        // `scripts/check-rail.mjs`.
+        //
+        // (Numbers here carry no unit on purpose: `check-px.mjs` reads
+        // lines rather than syntax, so a number-and-unit is a build
+        // error even inside a comment.)
+        "group relative h-auto flex-col gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+        // Open takes the full ink, not the brand green: green cannot
+        // reach a legible ratio against any light background, and the
+        // app's rule is now that it carries no text at all (the whole
+        // argument, with the numbers, sits on `--rail-on` in
+        // `tokens.css`). The block behind the glyph is what says
+        // *open*; this says how much louder the open one is than its
+        // neighbours.
+        on && "text-foreground",
         className,
       )}
     >
@@ -728,9 +771,15 @@ export default function App() {
           setMark(true);
           setScreen("list");
         }}
-        // The one item whose glyph is a picture, so being the open one
-        // has to be said with something a picture can wear.
-        className="data-[on=true]:bg-accent"
+        // Whitespace is the whole separator, and it is deliberately not
+        // a line. A rule would have to be drawn twice to say one thing —
+        // horizontal in the column rail, vertical in the narrow bottom
+        // bar — and this is one fact (the mark is not a fifth landing),
+        // so it should be said in the one form that does not change
+        // shape with the rail. The eye already has the difference too:
+        // the mark is a picture among stroke glyphs, so the distance
+        // only has to confirm it, not invent it.
+        className={narrow ? "me-group" : "mb-group"}
       >
         <KhorMark />
       </RailItem>
@@ -766,7 +815,18 @@ export default function App() {
       {/* This machine, at the foot of the rail. Same derivation as its
           row in the device list, so the two are the same picture — that
           is the whole promise, and it is checkable on one screen. */}
-      {!narrow && <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-avatar" />}
+      {/* A group of its own, at `--gap-group` from the settings glyph
+          above it. **Not decoration: it is not a button.** Everything
+          else in this rail opens something, and a face parked at a
+          control's distance from a control reads as one more thing to
+          press — the spacing is what says it is a fact about this
+          machine rather than a place to go. */}
+      {!narrow && (
+        <MachineAvatar
+          face={devices.find((d) => d.me)?.face ?? null}
+          className="mt-group size-avatar"
+        />
+      )}
     </nav>
   );
 

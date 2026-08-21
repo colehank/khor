@@ -22,6 +22,42 @@
   fill-opacity: 1;
 }
 
+/* Being the open one, said once and the same way by all five items.
+ *
+ * **Unlayered on purpose.** This has to outrank the ghost button's
+ * `hover:bg-secondary` (`ui/button.tsx`), because hover and open are two
+ * different facts about one item, they cannot both own
+ * `background-color`, and if the pointer won then pointing at the open
+ * item would erase the only thing on screen saying where you are.
+ *
+ * The measurement, since the reasoning here is easy to get half right —
+ * all three of these were run (`scripts/check-rail.mjs`, which asserts
+ * the outcome):
+ *
+ *   unlayered          → open stays `--rail-on` under the pointer ✓
+ *   `@layer utilities` → also holds, but only because this file is
+ *                        imported after Tailwind's own utilities, so it
+ *                        is source order doing the work, not the layer
+ *   `@layer base`      → **hover wins**; the open item reads
+ *                        `--secondary` and the block is gone
+ *
+ * So the load-bearing property is "outranks the utility layer", and
+ * unlayered is the only form of it that does not quietly depend on
+ * which file was imported last.
+ *
+ * An open item is still not inert: the press answers a click through the
+ * rule above, which is a different channel and does not fight this one.
+ *
+ * One expression for all five, including the mark. The mark used to be
+ * the only item in the rail wearing a block — and it is the one item
+ * that is not a place to go, so the rail was drawing its emphasis in
+ * exactly the wrong place. A block works on a picture and on a stroke
+ * glyph alike, which is the only reason the mark ever needed a private
+ * way of saying this. */
+[data-rail-item][data-on="true"] {
+  background-color: var(--rail-on);
+}
+
 /* `type=search` is the right semantics — screen readers announce it, and
    Escape clears — but WebKit hangs its own clear glyph inside the box.
    That glyph belongs to no family we drew, which is the one thing the
