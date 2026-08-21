@@ -4,6 +4,20 @@
 //! drift from Rust; this cannot — it *is* the backend.
 //!
 //! Dev tool only: binds loopback, no auth, English messages.
+//!
+//! **The commands are not here.** They are [`khor_gui_core::api`]. What
+//! is left in this file is the part that is only true of a dev tool:
+//! loopback, CORS wide open, nobody asked for a key. A second server
+//! that answers those three differently is the point of moving them —
+//! it is not written yet (批⑦), and this file is what a reader should
+//! copy nothing from when it is.
+//!
+//! One request at a time, still. Measured on this server, 2026-08-21:
+//! a poll's own service time is ~3ms, but its p99 goes 3.5ms alone →
+//! 70ms with two clients → 107ms with four, because the 35–40ms list
+//! calls sit in front of it. That is a reason for a **product** server
+//! to run workers; it is not a reason to re-time a 4600-line
+//! acceptance run that has been green against this loop for weeks.
 
 use std::io::Read;
 
@@ -64,7 +78,7 @@ fn main() {
         // runs its loop on main, and one poisoned corner took the whole
         // preview down once (term.rs `plock` has the story).
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            handle(&rt, &root, &cmd, &args)
+            khor_gui_core::api::answer(&rt, &root, &cmd, &args)
         }))
         .unwrap_or_else(|_| Err("panic in handler".to_owned()));
         let (code, payload) = match outcome {
@@ -84,191 +98,4 @@ fn with_cors<R: Read>(r: tiny_http::Response<R>) -> tiny_http::Response<R> {
     r.with_header("Access-Control-Allow-Origin: *".parse::<tiny_http::Header>().unwrap())
         .with_header("Access-Control-Allow-Headers: content-type".parse::<tiny_http::Header>().unwrap())
         .with_header("Access-Control-Allow-Methods: POST, OPTIONS".parse::<tiny_http::Header>().unwrap())
-}
-
-fn handle(
-    rt: &tokio::runtime::Runtime,
-    root: &std::path::Path,
-    cmd: &str,
-    args: &serde_json::Value,
-) -> Result<String, String> {
-    let arg = |name: &str| {
-        args.get(name)
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("missing arg: {name}"))
-            .map(|s| s.to_owned())
-    };
-    // Missing is an error, not a silent false: a bool that defaults would
-    // turn a typo'd argument name into "unpin", which looks like the
-    // button working and doing the opposite.
-    let flag = |name: &str| {
-        args.get(name)
-            .and_then(|v| v.as_bool())
-            .ok_or_else(|| format!("missing bool arg: {name}"))
-    };
-    // Absent means "leave that axis alone" (`restyle`), so absent is not
-    // an error here — but **present and the wrong shape still is**. A
-    // malformed value quietly read as absent would report a change that
-    // took while nothing moved.
-    let opt_str = |name: &str| -> Result<Option<String>, String> {
-        match args.get(name) {
-            None | Some(serde_json::Value::Null) => Ok(None),
-            Some(v) => v
-                .as_str()
-                .map(|s| Some(s.to_owned()))
-                .ok_or_else(|| format!("arg is not a string: {name}")),
-        }
-    };
-    let opt_colors = || -> Result<Option<Vec<String>>, String> {
-        match args.get("colors") {
-            None | Some(serde_json::Value::Null) => Ok(None),
-            Some(serde_json::Value::Array(items)) => items
-                .iter()
-                .map(|c| c.as_str().map(str::to_owned).ok_or_else(|| "a color is not a string".to_owned()))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Some),
-            Some(_) => Err("arg is not a list: colors".to_owned()),
-        }
-    };
-    // Whole and in range is the frame contract; a fraction or a
-    // negative quietly truncated would answer a different poll than the
-    // one asked.
-    let num = |name: &str| {
-        args.get(name)
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| format!("missing number arg: {name}"))
-    };
-    match cmd {
-        "sessions" => to_json(&khor_gui_core::list_sessions(root, &arg("by")?)?),
-        "devices" => to_json(&khor_gui_core::list_devices(root)?),
-        "usage" => to_json(&khor_gui_core::usage(root)?),
-        "seen" => {
-            khor_gui_core::seen(root, &arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "close_session" => {
-            khor_gui_core::close_session(root, &arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "tell" => {
-            khor_gui_core::tell(root, &arg("machine")?, &arg("text")?)?;
-            Ok("null".to_owned())
-        }
-        "pin_session" => {
-            khor_gui_core::pin_session(root, &arg("id")?, flag("on")?)?;
-            Ok("null".to_owned())
-        }
-        "pin_device" => {
-            khor_gui_core::pin_device(root, &arg("machine")?, flag("on")?)?;
-            Ok("null".to_owned())
-        }
-        "face_choices" => to_json(&khor_gui_core::face_choices(root)?),
-        "restyle" => {
-            khor_gui_core::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;
-            Ok("null".to_owned())
-        }
-        "hooks_state" => to_json(&khor_gui_core::hooks_state(root)?),
-        "install_hooks" => to_json(&khor_gui_core::install_hooks(root)?),
-        "uninstall_hooks" => to_json(&khor_gui_core::uninstall_hooks(root)?),
-        "chat_open" => to_json(&khor_gui_core::chat::chat_open(root, &arg("id")?)?),
-        "chat_poll" => to_json(&khor_gui_core::chat::chat_poll(&arg("id")?, num("since")?)?),
-        "chat_say" => {
-            khor_gui_core::chat::chat_say(&arg("id")?, &arg("text")?)?;
-            Ok("null".to_owned())
-        }
-        "chat_answer" => {
-            khor_gui_core::chat::chat_answer(&arg("id")?, num("ask")?, opt_str("option")?)?;
-            Ok("null".to_owned())
-        }
-        "open_link" => {
-            khor_gui_core::web::open_link(&arg("url")?)?;
-            Ok("null".to_owned())
-        }
-        "chat_stop" => {
-            khor_gui_core::chat::chat_stop(&arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "chat_replay" => {
-            khor_gui_core::chat::chat_replay(&arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "chat_leave" => {
-            khor_gui_core::chat::chat_leave(&arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "history" => to_json(&khor_gui_core::chat::history(root, &arg("id")?)?),
-        "ls" => to_json(&rt.block_on(khor_gui_core::files::ls(root, &arg("machine")?, &arg("path")?))?),
-        "pull" => to_json(&rt.block_on(khor_gui_core::files::pull(root, &arg("machine")?, &arg("path")?))?),
-        "dir_pins" => to_json(&khor_gui_core::files::dir_pins(root)?),
-        "pin_dir" => {
-            khor_gui_core::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
-            Ok("null".to_owned())
-        }
-        "term_open" => {
-            khor_gui_core::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
-            Ok("null".to_owned())
-        }
-        "term_poll" => to_json(&khor_gui_core::term::term_poll(
-            &arg("id")?,
-            num("since")?,
-            num("back")? as usize,
-        )?),
-        "term_key" => {
-            khor_gui_core::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
-            Ok("null".to_owned())
-        }
-        "term_paste" => {
-            khor_gui_core::term::term_paste(&arg("id")?, &arg("text")?)?;
-            Ok("null".to_owned())
-        }
-        "term_drop" => {
-            let paths: Vec<String> = args
-                .get("paths")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
-                .unwrap_or_default();
-            khor_gui_core::term::term_drop(root, &arg("id")?, &paths)?;
-            Ok("null".to_owned())
-        }
-        "term_resize" => {
-            khor_gui_core::term::term_resize(&arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
-            Ok("null".to_owned())
-        }
-        "term_leave" => {
-            khor_gui_core::term::term_leave(&arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "web_pins" => to_json(&khor_gui_core::web::web_pins(root)?),
-        "pin_web" => {
-            khor_gui_core::web::pin_web(root, &arg("machine")?, &arg("url")?, flag("on")?)?;
-            Ok("null".to_owned())
-        }
-        // The bridge answers the borrow half only — it has no webview to
-        // point at the proxy, so it returns where the proxy listens and
-        // the window half stays the tauri skin's (`web::borrow_web`).
-        "open_web" => to_json(&rt.block_on(khor_gui_core::web::borrow_web(root, &arg("machine")?))?),
-        "takeover" => {
-            khor_gui_core::takeover(root, &arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "takeover_term" => {
-            khor_gui_core::takeover_term(root, &arg("id")?)?;
-            Ok("null".to_owned())
-        }
-        "open_session" => to_json(&khor_gui_core::open_session(
-            root,
-            &arg("dir")?,
-            &opt_str("title")?.unwrap_or_default(),
-            &arg("form")?,
-            &opt_str("agent")?.unwrap_or_default(),
-        )?),
-        "agents" => to_json(&khor_gui_core::agents(root)?),
-        "invite" => to_json(&khor_gui_core::invite(root)?),
-        "pair" => to_json(&rt.block_on(khor_gui_core::pair(root, &arg("ticket")?))?),
-        other => Err(format!("no such command: {other}")),
-    }
-}
-
-fn to_json<T: serde::Serialize>(v: &T) -> Result<String, String> {
-    serde_json::to_string(v).map_err(|e| e.to_string())
 }

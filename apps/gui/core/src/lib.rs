@@ -1,11 +1,14 @@
 //! The GUI's data layer: the same khor-node calls the CLI makes, shaped
 //! into rows the frontend can render. Two skins share this module — the
-//! tauri commands (apps/gui/src-tauri) and the dev bridge (`bridge` bin)
-//! — so what the browser verifies is what the app ships.
+//! tauri commands (apps/gui/src-tauri) and the dev bridge (`bridge`
+//! bin) — so what the browser verifies is what the app ships. The LAN
+//! listener a phone opens will be the third; [`api`] is the table it
+//! will dispatch through, moved out of the bridge ahead of it (批⑦).
 //!
 //! No judgment lives here: words, ordering, unread all come from the
 //! node. The GUI must not re-derive any of it (docs/UX.md 状态呈现).
 
+pub mod api;
 pub mod chat;
 pub mod files;
 pub mod term;

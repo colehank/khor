@@ -1,16 +1,23 @@
 //! **The app and the browser must answer the same commands.**
 //!
-//! `khor_gui_core` has two callers and they are written down in two
-//! places: the tauri handler list (`apps/gui/src-tauri`, what the
-//! shipped app answers) and the dev bridge's match (`src/bin/bridge.rs`,
-//! what browser verification answers). Nothing makes them agree, and
-//! **each way of disagreeing is silent in the direction nobody is
-//! looking**:
+//! `khor_gui_core`'s commands are written down in two places: the tauri
+//! handler list (`apps/gui/src-tauri`, what the shipped app answers) and
+//! `src/api.rs`'s match, which every HTTP skin dispatches through.
+//! Nothing makes the two agree, and **each way of disagreeing is silent
+//! in the direction nobody is looking**:
 //!
-//! - a command added only to the bridge — the smoke run goes green and
+//! - a command added only to `api.rs` — the smoke run goes green and
 //!   the shipped app has no such command;
 //! - a command added only to tauri — the app works and every browser
 //!   check of it 404s, which reads as the feature being broken.
+//!
+//! **Why there are still only two places.** The match used to live in
+//! the dev bridge, and the LAN listener a phone opens (批⑦) needed the
+//! same 42 arms. A second copy would have been a third table — one
+//! nothing on either side of this comparison checks, which is strictly
+//! worse than the drift this gate was written for. So the arms moved
+//! into the library, and every server that grows from here shares them
+//! rather than adding a row to this file.
 //!
 //! This is the same shape as a document named by a string in two places
 //! (`khor_sync::agents` over the wire, 批⑥): every in-process test stays
@@ -50,11 +57,11 @@ fn tauri_commands() -> BTreeSet<String> {
         .collect()
 }
 
-/// What browser verification answers: the string arms of the bridge's
+/// What every HTTP skin answers: the string arms of the shared
 /// dispatch. Anchored at line start so a `"word"` inside a comment or a
 /// nested expression cannot pass for an arm.
-fn bridge_commands() -> BTreeSet<String> {
-    let src = repo_file("src/bin/bridge.rs");
+fn served_commands() -> BTreeSet<String> {
+    let src = repo_file("src/api.rs");
     src.lines()
         .filter_map(|line| {
             let t = line.trim_start();
@@ -81,18 +88,24 @@ const ONE_SIDED: &[(&str, &str)] = &[];
 #[test]
 fn the_app_and_the_browser_answer_the_same_commands() {
     let tauri = tauri_commands();
-    let bridge = bridge_commands();
+    let served = served_commands();
 
     // The finders, before the comparison. Two empty sets agree, so
     // without this the gate would pass loudest at the moment it broke.
+    //
+    // **20 still means what it meant.** The arms moved file (批⑦) and
+    // not one of them was added or dropped, so this floor is the same
+    // distance below the real count it has always been — it catches a
+    // finder that rotted, not a table that shrank. If a batch ever does
+    // remove commands in bulk, this number is the thing to re-read.
     assert!(tauri.len() > 20, "the tauri finder found {} commands — it is broken", tauri.len());
-    assert!(bridge.len() > 20, "the bridge finder found {} commands — it is broken", bridge.len());
+    assert!(served.len() > 20, "the api.rs finder found {} commands — it is broken", served.len());
 
     let excused: BTreeSet<&str> = ONE_SIDED.iter().map(|(w, _)| *w).collect();
     let only_tauri: Vec<&str> =
-        tauri.iter().map(String::as_str).filter(|w| !bridge.contains(*w) && !excused.contains(w)).collect();
-    let only_bridge: Vec<&str> =
-        bridge.iter().map(String::as_str).filter(|w| !tauri.contains(*w) && !excused.contains(w)).collect();
+        tauri.iter().map(String::as_str).filter(|w| !served.contains(*w) && !excused.contains(w)).collect();
+    let only_served: Vec<&str> =
+        served.iter().map(String::as_str).filter(|w| !tauri.contains(*w) && !excused.contains(w)).collect();
 
     assert!(
         only_tauri.is_empty(),
@@ -100,9 +113,9 @@ fn the_app_and_the_browser_answer_the_same_commands() {
          which reads as the feature being broken: {only_tauri:?}"
     );
     assert!(
-        only_bridge.is_empty(),
-        "browser verification answers these and the shipped app does not — the smoke run goes \
-         green over a command nobody can call in the app: {only_bridge:?}"
+        only_served.is_empty(),
+        "every HTTP skin answers these and the shipped app does not — the smoke run goes green \
+         over a command nobody can call in the app: {only_served:?}"
     );
 }
 
@@ -111,10 +124,10 @@ fn the_app_and_the_browser_answer_the_same_commands() {
 /// exempt that command the day it really did drift.
 #[test]
 fn no_command_is_excused_from_a_rule_it_already_keeps() {
-    let (tauri, bridge) = (tauri_commands(), bridge_commands());
+    let (tauri, served) = (tauri_commands(), served_commands());
     for (word, why) in ONE_SIDED {
         assert!(
-            !(tauri.contains(*word) && bridge.contains(*word)),
+            !(tauri.contains(*word) && served.contains(*word)),
             "`{word}` is on both sides, so its excuse ({why}) is stale — delete the line"
         );
     }
