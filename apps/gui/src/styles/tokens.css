@@ -431,6 +431,34 @@
   --text-base: 14px;
   --text-lg: 17px;
 
+  /* ── three tiers, named for what a line *is* ──────────
+   * The sizes above answer "how big"; these answer "what kind of line
+   * is this", which is the question a component actually has when it is
+   * being laid out. Same three numbers, no new ones — the point is not
+   * a new scale, it is that a screen stops choosing sizes by feel.
+   *
+   *   title — what this thing is called. One per block, and the thing
+   *           a reader's eye should land on first.
+   *   fact  — the value the block exists to report: a reading, a state
+   *           word, a count. What you came to read.
+   *   aux   — everything that qualifies the fact and must never compete
+   *           with it: ids, ages, denominators, hints.
+   *
+   * **What this blocks: a fact that has to be hunted for.** Every one
+   * of these lines is `text-sm text-muted-foreground` today if whoever
+   * wrote it was thinking about density, and once the fact and the
+   * thing qualifying it are the same size and the same colour, the
+   * block has no reading order left — you find the number by knowing
+   * where it usually is.
+   *
+   * **A vocabulary, not a sweep.** The raw sizes stay, and a surface
+   * moves over when it is being reworked anyway; a pass over every
+   * `text-sm` in the app would put one lane's reflow into everybody
+   * else's hunks for a reading nobody asked for. */
+  --text-title: 17px;
+  --text-fact: 14px;
+  --text-aux: 12.5px;
+
   --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
