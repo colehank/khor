@@ -72,13 +72,19 @@ export function MachineCard({
                 about itself. Bigger here, not different. */}
             <MachineAvatar face={row.face} className="size-avatar-lg" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-lg">
+              {/* The three tiers by name rather than by size: this is
+                  the title, the readings under it are the facts, and
+                  the id below is what qualifies one. Same numbers as
+                  before — `text-lg` and `text-sm` are what these two
+                  tiers resolve to — so nothing moves; what changes is
+                  that the next person edits a role instead of a size. */}
+              <div className="truncate text-title">
                 {row.name}
                 {row.me ? ` ${cli.this_machine}` : ""}
               </div>
               {/* The whole id, not the row's twelve characters: this is
                   the screen somebody is on when they need to paste it. */}
-              <div data-machine-id className="break-all text-sm text-muted-foreground">
+              <div data-machine-id className="break-all text-aux text-muted-foreground">
                 {row.id}
               </div>
               {/* Which road this machine is using to reach that one
