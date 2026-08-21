@@ -1,5 +1,6 @@
 import type { DeviceRow, HooksState, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { Ring, RING_SIZE } from "@/components/Ring";
 import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -226,7 +227,7 @@ function Readings({ row }: { row: DeviceRow }) {
   }
   const { vitals: v, age_ms } = row.vitals;
   return (
-    <div data-vitals className="flex flex-col gap-row pt-pane">
+    <div data-vitals className="flex flex-wrap gap-row pt-pane">
       <Unit
         name="cpu"
         label={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
@@ -249,9 +250,14 @@ function Readings({ row }: { row: DeviceRow }) {
         // Said, not left out: a line that is simply absent and a machine
         // that could not answer read the same, and `0 / 0` would read as
         // an empty disk.
-        <div data-vitals-unit="disk" data-vitals-unknown className="text-sm text-muted-foreground">
-          {cli.vitals_disk_unknown}
-        </div>
+        //
+        // **A ring with no reading rather than a bare line.** `fraction`
+        // of null draws the track and no arc, which is the shape of "no
+        // answer" — and it keeps this reading in the same row as its
+        // neighbours, where a lone line of text would have read as a
+        // different *kind* of thing rather than the same kind with
+        // nothing in it.
+        <Unit name="disk" label={cli.vitals_disk_unknown} fraction={null} unknown />
       )}
       {/* **Absent rather than explained**, which is the opposite of the
           disk right above, and the asymmetry is the judgment. khor's home
@@ -304,38 +310,71 @@ function Readings({ row }: { row: DeviceRow }) {
   );
 }
 
+/**
+ * What colour a gauge draws in.
+ *
+ * **Neutral unless the node said otherwise, and there is no ramp.** A
+ * busy CPU is a machine doing the work you asked for, not a warning, so
+ * utilisation carries no hue at all; only 内存 and 磁盘 have a "full" to
+ * be near, and only they can be handed a `Strain`.
+ *
+ * **The colour is not computed here, and that is the point.** mandala's
+ * ring grades `used / total` into four colours in the frontend. khor
+ * decided that question in Rust (`Strain`, whose own doc says the
+ * thresholds are a judgment and must not live in a screen, because two
+ * frontends eyeballing the same two numbers disagree about the same
+ * machine) — so this reads the word it was handed and paints it.
+ *
+ * **One hue, and the step up is weight, not a second colour.** That is a
+ * standing user ruling: 中断 owns amber and 失败 owns red, and a 95%
+ * disk wearing either would dress a machine as a session. tight →
+ * critical is carried by the label's own `font-medium`, which is where
+ * it already lived — one escalation channel, not two.
+ */
+function gaugeColor(strain: Strain | null | undefined): string {
+  return strain ? "var(--strain)" : "var(--muted-foreground)";
+}
+
 function Unit({
   name,
   label,
   fraction,
   strain,
+  unknown,
 }: {
   name: string;
   label: string;
-  /** `null` when there is no denominator to divide by, and then no bar
-      is drawn — an empty track reads as "this is at zero". */
+  /** `null` when there is no denominator to divide by, and then only the
+      track is drawn — a full circle of arc would read as "this is at
+      100%", and no circle at all as "this is at zero". */
   fraction: number | null;
   /** The word gui-core minted, absent for the units that carry none
       (CPU, GPU) as much as for a reading below the first step. */
   strain?: Strain | null;
+  /** This reading could not be taken at all, as opposed to being zero. */
+  unknown?: boolean;
 }) {
   return (
-    <div data-vitals-unit={name}>
+    <div className="flex flex-col items-center gap-in" style={{ minWidth: RING_SIZE }}>
+      {/* `data-vitals-bar` rides the gauge, not a bar: smoke knows "a
+          reading drew its gauge" by this name, and the shape changed
+          while the fact it asserts did not. Worth renaming the day
+          somebody is editing that file anyway. */}
+      <span data-vitals-bar={fraction === null ? undefined : ""}>
+        <Ring fraction={fraction} color={gaugeColor(strain)} />
+      </span>
+      {/* **The attribute sits on the sentence, not on the column.** It is
+          what `khor devices` prints, word for word, and smoke compares
+          the two as text — so it has to mark exactly the sentence and
+          not a box that also contains a number in a ring. */}
       <div
+        data-vitals-unit={name}
+        data-vitals-unknown={unknown ? "" : undefined}
         data-strain={strain ?? undefined}
-        className="text-sm data-[strain]:text-strain data-[strain=critical]:font-medium"
+        className="text-aux text-center text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-medium"
       >
         {label}
       </div>
-      {fraction !== null && (
-        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-secondary">
-          <div
-            data-vitals-bar
-            className="h-full bg-muted-foreground"
-            style={{ width: `${Math.min(100, Math.max(0, fraction * 100))}%` }}
-          />
-        </div>
-      )}
     </div>
   );
 }
