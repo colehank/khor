@@ -34,6 +34,22 @@ unknown = "认不出的"
 # `every_face_option_has_a_word_and_every_word_names_an_option` walks, and
 # it is a prefix rather than a convention about dashes because a future
 # palette id may well carry one.
+# 这台机器现在走哪条路够到另一台(khor_core::Hop)。**读数,不是设置。**
+# 校园网上实测直连 3.8–9.8ms、中继 6.0ms——人从手感上分不出来,所以
+# 「悄悄退回中继」需要一个词才看得见。
+#
+# 四个词里有两个是「没话说」,而它们不是同一件事:「没在连」是答案,
+# 「说不出」不是。合成一个,等于把一台读不出来的机器说成没在连。
+#
+# 没有「直连+中继」这一档:实测直连开着的时候中继一直也开着(iroh 拿它当
+# 保险,不拆),所以那个词会出现在每一条健康的行上——常年都在的词等于没有词,
+# 而且会让人以为中继还被需要。「直连」回答的正是那个问题:打洞成没成。
+[hop]
+direct = "直连"
+relay = "中继"
+quiet = "没在连"
+unsure = "说不出"
+
 [avatar]
 axis-palette = "色板"
 axis-variant = "画法"

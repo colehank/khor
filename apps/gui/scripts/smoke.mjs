@@ -2421,15 +2421,21 @@ for line in sys.stdin:
   //     It prints the same reading from the same node, and `vitals_line`
   //     joins its pieces with two spaces — so counting them needs no word
   //     from the catalog, and this file stays free of Chinese.
-  const cliReadings = (machine, env) => {
+  //
+  //     The row is `name \t id \t road \t readings` — the readings are
+  //     **the last cell**, read that way rather than by number so that a
+  //     column added before them (the road one was, 批⑦) moves this
+  //     probe instead of silently making it read the wrong thing.
+  const cliRow = (machine, env) => {
     const line = cli(env, "devices")
       .split("\n")
       .find((l) => l.startsWith(`${machine}\t`));
     if (!line) throw new Error(`probe dead: no ${machine} row printed by \`khor devices\``);
     const cells = line.split("\t");
-    if (cells.length < 3) throw new Error(`probe dead: ${machine}'s row prints no readings`);
-    return cells[2].split("  ").filter(Boolean);
+    if (cells.length < 4) throw new Error(`probe dead: ${machine}'s row is ${cells.length} cells`);
+    return { road: cells[2], readings: cells[cells.length - 1].split("  ").filter(Boolean) };
   };
+  const cliReadings = (machine, env) => cliRow(machine, env).readings;
   //     The age counts on the GUI side too, because the CLI prints it as
   //     one more piece of that same run — leaving it out would make the
   //     two disagree for a reason that has nothing to do with readings.
@@ -2483,6 +2489,22 @@ for line in sys.stdin:
   }
   await sameNumberOfReadings("alpha", envB);
 
+  //     **The road reading is one fact, not two** (批⑦): the card and
+  //     `khor devices` are two faces on one `Node::hops` answer, and a
+  //     screen that worked it out for itself is a screen that can
+  //     disagree with the terminal. Compared as the word, which is the
+  //     only form both ends show — neither side spells it here.
+  const cardRoad = page.locator("[data-machine-card] [data-hop]");
+  if ((await cardRoad.count()) !== 1) {
+    throw new Error("alpha's card draws no road reading");
+  }
+  const printedRoad = cliRow("alpha", envB).road;
+  if ((await cardRoad.innerText()).trim() !== printedRoad.trim()) {
+    throw new Error(
+      `alpha's road is "${await cardRoad.innerText()}" on the card and "${printedRoad}" in the terminal`,
+    );
+  }
+
   //     **The offline axis reaches the screen.** alpha's reading was
   //     taken on alpha and carried here, so it has an age; beta samples
   //     itself to answer the very call that painted this, so it has
@@ -2497,6 +2519,14 @@ for line in sys.stdin:
       await page.locator('[data-device="beta"]').evaluate((el) => el.dataset.row.slice(0, 12)),
     ),
   );
+  //     **And this machine's own card carries no road at all.** A
+  //     machine does not reach itself over the network, so the row holds
+  //     no reading rather than an unreadable one — the negative half of
+  //     the check above, and the one that would go quietly wrong if the
+  //     field were a word every face had to remember to hide.
+  if ((await page.locator("[data-machine-card] [data-hop]").count()) !== 0) {
+    throw new Error("beta's own card claims a road to itself");
+  }
   if ((await page.locator("[data-vitals-unit]").count()) === 0) {
     throw new Error("this machine's own card is missing readings");
   }

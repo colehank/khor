@@ -256,12 +256,49 @@ fn version(_rest: &[String]) -> Result<(), String> {
 
 fn devices(_rest: &[String]) -> Result<(), String> {
     let n = node()?;
+    // Asked once for the whole list rather than per row: it is one
+    // hand-off to the resident, and asking per device would make the
+    // readings arrive at different instants — a table where two rows
+    // describe two moments.
+    let hops = rt()?.block_on(n.hops());
     for d in n.devices()? {
-        let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
+        // **By id, not by name.** Two machines on one network can carry
+        // the same hostname — two homes on one box always do — and the
+        // name test then marks both rows 「(本机)」, which is the one
+        // thing on this line a person reads to know where they are.
+        // Seen live while adding the road reading (2026-08-21): a
+        // second home on this Mac made every row claim to be home.
+        let me = d.id == n.device_str();
+        let here = if me { cli::THIS_MACHINE } else { "" };
         let pin = if d.pinned { cli::PINNED_MARK } else { "" };
-        println!("{}\t{}…{here}{pin}\t{}", d.name, &d.id[..16], vitals_line(&n, &d.id));
+        let hop = hops
+            .iter()
+            .find(|(id, _)| *id == d.id)
+            .map(|(_, h)| *h)
+            .unwrap_or(khor_node::Hop::Unknown);
+        println!(
+            "{}\t{}…{here}{pin}\t{}\t{}",
+            d.name,
+            &d.id[..16],
+            hop_word(hop, me),
+            vitals_line(&n, &d.id)
+        );
     }
     Ok(())
+}
+
+/// The road word for one row — and **nothing at all for this machine**.
+///
+/// A machine does not reach itself over the network, so any of the five
+/// readings would be answering a question nobody asked. Left blank
+/// rather than given a sixth word: a word here would be one more thing
+/// to read on every row, forever, to learn something already obvious
+/// from the 「(本机)」 beside it.
+fn hop_word(hop: khor_node::Hop, is_me: bool) -> &'static str {
+    if is_me {
+        return "";
+    }
+    khor_catalog::hop::word(hop.key())
 }
 
 /// One machine's readings on one line — the CLI half of the machine card,

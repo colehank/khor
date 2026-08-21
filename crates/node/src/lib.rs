@@ -30,7 +30,7 @@ pub mod vitals;
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
 };
-pub use khor_core::{kind, Fill, Session, SessionId, State, Tokens, Usage, UsageDay, Vitals};
+pub use khor_core::{kind, Fill, Hop, Session, SessionId, State, Tokens, Usage, UsageDay, Vitals};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 

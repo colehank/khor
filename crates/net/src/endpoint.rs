@@ -119,6 +119,48 @@ pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<i
     Ok(addr)
 }
 
+/// Which kinds of road this endpoint is **actually using** to reach a
+/// remote, right now. `None` when iroh has no entry for it at all.
+///
+/// **Only the addresses iroh marks as in use are counted.** The list it
+/// hands back also holds candidates that are merely known, and reading
+/// one of those would report a direct road for a machine whose every
+/// byte is going through a relay — the exact wrong answer to the
+/// question this exists for ("do we still need the relay here?"). Same
+/// judgment `probe.rs` already carries: what decides is the path that
+/// was selected, not the mere existence of a direct one.
+///
+/// Names nothing: it answers in facts and the word is chosen where the
+/// words live (`khor_core::Hop::of`). The third flag is a road in use
+/// that is neither kind — iroh's address enum is open, and folding a
+/// transport khor has no word for into "direct" or "relay" would be a
+/// confident lie rather than an admission.
+pub async fn roads_in_use(ep: &iroh::Endpoint, id_hex: &str) -> Option<RoadsInUse> {
+    let id: iroh::EndpointId = id_hex.parse().ok()?;
+    let info = ep.remote_info(id).await?;
+    let mut seen = RoadsInUse::default();
+    for a in info.addrs() {
+        if !matches!(a.usage(), iroh::endpoint::TransportAddrUsage::Active) {
+            continue;
+        }
+        match a.addr() {
+            iroh::TransportAddr::Ip(_) => seen.direct = true,
+            iroh::TransportAddr::Relay(_) => seen.relay = true,
+            _ => seen.other = true,
+        }
+    }
+    Some(seen)
+}
+
+/// The answer [`roads_in_use`] gives: which kinds are carrying traffic.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RoadsInUse {
+    pub direct: bool,
+    pub relay: bool,
+    /// A road in use that is neither of the above.
+    pub other: bool,
+}
+
 /// This endpoint's dialable addresses, as strings. Unspecified bind
 /// addresses (0.0.0.0) map to loopback — right for the same-machine
 /// case; LAN and NAT paths come from discovery.

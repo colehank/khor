@@ -1,10 +1,24 @@
 // Wording helpers on top of the generated catalog. The display word is
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
-import { avatar, category, cli, state } from "./gen/catalog";
+import { avatar, category, cli, hop, state } from "./gen/catalog";
 
 export function word(key: string): string {
   return (state as Record<string, string>)[key] ?? key;
+}
+
+/**
+ * The word for which road a machine is being reached over
+ * (`khor_core::Hop`), from the key the node sent.
+ *
+ * Its own lookup rather than a second use of `word` above: the keys are
+ * deliberately not shared with the state table — `quiet` and `unsure`
+ * exist here and nowhere else — precisely so that reading one in the
+ * wrong table echoes the key instead of quietly finding a real word and
+ * painting it. Sharing a lookup would give that mistake back.
+ */
+export function hopWord(key: string): string {
+  return (hop as Record<string, string>)[key] ?? key;
 }
 
 /**

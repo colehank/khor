@@ -343,6 +343,21 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::Hops => {
+                let mut by_device = Vec::new();
+                for d in self.devices().unwrap_or_default() {
+                    // Every device gets a row, including this machine
+                    // and the ones nothing has ever dialled: a device
+                    // left out would read as absent rather than as
+                    // unread, and those are different answers.
+                    let hop = match endpoint::roads_in_use(ep, &d.id).await {
+                        Some(u) => khor_core::Hop::of(u.direct, u.relay, u.other),
+                        None => khor_core::Hop::Unknown,
+                    };
+                    by_device.push((d.id, hop));
+                }
+                ipc::Reply::Hops { by_device }
+            }
             ipc::Op::SyncNow => {
                 let _g = self.sync_gate.lock().await;
                 ipc::Reply::Synced { outcomes: self.sync_with_all(ep).await }
@@ -1677,6 +1692,32 @@ impl Node {
             }
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Which road this machine is using to reach each device it knows.
+    ///
+    /// **No fallback to a fresh endpoint, unlike every other verb here.**
+    /// `sync_now` binds its own when no resident holds the key, because
+    /// syncing from a new endpoint is still syncing. A *reading* taken
+    /// from a new endpoint is not the same reading: it has spoken to
+    /// nobody, so every machine would come back as "nothing flowing" —
+    /// a confident, wrong, and completely plausible answer to the one
+    /// question this exists for. With no resident, the honest answer is
+    /// that khor cannot say, and that is a word (`khor_core::Hop`).
+    pub async fn hops(&self) -> Vec<(String, khor_core::Hop)> {
+        let fallback = || {
+            self.devices()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|d| (d.id, khor_core::Hop::Unknown))
+                .collect::<Vec<_>>()
+        };
+        match self.via_serve(ipc::Op::Hops).await {
+            Some(Ok(ipc::Reply::Hops { by_device })) => by_device,
+            // A resident that answered something else is one too old to
+            // know the question — which is a thing khor cannot say.
+            _ => fallback(),
         }
     }
 

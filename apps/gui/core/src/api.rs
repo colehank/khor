@@ -71,7 +71,7 @@ pub fn answer(
     };
     match cmd {
         "sessions" => to_json(&crate::list_sessions(root, &arg("by")?)?),
-        "devices" => to_json(&crate::list_devices(root)?),
+        "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         "usage" => to_json(&crate::usage(root)?),
         "seen" => {
             crate::seen(root, &arg("id")?)?;

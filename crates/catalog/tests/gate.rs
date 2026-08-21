@@ -4,7 +4,7 @@
 //! generates.
 
 use khor_core::avatar::{FaceShape, Variant, PRESETS};
-use khor_core::State;
+use khor_core::{Hop, State};
 
 #[test]
 fn every_state_word_is_translated_and_unknown_keys_echo() {
@@ -14,6 +14,33 @@ fn every_state_word_is_translated_and_unknown_keys_echo() {
         assert!(!w.is_ascii(), "{w} should be the word, not the key");
     }
     assert_eq!(khor_catalog::state::word("holodeck"), "holodeck");
+}
+
+/// **Every hop reading has a word, and every word names a reading.**
+///
+/// The second direction is the one that matters here. A word for a
+/// reading khor no longer produces is invisible — the screen looks
+/// complete while that row can never appear — and this table's whole
+/// job is to make an unreadable machine say so rather than wear a
+/// neighbour's word (`khor_core::Hop`).
+#[test]
+fn every_hop_has_a_word_and_every_word_names_a_hop() {
+    for h in Hop::ALL {
+        let w = khor_catalog::hop::word(h.key());
+        assert_ne!(w, h.key(), "{} must map to a word, not echo", h.key());
+        assert!(!w.is_ascii(), "{w} should be the word, not the key");
+    }
+    for key in khor_catalog::hop::KEYS {
+        assert!(
+            Hop::ALL.iter().any(|h| h.key() == key),
+            "hop.{key} is a word for a reading khor cannot produce"
+        );
+    }
+    // The keys are deliberately not `idle`/`unknown`: those exist in the
+    // state and category tables, so a face looking a hop up in the wrong
+    // one would find a real word and paint it. Here that mistake echoes.
+    assert_eq!(khor_catalog::hop::word("idle"), "idle");
+    assert_eq!(khor_catalog::hop::word("unknown"), "unknown");
 }
 
 /// **Every face option has a word, and every word here names an option

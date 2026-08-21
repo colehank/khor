@@ -47,6 +47,13 @@ pub enum Op {
     ReachOn { machine: String, session: String },
     /// End a session on another machine (`Act` "close"). Tail-appended.
     CloseOn { machine: String, session: String },
+    /// Which road this machine is using to reach each known device
+    /// (`khor_core::Hop`). **Only the resident can answer**: the reading
+    /// belongs to the live endpoint's own view of its remotes, and a
+    /// one-shot verb that bound its own endpoint would have talked to
+    /// nobody and report "nothing flowing" for the whole fleet.
+    /// Tail-appended.
+    Hops,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,6 +90,14 @@ pub enum Reply {
     /// address is this machine's; what is on the other end of it is the
     /// far host's socket (`tunnel`).
     Reaching { addr: String, cookie: String },
+    /// Tail-appended with [`Op::Hops`]: one reading per device id.
+    ///
+    /// A list rather than a map because it crosses msgpack, and every
+    /// device present in the table is present here — a machine missing
+    /// from this list would be read as *absent*, and the caller has no
+    /// way to tell that from *no reading*, which is precisely the
+    /// distinction `Hop` exists to keep (`Hop::Unknown`).
+    Hops { by_device: Vec<(String, khor_core::Hop)> },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

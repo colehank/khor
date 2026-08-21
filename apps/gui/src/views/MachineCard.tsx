@@ -3,7 +3,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
-import { ago } from "@/words";
+import { ago, hopWord } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -77,6 +77,24 @@ export function MachineCard({
               <div data-machine-id className="break-all text-sm text-muted-foreground">
                 {row.id}
               </div>
+              {/* Which road this machine is using to reach that one
+                  (`khor_core::Hop`), the same reading `khor devices`
+                  prints, from the same call.
+
+                  **Nothing for this machine itself** — the row carries
+                  no reading at all there, so this renders nothing
+                  without having to know why.
+
+                  Not a liveness signal, and deliberately not dressed as
+                  one — it lags the far end going away by minutes, and
+                  the age beside the readings below is what says whether
+                  this machine has been heard from. Two facts, two
+                  places. */}
+              {row.hop && (
+                <div data-hop={row.hop} className="text-sm text-muted-foreground">
+                  {hopWord(row.hop)}
+                </div>
+              )}
             </div>
             {/* The same control as on the row, with the same two names
                 and the same failure face — it is one fact about this

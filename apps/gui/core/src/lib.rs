@@ -128,6 +128,20 @@ pub struct DeviceRow {
     /// What that machine is doing, and how long ago it said so. `None`
     /// when it has never been reached — see [`VitalsReading`].
     pub vitals: Option<VitalsReading>,
+    /// Which road this machine is using to reach that one right now
+    /// (`khor_core::Hop`), as its key — the word is looked up at paint
+    /// time like every other.
+    ///
+    /// **Rides the row rather than arriving on its own**, so the whole
+    /// table describes one instant: asked per machine it would be one
+    /// reading per round trip, and two rows would be two moments.
+    ///
+    /// `None` for this machine, and that is the type doing the work: a
+    /// machine does not reach itself over the network, so there is no
+    /// reading rather than an unreadable one. Carried as a word every
+    /// face had to remember to hide, the first face that forgot would
+    /// print 说不出 on the row for the computer it is running on.
+    pub hop: Option<String>,
     /// Where this machine sits when the network is drawn as a mandala
     /// (`khor_core::map`).
     ///
@@ -372,10 +386,13 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .collect())
 }
 
-pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
+/// Async only because of the road reading: it is the resident's answer,
+/// fetched once for the whole table (`khor_node::Node::hops`).
+pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
     let n = open(root)?;
     let me = n.device_str().to_owned();
     let all = n.devices()?;
+    let hops = n.hops().await;
     // The ring is as big as the network minus this machine, and the
     // seats are handed out in the order the node listed them — so a
     // machine keeps its seat for as long as the list keeps its shape,
@@ -392,6 +409,14 @@ pub fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
                 ring.next().unwrap_or(map::CENTRE)
             },
             me: d.id == me,
+            hop: (d.id != me).then(|| {
+                hops.iter()
+                    .find(|(id, _)| *id == d.id)
+                    .map(|(_, h)| *h)
+                    .unwrap_or(khor_node::Hop::Unknown)
+                    .key()
+                    .to_owned()
+            }),
             face: n.face_of(&d),
             pinned: d.pinned,
             // Sampled for this machine, read from the last visit for

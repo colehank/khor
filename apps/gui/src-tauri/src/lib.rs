@@ -14,8 +14,8 @@ fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
 }
 
 #[tauri::command]
-fn devices() -> Result<Vec<DeviceRow>, String> {
-    khor_gui_core::list_devices(&Node::root_from_env())
+async fn devices() -> Result<Vec<DeviceRow>, String> {
+    khor_gui_core::list_devices(&Node::root_from_env()).await
 }
 
 /// **Blocking, and the first call can take seconds**: reading every

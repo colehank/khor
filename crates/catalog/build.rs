@@ -13,7 +13,7 @@ fn main() {
     let doc: toml::Table = text.parse().expect("zh.toml must parse");
     let mut rs = String::from("// Generated from zh.toml by build.rs - do not edit.\n");
     let mut ts = String::from("// Generated from zh.toml by khor-catalog - do not edit.\n");
-    for section in ["state", "category", "avatar", "cli", "msg", "gui"] {
+    for section in ["state", "category", "hop", "avatar", "cli", "msg", "gui"] {
         let table = doc[section].as_table().expect("each section must be a table");
         let mut texts: BTreeMap<&str, &str> = BTreeMap::new();
         for (k, v) in table {
@@ -74,7 +74,7 @@ fn gen_rust(rs: &mut String, section: &str, table: &toml::Table) {
     // list is what lets a gate walk the section in the other direction
     // ("every word here names something that exists"); without it a word
     // for an option the code no longer produces stays green forever.
-    if section == "state" || section == "category" || section == "avatar" {
+    if section == "state" || section == "category" || section == "hop" || section == "avatar" {
         write!(rs, "    pub fn word(key: &str) -> &str {{ match key {{ ").unwrap();
         for (k, v) in table {
             write!(rs, "{:?} => {:?}, ", k, v.as_str().unwrap()).unwrap();
