@@ -211,6 +211,23 @@ async function main() {
 
 async function cleanup() {
   if (browser) await browser.close().catch(() => {});
+  // **`khor quit` before the kill, or the session hosts outlive this.**
+  // A host is spawned *by serve*, not by this script, so it is not in
+  // the process group killed below — measured after nine runs of this
+  // file: nine `khor _host … -- cat` processes with `ppid=1`, each
+  // holding a scratch directory that had already been deleted. That is
+  // exactly what this verb is for ("停掉本机的 serve 和所有 session
+  // 宿主"), and using it is also the only cleanup that stays right when
+  // serve learns to start something else.
+  try {
+    execFileSync(KHOR, ["quit"], {
+      env: { ...process.env, KHOR_HOME: HOME },
+      stdio: "ignore",
+      timeout: 20_000,
+    });
+  } catch {
+    /* nothing to quit, or it is already gone */
+  }
   for (const c of children) {
     try {
       process.kill(-c.pid, "SIGKILL");
