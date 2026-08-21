@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use khor_node::list::Arrange;
+pub use khor_core::QuotaAnswer;
 use khor_core::map::{self, Seat};
 use khor_node::{
     Avatar, AvatarStyle, FaceShape, Node, SessionId, Usage, Variant, Vitals, PRESETS,
@@ -441,6 +442,32 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
 /// with it.
 pub fn usage(root: &Path) -> Result<Usage, String> {
     open(root)?.usage_everywhere()
+}
+
+/// What this machine's Claude subscription has left.
+///
+/// **Never fails.** Every way this can go wrong is something the person
+/// might act on — no login, an expired token, a cooldown with a stated
+/// wait — so a reason travels as data beside the reading rather than as
+/// an error that a screen would have to turn back into words. A panel
+/// that just stayed empty during a ten-minute cooldown would be
+/// indistinguishable from one that is broken.
+///
+/// **No `root` argument, unlike its neighbours here.** This is not a
+/// fact about a khor installation; it is a fact about an *account*, read
+/// through the login Claude Code already stored on this machine. The
+/// same account seen from two machines is one quota, not two.
+pub async fn quota() -> QuotaAnswer {
+    match khor_node::quota::read().await {
+        Ok(quota) => QuotaAnswer {
+            quota: Some(quota),
+            trouble: None,
+        },
+        Err(trouble) => QuotaAnswer {
+            quota: None,
+            trouble: Some(trouble),
+        },
+    }
 }
 
 /// Pins or unpins a session — the call `khor pin <session>` makes. One

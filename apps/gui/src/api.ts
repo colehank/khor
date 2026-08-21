@@ -22,6 +22,9 @@ import type { TermScreen } from "./gen/bindings/TermScreen";
 import type { TermRun } from "./gen/bindings/TermRun";
 import type { TermColor } from "./gen/bindings/TermColor";
 import type { AgentRow } from "./gen/bindings/AgentRow";
+import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
+import type { QuotaWindow } from "./gen/bindings/QuotaWindow";
+import type { QuotaTrouble } from "./gen/bindings/QuotaTrouble";
 
 export type {
   SessionRow,
@@ -42,6 +45,9 @@ export type {
   TermRun,
   TermColor,
   AgentRow,
+  QuotaAnswer,
+  QuotaWindow,
+  QuotaTrouble,
 };
 
 const params = new URLSearchParams(window.location.search);
@@ -161,6 +167,11 @@ export const fetchDevices = () => call<DeviceRow[]>("devices");
     the device rows: those are polled every couple of seconds and this is
     a list of every day there has ever been. */
 export const fetchUsage = () => call<Usage>("usage");
+/** What this machine's Claude subscription has left — read through the
+    login Claude Code already stored here. Never rejects: every way it
+    can come back empty is a reason the person might act on, so the
+    reason rides in the answer. */
+export const fetchQuota = () => call<QuotaAnswer>("quota");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });

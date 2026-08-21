@@ -103,7 +103,24 @@ export function valueOf(key: string): string {
 
 /** How long ago, in the catalog's units. */
 export function ago(ms: number): string {
-  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  return span(Date.now() - ms);
+}
+
+/**
+ * How long until a moment, in the same words `ago` uses for how long
+ * since one.
+ *
+ * **The ladder is shared rather than written twice.** Two copies would
+ * be two places to change 「分钟」, and the direction is the only thing
+ * that differs — which is the argument, not the vocabulary.
+ */
+export function until(ms: number): string {
+  return span(ms - Date.now());
+}
+
+/** A duration in the coarsest unit that still says something. */
+function span(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
   if (s < 60) return cli.age_seconds(s);
   const m = Math.floor(s / 60);
   if (m < 60) return cli.age_minutes(m);

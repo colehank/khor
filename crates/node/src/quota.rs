@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use khor_core::{Quota, QuotaWindow, QuotaWindowKind};
+use khor_core::{Quota, QuotaTrouble, QuotaWindow, QuotaWindowKind};
 use serde_json::Value;
 
 const ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -60,30 +60,6 @@ const FAIL_COOLDOWN: i64 = 600;
 
 static MEM_CACHE: Mutex<Option<(i64, Quota)>> = Mutex::new(None);
 static LAST_FAIL: Mutex<Option<i64>> = Mutex::new(None);
-
-/// Why there is no reading — as a cause, never as a sentence.
-///
-/// The words live in `crates/catalog` like every other user-facing
-/// string; a Rust file holding them would be the one place the wording
-/// could not be changed from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum QuotaTrouble {
-    /// No Claude Code login on this machine at all.
-    NoLogin,
-    /// The stored credential is expired or was refused (401/403).
-    ///
-    /// **khor does not refresh it**, and that is a decision rather than a
-    /// gap: minting a fresh token against this endpoint would be khor
-    /// acting as Claude Code rather than reading what Claude Code left.
-    /// The person runs `claude` once and it is fixed.
-    Stale,
-    /// Rate limited, with whole minutes left before khor will try again.
-    Cooling { minutes: i64 },
-    /// The endpoint answered in a shape this build cannot read.
-    Unreadable,
-    /// The endpoint could not be reached.
-    Unreachable,
-}
 
 /// This machine's reading, from whichever source can answer.
 pub async fn read() -> Result<Quota, QuotaTrouble> {

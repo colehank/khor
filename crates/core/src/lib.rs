@@ -715,6 +715,11 @@ pub struct QuotaWindow {
     /// When this window rolls over, unix seconds. `None` once the moment
     /// has passed — a reset time in the past is not a fact about the
     /// future, and the reading beside it has already been zeroed.
+    ///
+    /// A `number` on the TS side, as elsewhere here: unix seconds are
+    /// nowhere near 2^53, and a `bigint` would make every screen that
+    /// does arithmetic on it convert first.
+    #[ts(type = "number | null")]
     pub resets_at: Option<i64>,
 }
 
@@ -744,7 +749,52 @@ pub struct Quota {
     /// fresh fetch look identical otherwise, and 18% from ten minutes
     /// ago is a different sentence from 18% now — the same axis
     /// [`VitalsReading`] carries, applied to an account.
+    #[ts(type = "number | null")]
     pub as_of: Option<i64>,
+}
+
+/// Why there is no quota reading — as a cause, never as a sentence.
+///
+/// The words live in `crates/catalog` like every other user-facing
+/// string, and they are looked up where they are painted. A Rust file
+/// holding them would be the one place that wording could not be
+/// changed from, and this particular wording matters: three of these
+/// five are things the person can act on, and telling them *which* is
+/// the entire value of saying anything at all.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaTrouble {
+    /// No Claude Code login on this machine.
+    NoLogin,
+    /// The stored credential is expired or was refused.
+    ///
+    /// **khor does not refresh it**, which is a decision and not a gap:
+    /// minting a token against this endpoint would be khor acting as
+    /// Claude Code rather than reading what Claude Code left behind. The
+    /// person runs `claude` once and it is fixed.
+    Stale,
+    /// Rate limited. Whole minutes until khor will try again — said out
+    /// loud, because a panel that just stays empty during a ten-minute
+    /// cooldown is indistinguishable from one that is broken.
+    Cooling {
+        #[ts(type = "number")]
+        minutes: i64,
+    },
+    /// The endpoint answered in a shape this build cannot read.
+    Unreadable,
+    /// The endpoint could not be reached.
+    Unreachable,
+}
+
+/// What khor can say about the subscription right now.
+///
+/// **Both halves can be empty and that is not a bug**: before the first
+/// answer arrives there is neither a reading nor a reason, and a screen
+/// that guessed one would be describing a state that has not happened.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct QuotaAnswer {
+    pub quota: Option<Quota>,
+    pub trouble: Option<QuotaTrouble>,
 }
 
 /// One line of preview out of arbitrary said text, for

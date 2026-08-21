@@ -18,6 +18,10 @@ fn main() {
     // for on its own, so nothing embeds it and `export_all_to` would
     // never walk into it.
     khor_node::Usage::export_all_to(&dir).expect("export Usage");
+    // Same reason as the spending answer above: the subscription is
+    // asked for on its own and no row embeds it, so nothing would walk
+    // into it.
+    khor_gui_core::QuotaAnswer::export_all_to(&dir).expect("export QuotaAnswer");
     khor_gui_core::chat::ChatBatch::export_all_to(&dir).expect("export ChatBatch");
     khor_gui_core::files::DirListing::export_all_to(&dir).expect("export DirListing");
     khor_gui_core::files::DirPinRow::export_all_to(&dir).expect("export DirPinRow");

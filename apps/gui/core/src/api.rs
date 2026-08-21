@@ -73,6 +73,10 @@ pub fn answer(
         "sessions" => to_json(&crate::list_sessions(root, &arg("by")?)?),
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         "usage" => to_json(&crate::usage(root)?),
+        // No `root`: a subscription is an account's, not an
+        // installation's. And no `?` — every failure here is a reason
+        // the person can act on, so it rides back as data.
+        "quota" => to_json(&rt.block_on(crate::quota())),
         "seen" => {
             crate::seen(root, &arg("id")?)?;
             Ok("null".to_owned())

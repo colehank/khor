@@ -1028,3 +1028,24 @@ term-over = "这个终端结束了"
 # transcript. Nouns, not verbs — they name what the pane shows.
 view-terminal = "终端"
 view-chat = "对话"
+
+# ── Claude 订阅余量(批⑩) ─────────────────────────────
+# 窗口的名字。数字与「已用多少」由环画,这里只给名字——
+# 「5 小时」是它管的那段时间,不是一个还剩多久的倒计时。
+quota-five-hour = "5 小时"
+quota-seven-day = "7 天"
+quota-seven-day-sonnet = "7 天 Sonnet"
+quota-seven-day-opus = "7 天 Opus"
+# **这一行是这批里唯一非画不可的字。** 那份凭证是为了让 claude 跑才存下
+# 的,khor 拿它回答第二个问题,是把它被给予的用途撑宽了——用户认下这件事
+# 的前提就是它看得见。少了这一行,这几个数读起来就像 khor 自己知道的。
+quota-via = "借你登录的 Claude Code 查到的"
+# 这个窗口什么时候归零。
+quota-resets = "{0}后重置"
+# 五种「没有数」,每一种对应一件不同的事可做。**不能合并成一句「读不到」**:
+# 前两种是用户动一下就好,第三种是等,后两种是别人的事。
+quota-no-login = "这台机器没登录 Claude Code"
+quota-stale = "登录过期了,在终端跑一次 claude"
+quota-cooling = "被限流了,{0} 分钟后再问"
+quota-unreadable = "这份余量读不出来"
+quota-unreachable = "问不到余量"

@@ -4,6 +4,7 @@ import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
+  fetchQuota,
   fetchUsage,
   fetchWebPins,
   openWeb,
@@ -16,6 +17,7 @@ import {
   type HooksState,
   type SessionRow,
   type Usage,
+  type QuotaAnswer,
   type WebPinRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -350,6 +352,7 @@ export default function App() {
   // so a slower beat of its own is enough for a number that changes as
   // fast as somebody can type.
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [quota, setQuota] = useState<QuotaAnswer | null>(null);
 
   // This machine's hooks, polled with everything else rather than read
   // once when the card opens: `khor hooks install` in a terminal is the
@@ -396,6 +399,15 @@ export default function App() {
     const tick = () => {
       fetchUsage()
         .then((u) => live && setUsage(u))
+        .catch(() => {});
+      // **On the same beat as the spending, and that costs nothing.**
+      // The endpoint behind this is not touched per poll: one fetch
+      // answers for five minutes and the whole machine shares it
+      // (`khor_node::quota`), so this beat reaches a cache and stops.
+      // Polling slower here would only make the panel staler than the
+      // number it is allowed to show.
+      fetchQuota()
+        .then((q) => live && setQuota(q))
         .catch(() => {});
     };
     tick();
@@ -1106,7 +1118,7 @@ export default function App() {
           narrow ? "max-h-1/2 flex-none border-t" : "w-list flex-none border-l",
         )}
       >
-        <UsagePanel usage={usage} />
+        <UsagePanel usage={usage} quota={quota} />
       </div>
     </div>
   );
