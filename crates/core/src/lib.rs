@@ -176,12 +176,17 @@ impl State {
 ///
 /// - [`Hop::Idle`] is *khor knows, and the answer is nothing is
 ///   flowing* — a peer with no path in use.
-/// - [`Hop::Unknown`] is *khor cannot say* — no resident holds the
-///   endpoint, the remote is not in its map, or the road in use is a
-///   transport this version has no word for.
+/// - [`Hop::NoServe`] is *nobody on this machine is holding the
+///   endpoint*, so there was no one to ask. Fixable, and the fix is a
+///   command.
+/// - [`Hop::Unknown`] is *somebody was asked and could not say* — the
+///   remote is not in its map, or the road in use is a transport this
+///   version has no word for.
 ///
-/// Folding those two together would be the same mistake one size down:
-/// "not connected" is an answer, "I have no idea" is not.
+/// Folding any of the three together would be the same mistake one size
+/// down. "nothing is flowing", "khor is not running here" and "I have
+/// no idea" are three answers, and only the middle one tells a person
+/// what to type.
 ///
 /// # It lags, and by minutes
 ///
@@ -208,12 +213,17 @@ pub enum Hop {
     Relay,
     /// Nothing is flowing to that machine at the moment.
     Idle,
+    /// No resident on this machine, so nothing here holds an endpoint to
+    /// read the answer off. Kept apart from [`Hop::Unknown`] because it
+    /// is the one silent answer with a remedy in it.
+    NoServe,
     /// Khor cannot tell.
     Unknown,
 }
 
 impl Hop {
-    pub const ALL: [Hop; 4] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::Unknown];
+    pub const ALL: [Hop; 5] =
+        [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe, Hop::Unknown];
 
     /// Wire and catalog key.
     pub const fn key(self) -> &'static str {
@@ -227,6 +237,7 @@ impl Hop {
             // paint it. Keys that exist in only one table make that
             // mistake echo the key instead, which is visible.
             Hop::Idle => "quiet",
+            Hop::NoServe => "no-serve",
             Hop::Unknown => "unsure",
         }
     }
@@ -310,14 +321,27 @@ mod hop_tests {
         assert_eq!(Hop::of(true, true, true), Hop::Direct);
     }
 
-    /// The two silent answers stay apart. Folded together, a machine
-    /// khor cannot read and a machine nobody is talking to would wear
-    /// one word — and only one of them means anything is wrong.
+    /// **The three silent answers stay apart.** Folded together, "the
+    /// two of you are not talking", "khor is not running on this
+    /// machine" and "I could not read it" wear one word — and only the
+    /// middle one tells a person what to type.
+    ///
+    /// `NoServe` is not produced here on purpose: `of` is handed what a
+    /// live endpoint saw, and the case where there was no endpoint to
+    /// ask never reaches it (`khor_node::Node::hops` decides that one).
+    /// Asserted anyway, because the thing worth protecting is that the
+    /// three are three — wherever each is decided.
     #[test]
-    fn not_connected_and_cannot_tell_are_two_answers() {
+    fn the_three_silences_stay_apart() {
         assert_eq!(Hop::of(false, false, false), Hop::Idle, "nothing in use at all");
         assert_eq!(Hop::of(false, false, true), Hop::Unknown, "a road khor has no word for");
-        assert_ne!(Hop::Idle, Hop::Unknown);
+        let silent = [Hop::Idle, Hop::NoServe, Hop::Unknown];
+        for (i, a) in silent.iter().enumerate() {
+            for b in &silent[i + 1..] {
+                assert_ne!(a, b);
+                assert_ne!(a.key(), b.key(), "{} and {} share a key", a.key(), b.key());
+            }
+        }
     }
 
     /// Keys are what travel; a duplicate would make two readings one.

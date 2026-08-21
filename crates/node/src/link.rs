@@ -1706,18 +1706,24 @@ impl Node {
     /// question this exists for. With no resident, the honest answer is
     /// that khor cannot say, and that is a word (`khor_core::Hop`).
     pub async fn hops(&self) -> Vec<(String, khor_core::Hop)> {
-        let fallback = || {
+        let every = |h: khor_core::Hop| {
             self.devices()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|d| (d.id, khor_core::Hop::Unknown))
+                .map(|d| (d.id, h))
                 .collect::<Vec<_>>()
         };
         match self.via_serve(ipc::Op::Hops).await {
             Some(Ok(ipc::Reply::Hops { by_device })) => by_device,
-            // A resident that answered something else is one too old to
-            // know the question — which is a thing khor cannot say.
-            _ => fallback(),
+            // **Three silences, not one.** No resident at all is the one
+            // with a remedy in it — nothing here is holding an endpoint,
+            // and starting `khor serve` fixes it. A resident that
+            // answered something else is one too old to know the
+            // question, which is a thing khor genuinely cannot say.
+            // Reporting both as "cannot say" would hide the fixable one
+            // behind the unfixable one.
+            None => every(khor_core::Hop::NoServe),
+            Some(_) => every(khor_core::Hop::Unknown),
         }
     }
 
