@@ -224,7 +224,7 @@ function RailItem({
       data-on={on}
       onClick={onClick}
       className={cn(
-        "group relative h-auto flex-col gap-0 rounded-md px-2 py-2 text-muted-foreground",
+        "group relative h-auto flex-col gap-0 rounded-md p-in text-rail-ink",
         on && "text-primary hover:text-primary",
         className,
       )}
@@ -712,7 +712,7 @@ export default function App() {
   const rail = (
     <nav
       className={cn(
-        "flex items-center gap-1 select-none",
+        "flex items-center gap-in select-none",
         narrow ? "flex-row justify-around border-t py-1" : "w-rail flex-col border-r py-3",
       )}
     >

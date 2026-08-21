@@ -3,11 +3,18 @@
  * components, on the theme in tokens.css. */
 
 /* Two densities, one color (mandala's rail discipline): the solid piece
-   fills at sixty percent so body and line read as depths, not colors;
-   selection pushes it solid. */
+   fills at a fraction of the line so the two read as depths, not as
+   colors; selection pushes it solid.
+
+   The fraction is `--icon-body` rather than a number written here,
+   because it is only half of what reaches the screen — the other half
+   is whatever alpha the ink already carries, and the two multiply. That
+   product, and the contrast each factor was chosen to land on, are
+   recorded together in `tokens.css`; a number sitting here would be the
+   one place a reader could find it and still be wrong. */
 [data-rail-item] svg [data-body] {
   fill: currentColor;
-  fill-opacity: 0.6;
+  fill-opacity: var(--icon-body);
   transition: fill-opacity var(--dur-180) var(--ease-out);
 }
 

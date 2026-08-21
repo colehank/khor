@@ -171,7 +171,7 @@ function Hooks({
   if (!state) return null;
   const on = state.installed;
   return (
-    <div data-hooks data-installed={on} className="flex flex-col gap-2 pt-8">
+    <div data-hooks data-installed={on} className="flex flex-col gap-2 pt-pane">
       <Button
         variant="outline"
         size="sm"
@@ -219,14 +219,14 @@ function Hooks({
 function Readings({ row }: { row: DeviceRow }) {
   if (!row.vitals) {
     return (
-      <div data-vitals-never className="pt-6 text-sm text-muted-foreground">
+      <div data-vitals-never className="pt-pane text-sm text-muted-foreground">
         {cli.vitals_never}
       </div>
     );
   }
   const { vitals: v, age_ms } = row.vitals;
   return (
-    <div data-vitals className="flex flex-col gap-3 pt-6">
+    <div data-vitals className="flex flex-col gap-row pt-pane">
       <Unit
         name="cpu"
         label={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}

@@ -74,13 +74,88 @@
    * card. Taking the theme's own ink handles both at once. */
   --avatar-edge: rgba(26, 26, 20, 0.22);
 
+  /* ── the rail's ink, and the two densities inside it ──
+   * The family draws each glyph as one solid piece (`data-body`) held
+   * in a line: one colour at two depths, never two colours (`app.css`).
+   * That reads as depth only while the depths are the *only* thing
+   * dividing the two layers — and they were not. The button wore
+   * `text-muted-foreground`, which already carries alpha (.62 light /
+   * .55 dark), and the body took a further .6 **of that**, so the two
+   * multiplied. Every number below is a reading from a real browser
+   * (`scripts/check-contrast.mjs`), against what the glyph actually
+   * sits on — which is `--background`, since the rail paints nothing
+   * of its own:
+   *
+   *              was            is
+   *   body    2.30 / 2.71    3.31 / 4.80     (light / dark)
+   *   line    4.73 / 5.51    6.59 / 8.76
+   *
+   * 3.0 is the floor a non-text graphic needs to be made out at all, so
+   * the filled half of every glyph was under it in both themes while
+   * its outline stayed crisp: a clear outline around a fog, which is
+   * exactly what "看不清" turned out to mean.
+   *
+   * So the rail owns its ink instead of borrowing the one paragraphs
+   * are muted with. **What that blocks is a change made for text
+   * silently re-dimming a graphic** — `--muted-foreground` is tuned for
+   * prose on a card and knows nothing about a 1.4/24 stroke, and the
+   * damage arrived one multiplication away from anywhere anyone would
+   * look for it.
+   *
+   * **Both numbers are fenced; neither was free.** Measured, not
+   * argued:
+   *
+   *   - The ink cannot simply go opaque, which is what a ".6 fill"
+   *     assumed. At alpha 1 the *resting* outline measures 15.84 light,
+   *     against 13.60 for this app's own prose — a rail whose unlit
+   *     state out-shouts the writing reads as entirely lit.
+   *   - The ratio cannot stay at .60. Clearing the floor through .60
+   *     needs the ink near .78, and that lands the body at **2.99** —
+   *     still red, with the outline already up at 8.09. .72 × .70 is
+   *     the pair that buys margin at the quieter ink.
+   *
+   * A ratio rather than a second colour, so the themes cannot drift:
+   * `--icon-body` moves both at once, which is the only form in which
+   * "one colour, two depths" stays a checkable claim. */
+  --rail-ink: rgba(26, 26, 20, 0.72);
+  --icon-body: 0.7;
+
   /* ── control heights: three, no fourth ────────────── */
   --ctl-sm: 24px;
   --ctl-md: 30px;
   --ctl-lg: 40px;
 
+  /* ── spacing: four gaps, named for what they separate ─
+   * The one dimension this theme still left to chance. Colours, control
+   * heights and motion were all collected; gaps stayed as whichever
+   * `gap-1` / `gap-3` / `pt-6` / `pt-8` a component happened to reach
+   * for.
+   *
+   * **What this blocks is not untidiness — it is an unreadable
+   * grouping.** A gap is the only thing on screen that says which items
+   * are one group, so while every component picks its own number there
+   * is no distance a reader can recognise as deliberate, and a group
+   * that was meant cannot be told from a rounding. The rail was the
+   * live case: the app's mark sat one `gap-1` from the four landings,
+   * the very distance the landings sit from each other, while `App.tsx`
+   * argued in a comment that the mark is not one of them. The judgment
+   * was right and nothing on screen carried it.
+   *
+   * Named for the relation and not the size, so reaching for the wrong
+   * one is wrong on sight rather than merely off by a step. Four,
+   * because a fifth would have to name a relation these do not cover —
+   * and if one ever does, it earns its own line here rather than an
+   * arbitrary number at the call site. */
+  --gap-in: 8px;     /* inside one thing: glyphs in a group, a control's parts */
+  --gap-row: 12px;   /* between the parts of one row */
+  --gap-group: 18px; /* between groups that must not read as one list */
+  --gap-pane: 24px;  /* a region's own breathing room, against its edge */
+
   /* ── layout ───────────────────────────────────────── */
-  --rail-w: 56px;
+  /* 64, not the 56 this began at: a 56px rail around a 26px glyph left
+     15px of air, and the glyphs read as crowded before anyone got as
+     far as their colour. */
+  --rail-w: 64px;
   --list-w: 288px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
@@ -100,12 +175,17 @@
      and two sizes a few pixels apart would read as a rendering accident
      rather than as a statement. */
   --avatar-xl: 96px;
-  --icon-rail: 26px;
+  --icon-rail: 28px;
   /* The app mark at the head of the rail. Larger than a rail glyph and
    * smaller than this machine's face at the foot: it is the app, not a
    * place to go and not a machine, so it should not measure the same as
-   * either of its neighbours. */
-  --icon-mark: 28px;
+   * either of its neighbours.
+   *
+   * The band is only 4px wide now (28 below, `--avatar` 32 above), so
+   * this sits in the middle of it. It moved because the rail glyph
+   * moved: leaving it at 28 would have made it *equal* to a landing,
+   * which is the one thing the paragraph above says it must not be. */
+  --icon-mark: 30px;
   /* The session row's corner mark (mandala's .wsagent, numbers verbatim):
    * a 14px frame holding an 11px glyph. The frame matches the old 14px
    * machine badge so the row's grid does not move; the glyph takes 11
@@ -171,6 +251,10 @@
     --badge-foreground: #1a1a14;
 
     --avatar-edge: rgba(238, 238, 231, 0.22);
+
+    /* Only the ink flips; `--icon-body` is a ratio and stays one number
+       for both themes — see the light block for why that is the point. */
+    --rail-ink: rgba(238, 238, 231, 0.72);
   }
 }
 
@@ -206,6 +290,7 @@
   --color-badge: var(--badge);
   --color-badge-foreground: var(--badge-foreground);
   --color-avatar-edge: var(--avatar-edge);
+  --color-rail-ink: var(--rail-ink);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -226,6 +311,12 @@
   --spacing-icon-mark: var(--icon-mark);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
+
+  /* the four gaps → utilities (gap-in, mb-group, pt-pane…) */
+  --spacing-in: var(--gap-in);
+  --spacing-row: var(--gap-row);
+  --spacing-group: var(--gap-group);
+  --spacing-pane: var(--gap-pane);
 
   /* mandala-adjacent type scale */
   --text-xs: 11px;

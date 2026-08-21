@@ -10,7 +10,8 @@
     "prebuild": "npm run gen",
     "build": "tsc --noEmit && vite build",
     "pretest": "npm run gen",
-    "test": "node scripts/check-px.mjs && node scripts/check-icons.mjs && tsc --noEmit"
+    "test": "node scripts/check-px.mjs && node scripts/check-icons.mjs && tsc --noEmit",
+    "contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
