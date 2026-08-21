@@ -161,6 +161,7 @@ try {
         card: g("--card"),
         bg: g("--background"),
         lq3: g("--lq3"),
+        done: g("--state-done"),
       };
     });
     if (!t.primary || !t.ring || !t.lq3) throw new Error(`probe dead in ${scheme}: tokens did not resolve`);
@@ -182,6 +183,21 @@ try {
     // the one the whole decision was about.
     if (same(t.primary, t.lq3)) fail(`${scheme}: the main action is the identity green again (${t.primary})`);
     if (same(t.ring, t.lq3)) fail(`${scheme}: the focus ring is the identity green again (${t.ring})`);
+
+    // The one post green kept that still touches text: the word 完成,
+    // painted straight onto the row through `var(--state-done)`. The
+    // doctrine allows that and allows nothing else, so this is the
+    // boundary of the rule rather than a breach of it — and a boundary
+    // is only worth writing down if crossing it goes red. A word answers
+    // to the text threshold like any other.
+    const done = Math.min(
+      contrast(flatten(parse(t.done), rgb(t.card)), rgb(t.card)),
+      contrast(flatten(parse(t.done), rgb(t.bg)), rgb(t.bg)),
+    );
+    console.log(`${scheme}: 完成 reads ${say(done)} at worst`);
+    if (done < TEXT_FLOOR) {
+      fail(`${scheme}: 完成 reads ${say(done)}, under ${TEXT_FLOOR} — the one green that may still be read cannot be`);
+    }
 
     // Tokens are worth nothing if nothing wears them.
     const worn = await join.evaluate((el) => {
