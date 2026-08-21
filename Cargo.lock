@@ -3347,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "khor-catalog"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "khor-core",
  "toml 0.8.23",
@@ -3355,7 +3355,7 @@ dependencies = [
 
 [[package]]
 name = "khor-cli"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "agent-client-protocol",
  "khor-acp",
@@ -3371,7 +3371,7 @@ dependencies = [
 
 [[package]]
 name = "khor-core"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "rmp-serde",
  "serde",
@@ -3382,7 +3382,7 @@ dependencies = [
 
 [[package]]
 name = "khor-detect"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "regex",
  "toml 0.8.23",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "khor-gui"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "khor-catalog",
  "khor-gui-core",
@@ -3406,7 +3406,7 @@ dependencies = [
 
 [[package]]
 name = "khor-gui-core"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "khor-catalog",
  "khor-core",
@@ -3421,7 +3421,7 @@ dependencies = [
 
 [[package]]
 name = "khor-net"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3435,7 +3435,7 @@ dependencies = [
 
 [[package]]
 name = "khor-node"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "agent-client-protocol",
  "base64 0.22.1",
@@ -3466,7 +3466,7 @@ dependencies = [
 
 [[package]]
 name = "khor-sync"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "base64 0.22.1",
  "khor-catalog",
@@ -3477,7 +3477,7 @@ dependencies = [
 
 [[package]]
 name = "khor-web"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "khor-catalog",
  "khor-gui-core",
