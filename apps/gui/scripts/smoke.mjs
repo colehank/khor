@@ -1186,6 +1186,64 @@ for line in sys.stdin:
     return Boolean(line && line.includes(idleGuiWord));
   });
 
+  // 9b) three channels, three questions (批⑨): the halo says how it is,
+  //     the corner mark says what it is, the word says it in letters.
+  //     The mark used to say two of those at once, so asserting the
+  //     split is what keeps it split.
+  //
+  //     **Every reading is taken against the row's own word**, never
+  //     against a colour written in this file. A halo pinned to one
+  //     colour satisfies any check that only asks "is there a halo", and
+  //     "every row wears the same ring" is the exact shape that failure
+  //     takes — so what is asserted is the *derivation*: this row's ring
+  //     is built from this row's word.
+  const channels = await sessionRows.evaluateAll((rows) =>
+    rows.map((el) => {
+      const halo = el.querySelector("[data-halo]");
+      const mark = el.querySelector("[data-kind-mark]");
+      return {
+        word: el.getAttribute("data-word"),
+        haloWord: halo ? halo.getAttribute("data-halo") : null,
+        // What the halo actually resolved to, beside what this row's own
+        // word resolves to. **Not the literal it was written as** —
+        // `getComputedStyle` substitutes `var()` inside custom
+        // properties, so a computed `--halo-color` comes back as a
+        // colour and never as the text `var(--state-idle)`.
+        from: halo ? getComputedStyle(halo).getPropertyValue("--halo-color").trim() : null,
+        wants: getComputedStyle(document.documentElement)
+          .getPropertyValue(`--state-${el.getAttribute("data-word")}`)
+          .trim(),
+        shadow: halo ? getComputedStyle(halo).boxShadow : null,
+        markColor: mark ? getComputedStyle(mark).color : null,
+        muted: getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground").trim(),
+      };
+    }),
+  );
+  if (channels.length === 0) throw new Error("probe dead: no session rows to read channels off");
+  for (const c of channels) {
+    if (c.from === null) throw new Error(`the ${c.word} row wears no halo`);
+    if (c.haloWord !== c.word) {
+      throw new Error(`a row says ${c.word} at its end and ${c.haloWord} in its halo`);
+    }
+    if (c.from !== c.wants) {
+      throw new Error(`the ${c.word} row's halo paints ${c.from}, but its own word is ${c.wants}`);
+    }
+    if (!c.shadow || c.shadow === "none") throw new Error(`the ${c.word} row's halo paints nothing`);
+    // Neutral, and measured rather than assumed absent: the mark carried
+    // an inline state colour until the halo landed, and a mark that went
+    // back to it would still pass every count in this file.
+    if (c.markColor !== c.muted) {
+      throw new Error(`the ${c.word} row's kind mark paints ${c.markColor}, not the neutral ${c.muted}`);
+    }
+  }
+  //     And the rings really are different where the words are: the
+  //     check above would still pass if every `--state-*` resolved to
+  //     one colour.
+  const byWord = new Map(channels.map((c) => [c.word, c.shadow]));
+  if (byWord.size > 1 && new Set(byWord.values()).size === 1) {
+    throw new Error(`${byWord.size} different words all wear the same ring`);
+  }
+
   // 10) faces. Everything below is still on the wide viewport.
   //
   //    a. every session row paints a real derived face. Stated
@@ -1225,6 +1283,23 @@ for line in sys.stdin:
     (await locator.innerHTML()).replace(/av-blur-[^"')\s]+/g, "BLUR");
   await openLanding("devices");
   await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) >= 2);
+  //    **Two circles on a machine's row are the same size** (批⑨). They
+  //    are two facts about one machine — the face is which machine, the
+  //    stack is what it is doing — and the moment one is bigger, size
+  //    starts claiming one of them matters more. Read as boxes, because
+  //    the two are written in different files and in different units (a
+  //    number in `Ring.tsx`, a length in `tokens.css`) and nothing but a
+  //    measurement notices them drifting apart.
+  const stackBox = await page.locator("[data-device] [data-vitals-stack] [data-ring]").first().boundingBox();
+  const faceBox = await page.locator("[data-device] [data-face]").first().boundingBox();
+  if (!stackBox || !faceBox) throw new Error("probe dead: a machine row is missing its face or its stack");
+  if (Math.abs(stackBox.width - faceBox.width) > 1 || Math.abs(stackBox.height - faceBox.height) > 1) {
+    throw new Error(
+      `a machine row draws a ${stackBox.width}×${stackBox.height} stack beside a ` +
+        `${faceBox.width}×${faceBox.height} face`,
+    );
+  }
+
   const railFace = page.locator("nav > [data-face]");
   const betaRow = page.locator('[data-device="beta"] [data-face]');
   if ((await railFace.count()) !== 1) throw new Error("probe dead: no face at the foot of the rail");
