@@ -57,6 +57,17 @@ const TEXT_FLOOR = 4.5;
 /** A focus ring is a graphic. */
 const GRAPHIC_FLOOR = 3.0;
 
+/**
+ * The six words, in the order the doctrine gives them.
+ *
+ * **Each of these is a text colour**, not a decoration: a row paints the
+ * word itself with `var(--state-<word>)`, so they answer to the text
+ * threshold like any other prose. 空闲 measured 2.88 until 批⑨b — the
+ * quietest word in the app was also the one nobody could read, and these
+ * six are the most valuable signal khor has.
+ */
+const WORDS = ["busy", "blocked", "done", "errored", "failed", "idle"];
+
 function luminance([r, g, b]) {
   const lin = (c) => {
     const s = c / 255;
@@ -161,6 +172,13 @@ try {
         card: g("--card"),
         bg: g("--background"),
         lq3: g("--lq3"),
+        accent: g("--accent"),
+        words: Object.fromEntries(
+          ["busy", "blocked", "done", "errored", "failed", "idle"].map((w) => [
+            w,
+            g(`--state-${w}`),
+          ]),
+        ),
         done: g("--state-done"),
       };
     });
@@ -183,6 +201,40 @@ try {
     // the one the whole decision was about.
     if (same(t.primary, t.lq3)) fail(`${scheme}: the main action is the identity green again (${t.primary})`);
     if (same(t.ring, t.lq3)) fail(`${scheme}: the focus ring is the identity green again (${t.ring})`);
+
+    // ── the six words, every one of them, on both themes ──────────
+    //
+    // **Measured against the worst ground a word can land on**, not
+    // against one chosen ground: the same colour is painted on a card in
+    // the session list, on a selected row where the card is tinted, and
+    // on the app's own paper. A word that clears 4.5 on the lightest of
+    // those and fails on another is a word that is unreadable exactly
+    // where it happens to be sitting.
+    const grounds = [rgb(t.card), rgb(t.bg), flatten(parse(t.accent), rgb(t.card))];
+    const readings = WORDS.map((w) => {
+      const colour = t.words[w];
+      if (!colour) throw new Error(`probe dead in ${scheme}: --state-${w} did not resolve`);
+      return {
+        word: w,
+        worst: Math.min(...grounds.map((g) => contrast(flatten(parse(colour), g), g))),
+      };
+    });
+    console.log(
+      `${scheme}: ${readings.map((r) => `${r.word} ${say(r.worst)}`).join(", ")}`,
+    );
+    for (const r of readings) {
+      if (r.worst < TEXT_FLOOR) {
+        fail(`${scheme}: the word ${r.word} reads ${say(r.worst)} at worst, under ${TEXT_FLOOR}`);
+      }
+    }
+    // **Readable and still the quietest are two requirements.** Raising
+    // 空闲 until it passed would have been half the job; a fix that also
+    // made it louder than 忙碌 would have traded the doctrine away to
+    // satisfy a number.
+    const faintest = readings.reduce((a, b) => (a.worst <= b.worst ? a : b));
+    if (faintest.word !== "idle") {
+      fail(`${scheme}: ${faintest.word} is now fainter than 空闲 — the six words changed order`);
+    }
 
     // The one post green kept that still touches text: the word 完成,
     // painted straight onto the row through `var(--state-done)`. The

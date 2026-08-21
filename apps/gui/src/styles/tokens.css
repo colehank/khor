@@ -96,7 +96,33 @@
   --state-done: #546f1c;                 /* green = go collect */
   --state-errored: #8a6212;
   --state-failed: #b23a2e;               /* red sinks, no badge */
-  --state-idle: rgba(26, 26, 20, 0.45);
+  /* **The faintest of the six, and still readable — those are two
+   * requirements, not one.** These are not decoration: each of them is
+   * painted straight onto a row as the word itself
+   * (`var(--state-<word>)` on `[data-word-text]`), so a state colour is
+   * a text colour and answers to 4.5.
+   *
+   * 空闲 was .45 — **2.88** on the card, and the quietest word in the
+   * app was also the one nobody could read.
+   *
+   * **The ground that decides this is a selected row, not the card.**
+   * The same word is painted on the card, on the app's paper, and on a
+   * row tinted with `--accent`, and the tinted one is the worst of the
+   * three. Measured against the card alone, .60 looks like 4.54 and
+   * passes; measured against the ground it can actually land on, .60 is
+   * 4.35 and does not. .615 is 4.56.
+   *
+   * It stays under 忙碌 (.62, 4.63), so "the faintest of the six"
+   * survives the fix. **But only just, and that is worth writing down**:
+   * the light palette's quiet half is bunched between 4.6 and 5.1, so
+   * being both readable and visibly the quietest is not available here
+   * without moving the other five. Re-balancing them is a decision of
+   * its own, not a side effect of this one.
+   *
+   * The halo drawn from the same token (批⑨) only needs 3.0 and is the
+   * redundant channel anyway — the word at the row's end carries the
+   * state. It improved along with this and did not decide it. */
+  --state-idle: rgba(26, 26, 20, 0.615);
 
   /* One new colour for one new thing: a resource nearly full (memory,
      disk — khor_core::Strain). Deliberately none of the six words'
@@ -350,7 +376,15 @@
     --secondary: rgba(244, 244, 239, 0.07);
     --secondary-foreground: rgba(238, 238, 231, 0.72);
     --muted: rgba(244, 244, 239, 0.07);
-    --muted-foreground: rgba(238, 238, 231, 0.55);
+    /* .60, up from .55 — and **this move was forced by the six words,
+       not chosen for secondary text.** 忙碌 *is* this token, so it sets
+       the ceiling 空闲 has to sit under; at .55 that ceiling measured
+       4.55 while the floor a word answers to is 4.5, leaving 空闲 a
+       window of five hundredths — arithmetic room, no visible room. At
+       .60 (5.11) there is somewhere for the quietest word to be quiet.
+       Secondary text on this theme reads better for the same reason it
+       had to move: it was sitting on the floor too. */
+    --muted-foreground: rgba(238, 238, 231, 0.6);
     --accent: rgba(183, 207, 117, 0.14);
     --accent-foreground: rgba(238, 238, 231, 0.96);
     --destructive: #d4756b;
@@ -367,8 +401,15 @@
     --state-blocked: #01aac6;
     --state-done: #cfe08a;
     --state-errored: #e3c06b;
-    --state-failed: #d4756b;
-    --state-idle: rgba(238, 238, 231, 0.4);
+    /* Lightened from #d4756b, which measured **4.07** on a selected
+       row — under the 4.5 a word answers to, and nobody had reported
+       it: the halo work only ever measured these against the card,
+       where it reads 5.50. Ten percent toward paper, which keeps it the
+       same red and clears the floor at 4.62. */
+    --state-failed: #d8837a;
+    /* .55 against 忙碌's .55 — see the light block; on this theme the
+       ceiling is 待批 at 4.70 rather than 忙碌, so this sits under it. */
+    --state-idle: rgba(238, 238, 231, 0.55);
 
     --strain: #d59ab8;
 
