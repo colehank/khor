@@ -24,7 +24,51 @@ permissions:
   contents: write
 
 jobs:
+  # **The face is built once, not four times.**
+  #
+  # `khor web` serves the desktop GUI's own bundle, and that bundle is
+  # compiled into the binary (`crates/web/build.rs`) — so every release
+  # build needs `apps/gui/dist` on disk before cargo runs, and without
+  # it the build stops with a message rather than shipping a khor whose
+  # web face is blank.
+  #
+  # Building it in each matrix leg would be four node installs producing
+  # four artifacts that must be identical and have no mechanism making
+  # them so. One job, one artifact, downloaded by all four: whatever
+  # ships, every platform ships the same one.
+  #
+  # It needs the rust toolchain as well as node — `npm run build` runs
+  # `npm run gen` first, and the wording and the TS types are generated
+  # by cargo from `crates/catalog/zh.toml` and the Rust structs, which
+  # is what keeps the frontend from holding its own copy of either.
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: frontend-gen
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - run: npm ci
+        working-directory: apps/gui
+      - run: npm run build
+        working-directory: apps/gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-dist
+          path: apps/gui/dist
+          # A face nobody can see is the failure this whole arrangement
+          # exists to prevent, so an empty upload must stop the release
+          # rather than travel quietly to four builds.
+          if-no-files-found: error
+
   build:
+    needs: frontend
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +92,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      # Before the toolchain, because `crates/web/build.rs` reads this
+      # directory and a missing one is a build error, not a warning.
+      - uses: actions/download-artifact@v4
+        with:
+          name: gui-dist
+          path: apps/gui/dist
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
