@@ -116,7 +116,39 @@
    * never are — they appear on separate rows with content in between,
    * so the comparison is from memory, which needs several times the
    * threshold. 8 is about one step of a ten-step tonal ramp: the
-   * smallest step that can be named on its own. */
+   * smallest step that can be named on its own.
+   *
+   * ── three things this ordering does *not* mean ──────────────
+   *
+   * **Lightness does one job here, and it is not ranking.** It separates
+   * the four that want something from the two that do not, and that one
+   * gap — 8.2 light, 8.4 dark — is the only difference in this palette
+   * anybody designed. Everything else about which word is which is
+   * carried by hue.
+   *
+   * **So the order *within* a group is arithmetic, not perception, and
+   * it is not something to go and fix.** The four that call you sit
+   * 0.5–1.4 apart in light and 1.9–2.1 apart in dark. By this file's own
+   * standard — 1 is what two samples need when held side by side, and
+   * these are never side by side — **none of those differences is
+   * visible at all**. Reading a ranking off them is the same mistake
+   * "空闲 is the faintest" was before it was fixed: true in the numbers,
+   * absent from the screen. A future reader who notices that 失败
+   * measures "loudest" and sets out to correct it will be correcting
+   * something nobody can see.
+   *
+   * **And sinking is about order, not about weight.** `Activity::rank`
+   * puts 失败 last and the badge rule keeps it off the count — that
+   * governs where a row sits and whether it is tallied, which is a
+   * different question from how much ink the word is set in. A deep red
+   * reads as settled and heavy, not as come-here; it does not contradict
+   * sinking, and making it paler to "match" the sinking would trade a
+   * legible word for a tidier-looking rule.
+   *
+   * Written down because a status quo with no reason attached is an
+   * invitation: the red proof in 批⑨b simulated exactly this edit — one
+   * word nudged past its neighbour to tidy the ramp — and the gate
+   * catches it, but the gate cannot explain why it is red. This can. */
   --state-busy: var(--muted-foreground); /* no hue; it breathes */
   --state-blocked: #005a6c;              /* the only cold color */
   --state-done: #425b00;                 /* green = go collect */
