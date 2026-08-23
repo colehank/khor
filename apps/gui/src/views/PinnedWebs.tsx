@@ -8,9 +8,20 @@
 import { useEffect, useState } from "react";
 
 import { fetchWebPins, type WebPinRow } from "@/api";
+import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 
-export function PinnedWebs({ onOpen }: { onOpen: (device: string, url: string) => void }) {
+export function PinnedWebs({
+  onOpen,
+  onGo,
+}: {
+  onOpen: (device: string, url: string) => void;
+  /** The empty state's way onward: picks an exit machine to borrow.
+      Absent when the network has no other machine — borrowing your own
+      network is refused by design (borrow-self), so the sentence then
+      stands without a button that has nowhere to go. */
+  onGo?: () => void;
+}) {
   const [rows, setRows] = useState<WebPinRow[] | null>(null);
 
   useEffect(() => {
@@ -31,7 +42,16 @@ export function PinnedWebs({ onOpen }: { onOpen: (device: string, url: string) =
   if (rows.length === 0) {
     return (
       <div className="grid h-full place-items-center text-sm text-muted-foreground">
-        {gui.no_pinned_webs}
+        <div className="flex flex-col items-center gap-2">
+          <div>{gui.no_pinned_webs}</div>
+          {onGo ? (
+            <Button size="sm" variant="secondary" data-go-pick-exit onClick={onGo}>
+              {gui.pick_exit}
+            </Button>
+          ) : (
+            <div data-go-pick-exit-flat>{gui.pick_exit}</div>
+          )}
+        </div>
       </div>
     );
   }

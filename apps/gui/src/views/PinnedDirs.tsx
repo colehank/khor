@@ -7,9 +7,20 @@
 import { useEffect, useState } from "react";
 
 import { fetchDirPins, type DirPinRow } from "@/api";
+import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 
-export function PinnedDirs({ onOpen }: { onOpen: (device: string, path: string) => void }) {
+export function PinnedDirs({
+  onOpen,
+  onGo,
+}: {
+  onOpen: (device: string, path: string) => void;
+  /** The empty state's way onward: opens a machine's directory, which
+      is where pinning starts. Absent only while the device table has
+      not answered yet — then the sentence stands alone rather than
+      wearing a button with nowhere to go. */
+  onGo?: () => void;
+}) {
   const [rows, setRows] = useState<DirPinRow[] | null>(null);
 
   useEffect(() => {
@@ -30,7 +41,14 @@ export function PinnedDirs({ onOpen }: { onOpen: (device: string, path: string) 
   if (rows.length === 0) {
     return (
       <div className="grid h-full place-items-center text-sm text-muted-foreground">
-        {gui.no_pinned_dirs}
+        <div className="flex flex-col items-center gap-2">
+          <div>{gui.no_pinned_dirs}</div>
+          {onGo && (
+            <Button size="sm" variant="secondary" data-go-pin-dir onClick={onGo}>
+              {gui.go_pin_a_dir}
+            </Button>
+          )}
+        </div>
       </div>
     );
   }

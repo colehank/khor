@@ -320,10 +320,15 @@ export function DetailPane({
   row,
   narrow,
   onBack,
+  onNew,
 }: {
   row: SessionRow | null;
   narrow: boolean;
   onBack: () => void;
+  /** Opens the new-session dialog — the same act the pane bar's "+"
+      offers. Handed in rather than owned: the dialog is `App`'s, and
+      this pane only points at it from its empty state. */
+  onNew?: () => void;
 }) {
   const close = useCloseSession(row);
   return (
@@ -428,7 +433,18 @@ export function DetailPane({
               <div>{row.kind}</div>
             </div>
           ) : (
-            <div>{gui.pick_a_session}</div>
+            // Not a dead end: the sentence says what this pane is
+            // waiting for, and the button underneath is the other way
+            // to satisfy it — the same act the pane bar's "+" offers,
+            // where a first-time screen has no session to pick yet.
+            <div className="flex flex-col items-center gap-2">
+              <div>{gui.pick_a_session}</div>
+              {onNew && (
+                <Button size="sm" variant="secondary" data-empty-new onClick={onNew}>
+                  {gui.new_session}
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}

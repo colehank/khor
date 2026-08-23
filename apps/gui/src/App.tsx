@@ -1024,10 +1024,21 @@ export default function App() {
   // now — the whole mesh, which is what that pane is about — so the space
   // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
+  // The two machines the empty states step toward: pinning a directory
+  // starts on this machine's own disk (the one browse that always
+  // exists), and borrowing a network starts on the first machine that
+  // is not this one (borrow-self is refused by design).
+  const meDevice = devices.find((d) => d.me) ?? null;
+  const firstOther = devices.find((d) => !d.me) ?? null;
   const browsed = browse ? (devices.find((d) => d.id === browse.device) ?? null) : null;
   const surfed = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
   const detail = sessions ? (
-    <DetailPane row={selectedRow} narrow={narrow} onBack={() => setScreen("list")} />
+    <DetailPane
+      row={selectedRow}
+      narrow={narrow}
+      onBack={() => setScreen("list")}
+      onNew={() => setSheet("new")}
+    />
   ) : landing === "files" && browse && browsed ? (
     // Keyed so switching machines or shortcuts restarts the browse
     // where it points — a path from one disk means nothing on another.
@@ -1047,6 +1058,14 @@ export default function App() {
         setBrowse({ device, path });
         setScreen("detail");
       }}
+      onGo={
+        meDevice
+          ? () => {
+              setBrowse({ device: meDevice.id, path: "" });
+              setScreen("detail");
+            }
+          : undefined
+      }
     />
   ) : landing === "browser" && surf && surfed ? (
     // Keyed by exit and page so a shortcut opening a different machine's
@@ -1067,6 +1086,14 @@ export default function App() {
         setSurf({ device, url });
         setScreen("detail");
       }}
+      onGo={
+        firstOther
+          ? () => {
+              setSurf({ device: firstOther.id, url: null });
+              setScreen("detail");
+            }
+          : undefined
+      }
     />
   ) : landing === "devices" && !openDevice ? (
     <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />
