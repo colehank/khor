@@ -113,8 +113,9 @@ usage = """
   borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
                         它那儿出去(要 serve 在跑;close 那条 session 收口)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
-  sessions [--by recent|category|device|state]
-                        session 列表(默认最近);换一种排布,置顶永远在最上
+  sessions [--by recent|category|device|state] [--all]
+                        session 列表(默认最近);换一种排布,置顶永远在最上;
+                        看过的旧会话默认只报条数,--all 全列出来
   tell <机器> <话...>    给机器的窗口留言
   send <机器> <文件>     把文件给那台机器(摘要先到,对方许可后才传)
   accept <传输号>        许可并收下全量(在收文件的那台机器上跑)
@@ -190,6 +191,11 @@ unreachable-for = "{0}没联系上"
 # read off disk — it is asked. A machine with **no** tmux is not counted
 # here at all, because zero rows is then the truth (adaptor::tmux).
 adaptor-behind = "有 {0} 个正在跑的 session 读不出来,khor 认不得它给的格式"
+# The fold's one line (退场批): dead + looked at + past the threshold
+# stays off the default listing, and this says how many — a count that
+# is silent would read as the rows having been deleted, which they
+# never are.
+old-sessions-hidden = "{0} 条旧会话没列出来(--all 全看)"
 age-seconds = "{0} 秒"
 age-minutes = "{0} 分钟"
 age-hours = "{0} 小时"
@@ -886,6 +892,12 @@ rename = "改名"
 # typed, the pin's rule: a failed rename and a missed Enter must not
 # wear one face (docs/UX.md 做了但没变化 / 失败).
 rename-failed = "改不了名"
+# The folded tail (退场批): dead, looked-at rows past the threshold sit
+# behind this one line at the list's end. Two words because the control
+# has two jobs, and the one it shows is what pressing it does next —
+# the pin's rule.
+old-sessions = "{0} 条旧会话"
+collapse-old = "收起旧会话"
 # …and what the button says when the write did not take. Two words for
 # the same reason the two above are two: the one shown is about the
 # action that was attempted.
