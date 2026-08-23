@@ -774,6 +774,10 @@ web-no-key = "这个链接没带钥匙。在那台机器上跑 khor web,用它�
 web-wrong-key = "钥匙不对。多半是那台机器换过钥匙了——旧链接就此作废,跑一次 khor web 拿新的"
 web-no-key-yet = "这台机器还没有网页脸的钥匙(serve 没起来过?)。先 khor serve,再 khor web"
 web-key-empty = "网页脸的钥匙文件是空的: {0}。删掉它,重启 serve 会重新发一把"
+# The upload cap's refusal ({0} is the cap in MB). It names the limit
+# and the way around it — bigger things ride `khor send` with a real
+# path on the machine that has them, not a browser upload.
+upload-too-big = "文件太大:网页脸的上传上限是 {0}MB。更大的用那台机器上的 khor send"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
@@ -1075,6 +1079,20 @@ took-file = "落在 {0}"
 # pin's rule); success needs none, the chip's state word changes.
 accept-file = "收下"
 accept-file-failed = "收不下"
+# The composer's other verb (GUI 发文件批): hand a file to `send`. The
+# label names the action; in the app a native picker answers with a
+# real path, in a browser the bytes upload to the sending machine first
+# — one word either way, because it is one act.
+send-file = "发文件"
+# The upload's visible in-between (browser faces only — the app hands
+# over a path and has no upload). Absent, a big file looks like a dead
+# button until the chip appears (docs/UX.md 做了但没变化).
+uploading = "上传中…"
+# …and the failure, worn where the act was started (the pin's rule).
+# One word for both leg failures — the upload and the send behind it —
+# because the person's next step is the same: try again or go smaller,
+# and the refusal sentence beside it says which it was.
+send-file-failed = "发不出去"
 # The files landing before a machine is picked: the pinned shortcuts.
 # Empty says what would be here — a blank region reads as broken, and
 # this one has no machine list to explain it.
