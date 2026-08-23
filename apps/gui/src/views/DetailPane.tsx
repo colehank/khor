@@ -2,11 +2,11 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   closeSession,
-  renameSession,
   takeoverTerm as takeoverTermCall,
   type SessionRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { SessionTitle } from "@/components/SessionTitle";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -95,90 +95,6 @@ function ChatToTerm({ row }: { row: SessionRow }) {
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * The title, and the way to change it: double-click, type, Enter.
- *
- * The name is the user's override over whatever the row derives for
- * itself (`Node::rename_session`); an emptied box takes it back, so the
- * vendor's own name — or the title the session was opened with — shows
- * again. Esc (or clicking away) backs out without writing anything.
- *
- * **The row is the truth; the echo is a bridge.** The list polls on its
- * own clock, so for a beat after Enter the row still carries the old
- * name. `echo` covers exactly that beat and retires the moment the row
- * changes — it must not linger, or a rename made on another device
- * would be papered over by this screen's stale memory of its own.
- *
- * A failed write says so where it was typed (the pin's rule): the box
- * stays open wearing the failure word, because closing it would paint
- * the exact picture a successful rename paints while nothing moved.
- */
-function SessionTitle({ row }: { row: SessionRow }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [failed, setFailed] = useState(false);
-  const [echo, setEcho] = useState<string | null>(null);
-  // The poll caught up (or another device renamed it): the row speaks
-  // for itself again.
-  useEffect(() => {
-    setEcho(null);
-  }, [row.title]);
-  const shown = echo ?? (row.title || row.id);
-  if (!editing) {
-    return (
-      <span
-        data-session-title
-        onDoubleClick={() => {
-          setDraft(echo ?? row.title);
-          setFailed(false);
-          setEditing(true);
-        }}
-        className="min-w-0 truncate font-semibold"
-      >
-        {shown}
-      </span>
-    );
-  }
-  const submit = () => {
-    const title = draft.trim();
-    renameSession(row.id, title).then(
-      () => {
-        setEditing(false);
-        // An emptied box falls back to a title only the backend knows,
-        // so there is nothing honest to echo — the poll fills it in.
-        setEcho(title === "" ? null : title);
-      },
-      () => setFailed(true),
-    );
-  };
-  return (
-    <>
-      <input
-        data-title-input
-        autoFocus
-        value={draft}
-        aria-label={gui.rename}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          setFailed(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-          else if (e.key === "Escape") setEditing(false);
-        }}
-        onBlur={() => setEditing(false)}
-        onFocus={(e) => e.currentTarget.select()}
-        className="min-w-0 flex-1 rounded-sm bg-secondary px-1 font-semibold outline-none"
-      />
-      {failed && (
-        <span data-rename-failed className="flex-none text-sm text-state-failed">
-          {gui.rename_failed}
-        </span>
-      )}
-    </>
   );
 }
 
@@ -429,7 +345,13 @@ export function DetailPane({
             drops any half-typed edit — a draft belongs to the row it
             was typed over. */}
         {row ? (
-          <SessionTitle key={row.id} row={row} />
+          <SessionTitle
+            key={row.id}
+            id={row.id}
+            title={row.title}
+            className="min-w-0 font-semibold"
+            inputClassName="flex-1 font-semibold"
+          />
         ) : (
           <span className="min-w-0 truncate font-semibold" />
         )}

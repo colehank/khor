@@ -3,6 +3,7 @@ import { Fragment, useLayoutEffect, useRef } from "react";
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionMark } from "@/components/BrandIcons";
+import { SessionTitle } from "@/components/SessionTitle";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -283,7 +284,13 @@ export function SessionsList({
               </span>
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate">{r.title || r.id}</span>
+              {/* Double-click the title text to rename it in place —
+                  the same component the detail header wears, so the two
+                  cannot drift. The hot zone is the text alone: the rest
+                  of the row keeps opening the row, which is also what
+                  the first click of the double-click does — selecting
+                  the very row being renamed. */}
+              <SessionTitle id={r.id} title={r.title} className="block" inputClassName="w-full" />
               {/* The preview line: the newest thing said or shown, the
                   kind's own judgment carried on the row (`last`). The
                   machine a reported row came from rides the same line —
