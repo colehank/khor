@@ -179,9 +179,11 @@ mod tests {
                 last: None,
                 via: None,
                 term: false,
+                dead: false,
             },
             source: None,
             pinned: false,
+            stale: false,
         }
     }
 

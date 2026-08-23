@@ -1067,6 +1067,22 @@ pub struct Session {
     /// (remote attach is on the ledger).
     #[serde(default)]
     pub term: bool,
+    /// Nothing will move this row again on its own: the process behind
+    /// it is gone (a recorded exit, or a backing that vanished), or a
+    /// transfer reached an end nobody can resume. **Not derivable from
+    /// the word**: a shell that exited cleanly and was looked at reads
+    /// 空闲, exactly like a shell sitting alive at a prompt — only the
+    /// home device can tell them apart, so the fact rides the row like
+    /// `category` does. A chat row is never dead: the other machine can
+    /// always speak again. What readers do with it (退场 into the folded
+    /// tail) is the reader's judgment, gated on more than this one bit.
+    ///
+    /// Wire: appended at the tail with a serde default, so an older
+    /// peer's ten-field frame still decodes — and its rows read as not
+    /// dead, which fails safe: a row wrongly kept is clutter, a row
+    /// wrongly folded is a disappearance.
+    #[serde(default)]
+    pub dead: bool,
 }
 
 #[cfg(test)]
@@ -1085,6 +1101,7 @@ mod tests {
             last: Some("last said".to_owned()),
             via: None,
             term: true,
+            dead: false,
         }
     }
 
@@ -1134,17 +1151,18 @@ mod tests {
     }
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_ten() {
+    fn the_session_frame_is_a_fixed_order_array_of_eleven() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x9a = msgpack fixarray of 10. Adding, removing, or reordering a
+        // 0x9b = msgpack fixarray of 11. Adding, removing, or reordering a
         // field must land here first, consciously. Six → seven appended
         // `category`; seven → nine appended `last` and `via` together
-        // (会话行改版批); nine → ten appended `term` (会话身份批) —
-        // always at the tail, never in the middle: a mid-frame optional
-        // desyncs the array on every older end.
-        assert_eq!(bytes[0], 0x9a);
-        let (id, kind, title, home, state, unread, category, last, via, term): (
+        // (会话行改版批); nine → ten appended `term` (会话身份批);
+        // ten → eleven appended `dead` (退场批) — always at the tail,
+        // never in the middle: a mid-frame optional desyncs the array on
+        // every older end.
+        assert_eq!(bytes[0], 0x9b);
+        let (id, kind, title, home, state, unread, category, last, via, term, dead): (
             SessionId,
             Kind,
             String,
@@ -1155,9 +1173,10 @@ mod tests {
             Option<String>,
             Option<String>,
             bool,
+            bool,
         ) = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(
-            (id, kind, title, home, state, unread, category, last, via, term),
+            (id, kind, title, home, state, unread, category, last, via, term, dead),
             (
                 session.id,
                 session.kind,
@@ -1168,9 +1187,39 @@ mod tests {
                 session.category,
                 session.last,
                 session.via,
-                session.term
+                session.term,
+                session.dead
             )
         );
+    }
+
+    /// **Over the wire from an older peer**: a machine that predates
+    /// `dead` sends ten fields, and its rows must read as not dead —
+    /// wrongly kept clutter, never a wrong disappearance.
+    ///
+    /// Built by hand as a ten-tuple, and the first assertion is that the
+    /// bytes really are a ten-array — without it this could be encoding
+    /// today's struct and proving nothing.
+    #[test]
+    fn a_frame_from_an_older_peer_decodes_as_not_dead() {
+        let old = (
+            SessionId("dev0/demo/1".to_owned()),
+            Kind("shell".to_owned()),
+            "build khor".to_owned(),
+            DeviceId([7; 32]),
+            StateStamp { state: State::Failed, at: Millis(1) },
+            0u64,
+            Some("shell".to_owned()),
+            None::<String>,
+            None::<String>,
+            false,
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x9a, "the sample must be a ten-field frame, or it proves nothing");
+
+        let row: Session = rmp_serde::from_slice(&bytes).unwrap();
+        assert!(!row.dead, "an older peer said nothing about dead, and nothing must fold");
+        assert_eq!(row.title, "build khor", "…and the rest of the row survived");
     }
 
     /// **Over the wire from an older peer**: a machine that predates

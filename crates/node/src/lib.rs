@@ -91,6 +91,43 @@ pub struct SessionView {
     /// replicates, so every device answers this from its own copy — a
     /// reported row from an older machine is pinned all the same.
     pub pinned: bool,
+    /// Old news: dead, looked at, and dead for longer than
+    /// [`STALE_AFTER_MS`] — the default list folds it into a tail
+    /// count (`is_stale` has the full judgment). Derived here so every
+    /// face folds the same rows; **nothing is deleted** — the row is in
+    /// this very list, search still reads it, `--all` prints it.
+    pub stale: bool,
+}
+
+/// How long a dead, looked-at row stays on the default list before it
+/// folds into the tail. Tunable, but only here: a second copy of this
+/// number is how two faces come to disagree about what "old" means.
+///
+/// 48 hours: long enough that "the probe I ran yesterday failed" is
+/// still in sight when someone comes back after a weekend day, short
+/// enough that the first screen is not half graveyard.
+pub const STALE_AFTER_MS: u64 = 48 * 60 * 60 * 1000;
+
+/// Whether a row is old news the default list should fold away.
+///
+/// Three gates, all required (领队 ruling, 退场批):
+/// - **dead** ([`khor_core::Session::dead`]): nothing will move the row
+///   again on its own. 待批/忙碌/中断 rows are never dead by
+///   construction, so they never fold.
+/// - **looked at** (`unread == 0`): unread is a debt, and debts do not
+///   expire on their own.
+/// - **dead for longer than [`STALE_AFTER_MS`]**, measured from the
+///   row's own stamp — for a dead row that is the moment it died (the
+///   recorded exit, the crash, the settled transfer), so no new field
+///   was invented to answer "dead since when".
+///
+/// A pinned row never folds: pinning is the person saying this one
+/// matters, and a judgment made by hand outranks one made by a clock.
+fn is_stale(session: &Session, pinned: bool, now_ms: u64) -> bool {
+    session.dead
+        && session.unread == 0
+        && !pinned
+        && now_ms.saturating_sub(session.state.at.0) >= STALE_AFTER_MS
 }
 
 /// What subscribers receive. `watch()` is the one feed both faces
@@ -687,11 +724,13 @@ impl Node {
     pub fn sessions(&self) -> Result<Vec<SessionView>, String> {
         let pins = self.pins_loaded()?;
         let titles = self.titles_loaded()?;
+        let now = crate::live::now_ms().max(0) as u64;
         let mut views: Vec<SessionView> = Vec::new();
         for k in self.kinds() {
             for row in k.rows(self)? {
                 views.push(SessionView {
                     pinned: pins.doc.pinned(&row.id.0),
+                    stale: false,
                     session: row,
                     source: None,
                 });
@@ -705,6 +744,7 @@ impl Node {
             if have.insert(row.id.0.clone()) {
                 views.push(SessionView {
                     pinned: pins.doc.pinned(&row.id.0),
+                    stale: false,
                     session: row,
                     source: Some((name, age)),
                 });
@@ -721,6 +761,10 @@ impl Node {
             if let Some(t) = titles.doc.title_of(&v.session.id.0) {
                 v.session.title = t;
             }
+            // After the overlay only because both write the same rows;
+            // the judgment reads state, unread and the pin, never the
+            // title.
+            v.stale = is_stale(&v.session, v.pinned, now);
         }
         // Stable: within each group the order above survives untouched.
         views.sort_by_key(|v| !v.pinned);

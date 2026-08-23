@@ -745,6 +745,10 @@ impl LiveKind {
                     at: Millis(sighting.at_ms.max(0) as u64),
                 },
                 unread,
+                // A discovered 失败 is the crash rule: the status file
+                // outlived its process, so nothing is behind this row
+                // any more. Every other sighting is a live process.
+                dead: sighting.word == State::Failed,
                 category: Some(found.category.to_owned()),
                 last: None,
                 via: None,
@@ -824,6 +828,9 @@ impl LiveKind {
                 // A multiplexer cannot say 完成, so there is nothing here
                 // that could be unread (docs/UX.md 角标可归零).
                 unread: 0,
+                // Listed by a live multiplexer server, so something is
+                // running behind it by construction.
+                dead: false,
                 category: Some(held.found.category.to_owned()),
                 last: None,
                 via: None,
@@ -895,7 +902,7 @@ impl LiveKind {
             } else {
                 SessionId(meta.id.clone())
             };
-            let (word, at, unread) = face(&e.path(), &meta, &state, watermark(&id.0));
+            let (word, at, unread, dead) = face(&e.path(), &meta, &state, watermark(&id.0));
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
                 vendor_leaf: meta.vendor_leaf.clone(),
@@ -906,6 +913,7 @@ impl LiveKind {
                     home: self.device,
                     state: StateStamp { state: word, at: Millis(at.max(0) as u64) },
                     unread,
+                    dead,
                     category: meta.category.clone(),
                     // The host keeps the terminal's last non-empty line
                     // beside its state; a row with no host keeps `None`
@@ -1044,23 +1052,30 @@ fn backing(dir: &Path, meta: &Meta) -> Backing {
 /// host died — the row therefore ages from the last thing that was
 /// known, which is the honest reading of "and then khor lost sight of
 /// it".
-fn face(dir: &Path, meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64) {
+/// The last position is [`khor_core::Session::dead`]: whether anything
+/// will ever move this row again on its own. Said here rather than
+/// re-derived from the word, because the word loses it — a shell that
+/// exited cleanly and was looked at reads 空闲, exactly like one
+/// sitting alive at a prompt.
+fn face(dir: &Path, meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64, bool) {
     if let Some(code) = state.exit {
         if code != 0 {
-            return (State::Failed, state.at_ms, 0);
+            return (State::Failed, state.at_ms, 0, true);
         }
         if meta.kind == khor_core::kind::TUI {
-            return (State::Idle, state.at_ms, 0);
+            return (State::Idle, state.at_ms, 0, true);
         }
         let (word, unread) = settle_done(State::Done, state.at_ms, watermark);
-        return (word, state.at_ms, unread);
+        return (word, state.at_ms, unread, true);
     }
     match backing(dir, meta) {
-        Backing::Gone => (State::Failed, state.at_ms, 0),
-        Backing::HostLost => (State::Errored, state.at_ms, 0),
+        Backing::Gone => (State::Failed, state.at_ms, 0, true),
+        // The child is alive; the row can move again the moment a new
+        // host stands up — not dead.
+        Backing::HostLost => (State::Errored, state.at_ms, 0, false),
         Backing::Running | Backing::Unpronounceable => {
             let (word, unread) = settle_done(state.word, state.at_ms, watermark);
-            (word, state.at_ms, unread)
+            (word, state.at_ms, unread, false)
         }
     }
 }

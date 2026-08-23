@@ -167,6 +167,11 @@ impl TransferKind {
                 home: device_id_from_hex(&m.from.id).unwrap_or(DeviceId([0; 32])),
                 state: StateStamp { state, at: Millis(at.max(0) as u64) },
                 unread,
+                // A transfer is over once the bytes all landed: 完成,
+                // and the 空闲 it settles into once looked at. The live
+                // words (传着/等许可) and the resumable break (中断) can
+                // all still move on their own.
+                dead: matches!(state, State::Done | State::Idle),
                 // Same as a device chat: khor's own doing, no vendor.
                 category: Some(khor_core::category::KHOR.to_owned()),
                 last: None,

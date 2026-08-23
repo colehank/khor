@@ -468,20 +468,37 @@ fn count(n: u64) -> String {
 }
 
 fn sessions(rest: &[String]) -> Result<(), String> {
-    let mode = match rest {
-        [] => list::Arrange::Recent,
-        [flag, key] if flag == "--by" => list::Arrange::from_key(key).ok_or_else(|| {
-            let all: Vec<&str> = list::Arrange::ALL.iter().map(|a| a.key()).collect();
-            msg::not_a_way_to_arrange(key, all.join(cli::NAME_SEPARATOR))
-        })?,
-        _ => return Err(USAGE.into()),
-    };
+    let mut mode = list::Arrange::Recent;
+    let mut all = false;
+    let mut it = rest.iter();
+    while let Some(flag) = it.next() {
+        match flag.as_str() {
+            "--all" => all = true,
+            "--by" => {
+                let key = it.next().ok_or_else(|| USAGE.to_string())?;
+                mode = list::Arrange::from_key(key).ok_or_else(|| {
+                    let keys: Vec<&str> = list::Arrange::ALL.iter().map(|a| a.key()).collect();
+                    msg::not_a_way_to_arrange(key, keys.join(cli::NAME_SEPARATOR))
+                })?;
+            }
+            _ => return Err(USAGE.into()),
+        }
+    }
     let n = node()?;
     // The heading is printed when the group changes, which is also why
     // the node returns rows already grouped: this loop owns no
     // comparison, it only notices the boundary.
     let mut current: Option<String> = None;
+    // Old news stays off the default listing and becomes one count at
+    // the end (退场批). Skipped here, never dropped by the node: the
+    // judgment is the node's (`SessionView::stale`), the folding is
+    // each face's, and `--all` is this face unfolding it.
+    let mut folded: u64 = 0;
     for a in n.sessions_arranged(mode)? {
+        if !all && a.view.stale {
+            folded += 1;
+            continue;
+        }
         if !a.group.is_empty() && current.as_deref() != Some(a.group.as_str()) {
             println!("{}", cli::group_header(group_word(&a.group)));
             current = Some(a.group.clone());
@@ -507,6 +524,10 @@ fn sessions(rest: &[String]) -> Result<(), String> {
             s.title,
             src
         );
+    }
+    // A hidden row must say it is hidden, or folding reads as deleting.
+    if folded > 0 {
+        println!("{}", cli::old_sessions_hidden(folded));
     }
     // A missing row is invisible; this is the one thing that makes "khor
     // cannot read this vendor any more" visible instead of looking like

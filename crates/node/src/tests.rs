@@ -493,6 +493,84 @@ fn a_minted_session_id_carries_its_full_width() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// The four classes of the fold ruling (退场批), enumerated — a "fold
+/// everything" implementation passes the first alone, which is why the
+/// other three exist.
+#[test]
+fn only_dead_seen_and_old_rows_are_stale() {
+    let hours = |h: u64| h * 60 * 60 * 1000;
+    let now = hours(1000);
+    let row = |dead: bool, unread: u64, died_at: u64| Session {
+        id: SessionId("shell/x".into()),
+        kind: khor_core::Kind(khor_core::kind::SHELL.into()),
+        title: "probe".into(),
+        home: DeviceId([1; 32]),
+        state: khor_core::StateStamp { state: State::Failed, at: khor_core::Millis(died_at) },
+        unread,
+        dead,
+        category: None,
+        last: None,
+        via: None,
+        term: false,
+    };
+    assert!(
+        is_stale(&row(true, 0, now - hours(49)), false, now),
+        "dead + looked at + 49h ago must fold"
+    );
+    assert!(
+        !is_stale(&row(true, 1, now - hours(49)), false, now),
+        "unread is a debt: an unread dead row must stay"
+    );
+    assert!(
+        !is_stale(&row(true, 0, now - hours(47)), false, now),
+        "dead but not yet 48h: too fresh to fold"
+    );
+    assert!(
+        !is_stale(&row(false, 0, now - hours(400)), false, now),
+        "alive rows never fold, however old their stamp"
+    );
+    assert!(
+        !is_stale(&row(true, 0, now - hours(49)), true, now),
+        "a pinned row never folds: the hand outranks the clock"
+    );
+}
+
+/// The same judgment through the real pipeline: a khor-opened row whose
+/// process exited long ago folds; one that exited just now does not.
+/// The age is written into the row's own state file — the stamp the
+/// judgment reads is the recorded death, no invented field.
+#[test]
+fn a_long_dead_row_is_stale_on_the_list_and_a_fresh_one_is_not() {
+    let r = root("stale-rows");
+    let n = Node::open(r.clone()).unwrap();
+    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let old = n.open_ephemeral(khor_core::kind::SHELL, "old-probe").unwrap();
+    let fresh = n.open_ephemeral(khor_core::kind::SHELL, "fresh-probe").unwrap();
+    live.record_exit(&old, 1).unwrap();
+    live.record_exit(&fresh, 1).unwrap();
+
+    // Push the old row's death 49 hours into the past, in its own
+    // state file — the place the stamp actually comes from.
+    let dir = n.session_dir(&old).unwrap();
+    let text = fs::read_to_string(dir.join("state.json")).unwrap();
+    let mut state: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let died = crate::live::now_ms() - 49 * 60 * 60 * 1000;
+    state["at_ms"] = serde_json::json!(died);
+    fs::write(dir.join("state.json"), serde_json::to_vec(&state).unwrap()).unwrap();
+
+    let stale_of = |id: &SessionId| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == *id)
+            .expect("the row must still be on the list — folding is not deleting")
+            .stale
+    };
+    assert!(stale_of(&old), "failed 49h ago and looked at: folds");
+    assert!(!stale_of(&fresh), "failed just now: stays in plain sight");
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// `pid_alive` answers about this process, and about one that cannot
 /// exist. The second half is the control: a function that simply
 /// returned true would pass the first half alone.

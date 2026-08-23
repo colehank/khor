@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -178,7 +178,19 @@ export function SessionsList({
   narrow: boolean;
 }) {
   const shown = visibleSessions(rows, query, words);
-  const box = useRowFlip(shown.map((r) => r.id).join("\n"));
+  // The fold (退场批): old news — dead, looked at, past the threshold,
+  // all judged by the node (`SessionRow::stale`) — sits behind one line
+  // at the list's end. **Searching and filtering read everything**: a
+  // query is the person asking for a row wherever it is, so the fold
+  // applies only to the untouched default view. Nothing is deleted —
+  // the rows are in `shown` either way.
+  const searching = query.trim() !== "" || words.length > 0;
+  const fresh = searching ? shown : shown.filter((r) => !r.stale);
+  const old = searching ? [] : shown.filter((r) => r.stale);
+  const [showOld, setShowOld] = useState(false);
+  const box = useRowFlip(
+    (showOld ? [...fresh, ...old] : fresh).map((r) => r.id).join("\n"),
+  );
   if (shown.length === 0) {
     // "Nothing here" and "nothing matched" are different facts, and the
     // wrong one is a lie the user has no way to catch: someone who
@@ -190,9 +202,7 @@ export function SessionsList({
       </div>
     );
   }
-  return (
-    <div ref={box}>
-      {shown.map((r, i) => (
+  const strip = (r: SessionRow, prev: SessionRow | undefined) => (
         <Fragment key={r.id}>
           {/* A heading starts where the group changes between
               neighbouring rows. The rows arrive grouped, so this notices
@@ -204,7 +214,7 @@ export function SessionsList({
               no path that renders a group with nothing under it. A
               heading over nothing is worse than no heading — it is a
               handle that does not move (mandala's FilesPane). */}
-          {r.group !== "" && r.group !== shown[i - 1]?.group && (
+          {r.group !== "" && r.group !== prev?.group && (
             <div
               data-group={r.group}
               className="px-4 pt-3 pb-1 text-xs text-muted-foreground"
@@ -383,7 +393,26 @@ export function SessionsList({
           </Button>
         </div>
         </Fragment>
-      ))}
+  );
+  return (
+    <div ref={box}>
+      {fresh.map((r, i) => strip(r, fresh[i - 1]))}
+      {/* The folded tail. A control, not a heading: pressing it is what
+          changes the view, and its word is what pressing it does next
+          (the pin's rule). It never renders over nothing — `old` empty
+          means no line at all. */}
+      {old.length > 0 && (
+        <button
+          type="button"
+          data-old-fold
+          data-open={showOld}
+          onClick={() => setShowOld((v) => !v)}
+          className="w-full px-4 py-2 text-left text-xs text-muted-foreground hover:bg-secondary"
+        >
+          {showOld ? gui.collapse_old : gui.old_sessions(old.length)}
+        </button>
+      )}
+      {showOld && old.map((r, i) => strip(r, old[i - 1]))}
     </div>
   );
 }

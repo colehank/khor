@@ -74,6 +74,9 @@ impl ChatKind {
                 at: Millis(at),
             },
             unread,
+            // Never dead: the other machine can always speak again, so
+            // there is no state this row cannot move out of on its own.
+            dead: false,
             // Khor's own, not a vendor's: a device chat is a thing this
             // product makes, and there is no agent behind it to name.
             category: Some(khor_core::category::KHOR.to_owned()),

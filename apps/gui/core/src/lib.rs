@@ -46,6 +46,12 @@ pub struct SessionRow {
     /// paints a mark from this and **does not sort by it** — the rows
     /// arrive in the order the node decided.
     pub pinned: bool,
+    /// Old news the default view folds into a tail count
+    /// (`khor_node::SessionView::stale` — dead, looked at, and dead
+    /// past the one threshold). The frontend folds, it never judges:
+    /// the row still arrives, search still reads it, nothing is
+    /// deleted.
+    pub stale: bool,
     /// Whose session this is (`khor_core::Session::category`): `claude`,
     /// `codex`, `khor`, `shell`. `None` when nobody could place it, and
     /// the frontend must render that as its own group rather than
@@ -380,6 +386,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             unread: v.session.unread,
             source: v.source.map(|(device, age_ms)| SourceTag { device, age_ms }),
             pinned: v.pinned,
+            stale: v.stale,
             category: v.session.category,
             group,
         }
