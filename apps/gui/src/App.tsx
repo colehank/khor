@@ -769,13 +769,15 @@ export default function App() {
       className={cn(
         "flex items-center select-none",
         // Two gaps, one per face. The column rail holds its items a
-        // `--gap-group` apart: each glyph is a whole place to go, and
-        // `--gap-in` is the distance for the *parts* of one thing — at
-        // 8px the four landings read as a single clump. The narrow bar
-        // keeps `gap-in`: `justify-around` is already spending the
+        // `--gap-row` apart: at `--gap-in` the four landings read as a
+        // single clump (that is the distance for the *parts* of one
+        // thing), while a whole `--gap-group` centered them into a
+        // free-floating cluster that read as layout gone wrong — this
+        // rail is a list, and 12px is the list's own step. The narrow
+        // bar keeps `gap-in`: `justify-around` is already spending the
         // row's width, and a phone's rail has no room to give
         // (`scripts/check-rail.mjs` measures what overflow does there).
-        narrow ? "flex-row justify-around gap-in border-t py-1" : "w-rail flex-col gap-group border-r py-3",
+        narrow ? "flex-row justify-around gap-in border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
       {/* The app's mark, on both faces now. It used to be wide-only,
@@ -795,24 +797,13 @@ export default function App() {
         // horizontal in the column rail, vertical in the narrow bottom
         // bar — and this is one fact (the mark is not a fifth landing),
         // so it should be said in the one form that does not change
-        // shape with the rail. In the narrow bar a margin says it; in
-        // the column rail the spacer below carries it, and even with
-        // the spacer squeezed to nothing its two flanking nav gaps
-        // leave the mark at twice a landing's distance. The eye
-        // already has the difference too: the mark is a picture among
-        // stroke glyphs, so the distance only has to confirm it, not
-        // invent it.
-        className={narrow ? "me-group" : undefined}
+        // shape with the rail. The eye already has the difference too:
+        // the mark is a picture among stroke glyphs, so the distance
+        // only has to confirm it, not invent it.
+        className={narrow ? "me-group" : "mb-group"}
       >
         <KhorMark />
       </RailItem>
-      {/* The landings sit at the rail's waist, not under the mark.
-          Pinned to the head they were a clump of glyphs over one long
-          blank, and the blank read as missing content rather than as
-          layout. Two spacers split it instead — identity at the head,
-          places to go in the middle, system at the foot — so the empty
-          space comes out symmetric and deliberate. */}
-      {!narrow && <span className="flex-1" />}
       {LANDINGS.map((l) => (
         <RailItem
           key={l.key}
