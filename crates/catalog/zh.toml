@@ -106,7 +106,7 @@ usage = """
   id                    本机身份
   face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
                         本机的脸;不带参数看现在是什么、有哪些可选
-  devices               网里的设备
+  devices               网里的机器
   ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
   pull <机器> <文件> [目录]
                         把那台机器上的文件拉过来(默认落当前目录)
@@ -338,7 +338,7 @@ gui-not-on-another-machine = "--gui 还不能配 --on:对话宿主只在本机�
 # stdout so it can be piped, and the window is something the person has
 # to know without it landing in whatever they paste.
 invite-window = "这张票 {0} 分钟内有效,过了就再出一张"
-paired-ok = "配上了: {0}。它认识的机器现在都在你的设备表里"
+paired-ok = "配上了: {0}。它认识的机器现在都在你的机器表里"
 nothing-to-sync = "网里只有本机,没得同步"
 sync-failed-line = "{0}: 没同步上——{1}"
 attached = "接上了: {0}(Ctrl-\\ 断开,session 不会跟着走)"
@@ -369,7 +369,7 @@ cant-make-dir-for = "创建目录失败: {0}"
 cant-write-file = "写入失败: {0}"
 cant-set-permissions = "设置文件权限失败"
 identity-too-open = "身份文件权限过于开放({0}),别人能读走它冒充这台机器。\n  修:chmod 600 {1}"
-identity-corrupt = "身份文件损坏(应为 32 字节),删掉它会重新生成——\n  注意重新生成等于换一台机器,已配对的设备需要重新配对:{0}"
+identity-corrupt = "身份文件损坏(应为 32 字节),删掉它会重新生成——\n  注意重新生成等于换一台机器,已配对的机器需要重新配对:{0}"
 not-a-machine-id-short = "这不是一个机器 id"
 not-a-ticket-base64 = "这不是一张配对票(base64 解不开)"
 not-a-ticket-content = "这不是一张配对票(内容对不上)"
@@ -422,7 +422,7 @@ bad-invite = "配对码不对,或已经被用过了"
 # the rule.
 invite-expired = "这张票过期了(出票后 {0} 分钟内有效),让那台机器再出一张: khor invite"
 cant-burn-invite = "销不掉配对码: {0}"
-not-paired = "这台设备不在设备表里,先配对"
+not-paired = "这台机器不在机器表里,先配对"
 # The Ls contract (`khor_node::files`): empty asks for home, anything
 # else is spelled from the root — a relative path would be relative to
 # wherever serve happened to start.
@@ -433,7 +433,7 @@ unknown-doc = "不认识这种 doc: {0}"
 unknown-action = "不认识的动作: {0}"
 serve-non-answer = "serve 答非所问: {0}"
 peer-non-answer = "对面答非所问: {0}"
-far-table-not-base64 = "对面的设备表不是 base64: {0}"
+far-table-not-base64 = "对面的机器表不是 base64: {0}"
 no-roads-reported = "它没报过任何地址,等它自己来同步"
 nothing-to-move = "无事,已是同步的"
 moved-bytes = "搬了 {0} 字节"
@@ -462,7 +462,7 @@ offered-file-changed = "出让的文件被动过(大小变了),让对方重新�
 offset-out-of-range = "起点越界: {0} > {1}"
 offered-file-wont-open = "出让的文件打不开: {0}"
 cant-read-slice = "读不完这一片: {0}"
-recipient-not-in-table = "收文件的机器不在设备表里: {0}"
+recipient-not-in-table = "收文件的机器不在机器表里: {0}"
 # A dial that timed out, named. The tail this line used to carry ("收下由
 # 那台机器执行") is about accepting a transfer, and all five callers are
 # plain dials — so a person attaching a terminal was being told about a
@@ -471,10 +471,10 @@ recipient-not-in-table = "收文件的机器不在设备表里: {0}"
 machine-unreachable-timeout = "连不上 {0}(超时)——那台机器得在线"
 offerer-unreachable-timeout = "连不上出让方(超时)"
 offerer-unreachable = "连不上出让方: {0}"
-offerer-left-table = "出让方已不在设备表里"
+offerer-left-table = "出让方已不在机器表里"
 # Two reads of one table can straddle a removal; the second read owns
 # this word. Not recipient-not-in-table: nothing is being received.
-machine-left-table = "这台机器已不在设备表里: {0}"
+machine-left-table = "这台机器已不在机器表里: {0}"
 # The pull's refusals. Overwriting is the one irreversible act on this
 # path, so an existing name refuses up front; and with no digest, a
 # total or mtime that moved mid-pull is two files, not one.
@@ -636,7 +636,7 @@ self-moved = "khor 自己的程序不在 {0} 了(升级或搬走了),重启 serv
 # request for the model's attention. The one thing prose must say is the
 # thing no tool schema can — that the machines are *somebody's*, and
 # that reading is free while moving is not.
-agent-brief = """你接在 khor 上:一张连着这个人所有设备的网。\
+agent-brief = """你接在 khor 上:一张连着这个人所有机器的网。\
 khor 那组工具是你的手——devices/sessions/ls 是看,随便用;\
 open/close/tell 会在别人的机器上留下痕迹,用之前说清楚你要做什么。\
 这些机器是这个人的,不是测试环境。"""
@@ -754,7 +754,7 @@ wrong-cookie = "暗号不对"
 host-child-wait = "等不到孩子结束: {0}"
 
 # ── the web face (khor-web) ──
-# 拒绝的话要说清「怎么才对」,因为读到它的人多半在另一台设备上,
+# 拒绝的话要说清「怎么才对」,因为读到它的人多半在另一台机器上,
 # 手边没有这台机器的终端——只说「不行」等于让他回去猜。
 web-cant-listen = "网页脸起不来,{0} 口占着了: {1}。换一个口:设 KHOR_WEB_PORT 再 khor serve"
 web-no-such-page = "网页脸没有这一页: {0}"
@@ -765,7 +765,7 @@ web-wrong-key = "钥匙不对。多半是那台机器换过钥匙了——旧链
 web-no-key-yet = "这台机器还没有网页脸的钥匙(serve 没起来过?)。先 khor serve,再 khor web"
 web-key-empty = "网页脸的钥匙文件是空的: {0}。删掉它,重启 serve 会重新发一把"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
-# khor web 自己的输出。链接是要被人抄到另一台设备上的,所以它自己一行。
+# khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
 web-face-key-note = "链接里带着钥匙,别往同步的文档里贴。换一把:khor web --new"
 web-face-rotated = "换了一把新钥匙,之前发出去的链接全都作废了。"
@@ -810,7 +810,11 @@ takeover-term-busy = "它正说着,接管会打断这一轮;对话面会结束,�
 # what it is until somebody moves it.
 term-is-a-chat = "它现在是对话形式——khor 在替它说话,没有终端可看"
 create = "建立"
-devices-tab = "设备"
+# 「机器」, not 「设备」 (2026-08-23 ruling): one concept had two words —
+# the landing said 设备 while the mark's aria and 「给机器留言」 said 机器 —
+# and docs/UX.md says one fact, one word. 机器 is the one already living
+# in the sentences people act on, so it is the one that stays.
+devices-tab = "机器"
 # The other two landings. Both list machines today — files is "which
 # machine do I go looking on", browser is "whose network am I borrowing"
 # — and each grows its own content when that batch lands. The names are
@@ -835,18 +839,18 @@ search-sessions = "搜索会话"
 # list machines too. A key of their own reading "搜索文件" would name
 # something the box cannot find — and a second key with this same text
 # is a build error by design (one text, one name).
-search-devices = "搜索设备"
+search-devices = "搜索机器"
 filter = "筛选"
 # The filter menu's axis headings. It ticks on three axes now (状态 /
-# 设备 / 类别), and a flat checkbox list with no headings reads as one
+# 机器 / 类别), and a flat checkbox list with no headings reads as one
 # set — ticking a machine and a state would look like two of a kind
 # when they are two questions.
 #
 # **The machine axis borrows `devices-tab` rather than growing a word of
 # its own.** It is the same word for the same things, and one text may
 # not carry two names in a section (the build refuses it) — which is the
-# rule doing its job: a second name for 设备 is exactly the drift this
-# file exists to stop. The arrange section right above says 按设备, so
+# rule doing its job: a second name for 机器 is exactly the drift this
+# file exists to stop. The arrange section right above says 按机器, so
 # one axis reads the same in both halves of one menu.
 axis-state = "状态"
 axis-category = "类别"
@@ -861,7 +865,7 @@ remove = "去掉"
 arrange = "排布"
 by-recent = "按最近"
 by-category = "按类别"
-by-device = "按设备"
+by-device = "按机器"
 by-state = "按状态"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
