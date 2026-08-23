@@ -205,6 +205,7 @@ pub fn answer(
             &arg("form")?,
             &opt_str("agent")?.unwrap_or_default(),
         )?),
+        "open_on" => to_json(&rt.block_on(crate::open_term_on(root, &arg("machine")?))?),
         "agents" => to_json(&crate::agents(root)?),
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),

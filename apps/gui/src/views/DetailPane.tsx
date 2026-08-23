@@ -109,7 +109,7 @@ function ChatToTerm({ row }: { row: SessionRow }) {
  * worked — until somebody pastes. The word goes back to the offer after
  * a beat, because "复制好了" is about the press and not about the row.
  */
-function CopyId({ id }: { id: string }) {
+export function CopyId({ id }: { id: string }) {
   const [said, setSaid] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
     if (!said) return;

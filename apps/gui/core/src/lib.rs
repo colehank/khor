@@ -766,6 +766,34 @@ pub fn open_session(
     }
 }
 
+/// The machine card's 在这台开终端 — the GUI face of `open` / `open
+/// --on` (docs/KHOR.md: the faces are equivalent because they are one
+/// call, and these are those calls). **The fork is on the row, not on
+/// the person**: `attach` set the precedent — 行在哪台机器上就接哪台,
+/// 不用说 — so this machine's own row opens locally, the CLI's bare
+/// `open`, and any other routes over, its `open --on`. The command is
+/// left empty going over so the far machine's own shell answers, the
+/// CLI's judgment verbatim; locally the shell is resolved here exactly
+/// as the CLI resolves it. The size is a placeholder the terminal pane
+/// corrects on attach (`term_resize`), because no tty exists here to
+/// measure.
+pub async fn open_term_on(root: &Path, machine: &str) -> Result<String, String> {
+    let n = open(root)?;
+    if machine == n.name() {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        let title = std::path::Path::new(&shell)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| shell.clone());
+        let id = n.open_persistent(khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
+        return Ok(id.0);
+    }
+    let id = n
+        .open_on(machine, khor_node::kind::SHELL, "shell", "", &[], (80, 24))
+        .await?;
+    Ok(id.0)
+}
+
 
 /// Issues a one-time pairing ticket. It carries the live endpoint's
 /// addresses, so it needs a resident serve — and both skins embed one

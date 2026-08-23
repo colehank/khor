@@ -316,6 +316,13 @@ fn open_session(
     )
 }
 
+/// The machine card's 在这台开终端 — `open --on`, through the same
+/// core call the bridge answers with (docs/KHOR.md equivalence).
+#[tauri::command]
+async fn open_on(machine: String) -> Result<String, String> {
+    khor_gui_core::open_term_on(&Node::root_from_env(), &machine).await
+}
+
 /// The wizard's 智能体 list (批⑥): every ACP agent this person named.
 /// khor's own two are not in it — they are not registrations, and the
 /// face puts them beside this list rather than inside it.
@@ -410,6 +417,7 @@ pub fn run() {
             pin_web,
             open_web,
             open_session,
+            open_on,
             agents,
             takeover,
             takeover_term,

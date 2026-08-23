@@ -196,6 +196,10 @@ export const openSession = (
   form: "chat" | "term",
   agent: string,
 ) => call<string>("open_session", { dir, title, form, agent });
+/** The machine card's 在这台开终端 — `open --on` with the far machine's
+    own shell, through the same core call both skins answer with
+    (docs/KHOR.md equivalence). Answers the new row's id. */
+export const openTermOn = (machine: string) => call<string>("open_on", { machine });
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the

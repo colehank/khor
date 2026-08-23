@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { DeviceRow, HooksState, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -7,6 +7,7 @@ import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { gaugeColor } from "@/lib/vitals";
+import { CopyId } from "@/views/DetailPane";
 import { ago, hopWord } from "@/words";
 
 /**
@@ -33,6 +34,8 @@ export function MachineCard({
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
+  onOpenTerm,
+  onBrowseFiles,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
@@ -45,6 +48,9 @@ export function MachineCard({
   hooksFailed: boolean;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
+  /** 在这台开终端 — rejects with the refusal, which lands on the button. */
+  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onBrowseFiles: (row: DeviceRow) => void;
 }) {
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
@@ -81,11 +87,6 @@ export function MachineCard({
               <div className="truncate text-title">
                 {row.name}
                 {row.me ? ` ${cli.this_machine}` : ""}
-              </div>
-              {/* The whole id, not the row's twelve characters: this is
-                  the screen somebody is on when they need to paste it. */}
-              <div data-machine-id className="break-all text-aux text-muted-foreground">
-                {row.id}
               </div>
               {/* Which road this machine is using to reach that one
                   (`khor_core::Hop`), the same reading `khor devices`
@@ -131,6 +132,7 @@ export function MachineCard({
               <IconPin pinned={row.pinned} />
             </Button>
           </div>
+          <Verbs row={row} onOpenTerm={onOpenTerm} onBrowseFiles={onBrowseFiles} />
           <Readings row={row} />
           {/* **Only on this machine's card**, because the file it edits
               is on this machine. Putting it on every card would be a
@@ -149,6 +151,71 @@ export function MachineCard({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The card's verbs, in one row — the pane stops being a pure dashboard
+ * here (docs/KHOR.md 等价: the CLI can already `open --on`, `ls`, and
+ * copy this machine's id from any terminal, so the card owes the same
+ * moves).
+ *
+ * 开终端 is the one that can fail — the far machine can be away — and
+ * the refusal lands on the button in the failure colour, the pin's
+ * rule, then yields the offer back after a beat (`CopyId`'s cadence:
+ * the report is about the press, not about the row). While the call is
+ * out the button is disabled rather than reworded: a second press
+ * would open a second terminal, and "pressed twice, got two" is the
+ * kind of surprise a disable is for.
+ *
+ * The id keeps its 64 characters out of the header: it is the string a
+ * person pastes, not a fact they read, so it travels behind the same
+ * 复制 id button the session detail uses — one control for one job on
+ * both cards.
+ */
+function Verbs({
+  row,
+  onOpenTerm,
+  onBrowseFiles,
+}: {
+  row: DeviceRow;
+  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onBrowseFiles: (row: DeviceRow) => void;
+}) {
+  const [opening, setOpening] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!failed) return;
+    const t = window.setTimeout(() => setFailed(false), 2_000);
+    return () => window.clearTimeout(t);
+  }, [failed]);
+  return (
+    <div data-machine-verbs className="flex flex-wrap items-center gap-2 pt-pane">
+      <Button
+        variant="outline"
+        size="sm"
+        data-open-term
+        data-failed={failed}
+        disabled={opening}
+        className="data-[failed=true]:text-state-failed"
+        onClick={() => {
+          setOpening(true);
+          onOpenTerm(row).then(
+            () => setOpening(false),
+            () => {
+              setOpening(false);
+              setFailed(true);
+            },
+          );
+        }}
+      >
+        {failed ? gui.open_term_on_failed : gui.open_term_on}
+      </Button>
+      <Button variant="outline" size="sm" data-browse-files onClick={() => onBrowseFiles(row)}>
+        {gui.browse_files}
+      </Button>
+      <CopyId id={row.id} />
+    </div>
   );
 }
 

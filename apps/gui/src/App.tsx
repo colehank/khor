@@ -7,6 +7,7 @@ import {
   fetchQuota,
   fetchUsage,
   fetchWebPins,
+  openTermOn,
   openWeb,
   installHooks,
   markSeen,
@@ -1109,6 +1110,26 @@ export default function App() {
       hooksFailed={hooksFailed}
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
+      // The fresh terminal is what the person came for: land on its row
+      // the way the wizard does (`NewSessionDialog.onOpened`), trusting
+      // the same guard that keeps a not-yet-polled selection alive. A
+      // refusal is rethrown so the card's button can wear it.
+      onOpenTerm={async (row) => {
+        const id = await openTermOn(row.name);
+        setMark(false);
+        setLanding("sessions");
+        setSelected(id);
+        setScreen("detail");
+      }}
+      // The files landing with this machine picked — the same move its
+      // chip makes there (`onBrowseDevice`), plus the landing change
+      // this card is one landing away from.
+      onBrowseFiles={(row) => {
+        setMark(false);
+        setLanding("files");
+        setBrowse({ device: row.id, path: "" });
+        setScreen("detail");
+      }}
     />
   ) : null;
 
