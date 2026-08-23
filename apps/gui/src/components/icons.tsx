@@ -272,6 +272,16 @@ export function IconClose({ className }: IconProps) {
   );
 }
 
+/** Paperclip — attach a file to the conversation. One continuous line,
+    the family's density; drawn for the 16 canvas, not scaled in. */
+export function IconAttach({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M12.9 7.1l-5.3 5.3a2.9 2.9 0 0 1-4.1-4.1l5.7-5.7a2 2 0 0 1 2.9 2.9l-5.4 5.4a1.1 1.1 0 0 1-1.6-1.6l4.9-4.9" />
+    </Mark>
+  );
+}
+
 /**
  * Pin a row to the top. Ported from mandala's `IconPin`, paths verbatim,
  * and so is the judgment behind it:

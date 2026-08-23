@@ -206,6 +206,17 @@ pub fn answer(
             &opt_str("agent")?.unwrap_or_default(),
         )?),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(root, &arg("machine")?))?),
+        // The path names a file on the machine answering this call —
+        // meaningful from the app and the loopback bridge, where that
+        // machine is the one the person sits at. The browser upload is
+        // not here: it is a raw-bytes route, not a JSON command
+        // (`send_upload` behind `/api/upload`), and this table carries
+        // JSON commands.
+        "send_path" => to_json(&crate::send_path(
+            root,
+            &arg("machine")?,
+            std::path::Path::new(&arg("path")?),
+        )?),
         "machine_log" => to_json(&crate::machine_log(root, &arg("id")?)?),
         "accept_transfer" => to_json(&rt.block_on(crate::accept_transfer(root, &arg("msg")?))?),
         "agents" => to_json(&crate::agents(root)?),

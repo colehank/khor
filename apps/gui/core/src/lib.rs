@@ -861,6 +861,151 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
     Ok(MachineLog { messages, broken: log.broken as u64 })
 }
 
+/// Sends a file the sender names by path — `khor send <machine> <file>`
+/// through the same node call (docs/KHOR.md equivalence). The tauri
+/// skin reaches this after its native picker answered with a real local
+/// path; the browser faces reach it after [`save_upload`] turned bytes
+/// into one. Answers the transfer session id, the CLI's own deliverable.
+pub fn send_path(root: &Path, machine: &str, path: &Path) -> Result<String, String> {
+    Ok(open(root)?.send(machine, path)?.0)
+}
+
+/// The most bytes one browser upload may carry: 1 GiB.
+///
+/// One constant, one place — the LAN listener and the dev bridge both
+/// enforce it, and two copies is how a file gets refused on one face
+/// and taken on the other. The number: the upload crosses one LAN hop
+/// and streams to disk (never through memory whole), so the cap is not
+/// protecting RAM — it bounds how much disk a single unauthenticated-
+/// by-mistake or fat-fingered POST can commit, while staying above a
+/// phone video, the largest thing this pipe is for. Bigger things have
+/// `khor send` with a real path on the machine that has them.
+pub const UPLOAD_CAP_BYTES: u64 = 1 << 30;
+
+/// Streams one uploaded file to the sender's own staging area and
+/// answers the staged path, refusing past [`UPLOAD_CAP_BYTES`] with the
+/// catalog's sentence.
+///
+/// The staged file is **the offer's source, not a temporary**: `send`
+/// records its path and serves the far side's fetch from it (the chat
+/// document carries only the summary — payload bytes exist nowhere else
+/// on the sending machine), so it must outlive the transfer the way a
+/// CLI send's real path does. What must NOT survive is a failed upload
+/// or a failed send — the caller deletes the staged file on any error
+/// after this returns, and this function deletes it on its own errors,
+/// so no orphan marks a send that never happened.
+///
+/// The name lands under the same whitelist the receiving side applies
+/// (`transfer::safe_name` is not exported; the cleaning here mirrors
+/// it): the browser hands over whatever it likes, and a name is not a
+/// path.
+pub fn save_upload(
+    root: &Path,
+    name: &str,
+    body: &mut dyn std::io::Read,
+) -> Result<std::path::PathBuf, String> {
+    use std::io::Write;
+    let clean: String = name.chars().filter(|c| !matches!(c, '/' | '\\' | '\0')).collect();
+    let clean = clean.trim_start_matches('.');
+    let clean = if clean.is_empty() { "file" } else { clean };
+    let dir = root.join(".khor").join("uploads");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Epoch-ms plus pid in the name: two uploads of one file must not
+    // overwrite each other while the first is still being fetched.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("{stamp}-{}-{clean}", std::process::id()));
+    let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    let mut taken: u64 = 0;
+    let mut buf = vec![0u8; 1 << 16];
+    loop {
+        let n = match body.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => {
+                let _ = std::fs::remove_file(&path);
+                return Err(e.to_string());
+            }
+        };
+        taken += n as u64;
+        if taken > UPLOAD_CAP_BYTES {
+            let _ = std::fs::remove_file(&path);
+            return Err(khor_catalog::msg::upload_too_big(UPLOAD_CAP_BYTES >> 20));
+        }
+        if let Err(e) = f.write_all(&buf[..n]) {
+            let _ = std::fs::remove_file(&path);
+            return Err(e.to_string());
+        }
+    }
+    Ok(path)
+}
+
+/// The upload route's two arguments off its query string,
+/// percent-decoded — a file name is user text and arrives encoded.
+/// Both required: an upload with no machine has nowhere to go, one
+/// with no name would invent one. Here rather than in each server so
+/// the web face and the dev bridge parse one contract.
+pub fn upload_args(query: &str) -> Option<(String, String)> {
+    let mut machine = None;
+    let mut name = None;
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=')?;
+        match k {
+            "machine" => machine = Some(percent_decode(v)?),
+            "name" => name = Some(percent_decode(v)?),
+            _ => {}
+        }
+    }
+    match (machine, name) {
+        (Some(m), Some(n)) if !m.is_empty() && !n.is_empty() => Some((m, n)),
+        _ => None,
+    }
+}
+
+/// Minimal percent-decoding (RFC 3986): enough for what
+/// `encodeURIComponent` produces, refusing malformed escapes rather
+/// than guessing at them. No crate — a dozen lines is not a dependency.
+fn percent_decode(s: &str) -> Option<String> {
+    let mut out = Vec::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'%' => {
+                let hi = char::from(bytes.next()?).to_digit(16)?;
+                let lo = char::from(bytes.next()?).to_digit(16)?;
+                out.push((hi * 16 + lo) as u8);
+            }
+            b'+' => out.push(b' '),
+            other => out.push(other),
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// One browser upload, end to end: stage the bytes, then send the
+/// staged path — the shared body behind the web face's and the dev
+/// bridge's upload routes, so the two cannot come to enforce different
+/// rules. On a failed send the staged file goes too (the module's
+/// no-orphan rule); on success it stays, because it is what the far
+/// side's fetch reads.
+pub fn send_upload(
+    root: &Path,
+    machine: &str,
+    name: &str,
+    body: &mut dyn std::io::Read,
+) -> Result<String, String> {
+    let staged = save_upload(root, name, body)?;
+    match send_path(root, machine, &staged) {
+        Ok(id) => Ok(id),
+        Err(e) => {
+            let _ = std::fs::remove_file(&staged);
+            Err(e)
+        }
+    }
+}
+
 /// The waiting file message's 收下 — `khor accept`, through the same
 /// node call (docs/KHOR.md equivalence). Takes the message id the chip
 /// carries; the transfer session id is spelled here because it is the

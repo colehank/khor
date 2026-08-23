@@ -2,11 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   acceptTransfer,
+  inApp,
   machineLog,
+  pickAndSendFile,
   tell,
+  uploadFile,
   type ChatMsgRow,
   type MachineLog,
 } from "@/api";
+import { IconAttach } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -34,12 +38,16 @@ function fmtSize(n: number): string {
  * a chip: name, size, and the transfer's own state word — the word is
  * the node's (docs/UX.md 状态呈现), this pane never derives one. The
  * waiting chip (待批, the receiver's seat) carries the one verb the
- * seat owns: 收下, `khor accept` behind a button. No send-file control
- * exists here — the upload pipe does not, and a dead button is worse
- * than an absent one (ledger: GUI 发文件).
+ * seat owns: 收下, `khor accept` behind a button.
  *
  * The composer at the foot is `tell`'s pipe — the same call the 留言
- * dialog makes, so the two ways of speaking cannot drift.
+ * dialog makes, so the two ways of speaking cannot drift. Beside it,
+ * 发文件 (GUI 发文件批): in the app a native picker answers with a
+ * real path (`pick_and_send`), in a browser the bytes upload to the
+ * sending machine first (`uploadFile`) — one act, two ways of handing
+ * the file to the same `send`. The upload's in-between is said out
+ * loud (上传中…), and a refusal — the size cap included — lands as the
+ * backend's own sentence where the act was started (the pin's rule).
  */
 export function MachineChat({ id }: { id: string }) {
   const [log, setLog] = useState<MachineLog | null>(null);
@@ -72,13 +80,15 @@ export function MachineChat({ id }: { id: string }) {
     if (el && stickToEnd.current) el.scrollTop = el.scrollHeight;
   }, [log]);
 
+  // The channel is the row's title-independent name; the id carries
+  // it (`chat/<channel>`), and peeling it here mirrors the read side.
+  const machine = id.startsWith("chat/") ? id.slice(5) : id;
+
   const send = () => {
     const text = draft.trim();
     if (!text || sending) return;
     setSending(true);
-    // The channel is the row's title-independent name; the id carries
-    // it (`chat/<channel>`), and peeling it here mirrors the read side.
-    tell(id.startsWith("chat/") ? id.slice(5) : id, text).then(
+    tell(machine, text).then(
       () => {
         setDraft("");
         setSending(false);
@@ -86,6 +96,42 @@ export function MachineChat({ id }: { id: string }) {
       },
       () => setSending(false),
     );
+  };
+
+  // 发文件 — the file leg of the composer (module head). One in-flight
+  // at a time; the failure keeps the backend's own sentence, because
+  // "too big" and "machine unreachable" have different next steps and
+  // the sentence is where they differ.
+  const [sendingFile, setSendingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const fileOutcome = (p: Promise<unknown>) =>
+    p.then(
+      () => {
+        setSendingFile(false);
+        refresh();
+      },
+      (e: unknown) => {
+        setSendingFile(false);
+        setFileError(String(e instanceof Error ? e.message : e));
+      },
+    );
+  const attach = () => {
+    if (sendingFile) return;
+    setFileError(null);
+    if (inApp) {
+      // The native picker owns the visible in-between here; a cancel
+      // resolves null and simply ends the flight.
+      setSendingFile(true);
+      fileOutcome(pickAndSendFile(machine));
+    } else {
+      fileInput.current?.click();
+    }
+  };
+  const picked = (f: File | undefined) => {
+    if (!f) return;
+    setSendingFile(true);
+    fileOutcome(uploadFile(machine, f));
   };
 
   return (
@@ -105,7 +151,47 @@ export function MachineChat({ id }: { id: string }) {
         )}
         {log?.messages.map((m) => <MsgLine key={m.id} m={m} onAccepted={refresh} />)}
       </div>
+      {/* The file leg's own two lines, above the composer: the upload's
+          in-between (browser forms only — the app's picker is its own
+          visible state), and a refusal in the backend's sentence where
+          the act was started. Neither renders over nothing. */}
+      {sendingFile && !inApp && (
+        <div data-uploading className="flex-none border-t px-3 py-1 text-xs text-muted-foreground">
+          {gui.uploading}
+        </div>
+      )}
+      {fileError && (
+        <div data-file-error className="flex-none border-t px-3 py-1 text-xs text-state-failed">
+          {gui.send_file_failed}: {fileError}
+        </div>
+      )}
       <div className="flex flex-none items-end gap-2 border-t px-3 py-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          data-attach-file
+          aria-label={gui.send_file}
+          disabled={sendingFile}
+          onClick={attach}
+          className="flex-none text-muted-foreground"
+        >
+          <IconAttach />
+        </Button>
+        {/* The browser forms' picker: a real <input type=file>, hidden —
+            the button above is its face. Value cleared after each pick
+            so the same file twice still fires onChange. */}
+        {!inApp && (
+          <input
+            ref={fileInput}
+            type="file"
+            hidden
+            data-file-input
+            onChange={(e) => {
+              picked(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        )}
         <textarea
           data-chat-composer
           aria-label={gui.message_text}

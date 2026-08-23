@@ -335,6 +335,45 @@ async fn accept_transfer(msg: String) -> Result<Vec<String>, String> {
     khor_gui_core::accept_transfer(&Node::root_from_env(), &msg).await
 }
 
+/// A path this machine already has, straight to `khor send`'s call —
+/// what a tauri file drop hands over, and what the bridge answers for
+/// browser verification. The picker flow is `pick_and_send` below.
+#[tauri::command]
+async fn send_path(machine: String, path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::send_path(&Node::root_from_env(), &machine, std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The composer's 发文件, desktop form: a native picker answers with a
+/// real local path and the path goes straight to `khor send`'s own call
+/// — no upload exists here, which is the whole advantage of this form
+/// (the browser faces stage bytes first; `khor_gui_core::send_upload`).
+/// `None` = the person cancelled the picker, which is not an error and
+/// must not wear one.
+///
+/// Rust-side dialog on purpose (`DialogExt`, the official v2 plugin):
+/// the webview's own <input type=file> deliberately never reveals a
+/// path, and driving the plugin from here keeps the frontend free of
+/// the plugin's JS package and its capability grant.
+#[tauri::command]
+async fn pick_and_send(app: tauri::AppHandle, machine: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(picked) = app.dialog().file().blocking_pick_file() else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    // Digesting a large file is real work; off the async runtime.
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::send_path(&Node::root_from_env(), &machine, &path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(Some)
+}
+
 /// The wizard's 智能体 list (批⑥): every ACP agent this person named.
 /// khor's own two are not in it — they are not registrations, and the
 /// face puts them beside this list rather than inside it.
@@ -389,6 +428,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             sessions,
             devices,
@@ -432,6 +472,8 @@ pub fn run() {
             open_on,
             machine_log,
             accept_transfer,
+            send_path,
+            pick_and_send,
             agents,
             takeover,
             takeover_term,

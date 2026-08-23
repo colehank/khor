@@ -75,11 +75,16 @@ fn served_commands() -> BTreeSet<String> {
 
 /// A command that lives on one side on purpose, with the reason.
 ///
-/// Empty, because none has earned it yet — and it exists empty so that
-/// the first one is **a decision somebody writes down** rather than an
-/// omission that happens (`khor-cli`'s `NOT_IN_USAGE`, same judgment).
-/// Delete a line here and that command goes red, which is the point.
-const ONE_SIDED: &[(&str, &str)] = &[];
+/// It existed empty so that the first entry would be **a decision
+/// somebody writes down** rather than an omission that happens
+/// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
+/// that command goes red, which is the point.
+const ONE_SIDED: &[(&str, &str)] = &[(
+    "pick_and_send",
+    "app-only by nature: it opens the DESKTOP's native file picker (tauri-plugin-dialog) — \
+     a browser face has its own <input type=file> and uploads bytes instead (/api/upload), \
+     so an HTTP arm for this would be a dialog on a machine nobody is looking at",
+)];
 
 /// **Both tables name the same commands.**
 ///

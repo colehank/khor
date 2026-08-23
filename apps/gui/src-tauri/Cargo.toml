@@ -22,6 +22,13 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tauri = { version = "2", features = [] }
+# The native file picker behind 发文件 (GUI 发文件批). The official v2
+# plugin and nothing homegrown, because the one thing the desktop form
+# needs is a REAL local path to hand `Node::send` — a webview's
+# <input type=file> deliberately never reveals one. Rust-side API only
+# (`DialogExt` inside the command): the frontend never invokes the
+# plugin directly, so no JS package and no capability grant is added.
+tauri-plugin-dialog = "2"
 
 # macos-proxy is macOS-only (it compiles for macOS 14+ alone), so the
 # feature is enabled only on macOS — enabling it everywhere would break

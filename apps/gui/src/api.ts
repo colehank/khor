@@ -193,6 +193,30 @@ export const machineLog = (id: string) => call<MachineLog>("machine_log", { id }
 /** The waiting file chip's 收下 — `khor accept`, same node call
     (docs/KHOR.md equivalence). Answers where the files landed. */
 export const acceptTransfer = (msg: string) => call<string[]>("accept_transfer", { msg });
+/** The composer's 发文件, desktop form: the native picker answers with
+    a real local path and the path goes straight to `khor send`'s call.
+    `null` = cancelled, which is not an error. App only (`inApp`) — the
+    browser forms upload bytes instead (`uploadFile`). */
+export const pickAndSendFile = (machine: string) =>
+  call<string | null>("pick_and_send", { machine });
+/** The composer's 发文件, browser form: the bytes stream to the sending
+    machine's staging area and the same send runs there
+    (`khor_gui_core::send_upload`). Raw-bytes POST, not a JSON command —
+    a file does not belong inside a JSON envelope — so this is the one
+    call in this file that does not go through `call`. The size cap and
+    its refusal sentence are the backend's (`UPLOAD_CAP_BYTES`). */
+export const uploadFile = async (machine: string, file: File): Promise<string> => {
+  const q = `machine=${encodeURIComponent(machine)}&name=${encodeURIComponent(file.name)}`;
+  const url = bridge ? `http://127.0.0.1:${bridge}/upload?${q}` : `/api/upload?${q}`;
+  if (!bridge && webKey === null) throw new Error(msg.web_no_key);
+  const r = await fetch(url, {
+    method: "POST",
+    headers: bridge ? {} : { authorization: `Bearer ${webKey}` },
+    body: file,
+  });
+  if (!r.ok) throw new Error(unwrap(await r.text()));
+  return (await r.json()) as string;
+};
 /** Every ACP agent this person registered (批⑥, `khor agents add`).
     **khor's own two are not in here** — they are not registrations, and
     the wizard puts them beside this list rather than inside it. */

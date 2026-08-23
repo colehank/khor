@@ -63,10 +63,33 @@ fn main() {
     let server = tiny_http::Server::http(("127.0.0.1", port)).expect("bind loopback");
     println!("bridge listening on 127.0.0.1:{port}");
     for mut req in server.incoming_requests() {
-        let cmd = req.url().trim_start_matches('/').to_owned();
+        let url = req.url().trim_start_matches('/').to_owned();
+        let (cmd, query) = url.split_once('?').unwrap_or((url.as_str(), ""));
+        let (cmd, query) = (cmd.to_owned(), query.to_owned());
         // Preflight: the vite origin differs from ours.
         if req.method() == &tiny_http::Method::Options {
             let _ = req.respond(with_cors(tiny_http::Response::from_string("").with_status_code(204)));
+            continue;
+        }
+        // The raw-bytes route, before the JSON read below — a file body
+        // is not UTF-8 and must never pass through a String. Same
+        // shared body as the web face's `/api/upload`, so the two
+        // faces cannot come to enforce different rules.
+        if cmd == "upload" {
+            let outcome = khor_gui_core::upload_args(&query)
+                .ok_or_else(|| "upload needs machine and name query args".to_owned())
+                .and_then(|(machine, name)| {
+                    khor_gui_core::send_upload(&root, &machine, &name, req.as_reader())
+                });
+            let (code, payload) = match outcome {
+                Ok(id) => (200, serde_json::to_string(&id).unwrap_or_default()),
+                Err(e) => (400, serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into())),
+            };
+            let _ = req.respond(with_cors(
+                tiny_http::Response::from_string(payload)
+                    .with_status_code(code)
+                    .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap()),
+            ));
             continue;
         }
         let mut body = String::new();

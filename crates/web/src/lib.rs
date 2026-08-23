@@ -235,15 +235,38 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
         return Reply::refused(403, sentence);
     }
     let url = req.url().to_owned();
-    let path = url.split('?').next().unwrap_or("/");
+    let (path, query) = url.split_once('?').unwrap_or((url.as_str(), ""));
     match path.strip_prefix("/api/") {
         None => page(path),
         Some(cmd) => {
+            // Every /api/ door wears every lock — the upload included:
+            // it writes this machine's disk, which is more reason for
+            // the key, not less (docs/NET.md 网页脸的暴露面, one rule
+            // relaxed nowhere).
             if let Err(sentence) = check_origin(req, &host) {
                 return Reply::refused(403, sentence);
             }
             if let Err(sentence) = check_key(req, root) {
                 return Reply::refused(401, sentence);
+            }
+            // The one raw-bytes route: a browser has no path to name, so
+            // the file rides the body whole and the arguments ride the
+            // query (a JSON envelope around a gigabyte would mean
+            // base64ing it through memory). Streamed to disk with the
+            // cap enforced mid-stream (`khor_gui_core::send_upload`).
+            if cmd == "upload" {
+                let (machine, name) = match khor_gui_core::upload_args(query) {
+                    Some(pair) => pair,
+                    None => return Reply::refused(400, msg::UPLOAD_NEEDS_MACHINE_AND_NAME.to_owned()),
+                };
+                return match khor_gui_core::send_upload(root, &machine, &name, req.as_reader()) {
+                    Ok(id) => Reply {
+                        code: 200,
+                        kind: "application/json",
+                        body: serde_json::to_vec(&id).unwrap_or_default(),
+                    },
+                    Err(sentence) => Reply::refused(400, sentence),
+                };
             }
             // Read only once the request is allowed to be here: a body
             // from somebody who has not shown a key is a body khor has
@@ -258,6 +281,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
         }
     }
 }
+
 
 /// One file out of the binary. `/` is the page; anything unnamed is a
 /// 404 rather than the page, because this app has no client-side routes
