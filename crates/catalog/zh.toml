@@ -1052,6 +1052,14 @@ empty-dir = "空目录"
 # that collects messages).
 take-file = "拉过来"
 took-file = "落在 {0}"
+# The file chip's verb in a machine's conversation (传输并入对话批):
+# what `khor accept` does, as a thing to press on the waiting message.
+# Only the receiver's 待批 chip offers it — the word is the state
+# machine's and the button only appears where the approval asked for
+# is this machine's. Failure wears its own word on the button (the
+# pin's rule); success needs none, the chip's state word changes.
+accept-file = "收下"
+accept-file-failed = "收不下"
 # The files landing before a machine is picked: the pinned shortcuts.
 # Empty says what would be here — a blank region reads as broken, and
 # this one has no machine list to explain it.
