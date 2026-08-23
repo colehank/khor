@@ -29,8 +29,15 @@ use crate::proto::DirEntry;
 pub const MOST_ENTRIES: usize = 4096;
 
 /// The listing behind [`crate::proto::Request::Ls`]. Ordered here —
-/// directories first, each half by case-folded name — so every face
-/// paints the same order and none re-sorts.
+/// dot-named entries sink below everything, each half directories
+/// first, each quarter by case-folded name — so every face paints the
+/// same order and none re-sorts.
+///
+/// Dotfiles sink because a home directory leads with dozens of them
+/// (`.cache/`, `.config/`…) and the things a person came to browse
+/// start a screen down. Sunk, not hidden: no "show hidden" toggle —
+/// a default that shows everything beats a setting (docs/UX.md 设置),
+/// and hiding would make a real file unpinnable.
 pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool), String> {
     let dir = if path.is_empty() {
         std::env::home_dir().ok_or(msg::NO_HOME_DIR)?
@@ -63,8 +70,10 @@ pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool),
         entries.push(DirEntry { name, dir, size, at_ms });
     }
     entries.sort_by(|a, b| {
-        b.dir
-            .cmp(&a.dir)
+        a.name
+            .starts_with('.')
+            .cmp(&b.name.starts_with('.'))
+            .then_with(|| b.dir.cmp(&a.dir))
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     let truncated = entries.len() > MOST_ENTRIES;
@@ -136,19 +145,24 @@ mod tests {
         p
     }
 
-    /// Directories first, each half by case-folded name — asymmetric
-    /// fixture on purpose: a file sorting before a directory, or `B`
-    /// before `a`, would satisfy a plain byte sort and fail here.
+    /// Dotfiles sink, then directories lead, then names fold case —
+    /// asymmetric fixture on purpose: a file sorting before a
+    /// directory, `B` before `a`, or a dot-*directory* floating above a
+    /// plain *file* (what a plain byte sort does, and what dirs-first
+    /// alone would also do) would each fail here.
     #[test]
-    fn directories_lead_and_names_fold_case() {
+    fn dotfiles_sink_directories_lead_and_names_fold_case() {
         let root = tmp("order");
         std::fs::write(root.join("apple"), b"x").unwrap();
         std::fs::write(root.join("Banana"), b"xy").unwrap();
         std::fs::create_dir(root.join("zoo")).unwrap();
+        std::fs::create_dir(root.join(".config")).unwrap();
+        std::fs::write(root.join(".env"), b"z").unwrap();
         let (_, rows, truncated) = list_dir(root.to_str().unwrap()).unwrap();
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["zoo", "apple", "Banana"]);
+        assert_eq!(names, ["zoo", "apple", "Banana", ".config", ".env"]);
         assert!(rows[0].dir && !rows[1].dir);
+        assert!(rows[3].dir && !rows[4].dir);
         assert_eq!(rows[2].size, 2);
         assert!(!truncated);
         let _ = std::fs::remove_dir_all(&root);
