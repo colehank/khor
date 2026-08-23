@@ -112,7 +112,7 @@ export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: Quota
  * one either**: 1024 is a property of memory, and a thousand tokens is a
  * thousand tokens.
  */
-function count(n: number): string {
+export function count(n: number): string {
   const units = ["", "k", "M", "G"];
   let v = n;
   let u = 0;

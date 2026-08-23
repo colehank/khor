@@ -57,6 +57,7 @@ import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
+import { MeshNow } from "@/views/MeshNow";
 import { UsagePanel } from "@/views/UsagePanel";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
@@ -396,8 +397,12 @@ export default function App() {
     // wait — no extra wiring, and nothing to remember to clear.
   }, [arrangeBy, hidden]);
 
+  // The spending answer feeds two places now: the mark's panel and the
+  // network's-now canvas behind no selection. One beat, one effect —
+  // the gate widens, the period does not.
+  const meshNow = !mark && landing === "sessions" && !selected;
   useEffect(() => {
-    if (!mark) return;
+    if (!mark && !meshNow) return;
     let live = true;
     const tick = () => {
       fetchUsage()
@@ -423,7 +428,7 @@ export default function App() {
       live = false;
       clearInterval(t);
     };
-  }, [mark]);
+  }, [mark, meshNow]);
 
   const onSelect = useCallback((row: SessionRow) => {
     setSelected(row.id);
@@ -1040,6 +1045,22 @@ export default function App() {
       narrow={narrow}
       onBack={() => setScreen("list")}
       onNew={() => setSheet("new")}
+      // The network's now, painted from the shell's own polled state —
+      // rows, devices and the usage answer all already on their beats
+      // (the usage effect widens its gate to feed this, same beat).
+      empty={
+        <MeshNow
+          rows={rows}
+          devices={devices}
+          usage={usage}
+          onPick={onSelect}
+          onDevice={(d) => {
+            setLanding("devices");
+            onSelectDevice(d);
+          }}
+          onNew={() => setSheet("new")}
+        />
+      }
     />
   ) : landing === "files" && browse && browsed ? (
     // Keyed so switching machines or shortcuts restarts the browse

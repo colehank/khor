@@ -322,6 +322,7 @@ export function DetailPane({
   narrow,
   onBack,
   onNew,
+  empty,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -330,6 +331,11 @@ export function DetailPane({
       offers. Handed in rather than owned: the dialog is `App`'s, and
       this pane only points at it from its empty state. */
   onNew?: () => void;
+  /** What stands where nothing is picked (the network's now, `MeshNow`)
+      — handed in because it is painted from `App`'s own polled state,
+      and this pane must not grow a second copy of those polls. Absent,
+      the plain sentence-and-button empty state stands. */
+  empty?: ReactNode;
 }) {
   const close = useCloseSession(row);
   return (
@@ -432,6 +438,11 @@ export function DetailPane({
         // other vendors' records are on the ledger, and their rows
         // keep the facts pane below rather than an empty chat.
         <ChatView key={row.id} id={row.id} still takeover={takeoverOffer(row)} />
+      ) : !row && empty ? (
+        // The network's now: the biggest canvas in the app stops
+        // reading "pick something" and starts showing what there is
+        // to pick for. Handed in by `App` (see the prop).
+        empty
       ) : (
         <div className="grid flex-1 place-items-center text-center text-sm text-muted-foreground">
           {row ? (
