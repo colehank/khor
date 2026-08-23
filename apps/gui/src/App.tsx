@@ -984,6 +984,7 @@ export default function App() {
             onSelect={onSelect}
             onPin={onPinSession}
             pinFailed={pinFailed}
+            narrow={narrow}
           />
         ) : (
           <DevicesList

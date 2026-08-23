@@ -166,13 +166,19 @@ export function FilesPane({
                     data-pin-dir={e.name}
                     data-on={pinned.has(full)}
                     aria-label={pinned.has(full) ? gui.unpin : gui.pin}
-                    // **Painted on every row, not on hover.** A control
-                    // that appears when a pointer arrives does not exist
-                    // on a phone, and the browser face put this pane on
-                    // phones (批⑦). It is the judgment 批② already made
-                    // for the session rows' pin, applied to the two
-                    // places here that were still hiding.
-                    className="flex-none text-muted-foreground"
+                    // The session rows' visibility rule, worn here too:
+                    // narrow draws it always (the browser face put this
+                    // pane on phones, 批⑦, and a phone has no pointer to
+                    // summon it with); wide reveals it under the pointer
+                    // or keyboard focus, because a pin on every row of a
+                    // directory was the pane's loudest repetition. A
+                    // pinned row's mark stays drawn on both faces — a
+                    // fact, not an entry point (`SessionsList`).
+                    className={cn(
+                      "flex-none text-muted-foreground",
+                      !narrow &&
+                        "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[on=true]:opacity-100",
+                    )}
                     onClick={() => togglePin(full)}
                   >
                     <IconPin pinned={pinned.has(full)} />
@@ -212,7 +218,10 @@ export function FilesPane({
                         size="sm"
                         variant="ghost"
                         data-take={e.name}
-                        // Visible for the reason the pin above is.
+                        // Always drawn, unlike the pin above: it is the
+                        // row's one action, a word rather than a repeated
+                        // glyph, and hiding it would leave a file row
+                        // with nothing to do.
                         className="flex-none"
                         onClick={() => take(full)}
                       >

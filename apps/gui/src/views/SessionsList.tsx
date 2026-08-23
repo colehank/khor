@@ -163,6 +163,7 @@ export function SessionsList({
   onSelect,
   onPin,
   pinFailed,
+  narrow,
 }: {
   rows: SessionRow[];
   query: string;
@@ -172,6 +173,9 @@ export function SessionsList({
   onPin: (row: SessionRow) => void;
   /** Rows whose last pin attempt did not take — see `App`. */
   pinFailed: Set<string>;
+  /** The posture, for the pin's visibility rule below — the one
+      breakpoint, handed down rather than measured again. */
+  narrow: boolean;
 }) {
   const shown = visibleSessions(rows, query, words);
   const box = useRowFlip(shown.map((r) => r.id).join("\n"));
@@ -231,7 +235,7 @@ export function SessionsList({
           data-home={r.home}
           data-title={r.title}
           className={cn(
-            "flex w-full items-center pr-2 hover:bg-secondary",
+            "group/row flex w-full items-center pr-2 hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
           )}
         >
@@ -337,11 +341,15 @@ export function SessionsList({
           </button>
           {/* The row's second control, and the reason the strip exists:
               a button cannot live inside the button that opens the row.
-              **Always drawn, never hover-only** — the narrow face has no
-              pointer to reveal it with, and a control you can only reach
-              with a mouse is not reachable on a phone. Resting state is
-              quiet (muted, tilted); pinned is upright and takes the
-              foreground, so the mark is legible without hovering. */}
+              **Wide reveals it under the pointer or keyboard focus;
+              narrow draws it always** — a control that only a mouse can
+              summon does not exist on a phone, and the narrow face is
+              the one with no pointer. On the wide face a pin on every
+              row was the screen's loudest repetition: fifteen identical
+              glyphs saying nothing row-specific. **A pinned row's pin
+              stays drawn on both faces** — there it is a fact about the
+              row, not an entry point, and facts do not wait for a
+              pointer (the failure word stays for the same reason). */}
           {/* When the write did not take, the button says so where it
               was pressed: it goes to the failure colour and its name
               becomes the word for what failed. Without this, a failed
@@ -365,7 +373,11 @@ export function SessionsList({
                   : gui.pin
             }
             onClick={() => onPin(r)}
-            className="flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
+            className={cn(
+              "flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed",
+              !narrow &&
+                "opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 data-[on=true]:opacity-100 data-[pin-failed=true]:opacity-100",
+            )}
           >
             <IconPin pinned={r.pinned} />
           </Button>
