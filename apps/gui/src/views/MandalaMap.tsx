@@ -1,4 +1,4 @@
-import type { DeviceRow } from "@/api";
+import type { DeviceRow, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,7 @@ import { ago } from "@/words";
  *
  * # Every mark on it is a fact khor holds
  *
- * There are four, and there are only four because khor knows four things
+ * There are five, and there are only five because khor knows five things
  * about a machine it has met:
  *
  * | on screen | the fact |
@@ -19,6 +19,7 @@ import { ago } from "@/words";
  * | the name | what it calls itself in the device table |
  * | in the middle, and larger | it is this machine |
  * | how long ago, or never | the age of the last answer it gave |
+ * | the readings | what it said it was doing, in that same answer |
  *
  * **No line is drawn between any two of them**, and **where they sit is
  * not worked out here** — both are `khor_core::map`, which carries the
@@ -153,6 +154,7 @@ function Seat({
               {cli.vitals_never}
             </span>
           ))}
+        {row.vitals && <SeatVitals row={row} />}
       </span>
     </>
   );
@@ -196,3 +198,61 @@ function Seat({
     </div>
   );
 }
+
+/**
+ * The readings under a seat, in words rather than rings.
+ *
+ * The same numbers the machine row's ring stack draws — CPU, 内存, and
+ * a GPU when the machine has one — as percentages, because that is what
+ * the ring's front face says too and the two screens must agree about
+ * one machine. The disk stays off the seat: this picture answers "what
+ * is everyone doing", and a disk filling up is not doing.
+ *
+ * How current the numbers are is the age line's job, one line up —
+ * printing it again here would be the same fact twice on one caption.
+ * Strain wears the strain token and critical adds weight, exactly the
+ * card's channels (`MachineCard`): one hue for one thing, escalation by
+ * weight, never a borrowed state colour.
+ */
+function SeatVitals({ row }: { row: DeviceRow }) {
+  const { vitals: v } = row.vitals!;
+  const mem = v.mem.total > 0 ? Math.round((v.mem.used / v.mem.total) * 100) : null;
+  return (
+    <span
+      data-seat-vitals
+      className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-xs text-muted-foreground"
+    >
+      <span data-seat-cpu>{`${cli.vitals_name_cpu} ${Math.round(v.cpu_pct)}%`}</span>
+      {mem !== null && (
+        <Micro name={cli.vitals_name_mem} pct={mem} strain={row.vitals!.mem_strain} anchor="mem" />
+      )}
+      {v.gpu && (
+        <span data-seat-gpu>{`${cli.vitals_name_gpu} ${Math.round(v.gpu.util_pct)}%`}</span>
+      )}
+    </span>
+  );
+}
+
+/** One reading that can carry a strain word. */
+function Micro({
+  name,
+  pct,
+  strain,
+  anchor,
+}: {
+  name: string;
+  pct: number;
+  strain: Strain | null;
+  anchor: string;
+}) {
+  return (
+    <span
+      data-seat-vital={anchor}
+      data-strain={strain ?? undefined}
+      className="data-[strain]:text-strain data-[strain=critical]:font-medium"
+    >
+      {`${name} ${pct}%`}
+    </span>
+  );
+}
+
