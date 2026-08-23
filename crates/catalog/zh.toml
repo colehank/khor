@@ -1036,6 +1036,11 @@ took-file = "落在 {0}"
 # Empty says what would be here — a blank region reads as broken, and
 # this one has no machine list to explain it.
 no-pinned-dirs = "还没有钉住的目录"
+# …and the way onward, as a thing to press. An empty state that only
+# names what is missing is a dead end wearing a sentence; this one opens
+# a machine's directory, which is where pinning starts. Pressing it
+# opens this machine's home — the one browse that always exists.
+go-pin-a-dir = "去一台机器挑个目录钉住"
 # The browser landing (docs/NET.md 借网). The address bar names the exit
 # so the user knows a page opened here leaves through that machine, not
 # this one. Open builds the window; the empty state and the no-pins state
@@ -1045,7 +1050,13 @@ web-open = "打开"
 web-opening = "正在借 {0} 的网开…"
 web-opened = "在 {0} 的网里开了"
 no-pinned-webs = "还没有钉住的网页"
-pick-exit = "从左边挑一台机器,借它的网上网"
+# The browser landing's way onward, `go-pin-a-dir`'s sibling. Pressing
+# it picks an exit to borrow — the first machine that is not this one,
+# because borrowing your own network is refused by design (borrow-self).
+# When the network has no other machine it is a plain sentence: a
+# button with nowhere to go teaches people to stop pressing the ones
+# that do. Not 「从左边」 any more — the narrow face has no left.
+pick-exit = "去一台机器,借它的网上网"
 # The terminal ended — the host's child exited or the connection tore.
 # Both are one fact to a face (docs/handoff 终端画屏).
 term-over = "这个终端结束了"
