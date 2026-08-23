@@ -1151,6 +1151,27 @@ impl Node {
         self.chat.log(&channel)
     }
 
+    /// The readout with each message's transfer face, aligned by index
+    /// — `None` for anything that is not a file message on a seat with
+    /// something to say (`TransferKind::message_face`). One read, one
+    /// order: two calls would let a message land between them and put
+    /// every face off by one.
+    pub fn log_faced(
+        &self,
+        machine: &str,
+    ) -> Result<(chat::ChannelLog, Vec<Option<khor_core::State>>), String> {
+        let (channel, _) = self.resolve(machine)?;
+        let log = self.chat.log(&channel)?;
+        let dir = khor_sync::chat::channel_dir(&self.root, &channel)
+            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
+        let faces = log
+            .messages
+            .iter()
+            .map(|m| self.transfer.message_face(&channel, &dir, m))
+            .collect();
+        Ok((log, faces))
+    }
+
     /// Marks a session seen; unread drops to zero — here and, once the
     /// watermark syncs, on every device. Seen is the one action every
     /// kind answers the same way: the kind names the watermark, the node

@@ -25,6 +25,9 @@ import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
 import type { QuotaWindow } from "./gen/bindings/QuotaWindow";
 import type { QuotaTrouble } from "./gen/bindings/QuotaTrouble";
+import type { MachineLog } from "./gen/bindings/MachineLog";
+import type { ChatMsgRow } from "./gen/bindings/ChatMsgRow";
+import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
 
 export type {
   SessionRow,
@@ -48,6 +51,9 @@ export type {
   QuotaAnswer,
   QuotaWindow,
   QuotaTrouble,
+  MachineLog,
+  ChatMsgRow,
+  ChatFileRow,
 };
 
 const params = new URLSearchParams(window.location.search);
@@ -180,6 +186,13 @@ export const closeSession = (id: string) => call<null>("close_session", { id });
 export const renameSession = (id: string, title: string) =>
   call<null>("rename_session", { id, title });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
+/** A machine conversation's readout — what `khor log` prints, shaped
+    for the pane. Takes the row's id (`chat/<channel>`); the core layer
+    peels the prefix. */
+export const machineLog = (id: string) => call<MachineLog>("machine_log", { id });
+/** The waiting file chip's 收下 — `khor accept`, same node call
+    (docs/KHOR.md equivalence). Answers where the files landed. */
+export const acceptTransfer = (msg: string) => call<string[]>("accept_transfer", { msg });
 /** Every ACP agent this person registered (批⑥, `khor agents add`).
     **khor's own two are not in here** — they are not registrations, and
     the wizard puts them beside this list rather than inside it. */

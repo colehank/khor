@@ -11,6 +11,7 @@ import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { ChatView } from "@/views/ChatView";
+import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
 import { word } from "@/words";
 
@@ -395,7 +396,13 @@ export function DetailPane({
         )}
       </header>
       {close.strip}
-      {row && row.kind === "gui" ? (
+      {row && row.kind === "chat" ? (
+        // A machine's conversation — the stream `khor log` prints,
+        // with the composer `tell` fills. Keyed so switching machines
+        // drops the draft and the scroll with the conversation they
+        // belonged to.
+        <MachineChat key={row.id} id={row.id} />
+      ) : row && row.kind === "gui" ? (
         // Keyed so switching sessions remounts the chat: its cursor,
         // frames and attachment all belong to one conversation. The
         // terminal face is not a terminal — this session has none — it

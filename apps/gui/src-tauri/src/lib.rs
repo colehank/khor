@@ -323,6 +323,18 @@ async fn open_on(machine: String) -> Result<String, String> {
     khor_gui_core::open_term_on(&Node::root_from_env(), &machine).await
 }
 
+/// A machine conversation's readout — `khor log`, shaped for the pane.
+#[tauri::command]
+fn machine_log(id: String) -> Result<khor_gui_core::MachineLog, String> {
+    khor_gui_core::machine_log(&Node::root_from_env(), &id)
+}
+
+/// The waiting file message's 收下 — `khor accept`, same core call.
+#[tauri::command]
+async fn accept_transfer(msg: String) -> Result<Vec<String>, String> {
+    khor_gui_core::accept_transfer(&Node::root_from_env(), &msg).await
+}
+
 /// The wizard's 智能体 list (批⑥): every ACP agent this person named.
 /// khor's own two are not in it — they are not registrations, and the
 /// face puts them beside this list rather than inside it.
@@ -418,6 +430,8 @@ pub fn run() {
             open_web,
             open_session,
             open_on,
+            machine_log,
+            accept_transfer,
             agents,
             takeover,
             takeover_term,

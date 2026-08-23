@@ -128,6 +128,39 @@ impl TransferKind {
         SessionId(format!("transfer/{msg_id}"))
     }
 
+    /// One file message's face on this machine — the same seats and the
+    /// same words as [`Self::urgency`], read per message instead of
+    /// folded onto the row, so a face painting the conversation can
+    /// stamp each file chip without re-deriving the state machine
+    /// (docs/UX.md 状态呈现: the word comes from here or not at all).
+    ///
+    /// Beyond the pressure `urgency` reports, the receiver's settled
+    /// states come through too (完成/空闲 once the payload landed):
+    /// on a chip "no word" must mean "not my seat", never "done" —
+    /// those are different answers to a person deciding whether to act.
+    /// `None`: a text message, a retracted one, or the sender's seat
+    /// with nothing in flight.
+    pub fn message_face(&self, channel: &str, channel_dir: &Path, m: &Message) -> Option<State> {
+        let MsgBody::Files(files) = &m.body else { return None };
+        if m.retracted || files.is_empty() {
+            return None;
+        }
+        let i_sent = m.from.id == self.device_str;
+        let i_receive = channel == self.name && !i_sent;
+        let f = &files[0];
+        if i_receive {
+            let (state, _, _) = self.receiver_face(channel_dir, f, m.at, 0);
+            Some(state)
+        } else if i_sent {
+            match load_offer(&self.root, &f.digest).ok().flatten() {
+                Some(o) if o.started && !o.done => Some(State::Busy),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
     /// The most pressing live word among one channel's file messages,
     /// folded onto that machine's chat row (传输并入对话批, 2026-08-23:
     /// a transfer is a file message in the conversation, not a row of

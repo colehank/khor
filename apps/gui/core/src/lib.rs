@@ -773,6 +773,107 @@ pub fn open_session(
     }
 }
 
+/// One message in a machine's conversation, shaped for painting. The
+/// words and the order are the node's (`Node::log_faced`); this only
+/// flattens the enum so a TS switch cannot invent a fourth arm.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ChatMsgRow {
+    pub id: String,
+    #[ts(type = "number")]
+    pub at_ms: i64,
+    /// The sender's name at the time of writing — history must not
+    /// rewrite itself on a later rename (`khor_sync::chat::Sender`).
+    pub from: String,
+    pub from_me: bool,
+    pub text: Option<String>,
+    pub files: Option<Vec<ChatFileRow>>,
+    /// A body kind this build cannot read, by its kind name — said out
+    /// loud rather than rendered as blank text (`MsgBody::Unknown`'s
+    /// rule).
+    pub unknown: Option<String>,
+    pub retracted: bool,
+    pub edited: bool,
+    /// The file message's transfer face on this machine, as a state
+    /// key (`TransferKind::message_face`) — `None` is "not my seat",
+    /// never "done". The frontend looks the word up and never derives
+    /// one (docs/UX.md 状态呈现).
+    pub word: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ChatFileRow {
+    pub name: String,
+    #[ts(type = "number")]
+    pub size: i64,
+}
+
+/// The whole conversation readout.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct MachineLog {
+    pub messages: Vec<ChatMsgRow>,
+    /// Blocks that would not read — a missing slice of conversation
+    /// the screen must be able to mention (`chat::ChannelLog`).
+    #[ts(type = "number")]
+    pub broken: u64,
+}
+
+/// A machine conversation's readout — what `khor log <机器>` prints,
+/// shaped for the chat pane. Takes the row's id (`chat/<channel>`) and
+/// peels the prefix here: the caller holds a row, and which string is
+/// the channel is this layer's knowledge, not the screen's.
+pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
+    let n = open(root)?;
+    let machine = id.strip_prefix("chat/").unwrap_or(id);
+    let (log, faces) = n.log_faced(machine)?;
+    let me = n.device_str().to_owned();
+    let messages = log
+        .messages
+        .into_iter()
+        .zip(faces)
+        .map(|(m, face)| {
+            let (text, files, unknown) = match m.body {
+                khor_node::MsgBody::Text(t) => (Some(t), None, None),
+                khor_node::MsgBody::Files(fs) => (
+                    None,
+                    Some(
+                        fs.into_iter()
+                            .map(|f| ChatFileRow { name: f.name, size: f.size })
+                            .collect(),
+                    ),
+                    None,
+                ),
+                khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
+            };
+            ChatMsgRow {
+                at_ms: m.at,
+                from_me: m.from.id == me,
+                from: m.from.name,
+                id: m.id,
+                text,
+                files,
+                unknown,
+                retracted: m.retracted,
+                edited: m.edited,
+                word: face.map(|s| s.key().to_owned()),
+            }
+        })
+        .collect();
+    Ok(MachineLog { messages, broken: log.broken as u64 })
+}
+
+/// The waiting file message's 收下 — `khor accept`, through the same
+/// node call (docs/KHOR.md equivalence). Takes the message id the chip
+/// carries; the transfer session id is spelled here because it is the
+/// node's address scheme, not the screen's. Answers where the files
+/// landed, the CLI's own deliverable.
+pub async fn accept_transfer(root: &Path, msg: &str) -> Result<Vec<String>, String> {
+    let n = open(root)?;
+    let (_, landed) = n
+        .accept(&khor_node::transfer::TransferKind::session_id(msg))
+        .await?;
+    Ok(landed)
+}
+
 /// The machine card's 在这台开终端 — the GUI face of `open` / `open
 /// --on` (docs/KHOR.md: the faces are equivalent because they are one
 /// call, and these are those calls). **The fork is on the row, not on

@@ -23,6 +23,9 @@ fn main() {
     // into it.
     khor_gui_core::QuotaAnswer::export_all_to(&dir).expect("export QuotaAnswer");
     khor_gui_core::chat::ChatBatch::export_all_to(&dir).expect("export ChatBatch");
+    // Asked for on its own by the machine-conversation pane; no row
+    // embeds it.
+    khor_gui_core::MachineLog::export_all_to(&dir).expect("export MachineLog");
     khor_gui_core::files::DirListing::export_all_to(&dir).expect("export DirListing");
     khor_gui_core::files::DirPinRow::export_all_to(&dir).expect("export DirPinRow");
     khor_gui_core::web::WebPinRow::export_all_to(&dir).expect("export WebPinRow");

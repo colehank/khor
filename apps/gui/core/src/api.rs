@@ -206,6 +206,8 @@ pub fn answer(
             &opt_str("agent")?.unwrap_or_default(),
         )?),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(root, &arg("machine")?))?),
+        "machine_log" => to_json(&crate::machine_log(root, &arg("id")?)?),
+        "accept_transfer" => to_json(&rt.block_on(crate::accept_transfer(root, &arg("msg")?))?),
         "agents" => to_json(&crate::agents(root)?),
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
