@@ -145,7 +145,8 @@ usage = """
                         钉在哪台都一样,全网同一份
   unpin [-m|-d] <session|机器|机器 路径>
                         取消置顶
-  close <session>       关掉(对话删收下的文件;临时 session 停掉进程)
+  close <session>       关掉(session 停掉进程;对话是常驻账本,历史和
+                        收下的文件都留着)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
                         (顺带把网页脸也开在局域网上,见 web)
   web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
@@ -1010,7 +1011,11 @@ chat-refused-no-turn = "现在没有在跑的轮"
 # useful for none: the thing a person is deciding is what they are about
 # to lose, and that is the part that differs.
 close-warn-live = "关掉它,它正在跑的进程会停下"
-close-warn-chat = "关掉它,从这台机器收下的文件会删掉,聊天记录还在"
+# 传输并入对话批 rewrote this: the conversation is the machine's
+# long-term ledger, and received files belong to the filesystem —
+# close costs nothing any more, and the sentence must not threaten
+# what it will not do.
+close-warn-chat = "关掉它,历史和收下的文件都留着"
 close-warn-transfer = "关掉它,这次传下来的文件会删掉;这一行会留着"
 # A kind khor has no sentence for. Kinds are an open set
 # (`khor_core::kind` — new ones must appear without touching that
