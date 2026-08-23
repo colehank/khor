@@ -136,6 +136,9 @@ usage = """
                         claude、codex、khor、shell 这四个名字 khor 自己在用
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
+  rename <session> [名字...]
+                        给它起个名(全网同一份,盖在它自己的名上);
+                        不给名字=撤销,它自己的名原样露出
   pin [-m|-d] <session|机器|机器 路径>
                         置顶(-m 钉机器,-d 钉某台机器上的目录);
                         钉在哪台都一样,全网同一份

@@ -68,6 +68,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "agents", run: agents },
     Verb { word: "state", run: state },
     Verb { word: "seen", run: seen },
+    Verb { word: "rename", run: rename },
     Verb { word: "pin", run: pin },
     Verb { word: "unpin", run: unpin },
     Verb { word: "close", run: close },
@@ -841,6 +842,21 @@ fn seen(rest: &[String]) -> Result<(), String> {
         return Err(USAGE.into());
     };
     node()?.seen(&SessionId(id.clone()))
+}
+
+/// Names a session for the whole network, or takes the name back.
+///
+/// Everything after the id is the name, joined with spaces (`tell`'s
+/// shape — a name is words, and quoting should not be homework). **No
+/// words is the eraser, on purpose**: the override is withdrawn and the
+/// row falls back to the title its kind derives, so unlike `tell` an
+/// empty tail is an argument here, not a mistake. Same node call as the
+/// GUI's double-click (docs/KHOR.md: CLI equals GUI).
+fn rename(rest: &[String]) -> Result<(), String> {
+    let [id, name @ ..] = rest else {
+        return Err(USAGE.into());
+    };
+    node()?.rename_session(&SessionId(id.clone()), &name.join(" "))
 }
 
 /// Two verbs rather than one toggle: a toggle typed twice is a no-op you
