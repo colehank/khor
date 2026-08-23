@@ -344,6 +344,15 @@
      far as their colour. */
   --rail-w: 64px;
   --list-w: 288px;
+  /* The list pane's drag bounds. The floor is where the PaneBar stops
+   * being usable — below ~180 the search field is a slit before the
+   * pane itself has failed, so the pane should give way first. Under
+   * the snap line a drag stops meaning "this wide" and starts meaning
+   * "away" — the pane collapses whole rather than grinding through
+   * widths nothing fits in (the ceiling, half the window, is a ratio
+   * and lives where the drag is measured). */
+  --list-w-min: 180px;
+  --list-w-snap: 100px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted

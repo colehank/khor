@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { useListWidth } from "@/hooks/use-list-width";
 import { useNarrow } from "@/hooks/use-narrow";
 import { usePathCandidates } from "@/hooks/use-path-candidates";
 import { useStatusBar } from "@/hooks/use-status-bar";
@@ -300,6 +301,7 @@ function RailItem({
 
 export default function App() {
   const narrow = useNarrow();
+  const listPane = useListWidth(narrow);
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
@@ -773,7 +775,7 @@ export default function App() {
         // single clump (that is the distance for the *parts* of one
         // thing), while a whole `--gap-group` centered them into a
         // free-floating cluster that read as layout gone wrong — this
-        // rail is a list, and 12px is the list's own step. The narrow
+        // rail is a list, and row-step is the list's own step. The narrow
         // bar keeps `gap-in`: `justify-around` is already spending the
         // row's width, and a phone's rail has no room to give
         // (`scripts/check-rail.mjs` measures what overflow does there).
@@ -824,6 +826,11 @@ export default function App() {
             setMark(false);
             setLanding(l.key);
             setScreen("list");
+            // Choosing a landing reopens a collapsed list: the rail is
+            // the anchor a hidden pane comes back from (the seam's own
+            // handle is the other way), and it comes back at the width
+            // it had, not at the default.
+            listPane.expand();
           }}
         >
           {l.glyph}
@@ -861,7 +868,15 @@ export default function App() {
     <section
       data-list
       aria-label={paneName}
-      className={cn("flex h-full min-h-0 flex-col overflow-hidden bg-card", !narrow && "w-list border-r")}
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden bg-card",
+        !narrow && !listPane.collapsed && "border-r",
+      )}
+      // Wide, the width is the viewer's own, dragged at the seam and
+      // remembered (`useListWidth`); collapsed it is zero, not unmounted
+      // — what the pane holds (a typed search, a scroll) is state worth
+      // keeping through a collapse. Narrow keeps the class-driven flow.
+      style={narrow ? undefined : { width: listPane.collapsed ? 0 : listPane.width }}
     >
       <PaneBar
         // Files and browser search machines, because machines are what
@@ -1167,6 +1182,22 @@ export default function App() {
           ) : (
             <>
               {list}
+              {/* The seam between list and detail, and the whole width
+                  control: drag to size, drag under the snap line to put
+                  the list away, double-click for the default. It takes
+                  no room — a hit margin overhanging the pane's border —
+                  so collapsing paints it as the one visible strip left,
+                  which is also the way to pull the pane back out. */}
+              <div
+                data-list-seam
+                role="separator"
+                aria-orientation="vertical"
+                className={cn(
+                  "relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors hover:bg-border",
+                  listPane.collapsed && "bg-border",
+                )}
+                {...listPane.handleProps}
+              />
               <div className="min-w-0 flex-1">{detail}</div>
             </>
           )}
