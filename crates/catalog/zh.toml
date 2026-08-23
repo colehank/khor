@@ -841,6 +841,21 @@ mesh-map = "网里的机器"
 from-device = "来自 {0}"
 pick-a-session = "选一个 session"
 empty-sessions = "还没有 session"
+# The big canvas behind no selection: the network's now, three
+# headings and what stands under each. 等你的事 is the blocked rows —
+# the word's own definition (docs/SESSION.md 待批: an approval this
+# machine owes) — and when there are none the good news is said out
+# loud: an empty section under that heading would read as a query
+# that failed, not as a clear conscience. 今天 heads the day's token
+# numbers (the four of them — a single total is refused where the
+# numbers live, UsagePanel's measured judgment); when nothing was
+# spent yet the day says so in its own tense — usage-none speaks of
+# days plural and would overclaim here. The machines section borrows
+# devices-tab: same fact, same word.
+waiting-on-you = "等你的事"
+none-waiting = "没有等你的事"
+today = "今天"
+today-none = "今天还没花"
 backend-unreachable = "够不着本机的 khor"
 # The pane bar. No page carries a title (docs/UX.md); the pane's name
 # lives in an aria-label, and what shows is the work you can do here.
