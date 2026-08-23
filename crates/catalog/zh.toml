@@ -778,6 +778,9 @@ web-key-empty = "网页脸的钥匙文件是空的: {0}。删掉它,重启 serve
 # and the way around it — bigger things ride `khor send` with a real
 # path on the machine that has them, not a browser upload.
 upload-too-big = "文件太大:网页脸的上传上限是 {0}MB。更大的用那台机器上的 khor send"
+# A malformed upload request — the two query arguments are the whole
+# contract, and a missing one is the caller's bug said plainly.
+upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两个参数"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
