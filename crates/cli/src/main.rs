@@ -1542,11 +1542,17 @@ fn render(m: &khor_node::Message) -> String {
     }
     match &m.body {
         MsgBody::Text(t) => t.clone(),
-        MsgBody::Files(fs) => fs
-            .iter()
-            .map(|f| cli::file_chip(&f.name, f.size))
-            .collect::<Vec<_>>()
-            .join(" "),
+        // The transfer id rides the line: with no transfer row on the
+        // list any more (传输并入对话批), this is where the handle
+        // `khor accept` wants is read from.
+        MsgBody::Files(fs) => format!(
+            "{}\ttransfer/{}",
+            fs.iter()
+                .map(|f| cli::file_chip(&f.name, f.size))
+                .collect::<Vec<_>>()
+                .join(" "),
+            m.id
+        ),
         MsgBody::Unknown(k) => cli::unknown_body(k),
     }
 }

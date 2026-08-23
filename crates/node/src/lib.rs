@@ -1812,7 +1812,25 @@ impl KindSurface for ChatKind {
         let mut out = Vec::new();
         for d in node.devices()? {
             let wm = seen.doc.watermark(&format!("chat/{}", d.name));
-            out.push(self.row(&d.name, device_id_from_hex(&d.id)?, wm)?);
+            let mut row = self.row(&d.name, device_id_from_hex(&d.id)?, wm)?;
+            // A file in flight presses on the machine's own row, now
+            // that transfers no longer stand as rows of their own
+            // (传输并入对话批 — `TransferKind::urgency` owns which seat
+            // may say which word). More pressing wins; the row's own
+            // message-based word already covers 完成/未看, because a
+            // file message lands like any message.
+            if let Some(dir) = channel_dir(node.root(), &d.name) {
+                let msgs = self.log(&d.name)?.messages;
+                if let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs) {
+                    if word.rank() < row.state.state.rank() {
+                        row.state = khor_core::StateStamp {
+                            state: word,
+                            at: khor_core::Millis(at.max(0) as u64),
+                        };
+                    }
+                }
+            }
+            out.push(row);
         }
         Ok(out)
     }
@@ -1831,9 +1849,15 @@ impl KindSurface for ChatKind {
         Ok(self.log(&channel)?.messages.iter().map(|m| m.at).max().unwrap_or(0))
     }
 
+    /// Close leaves everything: the history replicates network-wide (a
+    /// local delete would be pulled right back), and the received files
+    /// belong to the filesystem now — the conversation is the long-term
+    /// ledger of this machine, and a ledger's close must not cost the
+    /// things it recorded (传输并入对话批 corrects the earlier "close
+    /// deletes received payloads"; docs/SESSION.md 动作 says why).
     fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
-        let (channel, _) = node.channel_of_session(id)?;
-        self.close_channel(&channel)
+        let _ = node.channel_of_session(id)?;
+        Ok(())
     }
 }
 
@@ -1842,16 +1866,16 @@ impl KindSurface for TransferKind {
         id.0.starts_with("transfer/")
     }
 
-    fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
-        let seen = node.seen_loaded()?;
-        let mut out = Vec::new();
-        for d in node.devices()? {
-            let dir = channel_dir(node.root(), &d.name)
-                .ok_or_else(|| msg::bad_channel_name(format_args!("{:?}", d.name)))?;
-            let msgs = node.chat.log(&d.name)?.messages;
-            out.extend(self.rows(&d.name, &dir, &msgs, |sid| seen.doc.watermark(sid)));
-        }
-        Ok(out)
+    /// No rows of its own any more (传输并入对话批, 2026-08-23): a
+    /// transfer is a file message in the machine's conversation, and its
+    /// pressure lands on that chat row's word (`ChatKind`'s rows via
+    /// [`TransferKind::urgency`]). The kind itself stays: `claims`,
+    /// `seen_at` and `close` still answer `transfer/` ids — accept marks
+    /// them seen, and an older peer still *reports* transfer rows, which
+    /// are painted as ever (nothing to migrate; those rows die of the
+    /// stale fold as their khor upgrades).
+    fn rows(&self, _node: &Node) -> Result<Vec<Session>, String> {
+        Ok(Vec::new())
     }
 
     fn reportable(&self) -> bool {

@@ -14,10 +14,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use khor_catalog::msg;
-use khor_core::{kind, DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
+use khor_core::{SessionId, State};
 use khor_sync::chat::{FileRef, Message, MsgBody};
-
-use crate::device_id_from_hex;
 
 /// Where an offered payload is read from, recorded at send time.
 /// Machine-local — the path means nothing on any other device. Keyed by
@@ -130,19 +128,38 @@ impl TransferKind {
         SessionId(format!("transfer/{msg_id}"))
     }
 
-    /// Rows for one channel's file messages. Only the sender and the
-    /// recipient machine derive a row (a third device sees the summary in
-    /// the chat; its transfer row waits on remote state — 挂账).
+    /// The most pressing live word among one channel's file messages,
+    /// folded onto that machine's chat row (传输并入对话批, 2026-08-23:
+    /// a transfer is a file message in the conversation, not a row of
+    /// its own — the pressure lands on the row that carries the
+    /// message).
     ///
-    /// `watermark` is the seen watermark for each transfer session id.
-    pub fn rows(
+    /// What counts as pressure, by seat:
+    /// - **receiver** (this machine was sent the file): 待批 while the
+    ///   payload waits on this machine's approval, 忙碌 while a pull
+    ///   runs, 中断 on a resumable break. 待批 comes from this seat and
+    ///   no other — the approval asked for is *this* machine's, which
+    ///   is the word's whole definition (docs/SESSION.md 六词).
+    /// - **sender**: 忙碌 while the far side is fetching. The wait for
+    ///   the far side's approval is *their* 待批, never ours — a badge
+    ///   this machine cannot clear by answering would break 角标可归零.
+    ///   (The retired transfer row said 待批 from either seat; on its
+    ///   own row that was a fact about the transfer, on the machine's
+    ///   row it would be a debt the wrong person is billed for.)
+    /// - settled transfers (payload landed, or the offer served whole)
+    ///   press nothing: 完成/未看 is already the chat row's own
+    ///   message-based reading — a file message lands like any message.
+    ///
+    /// `None` when nothing is in flight; the caller keeps the row's own
+    /// word. Ties go to the most pressing rank, stamped with the moment
+    /// that made it true.
+    pub fn urgency(
         &self,
         channel: &str,
         channel_dir: &Path,
         msgs: &[Message],
-        watermark: impl Fn(&str) -> i64,
-    ) -> Vec<Session> {
-        let mut out = Vec::new();
+    ) -> Option<(State, i64)> {
+        let mut best: Option<(State, i64)> = None;
         for m in msgs {
             let MsgBody::Files(files) = &m.body else { continue };
             if m.retracted || files.is_empty() {
@@ -150,46 +167,28 @@ impl TransferKind {
             }
             let i_sent = m.from.id == self.device_str;
             let i_receive = channel == self.name && !i_sent;
-            if !i_sent && !i_receive {
-                continue;
-            }
-            let id = Self::session_id(&m.id);
             let f = &files[0];
-            let (state, at, unread) = if i_sent {
-                self.sender_face(f, m.at)
+            let pressed = if i_receive {
+                let (state, at, _) = self.receiver_face(channel_dir, f, m.at, 0);
+                match state {
+                    State::Blocked | State::Busy | State::Errored => Some((state, at)),
+                    _ => None,
+                }
+            } else if i_sent {
+                match load_offer(&self.root, &f.digest).ok().flatten() {
+                    Some(o) if o.started && !o.done => Some((State::Busy, m.at)),
+                    _ => None,
+                }
             } else {
-                self.receiver_face(channel_dir, f, m.at, watermark(&id.0))
+                None
             };
-            out.push(Session {
-                id,
-                kind: Kind(kind::TRANSFER.to_owned()),
-                title: f.name.clone(),
-                home: device_id_from_hex(&m.from.id).unwrap_or(DeviceId([0; 32])),
-                state: StateStamp { state, at: Millis(at.max(0) as u64) },
-                unread,
-                // A transfer is over once the bytes all landed: 完成,
-                // and the 空闲 it settles into once looked at. The live
-                // words (传着/等许可) and the resumable break (中断) can
-                // all still move on their own.
-                dead: matches!(state, State::Done | State::Idle),
-                // Same as a device chat: khor's own doing, no vendor.
-                category: Some(khor_core::category::KHOR.to_owned()),
-                last: None,
-                via: None,
-            term: false,
-            });
+            if let Some((state, at)) = pressed {
+                if best.is_none_or(|(b, _)| state.rank() < b.rank()) {
+                    best = Some((state, at));
+                }
+            }
         }
-        out
-    }
-
-    /// The sender's view rides the offer record: no fetch yet = the far
-    /// user's approval is the only cure = 待批, from either seat.
-    fn sender_face(&self, f: &FileRef, msg_at: i64) -> (State, i64, u64) {
-        match load_offer(&self.root, &f.digest).ok().flatten() {
-            Some(o) if o.done => (State::Done, msg_at, 0),
-            Some(o) if o.started => (State::Busy, msg_at, 0),
-            _ => (State::Blocked, msg_at, 0),
-        }
+        best
     }
 
     /// The receiver's view rides the payload on disk.
@@ -287,11 +286,14 @@ mod tests {
         p
     }
 
-    /// The six-word mapping for a receiver, walked over disk states:
-    /// nothing = 待批, partial without a live pull = 中断, payload = 完成
-    /// while unseen, 空闲 once the watermark covers it.
+    /// The receiver's pressure, walked over disk states (传输并入对话批
+    /// reshaped the retired row-walk test — same disk states, the word
+    /// now lands on the chat row): nothing = 待批, live pull = 忙碌,
+    /// partial without a live pull = 中断, and a landed payload presses
+    /// **nothing** — 完成/未看 is the chat row's own message-based
+    /// reading, so a settled transfer must not keep shouting.
     #[test]
-    fn a_receivers_row_walks_blocked_errored_done_idle() {
+    fn a_receivers_pressure_walks_blocked_busy_errored_then_settles() {
         let root = tmp("faces");
         let ch = root.join("ch");
         fs::create_dir_all(ch.join("files")).unwrap();
@@ -299,56 +301,58 @@ mod tests {
         let f = file_ref("report.pdf");
         let m = [msg("m1", "far", f.clone())];
 
-        let row = &k.rows("mybox", &ch, &m, |_| 0)[0];
-        assert_eq!(row.state.state, State::Blocked, "no payload = waiting for approval");
-        assert_eq!(row.unread, 0);
+        let word = |k: &TransferKind| k.urgency("mybox", &ch, &m).map(|(w, _)| w);
+        assert_eq!(word(&k), Some(State::Blocked), "no payload = waiting for THIS machine");
 
         fs::write(partial_path(&ch, &f), b"he").unwrap();
         fs::write(pulling_marker(&ch, &f), format!("{}", std::process::id())).unwrap();
-        let row = &k.rows("mybox", &ch, &m, |_| 0)[0];
-        assert_eq!(row.state.state, State::Busy, "a live pull (this pid) = busy");
+        assert_eq!(word(&k), Some(State::Busy), "a live pull (this pid) = busy");
 
         fs::remove_file(pulling_marker(&ch, &f)).unwrap();
-        let row = &k.rows("mybox", &ch, &m, |_| 0)[0];
-        assert_eq!(row.state.state, State::Errored, "a partial with no live pull = resumable");
+        assert_eq!(word(&k), Some(State::Errored), "a partial with no live pull = resumable");
 
         fs::remove_file(partial_path(&ch, &f)).unwrap();
         fs::write(payload_path(&ch, &f), b"hello").unwrap();
-        let row = &k.rows("mybox", &ch, &m, |_| 0)[0];
-        assert_eq!(row.state.state, State::Done, "payload landed, not looked at yet");
-        assert_eq!(row.unread, 1);
-
-        let row = &k.rows("mybox", &ch, &m, |_| i64::MAX)[0];
-        assert_eq!((row.state.state, row.unread), (State::Idle, 0), "seen clears it");
+        assert_eq!(word(&k), None, "a landed payload presses nothing; the message itself is the news");
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// The sender's face rides the offer record; a third device derives
-    /// no row at all (its view waits on remote state — 挂账).
+    /// **待批 comes from the seat whose approval is being waited on,
+    /// and no other.** The sender's offer with no fetch yet presses
+    /// nothing — the wait is the far side's 待批 (the retired row said
+    /// 待批 from either seat; folded onto the machine's row that would
+    /// bill the debt to the wrong person). Fetching presses 忙碌; a
+    /// served offer presses nothing; a third party presses nothing.
     #[test]
-    fn the_senders_row_rides_the_offer_and_third_parties_get_none() {
+    fn the_senders_seat_never_presses_blocked() {
         let root = tmp("sender");
         let ch = root.join("ch");
         fs::create_dir_all(&ch).unwrap();
         let k = kind(&root);
         let f = file_ref("data.bin");
         let mine = [msg("m1", &"me".repeat(32), f.clone())];
+        let word = |k: &TransferKind, m: &[Message]| k.urgency("otherbox", &ch, m).map(|(w, _)| w);
 
-        let row = &k.rows("otherbox", &ch, &mine, |_| 0)[0];
-        assert_eq!(row.state.state, State::Blocked, "no fetch yet = the far approval is the cure");
+        assert_eq!(
+            word(&k, &mine),
+            None,
+            "an unanswered offer is the far side's 待批, never the sender's"
+        );
 
         save_offer(&root, &f.digest, &Offer {
             path: "/tmp/x".into(), name: f.name.clone(), size: 5,
             started: true, done: false,
         }).unwrap();
-        let row = &k.rows("otherbox", &ch, &mine, |_| 0)[0];
-        assert_eq!(row.state.state, State::Busy);
+        assert_eq!(word(&k, &mine), Some(State::Busy), "bytes flowing = busy on the sender too");
+
+        save_offer(&root, &f.digest, &Offer {
+            path: "/tmp/x".into(), name: f.name.clone(), size: 5,
+            started: true, done: true,
+        }).unwrap();
+        assert_eq!(word(&k, &mine), None, "a served offer presses nothing");
 
         let theirs = [msg("m2", "someone-else", f.clone())];
-        assert!(
-            k.rows("otherbox", &ch, &theirs, |_| 0).is_empty(),
-            "neither sender nor recipient = no row yet"
-        );
+        assert_eq!(word(&k, &theirs), None, "neither sender nor recipient = no pressure");
         let _ = fs::remove_dir_all(&root);
     }
 

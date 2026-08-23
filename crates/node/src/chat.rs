@@ -4,7 +4,6 @@
 //! Read state lives in the seen CRDT the node owns; this type takes the
 //! watermark and answers with rows.
 
-use std::fs;
 use std::path::PathBuf;
 
 use khor_catalog::msg;
@@ -153,16 +152,4 @@ impl ChatKind {
         })
     }
 
-    /// Deletes what the conversation received — the `files/` payloads —
-    /// and nothing else. The history blocks stay: they replicate
-    /// network-wide, so a local delete would only be pulled right back on
-    /// the next sync. Slimming history is an explicit cleanup, not close
-    /// (docs/SESSION.md 动作, docs/NET.md 同步).
-    pub fn close_channel(&self, channel: &str) -> Result<(), String> {
-        let files = self.dir(channel)?.join("files");
-        if files.exists() {
-            fs::remove_dir_all(&files).map_err(msg::cant_delete)?;
-        }
-        Ok(())
-    }
 }

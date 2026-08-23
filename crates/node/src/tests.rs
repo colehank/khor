@@ -77,10 +77,13 @@ fn watch_receives_what_tell_emits() {
     let _ = fs::remove_dir_all(&r);
 }
 
-/// Close deletes received payloads, never history: the history is
-/// network-replicated and a local delete would be pulled right back.
+/// Close leaves everything: history AND received files (传输并入对话批
+/// reversed the old "close deletes received payloads" — this test used
+/// to assert the deletion). The conversation is the machine's long-term
+/// ledger; received files belong to the filesystem, and closing a
+/// ledger must not cost the things it recorded.
 #[test]
-fn closing_a_chat_deletes_its_files_but_not_the_history() {
+fn closing_a_chat_keeps_its_files_and_its_history() {
     let r = root("close");
     let n = Node::open(r.clone()).unwrap();
     n.tell(n.name().to_owned().as_str(), "the line that stays").unwrap();
@@ -91,12 +94,105 @@ fn closing_a_chat_deletes_its_files_but_not_the_history() {
 
     let id = n.sessions().unwrap()[0].session.id.clone();
     n.close(&id).unwrap();
-    assert!(!files.exists(), "received payloads should be gone");
+    assert!(
+        files.join("payload.bin").exists(),
+        "a received file landed on this filesystem; close must not take it back"
+    );
     let log = n.log(n.name().to_owned().as_str()).unwrap();
     assert_eq!(log.messages.len(), 1, "the history must survive close");
     let row = &n.sessions().unwrap()[0].session;
     assert_eq!((row.unread, row.state.state), (0, State::Idle));
     let _ = fs::remove_dir_all(&r);
+}
+
+/// **A send makes a message, not a row** (传输并入对话批). The offer is
+/// in the machine's log as a file message; no `transfer/` row joins the
+/// list; and the sender's own chat row is not 待批 — the approval being
+/// waited on is the far machine's, and a badge this machine cannot
+/// clear by answering would break 角标可归零. (The receiving seat's
+/// half of that pair is the next test.)
+#[test]
+fn a_send_makes_a_file_message_and_no_transfer_row() {
+    let r = root("send-msg");
+    let n = Node::open(r.clone()).unwrap();
+    let payload = r.join("hello.txt");
+    fs::write(&payload, b"five!").unwrap();
+
+    // To this machine's own window: sender seat, and a channel that
+    // exists without pairing anybody.
+    let tid = n.send(n.name().to_owned().as_str(), &payload).unwrap();
+    assert!(tid.0.starts_with("transfer/"), "the accept handle is still a transfer id");
+
+    let rows = n.sessions().unwrap();
+    assert!(
+        !rows.iter().any(|v| v.session.id.0.starts_with("transfer/")),
+        "no transfer row on the list any more"
+    );
+    let log = n.log(n.name().to_owned().as_str()).unwrap();
+    assert!(
+        log.messages.iter().any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "hello.txt")),
+        "the offer must be a file message in the machine's log"
+    );
+    let chat = rows
+        .iter()
+        .find(|v| v.session.id.0.starts_with("chat/"))
+        .expect("the machine's chat row exists");
+    assert_ne!(
+        chat.session.state.state,
+        State::Blocked,
+        "the sender's seat has nothing to approve: its row must not say 待批"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// The receiving seat's half of the pair: an offer sent TO this machine
+/// presses 待批 onto its chat row — the approval asked for is this
+/// machine's — and the payload landing clears it (accept 即清).
+#[test]
+fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
+    let r = root("recv-offer");
+    let n = Node::open(r.clone()).unwrap();
+
+    // A file offer from another device, landed as a chat block — the
+    // same shape `a_foreign_block_raises_unread_and_seen_clears_it`
+    // plants a text message with.
+    let far = ChatDoc::new(0xFAFA).unwrap();
+    let f = khor_node_test_fileref();
+    far.send_files(&Sender { id: "dev-far".into(), name: "far".into() }, &[f.clone()])
+        .unwrap();
+    let block = far.changes_since(&Default::default()).unwrap();
+    let dir = channel_dir(&r, n.name()).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("u-000000000000fafa-00000000.loro"), &block).unwrap();
+
+    let chat_row = |n: &Node| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id.0.starts_with("chat/"))
+            .expect("the machine's chat row exists")
+            .session
+    };
+    assert_eq!(
+        chat_row(&n).state.state,
+        State::Blocked,
+        "an offer waiting on THIS machine's approval must press 待批 onto its row"
+    );
+
+    // The payload lands (what accept's pull produces): the ask is
+    // answered, so 待批 clears — to the row's own message-based word.
+    let files = dir.join("files");
+    fs::create_dir_all(&files).unwrap();
+    fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
+    let row = chat_row(&n);
+    assert_ne!(row.state.state, State::Blocked, "答了才清: the landing clears 待批");
+    assert_eq!(row.state.state, State::Done, "…to the unseen file message's own 完成");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// The file ref the incoming-offer test plants.
+fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
+    khor_sync::chat::FileRef { name: "drop.bin".into(), size: 6, digest: "ef".repeat(32) }
 }
 
 /// Pinning lifts a row to the top of the list the library hands out, and
