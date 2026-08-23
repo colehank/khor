@@ -894,6 +894,15 @@ rename-failed = "改不了名"
 # be a whole surface built for the least common thing that happens here.
 pin-failed = "钉不上"
 unpin-failed = "取消不了"
+# The machine card's verbs, each the GUI face of a call that machine
+# already answers for the CLI (docs/KHOR.md — the faces are equivalent
+# because they are one call): 开终端 is `open --on`, 文件 is the files
+# landing with this machine picked. The failure word rides the button
+# that was pressed, the pin's rule; the files jump is a local
+# navigation and cannot fail, so it carries none.
+open-term-on = "在这台开终端"
+open-term-on-failed = "开不了"
+browse-files = "看它的文件"
 # The hook, on this machine's own card. Two names because the button has
 # two jobs and shows the one it will do next — the same rule the pin
 # follows.
