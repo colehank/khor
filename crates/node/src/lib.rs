@@ -54,6 +54,7 @@ use khor_sync::webpins::{webpins_dir, WebPinDoc};
 use khor_sync::pins::{pins_dir, PinDoc};
 use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
+use khor_sync::titles::{titles_dir, TitleDoc};
 
 use crate::chat::ChatKind;
 use crate::live::LiveKind;
@@ -533,6 +534,10 @@ impl Node {
         load(&agents_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn titles_loaded(&self) -> Result<Loaded<TitleDoc>, String> {
+        load(&titles_dir(&self.root), self.peer)
+    }
+
     /// Every ACP agent this person has named, by name (`khor_sync::agents`).
     pub fn agents(&self) -> Result<Vec<(String, AgentSpec)>, String> {
         Ok(self.agents_loaded()?.doc.all())
@@ -681,6 +686,7 @@ impl Node {
     /// already made).
     pub fn sessions(&self) -> Result<Vec<SessionView>, String> {
         let pins = self.pins_loaded()?;
+        let titles = self.titles_loaded()?;
         let mut views: Vec<SessionView> = Vec::new();
         for k in self.kinds() {
             for row in k.rows(self)? {
@@ -702,6 +708,18 @@ impl Node {
                     session: row,
                     source: Some((name, age)),
                 });
+            }
+        }
+        // The user's names go on last, over every row alike — the kinds
+        // keep deriving their own titles (a sweep recomputes a discovered
+        // agent's each round, a reported row is rebuilt from the far
+        // machine's report), and this overlay is what makes a rename
+        // outlive both (`khor_sync::titles`). Read here rather than
+        // carried on the row for the pin's reason: the document
+        // replicates, so every device answers from its own copy.
+        for v in &mut views {
+            if let Some(t) = titles.doc.title_of(&v.session.id.0) {
+                v.session.title = t;
             }
         }
         // Stable: within each group the order above survives untouched.
@@ -742,6 +760,29 @@ impl Node {
     pub fn pin_session(&self, id: &SessionId, on: bool) -> Result<(), String> {
         let loaded = self.pins_loaded()?;
         loaded.doc.set(&id.0, on)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        self.emit_row_of(id)
+    }
+
+    /// Names a session, for everyone — or, with an empty title, takes
+    /// the name back so the row falls back to what its kind derives
+    /// (the vendor's own name, or the title it was opened with).
+    ///
+    /// The name lands in a replicated document, never in the row's meta:
+    /// rows re-derive their titles — a discovered agent's is recomputed
+    /// from the vendor's status file on every sweep — so a name written
+    /// into meta would be overwritten by the next derivation. The
+    /// overlay is applied where the rows are read (`Node::sessions`),
+    /// which is also what lets a reported row from another machine wear
+    /// it. Replicated because a name is a decision, the same class as a
+    /// pin (docs/NET.md 同步).
+    ///
+    /// **Any id may be named, including one no row answers to today** —
+    /// the same ruling as `pin_session`, for the same reasons.
+    pub fn rename_session(&self, id: &SessionId, title: &str) -> Result<(), String> {
+        let loaded = self.titles_loaded()?;
+        loaded.doc.set(&id.0, title)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         self.emit_row_of(id)
@@ -1686,13 +1727,18 @@ impl Node {
         adaptor::claude::uninstall_hooks(&adaptor::vendor_home(&self.root))
     }
 
-    /// Re-derives one session's row and pushes it to watchers.
+    /// Re-derives one session's row and pushes it to watchers. The
+    /// user's name goes on here too, or the pushed row would disagree
+    /// with the very list `sessions` answers.
     pub(crate) fn emit_row_of(&self, id: &SessionId) -> Result<(), String> {
         for k in self.kinds() {
             if !k.claims(self, id) {
                 continue;
             }
-            if let Some(row) = k.rows(self)?.into_iter().find(|r| r.id == *id) {
+            if let Some(mut row) = k.rows(self)?.into_iter().find(|r| r.id == *id) {
+                if let Some(t) = self.titles_loaded()?.doc.title_of(&row.id.0) {
+                    row.title = t;
+                }
                 self.emit(NodeEvent::Row(row));
             }
             return Ok(());

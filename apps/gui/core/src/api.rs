@@ -85,6 +85,14 @@ pub fn answer(
             crate::close_session(root, &arg("id")?)?;
             Ok("null".to_owned())
         }
+        // `title` must be present even when empty — an empty string is
+        // the eraser (fall back to the derived title), and a missing
+        // argument silently read as "" would turn a frontend typo into
+        // renames that quietly erase.
+        "rename_session" => {
+            crate::rename_session(root, &arg("id")?, &arg("title")?)?;
+            Ok("null".to_owned())
+        }
         "tell" => {
             crate::tell(root, &arg("machine")?, &arg("text")?)?;
             Ok("null".to_owned())

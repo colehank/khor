@@ -49,6 +49,11 @@ fn close_session(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rename_session(id: String, title: String) -> Result<(), String> {
+    khor_gui_core::rename_session(&Node::root_from_env(), &id, &title)
+}
+
+#[tauri::command]
 fn tell(machine: String, text: String) -> Result<(), String> {
     khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
 }
@@ -372,6 +377,7 @@ pub fn run() {
             quota,
             seen,
             close_session,
+            rename_session,
             tell,
             pin_session,
             pin_device,

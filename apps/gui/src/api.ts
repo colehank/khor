@@ -174,6 +174,11 @@ export const fetchUsage = () => call<Usage>("usage");
 export const fetchQuota = () => call<QuotaAnswer>("quota");
 export const markSeen = (id: string) => call<null>("seen", { id });
 export const closeSession = (id: string) => call<null>("close_session", { id });
+/** Names a session for the whole network; an empty title takes the name
+    back so the row falls back to its derived title. The empty string is
+    sent, never omitted — it is the eraser, not a missing argument. */
+export const renameSession = (id: string, title: string) =>
+  call<null>("rename_session", { id, title });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
 /** Every ACP agent this person registered (批⑥, `khor agents add`).
     **khor's own two are not in here** — they are not registrations, and

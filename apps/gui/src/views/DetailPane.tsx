@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   closeSession,
+  renameSession,
   takeoverTerm as takeoverTermCall,
   type SessionRow,
 } from "@/api";
@@ -94,6 +95,90 @@ function ChatToTerm({ row }: { row: SessionRow }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The title, and the way to change it: double-click, type, Enter.
+ *
+ * The name is the user's override over whatever the row derives for
+ * itself (`Node::rename_session`); an emptied box takes it back, so the
+ * vendor's own name — or the title the session was opened with — shows
+ * again. Esc (or clicking away) backs out without writing anything.
+ *
+ * **The row is the truth; the echo is a bridge.** The list polls on its
+ * own clock, so for a beat after Enter the row still carries the old
+ * name. `echo` covers exactly that beat and retires the moment the row
+ * changes — it must not linger, or a rename made on another device
+ * would be papered over by this screen's stale memory of its own.
+ *
+ * A failed write says so where it was typed (the pin's rule): the box
+ * stays open wearing the failure word, because closing it would paint
+ * the exact picture a successful rename paints while nothing moved.
+ */
+function SessionTitle({ row }: { row: SessionRow }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [echo, setEcho] = useState<string | null>(null);
+  // The poll caught up (or another device renamed it): the row speaks
+  // for itself again.
+  useEffect(() => {
+    setEcho(null);
+  }, [row.title]);
+  const shown = echo ?? (row.title || row.id);
+  if (!editing) {
+    return (
+      <span
+        data-session-title
+        onDoubleClick={() => {
+          setDraft(echo ?? row.title);
+          setFailed(false);
+          setEditing(true);
+        }}
+        className="min-w-0 truncate font-semibold"
+      >
+        {shown}
+      </span>
+    );
+  }
+  const submit = () => {
+    const title = draft.trim();
+    renameSession(row.id, title).then(
+      () => {
+        setEditing(false);
+        // An emptied box falls back to a title only the backend knows,
+        // so there is nothing honest to echo — the poll fills it in.
+        setEcho(title === "" ? null : title);
+      },
+      () => setFailed(true),
+    );
+  };
+  return (
+    <>
+      <input
+        data-title-input
+        autoFocus
+        value={draft}
+        aria-label={gui.rename}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setFailed(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          else if (e.key === "Escape") setEditing(false);
+        }}
+        onBlur={() => setEditing(false)}
+        onFocus={(e) => e.currentTarget.select()}
+        className="min-w-0 flex-1 rounded-sm bg-secondary px-1 font-semibold outline-none"
+      />
+      {failed && (
+        <span data-rename-failed className="flex-none text-sm text-state-failed">
+          {gui.rename_failed}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -336,12 +421,18 @@ export function DetailPane({
             <IconBack />
           </Button>
         )}
-        {/* `min-w-0` is what lets it actually truncate: a flex child
-            will not shrink below its content without it, so on the
-            narrow face the title would push the facts and the two
-            controls off the end of the header instead of clipping
-            itself. */}
-        <span className="min-w-0 truncate font-semibold">{row ? row.title || row.id : ""}</span>
+        {/* `min-w-0` (inside SessionTitle) is what lets it actually
+            truncate: a flex child will not shrink below its content
+            without it, so on the narrow face the title would push the
+            facts and the two controls off the end of the header instead
+            of clipping itself. Keyed by the row so switching sessions
+            drops any half-typed edit — a draft belongs to the row it
+            was typed over. */}
+        {row ? (
+          <SessionTitle key={row.id} row={row} />
+        ) : (
+          <span className="min-w-0 truncate font-semibold" />
+        )}
         {row && (
           <>
             {/* The state, in the same clothes the row wears it in — the

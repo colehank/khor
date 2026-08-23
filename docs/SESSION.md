@@ -68,8 +68,12 @@ CRDT kind 灰一半：历史照读、还能写，送达等 home 回来——
 
 ## 动作
 
-通用三个：open、close、seen。
+通用四个：open、close、seen、rename。
 kind 专属（resize、send_keys、续传…）走 kind 命名空间，不进通用面。
-动作从哪台设备发都行，送到 home 执行；seen 例外——它是已读状态，走 CRDT。
+动作从哪台设备发都行，送到 home 执行；seen 与 rename 例外——已读和名字
+都是决定不是执行，走 CRDT，不经 home（NET.md 同步一节）。
+rename 是覆盖不是改写：kind 派生的名（开时给的、vendor 状态文件里的）
+一直在底下流，显示时才盖上去——sweep 重算多少轮都盖不回来；
+清空名字就是撤销覆盖，派生名原样露出。
 close 的收尾由 kind 定：对设备的对话删它收下的文件；
 全网复制的历史不随 close 消失，瘦身走清理（NET.md 同步一节）。

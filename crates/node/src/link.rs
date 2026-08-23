@@ -669,6 +669,9 @@ impl Node {
                 } else if doc == "agents" {
                     let mut loaded = self.agents_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "titles" {
+                    let mut loaded = self.titles_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if let Some(ch) = doc.strip_prefix("chat/") {
                     let dir = chat::channel_dir(self.root(), ch)
                         .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
@@ -1820,6 +1823,16 @@ impl Node {
         {
             let mut loaded = self.agents_loaded()?;
             if let Ok(n) = self.rounds(&conn, "agents", &mut loaded).await {
+                moved += n;
+            }
+        }
+        // Session names, on the same best-effort footing as the tables
+        // above and for the same reason: a peer that predates the table
+        // refuses the doc by name, and that refusal must not cost the
+        // chat rounds behind it — it only means older names there.
+        {
+            let mut loaded = self.titles_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "titles", &mut loaded).await {
                 moved += n;
             }
         }

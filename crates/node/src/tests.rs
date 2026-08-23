@@ -266,6 +266,116 @@ fn a_vendors_hook_places_the_row_that_khor_could_not() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// A claude status file the sweep will pick up on every list: the pid
+/// cannot exist (above every configured pid_max, the `pid_alive` test's
+/// number), so the row surfaces on the crash rule with the vendor's own
+/// `name` as its title — recomputed from this file each sweep, which is
+/// exactly the force a user's rename has to outlive.
+fn plant_discovered_claude(r: &PathBuf, vendor_session: &str, vendor_name: &str) {
+    let dir = crate::adaptor::vendor_home(r).join(".claude").join("sessions");
+    fs::create_dir_all(&dir).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    fs::write(
+        dir.join("4242.json"),
+        format!(
+            r#"{{"pid":{},"sessionId":"{vendor_session}","name":"{vendor_name}","status":"busy","statusUpdatedAt":{now}}}"#,
+            u32::MAX - 1
+        ),
+    )
+    .unwrap();
+}
+
+/// **The user's name outlives the vendor's sweep.** The sweep rebuilds a
+/// discovered row's title from the vendor's status file on every list,
+/// so a rename stored where the sweep writes would last one round. Two
+/// lists after the rename stand for two sweeps; the second is the one a
+/// meta-writing implementation fails.
+#[test]
+fn a_users_rename_outlives_the_vendors_sweep() {
+    let r = root("rename-sweep");
+    let n = Node::open(r.clone()).unwrap();
+    plant_discovered_claude(&r, "renamed0001", "vendor-name");
+
+    let row_of = |n: &Node| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id.0.starts_with("tui/"))
+            .expect("the planted status file must surface as a row")
+    };
+    let before = row_of(&n);
+    assert_eq!(before.session.title, "vendor-name", "control: the vendor names it first");
+
+    n.rename_session(&before.session.id, "the rent job").unwrap();
+    assert_eq!(row_of(&n).session.title, "the rent job", "the user's name must win the sweep");
+    assert_eq!(
+        row_of(&n).session.title,
+        "the rent job",
+        "…and the sweep after that: the vendor keeps deriving, the overlay keeps winning"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// The other half of the pair above: with no rename on record the
+/// vendor's own title shows. An implementation that ignored the overlay
+/// entirely passes this one alone — together they pin the overlay to
+/// "applied exactly when set".
+#[test]
+fn an_unnamed_discovered_row_keeps_the_vendors_title() {
+    let r = root("rename-none");
+    let n = Node::open(r.clone()).unwrap();
+    plant_discovered_claude(&r, "unnamed0001", "vendor-name");
+
+    for _ in 0..2 {
+        let row = n
+            .sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id.0.starts_with("tui/"))
+            .expect("the planted status file must surface as a row");
+        assert_eq!(row.session.title, "vendor-name", "no override on record: the vendor's title stands");
+    }
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// A khor-opened row renames the same way, and clearing the name falls
+/// back to the title it was opened with — an empty title is the eraser,
+/// not a name (`khor_sync::titles`). The rename also survives reopening
+/// the node: the overlay is a document on disk, not process state.
+#[test]
+fn clearing_a_rename_falls_back_to_the_opened_title() {
+    let r = root("rename-clear");
+    let n = Node::open(r.clone()).unwrap();
+    let id = n.open_ephemeral(khor_core::kind::TUI, "opened-title").unwrap();
+
+    let title_of = |n: &Node| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == id)
+            .expect("the opened row must be on the list")
+            .session
+            .title
+    };
+    assert_eq!(title_of(&n), "opened-title", "control: the opening title shows first");
+
+    n.rename_session(&id, "my words").unwrap();
+    assert_eq!(title_of(&n), "my words");
+
+    // A second open of the same store reads the same overlay — the
+    // document is what a serve restart comes back to.
+    drop(n);
+    let n = Node::open(r.clone()).unwrap();
+    assert_eq!(title_of(&n), "my words", "the rename must survive reopening the node");
+
+    n.rename_session(&id, "").unwrap();
+    assert_eq!(title_of(&n), "opened-title", "clearing must fall back to the opened title");
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// A khor-opened agent row's conversation is found through the vendor
 /// leaf the hook recorded — khor's minted leaf names no file in
 /// projects/, so without the bridge the transcript must NOT resolve

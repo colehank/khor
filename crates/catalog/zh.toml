@@ -869,6 +869,16 @@ no-matches = "没有匹配的"
 # state tells you what is, not what pressing it does.
 pin = "置顶"
 unpin = "取消置顶"
+# The title's own control: double-click it and it becomes this input.
+# The label names the action; the input needs no hint text because the
+# current title is already in it, selected — typing replaces, Enter
+# keeps, Esc backs out, and an emptied box takes the name back so the
+# session's own title shows again.
+rename = "改名"
+# …and what the edit says when the write did not take. Said where it was
+# typed, the pin's rule: a failed rename and a missed Enter must not
+# wear one face (docs/UX.md 做了但没变化 / 失败).
+rename-failed = "改不了名"
 # …and what the button says when the write did not take. Two words for
 # the same reason the two above are two: the one shown is about the
 # action that was attempted.

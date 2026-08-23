@@ -495,6 +495,14 @@ pub fn seen(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.seen(&SessionId(id.to_owned()))
 }
 
+/// Names a session, for everyone; an empty title takes the name back so
+/// the row falls back to its derived title (`Node::rename_session`).
+/// One function behind the double-click and any future verb, so the two
+/// cannot drift.
+pub fn rename_session(root: &Path, id: &str, title: &str) -> Result<(), String> {
+    open(root)?.rename_session(&SessionId(id.to_owned()), title)
+}
+
 pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
     // Routed: a row on another machine closes where it runs
     // (`Node::close_anywhere`). The app's own runtime is the caller's,
