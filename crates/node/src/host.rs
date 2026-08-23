@@ -75,10 +75,48 @@ pub fn host_file_path(dir: &Path) -> PathBuf {
 /// The terminal's last non-empty line, as the host keeps it beside its
 /// state (`last.txt`) — the row preview's source for hosted sessions.
 /// Absent file, absent preview; nothing here invents one.
+///
+/// A tmux status line is refused here too, not only at the writer
+/// (`host_main` skips the preview for a PTY carrying a tmux client):
+/// files written by hosts from before that gate are still on disk, and
+/// a host from before it may still be running and rewriting one. The
+/// preview's contract is 人话或空白 (退场批 sibling ruling), and a
+/// refused line is the blank half of it.
 pub fn read_last(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("last.txt")).ok()?;
     let line = text.trim();
-    (!line.is_empty()).then(|| line.to_owned())
+    (!line.is_empty() && !looks_like_a_tmux_status_line(line)).then(|| line.to_owned())
+}
+
+/// Whether a line is tmux's status bar rather than anything a person
+/// said or a program printed: `[<session>` … `:<window>*`, the `*`
+/// being the current-window flag every tmux status line carries.
+/// Deliberately narrow — a false positive costs one blank preview,
+/// a broad pattern would eat real output that happens to use brackets.
+fn looks_like_a_tmux_status_line(line: &str) -> bool {
+    let Some(open) = line.find('[') else {
+        return false;
+    };
+    let rest = &line[open + 1..];
+    let Some(colon) = rest.find(':') else {
+        return false;
+    };
+    let window = &rest[colon + 1..];
+    let end = window.find(char::is_whitespace).unwrap_or(window.len());
+    window[..end].contains('*')
+}
+
+/// Whether this host's PTY carries a tmux client rather than the
+/// session's own process. True for both bridge shapes — the plain host
+/// a tmux row gets and the viewer an agent-in-tmux row gets — because
+/// what they share is the argv, and the argv is what decides what the
+/// screen's bottom line is: tmux's status bar, not the session's
+/// output.
+fn pty_is_a_multiplexer_client(cmd: &[String]) -> bool {
+    cmd.first()
+        .map(Path::new)
+        .and_then(Path::file_name)
+        .is_some_and(|n| n == "tmux")
 }
 
 /// The last line with visible content out of raw PTY bytes, ANSI
@@ -408,6 +446,17 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
     let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
     let kind = id.0.split('/').next().unwrap_or("").to_owned();
+    // A PTY carrying a tmux client shows tmux's status bar as its
+    // bottom line, so its "last non-empty line" is chrome, never the
+    // session's output — the same judgment that keeps a viewer from
+    // writing words (below). No preview is written, and one already on
+    // disk is removed: it was written by a host from before this gate,
+    // and it is exactly the `[sess:zsh*…` junk the row would keep
+    // showing (副行要么人话要么空白).
+    let mux_client = pty_is_a_multiplexer_client(&cmd);
+    if mux_client {
+        let _ = std::fs::remove_file(dir.join("last.txt"));
+    }
     // A viewer never claims the row (`spawn_viewer_host`): the pid slot,
     // the words and the ending all stay the vendor's.
     let viewer = std::env::var(VIEWER_ENV).ok();
@@ -537,7 +586,10 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
                 clients.retain_mut(|c| c.write_all(&buf[..n]).is_ok());
                 drop(clients);
                 drop(ring);
-                {
+                // Never for a tmux client (`mux_client`): its bottom
+                // line is tmux's status bar, which is true of the
+                // screen and a lie about the session.
+                if !mux_client {
                     // The screen's reading beats the byte tail — it is
                     // what is actually on the terminal; the strip is the
                     // screenless (plain shell) approximation.
@@ -785,7 +837,7 @@ mod tests {
 
 #[cfg(test)]
 mod last_line_tests {
-    use super::last_plain_line;
+    use super::{last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last};
 
     /// The preview strip reads bytes the way `tail -1` would: ANSI
     /// dropped, CR dropped, the last line with visible content wins.
@@ -793,6 +845,57 @@ mod last_line_tests {
     fn ansi_is_stripped_and_the_last_visible_line_wins() {
         let bytes = b"\x1b[32mhello\x1b[0m world\r\n\x1b]0;title\x07$ make test\r\n\r\n";
         assert_eq!(last_plain_line(bytes).as_deref(), Some("$ make test"));
+    }
+
+    /// **A tmux status line is never a preview** (副行要么人话要么空白).
+    /// The two positives are real samples off this machine's own rows —
+    /// the second with the stray character the ANSI strip left in front.
+    /// The negatives are the control: ordinary lines wearing brackets
+    /// and colons must keep their preview, or the filter is a broad net
+    /// eating real output.
+    #[test]
+    fn a_tmux_status_line_is_refused_and_ordinary_lines_are_not() {
+        for junk in [
+            r#"[khor0-1870:zsh*"" 15:04 21-Aug-25"#,
+            r#"m[keyprobe-0:zsh*"Mac-mini" 09:12"#,
+        ] {
+            assert!(looks_like_a_tmux_status_line(junk), "must refuse: {junk}");
+        }
+        for fine in [
+            "$ make test",
+            "[INFO] 12:30:45 build finished",
+            "error[E0063]: missing field `dead`",
+            "[2026-08-23] done",
+        ] {
+            assert!(!looks_like_a_tmux_status_line(fine), "must keep: {fine}");
+        }
+    }
+
+    /// The whole read path: a `last.txt` holding a status line answers
+    /// nothing, and one holding real output answers it — the same file,
+    /// so the blank is the filter and not a broken read.
+    #[test]
+    fn a_last_file_full_of_tmux_chrome_reads_as_no_preview() {
+        let dir = std::env::temp_dir().join(format!("khor-last-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("last.txt"), r#"[khor0-1870:zsh*"" 15:04 21-Aug-25"#).unwrap();
+        assert_eq!(read_last(&dir), None, "tmux chrome must read as blank");
+        std::fs::write(dir.join("last.txt"), "$ cargo build").unwrap();
+        assert_eq!(read_last(&dir).as_deref(), Some("$ cargo build"), "control: real output survives");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Which hosts the writer gate applies to: any argv whose command is
+    /// tmux, by basename — both bridge shapes get there through one.
+    #[test]
+    fn a_tmux_argv_marks_the_pty_as_a_multiplexer_client() {
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert!(pty_is_a_multiplexer_client(&argv(&["tmux", "attach"])));
+        assert!(pty_is_a_multiplexer_client(&argv(&["/opt/homebrew/bin/tmux", "-L", "sock"])));
+        assert!(!pty_is_a_multiplexer_client(&argv(&["zsh"])));
+        assert!(!pty_is_a_multiplexer_client(&argv(&["/bin/bash", "-lc", "tmux ls"])));
+        assert!(!pty_is_a_multiplexer_client(&[]));
     }
 
     /// All-control input previews as nothing, not as an empty string —
