@@ -551,12 +551,33 @@ fn tell(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Sends a file, or says a thing — one word for "put this in that
+/// machine's conversation" (用户裁决, 传输并入对话批的后续).
+///
+/// The rule, fixed here and in the usage text: a **single** argument
+/// naming an existing regular file makes this a transfer; anything
+/// else makes the whole tail one message, joined with spaces (`tell`'s
+/// shape). Single on purpose — with more words along, a transfer would
+/// have to drop them while a message swallows a file name whole, so
+/// only one reading loses nothing. The escape hatch for a lone word
+/// that happens to name a file is `tell`, which stays and is always
+/// literal — the ambiguity has a one-word way out and never needs
+/// quoting tricks here.
 fn send(rest: &[String]) -> Result<(), String> {
-    let [machine, path] = rest else {
+    let [machine, tail @ ..] = rest else {
         return Err(USAGE.into());
     };
-    let id = node()?.send(machine, std::path::Path::new(path))?;
-    println!("{}", cli::summary_sent(&id.0));
+    if tail.is_empty() {
+        return Err(USAGE.into());
+    }
+    let candidate = std::path::Path::new(&tail[0]);
+    if tail.len() == 1 && candidate.is_file() {
+        let id = node()?.send(machine, candidate)?;
+        println!("{}", cli::summary_sent(&id.0));
+        return Ok(());
+    }
+    let id = node()?.tell(machine, &tail.join(" "))?;
+    println!("{id}");
     Ok(())
 }
 
