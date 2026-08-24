@@ -77,13 +77,13 @@ fn watch_receives_what_tell_emits() {
     let _ = fs::remove_dir_all(&r);
 }
 
-/// Close leaves everything: history AND received files (传输并入对话批
-/// reversed the old "close deletes received payloads" — this test used
-/// to assert the deletion). The conversation is the machine's long-term
-/// ledger; received files belong to the filesystem, and closing a
-/// ledger must not cost the things it recorded.
+/// Close is putting the row away, never deletion (chat 收起批, on top of
+/// 传输并入对话批's "close deletes nothing"): the row leaves the list,
+/// history AND received files stay exactly where they were, and the
+/// next message brings the row back owing only itself — the WeChat
+/// shape, with the whole ledger intact underneath.
 #[test]
-fn closing_a_chat_keeps_its_files_and_its_history() {
+fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
     let r = root("close");
     let n = Node::open(r.clone()).unwrap();
     n.tell(n.name().to_owned().as_str(), "the line that stays").unwrap();
