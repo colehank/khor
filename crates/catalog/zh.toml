@@ -148,8 +148,8 @@ usage = """
                         钉在哪台都一样,全网同一份
   unpin [-m|-d] <session|机器|机器 路径>
                         取消置顶
-  close <session>       关掉(session 停掉进程;对话是常驻账本,历史和
-                        收下的文件都留着)
+  close <session>       关掉(session 停掉进程;对话收起这一行,历史和
+                        收下的文件都留着,再来消息它自己回来)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
                         (顺带把网页脸也开在局域网上,见 web)
   web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
@@ -1034,8 +1034,10 @@ chat-refused-no-turn = "现在没有在跑的轮"
 #
 #   live (shell/tui/gui/borrow) — `LiveKind::close_session` kills the
 #     child's process group and then the host. A process stops.
-#   chat — `ChatKind::close_channel` deletes the `files/` directory of
-#     that device channel. The messages stay; the received files do not.
+#   chat — the `ChatKind` close records a put-away watermark: the row
+#     leaves the list and the next message brings it back, history and
+#     received files untouched (chat 收起批 — the sentence must promise
+#     the return, or a vanishing row reads as a deletion).
 #   transfer — `TransferKind::close` deletes that transfer's payloads,
 #     **and the row survives** (its summary lives in the CRDT and falls
 #     back to 待批). Said out loud, because a row that stays after a
@@ -1045,11 +1047,12 @@ chat-refused-no-turn = "现在没有在跑的轮"
 # useful for none: the thing a person is deciding is what they are about
 # to lose, and that is the part that differs.
 close-warn-live = "关掉它,它正在跑的进程会停下"
-# 传输并入对话批 rewrote this: the conversation is the machine's
-# long-term ledger, and received files belong to the filesystem —
-# close costs nothing any more, and the sentence must not threaten
-# what it will not do.
-close-warn-chat = "关掉它,历史和收下的文件都留着"
+# chat 收起批 rewrote this again (传输并入对话批 had it down to "costs
+# nothing", which described a close that visibly did nothing — the one
+# face docs/UX.md forbids). Now the sentence carries the two facts a
+# person needs before pressing: the row will leave, and leaving is not
+# losing — it comes back with the next message, ledger intact.
+close-warn-chat = "关掉它,这行先收起;历史和收下的文件都留着,它再来消息就回来"
 close-warn-transfer = "关掉它,这次传下来的文件会删掉;这一行会留着"
 # A kind khor has no sentence for. Kinds are an open set
 # (`khor_core::kind` — new ones must appear without touching that
