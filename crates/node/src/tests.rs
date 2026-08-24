@@ -100,8 +100,65 @@ fn closing_a_chat_keeps_its_files_and_its_history() {
     );
     let log = n.log(n.name().to_owned().as_str()).unwrap();
     assert_eq!(log.messages.len(), 1, "the history must survive close");
-    let row = &n.sessions().unwrap()[0].session;
+    assert!(
+        n.sessions().unwrap().is_empty(),
+        "the put-away row must leave the list"
+    );
+
+    // The way back is a message past the mark. The pause is real: the
+    // put-away watermark is the last message's clock, and a reply landing
+    // in the very same millisecond would still be under it.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    n.tell(n.name().to_owned().as_str(), "the line that reopens").unwrap();
+    let rows = n.sessions().unwrap();
+    assert_eq!(rows.len(), 1, "a new message must bring the row back");
+    assert_eq!(
+        n.log(n.name().to_owned().as_str()).unwrap().messages.len(),
+        2,
+        "…and it comes back with the whole history, not a fresh page"
+    );
+    let row = &rows[0].session;
     assert_eq!((row.unread, row.state.state), (0, State::Idle));
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// Closing marks seen to the same instant: a revived row owes only the
+/// messages that revived it, never the debt the person dismissed when
+/// they put the row away. Foreign words, because own words are auto-seen
+/// and would make this assertion pass with the mark broken.
+#[test]
+fn a_revived_chat_owes_only_what_revived_it() {
+    let r = root("close-unread");
+    let n = Node::open(r.clone()).unwrap();
+    let dir = channel_dir(&r, n.name()).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+    let far = ChatDoc::new(0xF0F0).unwrap();
+    let sender = Sender { id: "dev-far".into(), name: "far".into() };
+    far.tell(&sender, "unread when closed").unwrap();
+    fs::write(
+        dir.join("u-000000000000f0f0-00000000.loro"),
+        far.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
+    let before = &n.sessions().unwrap()[0].session;
+    assert_eq!(before.unread, 1, "control: the dismissed debt was real");
+    let id = before.id.clone();
+
+    n.close(&id).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    far.tell(&sender, "the reviver").unwrap();
+    fs::write(
+        dir.join("u-000000000000f0f0-00000001.loro"),
+        far.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
+
+    let rows = n.sessions().unwrap();
+    assert_eq!(rows.len(), 1, "the second message must bring the row back");
+    assert_eq!(
+        rows[0].session.unread, 1,
+        "only the reviver counts: close marked the dismissed debt seen"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 

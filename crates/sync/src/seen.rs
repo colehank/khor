@@ -11,6 +11,16 @@
 //! newest message's `at`, never the local clock: a sender running ahead
 //! would otherwise stay unread after being looked at, and a badge that
 //! cannot reach zero is the one thing the badge rules forbid.
+//!
+//! A second map rides the same document: `closed : Map<session_id,
+//! watermark_ms>` — how far a conversation has been *put away*, not
+//! merely looked at (docs/SESSION.md 动作: close 对话 = 收起那一行).
+//! Same clock, same monotonic rule, one degree stronger — which is why
+//! it lives here rather than in a document of its own: the two are one
+//! family of decisions about one row, and a new doc would be a new name
+//! on the wire that every older peer refuses whole, while a new map in
+//! this one replicates through them untouched (loro merges maps it was
+//! never asked to read).
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +38,7 @@ pub fn seen_dir(home: &Path) -> PathBuf {
 }
 
 const SEEN: &str = "seen";
+const CLOSED: &str = "closed";
 
 pub struct SeenDoc {
     inner: LoroDoc,
@@ -55,6 +66,36 @@ impl SeenDoc {
         }
         self.inner
             .get_map(SEEN)
+            .insert(session, at_ms)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// How far this conversation has been put away, or `None` — never
+    /// closed. `Some(0)` and `None` are different answers on purpose: a
+    /// conversation with no messages yet closes at watermark 0, and
+    /// folding that into "never closed" would make an empty row the one
+    /// row that cannot be put away.
+    pub fn closed_watermark(&self, session: &str) -> Option<i64> {
+        match self.inner.get_map(CLOSED).get(session).and_then(|v| v.into_value().ok()) {
+            Some(LoroValue::I64(n)) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// Puts the conversation away up to `at_ms` on the senders' clocks.
+    /// The row stops being derived until a message stamps past the mark
+    /// (`khor_node` ChatKind rows) — nothing is deleted, and the next
+    /// message brings the row back on every device at once. Monotonic
+    /// like [`Self::mark`], and for the same reason: a stale mark from
+    /// a late merge must not re-hide what a newer message revived.
+    pub fn put_away(&self, session: &str, at_ms: i64) -> Result<(), String> {
+        if self.closed_watermark(session).is_some_and(|w| at_ms <= w) {
+            return Ok(());
+        }
+        self.inner
+            .get_map(CLOSED)
             .insert(session, at_ms)
             .map_err(|e| e.to_string())?;
         self.inner.commit();
@@ -125,6 +166,39 @@ mod tests {
         phone.mark("chat/mac", 500).unwrap();
         desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
         assert_eq!(desk.watermark("chat/mac"), 500, "seen on the phone must clear on the desk");
+    }
+
+    /// `Some(0)` and `None` are different answers: an empty conversation
+    /// closes at watermark 0, and that close must be readable back.
+    #[test]
+    fn putting_away_at_zero_is_not_never_closed() {
+        let d = SeenDoc::new(1).unwrap();
+        assert_eq!(d.closed_watermark("chat/mac"), None, "never closed = None");
+        d.put_away("chat/mac", 0).unwrap();
+        assert_eq!(d.closed_watermark("chat/mac"), Some(0));
+    }
+
+    /// Monotonic like the seen mark, and op-free when it is a no-op —
+    /// a stale put-away from a late merge must not re-hide a row a
+    /// newer message revived.
+    #[test]
+    fn a_lower_put_away_never_lowers_the_closed_watermark() {
+        let d = SeenDoc::new(1).unwrap();
+        d.put_away("chat/mac", 100).unwrap();
+        let before = d.version();
+        d.put_away("chat/mac", 50).unwrap();
+        assert_eq!(d.closed_watermark("chat/mac"), Some(100));
+        assert_eq!(d.version(), before, "a lower put-away must not create ops");
+    }
+
+    /// The promise: close on the phone, the desktop's row folds too.
+    #[test]
+    fn putting_away_on_one_device_reaches_the_other_after_merge() {
+        let phone = SeenDoc::new(1).unwrap();
+        let desk = SeenDoc::new(2).unwrap();
+        phone.put_away("chat/mac", 500).unwrap();
+        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
+        assert_eq!(desk.closed_watermark("chat/mac"), Some(500));
     }
 
     /// Two devices mark concurrently: whichever LWW picks, the watermark

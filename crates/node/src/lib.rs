@@ -1832,7 +1832,21 @@ impl KindSurface for ChatKind {
         let seen = node.seen_loaded()?;
         let mut out = Vec::new();
         for d in node.devices()? {
-            let wm = seen.doc.watermark(&format!("chat/{}", d.name));
+            let sid = format!("chat/{}", d.name);
+            let msgs = self.log(&d.name)?.messages;
+            // A put-away conversation is not derived (docs/SESSION.md
+            // 动作: close 对话 = 收起那一行). The mark is a watermark on
+            // the senders' clocks, so the next message stamps past it
+            // and the row simply comes back — on every device at once,
+            // since the mark replicates. Nothing is deleted; the log
+            // read above is the very history a reopen paints.
+            if let Some(closed) = seen.doc.closed_watermark(&sid) {
+                let newest = msgs.iter().map(|m| m.at).max().unwrap_or(0);
+                if newest <= closed {
+                    continue;
+                }
+            }
+            let wm = seen.doc.watermark(&sid);
             let mut row = self.row(&d.name, device_id_from_hex(&d.id)?, wm)?;
             // A file in flight presses on the machine's own row, now
             // that transfers no longer stand as rows of their own
@@ -1841,7 +1855,6 @@ impl KindSurface for ChatKind {
             // message-based word already covers 完成/未看, because a
             // file message lands like any message.
             if let Some(dir) = channel_dir(node.root(), &d.name) {
-                let msgs = self.log(&d.name)?.messages;
                 if let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs) {
                     if word.rank() < row.state.state.rank() {
                         row.state = khor_core::StateStamp {
@@ -1870,14 +1883,27 @@ impl KindSurface for ChatKind {
         Ok(self.log(&channel)?.messages.iter().map(|m| m.at).max().unwrap_or(0))
     }
 
-    /// Close leaves everything: the history replicates network-wide (a
-    /// local delete would be pulled right back), and the received files
-    /// belong to the filesystem now — the conversation is the long-term
-    /// ledger of this machine, and a ledger's close must not cost the
-    /// things it recorded (传输并入对话批 corrects the earlier "close
-    /// deletes received payloads"; docs/SESSION.md 动作 says why).
+    /// Close is putting the row away, never deletion: the history
+    /// replicates network-wide (a local delete would be pulled right
+    /// back), and the received files belong to the filesystem now
+    /// (传输并入对话批 corrected the earlier "close deletes received
+    /// payloads"). What close *does* is record a put-away watermark at
+    /// the newest message's clock — `rows` above stops deriving the row,
+    /// and the next message stamps past the mark and brings it back,
+    /// history intact (docs/SESSION.md 动作).
+    ///
+    /// It marks seen to the same instant: putting a conversation away is
+    /// at least having looked at it, and a revived row must owe only the
+    /// messages that revived it — old unread resurfacing with the row
+    /// would be a debt the person already dismissed.
     fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
-        let _ = node.channel_of_session(id)?;
+        let (channel, _) = node.channel_of_session(id)?;
+        let newest = self.log(&channel)?.messages.iter().map(|m| m.at).max().unwrap_or(0);
+        let loaded = node.seen_loaded()?;
+        loaded.doc.mark(&id.0, newest)?;
+        loaded.doc.put_away(&id.0, newest)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
         Ok(())
     }
 }
