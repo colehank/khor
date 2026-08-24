@@ -149,7 +149,14 @@ export function MachineChat({ id }: { id: string }) {
             {cli.broken_blocks(log.broken)}
           </div>
         )}
-        {log?.messages.map((m) => <MsgLine key={m.id} m={m} onAccepted={refresh} />)}
+        {log?.messages.map((m, i) => (
+          <MsgLine
+            key={m.id}
+            m={m}
+            stamp={stampFor(m, i === 0 ? null : log.messages[i - 1])}
+            onAccepted={refresh}
+          />
+        ))}
       </div>
       {/* The file leg's own two lines, above the composer: the upload's
           in-between (browser forms only — the app's picker is its own
@@ -214,8 +221,58 @@ export function MachineChat({ id }: { id: string }) {
   );
 }
 
-function MsgLine({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) {
+/** WeChat's clustering distance: two messages further apart than this
+    get a time over the later one. One constant, one home. */
+const CLUSTER_GAP_MS = 5 * 60_000;
+
+/** The viewer's civil date of a moment — the ledger is read where the
+    reader sits, whatever clock the sender wrote on (`Message::at`). */
+function civilDay(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function clock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * What stands over a message, if anything: a day line where the civil
+ * day turns (今天 / 昨天 / the date itself — a ledger has dates or it
+ * is not a ledger), a bare clock where the same day pauses longer than
+ * one cluster. The words are the catalog's; the date and the clock are
+ * data, not copy.
+ */
+function stampFor(m: ChatMsgRow, prev: ChatMsgRow | null): string | null {
+  const day = civilDay(m.at_ms);
+  if (prev === null || civilDay(prev.at_ms) !== day) {
+    const now = new Date();
+    const today = civilDay(now.getTime());
+    const yesterday = civilDay(now.getTime() - 24 * 60 * 60_000);
+    const name = day === today ? gui.today : day === yesterday ? gui.yesterday : day;
+    return `${name} ${clock(m.at_ms)}`;
+  }
+  if (m.at_ms - prev.at_ms > CLUSTER_GAP_MS) return clock(m.at_ms);
+  return null;
+}
+
+function MsgLine({
+  m,
+  stamp,
+  onAccepted,
+}: {
+  m: ChatMsgRow;
+  stamp: string | null;
+  onAccepted: () => void;
+}) {
   return (
+    <>
+      {stamp && (
+        <div data-msg-stamp className="pt-1 text-center text-xs text-muted-foreground">
+          {stamp}
+        </div>
+      )}
     <div data-msg={m.id} className={cn("flex", m.from_me ? "justify-end" : "justify-start")}>
       <div className="max-w-[85%]">
         {/* The sender, over the bubble — the name as written, never
@@ -247,6 +304,7 @@ function MsgLine({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) {
         )}
       </div>
     </div>
+    </>
   );
 }
 
