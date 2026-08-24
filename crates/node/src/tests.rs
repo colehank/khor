@@ -162,6 +162,57 @@ fn a_revived_chat_owes_only_what_revived_it() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// forget 批: a machine shown the door takes its rows with it — its chat
+/// row stops being derived (the table no longer holds it) and its cached
+/// report stops being painted, while the in-table sibling keeps every
+/// row untouched (the control). Nothing is deleted: the report cache
+/// stays on disk, so a machine invited back resurfaces its last rows at
+/// their honest age.
+#[test]
+fn a_forgotten_machines_rows_leave_the_list() {
+    let r = root("forget-rows");
+    let n = Node::open(r.clone()).unwrap();
+    let keep_id = "aa".repeat(32);
+    let gone_id = "bb".repeat(32);
+    {
+        let loaded = n.devices_loaded().unwrap();
+        loaded.doc.upsert(&keep_id, "keeper", &[]).unwrap();
+        loaded.doc.upsert(&gone_id, "beta-probe", &[]).unwrap();
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    }
+    // One reported row each — a clone of a real row rather than a
+    // literal, so this test does not have to know every Session field.
+    let mut template = n.sessions().unwrap()[0].session.clone();
+    template.id = SessionId("shell/on-keeper".into());
+    n.cache_peer_rows(&keep_id, "keeper", &[template.clone()]).unwrap();
+    template.id = SessionId("shell/on-beta".into());
+    n.cache_peer_rows(&gone_id, "beta-probe", &[template]).unwrap();
+
+    let ids = |views: &[SessionView]| -> Vec<String> {
+        views.iter().map(|v| v.session.id.0.clone()).collect()
+    };
+    let before = ids(&n.sessions().unwrap());
+    for id in ["chat/keeper", "chat/beta-probe", "shell/on-keeper", "shell/on-beta"] {
+        assert!(before.iter().any(|i| i == id), "control: {id} is on the list before the forget");
+    }
+
+    n.forget_device("beta-probe").unwrap();
+
+    let after = ids(&n.sessions().unwrap());
+    for id in ["chat/beta-probe", "shell/on-beta"] {
+        assert!(!after.iter().any(|i| i == id), "{id} must leave with its machine");
+    }
+    for id in ["chat/keeper", "shell/on-keeper"] {
+        assert!(after.iter().any(|i| i == id), "{id} belongs to a machine still in the table");
+    }
+    assert!(
+        r.join(".khor").join("peers").join(&gone_id).exists(),
+        "the report cache stays on disk — only the painting stops"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// **A send makes a message, not a row** (传输并入对话批). The offer is
 /// in the machine's log as a file message; no `transfer/` row joins the
 /// list; and the sender's own chat row is not 待批 — the approval being

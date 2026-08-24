@@ -969,7 +969,27 @@ impl Node {
         let Ok(rd) = fs::read_dir(self.peers_dir()) else {
             return out;
         };
+        // Only machines the table still holds get to keep rows on the
+        // list (forget 批): a forgotten machine's report can never
+        // refresh, so its rows would hang forever as "N 天没联系上" —
+        // rows nothing can answer for. The file name is the reporter's
+        // device id (`cache_peer_rows` writes it), and filtering by the
+        // reporter covers "home 是它的行" because a report carries only
+        // rows the reporter itself derives (`reportable_rows` — home-only
+        // by construction). The cache file itself stays: a machine
+        // invited back resurfaces its last report at its honest age,
+        // which is exactly the offline axis (docs/SESSION.md 离线).
+        // An unreadable table is a blip, not a verdict on every peer:
+        // `None` skips the filter and paints what is cached, rather than
+        // blanking a list the person was just looking at.
+        let table: Option<std::collections::BTreeSet<String>> =
+            self.devices().ok().map(|devs| devs.into_iter().map(|d| d.id).collect());
         for e in rd.flatten() {
+            if let Some(table) = &table {
+                if !e.file_name().to_str().is_some_and(|id| table.contains(id)) {
+                    continue;
+                }
+            }
             let Ok(text) = fs::read_to_string(e.path()) else {
                 continue;
             };
