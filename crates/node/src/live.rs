@@ -706,6 +706,11 @@ impl LiveKind {
                 for &p in &pids {
                     seat_of_pid.insert(p, seat);
                 }
+                // A sighting is a voucher: the vendor's own file is
+                // being read for this row, so its word is no orphan —
+                // whatever `face` said from the pid-less registry entry
+                // (词的保鲜期批: only truly signal-less rows may fade).
+                out[seat].unbacked = false;
                 // The registered row wins, but it may have been registered
                 // by something that could not name the vendor (a bare
                 // `khor run --tui`). The sweep read that vendor's own
@@ -749,6 +754,9 @@ impl LiveKind {
                 // outlived its process, so nothing is behind this row
                 // any more. Every other sighting is a live process.
                 dead: sighting.word == State::Failed,
+                // A sighting IS the voucher: the vendor's file was read
+                // this very sweep.
+                unbacked: false,
                 category: Some(found.category.to_owned()),
                 last: None,
                 via: None,
@@ -831,6 +839,8 @@ impl LiveKind {
                 // Listed by a live multiplexer server, so something is
                 // running behind it by construction.
                 dead: false,
+                // …and the listing is the voucher.
+                unbacked: false,
                 category: Some(held.found.category.to_owned()),
                 last: None,
                 via: None,
@@ -902,7 +912,7 @@ impl LiveKind {
             } else {
                 SessionId(meta.id.clone())
             };
-            let (word, at, unread, dead) = face(&e.path(), &meta, &state, watermark(&id.0));
+            let (word, at, unread, dead, unbacked) = face(&e.path(), &meta, &state, watermark(&id.0));
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
                 vendor_leaf: meta.vendor_leaf.clone(),
@@ -914,6 +924,7 @@ impl LiveKind {
                     state: StateStamp { state: word, at: Millis(at.max(0) as u64) },
                     unread,
                     dead,
+                    unbacked,
                     category: meta.category.clone(),
                     // The host keeps the terminal's last non-empty line
                     // beside its state; a row with no host keeps `None`
@@ -1052,30 +1063,42 @@ fn backing(dir: &Path, meta: &Meta) -> Backing {
 /// host died — the row therefore ages from the last thing that was
 /// known, which is the honest reading of "and then khor lost sight of
 /// it".
-/// The last position is [`khor_core::Session::dead`]: whether anything
-/// will ever move this row again on its own. Said here rather than
-/// re-derived from the word, because the word loses it — a shell that
-/// exited cleanly and was looked at reads 空闲, exactly like one
+/// The fourth position is [`khor_core::Session::dead`]: whether
+/// anything will ever move this row again on its own. Said here rather
+/// than re-derived from the word, because the word loses it — a shell
+/// that exited cleanly and was looked at reads 空闲, exactly like one
 /// sitting alive at a prompt.
-fn face(dir: &Path, meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64, bool) {
+///
+/// The fifth is [`khor_core::Session::unbacked`]: nobody can vouch for
+/// the word — true only on the one arm where no verdict exists
+/// (`Backing::Unpronounceable`, the pid-less hook-observed row). Every
+/// other arm has a real judge: an exit record, a pid that answered or
+/// refused to, a living child. A sweep sighting later landing on the
+/// same row clears it (`LiveKind::rows`' merge) — a vendor file being
+/// written is a voucher too.
+fn face(dir: &Path, meta: &Meta, state: &LiveState, watermark: i64) -> (State, i64, u64, bool, bool) {
     if let Some(code) = state.exit {
         if code != 0 {
-            return (State::Failed, state.at_ms, 0, true);
+            return (State::Failed, state.at_ms, 0, true, false);
         }
         if meta.kind == khor_core::kind::TUI {
-            return (State::Idle, state.at_ms, 0, true);
+            return (State::Idle, state.at_ms, 0, true, false);
         }
         let (word, unread) = settle_done(State::Done, state.at_ms, watermark);
-        return (word, state.at_ms, unread, true);
+        return (word, state.at_ms, unread, true, false);
     }
     match backing(dir, meta) {
-        Backing::Gone => (State::Failed, state.at_ms, 0, true),
+        Backing::Gone => (State::Failed, state.at_ms, 0, true, false),
         // The child is alive; the row can move again the moment a new
         // host stands up — not dead.
-        Backing::HostLost => (State::Errored, state.at_ms, 0, false),
-        Backing::Running | Backing::Unpronounceable => {
+        Backing::HostLost => (State::Errored, state.at_ms, 0, false, false),
+        Backing::Running => {
             let (word, unread) = settle_done(state.word, state.at_ms, watermark);
-            (word, state.at_ms, unread, false)
+            (word, state.at_ms, unread, false, false)
+        }
+        Backing::Unpronounceable => {
+            let (word, unread) = settle_done(state.word, state.at_ms, watermark);
+            (word, state.at_ms, unread, false, true)
         }
     }
 }

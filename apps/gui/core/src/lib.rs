@@ -52,6 +52,12 @@ pub struct SessionRow {
     /// the row still arrives, search still reads it, nothing is
     /// deleted.
     pub stale: bool,
+    /// The word has outlived its believability
+    /// (`khor_node::SessionView::quiet`, 词的保鲜期批): grey the row
+    /// and note how long the silence is — the word itself stands
+    /// untouched, and the note's duration is the row's own `at_ms`
+    /// read against now.
+    pub quiet: bool,
     /// Whose session this is (`khor_core::Session::category`): `claude`,
     /// `codex`, `khor`, `shell`. `None` when nobody could place it, and
     /// the frontend must render that as its own group rather than
@@ -387,6 +393,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             source: v.source.map(|(device, age_ms)| SourceTag { device, age_ms }),
             pinned: v.pinned,
             stale: v.stale,
+            quiet: v.quiet,
             category: v.session.category,
             group,
         }
@@ -798,6 +805,12 @@ pub struct ChatMsgRow {
     /// never "done". The frontend looks the word up and never derives
     /// one (docs/UX.md 状态呈现).
     pub word: Option<String>,
+    /// The sender's neutral account of the offer, as a delivery key
+    /// (`TransferKind::Delivery`: waiting/fetching/served — 发端中性词批).
+    /// Not a state word: it never joins the six and never wears their
+    /// colors. At most one of `word` and `delivery` is present — the
+    /// seats are exclusive.
+    pub delivery: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -830,7 +843,7 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
         .messages
         .into_iter()
         .zip(faces)
-        .map(|(m, face)| {
+        .map(|(m, (face, delivery))| {
             let (text, files, unknown) = match m.body {
                 khor_node::MsgBody::Text(t) => (Some(t), None, None),
                 khor_node::MsgBody::Files(fs) => (
@@ -855,6 +868,7 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
                 retracted: m.retracted,
                 edited: m.edited,
                 word: face.map(|s| s.key().to_owned()),
+                delivery: delivery.map(|d| d.key().to_owned()),
             }
         })
         .collect();

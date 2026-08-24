@@ -516,8 +516,20 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         // The order already says which rows are pinned; the mark says
         // *why* they lead, which "on top" alone cannot.
         let pin = if v.pinned { format!("\t{}", cli::PINNED_MARK) } else { String::new() };
+        // The quiet note (词的保鲜期批): a live word nobody can vouch
+        // for, silent past the threshold — said beside the word, which
+        // stands untouched. The duration is the word's own age.
+        let quiet = if v.quiet {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            format!("\t{}", cli::quiet_for(human_age(now.saturating_sub(s.state.at.0))))
+        } else {
+            String::new()
+        };
         println!(
-            "{}\t{}\t{}\t{}{pin}{}",
+            "{}\t{}\t{}\t{}{pin}{quiet}{}",
             s.id.0,
             state::word(s.state.state.key()),
             cli::unread(s.unread),

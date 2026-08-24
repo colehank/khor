@@ -106,6 +106,13 @@ export function ago(ms: number): string {
   return span(Date.now() - ms);
 }
 
+/** The quiet note (词的保鲜期批): how long an unvouched live word has
+    said nothing, in the catalog's sentence. The duration is the word's
+    own age — the same clock the CLI reads. */
+export function quietFor(atMs: number): string {
+  return cli.quiet_for(span(Date.now() - atMs));
+}
+
 /**
  * How long until a moment, in the same words `ago` uses for how long
  * since one.

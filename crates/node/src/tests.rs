@@ -712,6 +712,7 @@ fn only_dead_seen_and_old_rows_are_stale() {
         state: khor_core::StateStamp { state: State::Failed, at: khor_core::Millis(died_at) },
         unread,
         dead,
+        unbacked: false,
         category: None,
         last: None,
         via: None,
@@ -772,6 +773,67 @@ fn a_long_dead_row_is_stale_on_the_list_and_a_fresh_one_is_not() {
     };
     assert!(stale_of(&old), "failed 49h ago and looked at: folds");
     assert!(!stale_of(&fresh), "failed just now: stays in plain sight");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A live word with no voucher goes quiet after a day; a vouched one
+/// never does** (词的保鲜期批). Three seats, one clock:
+/// - the pid-less hook-observed row whose signal stopped — greys, and
+///   its word stands exactly as it was (never a seventh word);
+/// - the same-aged row with a live pid — never greys, however old the
+///   stamp (the control against an age-only sweep);
+/// - the same-aged pid-less row at 空闲 — never greys: a finished word
+///   is honest at any age, only live words can be falsified by silence.
+#[test]
+fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
+    let r = root("quiet");
+    let n = Node::open(r.clone()).unwrap();
+    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let orphan = n.open_ephemeral(khor_core::kind::TUI, "orphan-busy").unwrap();
+    let backed = n.open_ephemeral(khor_core::kind::TUI, "backed-busy").unwrap();
+    let idle = n.open_ephemeral(khor_core::kind::TUI, "orphan-idle").unwrap();
+    // The hook shape: a word on record, no pid to ask (open_ephemeral
+    // records the opener's pid; clear it the way a hook registration
+    // never sets one — by rewriting meta with no pid).
+    for id in [&orphan, &idle] {
+        let dir = n.session_dir(id).unwrap();
+        let meta = fs::read_to_string(dir.join("meta.json")).unwrap();
+        let mut meta: serde_json::Value = serde_json::from_str(&meta).unwrap();
+        meta["pid"] = serde_json::Value::Null;
+        fs::write(dir.join("meta.json"), serde_json::to_vec(&meta).unwrap()).unwrap();
+    }
+    live.set_pid(&backed, std::process::id()).unwrap();
+    live.report(&orphan, State::Busy, crate::live::Source::Reported).unwrap();
+    live.report(&backed, State::Busy, crate::live::Source::Reported).unwrap();
+    live.report(&idle, State::Idle, crate::live::Source::Reported).unwrap();
+    // Push all three words 25 hours into the past.
+    let then = crate::live::now_ms() - 25 * 60 * 60 * 1000;
+    for id in [&orphan, &backed, &idle] {
+        let dir = n.session_dir(id).unwrap();
+        let text = fs::read_to_string(dir.join("state.json")).unwrap();
+        let mut state: serde_json::Value = serde_json::from_str(&text).unwrap();
+        state["at_ms"] = serde_json::json!(then);
+        fs::write(dir.join("state.json"), serde_json::to_vec(&state).unwrap()).unwrap();
+    }
+
+    let view = |id: &SessionId| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == *id)
+            .expect("the row must be on the list")
+    };
+    let o = view(&orphan);
+    assert!(o.quiet, "a day-silent 忙碌 nobody can vouch for must grey");
+    assert_eq!(o.session.state.state, State::Busy, "…and the word itself never changes");
+    assert!(
+        !view(&backed).quiet,
+        "a live pid is a voucher: the row never greys however old the stamp"
+    );
+    assert!(
+        !view(&idle).quiet,
+        "空闲 states a finished fact; silence cannot falsify it"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 

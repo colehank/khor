@@ -180,10 +180,12 @@ mod tests {
                 via: None,
                 term: false,
                 dead: false,
+                unbacked: false,
             },
             source: None,
             pinned: false,
             stale: false,
+            quiet: false,
         }
     }
 

@@ -8,7 +8,7 @@ import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago, axisOf, groupLabel, valueOf, word } from "@/words";
+import { ago, axisOf, groupLabel, quietFor, valueOf, word } from "@/words";
 
 /** The corner mark on a row's face: the shape is `sessionMark`'s one
     judgment; this only sizes it. */
@@ -237,16 +237,23 @@ export function SessionsList({
               machine the session lives on, present on every row
               (`SessionRow::home`). The machine filter reads that one —
               an axis built on `source` would be missing this machine. */}
+          {/* `data-quiet` greys the whole strip (词的保鲜期批): the
+              word has outlived its believability — the machine is
+              reachable, the signal is not. The word itself stands; the
+              age line below says how long the silence is. Same axis as
+              离线, worn the same way (dimmed, never re-worded). */}
           <div
           data-row={r.id}
           data-word={r.word}
           data-pinned={r.pinned}
+          data-quiet={r.quiet}
           data-source={r.source?.device}
           data-home={r.home}
           data-title={r.title}
           className={cn(
             "group/row flex w-full items-center pr-2 hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
+            r.quiet && "opacity-55",
           )}
         >
           <button
@@ -321,8 +328,15 @@ export function SessionsList({
               )}
             </span>
             <span className="flex flex-none flex-col items-end gap-1 text-xs text-muted-foreground">
-              {/* No stamp yet is no age — not an epoch-sized number. */}
-              {r.at_ms > 0 && <span>{ago(r.at_ms)}</span>}
+              {/* No stamp yet is no age — not an epoch-sized number.
+                  On a quiet row the age line IS the note: 「N 天没消息」
+                  says the same duration with the fact that matters. */}
+              {r.at_ms > 0 &&
+                (r.quiet ? (
+                  <span data-quiet-note>{quietFor(r.at_ms)}</span>
+                ) : (
+                  <span>{ago(r.at_ms)}</span>
+                ))}
               {/* The trailing fine print: the state word (still a word —
                   state is never colour alone, the mark's tint is the
                   second channel not the only one), the unread count, and

@@ -308,11 +308,23 @@ function MsgLine({
   );
 }
 
+/** The sender's neutral facts, by delivery key (发端中性词批) — an
+    unknown key echoes itself, the catalog's own rule for words this
+    build has not met. */
+const DELIVERY_WORDS: Record<string, string> = {
+  waiting: gui.file_not_taken,
+  fetching: gui.file_being_taken,
+  served: gui.file_taken,
+};
+
 /**
  * A file message: the summary that travelled the conversation. The
  * bytes are a transfer behind it, and the chip wears that transfer's
- * state word. 收下 appears only on the waiting word — the seat that
- * can answer is the only one shown the verb.
+ * state word — or, on the sender's seat, a neutral delivery fact
+ * (还没收/对方在收/收下了): not one of the six, no state colour, no
+ * pressure — 待批 stays the receiver's alone. 收下 appears only on the
+ * waiting word — the seat that can answer is the only one shown the
+ * verb.
  */
 function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) {
   const [accepting, setAccepting] = useState(false);
@@ -336,6 +348,11 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
           <span className="flex-none text-xs text-muted-foreground">{fmtSize(f.size)}</span>
         </div>
       ))}
+      {m.delivery && (
+        <span data-file-delivery={m.delivery} className="text-xs text-muted-foreground">
+          {DELIVERY_WORDS[m.delivery] ?? m.delivery}
+        </span>
+      )}
       {m.word && (
         <div className="flex items-center gap-2">
           {m.word && (

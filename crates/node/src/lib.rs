@@ -97,6 +97,14 @@ pub struct SessionView {
     /// face folds the same rows; **nothing is deleted** — the row is in
     /// this very list, search still reads it, `--all` prints it.
     pub stale: bool,
+    /// The word has outlived its believability: a *live* word (忙碌/
+    /// 待批/中断) that nobody can vouch for any more
+    /// ([`khor_core::Session::unbacked`]) and that has not moved in
+    /// [`QUIET_AFTER_MS`]. Faces grey the row and say how long the
+    /// silence is — the word itself never changes (`is_quiet` has the
+    /// judgment; docs/SESSION.md 离线不是第七个词, this is that axis's
+    /// second case: the machine is reachable, the *signal* is not).
+    pub quiet: bool,
 }
 
 /// How long a dead, looked-at row stays on the default list before it
@@ -128,6 +136,39 @@ fn is_stale(session: &Session, pinned: bool, now_ms: u64) -> bool {
         && session.unread == 0
         && !pinned
         && now_ms.saturating_sub(session.state.at.0) >= STALE_AFTER_MS
+}
+
+/// How long an unvouched *live* word stays believable (词的保鲜期批).
+/// One constant, one place — the same fact greys the CLI line and the
+/// GUI row.
+///
+/// 24 hours: a hook-observed agent speaks every turn (the hooks fire on
+/// every prompt, answer and stop), so a 忙碌 that has said nothing for
+/// a whole day is not a day-long turn — it is a signal that stopped
+/// (the vendor file gone, the process unfindable). Shorter would grey
+/// a long overnight run that is merely quiet between turns; a real
+/// case on this machine sat at 忙碌 for five days.
+pub const QUIET_AFTER_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// Whether a row's word has outlived its believability.
+///
+/// Three gates, all required — and the middle one is what keeps this
+/// from being an age-only sweep:
+/// - **a live word**: 忙碌/待批/中断 claim something is happening *now*,
+///   which is the only claim silence can falsify. 完成/失败/空闲 state
+///   finished facts and stay honest at any age.
+/// - **unvouched** ([`khor_core::Session::unbacked`]): rows with a real
+///   verdict available — a pid that answers, a vendor file being read,
+///   a listing multiplexer — never fade, however old their stamp;
+///   their words are re-derived, not remembered.
+/// - **silent past [`QUIET_AFTER_MS`]**, from the word's own stamp.
+///
+/// The word is left exactly as it was: this feeds greying and a "N 天
+/// 没消息" note, never a seventh word (docs/SESSION.md 离线).
+fn is_quiet(session: &Session, now_ms: u64) -> bool {
+    matches!(session.state.state, State::Busy | State::Blocked | State::Errored)
+        && session.unbacked
+        && now_ms.saturating_sub(session.state.at.0) >= QUIET_AFTER_MS
 }
 
 /// What subscribers receive. `watch()` is the one feed both faces
@@ -731,6 +772,7 @@ impl Node {
                 views.push(SessionView {
                     pinned: pins.doc.pinned(&row.id.0),
                     stale: false,
+                    quiet: false,
                     session: row,
                     source: None,
                 });
@@ -745,6 +787,7 @@ impl Node {
                 views.push(SessionView {
                     pinned: pins.doc.pinned(&row.id.0),
                     stale: false,
+                    quiet: false,
                     session: row,
                     source: Some((name, age)),
                 });
@@ -762,9 +805,10 @@ impl Node {
                 v.session.title = t;
             }
             // After the overlay only because both write the same rows;
-            // the judgment reads state, unread and the pin, never the
-            // title.
+            // the judgments read state, unread, backing and the pin,
+            // never the title.
             v.stale = is_stale(&v.session, v.pinned, now);
+            v.quiet = is_quiet(&v.session, now);
         }
         // Stable: within each group the order above survives untouched.
         views.sort_by_key(|v| !v.pinned);
@@ -1179,15 +1223,30 @@ impl Node {
     pub fn log_faced(
         &self,
         machine: &str,
-    ) -> Result<(chat::ChannelLog, Vec<Option<khor_core::State>>), String> {
+    ) -> Result<
+        (
+            chat::ChannelLog,
+            Vec<(Option<khor_core::State>, Option<transfer::Delivery>)>,
+        ),
+        String,
+    > {
         let (channel, _) = self.resolve(machine)?;
         let log = self.chat.log(&channel)?;
         let dir = khor_sync::chat::channel_dir(&self.root, &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
+        // Per message, both readings: the receiver's state word and the
+        // sender's neutral delivery fact — at most one of the two is
+        // `Some` (the seats are exclusive), and the pane paints
+        // whichever it got.
         let faces = log
             .messages
             .iter()
-            .map(|m| self.transfer.message_face(&channel, &dir, m))
+            .map(|m| {
+                (
+                    self.transfer.message_face(&channel, &dir, m),
+                    self.transfer.message_delivery(m),
+                )
+            })
             .collect();
         Ok((log, faces))
     }

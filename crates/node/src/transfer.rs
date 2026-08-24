@@ -113,6 +113,29 @@ fn safe_name(name: &str) -> String {
 
 // ── the row ─────────────────────────────────────────────────
 
+/// The sender's neutral account of one offer (发端中性词批): what has
+/// happened to it, never what anyone must do. Keys cross to the faces
+/// (`key`), words are looked up at the last moment (zh.toml's rule).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delivery {
+    /// Nobody has taken the offer up yet.
+    Waiting,
+    /// The far side is pulling bytes right now.
+    Fetching,
+    /// The whole payload was served.
+    Served,
+}
+
+impl Delivery {
+    pub fn key(&self) -> &'static str {
+        match self {
+            Delivery::Waiting => "waiting",
+            Delivery::Fetching => "fetching",
+            Delivery::Served => "served",
+        }
+    }
+}
+
 pub struct TransferKind {
     root: PathBuf,
     device_str: String,
@@ -128,7 +151,7 @@ impl TransferKind {
         SessionId(format!("transfer/{msg_id}"))
     }
 
-    /// One file message's face on this machine — the same seats and the
+    /// One file message's face on this machine — the same seat and the
     /// same words as [`Self::urgency`], read per message instead of
     /// folded onto the row, so a face painting the conversation can
     /// stamp each file chip without re-deriving the state machine
@@ -138,8 +161,10 @@ impl TransferKind {
     /// states come through too (完成/空闲 once the payload landed):
     /// on a chip "no word" must mean "not my seat", never "done" —
     /// those are different answers to a person deciding whether to act.
-    /// `None`: a text message, a retracted one, or the sender's seat
-    /// with nothing in flight.
+    /// `None`: a text message, a retracted one, or **any sender-seat
+    /// message** — the sender's chip speaks [`Delivery`], a neutral
+    /// fact, not a state word (发端中性词批; it used to say 忙碌 while
+    /// the fetch ran, which `Delivery::Fetching` replaces).
     pub fn message_face(&self, channel: &str, channel_dir: &Path, m: &Message) -> Option<State> {
         let MsgBody::Files(files) = &m.body else { return None };
         if m.retracted || files.is_empty() {
@@ -147,18 +172,30 @@ impl TransferKind {
         }
         let i_sent = m.from.id == self.device_str;
         let i_receive = channel == self.name && !i_sent;
-        let f = &files[0];
-        if i_receive {
-            let (state, _, _) = self.receiver_face(channel_dir, f, m.at, 0);
-            Some(state)
-        } else if i_sent {
-            match load_offer(&self.root, &f.digest).ok().flatten() {
-                Some(o) if o.started && !o.done => Some(State::Busy),
-                _ => None,
-            }
-        } else {
-            None
+        if !i_receive {
+            return None;
         }
+        let (state, _, _) = self.receiver_face(channel_dir, &files[0], m.at, 0);
+        Some(state)
+    }
+
+    /// Where the handover stands, said from the sender's seat as a
+    /// neutral fact (发端中性词批): the offer has not been taken up,
+    /// is being fetched, or was served whole. **Not a state word** — it
+    /// never joins the six, never ranks, never presses the row: 待批
+    /// stays the receiver's alone (`urgency`'s iron rule, untouched;
+    /// the row-level 忙碌 while bytes flow also stays `urgency`'s).
+    /// `None` for every seat but the sender's.
+    pub fn message_delivery(&self, m: &Message) -> Option<Delivery> {
+        let MsgBody::Files(files) = &m.body else { return None };
+        if m.retracted || files.is_empty() || m.from.id != self.device_str {
+            return None;
+        }
+        Some(match load_offer(&self.root, &files[0].digest).ok().flatten() {
+            Some(o) if o.done => Delivery::Served,
+            Some(o) if o.started => Delivery::Fetching,
+            _ => Delivery::Waiting,
+        })
     }
 
     /// The most pressing live word among one channel's file messages,
