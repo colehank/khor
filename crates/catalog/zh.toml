@@ -186,6 +186,11 @@ group-pinned = "置顶"
 name-separator = "、"
 unread = "未读 {0}"
 unreachable-for = "{0}没联系上"
+# The quiet note (词的保鲜期批): a live word nobody can vouch for has
+# said nothing for this long. Beside the word, never instead of it —
+# the word stays, this says how stale it is (离线轴的第二种情形:
+# 机器够得着,信号断了). {0} is a bare duration off the age ladder.
+quiet-for = "{0}没消息"
 # Said only when the number is non-zero. Zero rows and zero unreadable is
 # an idle machine; zero rows and a non-zero count is khor being out of
 # date, and nothing but this line tells the two apart.
@@ -1086,6 +1091,14 @@ took-file = "落在 {0}"
 # pin's rule); success needs none, the chip's state word changes.
 accept-file = "收下"
 accept-file-failed = "收不下"
+# The sender's file chip states where the offer stands (发端中性词批):
+# a neutral fact, NOT a state word — it never joins the six, never
+# ranks, never presses the row (待批只属于收端, that iron rule is not
+# touched). Three moments of one handover, each named by what has
+# happened, not by what anyone must do.
+file-not-taken = "还没收"
+file-being-taken = "对方在收"
+file-taken = "收下了"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a
 # real path, in a browser the bytes upload to the sending machine first
