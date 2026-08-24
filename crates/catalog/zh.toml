@@ -863,6 +863,10 @@ waiting-on-you = "等你的事"
 none-waiting = "没有等你的事"
 today = "今天"
 today-none = "今天还没花"
+# The conversation's day line, one word back: 今天 above serves both
+# (same fact, same word). Days further back print their own date — a
+# word per day would be a calendar rewritten in prose.
+yesterday = "昨天"
 backend-unreachable = "够不着本机的 khor"
 # The pane bar. No page carries a title (docs/UX.md); the pane's name
 # lives in an aria-label, and what shows is the work you can do here.
