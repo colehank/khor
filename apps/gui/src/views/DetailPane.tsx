@@ -10,6 +10,7 @@ import { SessionTitle } from "@/components/SessionTitle";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
+import { YIELD_MS } from "@/lib/tempo";
 import { ChatView } from "@/views/ChatView";
 import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
@@ -114,7 +115,7 @@ export function CopyId({ id }: { id: string }) {
   const [said, setSaid] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
     if (!said) return;
-    const t = window.setTimeout(() => setSaid(null), 2_000);
+    const t = window.setTimeout(() => setSaid(null), YIELD_MS);
     return () => window.clearTimeout(t);
   }, [said]);
   return (
@@ -361,11 +362,11 @@ export function DetailPane({
             key={row.id}
             id={row.id}
             title={row.title}
-            className="min-w-0 font-semibold"
-            inputClassName="flex-1 font-semibold"
+            className="min-w-0 font-title"
+            inputClassName="flex-1 font-title"
           />
         ) : (
-          <span className="min-w-0 truncate font-semibold" />
+          <span className="min-w-0 truncate font-title" />
         )}
         {row && (
           <>

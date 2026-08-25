@@ -43,7 +43,7 @@ import { faceWord } from "@/words";
 function Axis({ name, label, children }: { name: string; label: string; children: ReactNode }) {
   return (
     <div data-face-axis={name} className="flex flex-col gap-2">
-      <h2 className="text-sm text-muted-foreground">{label}</h2>
+      <h2 className="text-sm font-label text-muted-foreground">{label}</h2>
       {children}
     </div>
   );

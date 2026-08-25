@@ -109,7 +109,7 @@ export function FilesPane({
             <IconBack />
           </Button>
         )}
-        <span className="truncate font-semibold">{machine}</span>
+        <span className="truncate font-title">{machine}</span>
         {/* The whole path rides the title; what shows truncates from
             the tail — rtl tricks scramble a slashed path's order. */}
         <span

@@ -249,7 +249,7 @@ function Micro({
     <span
       data-seat-vital={anchor}
       data-strain={strain ?? undefined}
-      className="data-[strain]:text-strain data-[strain=critical]:font-medium"
+      className="data-[strain]:text-strain data-[strain=critical]:font-label"
     >
       {`${name} ${pct}%`}
     </span>

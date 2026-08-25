@@ -27,7 +27,7 @@ import type { Track } from "@/components/Ring";
  * the step from tight to critical is *weight*, not a second colour —
  * because 中断 already owns amber and 失败 owns red, and a 95% disk
  * wearing either would dress a machine up as a session. So the
- * escalation lives on the label's own `font-medium`, which is where it
+ * escalation lives on the label's own `font-label`, which is where it
  * already was: one channel, not two.
  *
  * **And it would have copied a judgment back out of Rust.** It decides

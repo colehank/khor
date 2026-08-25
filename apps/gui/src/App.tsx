@@ -279,7 +279,7 @@ function RailItem({
     >
       {children}
       {badge !== undefined && badge > 0 && (
-        <span className="absolute right-1 top-1 min-w-4 rounded-full bg-badge px-1 text-center text-xs leading-4 text-badge-foreground">
+        <span className="absolute right-1 top-1 min-w-4 rounded-full bg-badge px-1 text-center text-xs leading-4 tabular-nums text-badge-foreground">
           {badge}
         </span>
       )}

@@ -92,7 +92,7 @@ export function BrowserPane({
             <IconBack />
           </Button>
         )}
-        <span className="truncate font-semibold">{machine}</span>
+        <span className="truncate font-title">{machine}</span>
       </header>
       <form
         className="flex flex-none items-center gap-2 border-b p-2"

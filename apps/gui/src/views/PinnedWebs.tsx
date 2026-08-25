@@ -65,7 +65,7 @@ export function PinnedWebs({
           onClick={() => onOpen(r.device, r.url)}
           className="flex w-full items-baseline gap-2 rounded-md px-3 py-2 text-left hover:bg-muted/50"
         >
-          <span title={r.url} className="min-w-0 flex-1 truncate text-sm font-medium">
+          <span title={r.url} className="min-w-0 flex-1 truncate text-sm font-label">
             {r.url}
           </span>
           <span className="flex-none text-xs text-muted-foreground">{r.name}</span>

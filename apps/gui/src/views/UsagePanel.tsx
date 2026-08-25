@@ -74,16 +74,16 @@ export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: Quota
             <span data-usage-category className="text-sm">
               {row.category}
             </span>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm tabular-nums text-muted-foreground">
               {cli.tokens_input(count(row.tokens.input))}
             </span>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm tabular-nums text-muted-foreground">
               {cli.tokens_output(count(row.tokens.output))}
             </span>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm tabular-nums text-muted-foreground">
               {cli.tokens_cached(count(row.tokens.cached_input))}
             </span>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm tabular-nums text-muted-foreground">
               {cli.tokens_cache_write(count(row.tokens.cache_write))}
             </span>
           </div>

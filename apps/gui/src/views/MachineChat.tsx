@@ -14,6 +14,7 @@ import { IconAttach } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { YIELD_MS } from "@/lib/tempo";
 import { word } from "@/words";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
@@ -269,7 +270,7 @@ function MsgLine({
   return (
     <>
       {stamp && (
-        <div data-msg-stamp className="pt-1 text-center text-xs text-muted-foreground">
+        <div data-msg-stamp className="pt-1 text-center text-xs tabular-nums text-muted-foreground">
           {stamp}
         </div>
       )}
@@ -331,7 +332,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!failed) return;
-    const t = window.setTimeout(() => setFailed(false), 2_000);
+    const t = window.setTimeout(() => setFailed(false), YIELD_MS);
     return () => window.clearTimeout(t);
   }, [failed]);
   return (
@@ -345,7 +346,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
           <span data-file-name className="min-w-0 truncate">
             {f.name}
           </span>
-          <span className="flex-none text-xs text-muted-foreground">{fmtSize(f.size)}</span>
+          <span className="flex-none text-xs tabular-nums text-muted-foreground">{fmtSize(f.size)}</span>
         </div>
       ))}
       {m.delivery && (

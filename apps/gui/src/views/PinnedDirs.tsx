@@ -64,7 +64,7 @@ export function PinnedDirs({
             onClick={() => onOpen(r.device, r.path)}
             className="flex w-full items-baseline gap-2 rounded-md px-3 py-2 text-left hover:bg-muted/50"
           >
-            <span className="flex-none text-sm font-medium">{leaf}</span>
+            <span className="flex-none text-sm font-label">{leaf}</span>
             <span className="flex-none text-xs text-muted-foreground">{r.name}</span>
             <span title={r.path} className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
               {r.path}

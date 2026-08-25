@@ -217,7 +217,7 @@ export function SessionsList({
           {r.group !== "" && r.group !== prev?.group && (
             <div
               data-group={r.group}
-              className="px-4 pt-3 pb-1 text-xs text-muted-foreground"
+              className="px-4 pt-3 pb-1 text-xs font-label text-muted-foreground"
             >
               {groupLabel(r.group)}
             </div>
@@ -311,7 +311,7 @@ export function SessionsList({
                   of the row keeps opening the row, which is also what
                   the first click of the double-click does — selecting
                   the very row being renamed. */}
-              <SessionTitle id={r.id} title={r.title} className="block" inputClassName="w-full" />
+              <SessionTitle id={r.id} title={r.title} className="block font-title" inputClassName="w-full font-title" />
               {/* The preview line: the newest thing said or shown, the
                   kind's own judgment carried on the row (`last`). The
                   machine a reported row came from rides the same line —
@@ -335,7 +335,7 @@ export function SessionsList({
                 (r.quiet ? (
                   <span data-quiet-note>{quietFor(r.at_ms)}</span>
                 ) : (
-                  <span>{ago(r.at_ms)}</span>
+                  <span className="tabular-nums">{ago(r.at_ms)}</span>
                 ))}
               {/* The trailing fine print: the state word (still a word —
                   state is never colour alone, the mark's tint is the

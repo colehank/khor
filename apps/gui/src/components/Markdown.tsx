@@ -45,16 +45,16 @@ const parts: Components = {
   p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0 leading-relaxed">{children}</p>,
   // Three levels of heading, then flat: a chat turn that needs a fourth
   // is not a document the pane should try to typeset.
-  h1: ({ children }) => <h1 className="mt-3 mb-1 text-lg font-semibold first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="mt-3 mb-1 text-base font-semibold first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="mt-2 mb-1 font-semibold first:mt-0">{children}</h3>,
-  h4: ({ children }) => <h4 className="mt-2 mb-1 font-semibold first:mt-0">{children}</h4>,
-  h5: ({ children }) => <h5 className="mt-2 mb-1 font-semibold first:mt-0">{children}</h5>,
-  h6: ({ children }) => <h6 className="mt-2 mb-1 font-semibold first:mt-0">{children}</h6>,
+  h1: ({ children }) => <h1 className="mt-3 mb-1 text-lg font-title first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mt-3 mb-1 text-base font-title first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mt-2 mb-1 font-title first:mt-0">{children}</h3>,
+  h4: ({ children }) => <h4 className="mt-2 mb-1 font-title first:mt-0">{children}</h4>,
+  h5: ({ children }) => <h5 className="mt-2 mb-1 font-title first:mt-0">{children}</h5>,
+  h6: ({ children }) => <h6 className="mt-2 mb-1 font-title first:mt-0">{children}</h6>,
   ul: ({ children }) => <ul className="my-1.5 list-disc space-y-0.5 pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>,
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  strong: ({ children }) => <strong className="font-title">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   blockquote: ({ children }) => (
     <blockquote className="my-1.5 border-l-2 pl-2 text-muted-foreground">{children}</blockquote>
@@ -92,7 +92,7 @@ const parts: Components = {
       <table className="w-full border-collapse text-xs">{children}</table>
     </div>
   ),
-  th: ({ children }) => <th className="border px-2 py-1 text-left font-semibold">{children}</th>,
+  th: ({ children }) => <th className="border px-2 py-1 text-left font-title">{children}</th>,
   td: ({ children }) => <td className="border px-2 py-1 align-top">{children}</td>,
   a: ({ children, href }) => <Link href={href}>{children}</Link>,
   // An image is a remote fetch from an agent's text; its alt is the part

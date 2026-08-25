@@ -579,11 +579,56 @@
   --spacing-group: var(--gap-group);
   --spacing-pane: var(--gap-pane);
 
-  /* mandala-adjacent type scale */
+  /* mandala-adjacent type scale, each size with its one line-height:
+   * a size that floats between leadings is two sizes wearing one name.
+   * ~1.45 through the middle, tighter at the ends — small lines are
+   * annotations that hug their fact, the hero is a number that is
+   * mostly shape. */
   --text-xs: 11px;
+  --text-xs--line-height: 16px;
   --text-sm: 12.5px;
+  --text-sm--line-height: 18px;
   --text-base: 14px;
+  --text-base--line-height: 20px;
   --text-lg: 17px;
+  --text-lg--line-height: 24px;
+  /* The one display size: a number big enough to be read as a shape
+   * (a quota arc's centre, a spend figure). Not a heading scale — text
+   * has nothing to say at this size. */
+  --text-hero: 26px;
+  --text-hero--line-height: 32px;
+
+  /* ── ink weights ─────────────────────────────────────
+   * Three pressures of the same pen, named for what a line *does* —
+   * the same move the tiers below make for size. 纸墨 carries the
+   * judgment: hierarchy should come from how hard the ink was
+   * pressed, not from how much it was greyed out — grey is spoken
+   * for (muted-foreground qualifies, state colours judge), so before
+   * these, every line weighed 400 and hierarchy leaned on grey alone.
+   *
+   *   body  — the text itself, and anything not claiming rank.
+   *   label — a heading over rows: a group's name, a section word,
+   *           a field's key. Louder than what it labels, quieter
+   *           than a name.
+   *   title — what a thing is called: a session's name, a machine's.
+   *           One per block (the tier rule), so 600 stays rare
+   *           enough to mean something.
+   *
+   * **What this blocks: rank said twice.** A line that is both title
+   * weight and a size above its neighbours is shouting; pick the
+   * axis the block needs. It cannot block a 400 line that should be
+   * a title — that is the face gate's half (`check-face.mjs`). */
+  --font-weight-body: 400;
+  --font-weight-label: 500;
+  --font-weight-title: 600;
+
+  /* ── tempo ───────────────────────────────────────────
+   * How long a pressed control wears its outcome word before
+   * yielding the offer back (the pin's rule family: 复制好了, 开不了,
+   * 收不下). The TS twin is `lib/tempo.ts` — setTimeout cannot read
+   * a custom property without a layout pass, so the number lives
+   * twice with one name, and `check-type.mjs` holds the two equal. */
+  --time-yield: 2s;
 
   /* ── three tiers, named for what a line *is* ──────────
    * The sizes above answer "how big"; these answer "what kind of line

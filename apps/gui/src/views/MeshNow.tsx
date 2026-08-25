@@ -99,7 +99,7 @@ export function MeshNow({
 
 /** The list's group-heading shape: what the rows under it share. */
 function Heading({ text }: { text: string }) {
-  return <div className="mb-1 text-xs text-muted-foreground">{text}</div>;
+  return <div className="mb-1 text-xs font-label text-muted-foreground">{text}</div>;
 }
 
 /**
@@ -114,7 +114,7 @@ function Meters({ v }: { v: Vitals }) {
   }
   if (v.gpu) parts.push(`${cli.vitals_name_gpu} ${Math.round(v.gpu.util_pct)}%`);
   return (
-    <span data-now-meters className="ms-auto flex-none text-xs text-muted-foreground">
+    <span data-now-meters className="ms-auto flex-none text-xs tabular-nums text-muted-foreground">
       {parts.join(" · ")}
     </span>
   );
@@ -148,7 +148,7 @@ function Today({ usage }: { usage: Usage | null }) {
     sum.output += r.tokens.output;
   }
   return (
-    <div data-now-tokens className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+    <div data-now-tokens className="flex flex-wrap gap-x-3 text-sm tabular-nums text-muted-foreground">
       <span>{cli.tokens_input(count(sum.input))}</span>
       <span>{cli.tokens_cached(count(sum.cached_input))}</span>
       <span>{cli.tokens_cache_write(count(sum.cache_write))}</span>

@@ -7,6 +7,7 @@ import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { gaugeColor } from "@/lib/vitals";
+import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
 import { ago, hopWord } from "@/words";
 
@@ -84,7 +85,7 @@ export function MachineCard({
                   before — `text-lg` and `text-sm` are what these two
                   tiers resolve to — so nothing moves; what changes is
                   that the next person edits a role instead of a size. */}
-              <div className="truncate text-title">
+              <div className="truncate text-title font-title">
                 {row.name}
                 {row.me ? ` ${cli.this_machine}` : ""}
               </div>
@@ -186,7 +187,7 @@ function Verbs({
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!failed) return;
-    const t = window.setTimeout(() => setFailed(false), 2_000);
+    const t = window.setTimeout(() => setFailed(false), YIELD_MS);
     return () => window.clearTimeout(t);
   }, [failed]);
   return (
@@ -447,7 +448,7 @@ function Unit({
           data-metric-face="back"
           data-vitals-detail={name}
           data-strain={strain ?? undefined}
-          className="grid place-items-center text-center text-aux text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-medium"
+          className="grid place-items-center text-center text-aux tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
         >
           {label}
         </span>
