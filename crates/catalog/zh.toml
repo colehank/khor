@@ -1148,16 +1148,28 @@ close-tab = "关掉这个标签页"
 # shows one at a time.
 switch-tabs = "{0} 个标签页"
 # The address bar's name, standing in as its hint. **One control, two
-# states** — a breadcrumb at rest, a box with completions once it is
+# states** — a resting face, and a box with completions once it is
 # pressed. A second box beside it would be the two-search-fields
 # failure `PaneBar`'s head warns about, so the name has to cover both
 # halves of what goes in: which machine, then where on it.
+#
+# **One per browsing landing, because the second half is a different
+# thing on each** (浏览器接壳批). A shared name would have to say
+# 「机器和地方」, which names nothing anybody types.
 address-dir = "机器和路径"
-# The fresh tab's two sections. A pin is a decision, so it is always on
-# top; 最近去过 is by how lately, across machines, because "where was I"
-# is not a question about one disk.
+address-page = "机器和网址"
+# The fresh tab's sections. A pin is a decision, so it is always on
+# top — and what got pinned differs per landing, so the heading does
+# too.
 pinned-dirs = "钉住的目录"
-recent-dirs = "最近去过"
+pinned-webs = "钉住的网页"
+# …and the other heading, **shared by both on purpose**. 「最近去过」 is
+# already about the going and not about what was gone to, so it is one
+# fact in one place rather than two keys with one text (which this file
+# refuses at build time anyway). The key stopped saying `dirs` when the
+# browser landing started using it: a name that says one landing while
+# two read it is the kind of quiet lie 引用过期 is made of.
+recent-places = "最近去过"
 # The browser landing (docs/NET.md 借网). The address bar names the exit
 # so the user knows a page opened here leaves through that machine, not
 # this one. Open builds the window; the empty state and the no-pins state
