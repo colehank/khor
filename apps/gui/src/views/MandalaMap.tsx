@@ -1,16 +1,19 @@
 import type { DeviceRow, Strain } from "@/api";
+// Aliased: `Seat` the name belongs to the component below (one machine
+// in its place); the binding is the place itself.
+import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago } from "@/words";
+import { ago, hopWord } from "@/words";
 
 /**
- * The network as a mandala: this machine in the middle, everyone else
- * around it.
+ * The network as an ego graph: this machine in the middle, everyone
+ * else around it, and an edge from here to each of them.
  *
  * # Every mark on it is a fact khor holds
  *
- * There are five, and there are only five because khor knows five things
+ * There are six, and there are only six because khor knows six things
  * about a machine it has met:
  *
  * | on screen | the fact |
@@ -20,13 +23,32 @@ import { ago } from "@/words";
  * | in the middle, and larger | it is this machine |
  * | how long ago, or never | the age of the last answer it gave |
  * | the readings | what it said it was doing, in that same answer |
+ * | the edge to it | which road this machine reaches it by (`DeviceRow::hop`) |
  *
- * **No line is drawn between any two of them**, and **where they sit is
- * not worked out here** — both are `khor_core::map`, which carries the
- * reasoning: khor knows membership and not reachability, so there are no
- * edges and one ring, and the arrangement derives in the library because
- * a picture two faces work out separately is two pictures. This file
- * paints what it is handed, the way `Avatar.tsx` does.
+ * **Every edge starts here**, and that is the data's shape, not a
+ * style: the hop reading is first-hand — the same word the machine card
+ * prints — and it only exists from this machine outward. What two
+ * *other* machines have between them, this one does not know, so no
+ * edge is drawn between them: 不知道就不画, never guessed. (The old
+ * head of this file said "no line is drawn" outright; the hop reading
+ * is what overturned it — khor now does know this one thing about
+ * reachability, exactly one edge's worth per machine.)
+ *
+ * The edge wears its word (looked up from the same catalog keys the
+ * card uses) and one of two strokes: **direct is solid, relay is
+ * dashed**; every no-reading state (没在连 / serve 没在跑 / 说不出) is
+ * the same faint stroke, because the visual channel only has to say
+ * "there is a road" / "the road borrows a relay" / "no road to show" —
+ * the word carries the rest, and inventing a stroke per word would be
+ * five styles for three facts.
+ *
+ * **Where seats sit is still `khor_core::map`'s** — a picture two
+ * faces work out separately is two pictures. Edges take explicit
+ * endpoints rather than assuming "centre to rim": when sponsored
+ * reaching lands (本机—A—B two-segment routes), a middle machine's
+ * seat becomes a joint and `Edge` already speaks in arbitrary pairs —
+ * the layout library grows the seat, this file only paints one more
+ * segment. Not pre-built, just not walled off.
  *
  * # Three states, and no invented threshold between them
  *
@@ -88,12 +110,96 @@ export function MandalaMap({
           load. The height is the cap, which self-limits: the picture is
           never taller than the window it is in. */}
       <div className="relative aspect-square max-h-full w-full">
+        {/* The edges, under everything: the seats' percentages are the
+            viewBox's own coordinates (both speak 0–100 of the square),
+            and `non-scaling-stroke` keeps the line's weight in screen
+            units however large the square is. `preserveAspectRatio`
+            can be none because the box is square by construction. */}
+        {me && others.length > 0 && (
+          <svg
+            data-mesh-edges
+            aria-hidden="true"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            className="pointer-events-none absolute inset-0 size-full"
+          >
+            {others.map((row) => (
+              <Edge key={row.id} from={me.seat} to={row.seat} row={row} />
+            ))}
+          </svg>
+        )}
+        {/* Each edge's word, at its midpoint — HTML rather than SVG
+            text so the type tokens reach it. On a small chip of ground
+            so the line does not strike through its own name. */}
+        {me &&
+          others.map(
+            (row) =>
+              row.hop && (
+                <span
+                  key={row.id}
+                  data-edge-word={row.id}
+                  data-hop={row.hop}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm bg-background px-1 text-xs text-muted-foreground"
+                  style={{
+                    left: `${(me.seat.left + row.seat.left) / 2}%`,
+                    top: `${(me.seat.top + row.seat.top) / 2}%`,
+                  }}
+                >
+                  {hopWord(row.hop)}
+                </span>
+              ),
+          )}
         <Seat row={me} big onOpen={onOpen} selected={selected} />
         {others.map((row) => (
           <Seat key={row.id} row={row} onOpen={onOpen} selected={selected} />
         ))}
       </div>
     </section>
+  );
+}
+
+/* The edges' line weights and the relay's dash rhythm, named the way
+   Ring.tsx names its STROKE: screen units (non-scaling-stroke), one
+   place. The no-reading stroke is thinner as well as fainter, so the
+   difference survives a screenshot in one channel colour-blindness
+   cannot take away. */
+const EDGE_STROKE = 1.5;
+const EDGE_STROKE_FAINT = 1;
+const RELAY_DASH = "6 5";
+
+/**
+ * One first-hand edge: this machine to one it knows.
+ *
+ * The three visual states carry three facts (the file head's table):
+ * `direct` is a solid line — the hole got punched; `relay` is dashed —
+ * the road borrows a middleman; everything else (没在连 / serve 没在跑
+ * / 说不出 / a hop this build does not know) is one faint stroke,
+ * because "no road to show" is one fact wearing several words, and the
+ * word itself rides the edge's midpoint chip. Never `hidden`: a member
+ * with no road is still a member, and a missing edge would read as a
+ * machine the map forgot.
+ *
+ * Endpoints are explicit `Seat` pairs, not "centre to rim" — the shape
+ * a future two-segment sponsored route needs (file head).
+ */
+function Edge({ from, to, row }: { from: SeatPoint; to: SeatPoint; row: DeviceRow }) {
+  const road = row.hop === "direct" ? "direct" : row.hop === "relay" ? "relay" : "none";
+  return (
+    <line
+      data-edge={row.id}
+      data-road={road}
+      x1={from.left}
+      y1={from.top}
+      x2={to.left}
+      y2={to.top}
+      vectorEffect="non-scaling-stroke"
+      strokeWidth={road === "none" ? EDGE_STROKE_FAINT : EDGE_STROKE}
+      strokeDasharray={road === "relay" ? RELAY_DASH : undefined}
+      className={cn(
+        "stroke-muted-foreground",
+        road === "none" ? "opacity-25" : "opacity-50",
+      )}
+    />
   );
 }
 
