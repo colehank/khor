@@ -1,4 +1,10 @@
-// What this screen currently has open on the files landing.
+// What this screen currently has open on one browsing landing.
+//
+// **The shell's, not the files landing's** (docs/DESIGN.md 浏览型外壳):
+// a tab is a machine and a place on it either way, and the store, the
+// validation and the closing rules are the same whether the place is a
+// directory or a page. Only the `kind` differs, and it differs in one
+// place — the key.
 //
 // **Kept on this device and not on the network, deliberately** — the
 // same split the arrangement and the collapse state already follow
@@ -17,7 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /** One tab: a machine and a place on it. */
-export type DirTab = {
+export type BrowseTab = {
   /** This screen's own handle for the tab. Never shown, never sent —
       two tabs on one machine and one path are two tabs, so the identity
       cannot be derived from what the tab points at. */
@@ -26,13 +32,26 @@ export type DirTab = {
       pointed anywhere yet — the fresh-tab state, which is a real state
       and not a missing one. */
   device: string | null;
-  /** Where to open: absolute, or `""` for that machine's home. The
-      answer carries the real path back (`DirListing.path`) and this is
-      rewritten to it, so a restored tab needs no second resolution. */
+  /** Where to open, in this kind's own spelling; `""` asks for that
+      kind's starting point on that machine (for a disk, its home). What
+      actually opened is written back here, so a restored tab needs no
+      second resolution. Still called `path` because that is what the
+      one kind alive today calls it; the shell never reads inside it. */
   path: string;
 };
 
-const KEY = "khor.files.tabs";
+/**
+ * Where one landing's tabs are kept.
+ *
+ * **Keyed by the kind, so two browsing landings cannot read each
+ * other's tabs.** A directory and a page are both `{machine, place}`
+ * pairs and would parse cleanly out of each other's store, which is
+ * precisely the danger: the browser landing would come up holding four
+ * paths, point its address bar at them, and every failure after that
+ * would be about the wrong subject. One key per kind makes that
+ * unreachable rather than unlikely.
+ */
+const storeKey = (kind: string) => `khor.browse.${kind}.tabs`;
 
 /**
  * A fresh handle.
@@ -48,7 +67,7 @@ function mintId(): string {
   return `t${Date.now().toString(36)}-${minted}`;
 }
 
-export function blankTab(): DirTab {
+export function blankTab(): BrowseTab {
   return { id: mintId(), device: null, path: "" };
 }
 
@@ -56,19 +75,19 @@ export function blankTab(): DirTab {
     value written by another version of this app — or by a person with a
     console open — must not be able to put the landing into a state that
     draws nothing. */
-function restore(): { tabs: DirTab[]; active: string } {
+function restore(kind: string): { tabs: BrowseTab[]; active: string } {
   const fresh = () => {
     const one = blankTab();
     return { tabs: [one], active: one.id };
   };
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = window.localStorage.getItem(storeKey(kind));
     if (!raw) return fresh();
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return fresh();
     const { tabs, active } = parsed as { tabs?: unknown; active?: unknown };
     if (!Array.isArray(tabs)) return fresh();
-    const kept: DirTab[] = [];
+    const kept: BrowseTab[] = [];
     for (const t of tabs) {
       if (typeof t !== "object" || t === null) continue;
       const { id, device, path } = t as Record<string, unknown>;
@@ -87,11 +106,11 @@ function restore(): { tabs: DirTab[]; active: string } {
   }
 }
 
-export type DirTabs = {
-  tabs: DirTab[];
+export type BrowseTabs = {
+  tabs: BrowseTab[];
   /** The open one. Never undefined: closing the last tab mints a fresh
       one rather than leaving the landing with nothing to draw. */
-  current: DirTab;
+  current: BrowseTab;
   focus: (id: string) => void;
   /** A fresh tab, focused — the "+" and the switcher's own button. */
   add: () => void;
@@ -112,8 +131,8 @@ export type DirTabs = {
   close: (id: string) => void;
 };
 
-export function useDirTabs(): DirTabs {
-  const [state, setState] = useState(restore);
+export function useBrowseTabs(kind: string): BrowseTabs {
+  const [state, setState] = useState(() => restore(kind));
   // The first render must not write: `restore` may have just answered
   // "I could not read", and writing that answer back would turn a
   // one-off storage failure into a real erasure of the tabs.
@@ -125,11 +144,11 @@ export function useDirTabs(): DirTabs {
       return;
     }
     try {
-      window.localStorage.setItem(KEY, JSON.stringify(state));
+      window.localStorage.setItem(storeKey(kind), JSON.stringify(state));
     } catch {
       /* the tabs still work; only the memory of them is lost */
     }
-  }, [state]);
+  }, [kind, state]);
 
   const focus = useCallback((id: string) => {
     setState((was) => (was.tabs.some((t) => t.id === id) ? { ...was, active: id } : was));
@@ -151,7 +170,7 @@ export function useDirTabs(): DirTabs {
 
   const open = useCallback((device: string, path: string) => {
     setState((was) => {
-      const one: DirTab = { id: mintId(), device, path };
+      const one: BrowseTab = { id: mintId(), device, path };
       return { tabs: [...was.tabs, one], active: one.id };
     });
   }, []);

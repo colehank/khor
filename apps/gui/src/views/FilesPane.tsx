@@ -22,7 +22,7 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
-import { fetchDirPins, fetchLs, pinDir, pullFile, recentVisit, type DirListing } from "@/api";
+import { fetchDirPins, fetchLs, pinDir, pullFile, type DirListing } from "@/api";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -66,7 +66,7 @@ export function FilesPane({
   /** A directory really opened. Separate from `onPath` because the two
       are different facts: `onPath` fires for an *intention* that may
       still be refused, this one only after a listing came back. */
-  onLanded?: (path: string) => void;
+  onLanded: (path: string) => void;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,12 +105,12 @@ export function FilesPane({
         setListing(l);
         setError(null);
         if (l.path !== path) onPath(l.path);
-        onLanded?.(l.path);
-        // The visit is recorded only here — after a real listing, with
-        // the machine's own spelling of the path rather than whatever
-        // was typed. Fire and forget: a history that would not write
-        // must never be the reason a directory does not open.
-        recentVisit("dir", machine, l.path).catch(() => {});
+        // **After a real listing, with the machine's own spelling of the
+        // path rather than whatever was typed.** What the shell does
+        // with that — records a visit, re-reads its places — is the
+        // shell's business (`BrowseLanding`); this only says that
+        // something really opened.
+        onLanded(l.path);
       })
       // The message is the node's, in the catalog's words.
       .catch((e) => {

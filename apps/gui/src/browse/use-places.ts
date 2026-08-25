@@ -7,30 +7,19 @@
 // would be two answers a poll apart, and the box could offer a path the
 // page below it is not showing.
 //
-// **"The node has no such verb" is not "there is nothing".** Until the
-// recents ledger exists this call comes back refused, and the two
-// answers must not collapse: nothing means an empty section, refused
-// means no section at all. Collapsed, a fresh install would say 最近去过
-// over a blank strip and read as broken (docs/UX.md 不知道就说不知道).
+// **"The node has no such verb" is not "there is nothing".** The
+// recents ledger exists now (`khor_sync::recents`), so this is the
+// older-node path rather than the ordinary one — and it still has to be
+// kept apart: nothing means an empty section, refused means no section
+// at all. Collapsed, a screen talking to a node that predates the
+// ledger would say 最近去过 over a blank strip and read as broken
+// (docs/UX.md 不知道就说不知道).
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchDirPins, fetchRecents } from "@/api";
+import { fetchRecents } from "@/api";
+import type { BrowseKind, Place } from "@/browse/kind";
 
-/** One place, whichever list it came from. */
-export type Place = {
-  /** Device id — what both ledgers key by, because a machine can be
-      renamed (`khor_sync::recents`, `dirpins`). */
-  device: string;
-  /** That machine's current name, looked up on the node side. */
-  name: string;
-  /** The absolute path. */
-  place: string;
-  /** When it was last visited, or `null` on a pin — a pin is a
-      decision, and a decision has no recency to sort by. */
-  at_ms: number | null;
-};
-
-/** How many recent directories a fresh tab offers. A screenful, not a
+/** How many recent places a fresh tab offers. A screenful, not a
     history: the list is a shortcut, and a shortcut nobody can scan is
     a list. The node caps too — this is the ask, not the trust. */
 const MOST_RECENT = 12;
@@ -55,7 +44,7 @@ export type Places = {
   reload: () => void;
 };
 
-export function usePlaces(): Places {
+export function usePlaces(kind: BrowseKind): Places {
   const [pinned, setPinned] = useState<Place[]>([]);
   const [recent, setRecent] = useState<Place[] | null>(null);
   const [asked, setAsked] = useState(false);
@@ -64,10 +53,11 @@ export function usePlaces(): Places {
 
   useEffect(() => {
     let stopped = false;
-    fetchDirPins()
+    kind
+      .pins()
       .then((rows) => {
         if (stopped) return;
-        setPinned(rows.map((r) => ({ device: r.device, name: r.name, place: r.path, at_ms: null })));
+        setPinned(rows);
         setAsked(true);
       })
       .catch(() => {
@@ -79,7 +69,7 @@ export function usePlaces(): Places {
         // the last good answer stands rather than being erased. A blink
         // in the backend must not empty a shortcut list.
       });
-    fetchRecents("dir", MOST_RECENT)
+    fetchRecents(kind.kind, MOST_RECENT)
       .then((rows) => {
         if (stopped) return;
         setRecent(
@@ -95,7 +85,7 @@ export function usePlaces(): Places {
     return () => {
       stopped = true;
     };
-  }, [turn]);
+  }, [kind, turn]);
 
   return { pinned, recent, asked, reload };
 }

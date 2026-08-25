@@ -40,8 +40,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { BrowseLanding } from "@/browse/BrowseLanding";
+import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
-import { useDirTabs } from "@/hooks/use-dir-tabs";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
 import { useNarrow } from "@/hooks/use-narrow";
@@ -49,7 +50,7 @@ import { useStatusBar } from "@/hooks/use-status-bar";
 import { cn } from "@/lib/utils";
 import { axisOf, groupLabel, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
-import { FilesLanding } from "@/views/FilesLanding";
+import { FILES } from "@/views/FilesKind";
 import { BrowserPane } from "@/views/BrowserPane";
 import { PinnedWebs } from "@/views/PinnedWebs";
 import { DevicesList } from "@/views/DevicesList";
@@ -324,11 +325,11 @@ export default function App() {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   // …and what the files landing has open, which is no longer *a*
   // machine at all: it is a strip of tabs, each a machine and a path,
-  // kept on this device (`useDirTabs`). It lives here rather than
+  // kept on this device (`useBrowseTabs`). It lives here rather than
   // inside the landing so that opening a directory from somewhere else
   // — the machine card's 看它的文件 — is a tab appearing rather than a
   // landing being told to remember something on arrival.
-  const dirTabs = useDirTabs();
+  const dirTabs = useBrowseTabs(FILES.kind);
   // …and the exit machine whose network the browser landing surfs,
   // apart from all the above for the same reason: browsing through a
   // machine is a third question, and a shared variable would tangle it
@@ -960,8 +961,8 @@ export default function App() {
   // The machine the browser's empty state steps toward: borrowing a
   // network starts on the first machine that is not this one
   // (borrow-self is refused by design). The files landing's own
-  // starting point moved in with it (`FilesLanding` — it reads the
-  // device table for the same `me`).
+  // starting point moved in with the browsing shell, which reads the
+  // device table for the same `me` (`BrowseLanding`).
   const firstOther = devices.find((d) => !d.me) ?? null;
   const surfed = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
   const detail = sessions ? (
@@ -1042,7 +1043,7 @@ export default function App() {
       // This machine's disk, in a **new** tab. Not the open one: the
       // request came from somewhere else entirely, so whatever that tab
       // was showing is not part of it — replacing it would throw away a
-      // place the person did not ask to leave (`useDirTabs.open` says
+      // place the person did not ask to leave (`useBrowseTabs.open` says
       // the same from the other side).
       onBrowseFiles={(row) => {
         setMark(false);
@@ -1136,7 +1137,18 @@ export default function App() {
    * and a switcher where there is not (`TabStrip`).
    */
   const filesLanding = (
-    <FilesLanding devices={devices} tabs={dirTabs} narrow={narrow} />
+    <BrowseLanding
+      // **Keyed by the kind, and that is load-bearing.** A kind carries
+      // a hook (`BrowseKind.useSecond`), so two kinds under one mounted
+      // shell would change which hooks run — the one thing React cannot
+      // survive. A key makes a swap a remount instead of a crash, and
+      // it costs nothing while there is one browsing landing.
+      key={FILES.kind}
+      kind={FILES}
+      devices={devices}
+      tabs={dirTabs}
+      narrow={narrow}
+    />
   );
 
   // One shell, two width classes: wide is rail|list|detail all at once,

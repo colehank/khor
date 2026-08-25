@@ -18,16 +18,21 @@ import { useEffect } from "react";
 import { MachineAvatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import type { DeviceRow } from "@/api";
+import type { BrowseKind } from "@/browse/kind";
 import { gui } from "@/gen/catalog";
-import { placesInOrder, type Places } from "@/hooks/use-places";
+import { placesInOrder, type Places } from "@/browse/use-places";
 import { ago } from "@/words";
 
 export function NewTabPage({
+  kind,
   places,
   devices,
   onOpen,
   onGo,
 }: {
+  /** Whose places these are — this file asks it for one thing:
+      what to call a place in a word. */
+  kind: BrowseKind;
   places: Places;
   /** For the faces: a place is keyed by device id, and the picture
       belongs to the device table like everywhere else. */
@@ -80,7 +85,7 @@ export function NewTabPage({
         // in, this only notices the boundary — so a section with no
         // rows cannot draw a heading over nothing.
         const first = i === 0 || rows[i - 1].pinned !== pinned;
-        const leaf = place.place.slice(place.place.lastIndexOf("/") + 1) || place.place;
+        const leaf = kind.leafOf(place.place);
         const face = devices.find((d) => d.id === place.device)?.face ?? null;
         return (
           <div key={`${place.device}:${place.place}`}>

@@ -1,4 +1,8 @@
-// The file landing's tabs, in the two shapes a browser has.
+// A browsing landing's tabs, in the two shapes a browser has.
+//
+// **The shell's, not one landing's** (docs/DESIGN.md 浏览型外壳): every
+// tab here is a face and a word, and neither the strip nor the switcher
+// knows what kind of place is behind one.
 //
 // **Wide is the strip**: every tab on screen at once, because the whole
 // point of a tab is that you can see the other ones. **Narrow is a
@@ -18,15 +22,15 @@ import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
-/** One tab as it is shown: what it calls itself, whose disk it is on,
-    and where. Derived by the landing (it holds the device table); this
-    file paints and decides nothing. */
+/** One tab as it is shown: what it calls itself, whose machine it is
+    on, and where. Derived by the shell (it holds the device table and
+    the kind); this file paints and decides nothing. */
 export type TabFace = {
   id: string;
   label: string;
   face: Avatar | null;
-  /** The whole path, for the switcher's second line and the wide tab's
-      hover title. Empty on a fresh tab. */
+  /** The whole address, for the switcher's second line and the wide
+      tab's hover title. Empty on a fresh tab. */
   path: string;
 };
 
