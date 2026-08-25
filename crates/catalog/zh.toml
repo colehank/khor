@@ -199,6 +199,11 @@ quiet-for = "{0}没消息"
 # on, and the promise (全网都看得见) is the CRDT doing what it always
 # does, said so nobody goes checking.
 adopted = "领进来了: {0},经 {1} 说话;全网马上都看得见它"
+# A satellite's road column: it has no road of its own — its sponsor
+# speaks for it — so where every other machine shows 直连/中继 this
+# shows who it speaks through (both faces use it; 呈现处标「经 <sponsor>」
+# is the batch's own acceptance line).
+via-sponsor = "经 {0}"
 # The tmux probe's two outcomes, told at adoption so the terminal's
 # nature is no surprise later (docs/SESSION.md 例外墓碑: persistence on
 # a satellite is borrowed from its own tmux, never hosted by khor).
