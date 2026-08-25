@@ -161,6 +161,124 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
     })
 }
 
+/// A string as one safely-quoted sh word: wrapped in single quotes,
+/// with embedded single quotes spelled `'\''`. Paths cross into a
+/// remote shell here, and quoting is the difference between a filename
+/// and a command.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// One directory of the satellite, over ssh — the same answer shape as
+/// the local listing (`crate::files::list_dir`): the expanded path,
+/// entries sorted directories-first then case-folded, and whether the
+/// cap cut it short. Empty `path` means the satellite's own home, the
+/// `Ls` op's rule.
+///
+/// The line protocol is spelled to survive any filename short of a
+/// newline: `d/<name>` and `f <bytes> <name>` — the name is everything
+/// after the fixed prefix, spaces included. `find`, not a glob: the
+/// remote command runs in whatever login shell the satellite has, and
+/// zsh (the Mac default) errors a matchless glob instead of passing it
+/// through — measured, `no matches found: ..?*` where a listing should
+/// have been. `wc -c` per file costs a fork each, tolerable under the
+/// same entry cap the local listing keeps.
+pub fn ls(host: &str, path: &str) -> Result<(String, Vec<crate::proto::DirEntry>, bool), String> {
+    let target = if path.is_empty() { "\"$HOME\"".to_owned() } else { sh_quote(path) };
+    let script = format!(
+        r#"cd {target} 2>/dev/null || {{ echo KHOR-NO-DIR; exit 0; }}
+pwd
+find . -mindepth 1 -maxdepth 1 2>/dev/null | while IFS= read -r f; do
+  f=${{f#./}}
+  if [ -d "$f" ]; then echo "d/$f"; else echo "f $(wc -c <"$f" 2>/dev/null | tr -d ' 	') $f"; fi
+done"#
+    );
+    let out = ssh_base(host).arg(script).output().map_err(|e| msg::ssh_wont_run(e))?;
+    if !out.status.success() {
+        return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or_default();
+    if first == "KHOR-NO-DIR" {
+        return Err(msg::no_such_dir(path));
+    }
+    let at = first.to_owned();
+    let mut entries: Vec<crate::proto::DirEntry> = Vec::new();
+    for l in lines {
+        if let Some(name) = l.strip_prefix("d/") {
+            // at_ms 0 = "the machine could not say", the field's own
+            // word for it: a portable mtime needs stat, whose flags
+            // differ per platform, and the browse reads names first.
+            entries.push(crate::proto::DirEntry { name: name.to_owned(), size: 0, dir: true, at_ms: 0 });
+        } else if let Some(rest) = l.strip_prefix("f ") {
+            if let Some((size, name)) = rest.split_once(' ') {
+                entries.push(crate::proto::DirEntry {
+                    name: name.to_owned(),
+                    size: size.parse().unwrap_or(0),
+                    dir: false,
+                    at_ms: 0,
+                });
+            }
+        }
+    }
+    // The local listing's order, re-stated: directories first, each
+    // half case-folded — the screen paints and never re-sorts.
+    entries.sort_by(|a, b| {
+        b.dir
+            .cmp(&a.dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    let truncated = entries.len() > crate::files::MOST_ENTRIES;
+    entries.truncate(crate::files::MOST_ENTRIES);
+    Ok((at, entries, truncated))
+}
+
+/// Copies one satellite file down to `dest` on this machine, whole —
+/// scp, riding the same config door every ssh here rides. The bytes
+/// land where the caller says; slicing them onward to a third machine
+/// is the caller's business (`SatFetchPath` stages through this).
+pub fn pull_file(host: &str, path: &str, dest: &std::path::Path) -> Result<u64, String> {
+    let mut c = Command::new("scp");
+    if let Some(dir) = ssh_dir() {
+        c.arg("-F").arg(dir.join("config"));
+    }
+    let out = c
+        .arg("-o")
+        .arg("BatchMode=yes")
+        .arg("-q")
+        .arg(format!("{host}:{path}"))
+        .arg(dest)
+        .output()
+        .map_err(|e| msg::ssh_wont_run(e))?;
+    if !out.status.success() {
+        return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    std::fs::metadata(dest).map(|m| m.len()).map_err(|e| e.to_string())
+}
+
+/// Pushes one local file into the satellite's home directory — the
+/// sponsor-side half of `khor send <satellite> <file>`.
+pub fn push_file(host: &str, local: &std::path::Path) -> Result<u64, String> {
+    let size = std::fs::metadata(local).map(|m| m.len()).map_err(|e| e.to_string())?;
+    let mut c = Command::new("scp");
+    if let Some(dir) = ssh_dir() {
+        c.arg("-F").arg(dir.join("config"));
+    }
+    let out = c
+        .arg("-o")
+        .arg("BatchMode=yes")
+        .arg("-q")
+        .arg(local)
+        .arg(format!("{host}:"))
+        .output()
+        .map_err(|e| msg::ssh_wont_run(e))?;
+    if !out.status.success() {
+        return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(size)
+}
+
 /// The satellite's stable id: the SHA256 of its host key, hex — read
 /// out of known_hosts (`ssh-keygen -F`), the module head's rule.
 ///

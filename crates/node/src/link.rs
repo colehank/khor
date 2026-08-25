@@ -886,6 +886,44 @@ impl Node {
                     None => Err(msg::SAT_NOT_SAMPLED_YET.into()),
                 }
             }
+            Request::SatLs { sat, path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                // Off the reactor: an ssh dial plus a per-entry stat.
+                let (at, entries, truncated) =
+                    tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::Dir { path: at, entries, truncated })
+            }
+            Request::SatFetchPath { sat, path, offset } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                // Staged once per pull, on the first slice: one scp per
+                // file, then the ordinary local slice loop — a per-slice
+                // ssh would make a 100MB pull four hundred dials. The
+                // staging name is content-addressed by (sat, path), so a
+                // second pull of the same file re-stages over the same
+                // spot and PathSlice's own change contract (total/at_ms
+                // moving = start over) covers the swap.
+                let staged = self.sat_staging_path(&sat, &path)?;
+                if offset == 0 || !staged.exists() {
+                    let (h, p, s) = (host, path, staged.clone());
+                    tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &s))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                }
+                let staged_str = staged.display().to_string();
+                let (total, at_ms, bytes) =
+                    tokio::task::spawn_blocking(move || crate::files::read_slice(&staged_str, offset))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
+            }
             Request::FetchPath { path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -898,6 +936,32 @@ impl Node {
                 Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
             }
         }
+    }
+
+    /// The ssh destination for a satellite **this machine sponsors** —
+    /// the one gate every satellite op passes: not in the table, not
+    /// mine, or mine without a road each refuse by name. One row, one
+    /// speaker (附属机器批).
+    fn my_satellite_host(&self, sat: &str) -> Result<String, String> {
+        let d = self
+            .devices_loaded()?
+            .doc
+            .get(sat)
+            .ok_or_else(|| msg::not_my_satellite(sat))?;
+        if d.sponsor.as_deref() != Some(self.device_str()) {
+            return Err(msg::not_my_satellite(sat));
+        }
+        d.ssh_host.ok_or_else(|| msg::sat_no_ssh_host(sat))
+    }
+
+    /// Where a satellite pull stages on the sponsor: one spot per
+    /// (satellite, path), content-addressed so a re-pull lands on the
+    /// same file and the previous copy is simply replaced.
+    fn sat_staging_path(&self, sat: &str, path: &str) -> Result<std::path::PathBuf, String> {
+        let dir = self.root().join(".khor").join("satpull");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let digest = blake3::hash(format!("{sat}\n{path}").as_bytes()).to_hex();
+        Ok(dir.join(format!("{}-{}", &sat[..8.min(sat.len())], &digest.as_str()[..16])))
     }
 
     /// One slice of an offered payload. The offer's recorded size is the
@@ -1263,6 +1327,39 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
+        // A satellite's home is its sponsor (附属机器批): the listing
+        // runs there, over ssh — the same "ask home" this function
+        // already is, with one more hop written in the table. On the
+        // sponsor itself no wire is needed at all.
+        if let Some(sp) = target.sponsor.clone() {
+            if sp == self.device_str() {
+                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let path = path.to_owned();
+                return tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            let sponsor = self
+                .devices_loaded()?
+                .doc
+                .get(&sp)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            let conn =
+                self.dial(ep, &sponsor.id, &sponsor.addrs, ALPN).await.map_err(|e| match e {
+                    DialFailure::TimedOut => msg::machine_unreachable_timeout(&sponsor.name),
+                    DialFailure::Refused(why) => msg::cant_reach_named(&sponsor.name, why),
+                })?;
+            return match request(
+                &conn,
+                &Request::SatLs { sat: target.id.clone(), path: path.to_owned() },
+            )
+            .await?
+            {
+                Response::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
         let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
             DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
             DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
@@ -1363,9 +1460,44 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
-        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+        // A satellite's pull routes to its sponsor (附属机器批): on the
+        // sponsor itself one scp lands the file whole; from anywhere
+        // else the slices come off the sponsor's staging copy
+        // (`Request::SatFetchPath`).
+        let (dial_to, sat) = match target.sponsor.clone() {
+            Some(sp) if sp == self.device_str() => {
+                let host =
+                    target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let (h, p, part) = (host, path.to_owned(), fell.part.clone());
+                let moved =
+                    tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &part))
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r);
+                return match moved {
+                    Ok(moved) => {
+                        std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;
+                        Ok((moved, fell.dest))
+                    }
+                    Err(why) => {
+                        let _ = std::fs::remove_file(&fell.part);
+                        Err(why)
+                    }
+                };
+            }
+            Some(sp) => {
+                let sponsor = self
+                    .devices_loaded()?
+                    .doc
+                    .get(&sp)
+                    .ok_or_else(|| msg::machine_left_table(&channel))?;
+                (sponsor, Some(target.id.clone()))
+            }
+            None => (target, None),
+        };
+        let conn = self.dial(ep, &dial_to.id, &dial_to.addrs, ALPN).await.map_err(|e| match e {
+            DialFailure::TimedOut => msg::machine_unreachable_timeout(&dial_to.name),
+            DialFailure::Refused(why) => msg::cant_reach_named(&dial_to.name, why),
         })?;
         let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
         // The change contract: the first slice's (total, mtime) must
@@ -1374,8 +1506,15 @@ impl Node {
         let mut contract: Option<(u64, u64)> = None;
         let mut offset = 0u64;
         let outcome = loop {
-            let resp =
-                request(&conn, &Request::FetchPath { path: path.to_owned(), offset }).await;
+            let req = match &sat {
+                Some(s) => Request::SatFetchPath {
+                    sat: s.clone(),
+                    path: path.to_owned(),
+                    offset,
+                },
+                None => Request::FetchPath { path: path.to_owned(), offset },
+            };
+            let resp = request(&conn, &req).await;
             match resp {
                 Ok(Response::PathSlice { total, at_ms, bytes }) => {
                     match contract {

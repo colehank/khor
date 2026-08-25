@@ -164,6 +164,21 @@ pub enum Request {
     /// answers [`Response::Refused`], read as "no reading" — the same
     /// fallback every tail-appended op leans on.
     SatVitals { sat: String },
+    /// [`Request::Ls`], run on a satellite: the sponsor lists the
+    /// directory over ssh and answers the ordinary [`Response::Dir`].
+    /// A new variant, not a tail field on `Ls` — a `sat: None` tail
+    /// would lengthen the frame under every older peer for the plain
+    /// listings too, breaking exactly the case that has no satellite in
+    /// it (the module head's first question: change the words instead).
+    /// These words only ever go to a sponsor, and a machine that
+    /// sponsors anything runs code that knows them.
+    SatLs { sat: String, path: String },
+    /// [`Request::FetchPath`], off a satellite: the sponsor stages the
+    /// file down over scp on the first slice and serves the rest from
+    /// the staging copy — one ssh per pull, not one per slice. Answers
+    /// the ordinary [`Response::PathSlice`], whose change contract
+    /// (total/at_ms moving = start over) rides the staged copy.
+    SatFetchPath { sat: String, path: String, offset: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -756,6 +756,41 @@ impl Node {
         Ok((id, name, probe.tmux))
     }
 
+    /// Whether `machine` is a satellite, and if so the ssh road **from
+    /// here**: `Ok(Some(host))` when this machine sponsors it,
+    /// `Ok(None)` for an ordinary machine, and an error naming the
+    /// sponsor when it is somebody else's satellite — a file push runs
+    /// the sponsor's scp, and only the sponsor has the road
+    /// (一期单 sponsor; docs/NET.md 卫星).
+    pub fn satellite_host_here(&self, machine: &str) -> Result<Option<String>, String> {
+        let (channel, _) = self.resolve(machine)?;
+        let Some(d) = self.devices_loaded()?.doc.by_name(&channel) else {
+            return Ok(None);
+        };
+        let Some(sp) = d.sponsor else { return Ok(None) };
+        if sp != self.device_str() {
+            let sponsor_name = self
+                .devices_loaded()?
+                .doc
+                .get(&sp)
+                .map(|s| s.name)
+                .unwrap_or(sp);
+            return Err(msg::sat_send_elsewhere(&channel, sponsor_name));
+        }
+        d.ssh_host
+            .map(Some)
+            .ok_or_else(|| msg::sat_no_ssh_host(&channel))
+    }
+
+    /// Pushes one file into a satellite's home directory over the
+    /// sponsor's own scp — the satellite half of `khor send`. No chat
+    /// message and no transfer: the far side has no khor to approve or
+    /// receive anything, so the bytes just go, and the verb reports
+    /// what moved (一期: sponsor 本机才有这条路).
+    pub fn send_to_satellite(&self, host: &str, path: &Path) -> Result<u64, String> {
+        satellite::push_file(host, path)
+    }
+
     /// Forgets one. A name nobody registered is not an error — the
     /// caller asked for a world without it, and that is the world.
     pub fn forget_agent(&self, name: &str) -> Result<(), String> {

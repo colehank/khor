@@ -597,7 +597,17 @@ fn send(rest: &[String]) -> Result<(), String> {
     }
     let candidate = std::path::Path::new(&tail[0]);
     if tail.len() == 1 && candidate.is_file() {
-        let id = node()?.send(machine, candidate)?;
+        let n = node()?;
+        // A satellite has no khor to receive an offer: the file goes
+        // over the sponsor's own scp, whole, and the verb says what
+        // moved (附属机器批; from any other machine this refuses and
+        // names the sponsor to run it on).
+        if let Some(host) = n.satellite_host_here(machine)? {
+            let moved = n.send_to_satellite(&host, candidate)?;
+            println!("{}", msg::sat_sent(machine, moved));
+            return Ok(());
+        }
+        let id = n.send(machine, candidate)?;
         println!("{}", cli::summary_sent(&id.0));
         return Ok(());
     }
