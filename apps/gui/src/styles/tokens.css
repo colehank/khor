@@ -353,6 +353,32 @@
    * and lives where the drag is measured). */
   --list-w-min: 180px;
   --list-w-snap: 100px;
+  /* One tab in the file landing's strip: what it takes when there is
+   * room, and the floor it shrinks to before the strip starts
+   * scrolling instead.
+   *
+   * **Neither of the pair above would do**, and not because they are
+   * the wrong number: `--list-w` is how wide a *region* is, dragged by
+   * the person looking at it, while this is a ceiling on a *control*
+   * that nobody drags — two tabs in a 1400px window must not become two
+   * 700px tabs, which is what a strip of `flex-1` children does when
+   * nothing caps them. The three `--ctl-*` are heights and have no
+   * width to lend.
+   *
+   * 200 is a name-plus-face at this app's `--text-sm`: a machine's face
+   * (`--avatar` is bigger than what a tab wears, but the crop is the
+   * same picture), a directory leaf, and the close mark, with the leaf
+   * still readable rather than an ellipsis with two characters in front
+   * of it.
+   *
+   * The floor is where the leaf stops saying anything at all — below
+   * it a tab is a face and a truncation, so the strip should scroll
+   * (Chrome's own answer) rather than go on grinding tabs into
+   * identical stubs. What it cannot block: too many tabs to *find* one
+   * in. That is what the narrow face's switcher answers, and the wide
+   * face has no equivalent yet. */
+  --tab-w: 200px;
+  --tab-w-min: 88px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted
@@ -564,6 +590,8 @@
   --spacing-ctl-lg: var(--ctl-lg);
   --spacing-rail: var(--rail-w);
   --spacing-list: var(--list-w);
+  --spacing-tab: var(--tab-w);
+  --spacing-tab-min: var(--tab-w-min);
   --spacing-chat-box: var(--chat-box);
   --spacing-avatar: var(--avatar);
   --spacing-avatar-lg: var(--avatar-lg);
