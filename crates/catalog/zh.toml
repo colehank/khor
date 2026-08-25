@@ -786,6 +786,11 @@ upload-too-big = "文件太大:网页脸的上传上限是 {0}MB。更大的用�
 # A malformed upload request — the two query arguments are the whole
 # contract, and a missing one is the caller's bug said plainly.
 upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两个参数"
+# The refusal page a keyless browser gets (记住一次批: the page itself
+# sits behind the key now). It names the way in AND the promise — open
+# the printed link once, this browser is remembered from then on — so
+# the long ?k= reads as a one-time step, not a toll.
+web-door-shut = "这个地址要钥匙。在那台机器上跑 khor web,用它打印的链接打开一次,这个浏览器之后就记住了"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
