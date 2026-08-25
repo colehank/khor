@@ -293,10 +293,18 @@ try {
     ok("no list pane on the files landing");
   }
   // The probe that keeps the line above from being about a renamed
-  // attribute: the same locator finds one on the landing that still has
+  // attribute: the same locator finds one on a landing that still has
   // one, in the same window.
-  await rail("browser").click();
-  await until("the browser pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
+  //
+  // **The comparator is `devices`, not `browser`** — the browser landing
+  // was the natural control while it still had a machine column, and it
+  // stopped having one the moment it went through this same shell
+  // (浏览器接壳批). Left pointed there, this would have measured a
+  // landing with no column against another with no column and reported
+  // a gain of zero, which reads as the whole batch not having worked.
+  // 收件箱型 landings are what still have a column, by rule.
+  await rail("devices").click();
+  await until("the devices pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   const listWide = await page.locator("[data-list]").evaluate((el) => el.getBoundingClientRect().width);
   const detailWide = await page
     .locator("[data-list]")
@@ -305,7 +313,7 @@ try {
   const filesWide = await page
     .locator('[data-browse-landing="dir"]')
     .evaluate((el) => el.getBoundingClientRect().width);
-  console.log(`     list ${listWide} | browser content ${detailWide} | files content ${filesWide}`);
+  console.log(`     list ${listWide} | inbox-type content ${detailWide} | files content ${filesWide}`);
   if (filesWide <= detailWide) {
     fail(`the files content is ${filesWide} wide, no wider than the ${detailWide} a pane with a column gets`);
   } else {
@@ -630,6 +638,162 @@ try {
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(SCRATCH, "files-narrow.png") });
   console.log(`     screenshots in ${SCRATCH} (run ${STAMP}): ${["sessions", "devices", "files-wide", "files-narrow"].join(".png, ")}.png`);
+
+  // ── 8) the same shell, a second time, with pages in it ────────────
+  //
+  // **What is worth asserting here is only what differs.** Tabs, the
+  // strip, the switcher, the store and the widths are the shell's, and
+  // the sections above proved them once; running the identical checks a
+  // second time would measure the same code and call it two results.
+  // What is new is the three places the two kinds genuinely part
+  // company — the words, what completes the second segment, and who
+  // spends the borrow — plus the one structural fact that the second
+  // landing exists at all.
+  console.log("\n8) the browser landing, through the same shell");
+  await page.setViewportSize({ width: 1200, height: 800 });
+  const openBrowser = async () => {
+    await rail("browser").click();
+    await until("the browser landing", 10_000, async () =>
+      (await page.locator('[data-browse-landing="page"]').count()) === 1,
+    );
+  };
+  await openBrowser();
+  if ((await page.locator("[data-list]").count()) !== 0) {
+    fail("the browser landing still paints a list pane");
+  } else ok("no list pane on the browser landing");
+  const pageWide = await page
+    .locator('[data-browse-landing="page"]')
+    .evaluate((el) => el.getBoundingClientRect().width);
+  if (pageWide <= detailWide) {
+    fail(`the browser content is ${pageWide} wide, no wider than the ${detailWide} it had with a column`);
+  } else {
+    ok(`content gained ${Math.round(pageWide - detailWide)} (was ${detailWide}, now ${pageWide})`);
+  }
+
+  //    **The words are this landing's own.** Read off the two landings
+  //    and required to differ — never spelled here, the catalog owns
+  //    them. This is the assertion the first cut of the browser kind
+  //    would have failed: it mounted correctly and said 「目录」.
+  //    **Read from whichever state the bar is in.** The name rides the
+  //    box when a tab is fresh and the resting face when it is pointed
+  //    somewhere, and by this point in the run the files landing is
+  //    pointed somewhere — the first spelling looked only for the box,
+  //    found nothing, and reported "an address bar with no name" about a
+  //    bar that was sitting right there wearing it.
+  const wordsOn = async (open) => {
+    await open();
+    await page.waitForTimeout(400);
+    return page.evaluate(() => ({
+      empty: document.querySelector("[data-no-places]")?.textContent ?? null,
+      address:
+        document.querySelector("[data-omni-input]")?.getAttribute("aria-label") ??
+        document.querySelector("[data-address-rest]")?.getAttribute("aria-label") ??
+        null,
+    }));
+  };
+  const pageWords = await wordsOn(openBrowser);
+  const dirWords = await wordsOn(openFiles);
+  console.log(`     pages ${JSON.stringify(pageWords)} | files ${JSON.stringify(dirWords)}`);
+  if (!pageWords.address || !dirWords.address) fail("probe dead: an address bar with no name");
+  else if (pageWords.address === dirWords.address) {
+    fail(`both landings name their address bar ${pageWords.address}`);
+  } else ok("each landing names its address bar its own way");
+
+  //    A page kept, made through the real backend rather than by
+  //    reaching into a file: the bridge is the node behind an HTTP
+  //    skin, so this is `Node::pin_web` and nothing else.
+  const KEPT = "https://khor.example/kept";
+  const ask = (cmd, args) =>
+    fetch(`http://127.0.0.1:${BRIDGE_PORT}/${cmd}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(args),
+    }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${cmd}: ${r.status}`))));
+  await ask("pin_web", { machine: "alpha", url: KEPT, on: true });
+  await openBrowser();
+  await until("the kept page on the fresh tab", 20_000, async () =>
+    (await page.locator(`[data-place="${KEPT}"]`).count()) === 1,
+  );
+  ok("a pinned page reaches the browser landing's fresh tab");
+
+  //    **The second segment completes from memory, not from a machine.**
+  //    Nobody can enumerate the web, so what the box offers is what this
+  //    person keeps — and it has to be offered on the machine it was
+  //    kept against.
+  const pageBox = page.locator("[data-omni-input]");
+  await pageBox.click();
+  await pageBox.fill("alpha");
+  await until("alpha offered as an exit", 10_000, async () =>
+    (await page.locator('[data-omni-item="dev:alpha"]').count()) === 1,
+  );
+  await pageBox.press("Enter");
+  await until("alpha as the exit chip", 15_000, async () =>
+    (await page.locator('[data-chip="dev:alpha"]').count()) === 1,
+  );
+  await pageBox.fill("https://khor.exa");
+  await until("the kept page completed from what is remembered", 15_000, async () =>
+    (await page.locator(`[data-omni-item="${KEPT}"]`).count()) === 1,
+  );
+  ok("the address bar completes a kept page");
+  //    **Tab completes, Enter goes** (`Omnibox`), and pressing the wrong
+  //    one of those is not a product failure. The first spelling here
+  //    pressed Enter on the half-typed address, went to it — correctly —
+  //    and then complained that the tab was titled after where it had
+  //    actually gone. Tab first, and the box must really hold the whole
+  //    address before Enter means anything.
+  await pageBox.press("Tab");
+  await until("the completion written into the box", 10_000, async () =>
+    (await pageBox.inputValue()) === KEPT,
+  );
+  ok("Tab writes the completion into the box");
+
+  //    Enter spends a real borrow. **Whether it succeeds is not the
+  //    assertion** — that depends on a network this test does not own —
+  //    what is asserted is that the pane *says* which happened. A blank
+  //    pane after pressing Enter is the one outcome forbidden, and it is
+  //    the one a borrow that quietly did nothing would produce.
+  await pageBox.press("Enter");
+  //    Waited to *settle*, not merely to appear: 「正在借…」 is a real
+  //    thing to say but it is not the answer, and a probe that stops at
+  //    it would pass on a borrow that never comes back.
+  await until("the borrow settling", 30_000, async () =>
+    ["opened", "failed"].includes(
+      (await page.locator("[data-web-status]").getAttribute("data-web-status").catch(() => null)) ?? "",
+    ),
+  );
+  const spoke = await page.locator("[data-web-status]").innerText();
+  const how = await page.locator("[data-web-status]").getAttribute("data-web-status");
+  if (!spoke.trim()) fail("the borrow's report is an empty element");
+  else ok(`the borrow said so out loud (${how}): ${JSON.stringify(spoke.trim().slice(0, 48))}`);
+
+  //    …and the tab wears the page's host, not its whole address — the
+  //    kind's `leafOf`, which is the other thing the two do differently.
+  const pageTitles = await page
+    .locator("[data-tab-label]")
+    .evaluateAll((els) => els.map((e) => e.textContent));
+  console.log(`     browser tab titles: ${JSON.stringify(pageTitles)}`);
+  if (!pageTitles.includes("khor.example")) {
+    fail(`no tab is titled by the page's host — ${JSON.stringify(pageTitles)}`);
+  } else ok("a browser tab is titled by its host");
+
+  //    The narrow face is the shell's, but this landing has to reach it
+  //    too — one press, because the shape itself was proved in 4.
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openBrowser();
+  if ((await page.locator("[data-tab-count]").count()) !== 1) {
+    fail("no tab count on the browser landing's narrow face");
+  } else ok("the narrow switcher is reachable on the browser landing too");
+  const overPage = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  if (overPage > 0) fail(`the browser landing scrolls ${overPage} sideways at 390`);
+  else ok("no sideways scroll at 390");
+  await page.screenshot({ path: join(SCRATCH, "browser-narrow.png") });
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await openBrowser();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(SCRATCH, "browser-wide.png") });
+  console.log(`     ${shot("browser-wide.png")}, ${shot("browser-narrow.png")}`);
 
   if (thrown.length) fail(`page errors: ${thrown.join(" | ")}`);
   else ok("zero pageerror throughout");
