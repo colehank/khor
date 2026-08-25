@@ -111,7 +111,7 @@ function ChatToTerm({ row }: { row: SessionRow }) {
  * worked — until somebody pastes. The word goes back to the offer after
  * a beat, because "复制好了" is about the press and not about the row.
  */
-export function CopyId({ id }: { id: string }) {
+export function CopyId({ id, variant = "ghost" }: { id: string; variant?: "ghost" | "outline" }) {
   const [said, setSaid] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
     if (!said) return;
@@ -121,7 +121,12 @@ export function CopyId({ id }: { id: string }) {
   return (
     <Button
       size="sm"
-      variant="ghost"
+      // The dress follows the row, not the word (动作排语法批): in the
+      // session header every control is quiet text (ghost), on the
+      // machine card's verb row every verb wears the outline — one
+      // component, two rows, each row speaking one language. What must
+      // not differ is the behaviour: the copy, the cadence, the words.
+      variant={variant}
       data-copy-id
       data-said={said ?? undefined}
       className="flex-none data-[said=failed]:text-state-failed"

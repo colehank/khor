@@ -215,7 +215,12 @@ function Verbs({
       <Button variant="outline" size="sm" data-browse-files onClick={() => onBrowseFiles(row)}>
         {gui.browse_files}
       </Button>
-      <CopyId id={row.id} />
+      {/* Outline like its two neighbours (动作排语法批): the verb row
+          is this page's "what you can do here" list, three peer verbs
+          in one dress — bare text among outlined buttons reads as a
+          lower rank, or as a link. The session header keeps its ghost:
+          that row is all quiet text, and each row speaks one language. */}
+      <CopyId id={row.id} variant="outline" />
     </div>
   );
 }
@@ -361,6 +366,7 @@ function Readings({ row }: { row: DeviceRow }) {
               word={cli.vitals_name_vram}
               label={cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
               fraction={v.gpu.mem.total > 0 ? v.gpu.mem.used / v.gpu.mem.total : null}
+              strain={row.vitals.vram_strain}
             />
           )}
         </>

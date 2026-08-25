@@ -183,13 +183,20 @@ pub struct VitalsReading {
     pub vitals: Vitals,
     #[ts(type = "number")]
     pub age_ms: u64,
-    /// The strain words for memory and disk, minted here so the screen
-    /// paints a judgment instead of making one (the thresholds and their
-    /// reasons live on `khor_core::Fill::strain`). CPU and GPU carry no
+    /// The strain words for memory, disk and video memory, minted here
+    /// so the screen paints a judgment instead of making one (the
+    /// thresholds and their reasons live on `khor_core::Fill::strain`).
+    /// CPU and GPU utilisation carry no
     /// word on purpose: a pinned core is a machine doing its job, a full
     /// disk is a machine about to stop doing it.
     pub mem_strain: Option<khor_core::Strain>,
     pub disk_strain: Option<khor_core::Strain>,
+    /// Video memory is a `Fill` like the other two — it has a "full" to
+    /// be near — and it was the one the gauges whispered about while it
+    /// screamed (仪表环出声批's causing case: a 90% VRAM ring wearing the
+    /// same grey as a 2% CPU). Minted from the same `Fill::strain`, so
+    /// the thresholds stay one fact in one place.
+    pub vram_strain: Option<khor_core::Strain>,
 }
 
 impl VitalsReading {
@@ -197,6 +204,7 @@ impl VitalsReading {
         VitalsReading {
             mem_strain: vitals.mem.strain(),
             disk_strain: vitals.disk.and_then(|d| d.strain()),
+            vram_strain: vitals.gpu.as_ref().and_then(|g| g.mem).and_then(|m| m.strain()),
             vitals,
             age_ms,
         }
@@ -208,10 +216,11 @@ mod vitals_reading_tests {
     use super::*;
     use khor_core::{Fill, Strain};
 
-    /// Memory strained, disk fine — asymmetric on purpose. A symmetric
-    /// fixture (both strained or both fine) would stay green with the two
-    /// assignments swapped, and a swap is the one mistake this three-line
-    /// constructor has room for.
+    /// Memory strained, disk fine, VRAM tight — pairwise asymmetric on
+    /// purpose. A symmetric fixture would stay green with two
+    /// assignments swapped, and a swap is the one mistake this
+    /// constructor has room for. The words differ too (Critical vs
+    /// Tight), so mem↔vram swapped also goes red.
     #[test]
     fn each_strain_word_comes_from_its_own_fill() {
         let v = Vitals {
@@ -219,12 +228,31 @@ mod vitals_reading_tests {
             cores: 8,
             mem: Fill { used: 96, total: 100 },
             disk: Some(Fill { used: 50, total: 100 }),
-            gpu: None,
+            gpu: Some(khor_core::Gpu {
+                util_pct: 99.0, // pinned GPU carries no word either
+                cards: 1,
+                mem: Some(Fill { used: 91, total: 100 }),
+            }),
             version: None,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));
         assert_eq!(r.disk_strain, None, "a half-full disk says nothing");
+        assert_eq!(r.vram_strain, Some(Strain::Tight), "a 91% VRAM is worth a glance");
+    }
+
+    /// No GPU, no vram word — the absent card must not read as anything.
+    #[test]
+    fn a_machine_without_a_gpu_says_nothing_about_vram() {
+        let v = Vitals {
+            cpu_pct: 1.0,
+            cores: 8,
+            mem: Fill { used: 10, total: 100 },
+            disk: None,
+            gpu: None,
+            version: None,
+        };
+        assert_eq!(VitalsReading::of(v, 0).vram_strain, None);
     }
 }
 

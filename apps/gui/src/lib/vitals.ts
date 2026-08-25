@@ -12,8 +12,10 @@ import type { Track } from "@/components/Ring";
  *
  * **Neutral unless the node said otherwise, and there is no ramp.** A
  * busy CPU is a machine doing the work you asked for, not a warning, so
- * utilisation carries no hue at all; only 内存 and 磁盘 have a "full" to
- * be near, and only they are handed a `Strain`.
+ * utilisation carries no hue at all; 内存, 磁盘 and 显存 have a "full"
+ * to be near, and only they are handed a `Strain` (显存 joined in
+ * 仪表环出声批 — it was the one the gauges whispered about while it
+ * screamed: a 90% VRAM ring wearing a 2% CPU's grey).
  *
  * ── Why this is not mandala's `severityColor()` ──────────────────────
  *

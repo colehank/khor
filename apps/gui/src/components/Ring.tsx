@@ -173,7 +173,7 @@ export function Ring({
           the SVG: it is text the app styles like all its other text, and
           `<text>` would put it outside everything the type scale reaches. */}
       {children != null && (
-        <span data-ring-center className="col-start-1 row-start-1 text-fact font-label tabular-nums">
+        <span data-ring-center className="col-start-1 row-start-1 text-fact font-title tabular-nums">
           {children}
         </span>
       )}
