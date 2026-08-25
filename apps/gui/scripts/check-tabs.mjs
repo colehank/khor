@@ -37,7 +37,13 @@ import { chromium } from "playwright-core";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
-const SCRATCH = process.env.TABS_DIR ?? join(tmpdir(), `khor-tabs-${process.pid}`);
+// One fixed directory, wiped on the way in rather than minted per run.
+// It holds a copy of two ~115MB binaries, so a name carrying the pid
+// left 223MB behind every trip — nine runs of writing this file came to
+// 1.8GB on a disk other people are working on, and nothing announced
+// it. A fixed name cannot accumulate; two runs at once were never
+// possible anyway (they would fight over the ports).
+const SCRATCH = process.env.TABS_DIR ?? join(tmpdir(), "khor-tabs");
 const RUN = join(SCRATCH, "run");
 const KHOR = join(RUN, "khor");
 const BRIDGE = join(RUN, "bridge");
