@@ -821,6 +821,13 @@ sat-cant-reach = "ssh 够不着 {0}(要求免密):{1}"
 # trust the user already extended counts, so the fix is theirs to do
 # once by hand.
 sat-not-in-known-hosts = "known_hosts 里没有 {0} 的钥匙。先自己 ssh 连它一次(把指纹认下来),再回来领"
+# The sponsor gate on relayed readings: one row, one speaker — a second
+# machine answering for somebody else's satellite would be a staler
+# second voice on the same row.
+not-my-satellite = "{0} 不是这台机器领的卫星,它的读数归它的 sponsor 说"
+# The gap before the first sample lands: an honest "not yet", never a
+# row of zeros dressed as a reading.
+sat-not-sampled-yet = "还没采到它的读数(sponsor 每分钟采一轮)"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
