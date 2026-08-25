@@ -19,9 +19,30 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchRecents } from "@/api";
 import type { BrowseKind, Place } from "@/browse/kind";
 
-/** How many recent places a fresh tab offers. A screenful, not a
-    history: the list is a shortcut, and a shortcut nobody can scan is
-    a list. The node caps too — this is the ask, not the trust. */
+/**
+ * How many recent places a fresh tab offers. A screenful, not a
+ * history: the list is a shortcut, and a shortcut nobody can scan is a
+ * list. The node caps too — this is the ask, not the trust.
+ *
+ * **What makes this number harder to pick than it looks**, in
+ * `tabs-node`'s own words: a visit is recorded **per layer**, and that
+ * is deliberate — every layer really is a place somebody went, and
+ * which one was "the destination" is only knowable afterwards (a person
+ * who stops at `/a/b`, reads, then goes deeper was at both). No
+ * debounce can tell, so none pretends to.
+ *
+ * The consequence lands here: **one dig down three levels takes three
+ * of these slots**, all within milliseconds of each other, and at a
+ * small cap that single act can push everywhere else this person
+ * actually goes off the screen. The knob is this one; the ledger is
+ * not going to change.
+ *
+ * Left at 12 on purpose for now: the only customer is the fresh tab's
+ * one screen, twelve rows still scan at both widths, and there is no
+ * real usage to pick a better number from — raising it today would
+ * trade one guess for another. Somebody with a person's actual history
+ * in front of them should move it.
+ */
 const MOST_RECENT = 12;
 
 export type Places = {
