@@ -11,6 +11,7 @@ import {
   type MachineLog,
 } from "@/api";
 import { IconAttach } from "@/components/icons";
+import { IconFile } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -173,7 +174,7 @@ export function MachineChat({ id }: { id: string }) {
           {gui.send_file_failed}: {fileError}
         </div>
       )}
-      <div className="flex flex-none items-end gap-2 border-t px-3 py-2">
+      <div className="flex flex-none items-end gap-2 border-t bg-card px-3 py-2">
         <Button
           variant="ghost"
           size="icon"
@@ -212,7 +213,7 @@ export function MachineChat({ id }: { id: string }) {
               send();
             }
           }}
-          className="min-h-0 flex-1 resize-none rounded-md border bg-transparent px-3 py-1.5 text-sm outline-none"
+          className="min-h-0 flex-1 resize-none rounded-md border bg-background px-3 py-1.5 text-sm outline-none"
         />
         <Button size="sm" data-chat-send disabled={sending || !draft.trim()} onClick={send}>
           {gui.send_it}
@@ -291,7 +292,7 @@ function MsgLine({
             data-msg-text
             className={cn(
               "whitespace-pre-wrap rounded-lg px-3 py-1.5 text-sm",
-              m.from_me ? "bg-muted" : "border",
+              m.from_me ? "bg-accent" : "border bg-card",
             )}
           >
             {m.text}
@@ -339,14 +340,25 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
     <div
       data-msg-files
       data-word={m.word ?? undefined}
-      className={cn("flex flex-col gap-1 rounded-lg px-3 py-1.5 text-sm", m.from_me ? "bg-muted" : "border")}
+      className={cn(
+        "flex flex-col gap-1 rounded-lg px-3 py-2 text-sm",
+        m.from_me ? "bg-accent" : "border bg-card",
+      )}
     >
+      {/* The file leads with the family's own mark and its name at
+          title weight: a document being handed over is the thing this
+          message *is*, not a line in it — what makes the chip readable
+          as "a file" before any word is. Size rides under the name at
+          aux, the qualifying fact's place. */}
       {(m.files ?? []).map((f) => (
         <div key={f.name} className="flex items-center gap-2">
-          <span data-file-name className="min-w-0 truncate">
-            {f.name}
-          </span>
-          <span className="flex-none text-xs tabular-nums text-muted-foreground">{fmtSize(f.size)}</span>
+          <IconFile className="size-4 flex-none text-muted-foreground" />
+          <div className="min-w-0">
+            <div data-file-name className="truncate font-title">
+              {f.name}
+            </div>
+            <div className="text-xs tabular-nums text-muted-foreground">{fmtSize(f.size)}</div>
+          </div>
         </div>
       ))}
       {m.delivery && (
@@ -355,7 +367,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
         </span>
       )}
       {m.word && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
           {m.word && (
             <span data-file-word className="text-xs" style={{ color: `var(--state-${m.word})` }}>
               {word(m.word)}
