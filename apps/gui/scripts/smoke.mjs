@@ -747,6 +747,31 @@ for line in sys.stdin:
     );
   };
 
+  // The open machine card's full id.
+  //
+  // **Through the copy button, because the id is not written on the card
+  // any more.** It stepped behind that button in `2ef4750` (the card grew
+  // its verbs) and `data-machine-id` went with it — four assertions in
+  // this file went on naming that attribute, and a selector that matches
+  // nothing reads as "the card did not open" while the card is fine.
+  // Three of them were positive and failed honestly; **one was negative
+  // and had been passing for free ever since** (「没有 card 被打开」was
+  // true of a probe that could never find one). What each of them claims
+  // is unchanged — only the way of getting the id is.
+  //
+  // The clipboard is emptied first: it keeps whatever was put on it
+  // last, so a click that did not take would otherwise hand back the
+  // previous card's id and every comparison would still pass.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const cardId = async () => {
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await page.locator("[data-machine-card] [data-copy-id]").click();
+    return until("the card's id on the clipboard", 10_000, async () => {
+      const got = await page.evaluate(() => navigator.clipboard.readText());
+      return got && got.length > 0 ? got : false;
+    });
+  };
+
   // 0) **The app came up whole.** First assertion in the file, before
   //    anything is clicked, because everything after it reads one piece
   //    of a screen that is assumed to exist: a face that mounted half of
@@ -2435,14 +2460,20 @@ for line in sys.stdin:
   //
   //     The wide face is back on by now, so the list and the card are on
   //     screen together. The control comes first and it is a real one:
-  //     the card's section exists as soon as the devices pane is open
-  //     (it is the detail region), so what proves a machine was opened
-  //     is its *content* — no id is printed until a row is clicked.
+  //     with nothing picked the space holds the map instead, so the
+  //     card's own section is what proves a machine was opened — it is
+  //     not rendered at all until a row is clicked.
+  //
+  //     **This is the one of the four that was passing for free.** It
+  //     named `data-machine-id`, which has not existed since `2ef4750`,
+  //     so "no card is open" was being answered by a probe that could
+  //     never have found one. The live half is the map assertion right
+  //     below, which finds real elements in this very state.
   await page.setViewportSize({ width: 1080, height: 720 });
   await openLanding("devices");
   await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) >= 2);
-  if ((await page.locator("[data-machine-id]").count()) !== 0) {
-    throw new Error("a machine card is filled in before any machine was opened");
+  if ((await page.locator("[data-machine-card]").count()) !== 0) {
+    throw new Error("a machine card is open before any machine was opened");
   }
 
   //     **And what that space holds instead is the mandala map** — one
@@ -2566,15 +2597,16 @@ for line in sys.stdin:
     .locator('[data-device="alpha"]')
     .evaluate((el) => el.dataset.row.slice(0, 12));
   await page.locator('[data-device="alpha"] [data-row-open]').click();
-  await until("alpha's card", 10_000, async () => (await page.locator("[data-machine-id]").count()) === 1);
+  await until("alpha's card", 10_000, async () => (await page.locator("[data-machine-card]").count()) === 1);
 
-  //     …and it is alpha's card, not merely *a* card. The row prints the
-  //     first twelve characters of the id and the card prints all of it,
-  //     so one being a prefix of the other ties the two together without
-  //     this script knowing either value.
-  const cardId = await page.locator("[data-machine-id]").innerText();
-  if (!cardId.startsWith(shortId) || cardId.length <= shortId.length) {
-    throw new Error(`the card shows ${cardId}, which is not the full id behind ${shortId}`);
+  //     …and it is alpha's card, not merely *a* card. The row carries the
+  //     first twelve characters of the id and the card can hand over all
+  //     of it, so one being a prefix of the other ties the two together
+  //     without this script knowing either value (`cardId` says how it
+  //     is fetched now, and why).
+  const openCard = await cardId();
+  if (!openCard.startsWith(shortId) || openCard.length <= shortId.length) {
+    throw new Error(`the card hands over ${openCard}, which is not the full id behind ${shortId}`);
   }
 
   //     One machine, one picture — the same rule the rail and the row
@@ -2627,12 +2659,20 @@ for line in sys.stdin:
   if ((await page.locator("[data-vitals-age]").count()) !== 1) {
     throw new Error("a reading that travelled here shows no age");
   }
+  const betaShort = await page
+    .locator('[data-device="beta"]')
+    .evaluate((el) => el.dataset.row.slice(0, 12));
   await page.locator('[data-device="beta"] [data-row-open]').click();
+  //     Waited for, then read once. **Not read inside the wait**: the
+  //     fetch is a click on the copy button, and a loop would press it
+  //     once per turn on whichever card happened to be up.
   await until("beta's card", 10_000, async () =>
-    (await page.locator("[data-machine-id]").innerText()).startsWith(
-      await page.locator('[data-device="beta"]').evaluate((el) => el.dataset.row.slice(0, 12)),
-    ),
+    (await page.locator("[data-machine-card]").count()) === 1,
   );
+  const betaCard = await cardId();
+  if (!betaCard.startsWith(betaShort)) {
+    throw new Error(`the card hands over ${betaCard}, which is not the id behind ${betaShort}`);
+  }
   //     **And this machine's own card carries no road at all.** A
   //     machine does not reach itself over the network, so the row holds
   //     no reading rather than an unreadable one — the negative half of
@@ -2993,8 +3033,14 @@ for line in sys.stdin:
   if (!guest) throw new Error("probe dead: no seat that is not this machine");
   await page.locator(`[data-seat="${guest}"]`).click();
   await until("the card the seat opened", 10_000, async () =>
-    (await page.locator("[data-machine-id]").textContent().catch(() => "")) === guest,
+    (await page.locator("[data-machine-card]").count()) === 1,
   );
+  //     …and it is *that* seat's machine. Read once, outside the wait
+  //     (`cardId`).
+  const seatCard = await cardId();
+  if (seatCard !== guest) {
+    throw new Error(`pressing seat ${guest} opened the card for ${seatCard}`);
+  }
   if ((await page.locator("[data-mandala-map]").count()) !== 0) {
     throw new Error("the map is still on screen beside the card it opened");
   }
@@ -3029,7 +3075,7 @@ for line in sys.stdin:
   );
   await page.locator('[data-device="alpha"] [data-row-open]').click();
   await until("alpha's card", 10_000, async () =>
-    (await page.locator("[data-machine-id]").count()) === 1,
+    (await page.locator("[data-machine-card] [data-copy-id]").count()) === 1,
   );
   if ((await hookToggle.count()) !== 0) {
     throw new Error("another machine's card offers to edit this machine's hooks");

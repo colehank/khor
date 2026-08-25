@@ -53,6 +53,20 @@ const repo = join(gui, "../..");
 // it. A fixed name cannot accumulate; two runs at once were never
 // possible anyway (they would fight over the ports).
 const SCRATCH = process.env.TABS_DIR ?? join(tmpdir(), "khor-tabs");
+/**
+ * When this run started, printed beside every file it writes.
+ *
+ * **The fixed directory above fixed one thing and left another.** Every
+ * run overwrites the same names, so a screenshot path quoted in a report
+ * still goes stale the moment somebody re-runs — it just points at the
+ * right *kind* of picture now instead of the wrong one. A stamp on the
+ * same line means the quote carries which run it came from, and a reader
+ * can tell at a glance whether the file in front of them is that one.
+ * (tabs-node's catch, after a path in a report of mine went stale
+ * exactly this way.)
+ */
+const STAMP = new Date().toTimeString().slice(0, 8);
+const shot = (name) => `${join(SCRATCH, name)} (run ${STAMP})`;
 const RUN = join(SCRATCH, "run");
 const KHOR = join(RUN, "khor");
 const BRIDGE = join(RUN, "bridge");
@@ -320,6 +334,15 @@ try {
     .evaluateAll((els) => els.map((e) => e.dataset.placesSection));
   if (sections[0] !== "pinned") fail(`the fresh tab leads with ${sections[0]}, not the pins`);
   else ok(`sections in order: ${sections.join(" → ")}`);
+  // **Photographed here, where the claim is true.** The two shots at the
+  // end of this file are of an *open* tab, which is the right picture of
+  // a strip and the wrong picture of this — and a report that pointed at
+  // one of those for evidence about the fresh tab sent a reader to a
+  // screenshot showing something else (tabs-node caught exactly that).
+  // The scratch directory is fixed and every run overwrites it, so the
+  // only durable evidence is a file this run writes for this state.
+  await page.screenshot({ path: join(SCRATCH, "new-tab.png") });
+  console.log(`     the fresh tab, photographed: ${shot("new-tab.png")}`);
   await page.locator(`[data-place="${pinnedPlace}"]`).click();
   await until("pressing it points the tab there", 20_000, async () =>
     (await page.locator('[data-file="only-on-beta.txt"]').count()) === 1,
@@ -567,6 +590,32 @@ try {
     else ok(`${tab}: list pane + pane bar, unchanged`);
     await page.screenshot({ path: join(SCRATCH, `${tab}.png`) });
   }
+  //   …and a machine row still opens that machine's card. **Not
+  //   belt-and-braces**: the files landing used to be a third consumer
+  //   of `DevicesList.onOpen`, and taking it away rewrote that prop's
+  //   branch — so "the card still opens" is exactly the thing that edit
+  //   could have broken, and a pane bar being present says nothing
+  //   about it. (`smoke.mjs` §23 asserts the same; this is the cheap
+  //   copy that can be run on its own.)
+  await rail("devices").click();
+  await until("machines on the devices pane", 10_000, async () =>
+    (await page.locator('[data-device="alpha"] [data-row-open]').count()) === 1,
+  );
+  await page.locator('[data-device="alpha"] [data-row-open]').click();
+  //   `[data-machine-card]`, not `[data-machine-id]`: the id stepped
+  //   behind a copy button in 2ef4750 and the attribute went with it.
+  //   Written down because this probe was first spelled the old way and
+  //   went red — reading, for a few minutes, exactly like "the tabs work
+  //   broke the machine card". An empty match says "I did not find it",
+  //   never "it is not there".
+  try {
+    await until("alpha's card", 10_000, async () =>
+      (await page.locator("[data-machine-card]").count()) === 1,
+    );
+    ok("a machine row still opens that machine's card");
+  } catch {
+    fail("a machine row no longer opens its card");
+  }
   await openFiles();
   // With something actually listed under it: a strip photographed over
   // an empty tab cannot show whether the open tab joins its own page.
@@ -580,7 +629,7 @@ try {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(SCRATCH, "files-narrow.png") });
-  console.log(`     screenshots in ${SCRATCH}`);
+  console.log(`     screenshots in ${SCRATCH} (run ${STAMP}): ${["sessions", "devices", "files-wide", "files-narrow"].join(".png, ")}.png`);
 
   if (thrown.length) fail(`page errors: ${thrown.join(" | ")}`);
   else ok("zero pageerror throughout");
