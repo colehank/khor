@@ -243,6 +243,70 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         "a web pin made on beta must reach alpha: {webs:?}"
     );
 
+    // Where this person has been rides the same pump — and so does
+    // "stop suggesting this", which is the half a per-device store
+    // cannot do at all: dismissing on the desk has to reach the phone,
+    // or the phone keeps offering what was already waved away.
+    let place = browse.to_str().unwrap();
+    b.recent_visit(khor_node::PlaceKind::Dir, "alpha", place).unwrap();
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let seen = a.recents(khor_node::PlaceKind::Dir, 10).unwrap();
+    assert!(
+        seen.iter().any(|p| p.machine == alpha_hex && p.place == place),
+        "a visit recorded on beta must reach alpha: {seen:?}"
+    );
+
+    b.forget_recent(khor_node::PlaceKind::Dir, "alpha", place).unwrap();
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let left = a.recents(khor_node::PlaceKind::Dir, 10).unwrap();
+    assert!(
+        !left.iter().any(|p| p.place == place),
+        "the dismissal must reach alpha too, not just the device that made it: {left:?}"
+    );
+
+    // **A peer that cannot answer for this document must not cost the
+    // rounds behind it.** That is the whole reason the recents round is
+    // best-effort: it is a new name on the wire, and an older khor
+    // refuses one by name. An older khor cannot be built here, so alpha
+    // is made to refuse this one document for its own reason — a file
+    // where its block directory belongs — which reaches beta as exactly
+    // the same `Refused`.
+    let recents_dir = ra.join(".khor").join("recents");
+    let _ = fs::remove_dir_all(&recents_dir);
+    fs::write(&recents_dir, b"not a directory").unwrap();
+    assert!(
+        a.recents(khor_node::PlaceKind::Dir, 10).is_err(),
+        "control: the refusal has to be real, or this proves nothing"
+    );
+
+    b.recent_visit(khor_node::PlaceKind::Page, "alpha", "https://after.example").unwrap();
+    b.tell("alpha", "still talking").unwrap();
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let said: Vec<String> = a
+        .log("alpha")
+        .unwrap()
+        .messages
+        .iter()
+        .filter_map(|m| match &m.body {
+            khor_node::MsgBody::Text(t) => Some(t.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        said.iter().any(|t| t == "still talking"),
+        "the chat round runs after recents and must survive its refusal: {said:?}"
+    );
+    let _ = fs::remove_file(&recents_dir);
+
     serve_a.abort();
     let _ = fs::remove_dir_all(&ra);
     let _ = fs::remove_dir_all(&rb);

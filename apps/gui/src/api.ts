@@ -15,6 +15,7 @@ import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { DirPinRow } from "./gen/bindings/DirPinRow";
+import type { RecentRow } from "./gen/bindings/RecentRow";
 import type { WebPinRow } from "./gen/bindings/WebPinRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
 import type { TermBatch } from "./gen/bindings/TermBatch";
@@ -41,6 +42,7 @@ export type {
   ChatFrame,
   DirListing,
   DirPinRow,
+  RecentRow,
   WebPinRow,
   WebBorrow,
   TermBatch,
@@ -305,6 +307,25 @@ export const pullFile = (machine: string, path: string) =>
 export const fetchDirPins = () => call<DirPinRow[]>("dir_pins");
 export const pinDir = (machine: string, path: string, on: boolean) =>
   call<null>("pin_dir", { machine, path, on });
+/**
+ * Where this person has been, of one kind ("dir" | "page"), most recent
+ * first and machine names already looked up.
+ *
+ * **Not the tab strip.** What a screen currently has open belongs to
+ * that screen and stays in its own storage; this is the memory behind
+ * it, and it is the same on every device the person picks up
+ * (`khor_sync::recents`).
+ */
+export const fetchRecents = (kind: string, limit: number) =>
+  call<RecentRow[]>("recents", { kind, limit });
+/** Records a landing. Called when a tab arrives somewhere, not when
+    one is opened — the list is places, not trips. */
+export const recentVisit = (kind: string, machine: string, place: string) =>
+  call<null>("recent_visit", { kind, machine, place });
+/** "Stop suggesting this", for every device. Going back there puts it
+    back on its own. */
+export const forgetRecent = (kind: string, machine: string, place: string) =>
+  call<null>("forget_recent", { kind, machine, place });
 /** Every pinned page, exit-machine names already looked up. */
 export const fetchWebPins = () => call<WebPinRow[]>("web_pins");
 export const pinWeb = (machine: string, url: string, on: boolean) =>

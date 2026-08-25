@@ -666,6 +666,9 @@ impl Node {
                 } else if doc == "webpins" {
                     let mut loaded = self.webpins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "recents" {
+                    let mut loaded = self.recents_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if doc == "agents" {
                     let mut loaded = self.agents_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
@@ -1810,6 +1813,17 @@ impl Node {
         {
             let mut loaded = self.webpins_loaded()?;
             if let Ok(n) = self.rounds(&conn, "webpins", &mut loaded).await {
+                moved += n;
+            }
+        }
+        // Where this person has been, on the same best-effort footing
+        // and for the same reason: an older peer refuses the doc by
+        // name, and that must not cost the rounds behind it. What it
+        // costs instead is a phone whose suggestion list stops at what
+        // that phone itself has opened — no wrong answer, a shorter one.
+        {
+            let mut loaded = self.recents_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "recents", &mut loaded).await {
                 moved += n;
             }
         }

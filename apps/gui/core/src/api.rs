@@ -181,6 +181,17 @@ pub fn answer(
             crate::term::term_leave(&arg("id")?)?;
             Ok("null".to_owned())
         }
+        // Where this person has been, one kind at a time — the two
+        // landings never show each other's places (`crate::recents`).
+        "recents" => to_json(&crate::recents::recents(root, &arg("kind")?, num("limit")? as usize)?),
+        "recent_visit" => {
+            crate::recents::recent_visit(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
+            Ok("null".to_owned())
+        }
+        "forget_recent" => {
+            crate::recents::forget_recent(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
+            Ok("null".to_owned())
+        }
         "web_pins" => to_json(&crate::web::web_pins(root)?),
         "pin_web" => {
             crate::web::pin_web(root, &arg("machine")?, &arg("url")?, flag("on")?)?;

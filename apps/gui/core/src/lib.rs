@@ -11,6 +11,7 @@
 pub mod api;
 pub mod chat;
 pub mod files;
+pub mod recents;
 pub mod term;
 pub mod web;
 

@@ -51,6 +51,12 @@ use khor_sync::agents::{agents_dir, AgentDoc};
 pub use khor_sync::agents::Spec as AgentSpec;
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
+/// What sort of place a recorded visit was to
+/// (`khor_sync::recents::Kind`). Re-exported because `Node::recents`
+/// takes and reports one, and a type a public method demands that
+/// callers cannot name is a method they cannot call.
+pub use khor_sync::recents::Kind as PlaceKind;
+use khor_sync::recents::{recents_dir, RecentDoc};
 use khor_sync::pins::{pins_dir, PinDoc};
 use khor_sync::seen::{seen_dir, SeenDoc};
 use khor_sync::store::{load, Loaded};
@@ -169,6 +175,21 @@ fn is_quiet(session: &Session, now_ms: u64) -> bool {
     matches!(session.state.state, State::Busy | State::Blocked | State::Errored)
         && session.unbacked
         && now_ms.saturating_sub(session.state.at.0) >= QUIET_AFTER_MS
+}
+
+/// One place this person has been (`khor_sync::recents`). The machine
+/// is its id and not its name: the record outlives a rename, and the
+/// name is looked up at the surface by whoever is painting, the way a
+/// pin's is.
+#[derive(Debug, Clone)]
+pub struct RecentPlace {
+    /// Whose disk or whose network — the device hex.
+    pub machine: String,
+    /// The absolute path, or the URL.
+    pub place: String,
+    /// When it was last visited, Unix ms. Never 0: that is the
+    /// tombstone and those are not on this list.
+    pub at_ms: i64,
 }
 
 /// What subscribers receive. `watch()` is the one feed both faces
@@ -608,6 +629,10 @@ impl Node {
         load(&webpins_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn recents_loaded(&self) -> Result<Loaded<RecentDoc>, String> {
+        load(&recents_dir(&self.root), self.peer)
+    }
+
     pub(crate) fn agents_loaded(&self) -> Result<Loaded<AgentDoc>, String> {
         load(&agents_dir(&self.root), self.peer)
     }
@@ -931,6 +956,59 @@ impl Node {
             .filter_map(|k| {
                 khor_sync::webpins::split(k).map(|(d, u)| (d.to_owned(), u.to_owned()))
             })
+            .collect())
+    }
+
+    /// Records that this person went to a place, for every device
+    /// (`khor_sync::recents` — the memory travels, the tab strip does
+    /// not). Revisiting moves the instant and adds no row.
+    ///
+    /// A directory's path must be absolute for the same reason
+    /// [`Self::pin_dir`] demands it: a relative path names nowhere, and
+    /// a suggestion nobody can open is worse than no suggestion.
+    pub fn recent_visit(&self, kind: PlaceKind, machine: &str, place: &str) -> Result<(), String> {
+        if kind == PlaceKind::Dir && !std::path::Path::new(place).is_absolute() {
+            return Err(msg::path_not_absolute(place));
+        }
+        let (_, home) = self.resolve(machine)?;
+        let loaded = self.recents_loaded()?;
+        loaded
+            .doc
+            .visit(&khor_sync::recents::key(kind, &home.hex(), place), crate::live::now_ms())?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// "Stop suggesting this", for every device. A tombstone rather
+    /// than a deletion, so the dismissal travels — and going back there
+    /// puts the place back on its own (`khor_sync::recents`).
+    pub fn forget_recent(&self, kind: PlaceKind, machine: &str, place: &str) -> Result<(), String> {
+        let (_, home) = self.resolve(machine)?;
+        let loaded = self.recents_loaded()?;
+        loaded.doc.forget(&khor_sync::recents::key(kind, &home.hex(), place))?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Where this person has been of this kind, most recent first, at
+    /// most `limit` of them. Dismissed places are not on it, and keys
+    /// some other version spelled differently are skipped rather than
+    /// guessed at.
+    pub fn recents(&self, kind: PlaceKind, limit: usize) -> Result<Vec<RecentPlace>, String> {
+        Ok(self
+            .recents_loaded()?
+            .doc
+            .all()
+            .iter()
+            .filter_map(|(k, at_ms)| {
+                let (k_kind, device, place) = khor_sync::recents::split(k)?;
+                (k_kind == kind).then(|| RecentPlace {
+                    machine: device.to_owned(),
+                    place: place.to_owned(),
+                    at_ms: *at_ms,
+                })
+            })
+            .take(limit)
             .collect())
     }
 

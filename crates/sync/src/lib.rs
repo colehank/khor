@@ -14,6 +14,7 @@ mod glue;
 pub mod dirpins;
 pub mod pins;
 pub mod plan;
+pub mod recents;
 pub mod seen;
 pub mod store;
 pub mod titles;

@@ -910,3 +910,185 @@ mod self_exe_tests {
         );
     }
 }
+
+/// "Where was I?" at the node's surface (`khor_sync::recents`). The
+/// document's own laws are pinned in that module; what is pinned here is
+/// the surface's share of them — that the two kinds are two lists, that
+/// the cap is honoured, and that the machine and the path are checked
+/// before anything is written.
+#[cfg(test)]
+mod recents_tests {
+    use std::fs;
+
+    use crate::{Node, PlaceKind};
+
+    fn root(tag: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("khor-node-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    /// **The list grows by places, not by trips.** Opening the same
+    /// directory all morning must leave one row — a list that counted
+    /// visits would be a log, and the newest thing in it would be
+    /// wherever the person has been sitting longest.
+    #[test]
+    fn going_back_to_a_place_does_not_lengthen_the_list() {
+        let r = root("recents-revisit");
+        let n = Node::open(r.clone()).unwrap();
+        let me = n.name().to_owned();
+
+        for _ in 0..3 {
+            n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(3));
+        }
+        assert_eq!(n.recents(PlaceKind::Dir, 10).unwrap().len(), 1, "three trips, one place");
+
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/other").unwrap();
+        assert_eq!(n.recents(PlaceKind::Dir, 10).unwrap().len(), 2, "a second place is what makes it two");
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    /// Written in one order, read in the other, and cut to the cap.
+    /// The distinctness check above the ordering one is what keeps this
+    /// from passing on a clock that never moved — with three equal
+    /// stamps the order would be the tiebreak's, and this test would be
+    /// asserting something it is not about.
+    #[test]
+    fn the_list_reads_most_recent_first_and_stops_at_the_cap() {
+        let r = root("recents-order");
+        let n = Node::open(r.clone()).unwrap();
+        let me = n.name().to_owned();
+
+        for p in ["/first", "/second", "/third"] {
+            n.recent_visit(PlaceKind::Dir, &me, p).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(3));
+        }
+
+        let all = n.recents(PlaceKind::Dir, 10).unwrap();
+        let stamps: Vec<i64> = all.iter().map(|p| p.at_ms).collect();
+        assert!(
+            stamps.windows(2).all(|w| w[0] > w[1]),
+            "the clock must have moved between visits or this test is about the tiebreak: {stamps:?}"
+        );
+        let places: Vec<&str> = all.iter().map(|p| p.place.as_str()).collect();
+        assert_eq!(places, vec!["/third", "/second", "/first"], "most recent first");
+        assert!(all.iter().all(|p| p.machine == n.device_str()), "each place names whose disk it is on");
+
+        let two = n.recents(PlaceKind::Dir, 2).unwrap();
+        assert_eq!(
+            two.iter().map(|p| p.place.as_str()).collect::<Vec<_>>(),
+            vec!["/third", "/second"],
+            "the cap keeps the recent end, not the old one"
+        );
+        assert!(n.recents(PlaceKind::Dir, 0).unwrap().is_empty(), "a cap of none is none");
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    /// Two landings, two lists. A page must never surface where
+    /// directories are offered — they are one table told apart by a
+    /// word in the key, and a reader that ignored the word would pass
+    /// every other test in this module.
+    #[test]
+    fn directories_and_pages_never_show_up_in_each_others_lists() {
+        let r = root("recents-kinds");
+        let n = Node::open(r.clone()).unwrap();
+        let me = n.name().to_owned();
+
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").unwrap();
+        n.recent_visit(PlaceKind::Page, &me, "https://example.com/read").unwrap();
+
+        let dirs = n.recents(PlaceKind::Dir, 10).unwrap();
+        let pages = n.recents(PlaceKind::Page, 10).unwrap();
+        assert_eq!(dirs.len(), 1, "one directory: {dirs:?}");
+        assert_eq!(dirs[0].place, "/Users/x/proj");
+        assert_eq!(pages.len(), 1, "one page: {pages:?}");
+        assert_eq!(pages[0].place, "https://example.com/read");
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    /// Dismissing takes a place off the list; going back puts it back.
+    /// The second half is the one that says the tombstone means "stop
+    /// suggesting this" rather than "this place is gone".
+    #[test]
+    fn a_dismissed_place_leaves_the_list_and_a_new_visit_brings_it_back() {
+        let r = root("recents-forget");
+        let n = Node::open(r.clone()).unwrap();
+        let me = n.name().to_owned();
+
+        n.recent_visit(PlaceKind::Page, &me, "https://news.example").unwrap();
+        n.recent_visit(PlaceKind::Page, &me, "https://kept.example").unwrap();
+        assert_eq!(n.recents(PlaceKind::Page, 10).unwrap().len(), 2, "control: both are on the list");
+
+        n.forget_recent(PlaceKind::Page, &me, "https://news.example").unwrap();
+        let left = n.recents(PlaceKind::Page, 10).unwrap();
+        assert_eq!(
+            left.iter().map(|p| p.place.as_str()).collect::<Vec<_>>(),
+            vec!["https://kept.example"],
+            "the dismissed one is off the list and the other is untouched"
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        n.recent_visit(PlaceKind::Page, &me, "https://news.example").unwrap();
+        assert_eq!(
+            n.recents(PlaceKind::Page, 10).unwrap()[0].place,
+            "https://news.example",
+            "going back there must put it back, at the top"
+        );
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    /// The record is a document on disk, not process state: a serve
+    /// restart, or the CLI running beside the app, comes back to the
+    /// same list.
+    #[test]
+    fn the_list_survives_reopening_the_node() {
+        let r = root("recents-reopen");
+        let n = Node::open(r.clone()).unwrap();
+        let me = n.name().to_owned();
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").unwrap();
+        drop(n);
+
+        let n = Node::open(r.clone()).unwrap();
+        assert_eq!(
+            n.recents(PlaceKind::Dir, 10).unwrap()[0].place,
+            "/Users/x/proj",
+            "the record must outlive the process that made it"
+        );
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    /// A relative path names nowhere, and a machine nobody has heard of
+    /// names nobody: both are refused before anything is written, or the
+    /// list would offer somewhere that cannot be opened. The control
+    /// above each refusal is what says the refusal is about the argument
+    /// and not about recording visits at all.
+    #[test]
+    fn a_place_nobody_can_reach_is_refused_rather_than_recorded() {
+        let r = root("recents-refuse");
+        let n = Node::open(r.clone()).unwrap();
+        let me = n.name().to_owned();
+
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").expect("control: an absolute path is fine");
+        assert!(
+            n.recent_visit(PlaceKind::Dir, &me, "proj/sub").is_err(),
+            "a relative directory names nowhere"
+        );
+        assert!(
+            n.recent_visit(PlaceKind::Dir, "no-such-machine", "/Users/x/proj").is_err(),
+            "a machine not in the table names nobody"
+        );
+        assert_eq!(
+            n.recents(PlaceKind::Dir, 10).unwrap().len(),
+            1,
+            "…and neither refusal may have written a row"
+        );
+
+        // A URL is not a path, so the absolute-path rule must not reach
+        // pages — it would refuse every page there is.
+        n.recent_visit(PlaceKind::Page, &me, "https://example.com/read")
+            .expect("a page is not judged by the path rule");
+        let _ = fs::remove_dir_all(&r);
+    }
+}

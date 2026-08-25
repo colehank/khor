@@ -226,6 +226,25 @@ fn term_leave(id: String) -> Result<(), String> {
     khor_gui_core::term::term_leave(&id)
 }
 
+/// Where this person has been, of one kind, most recent first
+/// (`khor_gui_core::recents`). The cap is the caller's because it is a
+/// question about the surface asking — a strip of tabs and a landing's
+/// list want different lengths of the same list.
+#[tauri::command]
+fn recents(kind: String, limit: u32) -> Result<Vec<khor_gui_core::recents::RecentRow>, String> {
+    khor_gui_core::recents::recents(&Node::root_from_env(), &kind, limit as usize)
+}
+
+#[tauri::command]
+fn recent_visit(kind: String, machine: String, place: String) -> Result<(), String> {
+    khor_gui_core::recents::recent_visit(&Node::root_from_env(), &kind, &machine, &place)
+}
+
+#[tauri::command]
+fn forget_recent(kind: String, machine: String, place: String) -> Result<(), String> {
+    khor_gui_core::recents::forget_recent(&Node::root_from_env(), &kind, &machine, &place)
+}
+
 #[tauri::command]
 fn web_pins() -> Result<Vec<khor_gui_core::web::WebPinRow>, String> {
     khor_gui_core::web::web_pins(&Node::root_from_env())
@@ -465,6 +484,9 @@ pub fn run() {
             term_drop,
             term_resize,
             term_leave,
+            recents,
+            recent_visit,
+            forget_recent,
             web_pins,
             pin_web,
             open_web,
