@@ -156,6 +156,11 @@ pub struct DeviceRow {
     /// face had to remember to hide, the first face that forgot would
     /// print 说不出 on the row for the computer it is running on.
     pub hop: Option<String>,
+    /// The machine this satellite speaks through, by name (附属机器批)
+    /// — `None` for every ordinary machine. Where `hop` answers "which
+    /// road", this answers "whose road": a satellite has none of its
+    /// own, so faces print 「经 <sponsor>」 in the road's place.
+    pub sponsor: Option<String>,
     /// Where this machine sits when the network is drawn as a mandala
     /// (`khor_core::map`).
     ///
@@ -442,9 +447,17 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
     // machine keeps its seat for as long as the list keeps its shape,
     // and nothing here decides an order the node did not.
     let mut ring = map::ring(all.iter().filter(|d| d.id != me).count()).into_iter();
+    // id → name for the satellite rows: their road column names the
+    // sponsor they speak through, and a screen prints names.
+    let names: std::collections::HashMap<String, String> =
+        all.iter().map(|d| (d.id.clone(), d.name.clone())).collect();
     Ok(all
         .into_iter()
         .map(|d| DeviceRow {
+            sponsor: d
+                .sponsor
+                .as_ref()
+                .map(|sp| names.get(sp).cloned().unwrap_or_else(|| sp.clone())),
             seat: if d.id == me {
                 map::CENTRE
             } else {

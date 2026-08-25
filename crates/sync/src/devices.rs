@@ -115,6 +115,23 @@ const F_PINNED: &str = "pinned";
 /// A machine that was shown the door. Written like any other field, so
 /// it travels like any other field — see [`DeviceDoc::set_gone`].
 const F_GONE: &str = "gone";
+/// The machine that adopted this satellite (device id, hex) — present
+/// exactly when the row is a satellite (附属机器批: a machine only ssh
+/// can reach, spoken for by its sponsor; docs/NET.md 卫星). Fields, not
+/// a new document: an older khor replicates unknown registers untouched
+/// and paints the row as an ordinary unreachable machine, which is the
+/// safe misreading.
+const F_SPONSOR: &str = "sponsor";
+/// The ssh destination the sponsor reaches it by (a Host alias or
+/// user@host). Only meaningful where the sponsor's own ssh config is —
+/// it replicates anyway because it is a decision, not a credential, and
+/// the sponsor must still know it after its own restart.
+const F_SSH_HOST: &str = "ssh_host";
+/// Whether the satellite had tmux when it was adopted (or last probed)
+/// — what decides if a terminal on it can be made persistent. Stored as
+/// a bool register but read three-valued: "unprobed" must not read as
+/// "absent".
+const F_SAT_TMUX: &str = "sat_tmux";
 
 fn fkey(id: &str, field: &str) -> String {
     let mut k = String::with_capacity(id.len() + 1 + field.len());
@@ -145,6 +162,20 @@ pub struct DeviceInfo {
     /// Whether someone pinned this machine to the top of the list.
     /// Network-wide, not per viewer (see the module head).
     pub pinned: bool,
+    /// The device id of the machine that adopted this row, when the row
+    /// is a satellite (附属机器批) — `None` for every ordinary machine.
+    /// Everything a reader needs to route: a satellite's home is its
+    /// sponsor.
+    pub sponsor: Option<String>,
+    /// The ssh destination its sponsor reaches it by. Meaningful only
+    /// on the sponsor (whose ssh config defines it); carried on the row
+    /// so the sponsor still knows it after a restart.
+    pub ssh_host: Option<String>,
+    /// `Some(true)` = tmux was there at the last probe, `Some(false)` =
+    /// probed and absent, `None` = never probed (an adoption from an
+    /// older khor). Three states on purpose: unprobed must not read as
+    /// absent.
+    pub sat_tmux: Option<bool>,
 }
 
 pub struct DeviceDoc {
@@ -314,6 +345,41 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// Marks a row as a satellite: spoken for by `sponsor`, reached over
+    /// ssh at `ssh_host`, with tmux present or not as probed
+    /// (附属机器批). One call rather than three setters because the
+    /// three facts are one decision — a row with a sponsor but no ssh
+    /// destination is a satellite nobody can reach.
+    ///
+    /// Any paired machine may write it (it is how adoption enters the
+    /// table), but in practice only the sponsor does: it is the one
+    /// holding the ssh config the destination means anything to.
+    pub fn set_satellite(
+        &self,
+        id: &str,
+        sponsor: &str,
+        ssh_host: &str,
+        tmux: bool,
+    ) -> Result<(), String> {
+        let mut dirty = false;
+        if self.flat_str(id, F_SPONSOR).as_deref() != Some(sponsor) {
+            self.write_field(id, F_SPONSOR, sponsor)?;
+            dirty = true;
+        }
+        if self.flat_str(id, F_SSH_HOST).as_deref() != Some(ssh_host) {
+            self.write_field(id, F_SSH_HOST, ssh_host)?;
+            dirty = true;
+        }
+        if self.flat(id, F_SAT_TMUX) != Some(LoroValue::Bool(tmux)) {
+            self.write_field(id, F_SAT_TMUX, tmux)?;
+            dirty = true;
+        }
+        if dirty {
+            self.inner.commit();
+        }
+        Ok(())
+    }
+
     /// Shows a machine the door, network-wide — or takes it back in.
     ///
     /// **Leaving is expressed as "not in the table", which is why this
@@ -375,6 +441,12 @@ impl DeviceDoc {
                     .unwrap_or_default(),
                 style: self.str_field(&id, F_STYLE),
                 pinned: self.bool_field(&id, F_PINNED),
+                sponsor: self.str_field(&id, F_SPONSOR),
+                ssh_host: self.str_field(&id, F_SSH_HOST),
+                sat_tmux: match self.field(&id, F_SAT_TMUX) {
+                    Some(LoroValue::Bool(b)) => Some(b),
+                    _ => None,
+                },
                 id,
             })
             .collect();
@@ -853,5 +925,33 @@ mod tests {
         let before = d.version();
         d.set_pinned("aa", false).unwrap();
         assert_eq!(d.version(), before, "no change must mean no new ops");
+    }
+
+    /// The satellite mark round-trips and replicates (附属机器批): the
+    /// sponsor writes it once, every merged table answers with sponsor,
+    /// ssh destination and the tmux probe — and an ordinary machine
+    /// answers `None` on all three (the control: an implementation that
+    /// stamped everything a satellite would pass the first half alone).
+    #[test]
+    fn a_satellite_mark_replicates_and_ordinary_machines_carry_none() {
+        let sponsor = DeviceDoc::new(1).unwrap();
+        sponsor.upsert("aa", "mac", &[]).unwrap();
+        sponsor.upsert("5a".repeat(32).as_str(), "gpu-box", &[]).unwrap();
+        sponsor
+            .set_satellite("5a".repeat(32).as_str(), "aa", "gpubox", true)
+            .unwrap();
+
+        let far = DeviceDoc::new(2).unwrap();
+        far.merge(&sponsor.changes_since(&Default::default()).unwrap()).unwrap();
+        let sat = far.get("5a".repeat(32).as_str()).expect("the satellite crossed");
+        assert_eq!(sat.sponsor.as_deref(), Some("aa"), "the sponsor travels");
+        assert_eq!(sat.ssh_host.as_deref(), Some("gpubox"), "…with the ssh destination");
+        assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
+        let plain = far.get("aa").expect("the sponsor itself crossed");
+        assert_eq!(
+            (plain.sponsor, plain.ssh_host, plain.sat_tmux),
+            (None, None, None),
+            "an ordinary machine is no satellite"
+        );
     }
 }

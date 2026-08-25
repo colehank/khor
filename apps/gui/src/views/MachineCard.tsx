@@ -102,10 +102,19 @@ export function MachineCard({
                   the age beside the readings below is what says whether
                   this machine has been heard from. Two facts, two
                   places. */}
-              {row.hop && (
-                <div data-hop={row.hop} className="text-sm text-muted-foreground">
-                  {hopWord(row.hop)}
+              {/* A satellite has no road of its own — its sponsor
+                  speaks for it (附属机器批), so the road line names who
+                  through instead of a reading nothing could take. */}
+              {row.sponsor ? (
+                <div data-via-sponsor={row.sponsor} className="text-sm text-muted-foreground">
+                  {cli.via_sponsor(row.sponsor)}
                 </div>
+              ) : (
+                row.hop && (
+                  <div data-hop={row.hop} className="text-sm text-muted-foreground">
+                    {hopWord(row.hop)}
+                  </div>
+                )
               )}
             </div>
             {/* The same control as on the row, with the same two names

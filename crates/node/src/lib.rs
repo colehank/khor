@@ -23,6 +23,7 @@ pub mod live;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
+pub mod satellite;
 pub mod transfer;
 pub mod tunnel;
 pub mod usage;
@@ -724,6 +725,35 @@ impl Node {
         loaded.doc.set(name, &spec)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Adopts a satellite: a machine only ssh can reach, led into the
+    /// network by this machine — its sponsor from now on (附属机器批;
+    /// docs/NET.md 卫星). Probes it over the user's own ssh road (one
+    /// connection: reachable, uname, tmux), mints its id from the host
+    /// key already in known_hosts, and writes the row every device will
+    /// see on its next sync. Answers `(id, name, tmux)`.
+    ///
+    /// Re-adoption clears a tombstone the way pairing does: taking a
+    /// machine back in is what the verb is, and it cannot happen from
+    /// the satellite's own side — it has no side.
+    pub fn adopt_satellite(
+        &self,
+        host: &str,
+        name: Option<&str>,
+    ) -> Result<(String, String, bool), String> {
+        let probe = satellite::probe(host)?;
+        let id = satellite::fingerprint_id(host)?;
+        let name = name.unwrap_or(host);
+        let name = channel_of_machine(name)
+            .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
+        let loaded = self.devices_loaded()?;
+        loaded.doc.upsert(&id, &name, &[])?;
+        loaded.doc.set_satellite(&id, self.device_str(), host, probe.tmux)?;
+        loaded.doc.set_gone(&id, false)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok((id, name, probe.tmux))
     }
 
     /// Forgets one. A name nobody registered is not an error — the

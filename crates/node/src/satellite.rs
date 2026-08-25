@@ -1,0 +1,230 @@
+//! Satellites: machines only ssh can reach, spoken for by a sponsor
+//! (附属机器批; docs/NET.md 卫星).
+//!
+//! 卫星 = 看得见、够得着,但不是它自己在说话;行星 = 它自己在说话;
+//! 转正 = 一条命令. A satellite sits in the device table like any
+//! machine — id, name, a face — but its home is its **sponsor**: every
+//! operation routes there and the sponsor executes it over ssh.
+//!
+//! # Only the user's own ssh road, never khor's
+//!
+//! Everything here shells out to `ssh` so the user's `~/.ssh/config`,
+//! agent and known_hosts do all the deciding. khor stores no
+//! credential, opens no socket of its own, and never calls
+//! `ssh-keyscan`: the identity comes out of **known_hosts** — the trust
+//! the user already extended — and a host they never connected to is
+//! refused with directions, not probed behind their back.
+//!
+//! # The id is the host key's SHA256, as hex
+//!
+//! A SHA256 is exactly 32 bytes, so the fingerprint wears the same
+//! shape as every device id (64 hex chars): `DeviceId` parses it, the
+//! avatar mint seeds from it (a satellite has a face for free), and no
+//! reader needs a second id grammar. It is not an iroh key — nothing
+//! can dial it — and the row's empty `addrs` keeps every sync loop
+//! walking past it, which is exactly right.
+//!
+//! # BatchMode everywhere
+//!
+//! Every ssh this module runs carries `-o BatchMode=yes`: a password
+//! prompt inside a serve is a hang nobody can answer. A host that needs
+//! interactive auth fails fast with ssh's own words, which the caller
+//! wraps in directions.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+use khor_catalog::msg;
+
+/// The test door (`KHOR_TMUX_SOCKET`'s precedent): a scratch ssh world
+/// — a `config` and a `known_hosts` under one directory — so
+/// verification never reads or writes the user's real `~/.ssh`. It has
+/// to be an explicit door rather than a `HOME` override because OpenSSH
+/// resolves `~` through the passwd database, not the environment
+/// (measured: a HOME-overridden probe read the real config and sent the
+/// alias to a proxy's fake-ip DNS). Production leaves it unset and
+/// every call rides the user's own road, which is the whole point.
+fn ssh_dir() -> Option<PathBuf> {
+    std::env::var_os("KHOR_SSH_DIR").map(Into::into)
+}
+
+/// What one adoption probe learned over a single connection.
+#[derive(Debug, Clone)]
+pub struct Probe {
+    /// `uname -s` (or "unknown" where uname is missing) — recorded for
+    /// the report, not for branching: platform quirks are handled where
+    /// they bite (the sampler), never pre-sorted here.
+    pub uname: String,
+    /// Whether tmux is on the satellite — what decides if a terminal
+    /// there can be made persistent (docs/SESSION.md 例外墓碑).
+    pub tmux: bool,
+}
+
+/// The flags every satellite ssh shares. `ConnectTimeout` because a
+/// dead host must cost seconds, not a TCP stack's patience.
+fn ssh_base(host: &str) -> Command {
+    let mut c = Command::new("ssh");
+    if let Some(dir) = ssh_dir() {
+        c.arg("-F").arg(dir.join("config"));
+    }
+    c.arg("-o")
+        .arg("BatchMode=yes")
+        .arg("-o")
+        .arg("ConnectTimeout=8")
+        .arg(host);
+    c
+}
+
+/// One connection, two answers: what it is, and whether tmux is there.
+pub fn probe(host: &str) -> Result<Probe, String> {
+    let out = ssh_base(host)
+        .arg("uname -s 2>/dev/null || echo unknown; command -v tmux >/dev/null 2>&1 && echo tmux-yes || echo tmux-no")
+        .output()
+        .map_err(|e| msg::ssh_wont_run(e))?;
+    if !out.status.success() {
+        return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines();
+    let uname = lines.next().unwrap_or("unknown").trim().to_owned();
+    let tmux = lines.next().is_some_and(|l| l.trim() == "tmux-yes");
+    Ok(Probe { uname, tmux })
+}
+
+/// The satellite's stable id: the SHA256 of its host key, hex — read
+/// out of known_hosts (`ssh-keygen -F`), the module head's rule.
+///
+/// The alias the user types may not be what known_hosts is keyed by, so
+/// a miss retries with the canonical hostname `ssh -G` resolves the
+/// alias to — the same resolution the connection itself would use.
+pub fn fingerprint_id(host: &str) -> Result<String, String> {
+    if let Some(id) = known_host_id(host)? {
+        return Ok(id);
+    }
+    if let Some(real) = canonical_hostname(host) {
+        if real != host {
+            if let Some(id) = known_host_id(&real)? {
+                return Ok(id);
+            }
+        }
+    }
+    Err(msg::sat_not_in_known_hosts(host))
+}
+
+/// One name's known_hosts entry, fingerprinted — `None` when the file
+/// has never seen it.
+fn known_host_id(name: &str) -> Result<Option<String>, String> {
+    let mut find = Command::new("ssh-keygen");
+    if let Some(dir) = ssh_dir() {
+        find.arg("-f").arg(dir.join("known_hosts"));
+    }
+    let found = find
+        .arg("-F")
+        .arg(name)
+        .output()
+        .map_err(|e| msg::ssh_wont_run(e))?;
+    if !found.status.success() {
+        return Ok(None);
+    }
+    // Key lines only; `-F` prefixes each match with a `# Host …` comment.
+    let keys: String = String::from_utf8_lossy(&found.stdout)
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#') && !l.trim().is_empty())
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if keys.is_empty() {
+        return Ok(None);
+    }
+    let printed = {
+        use std::io::Write;
+        let mut c = Command::new("ssh-keygen")
+            .arg("-lf")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| msg::ssh_wont_run(e))?;
+        c.stdin
+            .take()
+            .ok_or_else(|| msg::ssh_wont_run("no stdin"))?
+            .write_all(keys.as_bytes())
+            .map_err(|e| msg::ssh_wont_run(e))?;
+        let out = c.wait_with_output().map_err(|e| msg::ssh_wont_run(e))?;
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    // First fingerprint line wins: `256 SHA256:<b64> name (ED25519)`.
+    // known_hosts may hold several key types for one host; any of them
+    // identifies it, and "the first" is stable because -F preserves
+    // file order.
+    let Some(b64) = printed
+        .lines()
+        .find_map(|l| l.split_whitespace().nth(1)?.strip_prefix("SHA256:").map(str::to_owned))
+    else {
+        return Ok(None);
+    };
+    Ok(sha256_b64_to_hex(&b64))
+}
+
+/// What known_hosts would key this alias under — the hostname the
+/// user's config resolves it to, spelled the way ssh itself records it:
+/// bare for port 22, `[host]:port` for any other port.
+fn canonical_hostname(host: &str) -> Option<String> {
+    let mut c = Command::new("ssh");
+    if let Some(dir) = ssh_dir() {
+        c.arg("-F").arg(dir.join("config"));
+    }
+    let out = c.arg("-G").arg(host).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let field = |name: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(name).map(|h| h.trim().to_owned()))
+    };
+    let hostname = field("hostname ")?;
+    match field("port ").as_deref() {
+        Some("22") | None => Some(hostname),
+        Some(port) => Some(format!("[{hostname}]:{port}")),
+    }
+}
+
+/// OpenSSH prints SHA256 fingerprints as unpadded base64 of the 32
+/// digest bytes; the device table wants those bytes as hex. `None` on
+/// anything that does not decode to exactly 32 bytes — a truncated or
+/// foreign fingerprint must not mint a malformed id.
+fn sha256_b64_to_hex(b64: &str) -> Option<String> {
+    use base64::Engine;
+    let engine = base64::engine::general_purpose::STANDARD_NO_PAD;
+    let bytes = engine.decode(b64).ok()?;
+    if bytes.len() != 32 {
+        return None;
+    }
+    Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the
+    /// device table's 64-hex shape out — and the two malformed shapes
+    /// (bad base64, wrong length) mint nothing rather than a wrong id.
+    #[test]
+    fn a_sha256_fingerprint_becomes_a_device_shaped_id() {
+        let b64 = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD_NO_PAD.encode([0xabu8; 32])
+        };
+        let id = sha256_b64_to_hex(&b64).expect("a whole digest mints");
+        assert_eq!(id.len(), 64, "the id must wear the device shape");
+        assert_eq!(id, "ab".repeat(32));
+        assert_eq!(sha256_b64_to_hex("not-base64!"), None, "garbage mints nothing");
+        let short = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD_NO_PAD.encode([1u8; 16])
+        };
+        assert_eq!(sha256_b64_to_hex(&short), None, "a wrong-sized digest mints nothing");
+    }
+}

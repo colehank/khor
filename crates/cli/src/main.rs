@@ -78,6 +78,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "hooks", run: hooks },
     Verb { word: "invite", run: invite },
     Verb { word: "pair", run: pair },
+    Verb { word: "adopt", run: adopt },
     Verb { word: "sync", run: sync },
     Verb { word: "mcp", run: mcp },
     Verb { word: "version", run: version },
@@ -262,7 +263,12 @@ fn devices(_rest: &[String]) -> Result<(), String> {
     // readings arrive at different instants — a table where two rows
     // describe two moments.
     let hops = rt()?.block_on(n.hops());
-    for d in n.devices()? {
+    let all = n.devices()?;
+    // id → name, for the satellite lines: their road column names the
+    // sponsor they speak through, and a person reads names.
+    let names: std::collections::HashMap<&str, &str> =
+        all.iter().map(|d| (d.id.as_str(), d.name.as_str())).collect();
+    for d in &all {
         // **By id, not by name.** Two machines on one network can carry
         // the same hostname — two homes on one box always do — and the
         // name test then marks both rows 「(本机)」, which is the one
@@ -277,11 +283,18 @@ fn devices(_rest: &[String]) -> Result<(), String> {
             .find(|(id, _)| *id == d.id)
             .map(|(_, h)| *h)
             .unwrap_or(khor_node::Hop::Unknown);
+        // A satellite has no road of its own — its sponsor speaks for
+        // it (附属机器批), so the road column says who through instead
+        // of a reading nothing could take.
+        let road = match d.sponsor.as_deref() {
+            Some(sp) => cli::via_sponsor(names.get(sp).copied().unwrap_or(sp)),
+            None => hop_word(hop, me).to_owned(),
+        };
         println!(
             "{}\t{}…{here}{pin}\t{}\t{}",
             d.name,
             &d.id[..16],
-            hop_word(hop, me),
+            road,
             vitals_line(&n, &d.id)
         );
     }
@@ -1314,6 +1327,23 @@ fn pair(rest: &[String]) -> Result<(), String> {
     };
     let name = rt()?.block_on(node()?.pair(ticket))?;
     println!("{}", cli::paired_ok(name));
+    Ok(())
+}
+
+/// Leads an ssh-only machine into the network as this machine's
+/// satellite (附属机器批) — `Node::adopt_satellite` does the probing
+/// and the minting; this prints the report, and the tmux line rides
+/// along so the terminal's nature is no surprise later.
+fn adopt(rest: &[String]) -> Result<(), String> {
+    let (host, name) = match rest {
+        [host] => (host, None),
+        [host, name] => (host, Some(name.as_str())),
+        _ => return Err(USAGE.into()),
+    };
+    let n = node()?;
+    let (_, name, tmux) = n.adopt_satellite(host, name)?;
+    println!("{}", cli::adopted(&name, n.name()));
+    println!("{}", if tmux { cli::SAT_TMUX_YES } else { cli::SAT_TMUX_NO });
     Ok(())
 }
 
