@@ -162,6 +162,9 @@ usage = """
                         khor 自己那几条,做两遍=做一遍)
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
+  adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网(卫星):身份从你的
+                        known_hosts 来,一切操作经本机代跑;请出去还是
+                        forget。要求免密 ssh(有密码提示的连不上)
   sync                  立即和全网各同步一趟
   mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)
   version               本机装的是哪一版(网里各机器的版本看 devices)
@@ -191,6 +194,16 @@ unreachable-for = "{0}没联系上"
 # the word stays, this says how stale it is (离线轴的第二种情形:
 # 机器够得着,信号断了). {0} is a bare duration off the age ladder.
 quiet-for = "{0}没消息"
+# Adoption's report (附属机器批): {0} the name, {1} this machine — the
+# sponsor is said out loud because it is the satellite's home from now
+# on, and the promise (全网都看得见) is the CRDT doing what it always
+# does, said so nobody goes checking.
+adopted = "领进来了: {0},经 {1} 说话;全网马上都看得见它"
+# The tmux probe's two outcomes, told at adoption so the terminal's
+# nature is no surprise later (docs/SESSION.md 例外墓碑: persistence on
+# a satellite is borrowed from its own tmux, never hosted by khor).
+sat-tmux-yes = "它有 tmux,在它上面开的终端能持久"
+sat-tmux-no = "它没有 tmux,在它上面开的终端是临时的(连接断了就没了)"
 # Said only when the number is non-zero. Zero rows and zero unreadable is
 # an idle machine; zero rows and a non-zero count is khor being out of
 # date, and nothing but this line tells the two apart.
@@ -791,6 +804,18 @@ upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两�
 # the printed link once, this browser is remembered from then on — so
 # the long ?k= reads as a one-time step, not a toll.
 web-door-shut = "这个地址要钥匙。在那台机器上跑 khor web,用它打印的链接打开一次,这个浏览器之后就记住了"
+# ── satellites (附属机器批) ──
+# ssh itself would not start — an environment problem, not the host's.
+ssh-wont-run = "跑不了 ssh: {0}"
+# The reach failure carries ssh's own words: BatchMode makes password
+# prompts fail fast, and ssh's sentence is what tells "no route" from
+# "wants a password" — khor must not paraphrase a diagnosis it did not
+# make.
+sat-cant-reach = "ssh 够不着 {0}(要求免密):{1}"
+# The identity rule: khor reads known_hosts, never keyscans — only the
+# trust the user already extended counts, so the fix is theirs to do
+# once by hand.
+sat-not-in-known-hosts = "known_hosts 里没有 {0} 的钥匙。先自己 ssh 连它一次(把指纹认下来),再回来领"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
