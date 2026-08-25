@@ -265,7 +265,14 @@ function RailItem({
         // (Numbers here carry no unit on purpose: `check-px.mjs` reads
         // lines rather than syntax, so a number-and-unit is a build
         // error even inside a comment.)
-        "group relative h-auto flex-col gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+        // **`min-h-touch min-w-touch`** — the finger floor (tokens.css
+        // `--touch`): the hit area grows to 44, the glyph keeps its
+        // `--icon-rail` size, and because the selected block and the
+        // hover wash paint this very button box, the highlight is the
+        // hit area — nothing is pressable that does not light up whole.
+        // Measured before this: every rail item was 44×30, under every
+        // guideline's floor (`check-face.mjs` now holds the line).
+        "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
         // Open takes the full ink, not the brand green: green cannot
         // reach a legible ratio against any light background, and the
         // app's rule is now that it carries no text at all (the whole

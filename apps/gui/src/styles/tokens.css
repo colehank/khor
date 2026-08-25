@@ -297,6 +297,19 @@
   --ctl-md: 30px;
   --ctl-lg: 40px;
 
+  /* ── touch floor ─────────────────────────────────────
+   * The smallest hit area a finger can trust: 44 — Apple HIG's minimum
+   * tappable target (44×44pt) and WCAG 2.5.5 (AAA)'s 44 CSS px; Material
+   * asks 48dp, but 44 is the floor every guideline shares and the rail's
+   * geometry was drawn on Apple's grid. **It sizes hit areas, never
+   * glyphs**: a control grows to it with min-height/min-width while its
+   * icon keeps `--icon-rail`, and whatever paints the pressed/selected
+   * state must paint the grown box, or the finger finds a target the eye
+   * was never shown. Not a fourth `--ctl-*`: those are the *look* of
+   * inline controls beside text; this is a floor under anything a finger
+   * must land on, and the two move for different reasons. */
+  --touch: 44px;
+
   /* ── spacing: four gaps, named for what they separate ─
    * The one dimension this theme still left to chance. Colours, control
    * heights and motion were all collected; gaps stayed as whichever
@@ -588,6 +601,7 @@
   --spacing-ctl-sm: var(--ctl-sm);
   --spacing-ctl-md: var(--ctl-md);
   --spacing-ctl-lg: var(--ctl-lg);
+  --spacing-touch: var(--touch);
   --spacing-rail: var(--rail-w);
   --spacing-list: var(--list-w);
   --spacing-tab: var(--tab-w);

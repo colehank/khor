@@ -165,6 +165,37 @@ try {
   if (face.tabularCount === 0) fail("probe dead: nothing on this face opted into tabular-nums");
   if (face.tabularBad > 0) fail(`${face.tabularBad} element(s) claim tabular-nums but compute without it`);
 
+  // ── 3) touch targets: every rail item is pressable by a finger ────
+  // The token is the criterion (`--touch`, tokens.css: HIG / WCAG floor)
+  // and is read off the page rather than repeated here — a second copy
+  // of the number is how a gate and a stylesheet drift apart. Measured
+  // on the narrow face because that is the posture with fingers, and on
+  // the wide face too: a desktop is where a trackpad's imprecision and
+  // the web face on an iPad both live.
+  for (const [name, vp] of [["narrow", { width: 390, height: 844 }], ["wide", { width: 1400, height: 900 }]]) {
+    await page.setViewportSize(vp);
+    await wait(400);
+    const touch = await page.evaluate(() => {
+      const floor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--touch"));
+      const items = [...document.querySelectorAll("[data-rail-item]")].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height) };
+      });
+      return { floor, items };
+    });
+    if (!(touch.floor > 0)) fail(`${name}: --touch does not resolve on the page`);
+    if (touch.items.length === 0) fail(`${name}: probe dead — no rail items to measure`);
+    const under = touch.items.filter((i) => i.h < touch.floor || i.w < touch.floor);
+    if (under.length > 0) {
+      fail(
+        `${name}: ${under.length} rail item(s) under the ${touch.floor} touch floor — ` +
+          under.map((i) => `${i.w}×${i.h}`).join(", "),
+      );
+    } else {
+      console.log(`${name}: ${touch.items.length} rail items all ≥ ${touch.floor} touch floor`);
+    }
+  }
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log("face gate: the ink lands at three pressures, numbers in columns");
 } finally {
