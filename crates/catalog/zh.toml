@@ -1121,15 +1121,43 @@ uploading = "上传中…"
 # because the person's next step is the same: try again or go smaller,
 # and the refusal sentence beside it says which it was.
 send-file-failed = "发不出去"
-# The files landing before a machine is picked: the pinned shortcuts.
-# Empty says what would be here — a blank region reads as broken, and
-# this one has no machine list to explain it.
+# A fresh tab, before it has been pointed anywhere: what is on offer is
+# where this person already goes. Empty says what would be here — a
+# blank region reads as broken, and this landing has no machine list
+# left to explain it (标签页一期: the sidebar went away).
 no-pinned-dirs = "还没有钉住的目录"
 # …and the way onward, as a thing to press. An empty state that only
 # names what is missing is a dead end wearing a sentence; this one opens
 # a machine's directory, which is where pinning starts. Pressing it
 # opens this machine's home — the one browse that always exists.
 go-pin-a-dir = "去一台机器挑个目录钉住"
+# ── the file landing's tabs (标签页一期) ──────────────
+# The landing is a browser now: tabs across the top, one address bar
+# under them, and a fresh tab that offers the places already gone to.
+# The machine list that used to stand on the left is gone — which
+# machine is *which shelf you are reaching for*, a step on the way, not
+# a thing worth a permanent column (docs/UX.md 浏览型).
+new-tab = "新标签页"
+# The tab's own control. Not `close` above: that one ends a session and
+# means losing something, this one puts a tab away and means nothing at
+# all — one text for both would make the cheap act read as the costly
+# one.
+close-tab = "关掉这个标签页"
+# The narrow face's switcher, Chrome mobile's shape: the count *is* the
+# button, and pressing it is the only way to another tab on a face that
+# shows one at a time.
+switch-tabs = "{0} 个标签页"
+# The address bar's name, standing in as its hint. **One control, two
+# states** — a breadcrumb at rest, a box with completions once it is
+# pressed. A second box beside it would be the two-search-fields
+# failure `PaneBar`'s head warns about, so the name has to cover both
+# halves of what goes in: which machine, then where on it.
+address-dir = "机器和路径"
+# The fresh tab's two sections. A pin is a decision, so it is always on
+# top; 最近去过 is by how lately, across machines, because "where was I"
+# is not a question about one disk.
+pinned-dirs = "钉住的目录"
+recent-dirs = "最近去过"
 # The browser landing (docs/NET.md 借网). The address bar names the exit
 # so the user knows a page opened here leaves through that machine, not
 # this one. Open builds the window; the empty state and the no-pins state
