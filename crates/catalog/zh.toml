@@ -828,6 +828,16 @@ not-my-satellite = "{0} 不是这台机器领的卫星,它的读数归它的 spo
 # The gap before the first sample lands: an honest "not yet", never a
 # row of zeros dressed as a reading.
 sat-not-sampled-yet = "还没采到它的读数(sponsor 每分钟采一轮)"
+# A satellite row with no ssh destination on record: adopted by an
+# older khor, or the register lost — either way the fix is re-adopting.
+sat-no-ssh-host = "{0} 是卫星,但表里没有它的 ssh 地址;在 sponsor 那台上重新 adopt 一次"
+# The file push needs the sponsor's own scp; said with the sponsor's
+# name so the person knows exactly which machine to walk to (一期单
+# sponsor 的单点语义,说破不绕).
+sat-send-elsewhere = "{0} 是经 {1} 说话的卫星;发文件要在 {1} 那台上 khor send"
+# What moved, plainly — no offer, no 待批: the far side has no khor to
+# ask, so the bytes just went (to its home directory).
+sat-sent = "送到了 {0} 的主目录,{1} 字节"
 web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
