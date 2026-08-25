@@ -224,6 +224,13 @@ impl Node {
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
         let node = std::sync::Arc::new(self);
+        // The satellite sampler (附属机器批): its own task on its own
+        // minute beat — a sample is an ssh dial, and the 5s pump must
+        // not inherit that weight.
+        {
+            let n = node.clone();
+            tokio::spawn(async move { n.satellite_sampler().await });
+        }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         loop {
@@ -857,6 +864,27 @@ impl Node {
                     return Err(msg::HOST_GONE.into());
                 }
                 Ok(Response::Reached { port: hf.port, cookie: hf.cookie })
+            }
+            Request::SatVitals { sat } => {
+                let doc = self.devices_loaded()?.doc;
+                if doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Only a satellite this machine sponsors — answering
+                // for someone else's would put a second, staler voice
+                // on a row that already has its one speaker.
+                let is_mine = doc
+                    .get(&sat)
+                    .and_then(|d| d.sponsor)
+                    .is_some_and(|sp| sp == self.device_str());
+                if !is_mine {
+                    return Err(msg::not_my_satellite(&sat));
+                }
+                match self.vitals_of(&sat) {
+                    Some((vitals, age_ms)) => Ok(Response::SatVitals { vitals, age_ms }),
+                    // Not sampled yet: an honest gap, never zeros.
+                    None => Err(msg::SAT_NOT_SAMPLED_YET.into()),
+                }
             }
             Request::FetchPath { path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1872,6 +1900,22 @@ impl Node {
         // that has no such op simply has no reading here.
         if let Ok(Response::Vitals { vitals }) = request(&conn, &Request::Vitals).await {
             let _ = self.cache_peer_vitals(&d.id, &vitals);
+        }
+        // …and the readings of every satellite this device sponsors, on
+        // the same visit (附属机器批): satellites cannot be dialed, so
+        // their numbers ride the road to the one machine that samples
+        // them. Best effort per satellite; the age crosses too, so a
+        // reading keeps its true birth instead of the arrival's
+        // freshness. An older sponsor refuses the op, which reads as
+        // "no reading" — the row stays on the offline axis.
+        if let Ok(devs) = self.devices() {
+            for sat in devs.iter().filter(|s| s.sponsor.as_deref() == Some(d.id.as_str())) {
+                if let Ok(Response::SatVitals { vitals, age_ms }) =
+                    request(&conn, &Request::SatVitals { sat: sat.id.clone() }).await
+                {
+                    let _ = self.cache_peer_vitals_aged(&sat.id, &vitals, age_ms);
+                }
+            }
         }
         // And what it has spent, on the same visit and kept in its own
         // record for the same reason. **Asked every round like the two

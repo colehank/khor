@@ -1185,6 +1185,57 @@ impl Node {
         )
     }
 
+    /// [`Node::cache_peer_vitals`] with the reading's true age: what a
+    /// sponsor relays about its satellite arrives already aged, and
+    /// stamping it "now" would dress the sponsor's minute-old sample in
+    /// the arrival's freshness (离线轴: a stale number must look stale).
+    pub(crate) fn cache_peer_vitals_aged(
+        &self,
+        device_id: &str,
+        v: &khor_core::Vitals,
+        age_ms: u64,
+    ) -> Result<(), String> {
+        if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
+        }
+        fs::create_dir_all(self.vitals_dir()).map_err(msg::cant_make_vitals_dir)?;
+        let report = VitalsReport {
+            at_ms: now_ms().saturating_sub(age_ms),
+            vitals: v.clone(),
+        };
+        link::write_private(
+            &self.vitals_dir().join(device_id),
+            &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
+        )
+    }
+
+    /// The sponsor's side of a satellite's numbers: every minute, one
+    /// ssh sample per satellite this machine sponsors, kept in the same
+    /// per-device cache every peer reading lands in — so `vitals_of`,
+    /// the GUI and the [`proto::Request::SatVitals`] answer all read one
+    /// record. Runs for as long as the serve does; a satellite that
+    /// stops answering simply stops refreshing, and its reading ages in
+    /// plain sight (离线轴).
+    pub(crate) async fn satellite_sampler(&self) {
+        let mut tick = tokio::time::interval(satellite::SAMPLE_EVERY);
+        loop {
+            tick.tick().await;
+            let Ok(devs) = self.devices() else { continue };
+            for d in devs {
+                if d.sponsor.as_deref() != Some(self.device_str()) {
+                    continue;
+                }
+                let Some(host) = d.ssh_host.clone() else { continue };
+                // Off the runtime: a sample is an ssh dial plus a
+                // one-second on-host measurement.
+                let taken = tokio::task::spawn_blocking(move || satellite::sample(&host)).await;
+                if let Ok(Ok(v)) = taken {
+                    let _ = self.cache_peer_vitals(&d.id, &v);
+                }
+            }
+        }
+    }
+
     /// What a machine last said about itself, and how old that is.
     ///
     /// **This machine answers by sampling, everyone else from cache**, and

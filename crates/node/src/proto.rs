@@ -152,6 +152,18 @@ pub enum Request {
     /// step. The cookie is what keeps *unpaired* processes on that
     /// machine out of the socket, and it never leaves the pair.
     Reach { session: String },
+    /// A satellite's last reading, asked of its **sponsor** — the one
+    /// machine that samples it over ssh (附属机器批; docs/NET.md 卫星).
+    /// A cached answer with its age, never a fresh sample: the asker
+    /// must not be able to make the sponsor dial out on demand, and the
+    /// age is what keeps a stale reading honest (离线轴).
+    ///
+    /// A new variant rather than a field on [`Request::Vitals`]: that
+    /// one is a unit variant, and growing it a body would change its
+    /// bytes under every older peer. A khor that predates satellites
+    /// answers [`Response::Refused`], read as "no reading" — the same
+    /// fallback every tail-appended op leans on.
+    SatVitals { sat: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +222,12 @@ pub enum Response {
     /// Where that session's host listens on the answering machine, and
     /// the cookie its handshake wants. See [`Request::Reach`].
     Reached { port: u16, cookie: String },
+    /// A satellite's cached reading and how old it is on the sponsor's
+    /// clock. The age travels so the asker can keep the reading's true
+    /// birth rather than dressing it in the arrival's freshness
+    /// ([`Request::SatVitals`]; 离线轴 — a stale number must look
+    /// stale).
+    SatVitals { vitals: khor_core::Vitals, age_ms: u64 },
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -431,6 +449,35 @@ mod tests {
         let bytes = encode(&Response::Usage { usage: sent.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::Usage { usage } => assert_eq!(usage, sent),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+    }
+
+    /// The satellite pair crosses whole, age included — the age is the
+    /// half a lazier shape would drop, and it is what keeps a relayed
+    /// reading wearing its true birth (附属机器批, 离线轴).
+    #[test]
+    fn a_satellites_reading_crosses_with_its_age() {
+        let ask = Request::SatVitals { sat: "ab".repeat(32) };
+        let bytes = encode(&ask).unwrap();
+        match decode::<Request>(&bytes).unwrap() {
+            Request::SatVitals { sat } => assert_eq!(sat, "ab".repeat(32)),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+        let sent = khor_core::Vitals {
+            cpu_pct: 7.0,
+            cores: 4,
+            mem: khor_core::Fill { used: 1, total: 2 },
+            disk: None,
+            gpu: None,
+            version: None,
+        };
+        let bytes = encode(&Response::SatVitals { vitals: sent.clone(), age_ms: 38_000 }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::SatVitals { vitals, age_ms } => {
+                assert_eq!(vitals, sent);
+                assert_eq!(age_ms, 38_000, "the age must survive, or staleness dresses as fresh");
+            }
             other => panic!("decoded wrong: {other:?}"),
         }
     }

@@ -91,6 +91,76 @@ pub fn probe(host: &str) -> Result<Probe, String> {
     Ok(Probe { uname, tmux })
 }
 
+/// How often a sponsor samples each of its satellites. A minute, not
+/// the 5s sync beat: every sample is an ssh connection and a one-second
+/// on-host measurement, and a reading of a machine nobody khor runs on
+/// does not need a heartbeat's cadence — the age rides the reading
+/// anyway (docs/SESSION.md 离线: how fresh is its own axis).
+pub const SAMPLE_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// One shell, both platforms, key=value lines out. The one-second sleep
+/// inside is the CPU delta window (a utilisation is a rate; a single
+/// glance at /proc/stat is a lifetime average). Every section tolerates
+/// its own absence — a missing nvidia-smi prints nothing and the parser
+/// reads nothing, the disk falling over leaves the reading without a
+/// disk, never without a row.
+const SAMPLE_SH: &str = r#"
+U=$(uname -s)
+echo cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+case "$U" in
+Linux)
+  c1=$(head -1 /proc/stat); sleep 1; c2=$(head -1 /proc/stat)
+  echo "$c1
+$c2" | awk 'NR==1{for(i=2;i<=NF;i++)t1+=$i; i1=$5} NR==2{for(i=2;i<=NF;i++)t2+=$i; i2=$5; dt=t2-t1; if(dt>0) printf "cpu_pct=%.1f\n", (dt-(i2-i1))*100/dt}'
+  awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "mem_total=%d\nmem_used=%d\n", t*1024, (t-a)*1024}' /proc/meminfo
+  ;;
+Darwin)
+  top -l 2 -n 0 -s 1 2>/dev/null | awk '/CPU usage/{u=$3; s=$5} END{gsub("%","",u); gsub("%","",s); printf "cpu_pct=%.1f\n", u+s}'
+  T=$(sysctl -n hw.memsize)
+  P=$(sysctl -n hw.pagesize)
+  vm_stat | awk -v t="$T" -v p="$P" '/Pages active/{a=$3} /Pages wired/{w=$4} /occupied by compressor/{c=$5} END{gsub("\\.","",a); gsub("\\.","",w); gsub("\\.","",c); printf "mem_total=%d\nmem_used=%d\n", t, (a+w+c)*p}'
+  ;;
+esac
+df -k "$HOME" 2>/dev/null | awk 'NR==2{printf "disk_total=%d\ndisk_used=%d\n", ($3+$4)*1024, $3*1024}'
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{n++; u+=$1; mu+=$2; mt+=$3} END{if(n>0) printf "gpu_pct=%.1f\ngpu_cards=%d\nvram_used=%d\nvram_total=%d\n", u/n, n, mu*1048576, mt*1048576}'
+fi
+"#;
+
+/// One reading of the satellite, taken over the user's ssh road — the
+/// same `khor_core::Vitals` shape every machine reports about itself,
+/// with `version: None`: no khor runs there, and saying so is the row's
+/// honest gap, never a guessed number.
+pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
+    let out = ssh_base(host)
+        .arg(SAMPLE_SH)
+        .output()
+        .map_err(|e| msg::ssh_wont_run(e))?;
+    if !out.status.success() {
+        return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let get = |key: &str| -> Option<f64> {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key)?.strip_prefix('=')?.trim().parse().ok())
+    };
+    let fill = |used: &str, total: &str| -> Option<khor_core::Fill> {
+        Some(khor_core::Fill { used: get(used)? as u64, total: get(total)? as u64 })
+    };
+    Ok(khor_core::Vitals {
+        cpu_pct: get("cpu_pct").unwrap_or(0.0) as f32,
+        cores: get("cores").unwrap_or(1.0) as u32,
+        mem: fill("mem_used", "mem_total").unwrap_or(khor_core::Fill { used: 0, total: 0 }),
+        disk: fill("disk_used", "disk_total"),
+        gpu: get("gpu_pct").map(|pct| khor_core::Gpu {
+            util_pct: pct as f32,
+            cards: get("gpu_cards").unwrap_or(1.0) as u32,
+            mem: fill("vram_used", "vram_total"),
+        }),
+        version: None,
+    })
+}
+
 /// The satellite's stable id: the SHA256 of its host key, hex — read
 /// out of known_hosts (`ssh-keygen -F`), the module head's rule.
 ///
