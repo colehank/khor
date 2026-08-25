@@ -161,6 +161,21 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
     })
 }
 
+/// The argv prefix for an **interactive** ssh to the satellite — what a
+/// terminal host on the sponsor runs. `-t` because the far end is a
+/// shell that wants a tty; BatchMode still, because the no-password
+/// contract holds for terminals too and a hidden prompt would hang the
+/// host, not ask anyone.
+pub fn ssh_argv(host: &str) -> Vec<String> {
+    let mut v = vec!["ssh".to_owned()];
+    if let Some(dir) = ssh_dir() {
+        v.push("-F".to_owned());
+        v.push(dir.join("config").display().to_string());
+    }
+    v.extend(["-o".to_owned(), "BatchMode=yes".to_owned(), "-t".to_owned(), host.to_owned()]);
+    v
+}
+
 /// A string as one safely-quoted sh word: wrapped in single quotes,
 /// with embedded single quotes spelled `'\''`. Paths cross into a
 /// remote shell here, and quoting is the difference between a filename

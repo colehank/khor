@@ -434,6 +434,46 @@ impl Node {
         size: (u16, u16),
     ) -> Result<crate::SessionId, String> {
         let (channel, home) = self.resolve(machine)?;
+        // A satellite's terminal is a host on its **sponsor** running
+        // ssh (附属机器批): the host's persistence lives on the sponsor
+        // as ever, and the WORK's persistence is borrowed from the
+        // satellite's own tmux where it has one (`new-session -A`: the
+        // connection can die and the next open walks back into the
+        // same session — docs/SESSION.md 例外墓碑). Without tmux the
+        // shell is as mortal as its connection, and the row says so by
+        // ending when it ends — never dressed as more durable than it
+        // is. An explicit command is run bare either way: the person
+        // named what to run, and wrapping it would run something else.
+        if let Some(sat) = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .filter(|d| d.sponsor.is_some())
+        {
+            let sponsor_id = sat.sponsor.clone().expect("filtered on sponsor");
+            let host = sat.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+            let sponsor_name = self
+                .devices_loaded()?
+                .doc
+                .get(&sponsor_id)
+                .map(|d| d.name)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            let mut ssh_cmd = crate::satellite::ssh_argv(&host);
+            if !cmd.is_empty() {
+                ssh_cmd.extend(cmd.iter().cloned());
+            } else if sat.sat_tmux == Some(true) {
+                ssh_cmd.extend(
+                    ["tmux", "new-session", "-A", "-s", "khor"].map(str::to_owned),
+                );
+            }
+            let title = if title.is_empty() { channel.clone() } else { title.to_owned() };
+            // The sponsor is an ordinary machine and the command is
+            // ordinary ssh: one recursion, zero new protocol.
+            return Box::pin(
+                self.open_on_with(ep, &sponsor_name, kind, &title, "", &ssh_cmd, size),
+            )
+            .await;
+        }
         if home == self.device() {
             let cwd = if cwd.is_empty() {
                 std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"))
