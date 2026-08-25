@@ -461,9 +461,17 @@ impl Node {
             let mut ssh_cmd = crate::satellite::ssh_argv(&host);
             if !cmd.is_empty() {
                 ssh_cmd.extend(cmd.iter().cloned());
-            } else if sat.sat_tmux == Some(true) {
-                ssh_cmd.extend(
-                    ["tmux", "new-session", "-A", "-s", "khor"].map(str::to_owned),
+            } else {
+                // The tmux decision is made ON the satellite, at open
+                // time, inside the same connection — the adoption probe
+                // (`sat_tmux`) is display only (领队裁: cache, never
+                // gate). A satellite that grew a tmux since adoption
+                // gets its persistence on the next open, no re-adopt;
+                // one that lost it falls back to a plain login shell
+                // instead of a broken command. One ssh either way.
+                ssh_cmd.push(
+                    "command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -s khor || exec \"$SHELL\" -l"
+                        .to_owned(),
                 );
             }
             let title = if title.is_empty() { channel.clone() } else { title.to_owned() };

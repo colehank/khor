@@ -747,17 +747,27 @@ fn open(rest: &[String]) -> Result<(), String> {
         }
         None => None,
     };
-    if cmd.is_empty() {
+    // The default shell is the **target's**, never this machine's: an
+    // `--on` with no command crosses empty and the far side fills in
+    // its own (the usage's promise — 不给命令就用那台自己的 shell).
+    // Filled here, this machine's /bin/zsh went to machines that may
+    // not have one — and to a satellite it read as a command the user
+    // named, which ran bare and shouldered the tmux persistence aside
+    // (measured: the satellite's live tmux probe never ran).
+    if cmd.is_empty() && on.is_none() {
         cmd = vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())];
     }
-    let title = title.unwrap_or_else(|| match &agent {
+    let title = title.unwrap_or_else(|| match (&agent, cmd.first()) {
         // A launch JSON has no file name worth reading; the name the
         // person gave the agent is the one they will recognise.
-        Some(name) => name.clone(),
-        None => std::path::Path::new(&cmd[0])
+        (Some(name), _) => name.clone(),
+        // Remote with the far side's own shell: the machine's name is
+        // the only honest title this side knows.
+        (None, None) => on.clone().unwrap_or_default(),
+        (None, Some(first)) => std::path::Path::new(first)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| cmd[0].clone()),
+            .unwrap_or_else(|| first.clone()),
     });
     if gui {
         // **Refused out loud, not ignored.** `--on` used to fall

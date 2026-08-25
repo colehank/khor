@@ -162,17 +162,20 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
 }
 
 /// The argv prefix for an **interactive** ssh to the satellite — what a
-/// terminal host on the sponsor runs. `-t` because the far end is a
-/// shell that wants a tty; BatchMode still, because the no-password
-/// contract holds for terminals too and a hidden prompt would hang the
-/// host, not ask anyone.
+/// terminal host on the sponsor runs. `-tt`, doubled: the far end is a
+/// shell that wants a tty, and a single `-t` lets ssh decide stdin is
+/// not terminal enough and skip the allocation — measured: the remote
+/// tmux died with `open terminal failed: not a terminal` while the very
+/// same command under `-tt` came up. BatchMode still, because the
+/// no-password contract holds for terminals too and a hidden prompt
+/// would hang the host, not ask anyone.
 pub fn ssh_argv(host: &str) -> Vec<String> {
     let mut v = vec!["ssh".to_owned()];
     if let Some(dir) = ssh_dir() {
         v.push("-F".to_owned());
         v.push(dir.join("config").display().to_string());
     }
-    v.extend(["-o".to_owned(), "BatchMode=yes".to_owned(), "-t".to_owned(), host.to_owned()]);
+    v.extend(["-o".to_owned(), "BatchMode=yes".to_owned(), "-tt".to_owned(), host.to_owned()]);
     v
 }
 
