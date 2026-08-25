@@ -451,5 +451,10 @@ fn kind_of(n: &khor_node::gui_host::GuiNote) -> &'static str {
         GuiNote::Turning => "Turning",
         GuiNote::Answered { .. } => "Answered",
         GuiNote::Agent { .. } => "Agent",
+        // 378afbc added the variant without covering this exhaustive
+        // match — the third step of removing/adding a thing (grep for
+        // who still points at it) missed again. A refusal in these
+        // tests is unexpected traffic, so naming it is enough.
+        GuiNote::Refused { .. } => "Refused",
     }
 }
