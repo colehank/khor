@@ -139,19 +139,6 @@ async function post<T>(url: string, headers: Record<string, string>, args?: Reco
  */
 export const onWebFace = !inApp && bridge === null;
 
-/**
- * …and it was never given a key.
- *
- * A distinct state rather than one more failed request: **every poll in
- * this app swallows its errors**, because a poll that threw on a blip
- * would take a screen down for a network hiccup. So without this, the
- * only symptom of arriving without a key is a screen where nothing ever
- * appears — which is what a broken khor looks like too. Measured that
- * way first (`scripts/web-face.mjs`), which is why it is knowable here,
- * synchronously, before anything renders (`main.tsx`).
- */
-export const missingWebKey = onWebFace && webKey === null;
-
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
   if (inApp) {
@@ -160,8 +147,18 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   }
   // The web face. Same origin — the page came from here — so the
   // address is relative and no CORS is involved in either direction.
-  if (webKey === null) throw new Error(msg.web_no_key);
-  return post<T>(`/api/${cmd}`, { authorization: `Bearer ${webKey}` }, args);
+  //
+  // No stored key is not a dead end any more (记住一次批): the page
+  // itself now sits behind the key, so this script running at all means
+  // the server accepted a credential — usually the remembered cookie,
+  // which same-origin fetches carry on their own. The Bearer header
+  // rides along only when this page also holds the key; the server
+  // treats the two channels as one credential.
+  return post<T>(
+    `/api/${cmd}`,
+    webKey === null ? {} : { authorization: `Bearer ${webKey}` },
+    args,
+  );
 }
 
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and
@@ -208,10 +205,11 @@ export const pickAndSendFile = (machine: string) =>
 export const uploadFile = async (machine: string, file: File): Promise<string> => {
   const q = `machine=${encodeURIComponent(machine)}&name=${encodeURIComponent(file.name)}`;
   const url = bridge ? `http://127.0.0.1:${bridge}/upload?${q}` : `/api/upload?${q}`;
-  if (!bridge && webKey === null) throw new Error(msg.web_no_key);
   const r = await fetch(url, {
     method: "POST",
-    headers: bridge ? {} : { authorization: `Bearer ${webKey}` },
+    // Same rule as `call`: the header rides when the key is held; a
+    // bare page leans on the remembered cookie (记住一次批).
+    headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
     body: file,
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));

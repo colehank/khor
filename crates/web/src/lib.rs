@@ -130,7 +130,7 @@ pub fn answers_at(addr: SocketAddr) -> bool {
     let _ = sock.set_write_timeout(Some(wait));
     // The page, not an API call: this asks whether a browser pointed
     // here would get something, and the page is the first thing one
-    // asks for. No key needed — that is what makes the assets public.
+    // asks for.
     if sock
         .write_all(format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes())
         .is_err()
@@ -145,7 +145,12 @@ pub fn answers_at(addr: SocketAddr) -> bool {
             Ok(n) => got += n,
         }
     }
-    head.starts_with(b"HTTP/1.1 200")
+    // Any HTTP status line is an answer — this probe exists to catch
+    // the firewall that completes the handshake and then swallows every
+    // byte, and a keyless probe now earns the refusal page (记住一次批:
+    // the page sits behind the key), which is this face answering in
+    // full. Pinning 200 here would report a healthy face as absent.
+    head.starts_with(b"HTTP/1.1 ")
 }
 
 /// Starts the face on every interface this machine has.
@@ -203,7 +208,16 @@ struct Reply {
     code: u16,
     kind: &'static str,
     body: Vec<u8>,
+    /// A key to remember (记住一次批): set exactly when a page load
+    /// presented a valid `?k=`, so the browser holds the credential and
+    /// the next visit needs no query string.
+    remember: Option<String>,
 }
+
+/// The credential cookie's name. The value is the key itself, verified
+/// by the very same comparison as the query and header forms — a second
+/// channel for one credential, never a second credential.
+const COOKIE: &str = "khor_key";
 
 impl Reply {
     fn refused(code: u16, sentence: String) -> Self {
@@ -211,7 +225,17 @@ impl Reply {
         // one transport seam unwraps (`api.ts`); a bare sentence would
         // arrive wearing quotation marks.
         let body = serde_json::to_vec(&sentence).unwrap_or_else(|_| b"\"error\"".to_vec());
-        Reply { code, kind: "application/json", body }
+        Reply { code, kind: "application/json", body, remember: None }
+    }
+
+    /// The door shut in a browser's face: text a person reads, telling
+    /// them where the key is handed out. HTML content type so the
+    /// browser renders the sentence instead of downloading it.
+    fn refused_page(sentence: &str) -> Self {
+        let body = format!(
+            "<!doctype html><meta charset=\"utf-8\"><body style=\"font-family:system-ui;display:grid;place-items:center;height:100dvh;margin:0\"><p style=\"max-width:36em;padding:1.5em\">{sentence}</p>"
+        );
+        Reply { code: 403, kind: "text/html; charset=utf-8", body: body.into_bytes(), remember: None }
     }
 
     fn into_response(self) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
@@ -225,6 +249,21 @@ impl Reply {
         // paints links an agent wrote — would otherwise carry the key
         // to a stranger's access log in the `Referer`.
         r.add_header(header("Referrer-Policy: no-referrer"));
+        if let Some(key) = &self.remember {
+            // HttpOnly: the page's own scripts keep their existing
+            // channels (localStorage + Authorization) and never need to
+            // read this; a cookie no script can read is one script
+            // injection cannot steal. SameSite=Strict: the cookie only
+            // travels on same-site requests, one more wall in front of
+            // the rebinding shapes `check_host` stops. Max-Age a year:
+            // "remember once" has to actually remember, and `khor web
+            // --new` revokes every copy at any moment by changing what
+            // the cookie is compared against. No `Secure` — this face
+            // is deliberately plain HTTP on the LAN (module head).
+            r.add_header(header(&format!(
+                "Set-Cookie: {COOKIE}={key}; Path=/; SameSite=Strict; HttpOnly; Max-Age=31536000"
+            )));
+        }
         r
     }
 }
@@ -237,7 +276,26 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
     let url = req.url().to_owned();
     let (path, query) = url.split_once('?').unwrap_or((url.as_str(), ""));
     match path.strip_prefix("/api/") {
-        None => page(path),
+        // The page sits behind the key too (记住一次批). Three doors,
+        // one lock: a valid `?k=` serves the page AND plants the
+        // cookie (so the next visit needs no query string); a valid
+        // cookie or Bearer serves it bare; nothing valid gets a
+        // sentence a person can act on — not a blank app that loads
+        // and then starves, which is what "public page, locked data"
+        // used to hand a keyless visitor.
+        None => {
+            let fresh = query_key(query).filter(|k| {
+                matches!(key::read(root), Ok(Some(real)) if key::matches(k, &real))
+            });
+            if fresh.is_none() {
+                if let Err(_) = check_key(req, root) {
+                    return Reply::refused_page(msg::WEB_DOOR_SHUT);
+                }
+            }
+            let mut reply = page(path);
+            reply.remember = fresh;
+            reply
+        }
         Some(cmd) => {
             // Every /api/ door wears every lock — the upload included:
             // it writes this machine's disk, which is more reason for
@@ -264,6 +322,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                         code: 200,
                         kind: "application/json",
                         body: serde_json::to_vec(&id).unwrap_or_default(),
+                        remember: None,
                     },
                     Err(sentence) => Reply::refused(400, sentence),
                 };
@@ -275,7 +334,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
             let args: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
             match khor_gui_core::api::answer(rt, root, cmd, &args) {
-                Ok(json) => Reply { code: 200, kind: "application/json", body: json.into_bytes() },
+                Ok(json) => Reply { code: 200, kind: "application/json", body: json.into_bytes(), remember: None },
                 Err(sentence) => Reply::refused(400, sentence),
             }
         }
@@ -290,7 +349,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
 fn page(path: &str) -> Reply {
     let wanted = if path == "/" { "/index.html" } else { path };
     match assets::ASSETS.iter().find(|(p, _)| *p == wanted) {
-        Some((p, bytes)) => Reply { code: 200, kind: content_type(p), body: bytes.to_vec() },
+        Some((p, bytes)) => Reply { code: 200, kind: content_type(p), body: bytes.to_vec(), remember: None },
         None => Reply::refused(404, msg::web_no_such_page(path)),
     }
 }
@@ -360,6 +419,13 @@ fn check_origin(req: &tiny_http::Request, host: &str) -> Result<(), String> {
 /// **The door.** Required from every address including loopback: the
 /// machines this fleet includes are shared, and on a shared box
 /// `127.0.0.1` is not a boundary — it is a hallway.
+///
+/// The credential may arrive as a Bearer header (the page's scripts) or
+/// as the remembered cookie (a bare visit, 记住一次批) — two channels,
+/// one credential, one comparison. `khor web --new` revokes every
+/// outstanding cookie by changing what both are compared against; the
+/// cookie is never a second trust root, and it excuses nothing else:
+/// Host and Origin are checked before this is ever asked.
 fn check_key(req: &tiny_http::Request, root: &Path) -> Result<(), String> {
     let real = match key::read(root)? {
         Some(k) => k,
@@ -367,6 +433,7 @@ fn check_key(req: &tiny_http::Request, root: &Path) -> Result<(), String> {
     };
     let presented = header_of(req, "authorization")
         .and_then(|h| h.strip_prefix("Bearer ").map(str::to_owned))
+        .or_else(|| cookie_key(req))
         .unwrap_or_default();
     if presented.is_empty() {
         return Err(msg::WEB_NO_KEY.to_owned());
@@ -376,6 +443,24 @@ fn check_key(req: &tiny_http::Request, root: &Path) -> Result<(), String> {
     } else {
         Err(msg::WEB_WRONG_KEY.to_owned())
     }
+}
+
+/// The remembered key out of the Cookie header, if one rode along.
+fn cookie_key(req: &tiny_http::Request) -> Option<String> {
+    let jar = header_of(req, "cookie")?;
+    jar.split(';').find_map(|pair| {
+        let (name, value) = pair.trim().split_once('=')?;
+        (name == COOKIE && !value.is_empty()).then(|| value.to_owned())
+    })
+}
+
+/// The `k` off a page URL's query string — the form `khor web` prints.
+/// Values are plain hex, so no decoding is owed.
+fn query_key(query: &str) -> Option<String> {
+    query.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        (name == "k" && !value.is_empty()).then(|| value.to_owned())
+    })
 }
 
 fn header_of(req: &tiny_http::Request, name: &str) -> Option<String> {

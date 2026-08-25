@@ -33,8 +33,15 @@ impl Drop for Home {
 }
 
 /// One request, one reply, spelled out. Returns the status line and the
-/// body — the two things every assertion below is about.
+/// body — the two things most assertions below are about.
 fn request(addr: SocketAddr, path: &str, headers: &[(&str, &str)]) -> (u16, String) {
+    let (code, _, body) = request_full(addr, path, headers);
+    (code, body)
+}
+
+/// The same, keeping the response head — for the one flow that asserts
+/// on a header the server set (the remembered-key cookie).
+fn request_full(addr: SocketAddr, path: &str, headers: &[(&str, &str)]) -> (u16, String, String) {
     let mut sock = TcpStream::connect(addr).expect("the face is listening");
     // 90s, not 5: on this Mac, a freshly compiled test binary is a new
     // face to macOS, and its first network-stack touch hangs waiting on
@@ -92,8 +99,11 @@ fn request(addr: SocketAddr, path: &str, headers: &[(&str, &str)]) -> (u16, Stri
         .nth(1)
         .and_then(|c| c.parse().ok())
         .unwrap_or_else(|| panic!("no status line in: {text:.200}"));
-    let body = text.split_once("\r\n\r\n").map(|(_, b)| b.to_owned()).unwrap_or_default();
-    (code, body)
+    let (head, body) = text
+        .split_once("\r\n\r\n")
+        .map(|(h, b)| (h.to_owned(), b.to_owned()))
+        .unwrap_or_default();
+    (code, head, body)
 }
 
 fn face(tag: &str) -> (Home, SocketAddr, String) {
@@ -127,18 +137,53 @@ fn a_listening_face_answers_and_a_closed_port_does_not() {
     assert!(!khor_web::answers_at(dead), "nothing is listening at {dead}");
 }
 
-/// The page is public and the data is not — one request apart.
+/// The page takes the key once and remembers the browser (记住一次批,
+/// reversing this test's earlier "the page is public"): keyless is a
+/// refusal with words; `?k=` serves the page AND plants the cookie;
+/// the cookie alone then opens page and data both; a wrong cookie is a
+/// wrong key; and rotating the key retires every outstanding cookie.
 #[test]
-fn the_page_needs_no_key_and_the_data_does() {
-    let (_home, addr, key) = face("public");
-    let (code, body) = request(addr, "/", &[]);
-    assert_eq!(code, 200, "the shell must load before anybody has a key");
-    assert!(body.contains("<div id=\"root\">"), "that was not the app's page: {body:.120}");
+fn the_page_takes_a_key_once_and_remembers_the_browser() {
+    let (home, addr, key) = face("remember");
 
-    let (code, _) = request(addr, "/api/devices", &[]);
-    assert_eq!(code, 401, "the same visitor must not get data");
-    let (code, _) = request(addr, "/api/devices", &[("Authorization", &bearer(&key))]);
-    assert_eq!(code, 200, "…and must get it with the key — otherwise the 401 proves nothing");
+    // Keyless: the door is shut with a sentence, not a blank app.
+    let (code, body) = request(addr, "/", &[]);
+    assert_eq!(code, 403, "a keyless page visit must be refused");
+    assert!(body.contains("钥匙"), "…with words a person can act on: {body:.120}");
+
+    // The printed link: page served, credential planted.
+    let (code, head, body) = request_full(addr, &format!("/?k={key}"), &[]);
+    assert_eq!(code, 200, "the printed link must open the page");
+    assert!(body.contains("<div id=\"root\">"), "that was not the app's page: {body:.120}");
+    let cookie = head
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
+        .expect("the ?k= visit must plant the remembered key");
+    assert!(cookie.contains("khor_key="), "the cookie must carry the credential: {cookie}");
+    assert!(
+        cookie.contains("SameSite=Strict") && cookie.contains("HttpOnly"),
+        "…wearing both locks: {cookie}"
+    );
+
+    // The bare return visit, cookie in hand: page and data both open.
+    let jar = format!("khor_key={key}");
+    let (code, _) = request(addr, "/", &[("Cookie", &jar)]);
+    assert_eq!(code, 200, "the remembered browser must come back bare");
+    let (code, _) = request(addr, "/api/devices", &[("Cookie", &jar)]);
+    assert_eq!(code, 200, "…and the data must flow on the same credential");
+
+    // Still one credential: a wrong cookie is a wrong key.
+    let bad = format!("khor_key={}", "0".repeat(key.len()));
+    let (code, _) = request(addr, "/api/devices", &[("Cookie", &bad)]);
+    assert_eq!(code, 401, "a wrong cookie must not open the data");
+    let (code, _) = request(addr, "/", &[("Cookie", &bad)]);
+    assert_eq!(code, 403, "…nor the page");
+
+    // 换锁踢旧客: rotating the key retires every outstanding cookie,
+    // because the cookie is compared against the key as it is now.
+    khor_web::key::rotate(&home.0).expect("a new key");
+    let (code, _) = request(addr, "/", &[("Cookie", &jar)]);
+    assert_eq!(code, 403, "an old cookie must die with the old key");
 }
 
 /// A key that is not the key. The pair rules out "this endpoint refuses
