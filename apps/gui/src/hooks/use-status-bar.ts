@@ -47,8 +47,14 @@ const LINGER_MS = 3_000;
     not reported — it was hidden (docs/UX.md 做了但没变化 / 失败). */
 const STICKS = ["errored", "failed"];
 
-/** The one that leaves by itself. */
-const LEAVES = ["done"];
+/** The words only a transfer can press onto a machine's chat row
+    (传输并入对话批: the retired transfer rows' pressure lands there —
+    `TransferKind::urgency`). 忙碌 = bytes flowing, 中断 = a resumable
+    break. **待批 is deliberately not here**: an offer waiting for this
+    machine already has the badge and the top of the list, and the strip
+    only carries what is *happening* — the same judgment the retired
+    shape made by never admitting a row it first met at 待批. */
+const PRESS = ["busy", "errored"];
 
 export function useStatusBar(rows: SessionRow[]): {
   items: StatusItem[];
@@ -94,13 +100,25 @@ export function useStatusBar(rows: SessionRow[]): {
     // is history, and history is what the list is for.
     const moved: SessionRow[] = [];
     for (const r of rows) {
-      // Rule 1 and 2 together: a process-class row, and this app is
-      // reading its word rather than deciding one.
-      if (r.kind !== "transfer") continue;
+      // Rule 1 and 2 together: a process-class fact, read off a row.
+      // The carrier changed in 传输并入对话批 — transfers no longer
+      // stand as rows, their pressure lands on the machine's chat row
+      // (`TransferKind::urgency`) — so the strip now watches chat rows
+      // for **transfer-pressed movement**: a change into a PRESS word
+      // (a fetch started, a break), out of one (it finished), or out
+      // of 待批 (the offer was answered — the old shape's own entry
+      // moment, 待批 → 完成). An ordinary message arriving or being
+      // read moves between 完成/空闲 and touches neither side, so the
+      // strip stays deaf to chatter — it is not a notification centre
+      // (the module head's whole point).
+      if (r.kind !== "chat") continue;
       const before = seen.current.get(r.id);
       seen.current.set(r.id, r.word);
       if (dropped.current.has(r.id)) continue;
-      if (before !== undefined && before !== r.word) moved.push(r);
+      if (before === undefined || before === r.word) continue;
+      const pressed = PRESS.includes(r.word);
+      const was = PRESS.includes(before) || before === "blocked";
+      if (pressed || was) moved.push(r);
     }
     setLive((prev) => {
       const byId = new Map(prev.map((i) => [i.id, i]));
@@ -109,7 +127,10 @@ export function useStatusBar(rows: SessionRow[]): {
           id: r.id,
           word: r.word,
           title: r.title || r.id,
-          settled: LEAVES.includes(r.word),
+          // Out of the pressure words = this line is done saying it;
+          // 中断 is inside PRESS, so a break stays until dismissed
+          // (STICKS' rule: a failure that vanishes was never reported).
+          settled: !PRESS.includes(r.word),
         });
       }
       // A row that left the list takes its line with it.

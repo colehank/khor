@@ -4667,58 +4667,64 @@ for line in sys.stdin:
   // 25j) 右下角状态栏 (批④ 三笔): what is happening that nobody is
   //      watching, and nothing else.
   //
-  //      Driven by a **real transfer** — alpha sends beta a file over
-  //      the real link, beta accepts, and the row walks 待批 → 完成. The
-  //      strip is fed off those rows, so this also proves the two
-  //      admission rules against something that actually happened
-  //      rather than against a fixture.
+  //      Driven by a **real transfer**, which since 传输并入对话批 is a
+  //      file message in the machine's conversation — no transfer/ row
+  //      exists any more; the pressure lands on the machine's chat row
+  //      (`TransferKind::urgency`), and the strip is fed off exactly
+  //      that (`use-status-bar`'s PRESS words). So this section watches
+  //      the row the fact actually lives on now: beta's own window,
+  //      chat/beta. What it proves is unchanged — the two admission
+  //      rules, against something that really happened.
   await openLanding("sessions");
   if ((await page.locator("[data-statusbar]").count()) !== 0) {
     throw new Error("probe dead: the corner is already occupied before anything happened");
   }
   const sentFile = join(SCRATCH, "corner-note.txt");
   writeFileSync(sentFile, "a file worth a line in the corner\n");
-  //      **The id comes from the verb that made it, not from scanning
-  //      the list for a transfer.** The list holds more than one by now
-  //      — 24o's drop put one there — and "the first row whose id starts
-  //      with transfer/" quietly picked that older, already finished one
-  //      instead. Accepting it moved nothing, no word changed, and the
-  //      corner stayed empty: a failure that reads exactly like the
-  //      feature being broken. (Measured: that is how this section first
-  //      went red after 24o was added.)
-  //      `\S+` and not a hex pattern: a transfer id is
-  //      `transfer/<peer>-<ms>-<seq>`, and a character class that
-  //      stopped at the first dash produced a real-looking id for a row
-  //      that does not exist — which times out reading exactly like the
-  //      sync being slow. `transfer/` is a code constant
-  //      (`TransferKind::session_id`), so this matches on khor's own
-  //      shape rather than on a sentence that gets translated.
+  //      **The accept handle comes from the verb that made it.** Rows
+  //      retired; the address scheme did not (`TransferKind::session_id`
+  //      still mints transfer/<msg>, and `khor accept` still takes it).
+  //      `\S+` and not a hex pattern: a character class that stopped at
+  //      the first dash once produced a real-looking id for a transfer
+  //      that does not exist, which timed out reading exactly like the
+  //      sync being slow.
   const transferRow = cli(envA, "send", "beta", sentFile).match(/transfer\/\S+/)?.[0];
   if (!transferRow) throw new Error("khor send did not name the transfer it made");
-  await until("the transfer row reaching beta", 30_000, async () =>
-    (await page.locator(`[data-row="${transferRow}"]`).count()) === 1,
+  //      The offer arriving presses 待批 onto beta's own window row —
+  //      the merged shape's way of saying "the summary reached beta".
+  await until("the offer pressing 待批 onto beta's window row", 30_000, async () =>
+    (await page.locator('[data-row="chat/beta"][data-word="blocked"]').count()) === 1,
   );
-  //      **A row that was already there does not announce itself.** The
-  //      strip has now seen this row sitting at 待批 and stayed empty —
-  //      which is the half that keeps it from being full at startup.
+  //      **待批 does not announce itself.** The strip has watched the
+  //      row arrive at 待批 and stayed empty: an offer waiting on THIS
+  //      machine already has the badge and the top of the list, and the
+  //      corner carries only what is happening — the same half that
+  //      used to keep a first-seen 待批 transfer row out of it, worn by
+  //      the new carrier.
   await settle();
   if ((await page.locator("[data-statusbar]").count()) !== 0) {
-    throw new Error("a transfer nobody touched put itself in the corner");
+    throw new Error("an offer nobody touched put itself in the corner");
   }
-  //      Now it moves, and the corner says so.
+  //      Now it moves — the accept pulls the bytes, the row leaves 待批
+  //      (through 忙碌 to 完成, and a small file may cross both between
+  //      two polls; leaving 待批 is itself an admission, so the strip
+  //      catches it either way) — and the corner says so, keyed by the
+  //      row the fact lives on.
   cli(envB, "accept", transferRow);
-  await until("the corner reporting the transfer", 30_000, async () =>
-    (await page.locator(`[data-status-item="${transferRow}"]`).count()) === 1,
+  await until("the corner reporting the movement", 30_000, async () =>
+    (await page.locator('[data-status-item="chat/beta"]').count()) === 1,
   );
   //      Every line in there is a process-class fact with a row behind
-  //      it — never a click's outcome. Checked as an invariant rather
-  //      than by trying to push a click result in, because the rule is
-  //      "only these get in", not "that one is kept out".
+  //      it — never a click's outcome, never mere chatter (a message
+  //      arriving moves 完成/空闲 and is deliberately inadmissible).
+  //      Checked as an invariant rather than by trying to push a click
+  //      result in, because the rule is "only these get in", not "that
+  //      one is kept out".
   const inCorner = await page
     .locator("[data-status-item]")
     .evaluateAll((els) => els.map((e) => e.dataset.statusItem));
-  if (inCorner.some((k) => !k.startsWith("transfer/"))) {
-    throw new Error(`the corner took something that is not a process: ${JSON.stringify(inCorner)}`);
+  if (inCorner.some((k) => k !== "chat/beta")) {
+    throw new Error(`the corner took something beyond the pressed row: ${JSON.stringify(inCorner)}`);
   }
   //      …and it goes to zero on its own. **Absent, not empty**: the
   //      whole strip stops rendering, so there is no box left saying
