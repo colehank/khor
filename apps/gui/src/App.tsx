@@ -41,16 +41,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
+import { useDirTabs } from "@/hooks/use-dir-tabs";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
 import { useNarrow } from "@/hooks/use-narrow";
-import { usePathCandidates } from "@/hooks/use-path-candidates";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import { cn } from "@/lib/utils";
 import { axisOf, groupLabel, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
-import { FilesPane } from "@/views/FilesPane";
-import { PinnedDirs } from "@/views/PinnedDirs";
+import { FilesLanding } from "@/views/FilesLanding";
 import { BrowserPane } from "@/views/BrowserPane";
 import { PinnedWebs } from "@/views/PinnedWebs";
 import { DevicesList } from "@/views/DevicesList";
@@ -323,12 +322,13 @@ export default function App() {
   // places, and one variable would have opening a machine close the
   // session you were reading.
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  // …and the machine whose files are open, apart from both: the files
-  // landing asks a different question of a machine than the devices
-  // landing does, and sharing the variable would have browsing a disk
-  // flip which machine card the devices pane shows. The path rides
-  // along so a pinned shortcut can open straight where it points.
-  const [browse, setBrowse] = useState<{ device: string; path: string } | null>(null);
+  // …and what the files landing has open, which is no longer *a*
+  // machine at all: it is a strip of tabs, each a machine and a path,
+  // kept on this device (`useDirTabs`). It lives here rather than
+  // inside the landing so that opening a directory from somewhere else
+  // — the machine card's 看它的文件 — is a tab appearing rather than a
+  // landing being told to remember something on arrival.
+  const dirTabs = useDirTabs();
   // …and the exit machine whose network the browser landing surfs,
   // apart from all the above for the same reason: browsing through a
   // machine is a third question, and a shared variable would tangle it
@@ -449,11 +449,6 @@ export default function App() {
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
     setSelectedDevice(row.id);
-    setScreen("detail");
-  }, []);
-
-  const onBrowseDevice = useCallback((row: DeviceRow) => {
-    setBrowse({ device: row.id, path: "" });
     setScreen("detail");
   }, []);
 
@@ -662,42 +657,11 @@ export default function App() {
     return [...byAxis.values()];
   }, [wordOptions, devices]);
 
-  // The files pane's box: one machine, then a path on it.
-  //
-  // **The chip is not a filter, and nothing here had to change for that
-  // to be true.** It is the same mechanism — a candidate committed
-  // becomes a chip — and only what `onToggle` does differs: this one
-  // *replaces*, because a path belongs to one disk and two machines at
-  // once is not a thing to browse. The pane's subject is `browse`, which
-  // is the state the pane already had; the chip is that state's face,
-  // not a copy of it.
-  const filesMachine = browse ? (devices.find((d) => d.id === browse.device) ?? null) : null;
-  const { entries: pathEntries, dir: pathDir } = usePathCandidates(
-    filesMachine?.name ?? null,
-    queries.files,
-  );
-  const filesAxes = useMemo<OmniAxis[]>(() => {
-    const machines: OmniAxis = {
-      key: "dev:",
-      label: gui.devices_tab,
-      candidates: devices.map((d) => ({ key: `dev:${d.name}`, label: d.name, face: d.face })),
-    };
-    if (!filesMachine) return [machines];
-    // Only directories complete: a file is where a path stops, so
-    // offering one as a segment to continue from would be offering a
-    // step that cannot be taken.
-    return [
-      machines,
-      {
-        key: "path:",
-        label: gui.files_tab,
-        role: "text",
-        candidates: pathEntries
-          .filter((e) => e.dir)
-          .map((e) => ({ key: `${pathDir}${e.name}/`, label: `${e.name}/` })),
-      },
-    ];
-  }, [devices, filesMachine, pathEntries, pathDir]);
+  // (The files pane's box used to be assembled here — a machine chip
+  // and a path axis, for a pane whose subject was one machine. It moved
+  // into `AddressBar` with the landing's shape: the box now belongs to
+  // a tab rather than to a pane, and a landing with no list pane has no
+  // `PaneBar` to hang one on.)
 
   // The browser pane's box: an exit machine, then an address on it.
   //
@@ -918,57 +882,21 @@ export default function App() {
                     setScreen("detail");
                   },
                 }
-              : landing === "files"
-                ? {
-                  // No menu of its own — the files box has one axis and
-                  // it is navigation, not narrowing. The shape is the
-                  // filter's because the chip mechanism reads it; the
-                  // `filterLabel` below is what decides whether a menu
-                  // is drawn at all, and files passes none.
-                  options: [],
-                  chosen: browse && filesMachine ? [`dev:${filesMachine.name}`] : [],
-                  onToggle: (key) => {
-                    const name = key.slice("dev:".length);
-                    const found = devices.find((d) => d.name === name);
-                    if (!found || (browse && browse.device === found.id)) {
-                      // Taking the chip off is leaving the machine: back
-                      // to the landing, which is the pinned shortcuts.
-                      setBrowse(null);
-                      setScreen("list");
-                      return;
-                    }
-                    setBrowse({ device: found.id, path: "" });
-                    setScreen("detail");
-                  },
-                }
               : undefined
         }
-        axes={
-          sessions
-            ? sessionAxes
-            : landing === "files"
-              ? filesAxes
-              : landing === "browser"
-                ? browserAxes
-                : undefined
-        }
+        axes={sessions ? sessionAxes : landing === "browser" ? browserAxes : undefined}
         onSubmit={
-          landing === "files" && browse
+          landing === "browser" && surf && surfMachine
             ? (text) => {
-                setBrowse({ device: browse.device, path: text });
+                // Opening a page is a real act on this machine's own
+                // browser — the pane it lands in is where its outcome
+                // is said (BrowserPane), so this only starts it.
+                if (!text.trim()) return;
+                setSurf({ device: surf.device, url: text });
                 setScreen("detail");
+                openWeb(surfMachine.name, text).catch(() => {});
               }
-            : landing === "browser" && surf && surfMachine
-              ? (text) => {
-                  // Opening a page is a real act on this machine's own
-                  // browser — the pane it lands in is where its outcome
-                  // is said (BrowserPane), so this only starts it.
-                  if (!text.trim()) return;
-                  setSurf({ device: surf.device, url: text });
-                  setScreen("detail");
-                  openWeb(surfMachine.name, text).catch(() => {});
-                  }
-                : undefined
+            : undefined
         }
         arrange={
           sessions
@@ -1005,22 +933,13 @@ export default function App() {
             query={queries[landing]}
             onPin={onPinDevice}
             // Each landing asks the machine a different question:
-            // devices opens the card, files opens the disk, browser
-            // borrows the network. Three selections, three variables
-            // (`DevicesList` says why onOpen is a prop).
-            onOpen={
-              landing === "devices"
-                ? onSelectDevice
-                : landing === "files"
-                  ? onBrowseDevice
-                  : onSurfDevice
-            }
+            // devices opens the card, browser borrows the network. Two
+            // selections, two variables (`DevicesList` says why onOpen
+            // is a prop) — files used to be a third, and stopped being
+            // one when it stopped having a machine list at all.
+            onOpen={landing === "devices" ? onSelectDevice : onSurfDevice}
             selected={
-              landing === "files"
-                ? (browse?.device ?? null)
-                : landing === "browser"
-                  ? (surf?.device ?? null)
-                  : selectedDevice
+              landing === "browser" ? (surf?.device ?? null) : selectedDevice
             }
             pinFailed={pinFailed}
           />
@@ -1038,13 +957,12 @@ export default function App() {
   // now — the whole mesh, which is what that pane is about — so the space
   // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
-  // The two machines the empty states step toward: pinning a directory
-  // starts on this machine's own disk (the one browse that always
-  // exists), and borrowing a network starts on the first machine that
-  // is not this one (borrow-self is refused by design).
-  const meDevice = devices.find((d) => d.me) ?? null;
+  // The machine the browser's empty state steps toward: borrowing a
+  // network starts on the first machine that is not this one
+  // (borrow-self is refused by design). The files landing's own
+  // starting point moved in with it (`FilesLanding` — it reads the
+  // device table for the same `me`).
   const firstOther = devices.find((d) => !d.me) ?? null;
-  const browsed = browse ? (devices.find((d) => d.id === browse.device) ?? null) : null;
   const surfed = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
   const detail = sessions ? (
     <DetailPane
@@ -1067,34 +985,6 @@ export default function App() {
           }}
           onNew={() => setSheet("new")}
         />
-      }
-    />
-  ) : landing === "files" && browse && browsed ? (
-    // Keyed so switching machines or shortcuts restarts the browse
-    // where it points — a path from one disk means nothing on another.
-    <FilesPane
-      key={`${browse.device}:${browse.path}`}
-      machine={browsed.name}
-      device={browsed.id}
-      initialPath={browse.path}
-      narrow={narrow}
-      onBack={() => setScreen("list")}
-    />
-  ) : landing === "files" ? (
-    // Before a machine is picked: the pinned shortcuts, each a jump
-    // straight to a directory somebody chose to keep close.
-    <PinnedDirs
-      onOpen={(device, path) => {
-        setBrowse({ device, path });
-        setScreen("detail");
-      }}
-      onGo={
-        meDevice
-          ? () => {
-              setBrowse({ device: meDevice.id, path: "" });
-              setScreen("detail");
-            }
-          : undefined
       }
     />
   ) : landing === "browser" && surf && surfed ? (
@@ -1149,13 +1039,15 @@ export default function App() {
         setSelected(id);
         setScreen("detail");
       }}
-      // The files landing with this machine picked — the same move its
-      // chip makes there (`onBrowseDevice`), plus the landing change
-      // this card is one landing away from.
+      // This machine's disk, in a **new** tab. Not the open one: the
+      // request came from somewhere else entirely, so whatever that tab
+      // was showing is not part of it — replacing it would throw away a
+      // place the person did not ask to leave (`useDirTabs.open` says
+      // the same from the other side).
       onBrowseFiles={(row) => {
         setMark(false);
         setLanding("files");
-        setBrowse({ device: row.id, path: "" });
+        dirTabs.open(row.id, "");
         setScreen("detail");
       }}
     />
@@ -1224,6 +1116,29 @@ export default function App() {
     </div>
   );
 
+  /**
+   * The files landing, which is neither half of the list-and-detail
+   * pair either — for a different reason from the mark's, and the two
+   * reasons are worth keeping apart.
+   *
+   * The mark's place is not a landing at all. This one is: it is simply
+   * a **browsing** landing rather than an **inbox** one (docs/UX.md
+   * 姿势 — 收件箱型 / 浏览型). 会话 and 机器 are lists a person keeps an
+   * eye on, so the list is furniture and stays on screen. A directory is
+   * not watched, it is walked: which machine is a step on the way to a
+   * place, and a permanent column of machines is a column spent on a
+   * question that was answered the moment the tab opened. What replaces
+   * it is the browser's own answer — tabs, one per place, and an
+   * address bar.
+   *
+   * Same on both faces, which is what the wide/narrow rule already
+   * says: the strip is every tab at once where there is room, a count
+   * and a switcher where there is not (`TabStrip`).
+   */
+  const filesLanding = (
+    <FilesLanding devices={devices} tabs={dirTabs} narrow={narrow} />
+  );
+
   // One shell, two width classes: wide is rail|list|detail all at once,
   // narrow is one screen at a time with the rail as a bottom bar. The
   // mark's place is neither half of that pair, so it takes the whole of
@@ -1241,11 +1156,20 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div
-            key={mark ? "mark" : screen}
-            data-screen={mark ? "mark" : screen}
+            key={mark ? "mark" : landing === "files" ? "files" : screen}
+            data-screen={mark ? "mark" : landing === "files" ? "files" : screen}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            {mark ? markPlace : screen === "detail" && detail ? detail : list}
+            {/* Files is one screen either way — it has no list screen
+                to be the other half of a pair, so `screen` says nothing
+                about it and it is keyed on its own. */}
+            {mark
+              ? markPlace
+              : landing === "files"
+                ? filesLanding
+                : screen === "detail" && detail
+                  ? detail
+                  : list}
           </div>
           {rail}
           {sheets}
@@ -1256,6 +1180,11 @@ export default function App() {
           {rail}
           {mark ? (
             <div className="min-w-0 flex-1">{markPlace}</div>
+          ) : landing === "files" ? (
+            // The whole width beside the rail, and that width is the
+            // point: what the machine column used to spend is now the
+            // directory's (see `filesLanding`).
+            <div className="min-w-0 flex-1">{filesLanding}</div>
           ) : (
             <>
               {list}

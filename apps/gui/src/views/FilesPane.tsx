@@ -1,9 +1,20 @@
-// The files landing's second step: one machine's directory, painted in
-// the node's order (it sorts, this pane never re-sorts — docs/UX.md).
-// Navigation is the tree's own: down by pressing a directory, up by
-// the 上一级 row. There is no "back" — the machine list on the left
-// never left (the desktop posture; narrow keeps its own back in the
-// header like every detail).
+// What one tab is showing: one machine's directory, painted in the
+// node's order (it sorts, this pane never re-sorts — docs/UX.md).
+// Navigation is the tree's own: down by pressing a directory, up by the
+// 上一级 row, anywhere by the address bar above.
+//
+// **Where the tab is belongs to the tab, not to this pane** (标签页一期).
+// It arrives as `path` and every move is reported back through
+// `onPath`, which is what lets the strip title a tab, the address bar
+// draw a breadcrumb, and a reload land where the person left off —
+// three faces of one fact, and one place that owns it. The pane keeping
+// its own idea of where it was is how those three drift apart.
+//
+// **There is no "back" on either face any more.** There used to be one
+// on narrow, back to the machine list; that list is gone, so the
+// button had nothing left to return to (docs/UX.md 返回 only exists
+// where the list is really off screen). Going elsewhere is the
+// switcher; going up is 上一级.
 //
 // Taking a file is the row's one action. The landing (the downloads
 // directory) was chosen silently, so the row says where the file went;
@@ -11,8 +22,8 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
-import { fetchDirPins, fetchLs, pinDir, pullFile, type DirListing } from "@/api";
-import { IconBack, IconPin } from "@/components/icons";
+import { fetchDirPins, fetchLs, pinDir, pullFile, recentVisit, type DirListing } from "@/api";
+import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -36,18 +47,26 @@ type Took = { path: string; state: "taking" | "landed" | "failed"; word: string 
 export function FilesPane({
   machine,
   device,
-  initialPath = "",
+  path,
   narrow,
-  onBack,
+  onPath,
+  onLanded,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
   /** Its device id — what a directory pin is keyed by. */
   device: string;
   /** Where to open; "" is that machine's home. */
-  initialPath?: string;
+  path: string;
   narrow: boolean;
-  onBack: () => void;
+  /** Where the tab should now be. Called both for a step the person
+      took and for the home a `""` resolved to — the tab holds the
+      answer, this pane only ever asks. */
+  onPath: (path: string) => void;
+  /** A directory really opened. Separate from `onPath` because the two
+      are different facts: `onPath` fires for an *intention* that may
+      still be refused, this one only after a listing came back. */
+  onLanded?: (path: string) => void;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,15 +75,6 @@ export function FilesPane({
   // each toggle answers by re-asking, so the mark never guesses.
   const [pinned, setPinned] = useState<Set<string>>(new Set());
 
-  const navigate = (path: string) => {
-    fetchLs(machine, path)
-      .then((l) => {
-        setListing(l);
-        setError(null);
-      })
-      // The message is the node's, in the catalog's words.
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
-  };
   const loadPins = () => {
     fetchDirPins()
       .then((rows) =>
@@ -72,24 +82,57 @@ export function FilesPane({
       )
       .catch(() => {});
   };
-  // The pane opens where it was pointed — "" asks for home, and the
-  // answer carries the real path so the way down can be spelled.
+  // The pane opens where the tab points — "" asks for home, and the
+  // answer carries the real path, which is handed straight back so the
+  // tab stops saying "home" and starts saying where that is.
+  //
+  // **The listing it already has is not asked for again**, which is
+  // what keeps that hand-back from being a second round trip: the
+  // resolved path arrives as a new `path`, and this sees it is the one
+  // already on screen.
   useEffect(() => {
-    navigate(initialPath);
-    loadPins();
+    let stopped = false;
+    // Already here. Clearing the refusal is part of that: coming back
+    // to a directory that is on screen must not leave the sentence
+    // about the one that could not be reached standing over it.
+    if (listing && listing.path === path) {
+      setError(null);
+      return;
+    }
+    fetchLs(machine, path)
+      .then((l) => {
+        if (stopped) return;
+        setListing(l);
+        setError(null);
+        if (l.path !== path) onPath(l.path);
+        onLanded?.(l.path);
+        // The visit is recorded only here — after a real listing, with
+        // the machine's own spelling of the path rather than whatever
+        // was typed. Fire and forget: a history that would not write
+        // must never be the reason a directory does not open.
+        recentVisit("dir", machine, l.path).catch(() => {});
+      })
+      // The message is the node's, in the catalog's words.
+      .catch((e) => {
+        if (!stopped) setError(String(e instanceof Error ? e.message : e));
+      });
+    return () => {
+      stopped = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine, initialPath]);
+  }, [machine, path]);
 
-  const togglePin = (path: string) => {
-    pinDir(machine, path, !pinned.has(path))
+  useEffect(loadPins, [device]);
+
+  const togglePin = (p: string) => {
+    pinDir(machine, p, !pinned.has(p))
       .then(loadPins)
       .catch(() => {});
   };
 
   const up = () => {
     if (!listing) return;
-    const parent = listing.path.slice(0, listing.path.lastIndexOf("/")) || "/";
-    navigate(parent);
+    onPath(listing.path.slice(0, listing.path.lastIndexOf("/")) || "/");
   };
 
   const take = (path: string) => {
@@ -101,27 +144,22 @@ export function FilesPane({
       );
   };
 
+  // No header: which machine and where on it are the address bar's, and
+  // a second copy of them here would be two spellings of one fact one
+  // poll apart. What is left is the listing.
   return (
     <section className="flex h-full min-w-0 flex-col">
-      <header className="flex h-ctl-lg flex-none items-center gap-2 border-b px-3">
-        {narrow && (
-          <Button variant="ghost" size="icon" aria-label={gui.back} data-back onClick={onBack}>
-            <IconBack />
-          </Button>
-        )}
-        <span className="truncate font-title">{machine}</span>
-        {/* The whole path rides the title; what shows truncates from
-            the tail — rtl tricks scramble a slashed path's order. */}
-        <span
-          title={listing?.path ?? ""}
-          className="min-w-0 flex-1 truncate text-sm text-muted-foreground"
-        >
-          {listing?.path ?? ""}
-        </span>
-      </header>
       <div data-files-list className="min-h-0 flex-1 overflow-y-auto">
         {error ? (
-          <div className="p-4 text-sm text-muted-foreground">{error}</div>
+          // **The one thing this must never be is blank.** Enter in the
+          // address bar says where to go; arriving is a different fact,
+          // and when it does not happen the refusal is the whole of what
+          // this pane has to say — in the node's own sentence, at the
+          // size of something meant to be read, not as a footnote under
+          // an empty directory that was never opened.
+          <div data-cannot-reach className="p-4 text-fact">
+            {error}
+          </div>
         ) : !listing ? null : (
           <>
             {listing.path !== "/" && (
@@ -153,7 +191,7 @@ export function FilesPane({
                   <button
                     type="button"
                     data-dir={e.name}
-                    onClick={() => navigate(full)}
+                    onClick={() => onPath(full)}
                     className="flex min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
                   >
                     <span className="min-w-0 flex-1 truncate">{e.name}/</span>

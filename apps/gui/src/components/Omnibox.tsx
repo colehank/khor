@@ -25,7 +25,7 @@
 // the box, and the same composition guard first of all — mid-组词 the
 // Enter that picks a candidate belongs to the IME, and a box that read it
 // would eat the choice and commit a half-typed word.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
@@ -35,8 +35,23 @@ import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 /** One thing the list can be narrowed by. `key` is the node's own group
-    key (`dev:turing`); `label` is what a person reads. */
-export type Candidate = { key: string; label: string; face?: Avatar | null };
+    key (`dev:turing`); `label` is what a person reads.
+
+    `hint` and `dim` are one judgment in two halves, and they exist for
+    a candidate that **is not a fact about right now**: a path offered
+    out of memory while the machine that owns it is not answering. The
+    hint names where it came from and the dimming says it is not a
+    listing — either alone is the failure, because a remembered path
+    that looks exactly like a live one is this box claiming to know
+    something it does not. Both are absent on an ordinary candidate,
+    which is how "no hint" stays readable as "this is live". */
+export type Candidate = {
+  key: string;
+  label: string;
+  face?: Avatar | null;
+  hint?: string;
+  dim?: boolean;
+};
 
 /**
  * One axis the box can offer, with the candidates it has right now.
@@ -62,6 +77,49 @@ export type OmniAxis = {
   role?: "chip" | "text";
 };
 
+/**
+ * One committed candidate, as a token.
+ *
+ * **Exported because a second place now wears one**: the address bar's
+ * resting face is a breadcrumb, not a box, and the machine still has to
+ * be a chip there — same picture, same remove, same distance from what
+ * follows it. Copied instead, the two would be one restyle apart from
+ * being visibly different tokens for one idea, which is the whole
+ * failure `PaneBar`'s head describes about search boxes.
+ */
+export function OmniChip({
+  candidate,
+  onRemove,
+}: {
+  candidate: Candidate;
+  onRemove: () => void;
+}) {
+  return (
+    <span
+      data-chip={candidate.key}
+      className="flex flex-none items-center gap-1 rounded-sm bg-secondary py-0.5 pr-0.5 pl-1.5 text-sm"
+    >
+      {candidate.face !== undefined && candidate.face !== null && (
+        <MachineAvatar face={candidate.face} className="size-kind-mark" />
+      )}
+      <span data-chip-label>{candidate.label}</span>
+      <Button
+        size="icon"
+        variant="ghost"
+        data-chip-remove={candidate.key}
+        aria-label={`${gui.remove} ${candidate.label}`}
+        className="size-ctl-sm"
+        // The box must not lose focus to the press — where there is a
+        // box. Harmless where there is not.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onRemove}
+      >
+        <IconClose />
+      </Button>
+    </span>
+  );
+}
+
 export function Omnibox({
   label,
   query,
@@ -70,6 +128,9 @@ export function Omnibox({
   chosen,
   onToggle,
   onSubmit,
+  lead,
+  autoFocus,
+  onLeave,
 }: {
   /** Names the box and stands in as its placeholder — the pane's, not
       this component's, for the same reason the plain box took it. */
@@ -87,6 +148,27 @@ export function Omnibox({
    * already narrowed and there is nothing left for Enter to do.
    */
   onSubmit?: (text: string) => void;
+  /**
+   * The glyph in front of the box. Defaults to the magnifier, which is
+   * what this control is on every pane that narrows a list — and is
+   * wrong on the one that does not: an address bar wearing a magnifier
+   * says "type words and I will look for them", which is the opposite
+   * of "this is where you are".
+   */
+  lead?: ReactNode;
+  /** Take the caret on mount. For a box that exists only because
+      somebody just pressed the thing it replaced — pressing a
+      breadcrumb and then having to click the box is one act done
+      twice. */
+  autoFocus?: boolean;
+  /**
+   * Done being typed in: Escape with no menu up, or focus gone
+   * elsewhere. **Only a caller with somewhere to go back to passes
+   * one** — a pane's search box is that pane's permanent furniture and
+   * has no other state to return to, so it passes none and nothing
+   * about it changes.
+   */
+  onLeave?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState(0);
@@ -175,46 +257,44 @@ export function Omnibox({
           }
         }}
       >
-        <IconSearch className="pointer-events-none flex-none text-muted-foreground" />
+        {lead ?? <IconSearch className="pointer-events-none flex-none text-muted-foreground" />}
         {chips.map((c) => (
-          <span
-            key={c.key}
-            data-chip={c.key}
-            className="flex flex-none items-center gap-1 rounded-sm bg-secondary py-0.5 pr-0.5 pl-1.5 text-sm"
-          >
-            {c.face !== undefined && c.face !== null && (
-              <MachineAvatar face={c.face} className="size-kind-mark" />
-            )}
-            <span data-chip-label>{c.label}</span>
-            <Button
-              size="icon"
-              variant="ghost"
-              data-chip-remove={c.key}
-              aria-label={`${gui.remove} ${c.label}`}
-              className="size-ctl-sm"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onToggle(c.key)}
-            >
-              <IconClose />
-            </Button>
-          </span>
+          <OmniChip key={c.key} candidate={c} onRemove={() => onToggle(c.key)} />
         ))}
         <input
           ref={box}
           data-pane-search
           data-omni-input
           type="search"
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus={autoFocus}
           aria-label={label}
           placeholder={chips.length === 0 ? label : ""}
           value={query}
           className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
           onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
+          onBlur={() => {
+            setOpen(false);
+            onLeave?.();
+          }}
           onChange={(e) => onQuery(e.target.value)}
           onKeyDown={(e) => {
             // First, before every branch: mid-composition these keys are
             // the IME's (`ChatView`'s "/" menu, same reason).
             if (e.nativeEvent.isComposing) return;
+            // Second, and before the "nothing to choose from" return
+            // below: Escape has to mean something in both cases. With a
+            // menu up it puts the menu away; with none it is the way out
+            // of the box for whoever has an out (see `onLeave`). Left
+            // where it used to sit — after that return — the second
+            // meaning was unreachable, which is exactly the state an
+            // address bar spends most of its time in.
+            if (e.key === "Escape") {
+              e.preventDefault();
+              if (open && flat.length > 0) setOpen(false);
+              else onLeave?.();
+              return;
+            }
             if (e.key === "Backspace" && query === "" && chosen.length > 0) {
               // Whole, never half: the chip is one token, and there is
               // no such thing as filtering by part of a machine's name.
@@ -257,10 +337,6 @@ export function Omnibox({
               else commit(flat[at].key);
               return;
             }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              setOpen(false);
-            }
           }}
         />
       </div>
@@ -285,6 +361,7 @@ export function Omnibox({
                     className={cn(
                       "flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-sm",
                       n === at && "bg-accent",
+                      c.dim && "text-muted-foreground",
                     )}
                     // The box must not lose focus to the press, or the
                     // chip would land in a field nobody is typing in.
@@ -294,7 +371,17 @@ export function Omnibox({
                     {c.face !== undefined && c.face !== null && (
                       <MachineAvatar face={c.face} className="size-kind-mark" />
                     )}
-                    {c.label}
+                    <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                    {/* Where it came from, when it came from memory
+                        rather than from the machine. It rides the row it
+                        describes — there is nowhere else for it to be
+                        that would still be beside the thing it is
+                        about. */}
+                    {c.hint && (
+                      <span data-omni-hint className="flex-none text-xs text-muted-foreground">
+                        {c.hint}
+                      </span>
+                    )}
                   </button>
                 );
               })}

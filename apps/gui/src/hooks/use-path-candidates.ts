@@ -18,6 +18,15 @@
 // claims nothing: no stale entries from the previous directory, and no
 // statement that the directory is empty. The two look identical in a
 // single frame, and only one of them is ever true.
+//
+// **And a third fact: "that machine did not answer at all."** It used
+// to be swallowed here, which was right while the only caller was a
+// dropdown under a caret. It is not right now that the caller is an
+// address bar: a machine that is not answering has to degrade to what
+// is remembered about it rather than to an empty list, and an empty
+// list is exactly what "no completions" looks like. So the refusal is
+// reported, and what to put on screen instead is the caller's judgment
+// (`AddressBar` — pins and recents, each saying where it came from).
 import { useEffect, useState } from "react";
 
 import { fetchLs } from "@/api";
@@ -28,6 +37,36 @@ import type { DirRow } from "@/gen/bindings/DirRow";
     nothing at all. */
 const SETTLE_MS = 150;
 
+/**
+ * Layers already pulled, across every box on this page and across the
+ * life of the tab.
+ *
+ * **Module-level and never evicted, on purpose.** A tab strip walks the
+ * same few trees over and over — down into a directory, back up, into
+ * its sibling — and the way up is the case the per-hook state could
+ * never serve: the parent was listed a second ago and asking again
+ * makes climbing feel slower than descending. The cost of keeping it is
+ * a few hundred names per directory visited in one sitting.
+ *
+ * **What it cannot do is stand in for a live answer.** A cached layer
+ * is served immediately *and* re-asked; the answer replaces it. So a
+ * directory that changed under the caret is briefly a layer old — which
+ * is the correct trade for a completion list, and would not be for the
+ * pane that actually opens the directory (`FilesPane` never reads
+ * this).
+ */
+const cache = new Map<string, DirRow[]>();
+const layer = (machine: string, dir: string) => `${machine}\n${dir}`;
+
+export type PathCandidates = {
+  dir: string;
+  entries: DirRow[];
+  answered: boolean;
+  /** The last ask about this directory came back refused — the machine
+      is not reachable, or the path is not one it will list. */
+  failed: boolean;
+};
+
 /** The directory part of a typed path, and the fragment after it. */
 export function splitPath(typed: string): { dir: string; leaf: string } {
   const cut = typed.lastIndexOf("/");
@@ -36,25 +75,32 @@ export function splitPath(typed: string): { dir: string; leaf: string } {
     : { dir: typed.slice(0, cut + 1), leaf: typed.slice(cut + 1) };
 }
 
-export function usePathCandidates(
-  machine: string | null,
-  typed: string,
-): { dir: string; entries: DirRow[]; answered: boolean } {
+export function usePathCandidates(machine: string | null, typed: string): PathCandidates {
   const { dir } = splitPath(typed);
   const [got, setGot] = useState<{ machine: string; dir: string; entries: DirRow[] } | null>(null);
+  const [refused, setRefused] = useState<{ machine: string; dir: string } | null>(null);
 
   useEffect(() => {
     if (!machine) return;
     let stopped = false;
+    // A layer already walked answers now. The ask below still goes out:
+    // this is a head start, not a substitute for the truth.
+    const held = cache.get(layer(machine, dir));
+    if (held) setGot({ machine, dir, entries: held });
     const t = window.setTimeout(() => {
       fetchLs(machine, dir)
         .then((listing) => {
-          if (!stopped) setGot({ machine, dir, entries: listing.entries });
+          cache.set(layer(machine, dir), listing.entries);
+          if (stopped) return;
+          setGot({ machine, dir, entries: listing.entries });
+          setRefused(null);
         })
         .catch(() => {
-          // A directory that cannot be read offers no completions, and
-          // says nothing about why — the pane that opens it is where a
-          // refusal belongs, not a dropdown under the caret.
+          // Not swallowed any more, and still not spoken here: this
+          // says *that* it failed, and the caller decides what a box
+          // with nothing live to offer should show instead. A reason
+          // under the caret would be a dropdown explaining itself.
+          if (!stopped) setRefused({ machine, dir });
         });
     }, SETTLE_MS);
     return () => {
@@ -64,5 +110,6 @@ export function usePathCandidates(
   }, [machine, dir]);
 
   const answered = got !== null && got.machine === machine && got.dir === dir;
-  return { dir, entries: answered ? got.entries : [], answered };
+  const failed = refused !== null && refused.machine === machine && refused.dir === dir;
+  return { dir, entries: answered ? got.entries : [], answered, failed };
 }
