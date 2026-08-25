@@ -28,7 +28,16 @@
 // Run: `node scripts/check-tabs.mjs` (needs `cargo build -p khor-cli
 // -p khor-gui-core --bins` first, and system Chrome).
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,6 +128,46 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => void cleanup().finally(() => process.exit(130)));
 }
 
+// ── 0) the shell does not know what a disk is ──────────────────────
+//
+// Static, and first, because it needs nothing standing up — and because
+// it is the one claim the rest of this file cannot make. Every assertion
+// below would pass just as well on a shell with `fetchLs` wired straight
+// into it; what would be gone is the reason the browser landing can be a
+// descriptor instead of a second copy (docs/DESIGN.md 浏览型外壳).
+//
+// **The probe is proved alive first**: the same finder is pointed at the
+// instance, which must name those very things. Without that, "the shell
+// mentions no disk" and "this grep is looking in the wrong place" read
+// exactly the same (the `.nav-badge` lesson).
+{
+  const SHELL = join(gui, "src/browse");
+  // What only a disk has. Not a vocabulary list — these are the four
+  // calls and types that would mean the shell had learned about one.
+  const DISK = /\b(fetchLs|fetchDirPins|DirListing|DirRow)\b/;
+  const INSTANCE = /from "@\/views\//;
+  const shellFiles = readdirSync(SHELL).filter((f) => /\.tsx?$/.test(f));
+  if (shellFiles.length < 5) fail(`probe dead: only ${shellFiles.length} files in src/browse`);
+  // **Counted, not just reported.** The first spelling printed its "ok"
+  // line whenever the probe was alive, so a run that had just failed on
+  // a real violation printed the failure and then a sentence saying the
+  // shell was clean — a reassurance standing right beside the thing it
+  // contradicts, which is worse than saying nothing. Caught by running
+  // the gate against an injected `fetchLs`, which is also how it was
+  // proved to go red at all.
+  const before = fails.length;
+  for (const f of shellFiles) {
+    const text = readFileSync(join(SHELL, f), "utf8");
+    if (DISK.test(text)) fail(`the shell knows about a disk: src/browse/${f}`);
+    if (INSTANCE.test(text)) fail(`the shell imports an instance: src/browse/${f}`);
+  }
+  const kindFile = readFileSync(join(gui, "src/views/FilesKind.tsx"), "utf8");
+  if (!DISK.test(kindFile)) fail("probe dead: the finder does not even match the files instance");
+  else if (fails.length === before) {
+    ok(`the shell (${shellFiles.length} files) names no disk; the instance does`);
+  }
+}
+
 let browser;
 try {
   rmSync(SCRATCH, { recursive: true, force: true });
@@ -191,7 +240,7 @@ try {
   const openFiles = async () => {
     await rail("files").click();
     await until("the files landing", 10_000, async () =>
-      (await page.locator("[data-files-landing]").count()) === 1,
+      (await page.locator('[data-browse-landing="dir"]').count()) === 1,
     );
   };
   const box = page.locator("[data-omni-input]");
@@ -240,7 +289,7 @@ try {
     .evaluate((el) => el.parentElement.lastElementChild.getBoundingClientRect().width);
   await openFiles();
   const filesWide = await page
-    .locator("[data-files-landing]")
+    .locator('[data-browse-landing="dir"]')
     .evaluate((el) => el.getBoundingClientRect().width);
   console.log(`     list ${listWide} | browser content ${detailWide} | files content ${filesWide}`);
   if (filesWide <= detailWide) {
@@ -468,7 +517,7 @@ try {
   await until("the sessions pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   await rail("files").click();
   await until("the files landing", 10_000, async () =>
-    (await page.locator("[data-files-landing]").count()) === 1,
+    (await page.locator('[data-browse-landing="dir"]').count()) === 1,
   );
   const flashed = await page.locator("[data-no-places]").count();
   if (flashed !== 0) fail("the fresh tab claims nothing is pinned before anything has answered");

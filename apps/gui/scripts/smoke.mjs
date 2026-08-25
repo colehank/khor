@@ -738,7 +738,7 @@ for line in sys.stdin:
     await railItem(tab).click();
     if (tab === "files") {
       await until("the files landing", 10_000, async () =>
-        (await page.locator("[data-files-landing]").count()) === 1,
+        (await page.locator('[data-browse-landing="dir"]').count()) === 1,
       );
       return;
     }
