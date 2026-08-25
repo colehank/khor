@@ -28,13 +28,16 @@
 //      inside the SVG;
 //  11. the rail's name shows on hover with no delay worth measuring, on
 //      keyboard focus too, and goes away when the pointer leaves;
-//  12. all four landings open, and the two machine-first panes (files,
-//      browser) list the same machines the devices pane does — the same
-//      set, not merely a list of the same length;
+//  12. all four landings open; the machine-first pane (browser) lists
+//      the same machines the devices pane does — the same set, not
+//      merely a list of the same length — and the files landing has no
+//      machine column at all, asserted with the same locator that just
+//      found machines twice elsewhere;
 //  13. each pane's bar carries exactly what that pane can do, and the
-//      three machine panes name their search box the same thing (a
-//      files pane offering to search files would be naming something
-//      it cannot find);
+//      two machine panes name their search box the same thing (a files
+//      pane offering to search files would be naming something it
+//      cannot find). Files has no pane bar to describe — its box
+//      belongs to a tab (24c);
 //  14. the app's mark is at the head of the rail, its artwork actually
 //      loaded, and it is not a control: no button around it and no
 //      hover response — with a rail glyph measured the same way as the
@@ -723,8 +726,22 @@ for line in sys.stdin:
 
   const listPane = page.locator("[data-list]");
   const railItem = (tab) => page.locator(`[data-rail-item][data-landing="${tab}"]`);
+  // Opening a landing, and waiting for the thing that landing *is*.
+  //
+  // **Three of the four are a list pane and one is not** (标签页一期):
+  // the files landing has no machine column any more, so there is no
+  // `[data-list]` there to compare a name against, and waiting for one
+  // would time out on a landing that came up perfectly. Its own arrival
+  // is asserted the same way in spirit — a region this landing and only
+  // this landing paints.
   const openLanding = async (tab) => {
     await railItem(tab).click();
+    if (tab === "files") {
+      await until("the files landing", 10_000, async () =>
+        (await page.locator("[data-files-landing]").count()) === 1,
+      );
+      return;
+    }
     await until(`the ${tab} pane`, 10_000, async () =>
       (await listPane.getAttribute("aria-label")) === (await railItem(tab).getAttribute("aria-label")),
     );
@@ -1423,11 +1440,19 @@ for line in sys.stdin:
   }
   await railItem("devices").blur();
 
-  // 12) four landings, and what the two borrowed ones show.
+  // 12) four landings, and what the borrowed one shows.
   //
-  //     Machine *names* are compared as sets, not counts: three panes
+  //     Machine *names* are compared as sets, not counts: two panes
   //     each showing three rows proves nothing if one of them is
   //     showing three of something else.
+  //
+  //     **The files landing is the counter-example on purpose now**
+  //     (标签页一期). It used to be checked here for listing the same
+  //     machines as the devices pane; it has no machine column at all
+  //     any more, because which machine is a step on the way to a
+  //     directory rather than a thing to watch (docs/UX.md 浏览型), and
+  //     asserting its absence is the point rather than a gap left by
+  //     the deletion.
   const LANDING_TABS = ["sessions", "devices", "files", "browser"];
   const machinesOn = async (tab) => {
     await openLanding(tab);
@@ -1443,11 +1468,20 @@ for line in sys.stdin:
   }
   const onDevices = await machinesOn("devices");
   if (onDevices.length !== 3) throw new Error(`expected three machines, saw ${onDevices.length}`);
-  for (const tab of ["files", "browser"]) {
-    const here = await machinesOn(tab);
-    if (here.join(",") !== onDevices.join(",")) {
-      throw new Error(`the ${tab} pane lists ${here} where devices lists ${onDevices}`);
-    }
+  const onBrowser = await machinesOn("browser");
+  if (onBrowser.join(",") !== onDevices.join(",")) {
+    throw new Error(`the browser pane lists ${onBrowser} where devices lists ${onDevices}`);
+  }
+  //     …and the negative half, after a probe that proves the selector
+  //     still finds machines somewhere (the two lines above did that
+  //     with the same locator, on two other landings). Absent that, "no
+  //     machine rows" and "the attribute got renamed" are one reading.
+  await openLanding("files");
+  if ((await page.locator("[data-list]").count()) !== 0) {
+    throw new Error("the files landing still has a list pane");
+  }
+  if ((await page.locator("[data-device]").count()) !== 0) {
+    throw new Error("the files landing still lists machines");
   }
 
   // 13) each pane's bar holds what that pane can do — and nothing it
@@ -1464,11 +1498,13 @@ for line in sys.stdin:
     };
   };
   const bars = {};
-  for (const tab of LANDING_TABS) bars[tab] = await barOf(tab);
+  // Files has no pane bar to describe, because it has no pane: its box
+  // belongs to a tab and is asserted in 24c.
+  const BAR_TABS = ["sessions", "devices", "browser"];
+  for (const tab of BAR_TABS) bars[tab] = await barOf(tab);
   const want = {
     sessions: { search: 1, filter: 1, plus: 1 },
     devices: { search: 1, filter: 0, plus: 1 },
-    files: { search: 1, filter: 0, plus: 0 },
     browser: { search: 1, filter: 0, plus: 0 },
   };
   for (const [tab, w] of Object.entries(want)) {
@@ -1479,14 +1515,12 @@ for line in sys.stdin:
     }
     if (!bars[tab].label) throw new Error(`probe dead: the ${tab} search box has no name`);
   }
-  // The three machine panes search machines, so they say the same
-  // thing; the sessions pane searches something else and says something
-  // else. Read off the app, never spelled here — the catalog owns the
-  // words, this owns the comparison.
-  for (const tab of ["files", "browser"]) {
-    if (bars[tab].label !== bars.devices.label) {
-      throw new Error(`the ${tab} search box is named ${bars[tab].label}, not ${bars.devices.label}`);
-    }
+  // The two machine panes search machines, so they say the same thing;
+  // the sessions pane searches something else and says something else.
+  // Read off the app, never spelled here — the catalog owns the words,
+  // this owns the comparison.
+  if (bars.browser.label !== bars.devices.label) {
+    throw new Error(`the browser search box is named ${bars.browser.label}, not ${bars.devices.label}`);
   }
   if (bars.sessions.label === bars.devices.label) {
     throw new Error("the sessions pane borrowed the machine pane's search label");
@@ -2662,10 +2696,12 @@ for line in sys.stdin:
   }
 
   // 24) every machine pane's rows open their second step now — the
-  //     devices card, the disk, the borrowed network. The pane that led
-  //     nowhere was the bug this once caught; there is none left, so the
-  //     assertion inverts to "all three lead somewhere", read off the
-  //     same three machines each pane lists.
+  //     devices card, the borrowed network. The pane that led nowhere
+  //     was the bug this once caught; there is none left, so the
+  //     assertion inverts to "both lead somewhere", read off the same
+  //     three machines each pane lists. (Files was a third of these
+  //     until it stopped having machine rows at all — 12 asserts that,
+  //     and 24c asserts what replaced them.)
   const openersOn = async (tab) => {
     await openLanding(tab);
     await until(`machines on the ${tab} pane`, 10_000, async () =>
@@ -2673,25 +2709,26 @@ for line in sys.stdin:
     );
     return page.locator("[data-device] [data-row-open]").count();
   };
-  for (const tab of ["devices", "files", "browser"]) {
+  for (const tab of ["devices", "browser"]) {
     const n = await openersOn(tab);
     if (n < 3) {
       throw new Error(`only ${n} of three machine rows open their second step on the ${tab} pane`);
     }
   }
 
-  // 24c) files 的 omnibox (批③ 三笔): the machine is a chip and the rest
-  //      is a path on it.
+  // 24c) the files landing's address bar (批③ 三笔, moved off the pane
+  //      bar by 标签页一期): the machine is a chip and the rest is a path
+  //      on it.
   //
   //      **Same mechanism as the sessions chips, different meaning** —
-  //      here a chip names the thing the pane acts on rather than
+  //      here a chip names the thing the tab is pointed at rather than
   //      narrowing a list, and nothing in the box knows the difference:
-  //      only what the pane does with a commit differs.
+  //      only what happens on a commit differs.
   const omniDir = join(SCRATCH, "omni-files");
   mkdirSync(join(omniDir, "inner"), { recursive: true });
   writeFileSync(join(omniDir, "inner", "omni-marker.txt"), "x");
   await openLanding("files");
-  await until("the files pane", 10_000, async () => (await page.locator("[data-omnibox]").count()) === 1);
+  await until("the address bar", 10_000, async () => (await page.locator("[data-omnibox]").count()) === 1);
   const filesInput = page.locator("[data-omni-input]");
   await filesInput.click();
   await until("machines offered", 10_000, async () =>
@@ -2742,8 +2779,11 @@ for line in sys.stdin:
   await until("the typed path really opened", 20_000, async () =>
     (await page.locator('[data-file="omni-marker.txt"]').count()) === 1,
   );
-  //      Taking the chip off leaves the machine — back to the landing,
-  //      which is the pinned shortcuts rather than somebody's disk.
+  //      Taking the chip off leaves the machine — the tab is a fresh
+  //      one again, which is the places list rather than somebody's
+  //      disk. (The chip is on the resting breadcrumb by now: Enter
+  //      above closed the box, which is the whole of what "submitting
+  //      means going" looks like from outside.)
   await page.locator('[data-chip-remove="dev:beta"]').click();
   await until("back off the machine", 10_000, async () =>
     (await page.locator("[data-files-list]").count()) === 0 &&
