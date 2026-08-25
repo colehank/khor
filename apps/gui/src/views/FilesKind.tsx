@@ -129,11 +129,23 @@ export const FILES: BrowseKind = {
   // The word `khor_sync::recents` refuses by name, and the word the tab
   // store is keyed by. One spelling, both jobs.
   kind: "dir",
-  segmentLabel: gui.files_tab,
+  words: {
+    address: gui.address_dir,
+    segment: gui.files_tab,
+    pinned: gui.pinned_dirs,
+    // Shared with the browser landing: 「最近去过」 is about the going,
+    // not about what was gone to (`recent-places` in the catalog).
+    recent: gui.recent_places,
+    empty: gui.no_pinned_dirs,
+    go: gui.go_pin_a_dir,
+  },
   pins: async () => {
     const rows = await fetchDirPins();
     return rows.map((r) => ({ device: r.device, name: r.name, place: r.path, at_ms: null }));
   },
+  // `remembered` is unused here: a directory's next step is a fact only
+  // that disk knows, so this asks the disk. The pages kind is the one
+  // that completes from memory (`BrowseKind.useSecond`).
   useSecond: (machine, typed): SecondSegment => {
     const { dir, entries, failed } = usePathCandidates(machine?.name ?? null, typed);
     return {

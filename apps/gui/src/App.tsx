@@ -6,9 +6,7 @@ import {
   fetchSessions,
   fetchQuota,
   fetchUsage,
-  fetchWebPins,
   openTermOn,
-  openWeb,
   installHooks,
   markSeen,
   pinDevice,
@@ -19,7 +17,6 @@ import {
   type SessionRow,
   type Usage,
   type QuotaAnswer,
-  type WebPinRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import {
@@ -51,8 +48,7 @@ import { cn } from "@/lib/utils";
 import { axisOf, groupLabel, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { FILES } from "@/views/FilesKind";
-import { BrowserPane } from "@/views/BrowserPane";
-import { PinnedWebs } from "@/views/PinnedWebs";
+import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
@@ -330,12 +326,12 @@ export default function App() {
   // — the machine card's 看它的文件 — is a tab appearing rather than a
   // landing being told to remember something on arrival.
   const dirTabs = useBrowseTabs(FILES.kind);
-  // …and the exit machine whose network the browser landing surfs,
-  // apart from all the above for the same reason: browsing through a
-  // machine is a third question, and a shared variable would tangle it
-  // with the machine card and the disk. `url` rides along so a pinned
-  // page opens straight through on arrival.
-  const [surf, setSurf] = useState<{ device: string; url: string | null } | null>(null);
+  // …and the browser landing's own tabs. **A second strip, not a
+  // second mechanism** (浏览器接壳批): both browsing landings are the
+  // same shell with a different kind, and the two stores are kept apart
+  // by that kind alone (`useBrowseTabs` keys on it), so a page can
+  // never turn up where a directory belongs.
+  const pageTabs = useBrowseTabs(PAGES.kind);
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">("list");
   const [stale, setStale] = useState(false);
@@ -450,11 +446,6 @@ export default function App() {
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
     setSelectedDevice(row.id);
-    setScreen("detail");
-  }, []);
-
-  const onSurfDevice = useCallback((row: DeviceRow) => {
-    setSurf({ device: row.id, url: null });
     setScreen("detail");
   }, []);
 
@@ -664,46 +655,9 @@ export default function App() {
   // a tab rather than to a pane, and a landing with no list pane has no
   // `PaneBar` to hang one on.)
 
-  // The browser pane's box: an exit machine, then an address on it.
-  //
-  // The same two roles as files — a chip that names the machine, and
-  // text that is the thing to open. The candidates are the pinned pages
-  // (`khor_node::webpins`), which is the one list of addresses this app
-  // actually has; it does not remember what anybody typed, because a
-  // history nobody asked for is a surface with its own rules.
-  const [webPins, setWebPins] = useState<WebPinRow[]>([]);
-  useEffect(() => {
-    if (landing !== "browser") return;
-    let stopped = false;
-    fetchWebPins()
-      .then((pins) => {
-        if (!stopped) setWebPins(pins);
-      })
-      .catch(() => {});
-    return () => {
-      stopped = true;
-    };
-  }, [landing, surf]);
-  const surfMachine = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
-  const browserAxes = useMemo<OmniAxis[]>(() => {
-    const machines: OmniAxis = {
-      key: "dev:",
-      label: gui.devices_tab,
-      candidates: devices.map((d) => ({ key: `dev:${d.name}`, label: d.name, face: d.face })),
-    };
-    if (!surfMachine) return [machines];
-    return [
-      machines,
-      {
-        key: "web:",
-        label: gui.browser_tab,
-        role: "text",
-        // Keyed by the address, because the address *is* the completed
-        // text; the name is what a person reads it by.
-        candidates: webPins.map((w) => ({ key: w.url, label: w.name || w.url })),
-      },
-    ];
-  }, [devices, surfMachine, webPins]);
+  // (The browser pane's box was assembled here too, for the same kind of
+  // pane, and left for the same reason. Both browsing landings put their
+  // box in `AddressBar` now, where it belongs to a tab.)
 
   const chooseArrange = useCallback((key: string) => {
     setArrangeBy(key);
@@ -837,6 +791,9 @@ export default function App() {
   );
 
   const sessions = landing === "sessions";
+  /** Whether this landing browses (docs/UX.md 浏览型) — the two that do
+      share one shell and have no list pane at all. */
+  const browses = landing === "files" || landing === "browser";
   const paneName = LANDINGS.find((l) => l.key === landing)!.name;
 
   // No pane wears its name where you can see it (docs/UX.md). The name
@@ -864,41 +821,13 @@ export default function App() {
         query={queries[landing]}
         onQuery={setQuery}
         filterLabel={sessions ? gui.filter : undefined}
+        // Only the sessions pane narrows a list now: the two browsing
+        // landings have no list pane at all, and their box belongs to a
+        // tab (`AddressBar`).
         filter={
-          sessions
-            ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord }
-            : landing === "browser"
-              ? {
-                  options: [],
-                  chosen: surf && surfMachine ? [`dev:${surfMachine.name}`] : [],
-                  onToggle: (key) => {
-                    const name = key.slice("dev:".length);
-                    const found = devices.find((d) => d.name === name);
-                    if (!found || (surf && surf.device === found.id)) {
-                      setSurf(null);
-                      setScreen("list");
-                      return;
-                    }
-                    setSurf({ device: found.id, url: null });
-                    setScreen("detail");
-                  },
-                }
-              : undefined
+          sessions ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord } : undefined
         }
-        axes={sessions ? sessionAxes : landing === "browser" ? browserAxes : undefined}
-        onSubmit={
-          landing === "browser" && surf && surfMachine
-            ? (text) => {
-                // Opening a page is a real act on this machine's own
-                // browser — the pane it lands in is where its outcome
-                // is said (BrowserPane), so this only starts it.
-                if (!text.trim()) return;
-                setSurf({ device: surf.device, url: text });
-                setScreen("detail");
-                openWeb(surfMachine.name, text).catch(() => {});
-              }
-            : undefined
-        }
+        axes={sessions ? sessionAxes : undefined}
         arrange={
           sessions
             ? {
@@ -933,15 +862,12 @@ export default function App() {
             rows={devices}
             query={queries[landing]}
             onPin={onPinDevice}
-            // Each landing asks the machine a different question:
-            // devices opens the card, browser borrows the network. Two
-            // selections, two variables (`DevicesList` says why onOpen
-            // is a prop) — files used to be a third, and stopped being
-            // one when it stopped having a machine list at all.
-            onOpen={landing === "devices" ? onSelectDevice : onSurfDevice}
-            selected={
-              landing === "browser" ? (surf?.device ?? null) : selectedDevice
-            }
+            // One question left: the devices pane opens a machine's
+            // card. Files and browser were the other two, and each
+            // stopped being one when it stopped having a machine list
+            // (`DevicesList` says why onOpen is a prop).
+            onOpen={onSelectDevice}
+            selected={selectedDevice}
             pinFailed={pinFailed}
           />
         )}
@@ -958,13 +884,8 @@ export default function App() {
   // now — the whole mesh, which is what that pane is about — so the space
   // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
-  // The machine the browser's empty state steps toward: borrowing a
-  // network starts on the first machine that is not this one
-  // (borrow-self is refused by design). The files landing's own
-  // starting point moved in with the browsing shell, which reads the
-  // device table for the same `me` (`BrowseLanding`).
-  const firstOther = devices.find((d) => !d.me) ?? null;
-  const surfed = surf ? (devices.find((d) => d.id === surf.device) ?? null) : null;
+  // (Both browsing landings' starting points moved in with the shell,
+  // which reads the device table itself — `BrowseLanding`.)
   const detail = sessions ? (
     <DetailPane
       row={selectedRow}
@@ -986,34 +907,6 @@ export default function App() {
           }}
           onNew={() => setSheet("new")}
         />
-      }
-    />
-  ) : landing === "browser" && surf && surfed ? (
-    // Keyed by exit and page so a shortcut opening a different machine's
-    // page restarts the pane pointed at it.
-    <BrowserPane
-      key={`${surf.device}:${surf.url ?? ""}`}
-      machine={surfed.name}
-      device={surfed.id}
-      initialUrl={surf.url}
-      narrow={narrow}
-      onBack={() => setScreen("list")}
-    />
-  ) : landing === "browser" ? (
-    // Before an exit is picked: the pinned pages, each a jump straight to
-    // opening it through the machine it was pinned against.
-    <PinnedWebs
-      onOpen={(device, url) => {
-        setSurf({ device, url });
-        setScreen("detail");
-      }}
-      onGo={
-        firstOther
-          ? () => {
-              setSurf({ device: firstOther.id, url: null });
-              setScreen("detail");
-            }
-          : undefined
       }
     />
   ) : landing === "devices" && !openDevice ? (
@@ -1118,35 +1011,41 @@ export default function App() {
   );
 
   /**
-   * The files landing, which is neither half of the list-and-detail
-   * pair either — for a different reason from the mark's, and the two
-   * reasons are worth keeping apart.
+   * The two browsing landings, which are neither half of the
+   * list-and-detail pair either — for a different reason from the
+   * mark's, and the two reasons are worth keeping apart.
    *
-   * The mark's place is not a landing at all. This one is: it is simply
-   * a **browsing** landing rather than an **inbox** one (docs/UX.md
-   * 姿势 — 收件箱型 / 浏览型). 会话 and 机器 are lists a person keeps an
-   * eye on, so the list is furniture and stays on screen. A directory is
-   * not watched, it is walked: which machine is a step on the way to a
-   * place, and a permanent column of machines is a column spent on a
-   * question that was answered the moment the tab opened. What replaces
-   * it is the browser's own answer — tabs, one per place, and an
-   * address bar.
+   * The mark's place is not a landing at all. These are: they are
+   * simply **browsing** landings rather than **inbox** ones
+   * (docs/UX.md 姿势 — 收件箱型 / 浏览型). 会话 and 机器 are lists a
+   * person keeps an eye on, so the list is furniture and stays on
+   * screen. A place is not watched, it is walked: which machine is a
+   * step on the way, and a permanent column of machines is a column
+   * spent on a question that was answered the moment the tab opened.
+   * What replaces it is the browser's own answer — tabs, one per
+   * place, and an address bar.
    *
    * Same on both faces, which is what the wide/narrow rule already
    * says: the strip is every tab at once where there is room, a count
    * and a switcher where there is not (`TabStrip`).
+   *
+   * **One component, two kinds, and nothing else differs** — which is
+   * the whole claim docs/DESIGN.md 浏览型外壳 makes, now with a second
+   * customer to test it against rather than one.
    */
-  const filesLanding = (
+  const browsing =
+    landing === "files" ? { kind: FILES, tabs: dirTabs } : { kind: PAGES, tabs: pageTabs };
+  const browsingLanding = (
     <BrowseLanding
       // **Keyed by the kind, and that is load-bearing.** A kind carries
       // a hook (`BrowseKind.useSecond`), so two kinds under one mounted
       // shell would change which hooks run — the one thing React cannot
-      // survive. A key makes a swap a remount instead of a crash, and
-      // it costs nothing while there is one browsing landing.
-      key={FILES.kind}
-      kind={FILES}
+      // survive. There really are two now, and switching landings is
+      // exactly the swap that would do it; the key makes it a remount.
+      key={browsing.kind.kind}
+      kind={browsing.kind}
       devices={devices}
-      tabs={dirTabs}
+      tabs={browsing.tabs}
       narrow={narrow}
     />
   );
@@ -1168,17 +1067,17 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div
-            key={mark ? "mark" : landing === "files" ? "files" : screen}
-            data-screen={mark ? "mark" : landing === "files" ? "files" : screen}
+            key={mark ? "mark" : browses ? landing : screen}
+            data-screen={mark ? "mark" : browses ? landing : screen}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            {/* Files is one screen either way — it has no list screen
-                to be the other half of a pair, so `screen` says nothing
-                about it and it is keyed on its own. */}
+            {/* A browsing landing is one screen either way — it has no
+                list screen to be the other half of a pair, so `screen`
+                says nothing about it and it is keyed on its own. */}
             {mark
               ? markPlace
-              : landing === "files"
-                ? filesLanding
+              : browses
+                ? browsingLanding
                 : screen === "detail" && detail
                   ? detail
                   : list}
@@ -1192,11 +1091,11 @@ export default function App() {
           {rail}
           {mark ? (
             <div className="min-w-0 flex-1">{markPlace}</div>
-          ) : landing === "files" ? (
+          ) : browses ? (
             // The whole width beside the rail, and that width is the
             // point: what the machine column used to spend is now the
-            // directory's (see `filesLanding`).
-            <div className="min-w-0 flex-1">{filesLanding}</div>
+            // content's (see `browsingLanding`).
+            <div className="min-w-0 flex-1">{browsingLanding}</div>
           ) : (
             <>
               {list}

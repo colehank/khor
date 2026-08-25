@@ -19,7 +19,6 @@ import { MachineAvatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import type { DeviceRow } from "@/api";
 import type { BrowseKind } from "@/browse/kind";
-import { gui } from "@/gen/catalog";
 import { placesInOrder, type Places } from "@/browse/use-places";
 import { ago } from "@/words";
 
@@ -30,8 +29,10 @@ export function NewTabPage({
   onOpen,
   onGo,
 }: {
-  /** Whose places these are — this file asks it for one thing:
-      what to call a place in a word. */
+  /** Whose places these are. This file asks it for two things: what
+      to call a place in a word, and what to call the sections and the
+      empty state — none of which the shell may spell itself, or the
+      browser landing says 「目录」 (`BrowseKind.words`). */
   kind: BrowseKind;
   places: Places;
   /** For the faces: a place is keyed by device id, and the picture
@@ -66,10 +67,10 @@ export function NewTabPage({
     return (
       <div className="grid h-full place-items-center text-sm text-muted-foreground">
         <div className="flex flex-col items-center gap-2">
-          <div data-no-places>{gui.no_pinned_dirs}</div>
+          <div data-no-places>{kind.words.empty}</div>
           {onGo && (
-            <Button size="sm" variant="secondary" data-go-pin-dir onClick={onGo}>
-              {gui.go_pin_a_dir}
+            <Button size="sm" variant="secondary" data-go-places onClick={onGo}>
+              {kind.words.go}
             </Button>
           )}
         </div>
@@ -94,7 +95,7 @@ export function NewTabPage({
                 data-places-section={pinned ? "pinned" : "recent"}
                 className="px-3 pt-2 pb-1 text-xs text-muted-foreground"
               >
-                {pinned ? gui.pinned_dirs : gui.recent_dirs}
+                {pinned ? kind.words.pinned : kind.words.recent}
               </div>
             )}
             <button

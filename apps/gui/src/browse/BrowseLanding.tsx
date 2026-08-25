@@ -86,7 +86,7 @@ export function BrowseLanding({
   // address passing for a live one.
   const remembered: Remembered[] = placesInOrder(places).map(({ place, pinned }) => ({
     place,
-    hint: pinned ? gui.pinned_dirs : gui.recent_dirs,
+    hint: pinned ? kind.words.pinned : kind.words.recent,
   }));
 
   const goTo = (device: string, place: string) => {

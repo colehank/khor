@@ -109,8 +109,36 @@ export type BrowseKind = {
    * keep in step.
    */
   kind: string;
-  /** The second axis's heading in the completion menu. */
-  segmentLabel: string;
+  /**
+   * Every word this landing says that names *its own* kind of thing.
+   *
+   * **The shell writes none of these, and that is the correction 浏览器
+   * 接壳批 made.** The first version of this contract carried exactly
+   * one word (the completion menu's heading) and left five more baked
+   * into the shell — so the browser landing mounted correctly and then
+   * told people it had 「还没有钉住的目录」. Measured on screen, not
+   * argued: `data-browse-landing="page"` with the files landing's
+   * sentences under it.
+   *
+   * The direction is what makes this growth rather than a broken line:
+   * every one of these moves instance knowledge **out** of the shell.
+   * The shell ends up knowing less about directories, not more — the
+   * same direction the boundary gate enforces. Welding a second
+   * landing's knowledge *in* would be the real break.
+   */
+  words: {
+    /** Names the address bar and stands in as its hint. */
+    address: string;
+    /** The second axis's heading in the completion menu. */
+    segment: string;
+    /** The fresh tab's two section headings. */
+    pinned: string;
+    recent: string;
+    /** …and what the fresh tab says with neither, plus the way onward
+        as a thing to press. */
+    empty: string;
+    go: string;
+  };
   /** Every place kept on purpose, for the fresh tab and for the
       fallback when a machine goes quiet. */
   pins: () => Promise<Place[]>;
@@ -127,7 +155,24 @@ export type BrowseKind = {
    * would change which hooks run, in the one way React cannot survive.
    * `App.tsx` keys the shell on `kind` so that a swap is a remount.
    */
-  useSecond: (machine: DeviceRow | null, typed: string) => SecondSegment;
+  useSecond: (
+    machine: DeviceRow | null,
+    typed: string,
+    /**
+     * What this screen already remembers, on every machine.
+     *
+     * **Handed in rather than fetched, because a kind may complete from
+     * memory instead of from a machine.** A directory's next step is a
+     * fact only that disk knows, so the files kind asks it; a URL's next
+     * step is not knowable at all — nobody enumerates the web — so the
+     * pages kind completes from the pins and recents this person keeps,
+     * and the shell is already holding exactly those (`usePlaces`: one
+     * fetch, two customers). Fetched again inside the kind they would be
+     * two answers a poll apart, and the box could offer an address the
+     * page below it is not showing.
+     */
+    remembered: Place[],
+  ) => SecondSegment;
   /** What a place is called in one word: the tab's title, the lead of a
       row on the fresh tab. */
   leafOf: (place: string) => string;

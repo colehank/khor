@@ -86,7 +86,7 @@ export function AddressBar({
   // else entirely would refill it under their hands.
   const seeding = useRef(false);
 
-  const second = kind.useSecond(machine, draft);
+  const second = kind.useSecond(machine, draft, remembered.map((r) => r.place));
   const Rest = kind.Rest;
 
   useEffect(() => {
@@ -126,7 +126,7 @@ export function AddressBar({
     : second.candidates;
 
   const axes: OmniAxis[] = machine
-    ? [machines, { key: "place:", label: kind.segmentLabel, role: "text", candidates: pathCandidates }]
+    ? [machines, { key: "place:", label: kind.words.segment, role: "text", candidates: pathCandidates }]
     : [machines];
 
   const go = (text: string) => {
@@ -177,7 +177,7 @@ export function AddressBar({
     <div data-address-bar className="flex min-h-ctl-lg flex-none items-center gap-1 border-b px-2">
       {boxUp ? (
         <Omnibox
-          label={gui.address_dir}
+          label={kind.words.address}
           query={draft}
           onQuery={setDraft}
           axes={axes}
