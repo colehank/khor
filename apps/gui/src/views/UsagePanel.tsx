@@ -82,13 +82,20 @@ export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: Quota
   // read in is this screen's business, and reversing the library's one
   // answer is not a second sort.
   const groups = byDay([...usage.days].reverse());
-  // **The peak is taken over every day khor has, not over the shown
-  // week.** Otherwise pressing 更早 would redraw bars the person had
-  // already read — the same day, a different length, because a longer
-  // day arrived underneath it. A scale that moves while you look at it
-  // is worse than a scale that is generous.
-  const peak = Math.max(1, ...usage.days.map((d) => d.tokens.output));
   const shown = all ? groups : groups.slice(0, RECENT_DAYS);
+  // **The peak is taken over the days on screen, and the first version
+  // took it over every day khor had.** The argument for that was that
+  // pressing 更早 must not redraw bars the person had already read — a
+  // scale that moves while you look at it. It is a real cost and it lost
+  // to a worse one, measured on the live panel the day it shipped: one
+  // outlier a fortnight back (1.9M against a week whose busiest day was
+  // 586.3k) left **all seven visible bars between 2% and 12%**, which is
+  // a row of empty tracks. A bar that cannot be compared to its
+  // neighbours is not doing the one thing a bar does, and the scale is
+  // stated in words right underneath them (`usage_vs_peak`), so the
+  // rescale is legible when it happens and is something the person
+  // asked for.
+  const peak = Math.max(1, ...shown.flatMap((g) => g.rows.map((r) => r.tokens.output)));
   const toggle = (key: string) =>
     setOpen((was) => {
       const next = new Set(was);
