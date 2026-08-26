@@ -127,6 +127,34 @@
 // (a rail item's aria-label, a row's data-word) and compared against
 // what the other face prints — the catalog owns the text, this script
 // owns the comparison.
+//
+// ── Writing a new item: four ways one was got wrong in one sitting ──
+//
+// All four are already in the repo's 假绿 family; they are written down
+// here because this is the file where the next one will be made, and
+// each of them **failed loudly only by luck** — three of the four would
+// have passed as a green in a slightly different order.
+//
+//  1. **The list is not the empty state.** 24b waited for
+//     `[data-new-tab]` before pinning anything — and a landing with
+//     nothing kept paints `[data-no-places]` instead. The assertion was
+//     about a thing that by definition did not exist yet. Wait for
+//     *either* face of the surface, then assert the fact.
+//  2. **Nothing pushes.** A backend op does not reach an open screen.
+//     What the app claims is "the pin is the network's, so the next
+//     screen that asks sees it" — so the reload is part of the claim,
+//     not a way around a flake. Asserting an instant update asserts a
+//     feature nobody built.
+//  3. **A sibling is not an ancestor.** `[data-places-section] [data-place]`
+//     matches nothing, because the heading is the row's sibling. A
+//     locator that matches nothing reads exactly like "it never
+//     arrived" — the `.nav-badge` lesson, which is in this file's own
+//     history twice already.
+//  4. **The view before the absence.** "The row is gone" is satisfied
+//     by a surface that has not answered yet. Prove the surface drew,
+//     *then* assert what is not on it. (This is the repo's own rule —
+//     「否定式断言之前,先证明测法还活着」 — violated by the person
+//     quoting it.)
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   mkdirSync,
@@ -734,11 +762,17 @@ for line in sys.stdin:
   // would time out on a landing that came up perfectly. Its own arrival
   // is asserted the same way in spirit — a region this landing and only
   // this landing paints.
+  // Which browse shell a landing opens into, when it is one of the two
+  // that browse. **Both of them, not just files** — the browser landing
+  // stopped having a list pane in 06f5757 (浏览型外壳收成模板) and this
+  // went on waiting for one, so every item that opened it timed out on a
+  // pane that cannot exist.
+  const BROWSE_KIND = { files: "dir", browser: "page" };
   const openLanding = async (tab) => {
     await railItem(tab).click();
-    if (tab === "files") {
-      await until("the files landing", 10_000, async () =>
-        (await page.locator('[data-browse-landing="dir"]').count()) === 1,
+    if (BROWSE_KIND[tab]) {
+      await until(`the ${tab} landing`, 10_000, async () =>
+        (await page.locator(`[data-browse-landing="${BROWSE_KIND[tab]}"]`).count()) === 1,
       );
       return;
     }
@@ -1465,19 +1499,19 @@ for line in sys.stdin:
   }
   await railItem("devices").blur();
 
-  // 12) four landings, and what the borrowed one shows.
+  // 12) four landings: one watches machines, two browse, one lists
+  //     sessions — and that difference is the assertion.
   //
-  //     Machine *names* are compared as sets, not counts: two panes
-  //     each showing three rows proves nothing if one of them is
-  //     showing three of something else.
+  //     Machine *names* are collected as a set, not counted: three rows
+  //     prove nothing if they are three of something else.
   //
-  //     **The files landing is the counter-example on purpose now**
-  //     (标签页一期). It used to be checked here for listing the same
-  //     machines as the devices pane; it has no machine column at all
-  //     any more, because which machine is a step on the way to a
-  //     directory rather than a thing to watch (docs/UX.md 浏览型), and
-  //     asserting its absence is the point rather than a gap left by
-  //     the deletion.
+  //     **Both browsing landings are the counter-example on purpose**
+  //     (标签页一期 for files, 06f5757 for browser). Either used to be
+  //     checked here for listing the same machines as the devices pane;
+  //     neither has a machine column any more, because which machine is
+  //     a step on the way to a place rather than a thing to watch
+  //     (docs/UX.md 浏览型), and asserting the absence is the point
+  //     rather than a gap left by the deletion.
   const LANDING_TABS = ["sessions", "devices", "files", "browser"];
   const machinesOn = async (tab) => {
     await openLanding(tab);
@@ -1493,20 +1527,22 @@ for line in sys.stdin:
   }
   const onDevices = await machinesOn("devices");
   if (onDevices.length !== 3) throw new Error(`expected three machines, saw ${onDevices.length}`);
-  const onBrowser = await machinesOn("browser");
-  if (onBrowser.join(",") !== onDevices.join(",")) {
-    throw new Error(`the browser pane lists ${onBrowser} where devices lists ${onDevices}`);
-  }
   //     …and the negative half, after a probe that proves the selector
-  //     still finds machines somewhere (the two lines above did that
-  //     with the same locator, on two other landings). Absent that, "no
-  //     machine rows" and "the attribute got renamed" are one reading.
-  await openLanding("files");
-  if ((await page.locator("[data-list]").count()) !== 0) {
-    throw new Error("the files landing still has a list pane");
-  }
-  if ((await page.locator("[data-device]").count()) !== 0) {
-    throw new Error("the files landing still lists machines");
+  //     still finds machines somewhere (the line above did that with the
+  //     same locator, on the one landing that watches machines). Absent
+  //     that, "no machine rows" and "the attribute got renamed" are one
+  //     reading.
+  for (const tab of ["files", "browser"]) {
+    await openLanding(tab);
+    if ((await page.locator("[data-list]").count()) !== 0) {
+      throw new Error(`the ${tab} landing still has a list pane`);
+    }
+    if ((await page.locator("[data-device]").count()) !== 0) {
+      throw new Error(`the ${tab} landing still lists machines`);
+    }
+    if ((await page.locator("[data-address-bar]").count()) !== 1) {
+      throw new Error(`the ${tab} landing has no address bar, so it has no second step at all`);
+    }
   }
 
   // 13) each pane's bar holds what that pane can do — and nothing it
@@ -1523,14 +1559,15 @@ for line in sys.stdin:
     };
   };
   const bars = {};
-  // Files has no pane bar to describe, because it has no pane: its box
-  // belongs to a tab and is asserted in 24c.
-  const BAR_TABS = ["sessions", "devices", "browser"];
+  // **Neither browsing landing has a pane bar to describe**, because
+  // neither has a pane: the box belongs to a tab (24c). Files was
+  // already out for that reason; browser was still in this list a batch
+  // after it stopped having one.
+  const BAR_TABS = ["sessions", "devices"];
   for (const tab of BAR_TABS) bars[tab] = await barOf(tab);
   const want = {
     sessions: { search: 1, filter: 1, plus: 1 },
     devices: { search: 1, filter: 0, plus: 1 },
-    browser: { search: 1, filter: 0, plus: 0 },
   };
   for (const [tab, w] of Object.entries(want)) {
     for (const [what, n] of Object.entries(w)) {
@@ -1540,13 +1577,11 @@ for line in sys.stdin:
     }
     if (!bars[tab].label) throw new Error(`probe dead: the ${tab} search box has no name`);
   }
-  // The two machine panes search machines, so they say the same thing;
-  // the sessions pane searches something else and says something else.
-  // Read off the app, never spelled here — the catalog owns the words,
-  // this owns the comparison.
-  if (bars.browser.label !== bars.devices.label) {
-    throw new Error(`the browser search box is named ${bars.browser.label}, not ${bars.devices.label}`);
-  }
+  // The sessions pane searches something other than machines, and says
+  // so. Read off the app, never spelled here — the catalog owns the
+  // words, this owns the comparison. (The other half of this comparison
+  // used to be the browser pane's box, which was the same box named the
+  // same way; it is a tab's address bar now, and 24c reads that.)
   if (bars.sessions.label === bars.devices.label) {
     throw new Error("the sessions pane borrowed the machine pane's search label");
   }
@@ -1898,10 +1933,15 @@ for line in sys.stdin:
   if ((await page.locator("[data-rail-mark]").count()) !== 1) {
     throw new Error("the mark is missing from the narrow rail, so the mesh is unreachable here");
   }
+  // Opening it is the assertion: `openLanding` waits for this landing's
+  // own shell, and a browsing landing has no machine rows to count on
+  // any width (12). This waited for exactly that count, which is why the
+  // narrow half of this item stopped being reachable a batch before
+  // anybody ran it.
   await openLanding("browser");
-  await until("machines on the narrow browser pane", 10_000, async () =>
-    (await page.locator("[data-device]").count()) === onDevices.length,
-  );
+  if ((await page.locator("[data-address-bar]").count()) !== 1) {
+    throw new Error("the narrow browser landing has no address bar, so it has no way in");
+  }
 
   // 18) the pin is reachable on the narrow face — the one where there is
   //     no pointer to reveal it with. A hover-only row action is simply
@@ -2478,14 +2518,21 @@ for line in sys.stdin:
 
   //     **And what that space holds instead is the mandala map** — one
   //     seat per machine, exactly one of them the middle, the ring a
-  //     real ring, and nothing drawn between any two of them.
+  //     real ring, and every line on it starting at that middle.
   //
-  //     The last one is the judgment the picture is built on: khor knows
-  //     who is in the mesh and not who can reach whom, so no line may be
-  //     drawn. It is asserted as a count rather than as a hunt for lines
-  //     nobody wrote — every `svg` inside the map has to belong to a
-  //     face, so an overlay drawing edges turns up as a surplus — and
-  //     the positive half is counted first, so a zero means zero rather
+  //     **The last one is turned over rather than deleted.** It used to
+  //     read "nothing drawn between any two of them", on the judgment
+  //     that khor knows who is in the mesh and not who can reach whom.
+  //     The hop reading overturned exactly half of that: khor does know
+  //     one thing about reachability — the road *this* machine is using
+  //     to reach each other one, first-hand, one edge's worth per
+  //     machine (`MandalaMap`'s head says the same). What two *other*
+  //     machines have between them it still does not know, so what must
+  //     be asserted now is not the absence of lines but their shape: a
+  //     star. Every edge shares one endpoint, and that endpoint is the
+  //     middle seat.
+  //
+  //     The positive half is counted first, so a zero means zero rather
   //     than a selector that stopped naming anything.
   const seats = page.locator("[data-mandala-map] [data-seat]");
   const machines = await page.locator("[data-device]").count();
@@ -2497,12 +2544,49 @@ for line in sys.stdin:
 
   const faces = await page.locator("[data-mandala-map] [data-seat] [data-face] svg").count();
   if (faces !== machines) throw new Error(`${faces} faces painted for ${machines} machines`);
-  const drawn = await page.locator("[data-mandala-map] svg").count();
-  if (drawn !== faces) {
+  //     One edge per machine that is not this one, and not one more:
+  //     a second-hand edge would be khor drawing a road it was never
+  //     told about.
+  const edges = await page.locator("[data-mandala-map] [data-edge]").evaluateAll((els) =>
+    els.map((e) => ({
+      road: e.dataset.road,
+      from: `${e.getAttribute("x1")},${e.getAttribute("y1")}`,
+      to: `${e.getAttribute("x2")},${e.getAttribute("y2")}`,
+    })),
+  );
+  if (edges.length !== machines - 1) {
+    throw new Error(`the map draws ${edges.length} edges for ${machines - 1} other machines`);
+  }
+  const ends = new Set(edges.map((e) => e.from));
+  if (ends.size !== 1) {
     throw new Error(
-      `the map draws ${drawn} svg elements for ${faces} faces — the surplus is a line between ` +
-        "machines, and khor does not know who can reach whom",
+      `the map's edges start from ${ends.size} different points — a line between two other ` +
+        "machines is a road khor was never told about",
     );
+  }
+  //     …and that shared end really is the middle seat, not merely a
+  //     point they happen to agree on.
+  const middle = await page
+    .locator('[data-mandala-map] [data-seat][data-seat-me="true"]')
+    .evaluate((el) => el.style.left + "|" + el.style.top);
+  const [mLeft, mTop] = middle.split("|").map((v) => parseFloat(v));
+  const [eLeft, eTop] = [...ends][0].split(",").map(Number);
+  if (Math.abs(mLeft - eLeft) > 0.01 || Math.abs(mTop - eTop) > 0.01) {
+    throw new Error(`edges meet at ${eLeft},${eTop} and the middle seat sits at ${mLeft},${mTop}`);
+  }
+  //     Every road wears one of the three strokes, and the word beside
+  //     it is the same one the machine's own row prints (24 reads that);
+  //     an unknown key would paint a faint line with no word at all.
+  for (const e of edges) {
+    if (!["direct", "relay", "none"].includes(e.road)) {
+      throw new Error(`an edge wears the road ${e.road}, which is not one of the three`);
+    }
+  }
+  //     The faces are still the only other svg on the map: one per seat,
+  //     plus the single layer the edges live in.
+  const drawn = await page.locator("[data-mandala-map] svg").count();
+  if (drawn !== faces + 1) {
+    throw new Error(`the map draws ${drawn} svg elements for ${faces} faces and one edge layer`);
   }
 
   //     The ring is a ring: every other **face** sits the same distance
@@ -2749,10 +2833,14 @@ for line in sys.stdin:
     );
     return page.locator("[data-device] [data-row-open]").count();
   };
-  for (const tab of ["devices", "browser"]) {
-    const n = await openersOn(tab);
+  // Devices only: the browsing landings reach their second step through
+  // a tab's address bar rather than a row (24c reads the files one, and
+  // `check-tabs` drives the pages one), so asking them for machine rows
+  // asks for the pane 12 just proved they do not have.
+  {
+    const n = await openersOn("devices");
     if (n < 3) {
-      throw new Error(`only ${n} of three machine rows open their second step on the ${tab} pane`);
+      throw new Error(`only ${n} of three machine rows open their second step on the devices pane`);
     }
   }
 
@@ -2862,76 +2950,90 @@ for line in sys.stdin:
     (await page.locator('[data-chip="dev:beta"]').count()) === 0,
   );
 
-  // 24b) the browser landing keeps pages: picking a machine opens the
-  //      address bar (whose placeholder names the exit, so the user
-  //      knows a page leaves through it), pinning a typed page makes a
-  //      shortcut that survives a reload into the PinnedWebs list before
-  //      any machine is picked, and unpinning takes it back. The pin
-  //      rides the real webpins table; the open itself (a real borrow)
-  //      is covered by tunnel_wire, and clicking a shortcut is avoided
-  //      here on purpose so this item never dials.
+  // 24b) the browser landing keeps pages: a pin made against the real
+  //      webpins table shows up among this landing's places, survives a
+  //      reload (it is the network's, not this screen's), and goes when
+  //      it is unpinned.
+  //
+  //      **Made through the backend op, not by clicking pin.** The pin
+  //      control (`[data-pin-web]`) lives on the *opened* page now, and
+  //      opening dials a real borrow through somebody's actual browser —
+  //      the same reason 24d stops short of pressing Enter. So this item
+  //      calls the very op that button calls (`pin_web`, over the bridge
+  //      that is one HTTP skin on the real node) and then asks the
+  //      screen what it shows. Nothing here is mocked; what is skipped
+  //      is the dial.
+  //
+  //      **It replaces an item that could not run.** The old one was
+  //      written against the pre-06f5757 browser pane — machine rows, a
+  //      `[data-web-address]` box, a `[data-web-pin-open]` list — and
+  //      two of those three attributes no longer exist anywhere in the
+  //      source. A locator that matches nothing reads as "the app is
+  //      broken" when it is positive and passes for free when it is
+  //      negative; either way this feature went unguarded from the day
+  //      the shell landed.
+  const bridgeOp = async (cmd, args) => {
+    const r = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/${cmd}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(args),
+    });
+    if (!r.ok) throw new Error(`${cmd} answered ${r.status}`);
+    return r.json().catch(() => null);
+  };
+  const webUrl = "https://smoke.example/page";
   await openLanding("browser");
-  await until("machines on the browser pane", 10_000, async () =>
-    (await page.locator("[data-device] [data-row-open]").count()) > 0,
+  //      **Either marker proves the places view drew**, and it has to be
+  //      either: `[data-new-tab]` is the list, and a landing with
+  //      nothing kept yet paints `[data-no-places]` instead — which is
+  //      exactly the state this item starts in. Waiting for the list
+  //      alone is an assertion that cannot hold before the thing it is
+  //      about exists (it did not, first time out).
+  await until("the browser landing's places", 10_000, async () =>
+    (await page.locator("[data-new-tab], [data-no-places]").count()) >= 1,
   );
-  const exit = await page.locator("[data-device]").first().getAttribute("data-device");
-  const openExit = () =>
-    page.locator(`[data-device="${exit}"] [data-row-open]`).first().click();
-  await openExit();
-  await until("the address bar on the browser pane", 10_000, async () =>
-    (await page.locator("[data-web-address]").count()) === 1,
-  );
-  const barPlaceholder = await page.locator("[data-web-address]").getAttribute("placeholder");
-  if (!barPlaceholder?.includes(exit)) {
-    throw new Error(`the address bar (${barPlaceholder}) does not name the exit ${exit}`);
+  //      The control: not there before it is pinned, so what follows is
+  //      about the pin rather than about the selector.
+  if ((await page.locator(`[data-place="${webUrl}"]`).count()) !== 0) {
+    throw new Error("that page was already pinned before this item pinned it");
   }
-  const url = "https://smoke.example/page";
-  await page.locator("[data-web-address]").fill(url);
-  await until("the pin-this-page control", 10_000, async () =>
-    (await page.locator("[data-pin-web]").count()) === 1,
-  );
-  await page.locator("[data-pin-web]").click();
-  await until("the pinned page in this exit's list", 10_000, async () =>
-    (await page.locator(`[data-web-pin-open="${url}"]`).count()) === 1,
-  );
-  // A reload drops every React selection, so the browser landing opens
-  // on PinnedWebs — where the pin, being the network's and not this
-  // screen's, must still be. (Reload keeps the ?bridge= query.)
+  await bridgeOp("pin_web", { machine: "beta", url: webUrl, on: true });
+  //      **Reload, and that is the claim rather than a workaround.**
+  //      This landing asks for what is kept when it mounts (and again
+  //      after it visits somewhere); nothing pushes a pin at an open
+  //      screen, and asserting that one appeared without a reload would
+  //      be asserting a live update the app does not do and has never
+  //      claimed. What it does claim is that the pin belongs to the
+  //      network and not to this screen — so the next time any screen
+  //      asks, it is there. (Reload keeps the ?bridge= query.)
   await page.reload();
   await openLanding("browser");
-  await until("the pinned page in the shortcut list", 10_000, async () =>
-    (await page.locator(`[data-pinned-web="${url}"]`).count()) === 1,
+  //      **Two locators, because the heading is the row's sibling and
+  //      not its parent** — `[data-places-section] [data-place]` matches
+  //      nothing at all, which reads exactly like "the pin never
+  //      arrived" (`.nav-badge`'s lesson, again).
+  await until("the pinned page among the places", 15_000, async () =>
+    (await page.locator(`[data-place="${webUrl}"]`).count()) === 1,
   );
-  // …and the omnibox offers it as a completion (批③ 四笔). Asserted
-  // here because this is where a pin provably exists — the candidates
-  // are the pinned pages and nothing else, so before this point there
-  // was correctly nothing to offer. Typed, not pressed: Enter would
-  // dial.
-  await openExit();
-  await until("the exit chip", 10_000, async () =>
-    (await page.locator("[data-chip]").count()) === 1,
+  if ((await page.locator('[data-places-section="pinned"]').count()) !== 1) {
+    throw new Error("the pinned page arrived without the heading that says it is pinned");
+  }
+  await bridgeOp("pin_web", { machine: "beta", url: webUrl, on: false });
+  await page.reload();
+  await openLanding("browser");
+  //      **The view first, the absence second, and that order is the
+  //      assertion's spine.** While nobody has answered about the pins
+  //      this landing paints nothing at all (`usePlaces.asked` — "no
+  //      answer yet" is not "nothing kept"), and an empty screen
+  //      satisfies "the pin is gone" for a reason that has nothing to do
+  //      with the pin. Written the other way round it read the loading
+  //      frame as proof and then tripped over its own probe.
+  await until("the places view again", 15_000, async () =>
+    (await page.locator("[data-new-tab], [data-no-places]").count()) >= 1,
   );
-  await page.locator("[data-omni-input]").click();
-  await page.locator("[data-omni-input]").fill(url.slice(0, url.length - 2));
-  await until("the pinned page offered as a completion", 10_000, async () =>
-    (await page.locator(`[data-omni-item="${url}"]`).count()) === 1,
-  );
-  await page.locator("[data-omni-input]").fill("");
-  await page.keyboard.press("Escape");
-
-  // Unpin from its exit — reached by the device row, not the shortcut,
-  // so opening it never dials.
-  await until("the address bar back", 10_000, async () =>
-    (await page.locator(`[data-unpin-web="${url}"]`).count()) === 1,
-  );
-  await page.locator(`[data-unpin-web="${url}"]`).click();
-  await until("the pinned page gone from this exit", 10_000, async () =>
-    (await page.locator(`[data-web-pin-open="${url}"]`).count()) === 0,
-  );
-
-  // Back where the next item expects to be: it pins the first row it
-  // finds, and which pane is open decides which row that is.
-  await openLanding("devices");
+  if ((await page.locator(`[data-place="${webUrl}"]`).count()) !== 0) {
+    throw new Error("the page is still among the places after it was unpinned");
+  }
 
   // 29) the mark opens the mesh and what it cost — on both faces.
   //
