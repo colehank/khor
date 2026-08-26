@@ -1,9 +1,10 @@
 import type { DeviceRow, SessionRow, Usage } from "@/api";
-import type { Vitals } from "@/gen/bindings/Vitals";
 import { MachineAvatar } from "@/components/Avatar";
+import { Bar, VitalBars } from "@/components/Gauge";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { doingTracks } from "@/lib/vitals";
 import { count } from "@/views/UsagePanel";
 import { word } from "@/words";
 
@@ -126,7 +127,7 @@ export function MeshNow({
                     {d.me ? ` ${cli.this_machine}` : ""}
                   </span>
                 </span>
-                {d.vitals && <Meters v={d.vitals.vitals} />}
+                {d.vitals && <Meters row={d} />}
               </button>
             ))}
           </div>
@@ -140,6 +141,54 @@ export function MeshNow({
   );
 }
 
+/**
+ * The one call the mark's place makes: how many sessions are waiting on
+ * an answer, and a way into the first of them.
+ *
+ * **Only when there are any.** `MeshNow`'s empty section says 没有等你的事
+ * out loud, and it is right to — an empty block where a query's answer
+ * belongs reads as a query that failed. This is not that block: the mark
+ * is not a checklist's landing, so on a quiet mesh it simply is not
+ * there, and the picture starts at the top.
+ *
+ * **It exists because the rail's badge cannot say this.** That number
+ * counts rows that are waiting *or* unread and cannot tell you which,
+ * and 待批 is the one state in the six with a person on the other end of
+ * it (docs/SESSION.md). The mark's place had the whole mesh and what it
+ * cost, and nothing at all about whether something was stuck.
+ */
+export function WaitingCall({
+  rows,
+  onPick,
+}: {
+  rows: SessionRow[];
+  onPick: (row: SessionRow) => void;
+}) {
+  const waiting = rows.filter((r) => r.word === "blocked");
+  if (waiting.length === 0) return null;
+  return (
+    <button
+      type="button"
+      data-mark-waiting={waiting.length}
+      onClick={() => onPick(waiting[0])}
+      className="flex items-center gap-row rounded-md px-3 py-2 text-left hover:bg-accent"
+    >
+      {/* The count at the display size, in the state's own colour — the
+          same two channels `MeshNow` gives it, so one glance recognises
+          the same fact in either place. Body weight: rank is already
+          said by size. */}
+      <span
+        data-mark-waiting-count
+        className="text-hero tabular-nums"
+        style={{ color: "var(--state-blocked)" }}
+      >
+        {waiting.length}
+      </span>
+      <span className="text-fact">{gui.waiting_on_you}</span>
+    </button>
+  );
+}
+
 /** The list's group-heading shape: what the rows under it share. The
     margin is the caller's (mb-in where it stands alone), because the
     first section seats it inside a flex row where a margin of its own
@@ -149,34 +198,42 @@ function Heading({ text, className }: { text: string; className?: string }) {
 }
 
 /**
- * One machine's readings in miniature: the percentages, under the same
- * names the card's rings wear, computed with the card's own fractions
- * (`MachineCard.Readings`) — one arithmetic, two magnifications.
+ * One machine's readings in miniature — **as bars, not as a sentence**.
+ *
+ * They were `CPU 23% · 内存 81% · GPU 67%`, one string per machine, at
+ * the same size and colour as the machine's own name beside it. Three of
+ * those rows and the section was nine numbers nobody was going to read.
+ * The strip is `components/Gauge`'s, shared with the star map, drawn
+ * from `vitalsTracks`' fractions — the same arithmetic the card's rings
+ * magnify, so no two screens can disagree about one machine.
+ *
+ * The percentages are still available here without leaving: the strip
+ * speaks them as its label, and the machine's card draws them in full.
  */
-function Meters({ v }: { v: Vitals }) {
-  const parts: string[] = [`${cli.vitals_name_cpu} ${Math.round(v.cpu_pct)}%`];
-  if (v.mem.total > 0) {
-    parts.push(`${cli.vitals_name_mem} ${Math.round((v.mem.used / v.mem.total) * 100)}%`);
-  }
-  if (v.gpu) parts.push(`${cli.vitals_name_gpu} ${Math.round(v.gpu.util_pct)}%`);
-  return (
-    // No `ms-auto`: the readings sit in the machine grid's second
-    // column, left edges aligned across rows — the column itself is the
-    // alignment, not a push to the far end.
-    <span data-now-meters className="flex-none text-xs tabular-nums text-muted-foreground">
-      {parts.join(" · ")}
-    </span>
-  );
+function Meters({ row }: { row: DeviceRow }) {
+  const tracks = doingTracks(row);
+  if (!tracks) return null;
+  // No `ms-auto`: the readings sit in the machine grid's second column,
+  // left edges aligned across rows — the column itself is the alignment,
+  // not a push to the far end.
+  return <VitalBars tracks={tracks} className="justify-start" />;
 }
 
 /**
- * Today's spending, as the four token numbers — never one total:
- * `UsagePanel`'s measured judgment stands (a total is almost entirely
- * cache reads and moves with resumption, not with work). Same-field
- * sums across machines and vendors are the mark place's own precedent.
- * "Today" is each machine's own civil day (`UsageDay::day`'s rule);
- * this screen filters by its clock's date, which is that rule read
- * from the one machine the person is sitting at.
+ * Today's spending: one number, and whether that is a lot.
+ *
+ * **Output, and a bar against the busiest day khor knows.** It printed
+ * all four token counts in a row — 输入 734 读缓存 245.9M 写缓存 7.8M
+ * 输出 270.2k — which is the usage panel's wall in miniature: four
+ * quantities of wildly different magnitude, at one size, with nothing to
+ * compare any of them to. `UsagePanel`'s head carries the reasoning for
+ * both halves of the fix (output rather than a total, other days rather
+ * than an allowance); this is the same judgment at a glance's depth, and
+ * the four numbers live one landing away.
+ *
+ * "Today" is each machine's own civil day (`UsageDay::day`'s rule); this
+ * screen filters by its clock's date, which is that rule read from the
+ * one machine the person is sitting at.
  */
 function Today({ usage }: { usage: Usage | null }) {
   // Nothing until the first answer — a "nothing spent" said while the
@@ -189,19 +246,16 @@ function Today({ usage }: { usage: Usage | null }) {
   if (rows.length === 0) {
     return <div data-now-unspent className="text-sm text-muted-foreground">{gui.today_none}</div>;
   }
-  const sum = { input: 0, cached_input: 0, cache_write: 0, output: 0 };
-  for (const r of rows) {
-    sum.input += r.tokens.input;
-    sum.cached_input += r.tokens.cached_input;
-    sum.cache_write += r.tokens.cache_write;
-    sum.output += r.tokens.output;
-  }
+  // Same-field sums across machines and vendors are the mark place's own
+  // precedent.
+  const output = rows.reduce((n, r) => n + r.tokens.output, 0);
+  const peak = Math.max(1, ...usage.days.map((d) => d.tokens.output));
   return (
-    <div data-now-tokens className="flex flex-wrap gap-x-3 text-sm tabular-nums text-muted-foreground">
-      <span>{cli.tokens_input(count(sum.input))}</span>
-      <span>{cli.tokens_cached(count(sum.cached_input))}</span>
-      <span>{cli.tokens_cache_write(count(sum.cache_write))}</span>
-      <span>{cli.tokens_output(count(sum.output))}</span>
+    <div data-now-tokens className="flex items-center gap-row">
+      <Bar anchor="today" fraction={output / peak} len="100%" className="min-w-0 flex-1" />
+      <span data-now-output className="flex-none text-fact tabular-nums">
+        {cli.tokens_output(count(output))}
+      </span>
     </div>
   );
 }

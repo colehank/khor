@@ -80,3 +80,17 @@ export function vitalsTracks(row: DeviceRow): Track[] | null {
   }
   return tracks;
 }
+
+/**
+ * The overview's readings: what a machine is **doing**.
+ *
+ * `vitalsTracks` minus the disk, because that is the one thing in the
+ * stack that is not an activity — the star map's seat already stated the
+ * rule in words ("a disk filling up is not doing"), and the network's
+ * now printed the same three. Filtered from the full stack rather than
+ * built again: one arithmetic, three magnifications.
+ */
+export function doingTracks(row: DeviceRow): Track[] | null {
+  const all = vitalsTracks(row);
+  return all ? all.filter((t) => t.id !== "disk") : null;
+}

@@ -1,11 +1,13 @@
-import type { DeviceRow, Strain } from "@/api";
+import type { DeviceRow } from "@/api";
 // Aliased: `Seat` the name belongs to the component below (one machine
 // in its place); the binding is the place itself.
 import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
+import { VitalBars } from "@/components/Gauge";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago, hopWord } from "@/words";
+import { doingTracks } from "@/lib/vitals";
+import { ageIfOld, hopWord } from "@/words";
 
 /**
  * The network as an ego graph: this machine in the middle, everyone
@@ -21,8 +23,11 @@ import { ago, hopWord } from "@/words";
  * | the face | that machine's own palette × its own key (`khor_core::avatar`) |
  * | the name | what it calls itself in the device table |
  * | in the middle, and larger | it is this machine |
- * | how long ago, or never | the age of the last answer it gave |
- * | the readings | what it said it was doing, in that same answer |
+ * | how long ago, or never | the age of the last answer it gave —
+ *   **printed only once it is older than a minute** (`ageIfOld`): a seat
+ *   that had just replied said 「0 秒前的读数」, which reads as a fault,
+ *   not as freshness |
+ * | the readings, as bars | what it said it was doing, in that same answer |
  * | the edge to it | which road this machine reaches it by (`DeviceRow::hop`) |
  *
  * **Every edge starts here**, and that is the data's shape, not a
@@ -223,9 +228,14 @@ const CAPTION_W = "min(36cqmin, calc(var(--avatar-xl) * 2))";
    the no-container-units fallback. A fluid size cannot carry a stepped
    token line-height, so the ratio is unitless — both token pairs sit
    at ~1.44 (16/11, 18/12.5), this simply keeps that ratio moving. */
-const TEXT_NAME = "clamp(var(--text-xs), 2.6cqmin, var(--text-sm))";
+const TEXT_NAME = "clamp(var(--text-sm), 2.6cqmin, var(--text-lg))";
 const TEXT_FINE = "clamp(var(--text-xs), 2.2cqmin, var(--text-sm))";
 const TEXT_RATIO = "1.44";
+/* The readings' bars, fluid on the same terms as the type: a fixed bar
+   inside a picture that scales would be the one mark that does not.
+   Their tokens are the floor and the ceiling (`--gauge-bar`). */
+const BAR_LEN = "clamp(var(--gauge-bar-len), 5cqmin, calc(var(--gauge-bar-len) * 2))";
+const BAR_THICK = "clamp(var(--gauge-bar), 0.7cqmin, calc(var(--gauge-bar) * 2))";
 
 /**
  * One first-hand edge: this machine to one it knows.
@@ -292,6 +302,8 @@ function Seat({
 }) {
   if (!row) return null;
   const reached = row.vitals !== null;
+  const aged = row.vitals ? ageIfOld(row.vitals.age_ms) : null;
+  const tracks = doingTracks(row);
   const body = (
     <>
       {/* The face fills a box the fluid size owns (file head): the
@@ -311,6 +323,12 @@ function Seat({
         className="absolute left-1/2 top-full flex -translate-x-1/2 flex-col items-center pt-2 text-center"
         style={{ width: CAPTION_W }}
       >
+        {/* **The name is the caption, and everything else qualifies
+            it.** It carries the whole hierarchy on the size axis alone —
+            never on weight as well, which would be rank said twice
+            (tokens.css 纸墨). Before this it was `--text-sm` like the
+            three lines under it, and a seat arrived as five pieces of
+            text of one size. */}
         <span
           data-seat-name
           className="max-w-full truncate text-sm"
@@ -318,18 +336,21 @@ function Seat({
         >
           {row.name}
         </span>
-        {/* The age, or the third state. **This machine says neither**:
-            it answers by looking, so there is no age to report and
-            nothing to be unsure about. */}
+        {/* The age — **only once it is worth saying** (`ageIfOld`) — or
+            the third state. **This machine says neither**: it answers by
+            looking, so there is no age to report and nothing to be
+            unsure about. */}
         {!row.me &&
           (reached ? (
-            <span
-              data-seat-age
-              className="max-w-full truncate text-xs text-muted-foreground"
-              style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
-            >
-              {cli.vitals_taken(ago(Date.now() - row.vitals!.age_ms))}
-            </span>
+            aged !== null && (
+              <span
+                data-seat-age
+                className="max-w-full truncate text-xs text-muted-foreground"
+                style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
+              >
+                {cli.vitals_taken(aged)}
+              </span>
+            )
           ) : (
             <span
               data-seat-never
@@ -339,7 +360,7 @@ function Seat({
               {cli.vitals_never}
             </span>
           ))}
-        {row.vitals && <SeatVitals row={row} />}
+        {tracks && <VitalBars tracks={tracks} len={BAR_LEN} thick={BAR_THICK} className="pt-in" />}
       </span>
     </>
   );
@@ -384,61 +405,11 @@ function Seat({
   );
 }
 
-/**
- * The readings under a seat, in words rather than rings.
- *
- * The same numbers the machine row's ring stack draws — CPU, 内存, and
- * a GPU when the machine has one — as percentages, because that is what
- * the ring's front face says too and the two screens must agree about
- * one machine. The disk stays off the seat: this picture answers "what
- * is everyone doing", and a disk filling up is not doing.
- *
- * How current the numbers are is the age line's job, one line up —
- * printing it again here would be the same fact twice on one caption.
- * Strain wears the strain token and critical adds weight, exactly the
- * card's channels (`MachineCard`): one hue for one thing, escalation by
- * weight, never a borrowed state colour.
- */
-function SeatVitals({ row }: { row: DeviceRow }) {
-  const { vitals: v } = row.vitals!;
-  const mem = v.mem.total > 0 ? Math.round((v.mem.used / v.mem.total) * 100) : null;
-  return (
-    <span
-      data-seat-vitals
-      className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-xs text-muted-foreground"
-      style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
-    >
-      <span data-seat-cpu>{`${cli.vitals_name_cpu} ${Math.round(v.cpu_pct)}%`}</span>
-      {mem !== null && (
-        <Micro name={cli.vitals_name_mem} pct={mem} strain={row.vitals!.mem_strain} anchor="mem" />
-      )}
-      {v.gpu && (
-        <span data-seat-gpu>{`${cli.vitals_name_gpu} ${Math.round(v.gpu.util_pct)}%`}</span>
-      )}
-    </span>
-  );
-}
-
-/** One reading that can carry a strain word. */
-function Micro({
-  name,
-  pct,
-  strain,
-  anchor,
-}: {
-  name: string;
-  pct: number;
-  strain: Strain | null;
-  anchor: string;
-}) {
-  return (
-    <span
-      data-seat-vital={anchor}
-      data-strain={strain ?? undefined}
-      className="data-[strain]:text-strain data-[strain=critical]:font-label"
-    >
-      {`${name} ${pct}%`}
-    </span>
-  );
-}
-
+/* The readings themselves are `components/Gauge`'s, shared with the
+   network's now — a machine that looked busy on one screen and calm on
+   the other would be two machines. **They used to be words here**
+   (`CPU 24% 内存 80% GPU 63%`, plus a `Micro` that coloured the strained
+   one): five pieces of text of one size arrived under every face at
+   once, and the name had no way to be first. The percentages are not
+   lost — the strip still speaks them to a screen reader and to a
+   pointer, and the machine's card draws them as rings. */

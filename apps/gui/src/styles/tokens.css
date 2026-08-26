@@ -431,6 +431,25 @@
   --kind-mark: 14px;
   --kind-mark-glyph: 11px;
 
+  /* The thickness of a reading drawn as a bar, and the length one takes
+   * in a caption.
+   *
+   * **A reading in an overview is a shape, not a number.** The star map
+   * and the network's now each used to print `CPU 24% 内存 80% GPU 63%`
+   * under every machine — measured on the map: sixteen pieces of text,
+   * every one of them the same size and the same weight, so the name,
+   * the age and three readings all arrived at once with no reading
+   * order. What an overview is asked is "who is busy", and a bar answers
+   * that at a glance; "how busy, exactly" is the machine card's
+   * question, one press away, where the rings and the byte counts live.
+   *
+   * The bar is deliberately thinner than any type token: it must read as
+   * a mark on the page rather than as another line of text competing
+   * with the name above it. The length is what the caption can spare —
+   * three of them plus their gaps sit inside a face's own width. */
+  --gauge-bar: 3px;
+  --gauge-bar-len: 22px;
+
   /* The ring of state around a machine's face on a session row, and the
    * clear space between the two.
    *
@@ -614,6 +633,8 @@
   --spacing-icon-mark: var(--icon-mark);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
+  --spacing-gauge-bar: var(--gauge-bar);
+  --spacing-gauge-bar-len: var(--gauge-bar-len);
 
   /* the four gaps → utilities (gap-in, mb-group, pt-pane…) */
   --spacing-in: var(--gap-in);

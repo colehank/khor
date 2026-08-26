@@ -19,6 +19,8 @@
 //     is that they do not.
 //
 // The centre of a ring is the caller's: a number, a word, or nothing.
+import { cn } from "@/lib/utils";
+
 
 /**
  * How opaque the **unfilled** part of a track is.
@@ -151,12 +153,29 @@ export function Ring({
   fraction,
   color,
   size = RING_SIZE,
+  centerClass = "text-fact",
   children,
 }: {
   /** `null` when there is no denominator — then only the track is drawn. */
   fraction: number | null;
   color: string;
   size?: number;
+  /**
+   * The size tier the centre reads at.
+   *
+   * **A tier, not a free class**, and there is exactly one caller that
+   * needs a second one: the subscription's arcs, where the percentage is
+   * the whole reason the panel exists. `--text-hero`'s own note in
+   * tokens.css names「a quota arc's centre」as what that size is for,
+   * and nothing had ever used it there — the number sat at `--text-fact`
+   * in a panel of `--text-aux` lines, a step of one and a half units
+   * standing in for "this is the fact". (Sizes named, not spelled: this
+   * file is inside the px gate.)
+   *
+   * Everywhere else the default holds: a machine's rings sit four to a
+   * row and none of them outranks another.
+   */
+  centerClass?: string;
   children?: React.ReactNode;
 }) {
   const r = (size - STROKE) / 2;
@@ -173,7 +192,10 @@ export function Ring({
           the SVG: it is text the app styles like all its other text, and
           `<text>` would put it outside everything the type scale reaches. */}
       {children != null && (
-        <span data-ring-center className="col-start-1 row-start-1 text-fact font-title tabular-nums">
+        <span
+          data-ring-center
+          className={cn("col-start-1 row-start-1 font-title tabular-nums", centerClass)}
+        >
           {children}
         </span>
       )}

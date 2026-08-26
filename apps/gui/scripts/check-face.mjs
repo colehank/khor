@@ -99,6 +99,36 @@ try {
   await page.route("**/hooks_state", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify({ installed: false }) }),
   );
+  // The mark's place asks for these two, and section 4 measures it. A
+  // fortnight of spending, because the wall this gate was written about
+  // only exists at that length.
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86_400_000);
+    days.push({
+      day: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+      category: "claude",
+      tokens: { input: 1500, cached_input: 246_000_000, cache_write: 7_800_000, output: 280_000 - i * 12_000 },
+    });
+  }
+  await page.route("**/usage", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify({ days, unreadable: 0 }) }),
+  );
+  await page.route("**/quota", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        quota: {
+          windows: [
+            { kind: "five_hour", used_pct: 4, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+            { kind: "seven_day", used_pct: 39, resets_at: Math.floor(Date.now() / 1000) + 86_400 },
+          ],
+          as_of: Math.floor(Date.now() / 1000) - 120,
+        },
+        trouble: null,
+      }),
+    }),
+  );
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
 
@@ -196,8 +226,93 @@ try {
     }
   }
 
+  // ── 4) a dense screen has a reading order ─────────────────────────
+  // **What sections 2 and 3 cannot see.** Section 2 asks whether the
+  // three weights exist *somewhere on the page*, which the rail and the
+  // list satisfy on their own — so the mark's place could hold 537
+  // pieces of text with 535 of them at one size, and this gate stayed
+  // green while a person said「一堆字表达什么不清楚,看着费劲」about the
+  // exact screen it had just passed. That is the family this repo calls
+  // 假绿: the assertion held, and it held somewhere else.
+  //
+  // So the claim is per surface and it is about size, the axis a wall of
+  // text collapses on: **past a couple of dozen lines, a pane must show
+  // more than one size, and its largest must be a clear step above the
+  // size most of it is set in.** Under that count a pane is small enough
+  // to take in whole and a single size is a legitimate choice.
+  //
+  // What it cannot block: a *wrong* order — a date bigger than the
+  // number under it passes. It blocks the flat one, which is the shape
+  // that was actually shipped.
+  await page.setViewportSize({ width: 1120, height: 1000 });
+  await page.locator("[data-rail-mark]").click();
+  await wait(900);
+  const DENSE = 24;
+  const STEP = 1.25;
+  const DOMINANT = 0.85;
+  // **Measured per half, not on the place as a whole — and that is not
+  // the first thing this section tried.** The first version measured
+  // `[data-mark-place]` in one piece and stayed green on a deliberately
+  // flattened ledger: thirty of thirty-one lines at one size, saved by a
+  // single machine name in the *other* half reading larger. A wall does
+  // not stop being a wall because something else on the screen is big.
+  // The halves are found structurally rather than by name, so a pane
+  // added later is measured without anyone remembering to list it — and
+  // if the structure moves out from under this, the probe finds nothing
+  // and says so instead of passing.
+  const regions = await page.evaluate(
+    ({ DENSE }) => {
+      const root = document.querySelector("[data-mark-place]");
+      if (!root) return null;
+      const of = (el) => {
+        const leaves = [...el.querySelectorAll("*")].filter(
+          (e) => e.children.length === 0 && e.textContent.trim(),
+        );
+        const sizes = {};
+        for (const e of leaves) {
+          const px = parseFloat(getComputedStyle(e).fontSize);
+          sizes[px] = (sizes[px] || 0) + 1;
+        }
+        return { leaves: leaves.length, sizes };
+      };
+      const halves = [...root.querySelectorAll(":scope > div > div")];
+      return {
+        whole: of(root),
+        halves: halves.map((h, i) => ({ name: `half ${i}`, ...of(h) })),
+        DENSE,
+      };
+    },
+    { DENSE },
+  );
+  if (!regions) fail("probe dead: the mark's place never drew, so nothing below measured it");
+  else if (regions.whole.leaves === 0) fail("probe dead: the mark's place drew no text at all");
+  else if (regions.halves.length === 0) {
+    fail("probe dead: the mark's place has no halves to measure — its structure moved");
+  } else {
+    for (const r of [{ name: "the mark's place", ...regions.whole }, ...regions.halves]) {
+      const entries = Object.entries(r.sizes).map(([px, n]) => [Number(px), n]);
+      const [modal, modalCount] = entries.slice().sort((a, b) => b[1] - a[1])[0];
+      const largest = Math.max(...entries.map(([px]) => px));
+      const share = modalCount / r.leaves;
+      console.log(
+        `density ${r.name}: ${r.leaves} leaves, ${JSON.stringify(r.sizes)}, modal ${modal} at ${Math.round(share * 100)}%, largest ${largest}`,
+      );
+      if (r.leaves <= DENSE) continue;
+      if (share > DOMINANT) {
+        fail(
+          `${r.name}: ${modalCount} of ${r.leaves} lines at ${modal} (${Math.round(share * 100)}%) — a wall, whatever else is on the screen`,
+        );
+      }
+      if (largest < modal * STEP) {
+        fail(
+          `${r.name}: largest ${largest} against a modal ${modal} — under a ${STEP}× step nothing leads`,
+        );
+      }
+    }
+  }
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
-  if (!process.exitCode) console.log("face gate: the ink lands at three pressures, numbers in columns");
+  if (!process.exitCode) console.log("face gate: three pressures, numbers in columns, and a dense pane that leads");
 } finally {
   await browser?.close();
   vite?.kill();

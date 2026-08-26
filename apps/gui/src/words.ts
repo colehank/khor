@@ -106,6 +106,32 @@ export function ago(ms: number): string {
   return span(Date.now() - ms);
 }
 
+/**
+ * How old an answer is — **or nothing, while that is not worth saying**.
+ *
+ * Takes an age rather than a moment, because the callers that have one
+ * (a reading's `age_ms`) have exactly that.
+ *
+ * `null` for anything still measured in seconds, and **the threshold is
+ * not a new judgment**: it is `span`'s own first rung. The ladder had
+ * already decided that under a minute is the seconds tier, and a machine
+ * that answered four seconds ago answered *now* — the star map printed
+ * `0 秒前的读数` under a seat that had just replied, which reads as a
+ * fault rather than as freshness. Past the rung the age starts carrying
+ * something (khor has missed a round it meant to take), so it appears,
+ * and it appears in the same words everything else uses for a duration.
+ *
+ * The caller decides what silence means for its own picture; on the map
+ * it means the caption is one line shorter for every machine that is
+ * answering, which is most of them, most of the time.
+ */
+export function ageIfOld(ageMs: number): string | null {
+  return ageMs < SECONDS_TIER ? null : span(ageMs);
+}
+
+/** The first rung of `span`'s ladder — where seconds become minutes. */
+const SECONDS_TIER = 60_000;
+
 /** The quiet note (词的保鲜期批): how long an unvouched live word has
     said nothing, in the catalog's sentence. The duration is the word's
     own age — the same clock the CLI reads. */

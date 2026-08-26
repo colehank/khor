@@ -53,7 +53,7 @@ import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
-import { MeshNow } from "@/views/MeshNow";
+import { MeshNow, WaitingCall } from "@/views/MeshNow";
 import { UsagePanel } from "@/views/UsagePanel";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
@@ -576,8 +576,13 @@ export default function App() {
     setSelected(null);
     setScreen("list");
   }, [rows, selected]);
+  // **Rows, not events.** This added the two conditions, so a session
+  // that was both waiting on an answer and unread counted twice and the
+  // badge could read 4 over two rows — a number that matches nothing the
+  // person can go and look at. What the glyph is for is "how many things
+  // want you", and a thing wants you once however many reasons it has.
   const blockedOrUnread = rows.reduce(
-    (n, r) => n + (r.word === "blocked" ? 1 : 0) + (r.unread > 0 ? 1 : 0),
+    (n, r) => n + (r.word === "blocked" || r.unread > 0 ? 1 : 0),
     0,
   );
 
@@ -992,20 +997,31 @@ export default function App() {
    * (`MandalaMap` says why that is a prop).
    */
   const markPlace = (
-    <div
-      data-mark-place
-      className={cn("flex h-full min-h-0 min-w-0", narrow ? "flex-col" : "flex-row")}
-    >
-      <div className={cn("min-h-0 min-w-0", narrow ? "flex-1" : "flex-[3]")}>
-        <MandalaMap rows={devices} />
-      </div>
-      <div
-        className={cn(
-          "min-h-0 min-w-0",
-          narrow ? "max-h-1/2 flex-none border-t" : "w-list flex-none border-l",
-        )}
-      >
-        <UsagePanel usage={usage} quota={quota} />
+    <div data-mark-place className="flex h-full min-h-0 min-w-0 flex-col">
+      {/* Above both halves rather than inside either: on the narrow face
+          the right-hand column is the bottom half of the screen, and a
+          call to answer something would have been the last thing seen
+          instead of the first. */}
+      <WaitingCall
+        rows={rows}
+        onPick={(row) => {
+          setMark(false);
+          setLanding("sessions");
+          onSelect(row);
+        }}
+      />
+      <div className={cn("flex min-h-0 min-w-0 flex-1", narrow ? "flex-col" : "flex-row")}>
+        <div className={cn("min-h-0 min-w-0", narrow ? "flex-1" : "flex-[3]")}>
+          <MandalaMap rows={devices} />
+        </div>
+        <div
+          className={cn(
+            "min-h-0 min-w-0",
+            narrow ? "max-h-1/2 flex-none border-t" : "w-list flex-none border-l",
+          )}
+        >
+          <UsagePanel usage={usage} quota={quota} />
+        </div>
       </div>
     </div>
   );
