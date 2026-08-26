@@ -50,6 +50,25 @@ import { ago, hopWord } from "@/words";
  * the layout library grows the seat, this file only paints one more
  * segment. Not pre-built, just not walled off.
  *
+ * # The whole picture scales with the window
+ *
+ * Mandala's map draws everything into one proportional coordinate
+ * system (an SVG viewBox sized off the layout) and lets the browser
+ * scale the lot — faces, edges, labels move together. The same idea,
+ * translated to this file's mixed SVG/HTML: the square is a size
+ * container, and every visual dimension speaks **cqmin** (1cqmin = 1%
+ * of the square's side) with **tokens as its floor and ceiling** —
+ * `clamp(token, Ncqmin, token)`. So the picture breathes with the
+ * window, and the type can never shrink below `--text-xs` (the floor
+ * the word chips are measured against) nor faces below their smallest
+ * token: past the floor the layout gives way (truncation, wrap), not
+ * the letterforms. The adaptivity lives here and not in Rust on the
+ * library's own reasoning: `Seat` is already a proportion ("one
+ * derivation serves a phone and a wide window"), so the seats were
+ * never the fixed part — the pixels this file used to hard-wear were.
+ * A browser without container units drops the style and falls back to
+ * the token classes underneath — smaller, never broken.
+ *
  * # Three states, and no invented threshold between them
  *
  * A member is either this machine (middle, no age — it answers by
@@ -101,15 +120,33 @@ export function MandalaMap({
     <section
       data-mandala-map
       aria-label={gui.mesh_map}
-      className="flex h-full min-w-0 items-center justify-center overflow-auto p-6"
+      className="flex h-full min-w-0 items-center justify-center overflow-hidden p-6"
+      // The outer size container: the square's side is measured off
+      // this pane. Inline because no utility says it, and one element
+      // needs it — a stylesheet rule for one attribute would be a
+      // second place to look.
+      style={{ containerType: "size" }}
     >
       {/* A square, so the ring is a ring at any width — and as large as
-          the pane allows rather than capped at some size.
-          **A mandala fills its field**, and a capped one sits stranded in
-          the middle of a wide pane looking like something that failed to
-          load. The height is the cap, which self-limits: the picture is
-          never taller than the window it is in. */}
-      <div className="relative aspect-square max-h-full w-full">
+          the pane allows rather than capped at some size. **The side is
+          said outright: the pane's smaller dimension less its padding**
+          (`100cqmin`). The previous spelling — `w-full max-h-full
+          aspect-square` — relied on max-height reining the ratio box
+          in, and measured 880 tall inside an 800 pane: the picture
+          overflowed into a scroll on every window wider than tall,
+          which is most of them. `overflow-hidden` above replaces that
+          scroll — with the side computed to fit there is nothing left
+          to scroll to, and a stray caption pixel must not summon a
+          scrollbar back. Container units measure the content box, so
+          the padding is already out of `100cqmin` — measured: a
+          further subtraction left a uniform 48 of slack on every
+          window size. */}
+      <div
+        className="relative aspect-square"
+        // …and the inner one: the fluid sizes inside the picture
+        // resolve against the square itself, not the pane around it.
+        style={{ width: "100cqmin", containerType: "size" }}
+      >
         {/* The edges, under everything: the seats' percentages are the
             viewBox's own coordinates (both speak 0–100 of the square),
             and `non-scaling-stroke` keeps the line's weight in screen
@@ -143,6 +180,8 @@ export function MandalaMap({
                   style={{
                     left: `${(me.seat.left + row.seat.left) / 2}%`,
                     top: `${(me.seat.top + row.seat.top) / 2}%`,
+                    fontSize: TEXT_FINE,
+                    lineHeight: TEXT_RATIO,
                   }}
                 >
                   {hopWord(row.hop)}
@@ -162,10 +201,31 @@ export function MandalaMap({
    Ring.tsx names its STROKE: screen units (non-scaling-stroke), one
    place. The no-reading stroke is thinner as well as fainter, so the
    difference survives a screenshot in one channel colour-blindness
-   cannot take away. */
+   cannot take away. The dash is in the viewBox's own units on purpose
+   — it scales with the picture, which is what "everything scales
+   together" means for a pattern. */
 const EDGE_STROKE = 1.5;
 const EDGE_STROKE_FAINT = 1;
 const RELAY_DASH = "6 5";
+
+/* ── the fluid sizes (file head: the whole picture scales) ──────────
+   Each is clamp(floor-token, proportion, ceiling): the proportion is
+   what tracks the window, the tokens are where it stops. Numbers here
+   are ratios of the square's side, the same kind of judgment as the
+   node radii mandala states in its viewBox units. */
+const FACE_ME = "clamp(var(--avatar-lg), 14cqmin, calc(var(--avatar-xl) * 1.5))";
+const FACE_OTHER = "clamp(var(--avatar), 10cqmin, var(--avatar-xl))";
+/* Captions may outgrow their old fixed width on a big canvas — that is
+   the readings line coming back onto one line — and shrink to roughly
+   the face's own width on a phone, where truncation takes over. */
+const CAPTION_W = "min(36cqmin, calc(var(--avatar-xl) * 2))";
+/* Type between its two smallest tokens; the classes underneath stay as
+   the no-container-units fallback. A fluid size cannot carry a stepped
+   token line-height, so the ratio is unitless — both token pairs sit
+   at ~1.44 (16/11, 18/12.5), this simply keeps that ratio moving. */
+const TEXT_NAME = "clamp(var(--text-xs), 2.6cqmin, var(--text-sm))";
+const TEXT_FINE = "clamp(var(--text-xs), 2.2cqmin, var(--text-sm))";
+const TEXT_RATIO = "1.44";
 
 /**
  * One first-hand edge: this machine to one it knows.
@@ -234,17 +294,28 @@ function Seat({
   const reached = row.vitals !== null;
   const body = (
     <>
-      {/* Exactly one size class, never a base plus an override:
-          tailwind-merge does not read `size-avatar-xl` as a size, so
-          `cn()` would leave both in the markup and let the stylesheet's
-          order decide (docs/handoff 坑节: `cn()` 盖不掉自定义尺寸类).
-          Nothing needs overriding here anyway — the box around this
-          *is* the face. */}
-      <MachineAvatar face={row.face} className={big ? "size-avatar-xl" : "size-avatar-lg"} />
+      {/* The face fills a box the fluid size owns (file head): the
+          wrapper wears the cqmin clamp, the face wears `size-full`.
+          Still exactly one size per element — the wrapper's is inline,
+          the face's is the one class — so the `cn()` merge trap
+          (docs/handoff 坑节) has nothing to bite. */}
+      <span
+        className="block"
+        style={big ? { width: FACE_ME, height: FACE_ME } : { width: FACE_OTHER, height: FACE_OTHER }}
+      >
+        <MachineAvatar face={row.face} className="size-full" />
+      </span>
       {/* Out of the flow, so the box this sits in stays exactly the size
           of the face — see the note above. */}
-      <span className="absolute left-1/2 top-full flex w-32 -translate-x-1/2 flex-col items-center pt-2 text-center">
-        <span data-seat-name className="max-w-full truncate text-sm">
+      <span
+        className="absolute left-1/2 top-full flex -translate-x-1/2 flex-col items-center pt-2 text-center"
+        style={{ width: CAPTION_W }}
+      >
+        <span
+          data-seat-name
+          className="max-w-full truncate text-sm"
+          style={{ fontSize: TEXT_NAME, lineHeight: TEXT_RATIO }}
+        >
           {row.name}
         </span>
         {/* The age, or the third state. **This machine says neither**:
@@ -252,11 +323,19 @@ function Seat({
             nothing to be unsure about. */}
         {!row.me &&
           (reached ? (
-            <span data-seat-age className="max-w-full truncate text-xs text-muted-foreground">
+            <span
+              data-seat-age
+              className="max-w-full truncate text-xs text-muted-foreground"
+              style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
+            >
               {cli.vitals_taken(ago(Date.now() - row.vitals!.age_ms))}
             </span>
           ) : (
-            <span data-seat-never className="max-w-full truncate text-xs text-muted-foreground">
+            <span
+              data-seat-never
+              className="max-w-full truncate text-xs text-muted-foreground"
+              style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
+            >
               {cli.vitals_never}
             </span>
           ))}
@@ -327,6 +406,7 @@ function SeatVitals({ row }: { row: DeviceRow }) {
     <span
       data-seat-vitals
       className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-xs text-muted-foreground"
+      style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
     >
       <span data-seat-cpu>{`${cli.vitals_name_cpu} ${Math.round(v.cpu_pct)}%`}</span>
       {mem !== null && (
