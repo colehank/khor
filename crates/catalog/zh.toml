@@ -1011,8 +1011,25 @@ no-matches = "没有匹配的"
 # The row action. Two words because the button has two jobs, and the one
 # it names is the one it will do next — a button labelled by its current
 # state tells you what is, not what pressing it does.
+# 两个词,两件事,别合并——账本里「钉住 vs 置顶 统一用词」那条,答案是
+# **各归各**而不是挑一个。
+#
+# **置顶说的是位置**:这一行本来就在你眼前那张单子里,按一下它挪到最上面。
+# 会话和机器是这样。**钉住说的是留下**:一个目录、一个网页不在任何单子里,
+# 按一下是把它收起来,以后在「钉住的目录/网页」那一栏里再见到。
+#
+# 混用的代价今天量得出来:文件面板和浏览器那两颗按钮写着「置顶」,而按完
+# 东西出现在「钉住的目录」底下——**按钮说的动作和结果那一栏的名字对不上**,
+# 而对不上的时候人会以为自己按错了。
+#
+# 挡不住的:CLI 那个动词仍然叫 `pin`(一个动词管四种落点),而中文这边分成
+# 两个词。那是对的——**动词是给机器的,词是给人的**,人看得见的是结果落在
+# 哪一栏,机器看不见。
 pin = "置顶"
 unpin = "取消置顶"
+# 给「留下」的那两种落点(目录、网页)。
+pin-place = "钉住"
+unpin-place = "取消钉住"
 # The title's own control: double-click it and it becomes this input.
 # The label names the action; the input needs no hint text because the
 # current title is already in it, selected — typing replaces, Enter

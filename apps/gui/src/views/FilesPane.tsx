@@ -216,7 +216,7 @@ export function FilesPane({
                     variant="ghost"
                     data-pin-dir={e.name}
                     data-on={pinned.has(full)}
-                    aria-label={pinned.has(full) ? gui.unpin : gui.pin}
+                    aria-label={pinned.has(full) ? gui.unpin_place : gui.pin_place}
                     // The session rows' visibility rule, worn here too:
                     // narrow draws it always (the browser face put this
                     // pane on phones, 批⑦, and a phone has no pointer to

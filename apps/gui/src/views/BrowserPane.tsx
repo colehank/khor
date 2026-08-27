@@ -129,7 +129,7 @@ export function BrowserPane({
             size="sm"
             data-pin-web
             data-on={pinned}
-            aria-label={pinned ? gui.unpin : gui.pin}
+            aria-label={pinned ? gui.unpin_place : gui.pin_place}
             className="text-muted-foreground"
             onClick={() => {
               pinWeb(machine, here, !pinned)
