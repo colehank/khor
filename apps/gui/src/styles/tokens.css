@@ -384,14 +384,42 @@
    * still readable rather than an ellipsis with two characters in front
    * of it.
    *
-   * The floor is where the leaf stops saying anything at all — below
-   * it a tab is a face and a truncation, so the strip should scroll
-   * (Chrome's own answer) rather than go on grinding tabs into
-   * identical stubs. What it cannot block: too many tabs to *find* one
-   * in. That is what the narrow face's switcher answers, and the wide
-   * face has no equivalent yet. */
+   * **The floor is whichever comes first of two limits, and the first
+   * spelling of it only knew one.** It was 88, derived from the leaf:
+   * below that a tab is a face and a truncation, so the strip should
+   * scroll (Chrome's own answer) rather than go on grinding tabs into
+   * identical stubs. True, and not the binding limit — a tab holds two
+   * targets, and at 88 the one that opens it measured **30 wide**
+   * against a `--touch` of 44, while the one that *closes* it was a
+   * full 44. Of an 88 tab: 8 of padding, 30 that opens, 4 of gap, 44
+   * that closes, 2 of padding. **The destructive half was the bigger
+   * target**, so a finger aimed at a compressed tab was likelier to
+   * throw it away than to open it — and that is not a floor being
+   * missed by a few pixels, it is the wrong action winning the tab.
+   *
+   * So 102: `8 + 44 + 4 + 44 + 2`, the two floors plus the gaps already
+   * between them. Not a new tier and not a new judgment — the same
+   * token, re-derived from both of the things that bound it instead of
+   * one. It is written as a number rather than a `calc()` off `--touch`
+   * because the padding and the gap are `TabStrip`'s and would have to
+   * be mirrored here to compute it, which is a second copy of them; the
+   * arithmetic is above, and the measurement below is what actually
+   * holds it.
+   *
+   * Measured after the change rather than computed (this token's own
+   * history is the reason): 102 wide, the open half 44×44, the close
+   * 44×44, at both 1400×900 and 720×900.
+   *
+   * **What it still cannot block, and the half it does not even
+   * touch**: at the floor the tab's *label* measured 12px wide beside a
+   * 14px face — so a floored tab says nothing about which tab it is,
+   * and 102 makes that 26px, which says no more. The finger is fixed;
+   * finding the tab is a different question and is not this token's to
+   * answer. The wide strip's own answer — every tab on screen at once —
+   * expires the moment the strip scrolls, which is what `TabStrip`'s
+   * switcher is doing on this face now. */
   --tab-w: 200px;
-  --tab-w-min: 88px;
+  --tab-w-min: 102px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted

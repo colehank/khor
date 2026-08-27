@@ -15,6 +15,31 @@
 // That is not two designs. It is one model — a list of places, one of
 // them open — drawn at the two widths, and neither face has a tab the
 // other does not.
+//
+// **…and the wide half of that had a condition nobody checked.** "Every
+// tab on screen at once" is not a property of the strip, it is a
+// property of the strip *while the tabs still fit*, and the strip's own
+// floor decides when they stop. Measured at `--tab-w-min`: the strip
+// scrolls (1900 against 1336 of room at 20 tabs on a 1400 window, and
+// at 6 tabs on the narrowest wide face there is), so tabs are literally
+// not on screen — and the label on the ones that are measured **12
+// wide** beside a face of 14, which is not a truncation of a name, it
+// is the absence of one. At that point the strip answers none of the three
+// things somebody with fifteen tabs is doing: getting back to the one
+// they were just on, seeing what is even open, or closing a batch.
+//
+// So the count and the switcher are **not the narrow face's** — they
+// are the answer to "too many to find one in", which is a question
+// about the number of tabs and not about the width of the window. The
+// wide face gets the same control, on the condition its own premise
+// fails on: the strip is actually scrolling. That is falsifiable in
+// both directions — if the tabs fit and every label is readable, the
+// button must not be there, because then the strip really is showing
+// you all of them and a second way to a thing that is not hidden is
+// clutter (this file's original judgment, kept, with its condition now
+// written down and measured rather than assumed).
+import { useEffect, useRef, useState } from "react";
+
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconClose, IconPlus } from "@/components/icons";
@@ -40,16 +65,42 @@ export function TabStrip({
   onFocus,
   onClose,
   onNew,
+  onSwitch,
 }: {
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
   onNew: () => void;
+  /** Open the switcher. Drawn **only once the strip has stopped showing
+      every tab** — see the file head; a landing that has no switcher to
+      open leaves this out and gets the strip alone. */
+  onSwitch?: () => void;
 }) {
+  const strip = useRef<HTMLDivElement>(null);
+  // Whether the strip has given up on its own promise. Measured off the
+  // element, not counted from `faces.length` and a width: how many tabs
+  // fit depends on the region, which the rail, the window and the
+  // landing all have a say in, and a number derived here would be a
+  // second opinion about a layout the browser has already decided.
+  const [crowded, setCrowded] = useState(false);
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    // A pixel of tolerance: sub-pixel flex widths make an exact
+    // comparison flap between renders on a strip that fits.
+    const measure = () => setCrowded(el.scrollWidth - el.clientWidth > 1);
+    measure();
+    // The observer catches the region changing; the dependency catches
+    // tabs opening and closing. Neither alone sees both.
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [faces.length]);
+
   return (
     <div
-      data-tab-strip
+      data-tab-bar
       // **The band is darker and the open tab is the page's own
       // colour**, which is the whole of how a tab says it is in front:
       // its bottom edge has no edge, so it reads as continuous with what
@@ -80,82 +131,111 @@ export function TabStrip({
       // it — so a hit area that reaches the floor while the tab stays
       // short is not available here: either the band grows or the
       // target stays under the floor. It grows.
-      className="flex flex-none items-end gap-1 overflow-x-auto bg-muted/40 px-2 pt-1"
+      //
+      // **The band and the scrolling row are two elements now, and the
+      // reason is a measurement**: with everything in one scroll
+      // container the "+" scrolled away with the tabs — at 20 tabs on a
+      // 1400 window it sat at x=1912 while the strip's visible edge was
+      // 1400, **512 past the end of the world**, so the way to open a
+      // tab was to scroll right until you found it. Chrome pins it, and
+      // the only way to pin anything against a scroll container is to
+      // be outside it. The band keeps the ground and the padding; the
+      // row inside it is what scrolls; the buttons ride at the end and
+      // never move.
+      className="flex flex-none items-end gap-1 bg-muted/40 px-2 pt-1"
     >
-      {faces.map((f) => {
-        const on = f.id === active;
-        return (
-          <div
-            key={f.id}
-            data-tab={f.id}
-            data-on={on}
-            title={f.path || undefined}
-            className={cn(
-              // `h-touch`, not `h-ctl-md`: the tab is the target, so the
-              // tab is what has to be tall enough to land on — and it is
-              // also what paints "this one is in front", which is the
-              // half that would have been lost by growing an invisible
-              // box inside a short pill. A tab whose colour stops short
-              // of where it can be pressed is a tab that lies about
-              // where it is.
-              "group flex h-touch w-tab max-w-tab min-w-tab-min flex-1 items-center gap-1 rounded-t-md pr-0.5 pl-2",
-              on ? "bg-background text-foreground" : "text-muted-foreground hover:bg-background/50",
-            )}
-          >
-            <button
-              type="button"
-              data-tab-open={f.id}
-              onClick={() => onFocus(f.id)}
-              // `h-full`: the whole tab opens it, not the line of text
-              // in the middle of it. Left at content height this was 18
-              // tall inside a tab it filled the width of — the band
-              // around the label looked pressable and was not.
-              className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
-            >
-              <MachineAvatar face={f.face} className="size-kind-mark flex-none" />
-              <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
-                {f.label}
-              </span>
-            </button>
-            <Button
-              size="icon"
-              variant="ghost"
-              data-tab-close={f.id}
-              aria-label={gui.close_tab}
-              // Drawn on the open tab and under the pointer, the session
-              // rows' rule: a close on every tab at once is the strip's
-              // loudest repetition, and the open one needs it always
-              // because that is the tab a person is finished with.
-              //
-              // **`min-*`, not a `size-*`** — and the class it replaces
-              // is the proof: `size-ctl-sm` never took effect here.
-              // `cn()` cannot lift `h-ctl-md`/`w-ctl-md` off the icon
-              // variant (tailwind-merge does not read `ctl-*` as a
-              // size, `button.tsx` says so with its own measurement),
-              // so both survived and the stylesheet's order decided —
-              // this button measured 30, the icon size, not the 24 it
-              // asked for. A floor beats a height without having to
-              // remove it. The glyph keeps its own size; what grows is
-              // the box, and the ghost wash paints that box, so what
-              // lights up is what can be pressed.
-              //
-              // What it costs, said out loud: the close takes 44 of the
-              // tab's width where it took 30, and the half that holds
-              // the face and the name gives them up — measured at
-              // `--tab-w`, 156 wide to 142. At `--tab-w-min` that half
-              // was already a truncation (see that token) and this
-              // makes it a shorter one.
+      <div
+        ref={strip}
+        data-tab-strip
+        className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto"
+      >
+        {faces.map((f) => {
+          const on = f.id === active;
+          return (
+            <div
+              key={f.id}
+              data-tab={f.id}
+              data-on={on}
+              title={f.path || undefined}
               className={cn(
-                "min-h-touch min-w-touch flex-none",
-                !on && "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+                // `h-touch`, not `h-ctl-md`: the tab is the target, so the
+                // tab is what has to be tall enough to land on — and it is
+                // also what paints "this one is in front", which is the
+                // half that would have been lost by growing an invisible
+                // box inside a short pill. A tab whose colour stops short
+                // of where it can be pressed is a tab that lies about
+                // where it is.
+                "group flex h-touch w-tab max-w-tab min-w-tab-min flex-1 items-center gap-1 rounded-t-md pr-0.5 pl-2",
+                on ? "bg-background text-foreground" : "text-muted-foreground hover:bg-background/50",
               )}
-              onClick={() => onClose(f.id)}
             >
-              <IconClose />
-            </Button>
-          </div>
-        );
-      })}
+              <button
+                type="button"
+                data-tab-open={f.id}
+                onClick={() => onFocus(f.id)}
+                // `h-full`: the whole tab opens it, not the line of text
+                // in the middle of it. Left at content height this was 18
+                // tall inside a tab it filled the width of — the band
+                // around the label looked pressable and was not.
+                className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+              >
+                <MachineAvatar face={f.face} className="size-kind-mark flex-none" />
+                <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
+                  {f.label}
+                </span>
+              </button>
+              <Button
+                size="icon"
+                variant="ghost"
+                data-tab-close={f.id}
+                aria-label={gui.close_tab}
+                // Drawn on the open tab and under the pointer, the session
+                // rows' rule: a close on every tab at once is the strip's
+                // loudest repetition, and the open one needs it always
+                // because that is the tab a person is finished with.
+                //
+                // **`min-*`, not a `size-*`** — and the class it replaces
+                // is the proof: `size-ctl-sm` never took effect here.
+                // `cn()` cannot lift `h-ctl-md`/`w-ctl-md` off the icon
+                // variant (tailwind-merge does not read `ctl-*` as a
+                // size, `button.tsx` says so with its own measurement),
+                // so both survived and the stylesheet's order decided —
+                // this button measured 30, the icon size, not the 24 it
+                // asked for. A floor beats a height without having to
+                // remove it. The glyph keeps its own size; what grows is
+                // the box, and the ghost wash paints that box, so what
+                // lights up is what can be pressed.
+                //
+                // What it costs, said out loud: the close takes 44 of the
+                // tab's width where it took 30, and the half that holds
+                // the face and the name gives them up — measured at
+                // `--tab-w`, 156 wide to 142. At `--tab-w-min` that half
+                // was already a truncation (see that token) and this
+                // makes it a shorter one.
+                //
+                // **And at the floor it made the destructive half the
+                // bigger one** — 30 that opened against 44 that closed —
+                // which is why `--tab-w-min` moved to 102 rather than why
+                // this went back to 30. A close that outweighs the open
+                // is the tab telling a finger the wrong thing; a strip
+                // that scrolls sooner is the price, and Chrome's answer
+                // to too many tabs is to scroll anyway.
+                className={cn(
+                  "min-h-touch min-w-touch flex-none",
+                  !on && "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+                )}
+                onClick={() => onClose(f.id)}
+              >
+                <IconClose />
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      {/* Pinned against the scrolling row, in the order a hand reaches
+          them: the way to see the ones that scrolled off, then the way
+          to add another. */}
+      {onSwitch && crowded && <TabCount n={faces.length} onPress={onSwitch} />}
       <Button
         size="icon"
         variant="ghost"
@@ -175,8 +255,19 @@ export function TabStrip({
   );
 }
 
-/** The narrow face's way to the switcher: the count *is* the control,
-    which is what makes it able to say how many without a second mark. */
+/**
+ * The way to the switcher: the count *is* the control, which is what
+ * makes it able to say how many without a second mark.
+ *
+ * **Both faces use it, for one reason spelled two ways.** On narrow it
+ * is always there, because a phone shows one screen and the strip
+ * cannot be that screen. On wide it appears only once the strip has
+ * stopped showing every tab (`TabStrip`) — the same question, "how do I
+ * get to the ones I cannot see", asked by a window that ran out of room
+ * instead of by one that never had any. It is not a narrow control
+ * borrowed onto the wide face; the narrow face is just the width where
+ * the condition is permanently true.
+ */
 export function TabCount({ n, onPress }: { n: number; onPress: () => void }) {
   return (
     <Button
@@ -186,10 +277,10 @@ export function TabCount({ n, onPress }: { n: number; onPress: () => void }) {
       aria-label={gui.switch_tabs(n)}
       onClick={onPress}
       // The count keeps its size; the box around it takes the floor.
-      // This is the narrow face's only way to every other tab, and it
-      // sits at the end of the address bar where a thumb reaches — the
-      // one control on this landing where being under the floor would
-      // be felt every time.
+      // This is the only way to every other tab, and on narrow it sits
+      // at the end of the address bar where a thumb reaches — the one
+      // control on this landing where being under the floor would be
+      // felt every time.
       className="min-h-touch min-w-touch flex-none"
     >
       <span className="rounded-sm border px-1 text-xs tabular-nums">{n}</span>
@@ -198,13 +289,25 @@ export function TabCount({ n, onPress }: { n: number; onPress: () => void }) {
 }
 
 /**
- * The narrow face's switcher: every tab as a row, with the way to close
- * one and the way to open another.
+ * The switcher: every tab as a row, with the way to close one and the
+ * way to open another.
  *
- * A screen rather than a sheet, because on this face it **is** the
- * place you are — the tab it replaces comes back the moment one is
- * picked, and a sheet over a screen you cannot see is a sheet over
- * nothing.
+ * A screen rather than a sheet, because it **is** the place you are —
+ * the tab it replaces comes back the moment one is picked, and a sheet
+ * over a screen you cannot see is a sheet over nothing.
+ *
+ * **It takes the tab's region, not the whole landing, and on wide the
+ * strip stays above it.** That is deliberate rather than left over: the
+ * switcher replaces what the *tab* was showing, and the strip is still
+ * how a person knows which tab they will come back to. What it costs is
+ * that the open tab appears twice for as long as the switcher is up —
+ * accepted, because the alternative is hiding the one mark that says
+ * where you are while you decide where to go.
+ *
+ * Rows run the full width of the region on both faces. Nothing caps
+ * them: a wider window spends the extra on the path, which is the half
+ * of a row that distinguishes two tabs with the same leaf, and a cap
+ * would be a measure invented here for a list that has no other one.
  */
 export function TabSwitcher({
   faces,

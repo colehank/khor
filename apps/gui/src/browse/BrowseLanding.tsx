@@ -58,9 +58,19 @@ export function BrowseLanding({
   tabs: BrowseTabs;
   narrow: boolean;
 }) {
-  // Narrow only: the switcher is up. Wide ignores it — the strip is
-  // already every tab at once, and a switcher over it would be a second
-  // way to do a thing that is not hidden.
+  // Whether the switcher is up.
+  //
+  // **Both faces now, and the correction is worth keeping.** This read
+  // "narrow only — the strip is already every tab at once, and a
+  // switcher over it would be a second way to do a thing that is not
+  // hidden". The second clause is still right and the first was a
+  // condition read as a fact: measured, the strip stops showing every
+  // tab as soon as it scrolls, and the tabs it does show wear a label
+  // 12 wide (`TabStrip`, tokens.css `--tab-w-min`). So the switcher is
+  // offered on the wide face exactly when the strip has stopped being
+  // able to do what the old comment credited it with, and `TabStrip`
+  // owns that condition because it is the only thing that can measure
+  // it.
   const [switching, setSwitching] = useState(false);
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
@@ -89,9 +99,13 @@ export function BrowseLanding({
     hint: pinned ? kind.words.pinned : kind.words.recent,
   }));
 
+  // Pointing the open tab somewhere puts the switcher away on either
+  // face: it was covering the tab that just moved, and leaving it up
+  // would hide the thing the press was for. No `narrow` test — the
+  // switcher being down already makes this a no-op.
   const goTo = (device: string, place: string) => {
     tabs.goTo(device, place);
-    if (narrow) setSwitching(false);
+    setSwitching(false);
   };
 
   const address = (trailing?: React.ReactNode) => (
@@ -150,29 +164,32 @@ export function BrowseLanding({
       />
     );
 
+  // **One switcher, written once**, whichever face asked for it. Spelled
+  // twice it would be two places to keep the closing rules in step, and
+  // the wide face's copy would be the one nobody notices drifting.
+  const region = switching ? (
+    <TabSwitcher
+      faces={faces}
+      active={tabs.current.id}
+      onFocus={(id) => {
+        tabs.focus(id);
+        setSwitching(false);
+      }}
+      onClose={tabs.close}
+      onNew={() => {
+        tabs.add();
+        setSwitching(false);
+      }}
+    />
+  ) : (
+    content
+  );
+
   if (narrow) {
     return (
       <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
         {address(<TabCount n={tabs.tabs.length} onPress={() => setSwitching(true)} />)}
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {switching ? (
-            <TabSwitcher
-              faces={faces}
-              active={tabs.current.id}
-              onFocus={(id) => {
-                tabs.focus(id);
-                setSwitching(false);
-              }}
-              onClose={tabs.close}
-              onNew={() => {
-                tabs.add();
-                setSwitching(false);
-              }}
-            />
-          ) : (
-            content
-          )}
-        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">{region}</div>
       </section>
     );
   }
@@ -182,12 +199,22 @@ export function BrowseLanding({
       <TabStrip
         faces={faces}
         active={tabs.current.id}
-        onFocus={tabs.focus}
+        onFocus={(id) => {
+          tabs.focus(id);
+          setSwitching(false);
+        }}
         onClose={tabs.close}
-        onNew={tabs.add}
+        onNew={() => {
+          tabs.add();
+          setSwitching(false);
+        }}
+        // The strip decides *whether* to offer this — it is the only
+        // thing that can measure whether it is still showing every tab.
+        // This side only says what pressing it does.
+        onSwitch={() => setSwitching(true)}
       />
       {address()}
-      <div className="min-h-0 flex-1 overflow-hidden">{content}</div>
+      <div className="min-h-0 flex-1 overflow-hidden">{region}</div>
     </section>
   );
 }
