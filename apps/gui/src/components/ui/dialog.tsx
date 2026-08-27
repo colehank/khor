@@ -64,10 +64,30 @@ function DialogContent({
         {...props}
       >
         {children}
+        {/* **The box is a finger's, the glyph stays a glyph.** This was
+            the smallest target on the whole face — 16×16, the icon's own
+            size — and it is the one control every sheet has. The box
+            grows to `--touch` and centres the mark inside it; the inset
+            drops by the same amount the box gained on each side, so the
+            cross does not move a pixel from where it has always sat.
+            (`top-4 right-4` around a 16 box put the mark's centre 24 in
+            from both edges; `top-0.5 right-0.5` around a `--touch` box
+            puts it in the same place.)
+
+            The feedback is on the glyph rather than a plate behind it,
+            and that is not the trap tokens.css warns about: hovering
+            anywhere in the grown box brightens the mark, so the whole
+            pressable area does announce itself. A plate would be a
+            second kind of hover mark on a surface that has none.
+
+            **What this does not fix:** every sheet's own controls. This
+            is the vendored shell, and a dialog body that draws a 24-high
+            button is still a 24-high button — the face gate walks the
+            sheets and says so. */}
         <DialogPrimitive.Close
           data-slot="dialog-close"
           aria-label={gui.close}
-          className="absolute top-4 right-4 rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0"
+          className="absolute top-0.5 right-0.5 grid size-touch place-items-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0"
         >
           <IconClose />
         </DialogPrimitive.Close>
