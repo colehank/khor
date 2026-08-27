@@ -11,6 +11,7 @@
 // be absent or throwing (private window, blocked site data), and every
 // touch of it is wrapped: unreadable simply means "never dragged".
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import type React from "react";
 
 const STORE = "khor.list-width";
 
@@ -129,6 +130,55 @@ export function useListWidth(narrow: boolean) {
     persist(next);
   };
 
+  /**
+   * The same seam, from a keyboard.
+   *
+   * **Stops, not nudges, and that is a judgment about this pane rather
+   * than a shortcut.** A splitter usually moves by some pixels per
+   * press, and picking that number would mean inventing one — this repo
+   * does not let a threshold be chosen by feel. This pane has exactly
+   * three widths that mean anything, and every one of them is already a
+   * token: away (`--list-w-snap` is where the drag lets go), the floor
+   * (`--list-w-min`, below which nothing fits), and the default
+   * (`--list-w`). The fourth is half the window, which the drag already
+   * treats as the ceiling. So the keys walk that ladder.
+   *
+   * **What it does not give you**: an arbitrary width. That stays a
+   * pointer's to choose, and a person who wants 350 will drag for it.
+   * The keyboard's job here is that the pane can be put away and
+   * brought back at all, which before this it could not be.
+   */
+  const step = (dir: -1 | 1) => {
+    const max = Math.floor(window.innerWidth / 2);
+    // Away, floor, default, ceiling — in order, and de-duplicated in
+    // case a window is narrow enough that half of it is under the
+    // floor (then the ladder simply has fewer rungs).
+    const rungs: ListPref[] = [
+      { w: pref.w, collapsed: true },
+      { w: b.min, collapsed: false },
+      { w: b.def, collapsed: false },
+      { w: max, collapsed: false },
+    ].filter((r, i, all) => i === 0 || r.collapsed || r.w > all[i - 1].w || all[i - 1].collapsed);
+    const at = pref.collapsed
+      ? 0
+      : rungs.findIndex((r) => !r.collapsed && r.w >= pref.w - 1);
+    const next = rungs[Math.min(rungs.length - 1, Math.max(0, (at < 0 ? rungs.length - 1 : at) + dir))];
+    setPref(next);
+    persist(next);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (narrow) return;
+    if (e.key === "ArrowLeft") step(-1);
+    else if (e.key === "ArrowRight") step(1);
+    else if (e.key === "Home") {
+      const next = { w: b.def, collapsed: false };
+      setPref(next);
+      persist(next);
+    } else return;
+    e.preventDefault();
+  };
+
   /** A rail landing was chosen: whatever it shows deserves its list. */
   const expand = useCallback(() => {
     setPref((p) => {
@@ -143,6 +193,13 @@ export function useListWidth(narrow: boolean) {
     width: pref.w,
     collapsed: pref.collapsed,
     expand,
-    handleProps: { onPointerDown, onPointerMove, onPointerUp, onDoubleClick },
+    handleProps: { onPointerDown, onPointerMove, onPointerUp, onDoubleClick, onKeyDown },
+    /** What the seam reports about itself, for anything that reads it
+        aloud: where it sits between its two ends. */
+    aria: {
+      "aria-valuenow": pref.collapsed ? 0 : Math.round(pref.w),
+      "aria-valuemin": 0,
+      "aria-valuemax": Math.round(b.def),
+    },
   };
 }

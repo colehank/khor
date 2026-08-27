@@ -1125,8 +1125,20 @@ export default function App() {
                 data-list-seam
                 role="separator"
                 aria-orientation="vertical"
+                // **Reachable, and that is the whole change here.** It
+                // had the role and the pointer gestures and nothing
+                // else: no focus, no key, so on a keyboard the list
+                // could not be put away or brought back at all. Arrow
+                // keys walk its stops, Home restores the default
+                // (`useListWidth` says why stops rather than nudges).
+                tabIndex={narrow ? undefined : 0}
+                {...listPane.aria}
                 className={cn(
                   "relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors hover:bg-border",
+                  // Focus has to be visible on a strip that is mostly
+                  // not there: the ring is the whole seam lighting up,
+                  // because there is no glyph to put a ring around.
+                  "outline-none focus-visible:bg-ring",
                   listPane.collapsed && "bg-border",
                 )}
                 {...listPane.handleProps}

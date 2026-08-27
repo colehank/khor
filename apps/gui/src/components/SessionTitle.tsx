@@ -22,6 +22,30 @@ import { cn } from "@/lib/utils";
  * click of the double-click still selects the row, which is fine — it
  * is the row being renamed.
  *
+ * # A double-click was the only way in, and a double-click is a pointer
+ *
+ * Nothing focused it, no key opened it, and nothing on the glass said
+ * it could be renamed at all — so on a keyboard, or with a screen
+ * reader, the feature did not exist. Now the resting title is a control
+ * where it is allowed to be one: it takes focus, F2 or Enter opens the
+ * editor (F2 is the rename key everywhere a file manager exists, and it
+ * is announced through `aria-keyshortcuts` rather than printed), and a
+ * pointer gets the same sentence as a tooltip.
+ *
+ * **`nested` is the list saying "not here".** In a row the title lives
+ * inside the button that opens the session, and a control inside a
+ * control is invalid markup and worse behaviour: Enter would both
+ * rename and open. So the row opts out, and the keyboard path is the
+ * one in the detail header — reached by opening the row, which is
+ * exactly what a keyboard user was already doing. **One path, in the
+ * one place it is well-formed**, rather than two paths of which one is
+ * broken.
+ *
+ * **What this does not fix:** renaming without opening the row. A list
+ * row could carry its own F2, but that key would have to belong to the
+ * row rather than to the title, and the row does not know what a title
+ * is (docs/UX.md 状态呈现 — the list paints what the library sends).
+ *
  * **The row is the truth; the echo is a bridge.** The list polls on its
  * own clock, so for a beat after Enter the row still carries the old
  * name. `echo` covers exactly that beat and retires the moment the row
@@ -37,6 +61,7 @@ export function SessionTitle({
   title,
   className,
   inputClassName,
+  nested,
 }: {
   id: string;
   title: string;
@@ -44,6 +69,12 @@ export function SessionTitle({
   className?: string;
   /** Carried by the editor (beside its own chrome). */
   inputClassName?: string;
+  /**
+   * This title sits inside another control, so it must not become one
+   * (the file head: one keyboard path, in the one place it is
+   * well-formed). The list row passes it; nothing else should need to.
+   */
+  nested?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -63,16 +94,42 @@ export function SessionTitle({
     // "title" would be double-clickable across the row's whole blank
     // stretch, which is the row's ground, not the title. Found by the
     // hot-zone probe, not by reading: the first cut hung it on the box.
+    const open = () => {
+      setDraft(echo ?? title);
+      setFailed(false);
+      setEditing(true);
+    };
     return (
       <span className={cn("truncate", className)}>
         <span
           data-session-title
+          // A control only where that is well-formed (the file head).
+          role={nested ? undefined : "button"}
+          tabIndex={nested ? undefined : 0}
+          title={nested ? undefined : gui.rename}
+          aria-keyshortcuts={nested ? undefined : "F2"}
+          // The box a finger aims at, on the standalone one. `inline-flex`
+          // because a bare inline box ignores a minimum height — and the
+          // outer span keeps the truncation, so the text still clips
+          // rather than pushing the header's controls off the end.
+          className={cn(
+            !nested &&
+              "inline-flex min-h-touch min-w-touch max-w-full items-center truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
           onDoubleClick={(e) => {
             e.stopPropagation();
-            setDraft(echo ?? title);
-            setFailed(false);
-            setEditing(true);
+            open();
           }}
+          onKeyDown={
+            nested
+              ? undefined
+              : (e) => {
+                  if (e.key !== "F2" && e.key !== "Enter") return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  open();
+                }
+          }
         >
           {shown}
         </span>

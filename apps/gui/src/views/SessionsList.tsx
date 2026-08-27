@@ -311,7 +311,16 @@ export function SessionsList({
                   of the row keeps opening the row, which is also what
                   the first click of the double-click does — selecting
                   the very row being renamed. */}
-              <SessionTitle id={r.id} title={r.title} className="block font-title" inputClassName="w-full font-title" />
+              <SessionTitle
+                id={r.id}
+                title={r.title}
+                className="block font-title"
+                inputClassName="w-full font-title"
+                // Inside the row's own button: not a control here
+                // (`SessionTitle`'s head says why the path lives in the
+                // detail header instead).
+                nested
+              />
               {/* The preview line: the newest thing said or shown, the
                   kind's own judgment carried on the row (`last`). The
                   machine a reported row came from rides the same line —
