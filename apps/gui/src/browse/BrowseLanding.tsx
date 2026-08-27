@@ -22,7 +22,7 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useState } from "react";
 
-import { recentVisit, type DeviceRow } from "@/api";
+import { forgetRecent, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
 import type { BrowseKind } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
@@ -159,7 +159,24 @@ export function BrowseLanding({
         kind={kind}
         places={places}
         devices={devices}
+        narrow={narrow}
         onOpen={goTo}
+        // **The ledger is written here, like every other visit.** The
+        // fresh tab is a reader of `usePlaces`; giving it the write as
+        // well would put two files in charge of one account (the same
+        // rule that keeps `recent_visit` out of the bodies).
+        //
+        // No local optimism: the row is not struck from the list on the
+        // way out, the ledger is re-read and the screen redraws from
+        // what it says. That makes a refused write show as the row
+        // staying — which is the truth — instead of a row vanishing off
+        // a screen whose account still has it (docs/UX.md 不知道就说不
+        // 知道, and 「做了但没变化」和「失败」长不一样的脸).
+        onForget={(place) => {
+          forgetRecent(kind.kind, place.name, place.place)
+            .catch(() => {})
+            .finally(places.reload);
+        }}
         onGo={me ? () => goTo(me.id, "") : undefined}
       />
     );
