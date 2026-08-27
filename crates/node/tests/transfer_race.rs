@@ -24,13 +24,14 @@
 //! yet", never. That is what makes phase 1 a gate rather than a coin
 //! toss: it goes red on every run against the old accept.
 //!
-//! **And the race is witnessed, not assumed.** A precondition checked
-//! only as an absence proves nothing — an absence is what a broken
-//! probe returns too. So the same probe is asked about the same id on
-//! both machines at the same instant: alpha must say yes while beta
-//! says no. That is the race itself, observed; and after the accept
-//! beta must say yes as well, which is what rules out a probe that
-//! only ever says no.
+//! **And the race is witnessed, not assumed.** The rule this file is
+//! built on: **a negative assertion must be paired with a positive one
+//! that would go red** — an absence is also what a probe that can find
+//! nothing returns, and the two read identically in a passing run. So
+//! the same probe is asked about the same id on both machines at the
+//! same instant: alpha must say yes while beta says no. That is the
+//! race itself, observed. And after the accept beta must say yes too,
+//! which is what rules out a probe that only ever says no.
 //!
 //! The probe is `Node::transfer_is_here` and not `sessions()`, and that
 //! is not a style choice: since 传输并入对话批 (2026-08-23)
@@ -166,10 +167,26 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     // alpha's only peer is beta, which reported no roads at pairing and
     // therefore cannot be dialled at all. alpha did not learn anything
     // about this id, and must not pretend it did.
+    let began = std::time::Instant::now();
     let pending = timeout(Duration::from_secs(90), a.accept(&ghost_id()))
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
+    // **A machine that reported no roads costs nothing, and that is a
+    // premise, not a detail.** The whole worst case quoted to the person
+    // before this wait (`cli::syncing-for-offer` counts only machines
+    // with roads) rests on `sync_device` refusing to dial one that has
+    // none. If that early return ever goes, this round starts paying a
+    // full dial budget for beta and the printed number becomes a lie —
+    // the kind that is worse than printing nothing, because people wait
+    // by it. Measured in milliseconds; the bar is one whole budget, so
+    // the only way past it is that the early return is gone.
+    let budget = Duration::from_secs(khor_node::link::dial_budget_seconds());
+    assert!(
+        began.elapsed() < budget,
+        "a roadless peer must not be dialled: the round took {:?}, a dial budget is {budget:?}",
+        began.elapsed()
+    );
     assert!(
         pending.contains("beta"),
         "the machine khor could not reach must be named: {pending}"
@@ -188,6 +205,125 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
 
     serve.abort();
     for r in [&ra, &rb] {
+        let _ = fs::remove_dir_all(r);
+    }
+}
+
+/// The routed half: **the machine that presses 收下 is the one that is
+/// behind**, and the file is not even addressed to it.
+///
+/// This is the phone-shaped case and the realistic one — a device that
+/// has been asleep approves a transfer between two machines that were
+/// not. It reaches `accept_with`'s wait rather than `accept_local`'s,
+/// and it is the only path on which the wait has to finish before khor
+/// even knows *which machine to route to*: the recipient's name is read
+/// off the offer.
+///
+/// Deterministic for the same reason as the first test, applied to a
+/// different seat: gamma pairs from a one-shot endpoint and never
+/// serves, so nothing syncs it but its own calls.
+///
+/// **The recipient-is-behind variant is deliberately absent, and it is
+/// worth saying why rather than leaving a hole.** A recipient must be
+/// serving to answer a routed Act at all, and a serving machine pumps
+/// every `SYNC_EVERY` — so its window of being behind is bounded by the
+/// pump and cannot be held open from a test without freezing it. The
+/// guard for that case is in the code (`accept_local` waits too) and it
+/// costs nothing on the way through; what cannot be had is a
+/// deterministic test, and a flaky one here would be worse than none.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
+    let ra = root("ra");
+    let rb = root("rb");
+    let rg = root("rg");
+    let alpha = Node::open_as(ra.clone(), "alpha").unwrap();
+    let serve_a = tokio::spawn(async move {
+        if let Err(why) = alpha.serve().await {
+            eprintln!("alpha's serve refused to start: {why}");
+        }
+    });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+
+    // beta serves: a routed accept lands on the recipient's serve.
+    let beta = Node::open_as(rb.clone(), "beta").unwrap();
+    let ticket_for_beta = a.invite().unwrap();
+    timeout(Duration::from_secs(45), beta.pair(&ticket_for_beta))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+    let serve_b = tokio::spawn(async move {
+        if let Err(why) = beta.serve().await {
+            eprintln!("beta's serve refused to start: {why}");
+        }
+    });
+    wait_for_endpoint_file(&rb).await;
+    // Setup, not the subject: beta paired from a one-shot endpoint and
+    // so reported no roads; its serve has just published real ones, and
+    // alpha has to have them before gamma copies the table. Without this
+    // the routing step would be racing alpha's pump — and the early stop
+    // makes that race real, because gamma's round can end at alpha
+    // before it ever reaches beta.
+    timeout(Duration::from_secs(45), a.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+
+    let g = Node::open_as(rg.clone(), "gamma").unwrap();
+    timeout(Duration::from_secs(45), g.pair(&a.invite().unwrap()))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    let payload: Vec<u8> = (0..120_000u32).map(|i| (i % 241) as u8).collect();
+    let src = ra.join("routed.bin");
+    fs::write(&src, &payload).unwrap();
+    let tid = a.send("beta", &src).unwrap();
+
+    // The witness, same shape as the first test: the offer exists where
+    // it was written, and the machine about to approve it has never
+    // heard of it. Pairing carries the device table, not the
+    // conversations, so gamma is behind by construction.
+    assert!(a.transfer_is_here(&tid), "the offer must be on alpha");
+    assert!(
+        !g.transfer_is_here(&tid),
+        "gamma must be behind, or this test routes an offer it already had"
+    );
+
+    let (moved, landed) = timeout(Duration::from_secs(120), g.accept(&tid))
+        .await
+        .expect("a routed accept must not hang while it waits out the sync axis")
+        .expect("a routed accept must wait for the offer, not refuse it");
+    assert_eq!(moved, payload.len() as u64, "the whole payload should move");
+    assert!(
+        g.transfer_is_here(&tid),
+        "gamma must hold the offer now — otherwise its earlier no was the probe"
+    );
+
+    // The pull ran on beta, off alpha, and the path that came back is
+    // beta's own — gamma has no such file and no such directory, so
+    // comparing the travelled answer against beta's disk is the only way
+    // to tell it from a path gamma computed under its own root.
+    let [landing] = landed.as_slice() else {
+        panic!("one file offered, one landing expected, got {landed:?}");
+    };
+    assert!(
+        !landing.starts_with(rg.to_str().unwrap()),
+        "the payload must not land on the machine that merely asked: {landing}"
+    );
+    assert_eq!(fs::read(landing).unwrap(), payload, "bytes verbatim on the recipient");
+    let on_beta = rb.join(".khor").join("chat").join("beta").join("files");
+    assert!(
+        fs::read_dir(&on_beta)
+            .unwrap()
+            .flatten()
+            .any(|e| !e.file_name().to_string_lossy().starts_with('.')),
+        "the payload must be on the recipient's own disk"
+    );
+
+    serve_a.abort();
+    serve_b.abort();
+    for r in [&ra, &rb, &rg] {
         let _ = fs::remove_dir_all(r);
     }
 }
