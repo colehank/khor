@@ -1471,6 +1471,13 @@ impl Node {
         let log = self.chat.log(&channel)?;
         let dir = khor_sync::chat::channel_dir(&self.root, &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
+        // The row's own seen mark, read once for the whole readout: the
+        // chips answer 完成/空闲 with the same watermark the row counts
+        // unread against, so a chip and the row it sits in cannot
+        // disagree about what has been looked at. Read here rather than
+        // inside the loop for the reason the whole function exists —
+        // one read, one order.
+        let watermark = self.seen_loaded()?.doc.watermark(&format!("chat/{channel}"));
         // Per message, both readings: the receiver's state word and the
         // sender's neutral delivery fact — at most one of the two is
         // `Some` (the seats are exclusive), and the pane paints
@@ -1480,7 +1487,7 @@ impl Node {
             .iter()
             .map(|m| {
                 (
-                    self.transfer.message_face(&channel, &dir, m),
+                    self.transfer.message_face(&channel, &dir, m, watermark),
                     self.transfer.message_delivery(m),
                 )
             })

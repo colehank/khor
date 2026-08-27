@@ -165,7 +165,21 @@ impl TransferKind {
     /// message** — the sender's chip speaks [`Delivery`], a neutral
     /// fact, not a state word (发端中性词批; it used to say 忙碌 while
     /// the fetch ran, which `Delivery::Fetching` replaces).
-    pub fn message_face(&self, channel: &str, channel_dir: &Path, m: &Message) -> Option<State> {
+    ///
+    /// `watermark` is the conversation's own seen mark
+    /// (`khor_sync::seen`), and it is what lets the settled half say
+    /// 空闲 at all. **It used to be hardcoded to 0 here**, which made
+    /// 完成 the only settled word a chip could ever wear: a file you
+    /// received and then looked at went on shouting 完成 for good, and
+    /// a state word that is always true is worth exactly what a badge
+    /// that never reaches zero is worth (docs/UX.md 角标).
+    pub fn message_face(
+        &self,
+        channel: &str,
+        channel_dir: &Path,
+        m: &Message,
+        watermark: i64,
+    ) -> Option<State> {
         let MsgBody::Files(files) = &m.body else { return None };
         if m.retracted || files.is_empty() {
             return None;
@@ -175,7 +189,7 @@ impl TransferKind {
         if !i_receive {
             return None;
         }
-        let (state, _, _) = self.receiver_face(channel_dir, &files[0], m.at, 0);
+        let (state, _) = self.receiver_face(channel_dir, &files[0], m.at, watermark);
         Some(state)
     }
 
@@ -239,7 +253,11 @@ impl TransferKind {
             let i_receive = channel == self.name && !i_sent;
             let f = &files[0];
             let pressed = if i_receive {
-                let (state, at, _) = self.receiver_face(channel_dir, f, m.at, 0);
+                // Watermark 0: this branch keeps only the pressing words
+                // below, and the settled pair (完成/空闲) is the one thing
+                // the watermark decides — so nothing here can read it.
+                // The row's own message-based reading owns that half.
+                let (state, at) = self.receiver_face(channel_dir, f, m.at, 0);
                 match state {
                     State::Blocked | State::Busy | State::Errored => Some((state, at)),
                     _ => None,
@@ -261,31 +279,47 @@ impl TransferKind {
         best
     }
 
-    /// The receiver's view rides the payload on disk.
+    /// The receiver's view rides the payload on disk: what is there
+    /// decides the word, and the file's own mtime dates it.
+    ///
+    /// **Two clocks meet here, and only one of them may decide 看过没
+    /// 看过.** The landing mtime is this machine's clock; the watermark
+    /// is on the senders' clocks (`khor_sync::seen`), and the message's
+    /// stamp is the only thing in this function that shares that clock.
+    /// So the settled pair asks `msg_at > watermark` — *the row's own
+    /// question about this very message* — and never the mtime against
+    /// the watermark, which would be two clocks compared as one and
+    /// would answer differently on a machine running a second behind.
+    /// The mtime stays where it belongs: as the *when* of the state, the
+    /// moment the file actually landed here.
+    ///
+    /// One rule, therefore, and not two: a chip says 完成 exactly when
+    /// the row counts that message unread, and 空闲 exactly when it does
+    /// not. A second way of deciding "looked at" is how a chip and the
+    /// row it sits in come to disagree in front of the person.
     fn receiver_face(
         &self,
         channel_dir: &Path,
         f: &FileRef,
         msg_at: i64,
         watermark: i64,
-    ) -> (State, i64, u64) {
+    ) -> (State, i64) {
         let done = payload_path(channel_dir, f);
         if done.exists() {
             let at = mtime_ms(&done).unwrap_or(msg_at);
-            let unread = u64::from(at > watermark);
-            let state = if unread > 0 { State::Done } else { State::Idle };
-            return (state, at, unread);
+            let state = if msg_at > watermark { State::Done } else { State::Idle };
+            return (state, at);
         }
         let partial = partial_path(channel_dir, f);
         if partial.exists() {
             let at = mtime_ms(&partial).unwrap_or(msg_at);
             if marker_pid_alive(&pulling_marker(channel_dir, f)) {
-                return (State::Busy, at, 0);
+                return (State::Busy, at);
             }
             // 断了可续 — the partial is the resume point, not garbage.
-            return (State::Errored, at, 0);
+            return (State::Errored, at);
         }
-        (State::Blocked, msg_at, 0)
+        (State::Blocked, msg_at)
     }
 
     /// Deletes this transfer's received payload (verified and partial

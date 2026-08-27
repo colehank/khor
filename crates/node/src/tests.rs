@@ -1193,3 +1193,53 @@ mod recents_tests {
         let _ = fs::remove_dir_all(&r);
     }
 }
+
+/// **The file chip's 空闲, measured.** A chip is the per-message twin of
+/// the row's word (`TransferKind::message_face`), and its vocabulary
+/// includes 看过了 — `receiver_face` computes 完成 vs 空闲 for a landed
+/// payload. This walks the same disk states the row is walked over, and
+/// then does the one thing the row-level walk never does: **looks at
+/// the row**. Every assertion before the last is a control establishing
+/// that the probe reads real, changing values off this seat.
+#[test]
+fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
+    let r = root("chip-seen");
+    let n = Node::open(r.clone()).unwrap();
+    let dir = channel_dir(&r, n.name()).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+
+    let far = ChatDoc::new(0xFAFA).unwrap();
+    let who = Sender { id: "dev-far".into(), name: "far".into() };
+    let f = khor_node_test_fileref();
+    far.send_files(&who, &[f.clone()]).unwrap();
+    fs::write(
+        dir.join("u-000000000000fafa-00000000.loro"),
+        far.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
+
+    let chip = |n: &Node| n.log_faced(n.name()).unwrap().1[0].0;
+    assert_eq!(
+        chip(&n),
+        Some(State::Blocked),
+        "control: nothing has landed, and this seat is the one being asked"
+    );
+
+    fs::create_dir_all(dir.join("files")).unwrap();
+    fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
+    assert_eq!(
+        chip(&n),
+        Some(State::Done),
+        "control: it landed and nobody has looked — the probe moves with the disk"
+    );
+
+    let id = SessionId(format!("chat/{}", n.name()));
+    n.seen(&id).unwrap();
+    assert_eq!(
+        n.sessions().unwrap()[0].session.unread,
+        0,
+        "control: the row itself counts as looked at, so the chip is the only thing left to ask"
+    );
+    assert_eq!(chip(&n), Some(State::Idle), "看过了 — a chip may not keep shouting 完成 forever");
+    let _ = fs::remove_dir_all(&r);
+}
