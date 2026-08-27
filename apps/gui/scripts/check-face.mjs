@@ -15,8 +15,11 @@
 //      gate was born from;
 //   3. **every pressable thing on every surface the rail reaches** is at
 //      least `--touch` on both sides, in both postures;
-//   4. a dense pane has a reading order;
-//   5. zero page errors while measuring — a half-drawn page answers
+//   4. and every press handler is on something that **says** it is a
+//      target — the claim section 3's scope rests on, since a control
+//      the DOM does not admit to is one section 3 cannot find either;
+//   5. a dense pane has a reading order;
+//   6. zero page errors while measuring — a half-drawn page answers
 //      probes too (the browser-check false-green family).
 //
 // The routed rows are shaped by hand from the bindings. If the shape
@@ -208,6 +211,81 @@ try {
       }),
     }),
   );
+  // The settings dialog's body. **Without this the settings stop judged
+  // one control — the dialog's own close button — while its name said
+  // 「settings」**: `FaceSettings` paints nothing at all until
+  // `face_choices` answers, so the walk opened the frame and reported on
+  // the house, the same hole `files · a directory open` was cut for one
+  // level in.
+  //
+  // Hand-shaped from the bindings like the rows above, and the keys are
+  // the library's own (`avatar::PRESETS` ids, `Variant::ALL`,
+  // `FaceShape::ALL`) — an invented key would paint a button whose word
+  // falls back to the key, which is a different screen from the real one.
+  // The three variants carry their three real paint shapes rather than
+  // one shape three times: `AvatarFace` has a separate brush per variant,
+  // and a fixture that exercised one of them would leave the other two's
+  // drift to be found by somebody else.
+  const av = (paint) => ({
+    canvas: paint.variant === "beam" ? 36 : 80,
+    background: "#1d1f21",
+    radius_ratio: 0.5,
+    paint,
+  });
+  const marble = {
+    variant: "marble",
+    blur: 7,
+    veins: [
+      { vein: "shard", scale: 1.2, rotate: 20, dx: 3, dy: -3, overlay: false, color: "#c5c8c6" },
+      { vein: "sweep", scale: 1.4, rotate: 200, dx: -4, dy: 6, overlay: true, color: "#8abeb7" },
+    ],
+  };
+  const bauhaus = {
+    variant: "bauhaus",
+    shapes: [
+      { shape: "rect", x: 0, y: 0, w: 80, h: 80, rotate: 0, dx: 0, dy: 0, color: "#81a2be" },
+      { shape: "circle", x: 10, y: 20, w: 40, h: 40, rotate: 20, dx: 4, dy: -4, color: "#f0c674" },
+      { shape: "rect", x: 30, y: 50, w: 60, h: 12, rotate: 45, dx: -6, dy: 2, color: "#8abeb7" },
+    ],
+  };
+  const beam = {
+    variant: "beam",
+    wrapper_rx: 18,
+    wrapper_scale: 1.1,
+    wrapper_rotate: 0,
+    wrapper_dx: 0,
+    wrapper_dy: 0,
+    wrapper_color: "#81a2be",
+    face_ink: "#000000",
+    mouth_open: true,
+    mouth_spread: 1,
+    eye_spread: 2,
+    face_rotate: 0,
+    face_dx: 0,
+    face_dy: 0,
+  };
+  const swatches = [marble, bauhaus, beam];
+  const PRESET_IDS = ["liquid", "monokai", "mocha", "nord", "okabe", "warm", "mandala"];
+  const slots = ["#1d1f21", "#c5c8c6", "#81a2be", "#8abeb7", "#f0c674"];
+  await page.route("**/face_choices", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        face: av(marble),
+        colors: slots,
+        preset: "monokai",
+        variant: "marble",
+        shape: "circle",
+        palettes: PRESET_IDS.map((key, i) => ({
+          key,
+          colors: slots,
+          face: av(swatches[i % swatches.length]),
+        })),
+        variants: ["marble", "bauhaus", "beam"].map((key, i) => ({ key, face: av(swatches[i]) })),
+        shapes: ["circle", "rounded", "square"].map((key) => ({ key, face: av(marble) })),
+      }),
+    }),
+  );
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
 
@@ -303,17 +381,16 @@ try {
   //
   // **What it cannot block:**
   //   - a bare `<div onClick>` — no role, no tabindex, nothing in the
-  //     DOM says it is a target, so this cannot see it (neither can a
-  //     keyboard; that is a11y's gate, not this one). The `cursor:
-  //     pointer` survey printed beside each stop is the tell-tale for
-  //     it, and it is **printed, never asserted** — a hover style on a
-  //     row would make it a red that teaches people to widen the
-  //     excuses;
-  //   - a target that is big enough and sits under something else;
-  //   - the settings dialog's body: it draws from `face_choices`, an
-  //     answer this fixture does not fake, so only the dialog's frame is
-  //     judged there. The stop says so on its own line rather than
-  //     counting zero and moving on.
+  //     DOM says it is a target, so this section cannot see it. **That
+  //     is section 4's job now**, and it is a separate section rather
+  //     than a bullet here because the criterion is a different one: not
+  //     how big the target is, but whether anything except a mouse can
+  //     tell it is one. The `cursor: pointer` survey printed beside each
+  //     stop stays **printed, never asserted** — a hover style on a row
+  //     would make it a red that teaches people to widen the excuses,
+  //     and section 4 reads the handler itself instead of guessing from
+  //     a cursor;
+  //   - a target that is big enough and sits under something else.
   const PRESSABLE = [
     "button",
     "a[href]",
@@ -360,6 +437,23 @@ try {
       if (i >= 0) hits.push(`${f.rel}:${i + 1}`);
     }
     return hits.length ? hits.slice(0, 3).join(" | ") : null;
+  };
+  // Three ways to name where a thing is written, in falling order of
+  // certainty, and **the line says which one it used** — an approximate
+  // location presented as an exact one is the kind of fact that sends
+  // somebody to edit a file that is fine. Shared by sections 3 and 4:
+  // section 4's offenders are precisely the ones with no marker of their
+  // own (that is what makes them offenders), so it needs the fallbacks
+  // more than section 3 does, and a red that could only say「somewhere」
+  // is a red nobody can act on.
+  const nameWhere = (t) => {
+    const own = t.own.map((a) => [a, whereIs(a)]).find(([, at]) => at);
+    if (own) return own[1];
+    const byClass = t.cls && whereIs(t.cls.split(" ").slice(0, 3).join(" "));
+    if (byClass) return `${byClass} (by class)`;
+    const via = t.chain.map((a) => [a, whereIs(a)]).find(([, at]) => at);
+    if (via) return `${via[1]} (the surface it is on, not where it is written)`;
+    return "no marker and no class — grep for the words on it";
   };
 
   const sweep = () =>
@@ -420,7 +514,30 @@ try {
         (el) =>
           getComputedStyle(el).cursor === "pointer" && !el.matches(PRESSABLE) && !el.closest(PRESSABLE),
       );
-      return { floor, targets, excused, pointing: pointing.length };
+      // Section 4's reading, taken on the same pass: which elements
+      // actually carry a press handler, read off React's own props
+      // rather than guessed at from a cursor. See section 4 below for
+      // what is done with it and why the cursor survey above stayed a
+      // printed line while this one is asserted.
+      const propsOf = (el) => {
+        for (const k in el) if (k.startsWith("__reactProps$")) return el[k];
+        return null;
+      };
+      const PRESS = ["onClick", "onMouseDown", "onPointerDown", "onDoubleClick"];
+      let withProps = 0;
+      let roledPress = 0;
+      const bare = [];
+      for (const el of document.querySelectorAll("*")) {
+        const p = propsOf(el);
+        if (p) withProps += 1;
+        if (!p || !PRESS.some((k) => typeof p[k] === "function")) continue;
+        if (el.matches(PRESSABLE) || el.closest(PRESSABLE)) {
+          roledPress += 1;
+          continue;
+        }
+        bare.push({ ...label(el), on: PRESS.filter((k) => typeof p[k] === "function").join("+") });
+      }
+      return { floor, targets, excused, pointing: pointing.length, withProps, roledPress, bare };
     }, PRESSABLE);
 
   // The walk. Each stop names the surface, how to get there, and one
@@ -479,8 +596,22 @@ try {
     { name: "browser", anchor: '[data-browse-landing="page"]', go: () => press(rail("browser")) },
     { name: "the mark's place", anchor: "[data-mark-place]", go: () => press("[data-rail-mark]") },
     {
-      name: "settings (frame only — its body needs a face_choices answer)",
-      anchor: "[data-face-settings]",
+      // The body, not the frame. **This stop used to be named
+      // 「settings (frame only)」and judged one control** — the dialog's
+      // close button — because `FaceSettings` paints nothing until
+      // `face_choices` answers and this fixture did not answer it. Naming
+      // the hole in the stop's own name was better than counting zero
+      // and moving on, and it was still a walk to the door: the palettes,
+      // the color wells and the three axes of options are the settings
+      // screen, and none of them were on the page.
+      //
+      // The anchor is an option **inside the last axis**, which is the
+      // one thing only this screen draws and the one that is absent if
+      // the body drew half of itself: a frame with a spinner in it, or a
+      // `FaceChoices` whose shape drifted so the render threw partway,
+      // both say *probe dead* here rather than passing.
+      name: "settings",
+      anchor: '[data-face-axis="shape"] [data-face-option]',
       // The one rail item that opens no landing and is not the mark, so
       // it is named by what it is not rather than by a key it does not
       // have. (The mark's own marker sits on the drawing inside its
@@ -494,9 +625,71 @@ try {
     },
   ];
 
+  // ── 4) a thing that can be pressed says so in the DOM ─────────────
+  // **This is not the touch floor and must not be filed under it.** The
+  // floor asks how big a target is; this asks whether it is a target at
+  // all as far as anything but a mouse is concerned. A bare
+  // `<div onClick>` is pressed by a pointer and by nothing else: it
+  // takes no focus, a keyboard cannot reach it, a screen reader does not
+  // announce it, and — the reason it lands in this file — section 3
+  // cannot measure it either, because `PRESSABLE` has no way to see it.
+  // Every hole in the section above is downstream of this one, which is
+  // why closing it is worth an assertion rather than a note.
+  //
+  // **The handler is read, not inferred.** The stop lines still print a
+  // `cursor: pointer` survey and that one stays printed: a hover style
+  // on a decorative row makes it a false red, and a false red is how
+  // people learn to widen the excuses. This reads React's own props off
+  // the element (`__reactProps$*`), so a hit is a handler somebody
+  // wrote — there is no decorative way to acquire one, and that is what
+  // makes it safe to assert where the cursor proxy is not.
+  //
+  // **A ratchet, not a clean sheet.** Run on the tree the day it was
+  // written it found three carriers, so an unconditional「zero」would
+  // have been red on arrival and turned off within the day. They are
+  // written down here instead, each with what it costs, and the gate
+  // moves in both directions: a carrier that is not on this list is red
+  // (somebody wrote a new one), and a listed one that stops turning up
+  // is **also** red (the debt was paid — delete the line). A list that
+  // cannot go stale is the difference between a written-down exception
+  // and a filter, which is the same judgment the excuses above are made
+  // under.
+  //
+  // **What it cannot block**: a handler bound with `addEventListener`
+  // instead of a prop (`ColorWell` binds `change` that way) — that is
+  // invisible to this and to any DOM reading, and the reason the live
+  // probe below asserts the reading works at all rather than trusting a
+  // zero.
+  const BARE_PRESSES = {
+    "data-omnibox": [
+      "src/components/Omnibox.tsx",
+      "a forwarder, not a target: the handler fires only for " +
+        "`e.target === e.currentTarget` (the strip's own blank space) and does " +
+        "one thing — focus the `<input>` inside it. The target is in the DOM " +
+        "and is that input; this widens its press area onto the field's padding.",
+    ],
+    "data-list-seam": [
+      "src/App.tsx",
+      "carries `role=\"separator\"`, which is a real role and deliberately not " +
+        "in PRESSABLE — a splitter is dragged, not pressed, and 8px is what a " +
+        "splitter is, so the touch floor is the wrong criterion for it. What is " +
+        "missing is the other half: a separator that can be moved wants " +
+        "`tabindex=0` and arrow keys. Debt, and not this gate's to size.",
+    ],
+    "data-session-title": [
+      "src/components/SessionTitle.tsx",
+      "double-click to rename, and double-click is the whole path — no focus, " +
+        "no key, no affordance. The one on this list that should end rather " +
+        "than be explained.",
+    ],
+  };
+
   // Same control, same posture, same size, on four surfaces is one
   // thing to fix — collapsed so the list reads as a work queue.
   const under = new Map();
+  // Same collapsing for section 4: one carrier, one line, however many
+  // surfaces it rides on.
+  const carriers = new Map();
   for (const [posture, vp] of [
     ["narrow", { width: 390, height: 844 }],
     ["wide", { width: 1400, height: 900 }],
@@ -523,6 +716,37 @@ try {
           (excuses ? `, excused ${excuses}` : "") +
           (seen.pointing ? `, ${seen.pointing} unmarked cursor:pointer (printed, not asserted)` : ""),
       );
+      // The live probe for section 4, per stop: a negative claim
+      // (「nothing here is bare」) is worth nothing until the same reading
+      // has hit something it should hit. If React's prop key ever moves,
+      // both counts go to zero and every stop reports a clean sheet —
+      // the `.nav-badge` shape, where an empty result reads as「this does
+      // not exist」and means「I looked in the wrong place」.
+      if (seen.withProps === 0) {
+        fail(`probe dead: ${here} — no element carries React props, the handler reading is blind`);
+      } else if (seen.roledPress === 0) {
+        fail(`probe dead: ${here} — not one press handler found on anything with a role`);
+      }
+      console.log(
+        `says-so ${here}: ${seen.roledPress} press handlers on elements that say they are targets` +
+          `, ${seen.bare.length} on elements that do not (of ${seen.withProps} react nodes)`,
+      );
+      for (const b of seen.bare) {
+        const key = b.own.join(" ") || `<${b.tag}> .${b.cls}`;
+        const was = carriers.get(key);
+        if (was) {
+          was.n += 1;
+          continue;
+        }
+        carriers.set(key, {
+          n: 1,
+          where: here,
+          on: b.on,
+          said: b.said,
+          marker: b.own.find((a) => BARE_PRESSES[a]) ?? null,
+          at: nameWhere(b),
+        });
+      }
       for (const t of seen.targets) {
         if (t.w >= seen.floor && t.h >= seen.floor) continue;
         const key = `${posture}|${t.own.join(" ") || t.cls}|${t.w}×${t.h}`;
@@ -531,13 +755,6 @@ try {
           was.n += 1;
           continue;
         }
-        // Three ways to name where it is written, in falling order of
-        // certainty, and **the line says which one it used** — an
-        // approximate location presented as an exact one is the kind of
-        // fact that sends somebody to edit a file that is fine.
-        const own = t.own.map((a) => [a, whereIs(a)]).find(([, at]) => at);
-        const byClass = t.cls && whereIs(t.cls.split(" ").slice(0, 3).join(" "));
-        const via = t.chain.map((a) => [a, whereIs(a)]).find(([, at]) => at);
         under.set(key, {
           n: 1,
           where: here,
@@ -545,13 +762,7 @@ try {
             `${t.own.join(" ") || `<${t.tag}> .${t.cls}`}` + (t.said ? ` "${t.said}"` : ""),
           size: `${t.w}×${t.h}`,
           floor: seen.floor,
-          at: own
-            ? own[1]
-            : byClass
-              ? `${byClass} (by class)`
-              : via
-                ? `${via[1]} (the surface it is on, not where it is written)`
-                : "no marker and no class — grep for the words on it",
+          at: nameWhere(t),
         });
       }
       await stop.after?.();
@@ -566,7 +777,35 @@ try {
   }
   if (under.size === 0) console.log("touch: every pressable thing on every stop clears the floor");
 
-  // ── 4) a dense screen has a reading order ─────────────────────────
+  // Section 4's verdict, both ways round.
+  for (const [key, c] of carriers) {
+    const known = c.marker && BARE_PRESSES[c.marker];
+    if (known) {
+      console.log(
+        `says-so · known bare press: ${key} (${c.on})` +
+          (c.n > 1 ? ` ×${c.n}` : "") +
+          ` — ${known[0]}: ${known[1]}`,
+      );
+      continue;
+    }
+    fail(
+      `a press handler on something that does not say it is a target — ${c.where}: ` +
+        `${key}${c.said ? ` "${c.said}"` : ""} carries ${c.on}` +
+        (c.n > 1 ? ` (×${c.n})` : "") +
+        ` — ${c.at}. Give it a role and a focus stop (a <button>, or role + tabindex), ` +
+        `or write it into BARE_PRESSES in this file with what it costs.`,
+    );
+  }
+  for (const marker of Object.keys(BARE_PRESSES)) {
+    if ([...carriers.values()].some((c) => c.marker === marker)) continue;
+    fail(
+      `census stale: ${marker} is written into BARE_PRESSES but carries no bare press handler ` +
+        `on any stop — either the debt was paid (delete its line) or the walk stopped ` +
+        `reaching the surface it lives on (fix the walk).`,
+    );
+  }
+
+  // ── 5) a dense screen has a reading order ─────────────────────────
   // **What sections 2 and 3 cannot see.** Section 2 asks whether the
   // three weights exist *somewhere on the page*, which the rail and the
   // list satisfy on their own — so the mark's place could hold 537
