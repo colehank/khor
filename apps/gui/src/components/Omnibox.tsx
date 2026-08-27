@@ -97,7 +97,13 @@ export function OmniChip({
   return (
     <span
       data-chip={candidate.key}
-      className="flex flex-none items-center gap-1 rounded-sm bg-secondary py-0.5 pr-0.5 pl-1.5 text-sm"
+      // **No vertical padding of its own any more.** The remove inside
+      // it now stands at the finger's floor (tokens.css `--touch`), and
+      // that is what a chip is as tall as: padding on top of it would
+      // only push the box that holds it further past what the tallest
+      // thing in it needs. The chip is a token either way — what
+      // changed is that it is a token you can hit.
+      className="flex flex-none items-center gap-1 rounded-sm bg-secondary pr-0.5 pl-1.5 text-sm"
     >
       {candidate.face !== undefined && candidate.face !== null && (
         <MachineAvatar face={candidate.face} className="size-kind-mark" />
@@ -108,7 +114,12 @@ export function OmniChip({
         variant="ghost"
         data-chip-remove={candidate.key}
         aria-label={`${gui.remove} ${candidate.label}`}
-        className="size-ctl-sm"
+        // A floor rather than a size: `cn()` cannot lift `h-ctl-md` off
+        // the icon variant (button.tsx has the measurement), and
+        // `min-*` beats a height without needing to remove it. The
+        // glyph does not grow — the box does, and the ghost wash paints
+        // that box.
+        className="min-h-touch min-w-touch"
         // The box must not lose focus to the press — where there is a
         // box. Harmless where there is not.
         onMouseDown={(e) => e.preventDefault()}
@@ -244,7 +255,13 @@ export function Omnibox({
       <div
         data-omnibox
         className={cn(
-          "flex min-h-ctl-md w-full flex-wrap items-center gap-1 rounded-md px-2 py-1",
+          // The strip is as tall as the floor and no taller: the box
+          // inside it is the thing a finger lands on, so the padding
+          // that used to sit above and below it would now only be
+          // distance between the field's edge and the target — bought
+          // at the cost of every bar this control rides in. Wrapped
+          // chips still have `gap-1` between rows.
+          "flex min-h-touch w-full flex-wrap items-center gap-1 rounded-md px-2",
           "focus-within:ring-2 focus-within:ring-ring/50",
         )}
         // A click anywhere on the strip lands in the box — the chips do
@@ -271,7 +288,15 @@ export function Omnibox({
           aria-label={label}
           placeholder={chips.length === 0 ? label : ""}
           value={query}
-          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
+          // **The one target on a browsing landing that is the landing**
+          // — where you are and where you go — and it measured 18 tall,
+          // the height of its own line of text. An `<input>` has no
+          // pseudo-elements to hang a bigger hit area on, so its box is
+          // its target and the box takes the floor (tokens.css
+          // `--touch`). The strip above sheds its padding in exchange,
+          // which is why the bar this rides in grows by four and not by
+          // fourteen.
+          className="min-h-touch min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
           onFocus={() => setOpen(true)}
           onBlur={() => {
             setOpen(false);
@@ -359,7 +384,13 @@ export function Omnibox({
                     data-omni-item={c.key}
                     data-on={n === at}
                     className={cn(
-                      "flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-sm",
+                      // A menu row is chosen with a finger as often as
+                      // with the keyboard, and the two ways have to aim
+                      // at the same thing: `bg-accent` marks the picked
+                      // row and the row is the floor tall, so what the
+                      // arrow keys highlight is exactly what a press
+                      // lands on (tokens.css `--touch`).
+                      "flex min-h-touch w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-sm",
                       n === at && "bg-accent",
                       c.dim && "text-muted-foreground",
                     )}

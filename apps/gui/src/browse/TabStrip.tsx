@@ -71,6 +71,15 @@ export function TabStrip({
       // The strip scrolls rather than shrinking past `--tab-w-min`
       // (that token says why), and `flex-none` keeps it from being the
       // thing that gives when the window is short.
+      //
+      // **The band is as tall as the floor under a finger**, which is
+      // the one place in this file where Chrome's proportions had to
+      // give (tokens.css `--touch`). `overflow-x-auto` makes this a
+      // scroll container on *both* axes — a child taller than the band
+      // would be clipped or made scrollable, not allowed to hang over
+      // it — so a hit area that reaches the floor while the tab stays
+      // short is not available here: either the band grows or the
+      // target stays under the floor. It grows.
       className="flex flex-none items-end gap-1 overflow-x-auto bg-muted/40 px-2 pt-1"
     >
       {faces.map((f) => {
@@ -82,7 +91,14 @@ export function TabStrip({
             data-on={on}
             title={f.path || undefined}
             className={cn(
-              "group flex h-ctl-md w-tab max-w-tab min-w-tab-min flex-1 items-center gap-1 rounded-t-md pr-0.5 pl-2",
+              // `h-touch`, not `h-ctl-md`: the tab is the target, so the
+              // tab is what has to be tall enough to land on — and it is
+              // also what paints "this one is in front", which is the
+              // half that would have been lost by growing an invisible
+              // box inside a short pill. A tab whose colour stops short
+              // of where it can be pressed is a tab that lies about
+              // where it is.
+              "group flex h-touch w-tab max-w-tab min-w-tab-min flex-1 items-center gap-1 rounded-t-md pr-0.5 pl-2",
               on ? "bg-background text-foreground" : "text-muted-foreground hover:bg-background/50",
             )}
           >
@@ -90,7 +106,11 @@ export function TabStrip({
               type="button"
               data-tab-open={f.id}
               onClick={() => onFocus(f.id)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+              // `h-full`: the whole tab opens it, not the line of text
+              // in the middle of it. Left at content height this was 18
+              // tall inside a tab it filled the width of — the band
+              // around the label looked pressable and was not.
+              className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
             >
               <MachineAvatar face={f.face} className="size-kind-mark flex-none" />
               <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
@@ -106,8 +126,27 @@ export function TabStrip({
               // rows' rule: a close on every tab at once is the strip's
               // loudest repetition, and the open one needs it always
               // because that is the tab a person is finished with.
+              //
+              // **`min-*`, not a `size-*`** — and the class it replaces
+              // is the proof: `size-ctl-sm` never took effect here.
+              // `cn()` cannot lift `h-ctl-md`/`w-ctl-md` off the icon
+              // variant (tailwind-merge does not read `ctl-*` as a
+              // size, `button.tsx` says so with its own measurement),
+              // so both survived and the stylesheet's order decided —
+              // this button measured 30, the icon size, not the 24 it
+              // asked for. A floor beats a height without having to
+              // remove it. The glyph keeps its own size; what grows is
+              // the box, and the ghost wash paints that box, so what
+              // lights up is what can be pressed.
+              //
+              // What it costs, said out loud: the close takes 44 of the
+              // tab's width where it took 30, and the half that holds
+              // the face and the name gives them up — measured at
+              // `--tab-w`, 156 wide to 142. At `--tab-w-min` that half
+              // was already a truncation (see that token) and this
+              // makes it a shorter one.
               className={cn(
-                "size-ctl-sm flex-none",
+                "min-h-touch min-w-touch flex-none",
                 !on && "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
               )}
               onClick={() => onClose(f.id)}
@@ -122,7 +161,12 @@ export function TabStrip({
         variant="ghost"
         data-tab-new
         aria-label={gui.new_tab}
-        className="mb-1 flex-none"
+        // The `mb-1` it used to wear lifted a 30 button off the band's
+        // floor so it read as level with the 30 tabs. Both are the
+        // finger's floor now, and `items-end` already levels them —
+        // keeping the margin would have made the band four taller than
+        // anything in it.
+        className="min-h-touch min-w-touch flex-none"
         onClick={onNew}
       >
         <IconPlus />
@@ -141,7 +185,12 @@ export function TabCount({ n, onPress }: { n: number; onPress: () => void }) {
       data-tab-count
       aria-label={gui.switch_tabs(n)}
       onClick={onPress}
-      className="flex-none"
+      // The count keeps its size; the box around it takes the floor.
+      // This is the narrow face's only way to every other tab, and it
+      // sits at the end of the address bar where a thumb reaches — the
+      // one control on this landing where being under the floor would
+      // be felt every time.
+      className="min-h-touch min-w-touch flex-none"
     >
       <span className="rounded-sm border px-1 text-xs tabular-nums">{n}</span>
     </Button>
@@ -179,7 +228,12 @@ export function TabSwitcher({
             data-switch-tab={f.id}
             data-on={f.id === active}
             className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-2",
+              // `py-1` where it was `py-2`: the row's own height now
+              // comes from the two controls in it, both of which are at
+              // the finger's floor, and keeping the old padding on top
+              // of that would have made a tab list of 60-tall rows out
+              // of one that reads fine at 52.
+              "flex items-center gap-2 rounded-md px-2 py-1",
               f.id === active && "bg-muted",
             )}
           >
@@ -187,7 +241,10 @@ export function TabSwitcher({
               type="button"
               data-switch-open={f.id}
               onClick={() => onFocus(f.id)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+              // The name and the path are what a person aims at here;
+              // at content height the row's padding looked like part of
+              // the target and was the parent's.
+              className="flex min-h-touch min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
             >
               <MachineAvatar face={f.face} className="size-avatar flex-none" />
               <span className="flex min-w-0 flex-1 flex-col">
@@ -209,8 +266,10 @@ export function TabSwitcher({
               // Always drawn here, unlike the wide strip: a phone has no
               // pointer to summon a control with, and a close that only
               // appears on hover is a close that does not exist
-              // (`FilesPane`'s pin, same rule).
-              className="flex-none"
+              // (`FilesPane`'s pin, same rule) — and on the face that
+              // has no pointer, a target under the floor is the same
+              // kind of nearly-not-there.
+              className="min-h-touch min-w-touch flex-none"
               onClick={() => onClose(f.id)}
             >
               <IconClose />
@@ -219,7 +278,17 @@ export function TabSwitcher({
         ))}
       </div>
       <div className="flex-none border-t p-2">
-        <Button variant="secondary" size="sm" data-tab-new onClick={onNew}>
+        {/* `size="sm"` is the look — a filled word, not a bar across the
+            foot — and the floor is the hit area under it. The two are
+            allowed to disagree: `--ctl-*` is what a control *is* beside
+            text, `--touch` is what a finger needs (tokens.css). */}
+        <Button
+          variant="secondary"
+          size="sm"
+          data-tab-new
+          className="min-h-touch min-w-touch"
+          onClick={onNew}
+        >
           {gui.new_tab}
         </Button>
       </div>

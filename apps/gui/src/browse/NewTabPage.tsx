@@ -69,7 +69,17 @@ export function NewTabPage({
         <div className="flex flex-col items-center gap-2">
           <div data-no-places>{kind.words.empty}</div>
           {onGo && (
-            <Button size="sm" variant="secondary" data-go-places onClick={onGo}>
+            <Button
+              size="sm"
+              variant="secondary"
+              data-go-places
+              // The only way onward from an empty screen: it has to be
+              // landable on (tokens.css `--touch`). The height token
+              // still says what kind of control it is; this says what a
+              // finger needs of it.
+              className="min-h-touch min-w-touch"
+              onClick={onGo}
+            >
               {kind.words.go}
             </Button>
           )}
@@ -103,7 +113,11 @@ export function NewTabPage({
               data-place={place.place}
               data-place-device={place.device}
               onClick={() => onOpen(place.device, place.place)}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-muted/50"
+              // `min-h-touch` and the wash on the same box: this is a
+              // list of one-line rows, so nothing but the floor decides
+              // how tall a row is, and the hover paints exactly what
+              // opens (tokens.css `--touch`). Measured before: 34.
+              className="flex min-h-touch w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-muted/50"
             >
               <MachineAvatar face={face} className="size-kind-mark flex-none" />
               <span className="flex-none text-sm font-label">{leaf}</span>
