@@ -14,7 +14,9 @@
 //      weight distribution is {400,500,600}, not the flat {400} this
 //      gate was born from;
 //   3. **every pressable thing on every surface the rail reaches** is at
-//      least `--touch` on both sides, in both postures;
+//      least `--touch` on both sides, in both postures — or is waived by
+//      name, with why the floor is the wrong criterion for that one and
+//      what the waiver does not buy;
 //   4. and every press handler is on something that **says** it is a
 //      target — the claim section 3's scope rests on, since a control
 //      the DOM does not admit to is one section 3 cannot find either;
@@ -391,6 +393,16 @@ try {
   //     and section 4 reads the handler itself instead of guessing from
   //     a cursor;
   //   - a target that is big enough and sits under something else.
+  //
+  // **An excuse and a waiver are not the same thing, and they are kept
+  // apart on purpose.** The four excuses below all say *a finger cannot
+  // land here* — nothing is drawn, or the press goes elsewhere. A waiver
+  // says the opposite: a finger can land here, it is under the floor,
+  // and the floor is the wrong criterion for this one thing. Those are
+  // written in `UNDER_FLOOR` below, by name, with what it still costs.
+  // Filed together they would rot into one list of「reasons this is
+  // fine」, and the day somebody wants a fifth excuse the list would
+  // already read as permissive.
   const PRESSABLE = [
     "button",
     "a[href]",
@@ -668,19 +680,30 @@ try {
         "one thing — focus the `<input>` inside it. The target is in the DOM " +
         "and is that input; this widens its press area onto the field's padding.",
     ],
+  };
+
+  // Section 3's waivers: the floor does not apply here, and here is why
+  // — a different claim from the four excuses above, which say a finger
+  // cannot land at all. Same ratchet as `BARE_PRESSES`: named, printed
+  // every run, red in both directions.
+  //
+  // **A waiver has to carry the part that is still broken.** Left as
+  // 「the floor is the wrong criterion」a line like this reads as「no
+  // problem here」, and the next person to meet the control believes it.
+  // So each entry says what a waiver does not buy.
+  const UNDER_FLOOR = {
     "data-list-seam": [
       "src/App.tsx",
-      "carries `role=\"separator\"`, which is a real role and deliberately not " +
-        "in PRESSABLE — a splitter is dragged, not pressed, and 8px is what a " +
-        "splitter is, so the touch floor is the wrong criterion for it. What is " +
-        "missing is the other half: a separator that can be moved wants " +
-        "`tabindex=0` and arrow keys. Debt, and not this gate's to size.",
-    ],
-    "data-session-title": [
-      "src/components/SessionTitle.tsx",
-      "double-click to rename, and double-click is the whole path — no focus, " +
-        "no key, no affordance. The one on this list that should end rather " +
-        "than be explained.",
+      "the floor is a floor under things whose size is free to grow, and this " +
+        "one's is not: it is the seam between two panes (`-mx-1 w-2`), and every " +
+        "pixel it grows is taken off the list's right edge and the detail's left " +
+        "— off the rows people actually press. That is WCAG 2.5.5's own Essential " +
+        "carve-out, not a hole cut here. **What it does not buy:** a finger on a " +
+        "wide touch screen — the iPad web face, which is the whole reason this " +
+        "section measures the wide posture — can drag this seam today " +
+        "(`onPointerDown` + `setPointerCapture`, and pointer events are touch " +
+        "events) and will find 8 hard. That is open debt; the answer is a " +
+        "separate touch affordance, not a wider seam. **It is not「no problem」.**",
     ],
   };
 
@@ -763,19 +786,47 @@ try {
           size: `${t.w}×${t.h}`,
           floor: seen.floor,
           at: nameWhere(t),
+          waived: t.own.find((a) => UNDER_FLOOR[a]) ?? null,
         });
       }
       await stop.after?.();
     }
   }
+  let offenders = 0;
   for (const u of [...under.values()]) {
+    const waiver = u.waived && UNDER_FLOOR[u.waived];
+    if (waiver) {
+      console.log(
+        `touch · waived under the floor: ${u.what} ${u.size}` +
+          (u.n > 1 ? ` ×${u.n}` : "") +
+          ` — ${waiver[0]}: ${waiver[1]}`,
+      );
+      continue;
+    }
+    offenders += 1;
     fail(
       `under the ${u.floor} touch floor — ${u.where}: ${u.what} ${u.size}` +
         (u.n > 1 ? ` (×${u.n})` : "") +
-        ` — ${u.at}`,
+        ` — ${u.at}. Wear the floor at the call site (min-h-touch / min-w-touch), ` +
+        `or write it into UNDER_FLOOR in this file with why the floor is the ` +
+        `wrong criterion **and what the waiver does not buy**.`,
     );
   }
-  if (under.size === 0) console.log("touch: every pressable thing on every stop clears the floor");
+  // The other direction, same as the census below: a waiver that has
+  // stopped being needed is a line nobody will delete unless something
+  // says so, and a stale waiver is how a list of one becomes a list of
+  // four.
+  for (const marker of Object.keys(UNDER_FLOOR)) {
+    if ([...under.values()].some((u) => u.waived === marker)) continue;
+    fail(
+      `waiver stale: ${marker} is written into UNDER_FLOOR but clears the floor ` +
+        `on every stop — either it grew (delete its line) or the walk stopped ` +
+        `reaching the surface it lives on (fix the walk).`,
+    );
+  }
+  if (offenders === 0) {
+    console.log("touch: every pressable thing on every stop clears the floor or is waived by name");
+  }
 
   // Section 4's verdict, both ways round.
   for (const [key, c] of carriers) {
