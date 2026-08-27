@@ -471,6 +471,21 @@ pub fn shell_quote(path: &str) -> String {
 /// by name. The CLI's `send` leaves that to the serve's own rhythm
 /// because an offer is content to wait for a person — this one cannot,
 /// because the same gesture that sends is the gesture that accepts.
+///
+/// **Since `2f68ac2` the push is an optimisation, not a requirement**,
+/// and the distinction is worth keeping straight. `Node::accept` now
+/// drives a sync round of its own when the offer is not here yet, so
+/// dropping this line would still work — it would just make the far
+/// machine pull from everyone instead of letting this one push what it
+/// has just written, which is strictly the more expensive half of the
+/// same round. So it stays, on cost rather than on correctness.
+///
+/// It was, until that commit, one of **two** hand-placed workarounds for
+/// one bug: this one in product code (so the feature worked and nobody
+/// looked), and a `b.sync_now()` in `crates/node/tests/transfer.rs` (so
+/// the test was green and nobody looked). Between them they explain how
+/// a race with a written-down repro sat in the ledger for days —
+/// **every road had a brick under it, and the bricks had no names.**
 fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
     let (root, machine, paths) = (root.to_path_buf(), machine.to_owned(), paths.to_vec());
     std::thread::spawn(move || -> Result<Vec<String>, String> {

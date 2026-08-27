@@ -510,7 +510,27 @@ recipient-not-in-table = "收文件的机器不在机器表里: {0}"
 # plain dials — so a person attaching a terminal was being told about a
 # 收下 they had not asked for. A sentence has to fit whatever the caller
 # was actually doing, and the only thing all five share is the machine.
-machine-unreachable-timeout = "连不上 {0}(超时)——那台机器得在线"
+#
+# **2026-08-27: the second tail went too, and this one was measured
+# false rather than merely off-topic.** It read「那台机器得在线」——a
+# claim about the far machine, made by the one end that cannot know it.
+# Reproduced three times that afternoon (restart turing's serve, verify
+# by pid *and* by UDP port that it really came back on a new address,
+# then probe both directions every few seconds): **all through the
+# window where this end could not reach turing, turing was reaching
+# this machine.** It was online the whole time. The old tail sent a
+# person to check a machine that was answering, while the thing to wait
+# for was on the side that printed the sentence.
+#
+# What replaces it says only what this end saw, plus the one thing that
+# is actually actionable — the far serve restarting is the common cause,
+# and this end learns the new address on its own, in tens of seconds
+# (measured 20s–3m36s across three runs; the ledger's old「约 13 分钟」
+# is from an older build and no longer reproduces).
+#
+# **It does not say「它刚重启过」** — this end does not know that either.
+# It says what to do if it did.
+machine-unreachable-timeout = "连不上 {0}(超时)——这边试过的路都没通;它要是刚重启过 serve,等一会儿这边会认得它的新地址"
 offerer-unreachable-timeout = "连不上出让方(超时)"
 offerer-unreachable = "连不上出让方: {0}"
 offerer-left-table = "出让方已不在机器表里"
