@@ -1362,9 +1362,40 @@ impl Node {
                 done: false,
             },
         )?;
-        self.mark_seen(&told.row.id, told.at)?;
+        // **Offering is not looking, so no watermark moves here** — and
+        // this is the one place the person and the machine come apart.
+        //
+        // The watermark is the *person's* decision, replicated on
+        // purpose: a look on the phone clears the desk (docs/NET.md 已读).
+        // That is exactly why `tell` raises it and must keep raising it —
+        // a line's content *is* the line, so the person who typed it has
+        // seen it wherever they read it, and `tests/pairing.rs` pins that
+        // ("own words never count as unread, on any device").
+        //
+        // A file message is not that. What it carries is not content but
+        // a summary of bytes that have not arrived anywhere yet, and
+        // **"it arrived here" is a fact about a machine, not about a
+        // person**. So there is no seat — not even this one — that has
+        // looked at it. Raising the watermark from here wrote a machine's
+        // fact into the person's document, and the offering machine
+        // cleared the badge on the machine the file was actually for:
+        // the recipient's row read 空闲/0 where docs/SESSION.md says an
+        // arrived file goes to 完成/未看 like any message, and a third
+        // machine never saw it at all.
+        //
+        // This machine still does not badge itself for what it offered.
+        // That is a seat's answer and it is derived locally, in
+        // `ChatKind::i_offered` — never written into a document that
+        // travels.
+        //
+        // The row is therefore re-read against the watermark that
+        // actually stands, not against the offer's own stamp: an offer
+        // clears nothing, so a debt already sitting on this row must
+        // survive it.
+        let wm = self.seen_loaded()?.doc.watermark(&told.row.id.0);
+        let row = self.chat.row(&channel, home, wm)?;
         self.emit(NodeEvent::Event(told.event));
-        self.emit(NodeEvent::Row(told.row));
+        self.emit(NodeEvent::Row(row));
         Ok(TransferKind::session_id(&told.msg_id))
     }
 

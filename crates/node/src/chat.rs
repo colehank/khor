@@ -21,6 +21,11 @@ pub struct ChannelLog {
 
 /// What `tell` did. `at` is the new message's timestamp — the caller
 /// persists it as the seen watermark (telling implies looking).
+///
+/// **`send` deliberately does not.** Telling implies looking because a
+/// line's content *is* the line; an offer's is a payload that has not
+/// arrived anywhere yet, so nobody has looked at anything. The full
+/// reasoning is at the one site that drops it, `Node::send`.
 pub struct Told {
     pub msg_id: String,
     pub at: i64,
@@ -57,9 +62,34 @@ impl ChatKind {
         SessionId(format!("chat/{channel}"))
     }
 
+    /// A file message **this machine offered**. It is not unread here,
+    /// and no watermark says so — the watermark is the person's decision
+    /// and it replicates, while this is a fact about a seat.
+    ///
+    /// The sender's seat already refuses to speak the six words about
+    /// its own file messages ([`crate::transfer::TransferKind::message_delivery`]
+    /// answers `Delivery`, "not a state word", 发端中性词批). Unread is
+    /// the same question asked of the row: 完成/未看 on a file message
+    /// means *a file arrived here and nobody looked*, and on the seat
+    /// that offered it nothing arrived. Same seat test as over there
+    /// (`m.from.id` against this device), and it must stay the same one:
+    /// two answers to "is this my own offer" is how the chip and the row
+    /// come to disagree.
+    ///
+    /// Text is untouched on purpose — for a line, the watermark already
+    /// does this job and does it person-wide, which is the tested rule
+    /// (`tests/pairing.rs`: own words never count as unread, on any
+    /// device).
+    fn i_offered(&self, m: &Message) -> bool {
+        matches!(m.body, khor_sync::chat::MsgBody::Files(_)) && m.from.id == self.me.id
+    }
+
     fn row_from(&self, channel: &str, home: DeviceId, doc: &ChatDoc, watermark: i64) -> Session {
         let msgs = doc.messages();
-        let unread = msgs.iter().filter(|m| m.at > watermark).count() as u64;
+        let unread = msgs
+            .iter()
+            .filter(|m| m.at > watermark && !self.i_offered(m))
+            .count() as u64;
         let at = msgs.last().map(|m| m.at.max(0) as u64).unwrap_or(0);
         Session {
             id: Self::session_id(channel),

@@ -3,6 +3,9 @@ use std::path::PathBuf;
 
 use khor_core::State;
 use khor_sync::chat::{channel_dir, ChatDoc, Sender};
+/// For `SeenDoc::changes_since` — the seen document's export lives on the
+/// trait, unlike `ChatDoc`'s, which also has it inherently.
+use khor_sync::store::Doc;
 
 use super::*;
 
@@ -253,9 +256,82 @@ fn a_send_makes_a_file_message_and_no_transfer_row() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// **Offering is not looking.** `khor send` used to raise the offered-to
+/// channel's seen watermark to the offer's own stamp — "telling implies
+/// looking", borrowed from `tell` — and the seen document is replicated,
+/// so the machine that had something to hand over cleared the badge on
+/// the machine the file was actually for. The recipient's row read
+/// 空闲/0 where docs/SESSION.md says an arrived file goes to 完成/未看.
+///
+/// This watches the cause from the only seat that can be watched with
+/// one node: the offering machine's own `send` must leave the watermark
+/// where it found it. (The effect at the other end, over a real
+/// connection, is `tests/seen_watermark.rs`.)
+///
+/// **The positive control is the same probe on the same document one
+/// line later**: `tell` does raise it. Without that, "the watermark is
+/// 0" and "this probe reads 0 for every id there is" are the same
+/// sentence in a test report.
+#[test]
+fn an_offer_must_not_raise_the_seen_watermark() {
+    let r = root("offer-watermark");
+    let n = Node::open(r.clone()).unwrap();
+    let me = n.name().to_owned();
+    let sid = format!("chat/{me}");
+    let watermark = |n: &Node| n.seen_loaded().unwrap().doc.watermark(&sid);
+
+    let payload = r.join("handover.bin");
+    fs::write(&payload, b"bytes").unwrap();
+    n.send(&me, &payload).unwrap();
+    assert_eq!(watermark(&n), 0, "offering is not looking: no mark may be written");
+
+    // And the offering seat still does not badge itself for what it just
+    // handed over. That answer is the seat's, derived locally
+    // (`ChatKind::i_offered`) — never a mark in a document that travels
+    // to every machine and speaks for all of them.
+    let row = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id.0 == sid)
+        .expect("the machine's chat row exists")
+        .session;
+    assert_eq!(row.unread, 0, "the machine that offered it has nothing to look at");
+
+    // Same probe, same document, one line later.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    n.tell(&me, "and a line about it").unwrap();
+    assert!(
+        watermark(&n) > 0,
+        "control: telling *is* looking, and this probe can read a mark when there is one"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// The receiving seat's half of the pair: an offer sent TO this machine
 /// presses 待批 onto its chat row — the approval asked for is this
-/// machine's — and the payload landing clears it (accept 即清).
+/// machine's — and the payload landing clears it (accept 即清), to
+/// 完成/未看 and not to 空闲.
+///
+/// **What this fixture can and cannot reach.** The far machine here is
+/// planted bytes, so whatever it "did" is whatever this function writes:
+/// the test can model one world, never compare two. It used to plant a
+/// message with **nobody behind it** — no sender's watermark at all —
+/// which is a world no `khor send` could produce, and so it stayed green
+/// through the entire life of the bug that `Node::send` marked
+/// `chat/<recipient>` seen as it offered and cleared this very badge.
+/// Planting *that* mark instead only swaps which single world is frozen:
+/// it would be red forever, including after the fix.
+///
+/// So the fixture below plants the mark a far machine really does leave
+/// — the one a **`tell`** raises, which still replicates and by
+/// construction stands *below* a later offer — and the property under
+/// test is that the offer counts above a legitimately standing
+/// watermark. **The send-side leak itself is not testable from one
+/// node**: it is a fact about what the other machine wrote, and it is
+/// owned by `tests/seen_watermark.rs` (two real nodes, a real send) and
+/// by `an_offer_must_not_raise_the_seen_watermark` below, which watches
+/// this machine's own `send` from the offering seat.
 #[test]
 fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     let r = root("recv-offer");
@@ -263,15 +339,35 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
 
     // A file offer from another device, landed as a chat block — the
     // same shape `a_foreign_block_raises_unread_and_seen_clears_it`
-    // plants a text message with.
+    // plants a text message with. A line comes first, so that the
+    // watermark planted below is one a real machine leaves behind.
     let far = ChatDoc::new(0xFAFA).unwrap();
+    let who = Sender { id: "dev-far".into(), name: "far".into() };
+    far.tell(&who, "sending you something").unwrap();
+    let said_at = far.messages().last().expect("the line is in the doc").at;
+    // Distinct stamps: same-millisecond messages would put the offer at
+    // the watermark rather than above it, and the reading below would be
+    // about the clock instead of about the rule.
+    std::thread::sleep(std::time::Duration::from_millis(5));
     let f = khor_node_test_fileref();
-    far.send_files(&Sender { id: "dev-far".into(), name: "far".into() }, &[f.clone()])
-        .unwrap();
+    far.send_files(&who, &[f.clone()]).unwrap();
     let block = far.changes_since(&Default::default()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("u-000000000000fafa-00000000.loro"), &block).unwrap();
+
+    // The far machine's watermark, arriving the way it really does: a
+    // foreign block in this node's own seen store, raised by its `tell`
+    // (telling implies looking) and therefore standing below the offer.
+    let far_seen = SeenDoc::new(0xFAFA).unwrap();
+    far_seen.mark(&format!("chat/{}", n.name()), said_at).unwrap();
+    let sdir = seen_dir(&r);
+    fs::create_dir_all(&sdir).unwrap();
+    fs::write(
+        sdir.join("u-000000000000fafa-00000000.loro"),
+        far_seen.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
 
     let chat_row = |n: &Node| {
         n.sessions()
@@ -295,6 +391,11 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     let row = chat_row(&n);
     assert_ne!(row.state.state, State::Blocked, "答了才清: the landing clears 待批");
     assert_eq!(row.state.state, State::Done, "…to the unseen file message's own 完成");
+    assert_eq!(
+        row.unread, 1,
+        "and 完成 here means one message nobody at this machine has looked at — \
+         the far machine's watermark is not this machine's answer"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 

@@ -12,6 +12,25 @@
 //! would otherwise stay unread after being looked at, and a badge that
 //! cannot reach zero is the one thing the badge rules forbid.
 //!
+//! **Whose decision is it — the person's or the machine's?** The
+//! person's. One watermark per session, replicated, so a look on the
+//! phone clears the desk; there is deliberately no per-device copy. That
+//! is what lets "telling implies looking" live in here: a line's content
+//! *is* the line, so the person who typed it has seen it on every
+//! machine they own (`khor_node`'s `tests/pairing.rs` pins exactly that).
+//!
+//! The two readings coincide almost everywhere, and the one place they
+//! do not is worth naming here, because the answer is not obvious from
+//! either side. A **file** message carries no content — it carries a
+//! summary of bytes that have not arrived anywhere yet, and *"it arrived
+//! here"* is a fact about a machine. So offering a file is not looking
+//! at one, on any seat, and `khor_node::Node::send` marks nothing (it
+//! used to mark, and the offering machine cleared the badge on the
+//! machine the file was for). Anything a *seat* knows — this machine
+//! wrote that, this machine holds those bytes — belongs where it is
+//! derived, never in this document: what is written here travels to
+//! every machine and speaks for all of them.
+//!
 //! A second map rides the same document: `closed : Map<session_id,
 //! watermark_ms>` — how far a conversation has been *put away*, not
 //! merely looked at (docs/SESSION.md 动作: close 对话 = 收起那一行).
