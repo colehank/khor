@@ -1243,3 +1243,120 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
     assert_eq!(chip(&n), Some(State::Idle), "看过了 — a chip may not keep shouting 完成 forever");
     let _ = fs::remove_dir_all(&r);
 }
+
+/// **A line in the conversation covers the file that came before it,
+/// and that is a decision, not a leak.**
+///
+/// `tell` raises the watermark to its own stamp and the mark replicates,
+/// so a line the far machine sends after a file sweeps that file's
+/// unread with it. A watermark is a point in time; it structurally
+/// cannot say "everything before T except that one file". The question
+/// this test freezes is whether it should have to.
+///
+/// **It should not.** 角标数的是「有几件事想要你」(docs/UX.md). A file
+/// that has landed, in a conversation the person has since spoken in,
+/// **wants nothing**: it sits on that machine, they can fetch it
+/// whenever, nothing is stuck and nobody is waiting on an answer. That
+/// is a *fact*, and this codebase already sorted facts from demands —
+/// 看了也不清的事实（失败沉底）占列表，不占角标.
+///
+/// And the alternative breaks something harder. To make the file stay
+/// owed, its "looked at" would have to be a per-machine fact that does
+/// **not** replicate — and then the badge on the desk could only be
+/// cleared by walking to the desk. 角标可归零 does not mean "some way
+/// exists to clear it"; it means **答了清、看了清**. A badge whose only
+/// answer is "be somewhere else" is a badge that stays non-zero for as
+/// long as the person is away, and a badge that is never zero is worth
+/// nothing. It would also mean rewriting what 已读 *is*: docs/NET.md
+/// says 看过是决定：手机看了，桌面角标同步清 — network-wide, one copy.
+///
+/// **Where the earlier reasoning stops.** A file message's *arrival* is
+/// a fact about a machine — that is why `Node::send` marks nothing and
+/// why the offering seat does not badge itself. But that reasoning
+/// governs **before the landing**, and before the landing there is
+/// already a signal that owes nothing to the watermark: 待批, from the
+/// seat whose approval is wanted. The assertions below hold that line:
+/// the person speaking clears the *unread*, and does not touch 待批.
+///
+/// **The counter-argument, kept on the record**: the file is on the
+/// desk, the person only ever looked on the phone, and so they may
+/// never notice it arrived. **Trigger**: someone actually reports "I
+/// didn't notice the file had landed on that machine." That day the
+/// thing to change is not this test — it is docs/NET.md's 已读 line,
+/// and that is a 改口 and wants a 墓碑.
+#[test]
+fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
+    let r = root("line-covers-file");
+    let n = Node::open(r.clone()).unwrap();
+    let dir = channel_dir(&r, n.name()).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+
+    let far = ChatDoc::new(0xFAFA).unwrap();
+    let who = Sender { id: "dev-far".into(), name: "far".into() };
+    let f = khor_node_test_fileref();
+    far.send_files(&who, &[f.clone()]).unwrap();
+    fs::write(
+        dir.join("u-000000000000fafa-00000000.loro"),
+        far.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        n.sessions().unwrap()[0].session.unread,
+        1,
+        "control: the offer is owed before anyone speaks — so the 0 below is a change, not a blind probe"
+    );
+
+    // The far machine says something afterwards. Its `tell` marks seen
+    // at its own stamp and that mark replicates: the half of 说话即看过
+    // that is right and stays (the person typed the line).
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    far.tell(&who, "did you get it?").unwrap();
+    let said_at = far.messages().last().unwrap().at;
+    fs::write(
+        dir.join("u-000000000000fafa-00000001.loro"),
+        far.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
+    let far_seen = SeenDoc::new(0xFAFA).unwrap();
+    far_seen.mark(&format!("chat/{}", n.name()), said_at).unwrap();
+    let sdir = seen_dir(&r);
+    fs::create_dir_all(&sdir).unwrap();
+    fs::write(
+        sdir.join("u-000000000000fafa-00000000.loro"),
+        far_seen.changes_since(&Default::default()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        n.log(n.name()).unwrap().messages.len(),
+        2,
+        "control: both the offer and the line really are here"
+    );
+
+    let row = n.sessions().unwrap()[0].session.clone();
+    assert_eq!(
+        row.unread, 0,
+        "the person has spoken in this conversation: nothing here is waiting to be read"
+    );
+
+    // **And the boundary**: speaking is not answering. The approval this
+    // machine owes is untouched by anything said in the window — 答了才
+    // 清, and only the landing answers it (docs/SESSION.md 六词).
+    assert_eq!(
+        row.state.state,
+        State::Blocked,
+        "待批 is not covered by a line: the file still wants THIS machine's approval"
+    );
+
+    // Once it does land, the chip agrees with the row rather than
+    // arguing with it — one rule for 看过没看过, not two.
+    fs::create_dir_all(dir.join("files")).unwrap();
+    fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
+    let chip = n.log_faced(n.name()).unwrap().1[0].0;
+    assert_eq!(chip, Some(State::Idle), "the chip reads the same watermark the row does");
+    assert_eq!(
+        n.sessions().unwrap()[0].session.state.state,
+        State::Idle,
+        "…and the row, with nothing pressing and nothing owed, is 空闲"
+    );
+    let _ = fs::remove_dir_all(&r);
+}

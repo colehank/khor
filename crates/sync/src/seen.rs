@@ -31,6 +31,20 @@
 //! derived, never in this document: what is written here travels to
 //! every machine and speaks for all of them.
 //!
+//! **That divergence closes again once the bytes land**, and knowing
+//! where it closes is what keeps this document from growing a
+//! per-machine half. Before the landing, the thing wanted is an
+//! approval, and it is already asked for by a signal that owes this
+//! document nothing (待批, from the seat whose approval it is). After
+//! the landing there is only a file sitting on a disk — a fact, not a
+//! demand — and facts are the person's to have seen, from any machine.
+//! So a watermark that cannot say "everything before T *except* that
+//! file" is not missing anything: the badge counts what wants you, and
+//! a landed file in a conversation you have since spoken in wants
+//! nothing. Making it want something would take a mark that does not
+//! replicate, and a badge that clears only by walking to one particular
+//! machine is a badge that is never zero.
+//!
 //! A second map rides the same document: `closed : Map<session_id,
 //! watermark_ms>` — how far a conversation has been *put away*, not
 //! merely looked at (docs/SESSION.md 动作: close 对话 = 收起那一行).
