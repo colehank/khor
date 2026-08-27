@@ -42,6 +42,28 @@ import type { BrowseKind, Place } from "@/browse/kind";
  * real usage to pick a better number from — raising it today would
  * trade one guess for another. Somebody with a person's actual history
  * in front of them should move it.
+ *
+ * **2026-08-27: that person's history was put in front of it, and it is
+ * one row.** Asked of the live node on the development machine — the
+ * only machine anybody has actually browsed from — through the same op
+ * this file calls:
+ *
+ *     recents(dir)  → 1        dir_pins → 0
+ *     recents(page) → 0        web_pins → 0
+ *
+ * So the number still cannot be moved on evidence, and now it is known
+ * *why* rather than assumed: **the cap has never once been reached**,
+ * by anyone, on the machine that would reach it first. Twelve is not
+ * defended by this — it is simply not yet under any pressure, and a
+ * cap nothing has pressed against is a cap nobody can size.
+ *
+ * **What would change the answer**, so the next person does not have to
+ * re-derive it: a single dig three levels deep spends three of these
+ * slots within milliseconds (the paragraph above), so the first real
+ * signal is not "twelve rows are hard to scan" — it is somebody finding
+ * that the place they went yesterday is gone while three layers of one
+ * detour are still on the screen. Watch for that sentence, not for a
+ * number.
  */
 const MOST_RECENT = 12;
 

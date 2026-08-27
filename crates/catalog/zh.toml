@@ -1225,6 +1225,18 @@ took-file = "落在 {0}"
 # machine's and the button only appears where the approval asked for
 # is this machine's. Failure wears its own word on the button (the
 # pin's rule); success needs none, the chip's state word changes.
+# 按下去到有结果之间那一段,按钮自己说的话。
+#
+# **这一句是 2f68ac2 造出来的债的一半。** 在那之前 accept 要么当场成、
+# 要么当场报「没有这个传输」;之后它会先把一轮同步等完,于是这颗按钮可能
+# 静坐十几秒。CLI 那一侧有话说(syncing-for-offer,还报得出要问几台、每台
+# 最多多久),**GUI 这一侧说不出**——它只 await 一个调用,中间没有任何通道
+# (NodeEvent 没有这一档,而 serve 在跑时那一轮是在 serve 进程里等的)。
+#
+# 所以这句话只说这一端确实知道的事:**按下去了,还没回来**。它不说
+# 「在同步」——那是这一侧猜不出来的。一个 disabled 而不出声的按钮和一个
+# 坏掉的按钮,在人眼里是同一个东西。
+accept-file-working = "在收…"
 accept-file = "收下"
 accept-file-failed = "收不下"
 # The sender's file chip states where the offer stands (发端中性词批):

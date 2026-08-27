@@ -395,7 +395,11 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
                 );
               }}
             >
-              {failed ? gui.accept_file_failed : gui.accept_file}
+              {failed
+                ? gui.accept_file_failed
+                : accepting
+                  ? gui.accept_file_working
+                  : gui.accept_file}
             </Button>
           )}
         </div>
