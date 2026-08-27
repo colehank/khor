@@ -65,8 +65,24 @@ export function MachineCard({
           session detail's header is not a counter-example: what it shows
           is not repeated under it. */}
       {narrow && (
-        <header className="flex h-ctl-lg flex-none items-center gap-2 border-b px-3">
-          <Button variant="ghost" size="icon" aria-label={gui.back} data-back onClick={onBack}>
+        // **`min-h`, not `h`** — the same move the session detail's bar
+        // made, for the same reason: the bar's look is still `--ctl-lg`,
+        // but a 44 target inside a fixed 40 would light up a band that
+        // is cut off, and the floor's own rule is that what paints the
+        // pressed state paints the grown box (tokens.css `--touch`).
+        <header className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3">
+          {/* The narrow face's only way back to the machine list, and it
+              was an icon-only 30 square. There is no second exit from a
+              detail screen on a phone, so this is the one control on
+              this card that must not be under the floor. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={gui.back}
+            data-back
+            onClick={onBack}
+            className="min-h-touch min-w-touch"
+          >
             <IconBack />
           </Button>
         </header>
@@ -137,7 +153,11 @@ export function MachineCard({
                     : gui.pin
               }
               onClick={() => onPin(row)}
-              className="flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
+              // The finger floor, the same one the row's pin carries in
+              // both lists — one control, one target size wherever it
+              // stands (tokens.css `--touch`). It grows the box the
+              // ghost's hover block paints, not the glyph.
+              className="min-h-touch min-w-touch flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
             >
               <IconPin pinned={row.pinned} />
             </Button>
@@ -182,6 +202,25 @@ export function MachineCard({
  * person pastes, not a fact they read, so it travels behind the same
  * 复制 id button the session detail uses — one control for one job on
  * both cards.
+ *
+ * **The finger floor is worn here, not fixed in `ui/button.tsx`.** All
+ * three of these are `size="sm"`, which is 24 tall, and this is the
+ * screen's main row of actions — so all three took `min-h-touch`
+ * (`CopyId` carries its own). Raising the floor inside the `sm` variant
+ * would have looked like the smaller edit and been the larger one: `sm`
+ * is a *look* for controls that sit inline beside text (the `--ctl-*`
+ * family), and tokens.css says in as many words that the touch floor is
+ * not a fourth `--ctl-*` — the two move for different reasons. Changing
+ * the variant would also regrow every `sm` button in the app, in files
+ * two other lanes have open right now, for a reading nobody on those
+ * screens asked for.
+ *
+ * The mechanism is worth knowing before copying it: `min-height` beats
+ * `height`, so a caller-side `min-h-touch` lands even though `cn()`
+ * cannot take `h-ctl-sm` off (tailwind-merge does not read `ctl-sm` as a
+ * height — `ui/button.tsx` has the scar). What the caller cannot do is
+ * make the box *smaller*; the floor is the only direction that works
+ * from here, which is the direction we want.
  */
 function Verbs({
   row,
@@ -207,7 +246,7 @@ function Verbs({
         data-open-term
         data-failed={failed}
         disabled={opening}
-        className="data-[failed=true]:text-state-failed"
+        className="min-h-touch data-[failed=true]:text-state-failed"
         onClick={() => {
           setOpening(true);
           onOpenTerm(row).then(
@@ -221,7 +260,13 @@ function Verbs({
       >
         {failed ? gui.open_term_on_failed : gui.open_term_on}
       </Button>
-      <Button variant="outline" size="sm" data-browse-files onClick={() => onBrowseFiles(row)}>
+      <Button
+        variant="outline"
+        size="sm"
+        data-browse-files
+        className="min-h-touch"
+        onClick={() => onBrowseFiles(row)}
+      >
         {gui.browse_files}
       </Button>
       {/* Outline like its two neighbours (动作排语法批): the verb row
@@ -270,7 +315,7 @@ function Hooks({
         data-hooks-toggle
         data-failed={failed}
         onClick={on ? onUninstall : onInstall}
-        className="self-start data-[failed=true]:text-state-failed"
+        className="min-h-touch self-start data-[failed=true]:text-state-failed"
       >
         {failed
           ? on
@@ -280,11 +325,19 @@ function Hooks({
             ? gui.uninstall_hooks
             : gui.install_hooks}
       </Button>
-      {/* What pressing it buys, and which claude it touches. Two facts
-          rather than one sentence: the second is not a detail of the
-          first, it is the answer to "whose machine". */}
-      <div className="text-sm text-muted-foreground">{gui.hooks_buy_you}</div>
-      <div className="text-sm text-muted-foreground">{gui.hooks_are_local}</div>
+      {/* What pressing it buys — **and only while it has not been
+          pressed**. Before, this is the reason to press; after, it is a
+          remark about something already true, and this app zeroes those
+          rather than shortening them (docs/UX.md 文案: 装饰性说明归零).
+          The word it promises is one of the six the list already shows,
+          which is the only vocabulary this line is allowed (不解释实现);
+          the catalog entry carries the rest of that judgment, including
+          the tombstone for the second line that used to sit here. */}
+      {!on && (
+        <div data-hooks-buy className="text-sm text-muted-foreground">
+          {gui.hooks_buy_you}
+        </div>
+      )}
     </div>
   );
 }

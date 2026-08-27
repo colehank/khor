@@ -34,6 +34,18 @@ const buttonVariants = cva(
         outline: "border border-border bg-transparent shadow-sm hover:bg-secondary",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // **None of these carries the finger floor, and that is on
+      // purpose.** These three are the *look* of an inline control
+      // beside text (`--ctl-*`); `--touch` is a different axis and
+      // tokens.css says so in as many words — a control that a finger
+      // must land on wears `min-h-touch` / `min-w-touch` at the call
+      // site, and `min-height` beats `height`, so it lands even though
+      // `cn()` cannot take an `h-ctl-*` off (see `auto` below for that
+      // scar). Baking the floor into `sm` would regrow every small
+      // button in the app — including the ones deliberately inline in a
+      // sentence — to fix the handful that are targets. The rendered
+      // gate (`scripts/check-face.mjs` §3) is what finds the ones whose
+      // author forgot; this scale is not the place to guess.
       size: {
         default: "h-ctl-md px-4 py-2",
         sm: "h-ctl-sm rounded-md px-3 text-xs",

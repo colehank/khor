@@ -150,7 +150,12 @@ export function UsagePanel({ usage, quota }: { usage: Usage | null; quota: Quota
           type="button"
           data-usage-earlier
           onClick={() => setAll(true)}
-          className="mt-group self-start rounded-md px-2 py-1 text-aux text-muted-foreground hover:bg-accent"
+          // Two words at the aux size drew a 41×27 target — under the
+          // floor on **both** sides, which is why this one takes
+          // `min-w-touch` as well. The words stay the size they are: the
+          // floor sizes hit areas, never glyphs (tokens.css `--touch`),
+          // and the centred box is what the press wash paints.
+          className="mt-group flex min-h-touch min-w-touch items-center justify-center self-start rounded-md px-2 py-1 text-aux text-muted-foreground hover:bg-accent"
         >
           {gui.usage_earlier}
         </button>
@@ -225,7 +230,13 @@ function SpendRow({
         data-usage-row={row.category}
         aria-expanded={open}
         onClick={onToggle}
-        className="col-span-3 grid grid-cols-subgrid items-center rounded-md px-2 py-1 text-left hover:bg-accent"
+        // The finger floor (tokens.css `--touch`), which this row was
+        // under from the day it became a button: it was 29 tall, and a
+        // ledger is a column of them — the shape where a near miss lands
+        // on the row above. **The hover wash paints the grown box**
+        // because the box is what grew; nothing here is a hit area
+        // hovering invisibly around a smaller drawing.
+        className="col-span-3 grid min-h-touch grid-cols-subgrid items-center rounded-md px-2 py-1 text-left hover:bg-accent"
       >
         {/* The vendor's own name, printed as it stands. A proper noun
             translated is a proper noun nobody can look up (docs/handoff

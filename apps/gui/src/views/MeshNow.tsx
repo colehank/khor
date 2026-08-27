@@ -54,7 +54,18 @@ export function MeshNow({
               something waits (it sits quietly aside, a ghost). */}
           <div className="mb-in flex items-center">
             <Heading text={gui.waiting_on_you} />
-            <Button size="sm" variant="ghost" data-empty-new className="ms-auto" onClick={onNew}>
+            {/* `min-h-touch`: the one act this screen offers was 24
+                tall. The `sm` look is what a control beside a heading
+                wears; the floor is a different axis and rides on top of
+                it (tokens.css `--touch` — it is not a fourth `--ctl-*`),
+                and the ghost's hover block paints the grown box. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              data-empty-new
+              className="ms-auto min-h-touch"
+              onClick={onNew}
+            >
               {gui.new_session}
             </Button>
           </div>
@@ -84,7 +95,11 @@ export function MeshNow({
                   type="button"
                   data-now-blocked={r.id}
                   onClick={() => onPick(r)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
+                  // The floor (tokens.css `--touch`): these rows were 30
+                  // tall, and they are the rows that exist because
+                  // something is waiting on a person — the last place in
+                  // the app where a press should be able to miss.
+                  className="flex min-h-touch w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
                 >
                   <MachineAvatar face={r.face} className="size-kind-mark flex-none" />
                   <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span>
@@ -114,7 +129,11 @@ export function MeshNow({
                 data-now-device={d.id}
                 onClick={() => onDevice(d)}
                 className={cn(
-                  "col-span-2 grid grid-cols-subgrid items-center rounded-md px-2 py-1.5 text-left hover:bg-accent",
+                  // Same floor as the waiting rows above it, and for the
+                  // same reason they are worth stating once: a list of
+                  // rows 30 tall is the shape where a press lands on the
+                  // neighbour (tokens.css `--touch`).
+                  "col-span-2 grid min-h-touch grid-cols-subgrid items-center rounded-md px-2 py-1.5 text-left hover:bg-accent",
                   // Never answered = greyed, the card's vitals_never fact
                   // painted instead of said; no word is invented for it.
                   !d.vitals && "opacity-50",

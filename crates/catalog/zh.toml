@@ -1024,12 +1024,32 @@ uninstall-hooks-failed = "卸不掉"
 # first-hand witness — khor is the end the turn ends at, `gui_host`). It does **not** produce 中断: there is no State::Errored
 # on that path at all, so promising one here would be a word khor cannot
 # keep. Reading the disk already gives 忙碌/待批/空闲/失败.
-hooks-buy-you = "装上钩子,claude 答完一轮才报得出「完成」,不装只显示成空闲"
-# Which claude. The hook goes into a settings file on this machine, and
-# the button only appears on this machine's card — said out loud because
-# a control that silently applies to one machine out of a list is a
-# control people will press on the wrong one.
-hooks-are-local = "改的是这台机器上的 claude"
+#
+# **Rewritten 2026-08-27, and what changed is who the sentence is
+# addressed to.** It read「装上钩子,claude 答完一轮才报得出「完成」,不装只
+# 显示成空闲」— three mechanism facts (something gets installed, the
+# vendor's program is what it is installed into, and a state word is
+# derived from a report) for a person who is looking at a button and
+# asking one question: what do I get. What they get is a word they
+# already read every day in the list, so the answer is said in that
+# word and in no others (docs/UX.md 文案: 不解释实现).
+#
+# It is drawn **only while the hook is not installed** (`MachineCard`),
+# which is the other half of the same judgment: before pressing this is
+# the reason to press, after pressing it is a remark about a thing
+# already true — and a remark nobody asked for is 装饰性说明, which this
+# repo zeroes rather than shortens.
+hooks-buy-you = "装了它,会话答完一轮才会显示「完成」"
+# **Tombstone: `hooks-are-local`「改的是这台机器上的 claude」is gone.**
+# Its stated reason was that a control which silently applies to one
+# machine out of a list gets pressed on the wrong one — a real risk,
+# against a design that does not exist: the button is drawn on this
+# machine's card only (`MachineCard`, and its comment says so), and the
+# machine's name is the first thing on that card. The sentence was
+# defending against a shape the screen had already ruled out, and a
+# sentence like that reads as though the risk is live. If remote verbs
+# ever put this control on somebody else's card, what says whose
+# machine is the card it is on, not a line of grey text under it.
 tell-machine = "给机器留言"
 pick-a-machine = "选一台机器"
 message-text = "留言"
