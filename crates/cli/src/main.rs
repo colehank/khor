@@ -625,6 +625,32 @@ fn accept(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     let sid = SessionId(id.clone());
+    // The summary travels the CRDT, so `khor send` over there and `khor
+    // accept` over here are a race, and accept now waits the sync axis
+    // out rather than refusing (`Node::accept`). Announced before it
+    // goes quiet: a verb that sits silent through a round gets killed
+    // and re-run — the guessing this replaces.
+    //
+    // Said from here rather than reported from inside, and that is not a
+    // preference: when a serve holds the key the wait runs **in the
+    // serve process**, whose stderr is not the person's terminal, and
+    // `ipc::Reply` is one frame with no room for progress. This end is
+    // the only one that has a terminal at all.
+    //
+    // Only the machines with roads are counted: `sync_device` refuses to
+    // dial one that reported none, so those cost nothing and putting
+    // them in the total would print a worst case that cannot happen.
+    if !n.transfer_is_here(&sid) {
+        let asking = n
+            .devices()?
+            .iter()
+            .filter(|d| d.id != n.device_str() && !d.addrs.is_empty())
+            .count();
+        eprintln!(
+            "{}",
+            cli::syncing_for_offer(asking, khor_node::link::dial_budget_seconds())
+        );
+    }
     let (moved, landed) = rt()?.block_on(n.accept(&sid))?;
     // Where the files are is the **receiving** machine's answer, not a
     // path worked out here. This verb routes when the row belongs to

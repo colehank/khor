@@ -306,6 +306,15 @@ usage-taken = "{0}前的账"
 # count and silence do not.
 usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
 summary-sent = "摘要已发,等对方许可。传输号: {0}"
+# Said before accept goes quiet, and only when this machine does not
+# have the offer yet. A verb that sits silent gets killed and re-run,
+# which is exactly the ten-second guessing this was written to end — so
+# the line carries the shape of the silence, not just its existence:
+# how many machines are about to be asked, and what one that is off
+# costs. Both numbers are read off the thing itself (the device table,
+# `khor_node::link::dial_budget_seconds`); neither is a guess, and a
+# printed worst case that is not true would be worse than no line.
+syncing-for-offer = "本机还没有这笔传输的记录,先同步一轮;有 {0} 台机器要问,联系不上的每台最多 {1} 秒"
 pulled = "收下了,这一趟拉了 {0} 字节"
 pulled-to = "拉了 {0} 字节,落在 {1}"
 # The no-silent-caps rule at the CLI: a listing cut at the cap must say
@@ -521,7 +530,22 @@ size-mismatch = "对面报的大小和摘要里的对不上({0} vs {1})"
 empty-slice = "对面送了个空片"
 cant-write-slice = "写不下这一片: {0}"
 digest-mismatch = "内容校验对不上(拉到的 {0}… ≠ 摘要说的 {1}…)"
+# Three answers to one miss, because a miss has three causes and they
+# call for three different next moves. `no-such-transfer` is the one
+# with nothing pending behind it — a live session id handed to accept, a
+# mesh of one. The other two are what a miss means on a machine with
+# peers, and they were the same sentence until 2026-08-27: accept
+# refused an id that had merely not been replicated yet with the words
+# for an id that does not exist, so the only way through was to guess
+# which one had happened and run it again ten seconds later.
+#
+# The line between them is not wording, it is the outcome of one full
+# sync round: every machine answered and it is still missing = it is
+# missing; somebody did not answer = khor does not know, and 不知道 may
+# not be painted as 没有 (docs/SESSION.md 离线不是第七个词, same rule).
 no-such-transfer = "没有这个传输: {0}"
+transfer-absent-after-sync = "没有这个传输: {0}(网里每台机器都同步过一轮了,这个号多半是错的)"
+transfer-not-synced-yet = "这笔传输还没同步到本机: {0};联系不上 {1} 台机器({2}),它可能还在那边"
 wrong-recipient = "这份文件是发给 {0} 的,这台机器不该收"
 not-a-file-path = "这不是一个文件路径: {0}"
 cant-canonicalize = "定不下这个路径: {0}"

@@ -1383,6 +1383,18 @@ impl Node {
         Err(msg::no_such_transfer(format_args!("transfer/{msg_id}")))
     }
 
+    /// Whether this machine already holds the offer behind a transfer
+    /// id — asked **before** `accept`, by a caller that wants to say
+    /// out loud that it is about to wait.
+    ///
+    /// A miss here is not an answer about the id (that takes a sync
+    /// round — `Node::accept`); it is only "not here yet", which is
+    /// precisely the thing worth announcing.
+    pub fn transfer_is_here(&self, id: &SessionId) -> bool {
+        id.0.strip_prefix("transfer/")
+            .is_some_and(|m| self.find_transfer(m).is_ok())
+    }
+
     /// Subscribes to everything that happens. Events push; the returned
     /// receiver ends when the node drops.
     pub fn watch(&self) -> mpsc::Receiver<NodeEvent> {

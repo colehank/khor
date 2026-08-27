@@ -87,6 +87,18 @@ impl DeafWatch {
 /// Per-device budget for one sync visit; the far side may simply be off.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The same budget in whole seconds, for the one place a person is told
+/// what a wait could cost before it starts (`khor accept` announcing the
+/// round it is about to drive — `Node::accept`).
+///
+/// Here rather than at the CLI for the reason [`invite_window_minutes`]
+/// is: a screen that names a number the code does not enforce is worse
+/// than a screen that names none, and a copy of the figure at the far
+/// end of the crate is exactly how the two drift apart.
+pub fn dial_budget_seconds() -> u64 {
+    DIAL_TIMEOUT.as_secs()
+}
+
 /// How long the direct roads get to themselves before the relay road is
 /// opened alongside them (`Node::dial_with`).
 ///
@@ -1602,6 +1614,84 @@ impl Node {
         }
     }
 
+    /// The offer behind `transfer/<msg_id>`, driving the sync axis once
+    /// when it is not here yet.
+    ///
+    /// The summary travels the CRDT (docs/NET.md 同步), so `khor send`
+    /// over there and `khor accept` over here are a race: for a window
+    /// the id is real and the summary has not landed. That window used
+    /// to be refused with [`msg::no_such_transfer`] — the words for an
+    /// id that does not exist — so the only way through was to guess
+    /// which of the two had happened and try again ten seconds later
+    /// (2026-08-26, twice, on the upgrade path that exists *because*
+    /// ssh does not).
+    ///
+    /// **The wait is one sync round, not a number of seconds.** Nothing
+    /// here is a threshold anybody picked: a complete round is exactly
+    /// what it takes for whatever exists on a reachable machine to be
+    /// here, and a second round only re-asks machines that just
+    /// answered. The round's own budget is already written down —
+    /// [`DIAL_TIMEOUT`] per device, and a device that reported no roads
+    /// is not dialled at all.
+    ///
+    /// The round is walked here rather than by [`Self::sync_with_all`]
+    /// for one reason: **it stops at the machine that had the offer.**
+    /// The round is serial, so the case this exists for — the offerer
+    /// is up, it wrote the summary a second ago — must not pay
+    /// `DIAL_TIMEOUT` for every dark machine that happens to sort ahead
+    /// of it. Only a miss walks the whole table, and a miss is
+    /// precisely the case that needs the whole table walked (below).
+    ///
+    /// **The outcomes are what separate the two misses**, with evidence
+    /// rather than wording: every peer answered and it is still absent —
+    /// then it is absent. Somebody did not answer — then khor does not
+    /// know, and painting 不知道 as 没有 is the thing this repo keeps
+    /// re-learning not to do (docs/SESSION.md 离线不是第七个词).
+    ///
+    /// **What it deliberately does not do is check the id's shape.** A
+    /// syntactic gate would be the cheapest of the three answers, but it
+    /// would put the message-id format in a second place (`khor_sync`
+    /// mints them) and would start refusing real ids the day that format
+    /// moves — buying a fast refusal at the price of a wrong one.
+    async fn transfer_after_sync(
+        &self,
+        ep: &iroh::Endpoint,
+        id: &crate::SessionId,
+        msg_id: &str,
+    ) -> Result<(String, chat::Message), String> {
+        if let Ok(found) = self.find_transfer(msg_id) {
+            return Ok(found);
+        }
+        let mut outcomes: Vec<(String, Result<String, String>)> = Vec::new();
+        {
+            let _g = self.sync_gate.lock().await;
+            for d in self.devices_loaded()?.doc.all() {
+                if d.id == self.device_str() {
+                    continue;
+                }
+                let verdict = self.sync_device(ep, &d).await;
+                outcomes.push((d.name, verdict));
+                if let Ok(found) = self.find_transfer(msg_id) {
+                    return Ok(found);
+                }
+            }
+        }
+        // A mesh of one: there was no round to wait out, so nothing is
+        // pending behind this and the plain refusal is the whole truth.
+        if outcomes.is_empty() {
+            return Err(msg::no_such_transfer(&id.0));
+        }
+        let dark: Vec<&str> = outcomes
+            .iter()
+            .filter(|(_, verdict)| verdict.is_err())
+            .map(|(name, _)| name.as_str())
+            .collect();
+        if dark.is_empty() {
+            return Err(msg::transfer_absent_after_sync(&id.0));
+        }
+        Err(msg::transfer_not_synced_yet(&id.0, dark.len(), dark.join("、")))
+    }
+
     /// Accept on an endpoint the caller owns: pulls locally when this
     /// machine is the recipient, otherwise routes the action to the
     /// recipient's serve — 动作从哪台设备发都行 (docs/SESSION.md).
@@ -1613,7 +1703,9 @@ impl Node {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
-        let (channel, _) = self.find_transfer(msg_id)?;
+        // Which machine to route to is read off the offer, so the wait
+        // has to happen before the fork, not inside one arm of it.
+        let (channel, _) = self.transfer_after_sync(ep, id, msg_id).await?;
         if channel == self.name() {
             return self.accept_local(ep, id).await;
         }
@@ -1650,7 +1742,12 @@ impl Node {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
-        let (channel, m) = self.find_transfer(msg_id)?;
+        // Also here, not only in `accept_with`: an incoming Act lands
+        // straight on this one (`handle`), and the recipient of a routed
+        // accept can be behind on the very offer it is being asked to
+        // approve. Costs nothing on the way through — the lookup that
+        // already succeeded upstream succeeds again before any dial.
+        let (channel, m) = self.transfer_after_sync(ep, id, msg_id).await?;
         if channel != self.name() {
             return Err(msg::wrong_recipient(&channel));
         }
