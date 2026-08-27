@@ -234,7 +234,17 @@ export function TabStrip({
       </div>
       {/* Pinned against the scrolling row, in the order a hand reaches
           them: the way to see the ones that scrolled off, then the way
-          to add another. */}
+          to add another.
+
+          **The condition can stop holding while somebody is inside the
+          switcher** — closing tabs from in there is one of the three
+          things they went in to do — and then this button leaves while
+          the switcher is still up. Measured (14 tabs, closing from
+          inside): it goes at 11, and the switcher stays up with 11 rows,
+          every one of them a way out, picking one puts it away. So the
+          way *in* disappearing is not a way *out* disappearing, and
+          holding the button drawn on `switching` would be drawing "go
+          see your tabs" over the screen that is showing them. */}
       {onSwitch && crowded && <TabCount n={faces.length} onPress={onSwitch} />}
       <Button
         size="icon"
