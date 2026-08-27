@@ -167,7 +167,13 @@ export function FilesPane({
                 type="button"
                 data-up
                 onClick={up}
-                className="flex w-full items-center gap-2 border-b px-4 py-2 text-left text-sm text-muted-foreground hover:bg-muted/50"
+                // The floor under a finger (tokens.css `--touch`), which
+                // this row was under by a third on its height alone. It
+                // is a whole row wide, so only the short way needed
+                // raising, and the wash it lights up with is painted on
+                // the row itself — grown, the lit box and the pressable
+                // box stay the same box.
+                className="flex min-h-touch w-full items-center gap-2 border-b px-4 py-2 text-left text-sm text-muted-foreground hover:bg-muted/50"
               >
                 {gui.up_dir}
               </button>
@@ -192,7 +198,14 @@ export function FilesPane({
                     type="button"
                     data-dir={e.name}
                     onClick={() => onPath(full)}
-                    className="flex min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
+                    // Raised to the floor here rather than on the row
+                    // around it: **this button is the target** — the row
+                    // is a wrapper that also holds the pin — and a row
+                    // grown from outside would have left the pressable
+                    // half its old height inside a taller stripe that
+                    // lights up. The hover wash is the row's, and the
+                    // row is exactly as tall as this.
+                    className="flex min-h-touch min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
                   >
                     <span className="min-w-0 flex-1 truncate">{e.name}/</span>
                   </button>
@@ -212,8 +225,21 @@ export function FilesPane({
                     // directory was the pane's loudest repetition. A
                     // pinned row's mark stays drawn on both faces — a
                     // fact, not an entry point (`SessionsList`).
+                    //
+                    // **`min-*` rather than a size**: `cn()` cannot lift
+                    // the icon variant's `h-ctl-md`/`w-ctl-md` off (that
+                    // is `button.tsx`'s own measurement — tailwind-merge
+                    // does not read `ctl-*` as a size, so both classes
+                    // survive and the stylesheet's order decides), and a
+                    // floor does not need the height taken off first.
+                    // The glyph keeps its own size; what grows is the
+                    // box, and the ghost wash paints that box.
+                    //
+                    // What it costs, out loud: the pin takes the floor's
+                    // width where it took the icon size, and the half
+                    // holding the directory's name gives that up.
                     className={cn(
-                      "flex-none text-muted-foreground",
+                      "min-h-touch min-w-touch flex-none text-muted-foreground",
                       !narrow &&
                         "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[on=true]:opacity-100",
                     )}
@@ -260,7 +286,14 @@ export function FilesPane({
                         // row's one action, a word rather than a repeated
                         // glyph, and hiding it would leave a file row
                         // with nothing to do.
-                        className="flex-none"
+                        //
+                        // Both floors, though only the short one bites
+                        // today: the `sm` height is well under it, while
+                        // the word makes the button wide enough on its
+                        // own. The width floor is here so that a shorter
+                        // word in the catalog cannot quietly take the
+                        // target back under.
+                        className="min-h-touch min-w-touch flex-none"
                         onClick={() => take(full)}
                       >
                         {gui.take_file}
