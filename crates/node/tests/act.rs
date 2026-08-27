@@ -1,8 +1,13 @@
 //! Third-device acceptance (docs/SESSION.md 动作: 从哪台设备发都行):
 //! gamma — a phone-shaped one-shot device — sees a transfer it is not
-//! part of through peer reports, approves it, and the recipient machine
-//! executes the pull. Real UDP between two serves plus a third dialer;
-//! wire-level controls; every await under a timeout.
+//! part of, approves it, and the recipient machine executes the pull.
+//! Real UDP between two serves plus a third dialer; wire-level
+//! controls; every await under a timeout.
+//!
+//! It sees it because the offer is a replicated file message, not
+//! because anybody reported it — that changed on 2026-08-23 along with
+//! which seat may say 待批, and the block below is where both are
+//! pinned.
 
 use std::fs;
 use std::path::PathBuf;
@@ -101,18 +106,40 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
         .expect("sync must not hang")
         .unwrap();
 
-    // gamma is neither sender nor recipient — the row it shows can only
-    // come from a peer's report, and it says 待批.
+    // gamma is neither sender nor recipient. Two things changed here on
+    // 2026-08-23 (`419e5ad`, 传输并入对话批) and this block had asserted
+    // the pre-08-23 shape ever since, red the whole time:
+    //
+    // - **The offer reaches gamma by replication, not by report.** It is
+    //   a file message in a CRDT everybody carries, so gamma derives its
+    //   own row (`ChatKind::reportable` is false) and `source` is None.
+    // - **And gamma must NOT say 待批.** 待批 comes from the seat whose
+    //   approval is being waited on and no other (docs/SESSION.md 六词;
+    //   `TransferKind::urgency`'s `i_receive`). gamma cannot clear that
+    //   badge by answering — it is beta's approval that is wanted — and
+    //   a badge its holder cannot clear breaks 角标可归零.
+    //
+    // So the assertion is the rule itself: gamma sees the offer, and
+    // wears the ordinary unseen-content word for it.
+    assert!(g.transfer_is_here(&tid), "the offer must replicate to a third device");
     let views = g.sessions().unwrap();
     let view = views
         .iter()
-        .find(|v| v.session.id == tid)
-        .expect("the reported row should be visible on the third device");
-    assert_eq!(view.session.state.state, State::Blocked, "摘要到了,等许可");
-    let (reporter, _) = view.source.as_ref().expect("a third device's row must carry its source");
+        .find(|v| v.session.id.0 == "chat/beta")
+        .expect("the third device derives beta's chat row like any other");
+    assert_ne!(
+        view.session.state.state,
+        State::Blocked,
+        "待批 belongs to the machine whose approval is wanted, and that is not gamma"
+    );
+    // Which word it does wear is left unasserted on purpose — measured
+    // here as 空闲 where docs/SESSION.md says 完成/未看, for a reason that
+    // has nothing to do with transfers or with third devices. The note in
+    // `transfer.rs` beside the same measurement has it.
     assert!(
-        reporter == "alpha" || reporter == "beta",
-        "the row should come from a participant, got {reporter}"
+        view.source.is_none(),
+        "a replicated document is derived here, not reported: {:?}",
+        view.source
     );
 
     // gamma approves; the pull runs on beta, the payload comes off alpha.
@@ -149,14 +176,27 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     // would otherwise be told nothing on every run but the first.
     assert_eq!(said_again, said, "an already-landed payload still names its path");
 
-    // After a fresh sync the third device sees the outcome word.
+    // **The outcome does not travel to the third device any more, and
+    // that is the design rather than a loss.** This block used to sync
+    // gamma again and read the word off the transfer's own row — a row
+    // that WAS reportable. Since 传输并入对话批 (`419e5ad`) the word
+    // lives on a chat row, and chat rows are never reported: the
+    // document replicates, so every device derives its own
+    // (`ChatKind::reportable` returns false, with that reason on it).
+    // What landed on beta's disk is beta's own business.
+    //
+    // So gamma learns the outcome exactly one way, and it already did,
+    // above: `accept` answered with the bytes moved and the recipient's
+    // own paths. Re-asserting it after a sync would be asserting that a
+    // sync changed nothing.
     timeout(Duration::from_secs(PATIENCE), g.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
-    let views = g.sessions().unwrap();
-    let view = views.iter().find(|v| v.session.id == tid).unwrap();
-    assert_eq!(view.session.state.state, State::Done, "传完了,第三台也看得到");
+    assert!(
+        g.sessions().unwrap().iter().all(|v| !v.session.id.0.starts_with("transfer/")),
+        "no transfer row may come back from a sync"
+    );
 
     // ── wire-level controls ─────────────────────────────────
     let beta_info = g

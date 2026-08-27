@@ -102,8 +102,15 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .await
         .expect("routed sync must not hang")
         .unwrap();
+    // The offer presses on the machine's chat row, not on a row of its
+    // own (传输并入对话批, `419e5ad`) — see the note in `transfer.rs`.
+    assert!(b.transfer_is_here(&tid), "the summary must have reached beta");
     let rows = b.sessions().unwrap();
-    let row = &rows.iter().find(|v| v.session.id == tid).expect("the summary should make a row").session;
+    let row = &rows
+        .iter()
+        .find(|v| v.session.id.0 == "chat/beta")
+        .expect("the machine's chat row exists")
+        .session;
     assert_eq!(row.state.state, State::Blocked);
     let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
