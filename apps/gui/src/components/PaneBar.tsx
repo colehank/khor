@@ -133,7 +133,16 @@ export function PaneBar({
             placeholder={searchLabel}
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            className="border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0"
+            // `min-h-touch` — the finger floor (tokens.css `--touch`).
+            // The omnibox half of this slot got it with the browse shell;
+            // this is the plain box the panes without axes draw, and it
+            // was still at the `--ctl-md` look's height. `min-h` rather
+            // than a height so it beats the vendored `h-ctl-md` without
+            // fighting it — tailwind-merge does not read `ctl-md` as a
+            // height, so both classes would have survived and the winner
+            // would have been whichever the stylesheet emitted last
+            // (`button.tsx` wrote that trap down first).
+            className="min-h-touch border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0"
           />
         </div>
       )}
@@ -147,7 +156,11 @@ export function PaneBar({
               aria-label={filterLabel}
               data-pane-filter
               data-on={filter.chosen.length > 0}
-              className="data-[on=true]:text-primary"
+              // The finger floor, the same spelling the rail and the row
+              // pins wear: the hit area grows, the glyph keeps its size,
+              // and the ghost wash paints this box — so what lights up is
+              // what is pressable.
+              className="min-h-touch min-w-touch data-[on=true]:text-primary"
             >
               <IconFilter />
             </Button>
@@ -200,7 +213,13 @@ export function PaneBar({
       {actions && actions.length > 0 && actionsLabel && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={actionsLabel} data-pane-new>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={actionsLabel}
+              data-pane-new
+              className="min-h-touch min-w-touch"
+            >
               <IconPlus />
             </Button>
           </DropdownMenuTrigger>
