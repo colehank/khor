@@ -49,16 +49,22 @@
 | `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
-| `node scripts/check-tabs.mjs` | 浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
-| `node scripts/smoke.mjs` | 整条验收,**真连**(三个 home) | 不拿 |
-| `node scripts/web-face.mjs` | 浏览器脸,**真连**(真的 `khor serve`) | 不拿 |
+| `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
+| `npm run smoke` | `smoke.mjs`,整条验收,**真连**(三个 home) | 不拿 |
+| `npm run web-face` | `web-face.mjs`,浏览器脸,**真连**(真的 `khor serve`) | 不拿 |
+| `npm run gates` | `check-gates.mjs`,守门自己够不够得着、写没写下来 | 不拿 |
 
-**最后三行没有 `npm run` 入口,而这不是笔误,是个没人写下来的分界**:有
-入口的都是「一台机器上自己跑得起来的」,没入口的三个都要**真的起网**。
-分界站得住,**但它今天只存在于这三个文件在做什么里**——`docs/DESIGN.md`
-第四节自己就写着「守门在 `scripts/check-tabs.mjs` 第 0 节」,而
-`npm run tabs` 报的是 `npm error Missing script: "tabs"`。**一个被文档称作
-守门、而 `npm run` 起不动的东西,读起来就像它不存在。**
+**最后那批「真连」的和上面几道之间有条分界,值得写下来**:有入口的前几道
+都是「一台机器上自己跑得起来的」,真连那三道要**真的起网**——所以跑它们
+之前先问一句机器上有没有别人在跑。
+
+**墓碑:上一版这里写的是「最后三行没有 `npm run` 入口」。** 那是真的,而且
+它比「文档说二」更糟一档:这份文档第四节自己写着「守门在
+`scripts/check-tabs.mjs` 第 0 节」,而 `npm run tabs` 答的是
+`npm error Missing script: "tabs"`——**一个被文档称作守门、而 `npm run`
+起不动的东西,读起来就像它不存在**,连「我漏跑了」的机会都不给。
+2026-08-27 傍晚补齐了三个入口,**并且加了 `npm run gates` 来守它**:
+下一个人加第十个脚本而不给入口,那道守门会红。
 
 ### 跑哪几道:按你动了什么,不按印象
 
@@ -69,13 +75,19 @@
   规则真落到了屏上,少任何一条另一条都只是一半;
 - **动了颜色或 `tokens.css` 的调色板** → 加 `npm run palette`;
 - **动了导轨** → 加 `npm run rail`;
-- **动了 `src/browse/`** → 加 `node scripts/check-tabs.mjs`;
-- **动了协议、后端、或 `khor serve`** → `smoke.mjs` / `web-face.mjs`,而这两条
-  要起真网,先问一句机器上有没有别人在跑。
+- **动了 `src/browse/`** → 加 `npm run tabs`;
+- **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,
+  而这两条要起真网,先问一句机器上有没有别人在跑;
+- **往 `scripts/` 里加了东西,或改了 `package.json` 的 scripts** →
+  `npm run gates`。
 
-**这份清单也会过期。** 它挡不住的是:**新加一道守门而没人回来改这一节**
-——那正是上一版留下「两道」的方式。加守门的人顺手改这张表,是这一节唯一
-的活法。
+**这张表不再只靠人记得。** `npm run gates` 守住两件事:`scripts/` 里每个
+`.mjs` 都有入口起得来(或者被一个有入口的 import 到),以及**每个入口都在
+这一节里被点过名**——所以加一道守门而不写进这张表,会红。
+
+**它仍然挡不住的**:这一节说的话**是不是真的**。`gates` 认的是
+「`npm run face` 这个串出现过」,不是「关于 face 那句描述没过期」;
+**一句写反的描述照样过关**。那还是只能靠读。
 
 ### 「我这条很轻」在有锁的世界里不是一个量纲
 
