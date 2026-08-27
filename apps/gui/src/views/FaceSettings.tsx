@@ -130,6 +130,25 @@ function FaceOption({
  * and shadcn has no color control. There is exactly one of these in the
  * app; the seam gets cut when a second screen needs one, which is the
  * same rule the node's adaptors follow.
+ *
+ * **The only control in the app whose target is `size-touch` rather than
+ * a `min-h-touch` floor over a smaller graphic**, and it is worth saying
+ * why, because the rule in `tokens.css` reads the other way (`--touch`
+ * sizes hit areas, never glyphs). That rule exists because a button's
+ * glyph and its target are two different things, so growing the target
+ * must not grow the picture. **Here they are one thing.** There is no
+ * glyph: the well *is* the color, the browser paints it across the whole
+ * element, and it is what a finger aims at. A 30px swatch inside a 44px
+ * hit area would be the failure that rule is written against from the
+ * other side — a target the eye was shown at one size and the finger
+ * finds at another — and there is no press state to paint on the grown
+ * box either, because pressing hands off to the OS picker.
+ *
+ * Measured before it was chosen: at 390 the dialog is 358 wide with 24
+ * of padding, so the axis has 308, and five 44s with the row's `gap-2`
+ * come to 252. One row, 56 to spare — the `flex-wrap` is still there and
+ * still unused, which is the answer to「does it fit on a phone」rather
+ * than a hope.
  */
 function ColorWell({
   index,
@@ -162,7 +181,7 @@ function ColorWell({
       aria-label={avatar.axis_palette_slot(index + 1)}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      className="size-ctl-md cursor-pointer rounded-md border bg-transparent p-0"
+      className="size-touch cursor-pointer rounded-md border bg-transparent p-0"
     />
   );
 }
