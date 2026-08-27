@@ -65,6 +65,7 @@ function ChatToTerm({ row }: { row: SessionRow }) {
               <Button
                 size="sm"
                 data-takeover-term-go
+                className="min-h-touch"
                 disabled={taking}
                 onClick={() => {
                   setTaking(true);
@@ -80,13 +81,25 @@ function ChatToTerm({ row }: { row: SessionRow }) {
               >
                 {gui.takeover}
               </Button>
-              <Button size="sm" variant="ghost" data-takeover-term-back onClick={() => setConfirming(false)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                data-takeover-term-back
+                className="min-h-touch"
+                onClick={() => setConfirming(false)}
+              >
                 {gui.back}
               </Button>
             </div>
           </>
         ) : (
-          <Button size="sm" variant="secondary" data-takeover-term onClick={() => setConfirming(true)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-takeover-term
+            className="min-h-touch"
+            onClick={() => setConfirming(true)}
+          >
             {gui.takeover}
           </Button>
         )}
@@ -129,7 +142,10 @@ export function CopyId({ id, variant = "ghost" }: { id: string; variant?: "ghost
       variant={variant}
       data-copy-id
       data-said={said ?? undefined}
-      className="flex-none data-[said=failed]:text-state-failed"
+      // `min-h-touch` — the finger floor (tokens.css `--touch`). The
+      // `sm` look stays; the box it is pressed in grows to 44, and the
+      // ghost wash paints that box.
+      className="min-h-touch flex-none data-[said=failed]:text-state-failed"
       onClick={() => {
         navigator.clipboard.writeText(id).then(
           () => setSaid("copied"),
@@ -203,7 +219,8 @@ function useCloseSession(row: SessionRow | null) {
         size="sm"
         variant="ghost"
         data-close-session
-        className="flex-none"
+        // The finger floor, same as its neighbour on this line.
+        className="min-h-touch flex-none"
         onClick={() => {
           setError(null);
           setConfirming(true);
@@ -225,6 +242,7 @@ function useCloseSession(row: SessionRow | null) {
           <Button
             size="sm"
             data-close-go
+            className="min-h-touch"
             disabled={closing}
             onClick={() => {
               setClosing(true);
@@ -243,7 +261,13 @@ function useCloseSession(row: SessionRow | null) {
           >
             {gui.close}
           </Button>
-          <Button size="sm" variant="ghost" data-close-back onClick={() => setConfirming(false)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-close-back
+            className="min-h-touch"
+            onClick={() => setConfirming(false)}
+          >
             {gui.back}
           </Button>
         </div>
@@ -286,6 +310,7 @@ function Faces({
           variant={view === "term" ? "secondary" : "ghost"}
           data-view-term
           data-on={view === "term"}
+          className="min-h-touch"
           onClick={() => setView("term")}
         >
           {gui.view_terminal}
@@ -295,6 +320,7 @@ function Faces({
           variant={view === "chat" ? "secondary" : "ghost"}
           data-view-chat
           data-on={view === "chat"}
+          className="min-h-touch"
           onClick={() => setView("chat")}
         >
           {gui.view_chat}
@@ -346,12 +372,31 @@ export function DetailPane({
   const close = useCloseSession(row);
   return (
     <section className="flex h-full min-w-0 flex-col">
-      <header data-detail-header className="flex h-ctl-lg flex-none items-center gap-2 border-b px-3">
+      {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
+          changed is that it may no longer clip. Everything in it that can
+          be pressed now carries the finger floor (tokens.css `--touch`),
+          and a fixed 40 would have drawn a 44 target overflowing a bar
+          that says it is 40 — the hit area would be real and the band it
+          lights up would be cut off, which is the one thing the floor's
+          own rule forbids ("按下的底色要画在扩后的盒上"). So the bar is
+          the height of the tallest thing a finger must land on. */}
+      <header data-detail-header className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3">
         {/* The back button exists only on the narrow face: there the
             list is genuinely off-screen, so "back" has somewhere to go.
-            Wide keeps the list on screen — nothing to go back from. */}
+            Wide keeps the list on screen — nothing to go back from.
+            **The narrow face's only exit, so it is the one control in
+            this app that must not be under the floor** — it was an
+            icon-only 30, and there is no second way out of a detail
+            screen on a phone. */}
         {narrow && (
-          <Button variant="ghost" size="icon" aria-label={gui.back} data-back onClick={onBack}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={gui.back}
+            data-back
+            onClick={onBack}
+            className="min-h-touch min-w-touch"
+          >
             <IconBack />
           </Button>
         )}
@@ -381,7 +426,14 @@ export function DetailPane({
                 copy of it (app.css). Two places, one fact, one word:
                 what must never differ between a list and a detail is
                 what they say about the same thing (docs/UX.md). */}
-            <span data-word={row.word} className="flex-none text-sm">
+            {/* `text-fact`, the tier the word wears in the list — "a
+                reading, a state word, a count" is the tier's own
+                definition, and this is the same word about the same
+                session. It was `text-sm`, which is the raw size `aux`
+                resolves to, so the header said in aux clothes what the
+                list is now saying in fact clothes: one fact, two
+                sizes. */}
+            <span data-word={row.word} className="flex-none text-fact">
               <span data-word-text style={{ color: `var(--state-${row.word})` }}>
                 {word(row.word)}
               </span>
@@ -452,9 +504,16 @@ export function DetailPane({
       ) : (
         <div className="grid flex-1 place-items-center text-center text-sm text-muted-foreground">
           {row ? (
+            // The same two tiers the list row draws, on the pane that
+            // has nothing but them: the word is what this pane exists to
+            // report (`fact`), the kind qualifies it (`aux`). Flat, they
+            // read as two lines of equal news about a session nobody can
+            // see.
             <div>
-              <div style={{ color: `var(--state-${row.word})` }}>{word(row.word)}</div>
-              <div>{row.kind}</div>
+              <div className="text-fact" style={{ color: `var(--state-${row.word})` }}>
+                {word(row.word)}
+              </div>
+              <div className="text-aux">{row.kind}</div>
             </div>
           ) : (
             // Not a dead end: the sentence says what this pane is
@@ -464,7 +523,13 @@ export function DetailPane({
             <div className="flex flex-col items-center gap-2">
               <div>{gui.pick_a_session}</div>
               {onNew && (
-                <Button size="sm" variant="secondary" data-empty-new onClick={onNew}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-empty-new
+                  className="min-h-touch"
+                  onClick={onNew}
+                >
                   {gui.new_session}
                 </Button>
               )}

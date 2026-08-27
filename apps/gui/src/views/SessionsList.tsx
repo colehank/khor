@@ -327,26 +327,43 @@ export function SessionsList({
                 </span>
               )}
             </span>
-            <span className="flex flex-none flex-col items-end gap-1 text-xs text-muted-foreground">
-              {/* No stamp yet is no age — not an epoch-sized number.
-                  On a quiet row the age line IS the note: 「N 天没消息」
-                  says the same duration with the fact that matters. */}
-              {r.at_ms > 0 &&
-                (r.quiet ? (
-                  <span data-quiet-note>{quietFor(r.at_ms)}</span>
-                ) : (
-                  <span className="tabular-nums">{ago(r.at_ms)}</span>
-                ))}
-              {/* The trailing fine print: the state word (still a word —
-                  state is never colour alone, the mark's tint is the
-                  second channel not the only one), the unread count, and
-                  the borrowed exit's mini face at the row's very corner
-                  (docs/NET.md via 记号; absent until `--via` produces
-                  one). */}
-              <span className="flex items-center gap-1">
+            {/* The row's right column, in the two tiers tokens.css names
+                (三 tiers 注释): **the state word is this row's `fact`,
+                the timestamp is `aux`.** They used to be one thing — same
+                size, same grey, the stamp on top — and the definition
+                that hands out the tiers points at exactly these two as
+                opposite examples ("a reading, a state word, a count" against
+                "ids, ages, denominators"). Two lines the vocabulary calls
+                different, wearing the same clothes, is a block with no
+                reading order: you find the word by knowing where it sits.
+
+                **Rank said once.** The word takes the size axis and the
+                first line; it keeps the weight it always had (400), because
+                a line that is both a size above its neighbours and heavier
+                is shouting (ink weights 注释), and it keeps the colour it
+                always had, because that channel is already spoken for by
+                the six words themselves — a second job for it would be the
+                brand green's mistake again.
+
+                Ordering the fact above the note is the other half of the
+                same move, and it lands the column on the left half's lines:
+                title beside word, preview beside age. */}
+            <span className="flex flex-none flex-col items-end gap-1 text-muted-foreground">
+              {/* The state word (still a word — state is never colour
+                  alone, the halo's tint is the second channel not the only
+                  one), the unread count, and the borrowed exit's mini face
+                  at the row's very corner (docs/NET.md via 记号; absent
+                  until `--via` produces one). */}
+              <span className="flex items-center gap-1 text-fact">
                 <span data-word-text style={{ color: `var(--state-${r.word})` }}>
                   {word(r.word)}
                 </span>
+                {/* The count takes no size of its own: it rides the fact
+                    line, and "a count" is one of the three things the
+                    fact tier is defined by. The pill's own `leading-4`
+                    fixes its height either way — measured at both sizes,
+                    16 tall in a 21 line, so this is the tier speaking and
+                    not a fit. */}
                 {r.unread > 0 && (
                   <span
                     data-unread
@@ -361,6 +378,17 @@ export function SessionsList({
                   </span>
                 )}
               </span>
+              {/* No stamp yet is no age — not an epoch-sized number.
+                  On a quiet row the age line IS the note: 「N 天没消息」
+                  says the same duration with the fact that matters. */}
+              {r.at_ms > 0 &&
+                (r.quiet ? (
+                  <span data-quiet-note className="text-aux">
+                    {quietFor(r.at_ms)}
+                  </span>
+                ) : (
+                  <span className="text-aux tabular-nums">{ago(r.at_ms)}</span>
+                ))}
             </span>
           </button>
           {/* The row's second control, and the reason the strip exists:
@@ -397,8 +425,16 @@ export function SessionsList({
                   : gui.pin
             }
             onClick={() => onPin(r)}
+            // **`min-h-touch min-w-touch`** — the finger floor
+            // (tokens.css `--touch`), the same spelling the rail wears.
+            // The hit area grows; the glyph does not, and the ghost
+            // variant's wash paints this very button box, so what lights
+            // up is what is pressable. Measured before this: every pin
+            // was an icon-only target at the `--ctl-md` look's size, on
+            // both faces — the hardest kind of target to hit and the one
+            // furthest under the floor.
             className={cn(
-              "flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed",
+              "min-h-touch min-w-touch flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed",
               !narrow &&
                 "opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 data-[on=true]:opacity-100 data-[pin-failed=true]:opacity-100",
             )}
@@ -421,7 +457,11 @@ export function SessionsList({
           data-old-fold
           data-open={showOld}
           onClick={() => setShowOld((v) => !v)}
-          className="w-full px-4 py-2 text-left text-xs text-muted-foreground hover:bg-secondary"
+          // A full-width strip, so only its height was ever under the
+          // floor; `min-h-touch` with the items centred keeps the words
+          // where they were and grows the band they sit in — and the
+          // hover wash is that band, not a smaller one inside it.
+          className="flex min-h-touch w-full items-center px-4 py-2 text-left text-xs text-muted-foreground hover:bg-secondary"
         >
           {showOld ? gui.collapse_old : gui.old_sessions(old.length)}
         </button>

@@ -126,7 +126,11 @@ export function DevicesList({
                   : gui.pin
             }
             onClick={() => onPin(d)}
-            className="flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
+            // Including the finger floor (`min-h-touch min-w-touch`,
+            // tokens.css `--touch`) — same control, same reason, and the
+            // whole point of "same face as a session row" is that this
+            // does not get to be the one that is 30 wide.
+            className="min-h-touch min-w-touch flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
           >
             <IconPin pinned={d.pinned} />
           </Button>
