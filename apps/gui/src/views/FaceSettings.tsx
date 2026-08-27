@@ -138,7 +138,7 @@ function FaceOption({
  * glyph and its target are two different things, so growing the target
  * must not grow the picture. **Here they are one thing.** There is no
  * glyph: the well *is* the color, the browser paints it across the whole
- * element, and it is what a finger aims at. A 30px swatch inside a 44px
+ * element, and it is what a finger aims at. A 30 swatch inside a 44
  * hit area would be the failure that rule is written against from the
  * other side — a target the eye was shown at one size and the finger
  * finds at another — and there is no press state to paint on the grown
