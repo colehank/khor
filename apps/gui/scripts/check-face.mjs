@@ -171,6 +171,43 @@ try {
       }),
     }),
   );
+  // A place to have been, so the browsing landings are not measured at
+  // their empty state and nothing else. **Without these the walk reaches
+  // the files landing and finds one button on it** — the whole of a
+  // directory (a breadcrumb, its rows) never draws, and a gate that says
+  // 「every stop」while stopping at an empty state is the scope hole
+  // section 3 is about, one level in.
+  const pin = { device: "f".repeat(64), name: "peer", path: "/home/peer/work" };
+  await page.route("**/dir_pins", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify([pin]) }),
+  );
+  await page.route("**/web_pins", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify([{ device: pin.device, name: pin.name, url: "https://example.invalid/" }]),
+    }),
+  );
+  await page.route("**/recents", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify([]) }),
+  );
+  // Landing somewhere writes a visit down; answered so the write is not
+  // the thing that fails while something else is being measured.
+  await page.route("**/recent_visit", (r) =>
+    r.fulfill({ contentType: "application/json", body: "null" }),
+  );
+  await page.route("**/ls", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: pin.path,
+        entries: [
+          { name: "src", dir: true, size: 0, at_ms: Date.now() },
+          { name: "notes.md", dir: false, size: 1234, at_ms: Date.now() },
+        ],
+        truncated: false,
+      }),
+    }),
+  );
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
 
@@ -430,6 +467,15 @@ try {
       go: async () => (await press(rail("devices"))) && pressNth("[data-list] [data-row-open]", 1),
     },
     { name: "files", anchor: '[data-browse-landing="dir"]', go: () => press(rail("files")) },
+    {
+      // …and a directory actually open, which is where that landing's
+      // controls are: the breadcrumb, the rows. The new-tab page is one
+      // button and a list of places; stopping there would have been a
+      // walk that visits the door and reports on the house.
+      name: "files · a directory open",
+      anchor: "[data-crumb]",
+      go: async () => (await press(rail("files"))) && press("[data-place]"),
+    },
     { name: "browser", anchor: '[data-browse-landing="page"]', go: () => press(rail("browser")) },
     { name: "the mark's place", anchor: "[data-mark-place]", go: () => press("[data-rail-mark]") },
     {
