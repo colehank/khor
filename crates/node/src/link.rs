@@ -1648,6 +1648,20 @@ impl Node {
     /// know, and painting 不知道 as 没有 is the thing this repo keeps
     /// re-learning not to do (docs/SESSION.md 离线不是第七个词).
     ///
+    /// **Who sees the wait, and who does not.** The CLI says what it is
+    /// about to wait for before it goes quiet (`cli::syncing-for-offer`,
+    /// with the machine count and this budget in it). **The GUI shows
+    /// nothing**: `khor_gui_core::accept_transfer` awaits this call and
+    /// gets one answer at the end of it, and there is no channel out of
+    /// here to say more — `NodeEvent` has no notice to carry, `watch()`
+    /// has no subscriber outside this crate's own tests, and when a
+    /// serve holds the key the wait runs in the serve process, whose
+    /// stderr is nobody's screen. So a face that presses 收下 on an
+    /// offer it has not replicated yet sits still for up to a round.
+    /// Written down rather than left to be rediscovered as a hang: the
+    /// remedy is a progress channel, which is a batch of its own and not
+    /// this one.
+    ///
     /// **What it deliberately does not do is check the id's shape.** A
     /// syntactic gate would be the cheapest of the three answers, but it
     /// would put the message-id format in a second place (`khor_sync`
