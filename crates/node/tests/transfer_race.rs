@@ -43,6 +43,31 @@
 //! asked on two machines, must come back with two different answers —
 //! "absent" where every peer answered, "not here yet" where one did
 //! not. A fix that merely retried would pass phase 1 and fail these.
+//!
+//! # What this costs, and one wrong diagnosis worth keeping
+//!
+//! Measured 2026-08-27 on this machine: each real-connection binary in
+//! this crate runs about 100 seconds (`transfer` 106s, `act` 102s,
+//! `ipc` 96s, this one 99s), so "just run all the integration tests" is
+//! **about seven minutes holding the cargo artifact lock** — the whole
+//! machine's, not this shell's. Worth knowing before starting it.
+//!
+//! **The routed test below was a coin toss for an afternoon, and the
+//! reason was not what it looked like.** It went red about half the
+//! time, in setup, wearing two different faces — `连不上 beta(超时)` and
+//! 「这台机器不在机器表里,先配对」 — and the obvious suspect was the two
+//! tests in this file running at once (they do, by default) and
+//! crowding each other's first touch of the network stack (#73). That
+//! suspicion cost a round of measurement and was wrong: both faces are
+//! **one defect in this file's own setup**, and the two-machine hops it
+//! got wrong are written out beside the pairing below. Neither depends
+//! on threading, and neither of the two green runs that seemed to
+//! exonerate serial execution meant anything.
+//!
+//! Left running in parallel on purpose, because there is now no
+//! measured reason not to: machinery kept for a refuted diagnosis is
+//! worse than none — it explains away the next failure of the same
+//! shape.
 
 use std::fs;
 use std::path::PathBuf;
@@ -258,21 +283,39 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
         }
     });
     wait_for_endpoint_file(&rb).await;
-    // Setup, not the subject: beta paired from a one-shot endpoint and
-    // so reported no roads; its serve has just published real ones, and
-    // alpha has to have them before gamma copies the table. Without this
-    // the routing step would be racing alpha's pump — and the early stop
-    // makes that race real, because gamma's round can end at alpha
-    // before it ever reaches beta.
-    timeout(Duration::from_secs(45), a.sync_now())
-        .await
-        .expect("sync must not hang")
-        .unwrap();
+    let b = Node::open_as(rb.clone(), "beta").unwrap();
 
+    // **gamma pairs with beta, not with alpha, and the reason is that
+    // one of them is a coin toss.**
+    //
+    // 配对任意一台即入网 (docs/NET.md) is true *after* the table
+    // replicates, and replicating takes a round — while the join gate is
+    // absolute in the meantime: a machine answers nobody outside its own
+    // table. Pair gamma to alpha and beta learns of it only on some
+    // later pump, so the routed accept comes back
+    // 「这台机器不在机器表里,先配对」 — from a machine that did pair.
+    // (Measured both ways today; that refusal is what a coin-toss red
+    // looks like here.)
+    //
+    // Pairing writes the newcomer into the ticket issuer's table
+    // synchronously, so pairing gamma to **beta** — the machine that
+    // must answer the routed action — makes the one hop that matters
+    // deterministic instead of hoping for a pump.
     let g = Node::open_as(rg.clone(), "gamma").unwrap();
-    timeout(Duration::from_secs(45), g.pair(&a.invite().unwrap()))
+    timeout(Duration::from_secs(45), g.pair(&b.invite().unwrap()))
         .await
         .expect("pairing must not hang")
+        .unwrap();
+    // The other hop, made the same way: gamma will sync with alpha on
+    // its way to the offer, and alpha's gate would refuse a machine it
+    // has not heard of yet. beta carries the news, because beta is
+    // already in alpha's table and can dial it — alpha cannot dial beta
+    // (beta paired from a one-shot endpoint and reported no roads, so
+    // `sync_device` will not even try), which is exactly why the earlier
+    // shape of this setup asked the wrong machine to sync.
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
         .unwrap();
 
     let payload: Vec<u8> = (0..120_000u32).map(|i| (i % 241) as u8).collect();
