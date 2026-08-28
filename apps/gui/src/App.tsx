@@ -1045,9 +1045,7 @@ export default function App() {
     <MarkPlace
       rows={rows}
       devices={devices}
-      usage={usage}
       quota={quota}
-      narrow={narrow}
       onPickWaiting={(row) => {
         setMark(false);
         setLanding("sessions");

@@ -108,7 +108,22 @@ try {
       vitals: null,
       hop: null,
       sponsor: null,
-      seat: { x: 0, y: 0 },
+      // **`{ left, top }`, and they are percentages** — `khor_core::map::Seat`
+      // (`CENTRE` is 50/50, the ring sits at 34 out; `ring(1)` puts the
+      // one other machine at six o'clock).
+      //
+      // This fixture used to say `{ x, y }`, and what that did is worth
+      // writing down because it is quieter than it sounds: React drops a
+      // style value that is `undefined`, so the seats came out with **no
+      // `left` and no `top` at all** — not a broken `"undefined%"` a
+      // reader could grep for. Measured: with `{x,y}` not one element
+      // under `[data-mark-place]` carried an inline `left`; with
+      // `{left,top}` there are three, at 50%/50%, 50%/84% and the edge's
+      // midpoint 50%/67%. No throw, no red, and **no number this gate
+      // reads changed either way** (it measures sizes, not positions) —
+      // which is exactly why it survived: the only witness was a picture
+      // nobody was looking at.
+      seat: { left: 50, top: 50 },
     },
     {
       id: "f".repeat(64),
@@ -132,7 +147,12 @@ try {
       },
       hop: "direct",
       sponsor: null,
-      seat: { x: 1, y: 0 },
+      // Where `map::ring(1)` actually puts the one other machine: half a
+      // step past twelve with a single seat lands it at six o'clock,
+      // 34 below the middle. Taken from the formula rather than made up,
+      // so the picture this gate measures is the picture the product
+      // draws.
+      seat: { left: 50, top: 84 },
     },
   ];
   await page.route("**/sessions", (r) =>
@@ -980,10 +1000,22 @@ try {
       const [modal, modalCount] = entries.slice().sort((a, b) => b[1] - a[1])[0];
       const largest = Math.max(...entries.map(([px]) => px));
       const share = modalCount / r.leaves;
+      // **The line says whether it judged.** Until 2026-08-28 a region
+      // under the threshold printed a line identical in shape to one
+      // that had been judged and passed, and `continue`d — so a screen
+      // that had shrunk out of this section's scope read, in the output
+      // and in a reader's head, as a screen this section was holding.
+      // The home screen did exactly that the day its ledger came off
+      // (38 text leaves down to 15): the assertion did not break, the
+      // surface stopped being the kind of surface it is about. Same
+      // family as an empty `querySelectorAll` reading as「this does not
+      // exist」— a silence that looks like an answer.
+      const judged = r.leaves > DENSE;
       console.log(
-        `density ${r.name}: ${r.leaves} leaves, ${JSON.stringify(r.sizes)}, modal ${modal} at ${Math.round(share * 100)}%, largest ${largest}`,
+        `density ${r.name}: ${r.leaves} leaves, ${JSON.stringify(r.sizes)}, modal ${modal} at ${Math.round(share * 100)}%, largest ${largest}` +
+          (judged ? " — judged" : ` — NOT judged: ${r.leaves} leaves is under the ${DENSE} this section is about`),
       );
-      if (r.leaves <= DENSE) continue;
+      if (!judged) continue;
       if (share > DOMINANT) {
         fail(
           `${r.name}: ${modalCount} of ${r.leaves} lines at ${modal} (${Math.round(share * 100)}%) — a wall, whatever else is on the screen`,
