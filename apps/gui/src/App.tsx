@@ -53,8 +53,8 @@ import { DevicesList } from "@/views/DevicesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
-import { MeshNow, WaitingCall } from "@/views/MeshNow";
-import { UsagePanel } from "@/views/UsagePanel";
+import { MeshNow } from "@/views/MeshNow";
+import { MarkPlace } from "@/views/MarkPlace";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { SessionsList } from "@/views/SessionsList";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
@@ -982,48 +982,22 @@ export default function App() {
     </>
   );
 
-  /**
-   * The mark's place: the mesh, and what it cost.
-   *
-   * **Side by side wide, stacked narrow, and the two are one argument
-   * rather than two panels that happen to share a screen.** The picture
-   * names the machines and says which of them khor has heard from; the
-   * numbers are every machine's added together and name none. Each is
-   * the caption the other would otherwise have needed printed under it.
-   *
-   * The map is handed no `onOpen` here: there is no machine card in this
-   * space to open into, and an affordance that answers nothing is what
-   * the mark itself was forbidden from being until this batch
-   * (`MandalaMap` says why that is a prop).
-   */
+  // Its own file: this surface and the session list get reshaped by
+  // different people at the same time, and while it lived here those
+  // were one file's changes (`MarkPlace` says the rest).
   const markPlace = (
-    <div data-mark-place className="flex h-full min-h-0 min-w-0 flex-col">
-      {/* Above both halves rather than inside either: on the narrow face
-          the right-hand column is the bottom half of the screen, and a
-          call to answer something would have been the last thing seen
-          instead of the first. */}
-      <WaitingCall
-        rows={rows}
-        onPick={(row) => {
-          setMark(false);
-          setLanding("sessions");
-          onSelect(row);
-        }}
-      />
-      <div className={cn("flex min-h-0 min-w-0 flex-1", narrow ? "flex-col" : "flex-row")}>
-        <div className={cn("min-h-0 min-w-0", narrow ? "flex-1" : "flex-[3]")}>
-          <MandalaMap rows={devices} />
-        </div>
-        <div
-          className={cn(
-            "min-h-0 min-w-0",
-            narrow ? "max-h-1/2 flex-none border-t" : "w-list flex-none border-l",
-          )}
-        >
-          <UsagePanel usage={usage} quota={quota} />
-        </div>
-      </div>
-    </div>
+    <MarkPlace
+      rows={rows}
+      devices={devices}
+      usage={usage}
+      quota={quota}
+      narrow={narrow}
+      onPickWaiting={(row) => {
+        setMark(false);
+        setLanding("sessions");
+        onSelect(row);
+      }}
+    />
   );
 
   /**
