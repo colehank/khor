@@ -342,8 +342,22 @@ export const pinWeb = (machine: string, url: string, on: boolean) =>
  * A phone has neither. What a borrow hands back is a proxy port on the
  * khor machine, and using it means pointing a whole browser at that
  * proxy — the app sets its window's `proxy_url`, and a page cannot
- * point itself at anything. So there is nothing this face could do with
- * the answer.
+ * point itself at anything. **That is a browser invariant, not a gap in
+ * khor**: a page that could set its own proxy could hijack the traffic
+ * of every other page.
+ *
+ * **What the sentence says, and what it leaves out.** The paragraph
+ * above is the why; the line a person reads is one clause naming the
+ * place where it does work, and nothing else. It used to carry the
+ * mechanism (a local proxy port), the reason (a page cannot aim
+ * itself), and a consolation ("the list and the pins are useful here")
+ * — all three are what docs/UX.md forbids a sentence to do. Someone
+ * standing here wants one thing: where it does work.
+ *
+ * Two non-app roads exist and neither is free; the ledger carries them
+ * (setting the proxy by hand, and a rewriting gateway) along with the
+ * security question that has to be answered before the first could be
+ * built at all.
  *
  * Refused before the call rather than after, because the call is not
  * free: it opens a real borrow session on the far machine, and one
