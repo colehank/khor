@@ -46,6 +46,24 @@
 @import "tw-animate-css";
 
 :root {
+  /* **This page has two themes, and the engine has to be told.** With
+   * this line missing, `color-scheme` computes to `normal`, the engine
+   * assumes light, and everything it draws itself — scrollbars first,
+   * but also the caret, `<select>`, the check in a checkbox and the
+   * canvas behind the page — stays in its light appearance while the
+   * palette below goes dark. Measured on the sessions pane in the dark
+   * theme: the scrollbar came back byte for byte the same pixels as in
+   * the light theme.
+   *
+   * `light dark` rather than `dark`: dark follows the system and there
+   * is no toggle (docs/UX.md 设置), so this says which two the page
+   * has, not which one it is in.
+   *
+   * **What it does not fix**: how much room the scrollbar takes. That
+   * belongs to the platform; the rule in `app.css` is the half that
+   * answers it, and neither half can do the other's job. */
+  color-scheme: light dark;
+
   /* ── shadcn scheme, mandala light values ─────────── */
   --background: #f4f4ef;
   --foreground: rgba(26, 26, 20, 0.94);
@@ -291,6 +309,44 @@
    * sit outside Tailwind's layer in order to beat hover, and a utility
    * cannot do that. See `app.css`. */
   --rail-on: rgba(26, 26, 20, 0.12);
+
+  /* ── the scrollbar's thumb ────────────────────────────
+   * The one mark in this app that has to be ignorable at rest and
+   * findable on purpose, which is why neither neighbour could hold it —
+   * this is a missing semantic, not a value two percent off one that
+   * exists. `--border` (.10 / .08) is the weight of a line nobody is
+   * meant to look at, and a thumb that faint cannot be found when you
+   * go looking for it; `--muted-foreground` (.62 / .60) is reading ink,
+   * and a bar that heavy running down the edge of every list is exactly
+   * what got reported ("很突兀").
+   *
+   * Measured, as painted against the card it lies on: .25 comes back
+   * rgb(196,196,192) on rgb(252,252,250) — 1.70 — and .22 comes back
+   * rgb(72,72,69) on rgb(25,25,23) — 1.92. **Both are meant to be that
+   * low**: macOS draws its own thumb against its own track at 1.72, and
+   * this is a bar that appears at the edge your eye is already at, with
+   * a wheel, a trackpad and a keyboard all still able to scroll without
+   * it. What it replaces measured 9.78 (and its track 16.87) against
+   * the dark list, while the body text beside it measures 13.92 — the
+   * scrollbar was drawn louder than the words.
+   *
+   * The dark alpha is the lower of the two because the same alpha reads
+   * louder against near-black; the two land within 2 of each other in
+   * L* (19.9 light, 21.8 dark), which is what makes them the same mark
+   * in two themes rather than two marks.
+   *
+   * The track gets no token because it gets no colour: `transparent`
+   * there is the absence of a surface, and the surface it would
+   * otherwise cover is the list itself.
+   *
+   * No `--color-` mapping on purpose — nothing wears this as a utility;
+   * one rule in `app.css` consumes it, and that rule also carries which
+   * engines honour it and what the rest fall back to.
+   *
+   * **What it does not block**: an engine with no `scrollbar-color` at
+   * all never reads this, and draws its own bar — dark, by then,
+   * because `color-scheme` at the top of this block told it to. */
+  --scroll-thumb: rgba(26, 26, 20, 0.25);
 
   /* ── control heights: three, no fourth ────────────── */
   --ctl-sm: 24px;
@@ -602,6 +658,12 @@
        for both themes — see the light block for why that is the point. */
     --rail-ink: rgba(238, 238, 231, 0.72);
     --rail-on: rgba(238, 238, 231, 0.12);
+
+    /* Lower than the light theme's .25 on purpose — see the light
+       block: the same alpha reads louder against near-black, and what
+       is being held equal across the two themes is how far the thumb
+       sits from the card, not how much ink is in it. */
+    --scroll-thumb: rgba(238, 238, 231, 0.22);
   }
 }
 

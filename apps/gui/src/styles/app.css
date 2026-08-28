@@ -113,6 +113,86 @@ input[type="search"]::-webkit-search-decoration {
   appearance: none;
 }
 
+/* The scrollbar — the one thing on the list this app had never drawn,
+ * and the loudest thing on it.
+ *
+ * Measured on the sessions pane in the dark theme before this landed: a
+ * 15-wide strip whose track came back rgb(250,250,250) and whose thumb
+ * came back rgb(193,193,193), against a rgb(25,25,23) list — 16.87 and
+ * 9.78 against it, where the body text beside it measures 13.92. The
+ * light theme returned the identical pixels, and that is the tell:
+ * nothing was following the theme because nothing had told the engine
+ * there were two of them (`color-scheme`, tokens.css).
+ *
+ * ── two mechanisms, and why the standard one ──────────
+ *
+ * There are two ways to reach a scrollbar and they are not two spellings
+ * of one thing. Measured on this page as `offsetWidth - clientWidth`,
+ * under both of the scrollbar styles macOS hands out — the always-
+ * visible one it picks when a mouse is plugged in, and the overlay one
+ * it picks for a trackpad:
+ *
+ *                                 always-visible   overlay
+ *   nothing                                  15         0
+ *   ::-webkit-scrollbar { width }             8         8
+ *   scrollbar-width: thin                    11         0
+ *
+ * **The pseudo-element buys a narrower bar by taking the overlay one
+ * away.** A width there switches the engine to a custom scrollbar, and
+ * a custom scrollbar is never an overlay one — so on every machine that
+ * had no gutter at all (trackpad Macs, iPads, phones) it creates one.
+ * That trades the thing that was asked for, on most machines, for a few
+ * units of width on this one.
+ *
+ * The pseudo-elements are not merely unneeded here, they are inert:
+ * with these two properties set, a `::-webkit-scrollbar-thumb {
+ * background: red }` laid on top painted no red at all — the same bytes
+ * as without it. A rule that provably does nothing is worse than no
+ * rule, because the next reader believes it.
+ *
+ * ── where it holds, where it degrades ─────────────────
+ *
+ *   Chrome / Blink    both honoured; 15 → 11, thumb painted
+ *                     rgb(196,196,192) light and rgb(72,72,69) dark
+ *   macOS WKWebView   the desktop app's own engine: both supported,
+ *                     17 → 13, computed value is ours. **The paint was
+ *                     not captured there** — `takeSnapshot` on an
+ *                     offscreen web view returns without the scroller —
+ *                     so that row is geometry and capability, not pixels
+ *   iOS Safari        both supported, and the gutter measures 0 with
+ *                     `thin` and without it: the indicator never took
+ *                     room, so `thin` costs nothing there. **Whether
+ *                     the colour reaches that indicator is untested** —
+ *                     it fades before a screenshot lands — and the
+ *                     honest floor for iOS is the `color-scheme` line
+ *   engines with      ignore both and draw the platform indicator,
+ *   neither property  which `color-scheme` has by then already told to
+ *                     be the dark one — that fallback is the whole
+ *                     reason `color-scheme` is its own line
+ *
+ * **What it does not fix**: an always-visible bar still takes room, 11
+ * of the list instead of 15. Nothing in CSS takes that to zero while
+ * leaving a bar you can see — the mechanisms that reach zero
+ * (`scrollbar-width: none`, a zero-width pseudo-element) reach it by
+ * removing the bar. Reserving room is the platform's call, and on a
+ * machine with a mouse attached it reserves it.
+ *
+ * **What it cannot say**: hover. `scrollbar-color` has no `:hover`
+ * form, so the thumb does not answer the pointer the way a hand-drawn
+ * one would. The overlay platforms still widen theirs natively; the
+ * always-visible ones now just have a quiet bar. Buying that back means
+ * the pseudo-element, and the table above is what that costs. */
+:root {
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* Two selectors because the two properties inherit differently:
+   `scrollbar-color` inherits, so the root reaches every pane;
+   `scrollbar-width` does not, so it has to be said everywhere. */
+* {
+  scrollbar-width: thin;
+}
+
 /* The press. Every control this app draws answers a finger the same
  * way, so it is one rule on shadcn's own slot rather than a class each
  * caller remembers to add.
