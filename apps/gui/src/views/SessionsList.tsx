@@ -4,7 +4,7 @@ import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionMark } from "@/components/BrandIcons";
 import { SessionTitle } from "@/components/SessionTitle";
-import { IconPin } from "@/components/icons";
+import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -188,8 +188,45 @@ export function SessionsList({
   const fresh = searching ? shown : shown.filter((r) => !r.stale);
   const old = searching ? [] : shown.filter((r) => r.stale);
   const [showOld, setShowOld] = useState(false);
+  /**
+   * Groups folded away, by the node's own group key.
+   *
+   * **Keyed by the group, not by a position or a mode**, so a fold
+   * survives everything that is not about it: a re-poll, a re-sort, a
+   * filter that empties the group and a later one that fills it again.
+   * Changing the arrangement brings different keys, so another mode's
+   * groups are neither shut nor remembered — they are simply not in
+   * here.
+   *
+   * **Every group folds, not only 置顶.** Singling that one out would
+   * mean writing `khor_node::list::GROUP_PINNED` into this file — a
+   * backend constant copied into the face — and it would show the
+   * moment somebody changes the arrangement: one heading wearing a
+   * chevron among neighbours that do not. In the default arrangement
+   * (`Arrange::Recent`) pinned rows are the only group there is; every
+   * other row carries an empty key and draws no heading at all, so on
+   * that screen this is the pinned fold and nothing else.
+   *
+   * Session-lived, like the tail's fold below: a fold is a view of this
+   * list right now, not a setting, and two folds on one list may not
+   * answer to two different lifetimes.
+   */
+  const [shut, setShut] = useState<Set<string>>(() => new Set());
+  const shutOf = (group: string) => group !== "" && shut.has(group);
+  const toggleGroup = (group: string) =>
+    setShut((was) => {
+      const next = new Set(was);
+      if (!next.delete(group)) next.add(group);
+      return next;
+    });
   const box = useRowFlip(
-    (showOld ? [...fresh, ...old] : fresh).map((r) => r.id).join("\n"),
+    (showOld ? [...fresh, ...old] : fresh)
+      // What is on the glass, not what survived the filter: a fold
+      // changes which rows exist to be measured, and a row that comes
+      // back arrives rather than moves.
+      .filter((r) => !shutOf(r.group))
+      .map((r) => r.id)
+      .join("\n"),
   );
   if (shown.length === 0) {
     // "Nothing here" and "nothing matched" are different facts, and the
@@ -202,7 +239,9 @@ export function SessionsList({
       </div>
     );
   }
-  const strip = (r: SessionRow, prev: SessionRow | undefined) => (
+  const strip = (r: SessionRow, prev: SessionRow | undefined, size: number) => {
+    const open = !shutOf(r.group);
+    return (
         <Fragment key={r.id}>
           {/* A heading starts where the group changes between
               neighbouring rows. The rows arrive grouped, so this notices
@@ -213,14 +252,45 @@ export function SessionsList({
               heading only exists because a row carried it, so there is
               no path that renders a group with nothing under it. A
               heading over nothing is worse than no heading — it is a
-              handle that does not move (mandala's FilesPane). */}
+              handle that does not move (mandala's FilesPane). **A shut
+              group is not a counter-example**: its rows are still here,
+              still declaring the boundary, and one press brings them
+              back — which is precisely why the fold is drawn from the
+              rows rather than from a list of group names. */}
           {r.group !== "" && r.group !== prev?.group && (
-            <div
+            // The heading is also the group's handle. **Unlike the fold
+            // line at the tail, a heading has a second job** — it names
+            // the group — so what pressing it does next is said by the
+            // chevron and by `aria-expanded`, not by swapping the word
+            // out. That line at the end of the list can swap its word
+            // because naming is all it would otherwise do.
+            //
+            // The count appears only while the group is shut: open, the
+            // rows count themselves.
+            <button
+              type="button"
               data-group={r.group}
-              className="px-4 pt-3 pb-1 text-xs font-label text-muted-foreground"
+              data-group-open={open}
+              aria-expanded={open}
+              onClick={() => toggleGroup(r.group)}
+              // A full-width strip, so only its height was ever under
+              // the floor — `min-h-touch` grows the band the words sit
+              // in and the hover wash is that band, exactly as the
+              // tail's fold does it.
+              className="flex min-h-touch w-full items-center gap-1 px-4 text-left text-xs font-label text-muted-foreground hover:bg-secondary"
             >
-              {groupLabel(r.group)}
-            </div>
+              {/* The family's only chevron, turned (icons.tsx is one
+                  family, no exceptions, and rotating a mark to say which
+                  way it means is what `IconPin` already does): pointing
+                  down is open, pointing right is shut. */}
+              <IconBack className={cn("flex-none", open ? "-rotate-90" : "rotate-180")} />
+              <span className="min-w-0 truncate">{groupLabel(r.group)}</span>
+              {!open && (
+                <span data-group-size className="tabular-nums">
+                  {size}
+                </span>
+              )}
+            </button>
           )}
           {/* The row is a strip holding two controls, not a button
               itself: the pin cannot be nested inside the button that
@@ -242,6 +312,7 @@ export function SessionsList({
               reachable, the signal is not. The word itself stands; the
               age line below says how long the silence is. Same axis as
               离线, worn the same way (dimmed, never re-worded). */}
+          {open && (
           <div
           data-row={r.id}
           data-word={r.word}
@@ -451,11 +522,23 @@ export function SessionsList({
             <IconPin pinned={r.pinned} />
           </Button>
         </div>
+          )}
         </Fragment>
-  );
+    );
+  };
+  /** One run of rows, plus the headings those rows declare.
+      **A group is counted inside its run**, never across the list: the
+      tail below holds rows of its own, and a heading down there
+      reporting a number that included rows from above would be a count
+      pointing at things the fold cannot show. */
+  const run = (list: SessionRow[]) => {
+    const size = new Map<string, number>();
+    for (const r of list) size.set(r.group, (size.get(r.group) ?? 0) + 1);
+    return list.map((r, i) => strip(r, list[i - 1], size.get(r.group) ?? 0));
+  };
   return (
     <div ref={box}>
-      {fresh.map((r, i) => strip(r, fresh[i - 1]))}
+      {run(fresh)}
       {/* The folded tail. A control, not a heading: pressing it is what
           changes the view, and its word is what pressing it does next
           (the pin's rule). It never renders over nothing — `old` empty
@@ -475,7 +558,7 @@ export function SessionsList({
           {showOld ? gui.collapse_old : gui.old_sessions(old.length)}
         </button>
       )}
-      {showOld && old.map((r, i) => strip(r, old[i - 1]))}
+      {showOld && run(old)}
     </div>
   );
 }
