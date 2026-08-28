@@ -6,7 +6,7 @@ import { Ring } from "@/components/Ring";
 import { IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { MandalaMap } from "@/views/MandalaMap";
-import { QuotaPanel } from "@/views/QuotaPanel";
+import { QuotaRings } from "@/views/QuotaRings";
 import { cli, gui, state } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { vitalsTracks } from "@/lib/vitals";
@@ -15,7 +15,7 @@ import { ageIfOld } from "@/words";
 /**
  * The mark's place: the mesh, and what is left of the subscription.
  *
- * # Two things, and the second one is under the first
+ * # One thing: the picture. Everything else is a press away
  *
  * 「Khor 主页不显示输出 token 什么的。只显示地图和 AI usage。我们的
  * usage 就放在地图下面。」 — the user, 2026-08-28, and 「AI usage」 was
@@ -28,10 +28,11 @@ import { ageIfOld } from "@/words";
  * else would have been the same screen with an extra press in front of
  * it.
  *
- * Under, not beside, and the difference is not taste: side by side the
- * two halves were peers, and the numbers were half the screen while
- * being the smaller question. Under the picture they are a footing —
- * the map is what this place is, and the arcs are what it costs.
+ * **The arcs then left the footing too**: 「额度都是机器卡里的」 (the
+ * same person, later the same day). So this screen is the picture and
+ * nothing else, and the arcs are on this machine's card with the rest
+ * of what khor reads locally — `QuotaRings` carries why that is the
+ * honest place for them rather than a compromise.
  *
  * # Everything here is a machine, and pressing one opens its card
  *
@@ -138,19 +139,17 @@ export function MarkPlace({
             <MachineNodeCard
               row={machine}
               rows={rows.filter((r) => r.home === machine.name)}
+              // Only this machine's card gets it, and the reason is not
+              // tidiness — khor reads the quota from a login stored on
+              // this machine and no frame carries another machine's
+              // (`QuotaRings`). Passed as `null` rather than guarded
+              // inside the card, so the card never holds an answer it
+              // is not allowed to paint.
+              quota={machine.me ? quota : null}
               onClose={() => setOpen(null)}
               onPickWaiting={onPickWaiting}
             />
           )}
-        </div>
-        {/* The footing. **The rule between it and the picture is drawn
-            by the panel, not by this box**: the panel draws nothing at
-            all until the first answer is in, and a border here would be
-            a line promising a section that has not arrived. A box that
-            is empty and a box that is not are the same box; only the
-            thing inside knows which. */}
-        <div className="min-h-0 min-w-0 flex-none">
-          <QuotaPanel quota={quota} />
         </div>
       </div>
     </div>
@@ -261,6 +260,7 @@ function NodeCard({
 function MachineNodeCard({
   row,
   rows,
+  quota,
   onClose,
   onPickWaiting,
 }: {
@@ -268,6 +268,9 @@ function MachineNodeCard({
   /** Only this machine's sessions — filtered by the caller, which is
       the one holding the whole table. */
   rows: SessionRow[];
+  /** The subscription's arcs, and **`null` on every card but this
+      machine's** — the caller decides, see its note. */
+  quota: QuotaAnswer | null;
   onClose: () => void;
   onPickWaiting: (row: SessionRow) => void;
 }) {
@@ -350,6 +353,11 @@ function MachineNodeCard({
           </div>
         )}
       </div>
+      {/* The subscription, under the same kind of rule as the counts —
+          it is a third group of numbers and reads as one more row of
+          them without a line. Draws nothing at all on a machine that is
+          not this one, and nothing before the first answer is in. */}
+      <QuotaRings quota={quota} className="mt-in border-t pt-in" />
       {/* Only once it is worth saying, the seat's own rule (`ageIfOld`):
           a reading taken a moment ago saying 「0 秒前」 reads as a fault. */}
       {aged !== null && (

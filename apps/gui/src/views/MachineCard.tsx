@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { DeviceRow, HooksState, Strain } from "@/api";
+import type { DeviceRow, HooksState, QuotaAnswer, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring, RING_SIZE } from "@/components/Ring";
 import { IconBack, IconPin } from "@/components/icons";
@@ -9,6 +9,7 @@ import { cli, gui } from "@/gen/catalog";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
+import { QuotaRings } from "@/views/QuotaRings";
 import { ago, hopWord } from "@/words";
 
 /**
@@ -33,6 +34,7 @@ export function MachineCard({
   pinFailed,
   hooks,
   hooksFailed,
+  quota,
   onInstallHooks,
   onUninstallHooks,
   onOpenTerm,
@@ -47,6 +49,11 @@ export function MachineCard({
   /** This machine's hooks, or `null` until the first answer is in. */
   hooks: HooksState | null;
   hooksFailed: boolean;
+  /** What the Claude subscription has left. Painted on **this**
+      machine's card only, the same rule the hooks toggle below follows
+      and for a stricter reason: khor reads it from a login stored here
+      and no frame carries another machine's (`QuotaRings`). */
+  quota: QuotaAnswer | null;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
   /** 在这台开终端 — rejects with the refusal, which lands on the button. */
@@ -164,6 +171,13 @@ export function MachineCard({
           </div>
           <Verbs row={row} onOpenTerm={onOpenTerm} onBrowseFiles={onBrowseFiles} />
           <Readings row={row} />
+          {/* Under the machine's own readings, because it is the same
+              kind of answer — something read here, now — and above the
+              hooks toggle, which is a control rather than a reading.
+              `row.me` for the reason the toggle carries: on any other
+              card this would be one machine's number under another
+              machine's name. */}
+          {row.me && <QuotaRings quota={quota} className="pt-pane" />}
           {/* **Only on this machine's card**, because the file it edits
               is on this machine. Putting it on every card would be a
               control that silently applies to one machine out of a list.

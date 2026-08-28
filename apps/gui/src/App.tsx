@@ -981,6 +981,7 @@ export default function App() {
       pinFailed={pinFailed}
       hooks={hooks}
       hooksFailed={hooksFailed}
+      quota={quota}
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
       // The fresh terminal is what the person came for: land on its row
