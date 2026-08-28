@@ -3,20 +3,15 @@ import type { DeviceRow } from "@/api";
 // in its place); the binding is the place itself.
 import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
-import { VitalBars } from "@/components/Gauge";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { doingTracks } from "@/lib/vitals";
 import { ageIfOld, hopWord } from "@/words";
 
 /**
  * The network as an ego graph: this machine in the middle, everyone
  * else around it, and an edge from here to each of them.
  *
- * # Every mark on it is a fact khor holds
- *
- * There are six, and there are only six because khor knows six things
- * about a machine it has met:
+ * # Every mark on it is a fact khor holds — and no reading is one
  *
  * | on screen | the fact |
  * |---|---|
@@ -27,8 +22,25 @@ import { ageIfOld, hopWord } from "@/words";
  *   **printed only once it is older than a minute** (`ageIfOld`): a seat
  *   that had just replied said 「0 秒前的读数」, which reads as a fault,
  *   not as freshness |
- * | the readings, as bars | what it said it was doing, in that same answer |
  * | the edge to it | which road this machine reaches it by (`DeviceRow::hop`) |
+ *
+ * **There used to be a sixth: three unlabelled bars under every name,
+ * CPU / 内存 / GPU.** The user's word for them was「看不懂,可以取消」
+ * (2026-08-28), and the judgment they were built on has been replaced
+ * rather than patched. That judgment was 「概览用画的,细节用写的」 — it
+ * took the wall of numbers those bars replaced as the whole problem and
+ * assumed a picture of the same reading was free. It is not: **a bar
+ * with no label has to be learnt exactly like a number does, and it has
+ * one thing less to learn from.** Which of the three is 内存 is not on
+ * the screen, and nothing on the screen says it is not.
+ *
+ * The rule that replaced it is flatter and can be checked by looking:
+ * **an overview carries no readings at all.** This map answers 谁在网里
+ * · 叫什么 · 通不通 · 多久没说话; how busy a machine is, is a question
+ * with a landing one press away — its node's card here, and the machine
+ * card a level in, both of which draw rings with the percentages inside
+ * them. A ring carries its own full, so it says how full without being
+ * learnt; that is why the card may draw what the map may not.
  *
  * **Every edge starts here**, and that is the data's shape, not a
  * style: the hop reading is first-hand — the same word the machine card
@@ -231,11 +243,6 @@ const CAPTION_W = "min(36cqmin, calc(var(--avatar-xl) * 2))";
 const TEXT_NAME = "clamp(var(--text-sm), 2.6cqmin, var(--text-lg))";
 const TEXT_FINE = "clamp(var(--text-xs), 2.2cqmin, var(--text-sm))";
 const TEXT_RATIO = "1.44";
-/* The readings' bars, fluid on the same terms as the type: a fixed bar
-   inside a picture that scales would be the one mark that does not.
-   Their tokens are the floor and the ceiling (`--gauge-bar`). */
-const BAR_LEN = "clamp(var(--gauge-bar-len), 5cqmin, calc(var(--gauge-bar-len) * 2))";
-const BAR_THICK = "clamp(var(--gauge-bar), 0.7cqmin, calc(var(--gauge-bar) * 2))";
 
 /**
  * One first-hand edge: this machine to one it knows.
@@ -303,7 +310,6 @@ function Seat({
   if (!row) return null;
   const reached = row.vitals !== null;
   const aged = row.vitals ? ageIfOld(row.vitals.age_ms) : null;
-  const tracks = doingTracks(row);
   const body = (
     <>
       {/* The face fills a box the fluid size owns (file head): the
@@ -360,7 +366,6 @@ function Seat({
               {cli.vitals_never}
             </span>
           ))}
-        {tracks && <VitalBars tracks={tracks} len={BAR_LEN} thick={BAR_THICK} className="pt-in" />}
       </span>
     </>
   );
@@ -384,6 +389,14 @@ function Seat({
       onClick={() => onOpen(row)}
       className={cn(
         shell,
+        // The finger floor (tokens.css `--touch`). A seat's face is a
+        // proportion of the picture (`FACE_OTHER`), so on a phone-width
+        // map it comes out around 37 — under the floor, and it is the
+        // one thing on this screen a finger is aimed at. The box grows,
+        // the face does not: it is centred in the grown box, and the
+        // press feedback is the scale of that whole box, so nothing is
+        // pressable where nothing is drawn.
+        "grid min-h-touch min-w-touch place-items-center",
         // **A scale and not a tinted box.** A face is whatever shape that
         // machine chose — round, or a rounded square — so a rectangular
         // hover plate would sit wrong behind half of them. Growing works
@@ -405,11 +418,19 @@ function Seat({
   );
 }
 
-/* The readings themselves are `components/Gauge`'s, shared with the
-   network's now — a machine that looked busy on one screen and calm on
-   the other would be two machines. **They used to be words here**
-   (`CPU 24% 内存 80% GPU 63%`, plus a `Micro` that coloured the strained
-   one): five pieces of text of one size arrived under every face at
-   once, and the name had no way to be first. The percentages are not
-   lost — the strip still speaks them to a screen reader and to a
-   pointer, and the machine's card draws them as rings. */
+/* A seat has carried a machine's readings twice and lost them twice,
+   and the two removals are not the same removal — that is worth one
+   note, because the second one reads like a retreat from the first.
+
+   They were **words** first (`CPU 24% 内存 80% GPU 63%`): five pieces of
+   text of one size arrived under every face at once and the name had no
+   way to be first. They became **bars**, on the judgment that a picture
+   of a reading costs a glance rather than a read. Now they are nothing,
+   because that judgment was wrong about labels: a bar says how full
+   *something* is, and which something is exactly what a seat has no
+   room to say.
+
+   What is left is not less information in the same place — it is the
+   same information one press away, in the shape that carries its own
+   scale (the card's rings). The file head has the rule this leaves
+   behind. */

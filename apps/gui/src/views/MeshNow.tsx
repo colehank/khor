@@ -1,11 +1,9 @@
 import type { DeviceRow, SessionRow, Usage } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { Bar, VitalBars } from "@/components/Gauge";
+import { Bar } from "@/components/Gauge";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { doingTracks } from "@/lib/vitals";
-import { count } from "@/views/UsagePanel";
 import { word } from "@/words";
 
 /**
@@ -18,6 +16,18 @@ import { word } from "@/words";
  *
  * The good news is said out loud: an empty section under 等你的事
  * would read as a query that failed, not as a clear conscience.
+ *
+ * **The machines here carry no readings, and that is the same ruling
+ * the star map's seats lost theirs to** (2026-08-28,「看不懂,可以取消」
+ * about three unlabelled bars; `MandalaMap`'s head carries the whole
+ * reasoning). This section is the other overview of the same machines,
+ * so it is the same question: which machine, not how busy it is. A
+ * ruling that only reached one of two screens showing one thing would
+ * have left the bars the user could not read alive one landing away.
+ *
+ * 今天 keeps its bar, and the difference is the denominator: it is one
+ * quantity against **the busiest day khor knows**, said in words right
+ * beside it — not a share of something nobody named.
  */
 export function MeshNow({
   rows,
@@ -113,15 +123,13 @@ export function MeshNow({
         </section>
         <section data-now-machines>
           <Heading text={gui.devices_tab} className="mb-in" />
-          {/* One grid for the whole section, rows spanning it through
-              subgrid: the readings start on one shared left edge — a
-              true column — instead of being pushed to the row's far end
-              (measured before this: a 248-wide gulf between a name's
-              end and its readings' start on a 448-wide row, eyes losing
-              the line in between). The name column is as wide as the widest
-              name; hostnames are short, and a pathological one costs
-              this section its readings column, not the app anything. */}
-          <div data-now-machine-grid className="grid grid-cols-[max-content_1fr] gap-x-row">
+          {/* **A column of names, and the grid that used to align their
+              readings went with the readings.** It was a two-column
+              subgrid so that every machine's bars started on one left
+              edge — a real alignment for a real column, and with nothing
+              in the second column it would be a layout holding a space
+              open for something that is not coming back. */}
+          <div data-now-machines-list className="flex flex-col">
             {devices.map((d) => (
               <button
                 key={d.id}
@@ -133,20 +141,17 @@ export function MeshNow({
                   // same reason they are worth stating once: a list of
                   // rows 30 tall is the shape where a press lands on the
                   // neighbour (tokens.css `--touch`).
-                  "col-span-2 grid min-h-touch grid-cols-subgrid items-center rounded-md px-2 py-1.5 text-left hover:bg-accent",
+                  "flex min-h-touch items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent",
                   // Never answered = greyed, the card's vitals_never fact
                   // painted instead of said; no word is invented for it.
                   !d.vitals && "opacity-50",
                 )}
               >
-                <span className="flex min-w-0 items-center gap-2">
-                  <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
-                  <span data-now-name className="min-w-0 truncate text-sm">
-                    {d.name}
-                    {d.me ? ` ${cli.this_machine}` : ""}
-                  </span>
+                <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
+                <span data-now-name className="min-w-0 truncate text-sm">
+                  {d.name}
+                  {d.me ? ` ${cli.this_machine}` : ""}
                 </span>
-                {d.vitals && <Meters row={d} />}
               </button>
             ))}
           </div>
@@ -160,54 +165,6 @@ export function MeshNow({
   );
 }
 
-/**
- * The one call the mark's place makes: how many sessions are waiting on
- * an answer, and a way into the first of them.
- *
- * **Only when there are any.** `MeshNow`'s empty section says 没有等你的事
- * out loud, and it is right to — an empty block where a query's answer
- * belongs reads as a query that failed. This is not that block: the mark
- * is not a checklist's landing, so on a quiet mesh it simply is not
- * there, and the picture starts at the top.
- *
- * **It exists because the rail's badge cannot say this.** That number
- * counts rows that are waiting *or* unread and cannot tell you which,
- * and 待批 is the one state in the six with a person on the other end of
- * it (docs/SESSION.md). The mark's place had the whole mesh and what it
- * cost, and nothing at all about whether something was stuck.
- */
-export function WaitingCall({
-  rows,
-  onPick,
-}: {
-  rows: SessionRow[];
-  onPick: (row: SessionRow) => void;
-}) {
-  const waiting = rows.filter((r) => r.word === "blocked");
-  if (waiting.length === 0) return null;
-  return (
-    <button
-      type="button"
-      data-mark-waiting={waiting.length}
-      onClick={() => onPick(waiting[0])}
-      className="flex items-center gap-row rounded-md px-3 py-2 text-left hover:bg-accent"
-    >
-      {/* The count at the display size, in the state's own colour — the
-          same two channels `MeshNow` gives it, so one glance recognises
-          the same fact in either place. Body weight: rank is already
-          said by size. */}
-      <span
-        data-mark-waiting-count
-        className="text-hero tabular-nums"
-        style={{ color: "var(--state-blocked)" }}
-      >
-        {waiting.length}
-      </span>
-      <span className="text-fact">{gui.waiting_on_you}</span>
-    </button>
-  );
-}
-
 /** The list's group-heading shape: what the rows under it share. The
     margin is the caller's (mb-in where it stands alone), because the
     first section seats it inside a flex row where a margin of its own
@@ -217,47 +174,38 @@ function Heading({ text, className }: { text: string; className?: string }) {
 }
 
 /**
- * One machine's readings in miniature — **as bars, not as a sentence**.
- *
- * They were `CPU 23% · 内存 81% · GPU 67%`, one string per machine, at
- * the same size and colour as the machine's own name beside it. Three of
- * those rows and the section was nine numbers nobody was going to read.
- * The strip is `components/Gauge`'s, shared with the star map, drawn
- * from `vitalsTracks`' fractions — the same arithmetic the card's rings
- * magnify, so no two screens can disagree about one machine.
- *
- * The percentages are still available here without leaving: the strip
- * speaks them as its label, and the machine's card draws them in full.
- */
-function Meters({ row }: { row: DeviceRow }) {
-  const tracks = doingTracks(row);
-  if (!tracks) return null;
-  // No `ms-auto`: the readings sit in the machine grid's second column,
-  // left edges aligned across rows — the column itself is the alignment,
-  // not a push to the far end.
-  return <VitalBars tracks={tracks} className="justify-start" />;
-}
-
-/**
  * Today's spending: one number, and whether that is a lot.
  *
  * **Output, and a bar against the busiest day khor knows.** It printed
  * all four token counts in a row — 输入 734 读缓存 245.9M 写缓存 7.8M
- * 输出 270.2k — which is the usage panel's wall in miniature: four
- * quantities of wildly different magnitude, at one size, with nothing to
- * compare any of them to. `UsagePanel`'s head carries the reasoning for
- * both halves of the fix (output rather than a total, other days rather
- * than an allowance); this is the same judgment at a glance's depth, and
- * the four numbers live one landing away.
+ * 输出 270.2k — four quantities of wildly different magnitude, at one
+ * size, with nothing to compare any of them to.
+ *
+ * Two judgments hold it up, and **this is the only place either of them
+ * is still written down** — the day ledger that argued them out was
+ * removed from the app on 2026-08-28 and its file went with it:
+ *
+ *   - **output, never a sum.** A total would be almost entirely cache
+ *     reads (measured on the development machine: 16.2 billion cached
+ *     input against 32 million output), so it moves with how often a
+ *     conversation was resumed rather than with how much work was done
+ *     (`khor_core::Tokens` carries that judgment);
+ *   - **against the other days, never against an allowance.** Nobody
+ *     has told khor what an allowance is, so a share of one would be a
+ *     share of something invented. 「Busy day or quiet one」 has an
+ *     obvious denominator and this bar uses that one.
+ *
+ * The remaining three numbers are one landing away — `khor usage`, and
+ * that verb is now the only place they are drawn at all.
  *
  * "Today" is each machine's own civil day (`UsageDay::day`'s rule); this
  * screen filters by its clock's date, which is that rule read from the
  * one machine the person is sitting at.
  */
 function Today({ usage }: { usage: Usage | null }) {
-  // Nothing until the first answer — a "nothing spent" said while the
-  // answer is still coming would be wrong for as long as it took
-  // (UsagePanel's opening rule).
+  // Nothing until the first answer: a 「nothing spent」 said while the
+  // answer is still coming would be telling a machine's whole history
+  // wrong for as long as it took to arrive.
   if (!usage) return null;
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -277,4 +225,30 @@ function Today({ usage }: { usage: Usage | null }) {
       </span>
     </div>
   );
+}
+
+/**
+ * A count as a person reads it: 1000-based, because tokens are counted,
+ * not stored.
+ *
+ * **It lives here because this is the only screen left that draws one.**
+ * It was exported from the day ledger's file, which had four callers in
+ * it; that file is gone and re-exporting from a shared bag would give a
+ * one-caller helper a second home to drift from.
+ *
+ * The CLI has its own copy (`crates/cli` `count`), deliberately —
+ * formatting is painting, not judgment, and nothing depends on the two
+ * producing identical characters. **Not the same function as the byte
+ * one either**: 1024 is a property of memory, and a thousand tokens is a
+ * thousand tokens.
+ */
+function count(n: number): string {
+  const units = ["", "k", "M", "G"];
+  let v = n;
+  let u = 0;
+  while (v >= 1000 && u + 1 < units.length) {
+    v /= 1000;
+    u += 1;
+  }
+  return u === 0 ? `${n}` : `${v.toFixed(1)}${units[u]}`;
 }

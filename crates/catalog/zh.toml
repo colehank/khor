@@ -958,12 +958,13 @@ empty-sessions = "还没有 session"
 # the word's own definition (docs/SESSION.md 待批: an approval this
 # machine owes) — and when there are none the good news is said out
 # loud: an empty section under that heading would read as a query
-# that failed, not as a clear conscience. 今天 heads the day's token
-# numbers (the four of them — a single total is refused where the
-# numbers live, UsagePanel's measured judgment); when nothing was
-# spent yet the day says so in its own tense — usage-none speaks of
-# days plural and would overclaim here. The machines section borrows
-# devices-tab: same fact, same word.
+# that failed, not as a clear conscience. 今天 heads what today cost —
+# **one number, the output, against the busiest day khor knows** (the
+# reasoning for both halves is on `MeshNow`'s `Today`, which is the
+# only screen still drawing it); when nothing was spent yet the day
+# says so in its own tense — usage-none speaks of days plural and
+# would overclaim here. The machines section borrows devices-tab:
+# same fact, same word.
 waiting-on-you = "等你的事"
 none-waiting = "没有等你的事"
 today = "今天"
@@ -1368,14 +1369,13 @@ quota-cooling = "被限流了,{0} 分钟后再问"
 quota-unreadable = "这份余量读不出来"
 quota-unreachable = "问不到余量"
 
-# 日账默认只画最近七天,这一句把其余的放出来。**它不是设置**:设置是替你
-# 记住一个偏好,这个是「再往下看一段」,按完就没了——同一个滚动条本来就能
-# 到那儿,只是默认不必先滚过半个月才看见今天(docs/UX.md 设置)。
-usage-earlier = "更早"
-# 一天一条,条长比的是这段时间里输出最多的那天。**比的是输出而不是总数**:
-# 总数几乎全是读缓存,它随「续了几次对话」动,不随干了多少活动
-# (khor_core::Tokens 的判词)。四类分项按一下那一条才出来。
-usage-vs-peak = "条长 = 和最忙的一天比"
+# 墓碑(2026-08-28):这儿原来有 `usage-earlier`(更早)和 `usage-vs-peak`
+# (条长 = 和最忙的一天比)。两个词都只服务主页右栏那本日账,而主页只剩
+# 地图和额度环了(用户原话:「Khor 主页不显示输出 token 什么的」),日账
+# **有意没在 GUI 里另找落点**——「还能用多少」是额度环答的,「花了多少」
+# 是 `khor usage` 答的。词跟着落点走:留一个没人查的键,下一个人会以为
+# 界面上还有那块东西。
+#
 # 新标签页上,把一条最近去过的记录送走。**动词是「去掉」不是「删掉」**:
 # 账本里它是个墓碑而不是一次删除(`khor_sync::recents`),再去一趟那个地方
 # 它自己就回来了——所以这句话不许听起来像那个目录没了。
