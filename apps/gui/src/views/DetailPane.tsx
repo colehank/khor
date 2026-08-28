@@ -173,7 +173,7 @@ export function CopyId({ id, variant = "ghost" }: { id: string; variant?: "ghost
  * later, and the honest thing to say about it is only the part that is
  * true of every close.
  */
-function closeWarning(kind: string): string {
+export function closeWarning(kind: string): string {
   if (kind === "chat") return gui.close_warn_chat;
   if (kind === "transfer") return gui.close_warn_transfer;
   if (kind === "shell" || kind === "tui" || kind === "gui" || kind === "borrow") {

@@ -8,6 +8,7 @@ import {
   fetchUsage,
   openTermOn,
   installHooks,
+  closeSession,
   markSeen,
   pinDevice,
   pinSession,
@@ -517,17 +518,71 @@ export default function App() {
   // must see the pin call failing and nothing else. Chained, a refresh
   // that threw after a pin that worked would paint the failure face on a
   // pin that actually took.
+  //
+  // **The returned promise says whether the pin took**, which is what
+  // the row's menu reads to decide between closing and staying open
+  // (`RowMenu`). Two things about the shape are load-bearing and neither
+  // is style: the rejection handler still **rethrows** rather than
+  // swallowing, so the failure that painted the face is the same event
+  // that keeps the menu open; and the refresh is *not* returned into the
+  // chain — awaiting it would put a whole poll between a pin that
+  // already worked and the menu closing, and a refresh that failed
+  // afterwards would then read as a pin that failed, which is the very
+  // confusion the two-argument form exists to prevent.
   const onPinSession = useCallback(
-    (row: SessionRow) => {
+    (row: SessionRow) =>
       pinSession(row.id, !row.pinned).then(
         () => {
           markPin(row.id, false);
           refresh().catch(() => {});
         },
-        () => markPin(row.id, true),
+        (e) => {
+          markPin(row.id, true);
+          throw e;
+        },
+      ),
+    [refresh, markPin],
+  );
+
+  /**
+   * Ending a session from its row's menu.
+   *
+   * **The refusal is the point.** Whether a close is possible is
+   * `Node::close`'s judgment — a discovered session is not khor's to
+   * end — and it comes back as a whole sentence written for a person
+   * ("不是 khor 起的,关不了它;去它自己的窗口里退"). Re-deriving that
+   * rule here would be this face guessing at a backend judgment and
+   * going stale the day one of those paths changes, which is the same
+   * reasoning `DetailPane`'s own close carries.
+   *
+   * Kept by row id, the way `pinFailed` is, and cleared the moment a
+   * later attempt on that row gets anywhere: a sentence about a refusal
+   * that has since been answered is worse than no sentence.
+   */
+  const [closeRefused, setCloseRefused] = useState<Map<string, string>>(() => new Map());
+  const onCloseSession = useCallback(
+    (row: SessionRow) => {
+      setCloseRefused((was) => {
+        if (!was.has(row.id)) return was;
+        const next = new Map(was);
+        next.delete(row.id);
+        return next;
+      });
+      return closeSession(row.id).then(
+        () => {
+          // Nothing to paint: the row leaves the list on the next poll,
+          // and the selection guard below takes the pane with it.
+          refresh().catch(() => {});
+        },
+        (e) => {
+          setCloseRefused((was) =>
+            new Map(was).set(row.id, String(e instanceof Error ? e.message : e)),
+          );
+          throw e;
+        },
       );
     },
-    [refresh, markPin],
+    [refresh],
   );
 
   const onPinDevice = useCallback(
@@ -859,8 +914,9 @@ export default function App() {
             selected={selected}
             onSelect={onSelect}
             onPin={onPinSession}
+            onClose={onCloseSession}
             pinFailed={pinFailed}
-            narrow={narrow}
+            closeRefused={closeRefused}
           />
         ) : (
           <DevicesList

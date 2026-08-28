@@ -569,6 +569,48 @@ try {
   const STOPS = [
     { name: "sessions list", anchor: "[data-list]", go: () => press(rail("sessions")) },
     {
+      // A row's own menu — pin and close, on right-click and on a long
+      // press (`RowMenu`). **It is the first surface in this walk that
+      // no amount of pressing things can reach**, and that is the whole
+      // reason it needs a stop: every other stop is a landing somebody
+      // navigates to, so a walk built out of clicks arrives by
+      // accident. A menu is asked for, and until it is asked for, its
+      // controls are not in the DOM to be measured — a scope hole of
+      // exactly the kind section 3 keeps being widened for, and the
+      // one the controls this menu **replaced** used to be caught by.
+      //
+      // Right-click in both postures, because that is what this gate
+      // can produce. **The long press is not covered here**: Radix opens
+      // on a 700ms `pointerdown` whose `pointerType` is touch or pen,
+      // and neither playwright's mouse nor `touchscreen.tap()` makes
+      // one — it takes a raw CDP `Input.dispatchTouchEvent` held open,
+      // which is a second input pathway this file has nowhere else. So
+      // this stop measures the menu, not the two ways in; the touch way
+      // in was verified by hand and stays unguarded, which is written
+      // here rather than left to be assumed from the stop's name.
+      name: "sessions list · a row's menu",
+      // Only this surface draws it. An item rather than the menu's own
+      // box, for the settings stop's reason: a menu that opened and
+      // rendered nothing would still satisfy the box.
+      anchor: "[data-row-menu] [data-menu-item]",
+      go: async () => {
+        if (!(await press(rail("sessions")))) return false;
+        const row = page.locator("[data-list] [data-row-open]").first();
+        if ((await row.count()) === 0) return false;
+        await row.click({ button: "right" });
+        await wait(500);
+        return true;
+      },
+      // Shut on the way out. A menu left open is a modal layer, and the
+      // next stop would find its own controls `aria-hidden` behind it
+      // and excuse them in bulk — which prints as a stop that was
+      // measured and is a stop that was not.
+      after: async () => {
+        await page.keyboard.press("Escape");
+        await wait(300);
+      },
+    },
+    {
       name: "session detail",
       anchor: "[data-detail-header]",
       go: async () => (await press(rail("sessions"))) && press("[data-list] [data-row-open]"),
@@ -679,6 +721,20 @@ try {
         "`e.target === e.currentTarget` (the strip's own blank space) and does " +
         "one thing — focus the `<input>` inside it. The target is in the DOM " +
         "and is that input; this widens its press area onto the field's padding.",
+    ],
+    "data-row-menu": [
+      "src/components/RowMenu.tsx (the handler is Radix's, not ours)",
+      "not a target and not ours: the carrier is the menu's own box, and the " +
+        "`onMouseDown` on it belongs to `RovingFocusGroup` " +
+        "(`@radix-ui/react-roving-focus`, `isClickFocusRef.current = true`) — it " +
+        "sets a flag so the group can tell a click-entry from a keyboard-entry " +
+        "and skip its auto-focus. It acts on nothing. **What this waiver does " +
+        "not buy:** it says nothing about the two items inside, which carry the " +
+        "real handlers and are `role=\"menuitem\"` — section 3 measures those, " +
+        "and they are the reason this stop exists. The box itself is reachable " +
+        "by keyboard regardless (Radix gives it `role=\"menu\"` and a tabindex), " +
+        "so the one thing this section is about — a target only a pointer can " +
+        "find — is not what is happening here.",
     ],
   };
 

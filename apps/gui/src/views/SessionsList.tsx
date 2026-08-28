@@ -3,11 +3,12 @@ import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionMark } from "@/components/BrandIcons";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionTitle } from "@/components/SessionTitle";
-import { IconBack, IconPin } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { IconBack } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { closeWarning } from "@/views/DetailPane";
 import { ago, axisOf, groupLabel, quietFor, valueOf, word } from "@/words";
 
 /** The corner mark on a row's face: the shape is `sessionMark`'s one
@@ -162,20 +163,26 @@ export function SessionsList({
   selected,
   onSelect,
   onPin,
+  onClose,
   pinFailed,
-  narrow,
+  closeRefused,
 }: {
   rows: SessionRow[];
   query: string;
   words: string[];
   selected: string | null;
   onSelect: (row: SessionRow) => void;
-  onPin: (row: SessionRow) => void;
+  /** **Rejects when the write did not take** — that is how the menu
+      knows to stay open on the item that was pressed, instead of
+      closing over a row that did not move (`RowMenu`, `App`). */
+  onPin: (row: SessionRow) => Promise<void>;
+  /** Rejects the same way, and for the same reason; a refusal also
+      lands in `closeRefused` as a whole sentence. */
+  onClose: (row: SessionRow) => Promise<void>;
   /** Rows whose last pin attempt did not take — see `App`. */
   pinFailed: Set<string>;
-  /** The posture, for the pin's visibility rule below — the one
-      breakpoint, handed down rather than measured again. */
-  narrow: boolean;
+  /** What the node said when it would not close a row, by row id. */
+  closeRefused: Map<string, string>;
 }) {
   const shown = visibleSessions(rows, query, words);
   // The fold (退场批): old news — dead, looked at, past the threshold,
@@ -239,6 +246,52 @@ export function SessionsList({
       </div>
     );
   }
+  /**
+   * What a row can be told to do, on right-click and on long-press.
+   *
+   * **Two items, and the second one is why there is a menu at all.** A
+   * menu holding one thing is a menu that teaches people not to open
+   * menus, which is the same judgment `App` makes about an empty "+".
+   *
+   * **Rename is deliberately not here.** It already has a way in — the
+   * title's own double-click and F2 (`SessionTitle`) — and a second
+   * path to one action is the thing this repo keeps taking back out.
+   * The two that are here had no way in that a finger could reach:
+   * the pin was a hover-only button, and close lived one screen away in
+   * the detail header.
+   */
+  const actions = (r: SessionRow): RowAction[] => [
+    {
+      key: "pin",
+      // The word is what pressing it *does*, so it is the opposite of
+      // the row's current state — which is also what makes this item
+      // say what the state is. When the last attempt did not take, the
+      // word becomes the one for what failed, said on the very thing
+      // that was pressed (docs/UX.md 做了但没变化 / 失败). It tracks the
+      // action that was **attempted**, so it stays the opposite of
+      // `r.pinned` read off the un-refreshed row.
+      label: pinFailed.has(r.id)
+        ? r.pinned
+          ? gui.unpin_failed
+          : gui.pin_failed
+        : r.pinned
+          ? gui.unpin
+          : gui.pin,
+      failed: pinFailed.has(r.id),
+      run: () => onPin(r),
+    },
+    {
+      key: "close",
+      label: gui.close,
+      // This row's own sentence, from the one place that map lives
+      // (`DetailPane.closeWarning`). Writing the kinds out again here
+      // would be a second source that compiles, runs, and says the
+      // wrong thing.
+      confirm: closeWarning(r.kind),
+      note: closeRefused.get(r.id),
+      run: () => onClose(r),
+    },
+  ];
   const strip = (r: SessionRow, prev: SessionRow | undefined, size: number) => {
     const open = !shutOf(r.group);
     return (
@@ -292,12 +345,20 @@ export function SessionsList({
               )}
             </button>
           )}
-          {/* The row is a strip holding two controls, not a button
-              itself: the pin cannot be nested inside the button that
-              opens the row, because a button inside a button is not a
-              thing the DOM has. The strip was cut one batch before the
-              pin arrived, so no anchor in here had to move when it
-              did. */}
+          {/* The row is a strip, not a button itself — it was cut that
+              way for a pin that had to sit outside the button that
+              opens the row (a button inside a button is not a thing the
+              DOM has). **The pin is gone and the strip stays**, now for
+              a different reason: right-click and long-press belong to
+              the whole row, and the strip is what "the whole row" is.
+              **Where the pinned fact went**: it used to be said twice —
+              by the group heading a pinned row sits under and by a pin
+              that stayed drawn on the row. The heading is `Node::sessions`'
+              own judgment and is on screen in all four arrangements; the
+              row's copy was the one that needed a pointer to appear.
+              What replaces it is more exact than either: the menu's own
+              first item reads 置顶 or 取消置顶, which states the row's
+              current state at the moment somebody asks. */}
           {/* `data-source` is the machine a reported row came from, as
               an anchor rather than only as painted text — verification
               asserts on data attributes, never on the words, which
@@ -322,16 +383,33 @@ export function SessionsList({
           data-home={r.home}
           data-title={r.title}
           className={cn(
-            "group/row flex w-full items-center pr-2 hover:bg-secondary",
+            // No `group/row` any more: that name existed for exactly one
+            // reader, the pin's `group-hover/row:opacity-100`, and a
+            // named group nobody names back is a handle left tied to
+            // something that is gone.
+            "flex w-full items-center hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
             r.quiet && "opacity-55",
           )}
         >
+          {/* **The menu's trigger is this button, not the strip around
+              it**, and the `pr-2` moved in here so that the button is
+              the whole row and the two are the same target either way.
+              The reason is not tidiness: the trigger carries an
+              `onPointerDown` (that is the long press), and a press
+              handler on a bare `<div>` is a target only a pointer can
+              find — `check-face`'s section 4 asserts against exactly
+              that, and it would have been right to. On the button, the
+              handler sits on something the DOM already admits is a
+              target: focus reaches it, and a keyboard's Menu key fires
+              `contextmenu` on the focused element, which is what opens
+              this. */}
+          <RowMenu items={actions(r)}>
           <button
             type="button"
             data-row-open
             onClick={() => onSelect(r)}
-            className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left"
+            className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4 text-left"
           >
             {/* The machine's face carries the row (one per machine, what
                 the eye scans by). Around it, a halo in the state's own
@@ -471,56 +549,7 @@ export function SessionsList({
                 ))}
             </span>
           </button>
-          {/* The row's second control, and the reason the strip exists:
-              a button cannot live inside the button that opens the row.
-              **Wide reveals it under the pointer or keyboard focus;
-              narrow draws it always** — a control that only a mouse can
-              summon does not exist on a phone, and the narrow face is
-              the one with no pointer. On the wide face a pin on every
-              row was the screen's loudest repetition: fifteen identical
-              glyphs saying nothing row-specific. **A pinned row's pin
-              stays drawn on both faces** — there it is a fact about the
-              row, not an entry point, and facts do not wait for a
-              pointer (the failure word stays for the same reason). */}
-          {/* When the write did not take, the button says so where it
-              was pressed: it goes to the failure colour and its name
-              becomes the word for what failed. Without this, a failed
-              pin and a missed click are the same picture — a row that
-              did not move (docs/UX.md 做了但没变化 / 失败). The name
-              tracks the action that was *attempted*, so it is the
-              opposite of `r.pinned` from the un-refreshed row. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            data-row-pin
-            data-on={r.pinned}
-            data-pin-failed={pinFailed.has(r.id)}
-            aria-label={
-              pinFailed.has(r.id)
-                ? r.pinned
-                  ? gui.unpin_failed
-                  : gui.pin_failed
-                : r.pinned
-                  ? gui.unpin
-                  : gui.pin
-            }
-            onClick={() => onPin(r)}
-            // **`min-h-touch min-w-touch`** — the finger floor
-            // (tokens.css `--touch`), the same spelling the rail wears.
-            // The hit area grows; the glyph does not, and the ghost
-            // variant's wash paints this very button box, so what lights
-            // up is what is pressable. Measured before this: every pin
-            // was an icon-only target at the `--ctl-md` look's size, on
-            // both faces — the hardest kind of target to hit and the one
-            // furthest under the floor.
-            className={cn(
-              "min-h-touch min-w-touch flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed",
-              !narrow &&
-                "opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 data-[on=true]:opacity-100 data-[pin-failed=true]:opacity-100",
-            )}
-          >
-            <IconPin pinned={r.pinned} />
-          </Button>
+          </RowMenu>
         </div>
           )}
         </Fragment>
