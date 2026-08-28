@@ -3263,91 +3263,105 @@ for line in sys.stdin:
   if (seatsHere.some((t) => t !== "BUTTON")) {
     throw new Error(`a face here answers nothing: ${JSON.stringify(seatsHere)}`);
   }
-  //     …and pressing one really opens that machine's card. Read off the
-  //     name it prints, so "a card opened" and "the right card opened"
-  //     are not the same pass.
-  const someSeat = await page
+  //     …and pressing one really opens **that** machine's card, and the
+  //     card carries what that machine is holding. Both halves are read
+  //     off the screen: the name the card prints against the name on the
+  //     seat that was pressed, so "a card opened" and "the right card
+  //     opened" are not the same pass; and the 全部 count, which is the
+  //     four counts that used to hang off one node standing for the
+  //     whole mesh, after they were moved onto the machine they are
+  //     about (「会话是在机器节点点击后看的,不是在地图外面」 — the
+  //     user, 2026-08-28).
+  //
+  //     **The independent witness is the sum.** Each card counts one
+  //     machine's rows; `khor sessions --all` on the same home counts
+  //     every row from the other side. No number is written in this
+  //     file — both sides are read, and a scoping bug in either
+  //     direction (a card showing the whole table, or a machine's rows
+  //     landing on nobody) moves the sum off the total.
+  const seatIds = await page
     .locator("[data-mark-place] [data-seat]")
-    .first()
-    .getAttribute("data-seat");
-  await page.locator(`[data-mark-place] [data-seat="${someSeat}"]`).click();
-  await until("the machine card on the map", 10_000, async () =>
-    (await page.locator("[data-node-card]").count()) === 1,
-  );
-  await page.keyboard.press("Escape");
-  await until("the card to close", 5_000, async () =>
-    (await page.locator("[data-node-card]").count()) === 0,
-  );
-
-  //     **The waiting count is on the node itself, at rest.** This is
-  //     the one fact on this screen with a person on the other end of
-  //     it, and it may not need a press to be seen — the rail's badge
-  //     cannot stand in, since it counts waiting *or* unread and says
-  //     which of the two it means nowhere. Both directions are asserted:
-  //     an implementation that simply never draws it would satisfy the
-  //     absent half on its own.
-  const blockedOnScreen = Number(
-    (await page.locator("[data-session-node]").getAttribute("data-blocked")) ?? "-1",
-  );
-  //     The witness is the CLI, and **the word it prints is never
-  //     spelled here** — it is read off a row wearing that state key and
-  //     then looked for in the terminal's second column, the same way
-  //     every other word in this file is compared. When nothing is
-  //     waiting there is no row to read it from, and there is also
-  //     nothing to count: both sides are zero and the comparison is
-  //     skipped rather than faked with a guessed word.
-  //     **A skipped half says so.** With nothing waiting there is no
-  //     word to read and nothing to count, so the comparison cannot run
-  //     — and a silent `continue` here would print a run that reads as
-  //     "both directions asserted" while only the absent one executed.
-  //     An implementation that never drew the line would be green on
-  //     such a run. Same shape as a gate that walks to the door and
-  //     reports the house fine; the deterministic half is in 26 below,
-  //     where an offer provably puts a row into the waiting state.
-  if (blockedOnScreen > 0) {
-    const blockedWord = await page.evaluate(() => {
-      const seen = document.querySelector('[data-row][data-word="blocked"] [data-word-text]');
-      return seen ? seen.textContent.trim() : null;
-    });
-    if (blockedWord) {
-      const inCli = cli(envB, "sessions", "--all")
-        .split("\n")
-        .filter((l) => l.split("\t")[1] === blockedWord).length;
-      if (blockedOnScreen !== inCli) {
-        throw new Error(`the node says ${blockedOnScreen} waiting and the CLI lists ${inCli}`);
-      }
-    } else {
-      console.log("  note: nothing on screen wears the waiting key, so no word to compare against");
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-seat")));
+  let summed = 0;
+  for (const id of seatIds) {
+    const seatName = (
+      await page.locator(`[data-mark-place] [data-seat="${id}"] [data-seat-name]`).innerText()
+    ).trim();
+    await page.locator(`[data-mark-place] [data-seat="${id}"]`).click();
+    await until(`the card for ${seatName}`, 10_000, async () =>
+      (await page.locator("[data-node-card]").count()) === 1,
+    );
+    const cardName = (await page.locator("[data-node-card-name]").innerText()).trim();
+    if (!cardName.startsWith(seatName)) {
+      throw new Error(`pressed ${seatName} and got the card for ${cardName}`);
     }
-  } else {
-    console.log("  note: nothing is waiting on this run — the drawn half of the node's count was not exercised here (26 does it)");
-  }
-  const noteDrawn = (await page.locator("[data-node-blocked]").count()) === 1;
-  if (noteDrawn !== blockedOnScreen > 0) {
-    throw new Error(
-      `the node counts ${blockedOnScreen} waiting and ${noteDrawn ? "draws" : "does not draw"} the line`,
+    //     A machine with nothing on it says so in one sentence rather
+    //     than in four zeros, so the two shapes are read as the two
+    //     shapes — and exactly one of them may be up.
+    const none = (await page.locator("[data-node-card] [data-count-none]").count()) === 1;
+    const counted = (await page.locator('[data-node-card] [data-count="all"]').count()) === 1;
+    if (none === counted) {
+      throw new Error(`${seatName}'s card shows ${none ? "both" : "neither"} the counts and the empty word`);
+    }
+    if (counted) {
+      const n = Number(
+        (await page.locator('[data-node-card] [data-count="all"]').innerText()).replace(/\D+/g, ""),
+      );
+      if (!Number.isFinite(n)) {
+        throw new Error(`${seatName}'s card counts something unreadable`);
+      }
+      summed += n;
+    }
+    await page.keyboard.press("Escape");
+    await until("the card to close", 5_000, async () =>
+      (await page.locator("[data-node-card]").count()) === 0,
     );
   }
-
-  //     **The independent witness, in its new form.** The sessions node
-  //     counts what this machine holds; `khor sessions` on the same home
-  //     counts the same thing from the other side. No number is written
-  //     in this file — both sides are read.
-  await page.locator("[data-session-node]").click();
-  await until("the sessions card", 10_000, async () =>
-    (await page.locator('[data-count="all"]').count()) === 1,
-  );
-  const shownAll = Number(
-    (await page.locator('[data-count="all"]').innerText()).replace(/\D+/g, ""),
-  );
-  if (!Number.isFinite(shownAll) || shownAll === 0) {
-    throw new Error(`probe dead: the sessions node counts nothing (${shownAll})`);
-  }
   const cliRows = cli(envB, "sessions", "--all").split("\n").filter((l) => l.includes("\t")).length;
-  if (shownAll !== cliRows) {
-    throw new Error(`the map says ${shownAll} sessions and \`khor sessions\` lists ${cliRows}`);
+  if (cliRows === 0) {
+    throw new Error("probe dead: khor lists no sessions, so the sum has nothing to disagree with");
   }
-  await page.keyboard.press("Escape");
+  if (summed !== cliRows) {
+    throw new Error(`the machine cards count ${summed} sessions between them and \`khor sessions\` lists ${cliRows}`);
+  }
+
+  //     **Waiting is said out on the map, without a press.** The counts
+  //     went behind a press when they moved onto the machines; this one
+  //     fact did not, and may not — it is the one state of the six with
+  //     a person on the other end of it, and a screen that has to be
+  //     searched for an alarm has no alarm. The rail's badge cannot
+  //     stand in: it counts waiting *or* unread and says which of the
+  //     two it means nowhere.
+  //
+  //     **Both directions, on every seat.** An implementation that never
+  //     drew the line would satisfy the absent half on its own, so what
+  //     is asserted is the agreement — a seat draws the line exactly
+  //     when its count is above zero. Whether anything is waiting on
+  //     this particular run is the run's business; 26 below creates the
+  //     state on purpose and checks the drawn half there.
+  const seatMarks = await page.locator("[data-mark-place] [data-seat]").evaluateAll((els) =>
+    els.map((e) => ({
+      name: e.querySelector("[data-seat-name]")?.textContent.trim() ?? "",
+      blocked: Number(e.getAttribute("data-blocked") ?? "-1"),
+      drawn: e.querySelector("[data-seat-blocked]") !== null,
+    })),
+  );
+  if (seatMarks.length === 0) {
+    throw new Error("probe dead: no seats to read the waiting mark off");
+  }
+  for (const m of seatMarks) {
+    if (m.blocked < 0) {
+      throw new Error(`${m.name}'s seat does not carry a waiting count at all`);
+    }
+    if (m.drawn !== m.blocked > 0) {
+      throw new Error(
+        `${m.name} counts ${m.blocked} waiting and ${m.drawn ? "draws" : "does not draw"} the line`,
+      );
+    }
+  }
+  if (seatMarks.every((m) => m.blocked === 0)) {
+    console.log("  note: nothing is waiting on this run — the drawn half of the seat's mark was not exercised here (26 does it)");
+  }
   await openLanding("devices");
 
   // 28) pressing a face on the map opens that machine.
@@ -5036,19 +5050,38 @@ for line in sys.stdin:
   //      depends on the weather is a gate that reports "both directions
   //      asserted" having exercised one. Here the state was just
   //      created, so the assertion holds every time.
+  //
+  //      **And it has to say so on the right machine.** The mark moved
+  //      from one node standing for the whole mesh onto the seat of the
+  //      machine that owns the row, so "somebody is waiting" and "this
+  //      one is" stopped being the same claim — a mark on the wrong
+  //      seat sends a person to the wrong card and would still pass
+  //      "something says so". Which machine that is, is not written
+  //      here: it is read off the row itself (`SessionRow::home`, the
+  //      node's own join), and the map has to agree with it.
+  const waitingHome = await page.locator('[data-row="chat/beta"]').getAttribute("data-home");
+  if (!waitingHome) {
+    throw new Error("probe dead: the waiting row does not say which machine it is on");
+  }
   await page.locator("[data-rail-mark]").click();
   await until("the mark's place", 15_000, async () =>
-    (await page.locator("[data-session-node]").count()) === 1,
+    (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
   );
-  const waitingNow = Number(
-    (await page.locator("[data-session-node]").getAttribute("data-blocked")) ?? "0",
-  );
-  if (waitingNow < 1) {
-    throw new Error(`a row is waiting and the node counts ${waitingNow}`);
-  }
-  if ((await page.locator("[data-node-blocked]").count()) !== 1) {
-    throw new Error("something is waiting and the node's face does not say so at rest");
-  }
+  //      A poll apart: the list saw 待批 first, and the map is fed by
+  //      the same table one round later.
+  await until(`${waitingHome}'s seat to say something is waiting`, 30_000, async () => {
+    const seat = await page.locator("[data-mark-place] [data-seat]").evaluateAll(
+      (els, name) =>
+        els
+          .filter((e) => e.querySelector("[data-seat-name]")?.textContent.trim() === name)
+          .map((e) => ({
+            blocked: Number(e.getAttribute("data-blocked") ?? "0"),
+            drawn: e.querySelector("[data-seat-blocked]") !== null,
+          }))[0] ?? null,
+      waitingHome,
+    );
+    return seat !== null && seat.blocked >= 1 && seat.drawn;
+  });
   //      …read at rest: nothing here was pressed open, which is the
   //      whole point — the count has to be legible before anyone asks.
   if ((await page.locator("[data-node-card]").count()) !== 0) {

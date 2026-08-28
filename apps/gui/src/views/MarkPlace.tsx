@@ -33,16 +33,27 @@ import { ageIfOld } from "@/words";
  * being the smaller question. Under the picture they are a footing —
  * the map is what this place is, and the arcs are what it costs.
  *
- * # Everything here is a node, and pressing one opens a card
+ * # Everything here is a machine, and pressing one opens its card
  *
- * There are two kinds and they are not the same kind of thing, which is
- * why one is in the mandala and one is not. **A seat is a machine**, and
- * the ring of seats is `khor_core::map`'s. **The session node is not a
- * machine** — sessions live on machines, several to one — so putting it
- * on that ring would draw a member the mesh does not have. It sits above
- * the picture, in the same grammar (a mark, a caption under it) so that
- * it reads as one more thing to press, and outside the ring so that it
- * claims nothing about membership.
+ * **There used to be a second kind of node**: one mark above the
+ * picture standing for every session khor holds, pressed for a card of
+ * four counts. 「会话是在机器节点点击后看的,不是在地图外面」 — the user,
+ * 2026-08-28. It is gone, and the counts went onto the machine's own
+ * card, scoped to that machine.
+ *
+ * The judgment it was built on was that a session is not a machine
+ * (several live on one), so it could not take a seat on a ring whose
+ * members are machines — true, and it does not follow that it belongs
+ * beside the ring. **A session does have a machine**, `SessionRow::home`
+ * has said so all along, and the honest place for a count of them is the
+ * thing they are counted on. One mark for the whole mesh could only ever
+ * answer 一共几个, which is a question with a landing of its own; asked
+ * per machine, the same four counts answer 这台在忙什么.
+ *
+ * What that costs is a standing signal, and the cost is paid on the map
+ * rather than waived: 待批 is drawn on the seat of the machine that owns
+ * it (`MandalaMap`'s head). Without it the one state with a person on
+ * the other end would be findable only by opening every machine in turn.
  *
  * **The card is a press, never a hover.** A preview that only appears
  * under a pointer does not exist on a phone, and this screen is the same
@@ -68,13 +79,14 @@ export function MarkPlace({
   /** Where the waiting call leads, when anything is waiting. */
   onPickWaiting: (row: SessionRow) => void;
 }) {
-  // Which node's card is open — a machine's id, the sessions node, or
-  // nothing. One piece of state rather than two booleans: the two cards
-  // occupy the same space and only one can be open, and two flags can
-  // represent a state the screen cannot show.
-  const [open, setOpen] = useState<{ kind: "machine"; id: string } | { kind: "sessions" } | null>(
-    null,
-  );
+  // Which machine's card is open, if any — its id, or nothing.
+  //
+  // **This used to be a tagged union**, back when a second kind of node
+  // could be open in the same space. There is one kind now, and a
+  // discriminant with one arm is the sort of leftover that outlives the
+  // structure it was for: it costs a `kind` at every read and quietly
+  // teaches the next person that this screen has two things to open.
+  const [open, setOpen] = useState<string | null>(null);
   // Escape closes, wherever the focus is. Bound while a card is open
   // and not before: a listener that is always on is a key this screen
   // has taken away from everything under it for the 99% of the time
@@ -90,8 +102,22 @@ export function MarkPlace({
   // A machine that leaves the table takes its card with it. Read from
   // the row rather than held in state, so the card cannot outlive the
   // fact it is about.
-  const machine =
-    open?.kind === "machine" ? (devices.find((d) => d.id === open.id) ?? null) : null;
+  const machine = open ? (devices.find((d) => d.id === open) ?? null) : null;
+  // How many rows on each machine are waiting on a person, keyed by
+  // device id for the map. Counted here rather than in `MandalaMap`:
+  // that file is handed devices and has never been handed sessions, and
+  // a picture that went looking for a second table to draw itself is a
+  // picture with an opinion about what a machine is.
+  //
+  // Joined on the name and not on an id, because the name is the join
+  // the node itself made (`khor_node::list::place_of` builds `home`
+  // from the same device table this row's `name` comes from) — a second
+  // mapping invented here would be a second answer that can disagree.
+  const waiting: Record<string, number> = {};
+  for (const d of devices) {
+    const n = rows.filter((r) => r.home === d.name && r.word === "blocked").length;
+    if (n > 0) waiting[d.id] = n;
+  }
   return (
     <div data-mark-place className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -100,25 +126,21 @@ export function MarkPlace({
             nothing else, so the arcs below stay readable while a card
             is open. */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <SessionNode
-            rows={rows}
-            on={open?.kind === "sessions"}
-            onPress={() => setOpen((was) => (was?.kind === "sessions" ? null : { kind: "sessions" }))}
-          />
           <div className="min-h-0 min-w-0 flex-1">
             <MandalaMap
               rows={devices}
               selected={machine?.id ?? null}
-              onOpen={(row) =>
-                setOpen((was) =>
-                  was?.kind === "machine" && was.id === row.id ? null : { kind: "machine", id: row.id },
-                )
-              }
+              waiting={waiting}
+              onOpen={(row) => setOpen((was) => (was === row.id ? null : row.id))}
             />
           </div>
-          {machine && <MachineNodeCard row={machine} onClose={() => setOpen(null)} />}
-          {open?.kind === "sessions" && (
-            <SessionNodeCard rows={rows} onClose={() => setOpen(null)} onPickWaiting={onPickWaiting} />
+          {machine && (
+            <MachineNodeCard
+              row={machine}
+              rows={rows.filter((r) => r.home === machine.name)}
+              onClose={() => setOpen(null)}
+              onPickWaiting={onPickWaiting}
+            />
           )}
         </div>
         {/* The footing. **The rule between it and the picture is drawn
@@ -136,96 +158,7 @@ export function MarkPlace({
 }
 
 /**
- * The one node on this screen that is not a machine: how many sessions
- * khor is holding, **and whether any of them is waiting on you**.
- *
- * # It has to answer that second question standing still
- *
- * **This is the whole design of it, and the first version failed it.**
- * That one drew the total and the word 会话 and put 待批 inside the card,
- * one press away — which took the one state in the six with a person on
- * the other end of it (`khor_core::State::Blocked`: an action is stuck
- * and an approval is the only way out; `rank()` puts it at 0, ahead of
- * 失败) and turned it from something seen into something looked up. The
- * rail's badge cannot cover for it: that number counts rows that are
- * waiting **or** unread and cannot say which.
- *
- * So 待批 rides the node itself, in two channels at once, and neither is
- * a new piece of furniture:
- *
- *   - **the arc** — the ring goes from track-only to a real arc, and the
- *     arc's fraction is 待批 out of the total. That is a denominator khor
- *     actually holds, which is why the arc is allowed at all: a ring's
- *     job is 「how much of this」 and here 「this」 is the number in the
- *     middle;
- *   - **the count**, printed under the word, in `--state-blocked` —
- *     the same colour that state wears on every row in the app, so it is
- *     recognised rather than decoded. A colour alone would have to be
- *     learnt, which is the mistake the star map's bars were removed for.
- *
- * **Neither is drawn at zero**, and that is not the vanishing act the
- * 「N 等你的事」 call was removed for. That call *was* the whole element,
- * so its absence and 「this screen forgot about sessions」 looked the
- * same. The node is always here; what changes is whether it is carrying
- * an alarm. A permanent 待批 0 would be the other failure this repo has
- * a rule for — a badge that can never reach zero is no badge, and its
- * mirror is a badge that is always at zero.
- */
-function SessionNode({
-  rows,
-  on,
-  onPress,
-}: {
-  rows: SessionRow[];
-  on: boolean;
-  onPress: () => void;
-}) {
-  const blocked = rows.filter((r) => r.word === "blocked").length;
-  return (
-    <div className="flex flex-none justify-center pt-pane">
-      <button
-        type="button"
-        data-session-node
-        data-blocked={blocked}
-        data-on={on}
-        aria-expanded={on}
-        onClick={onPress}
-        // The floor is cleared by the ring itself (`RING_SIZE` is 64),
-        // and it is stated anyway: the ring's diameter is a decision
-        // about drawing that this button does not own, and a press
-        // target that clears the floor by accident stops clearing it
-        // the day somebody shrinks the drawing.
-        className="flex min-h-touch min-w-touch flex-col items-center gap-in rounded-lg px-2 py-1 hover:bg-accent data-[on=true]:bg-accent"
-      >
-        {/* `null` while there is nothing to be a fraction of: a session
-            count is not out of anything, and at zero blocked there is no
-            share to draw either. */}
-        <Ring
-          fraction={blocked > 0 && rows.length > 0 ? blocked / rows.length : null}
-          color={blocked > 0 ? "var(--state-blocked)" : "var(--muted-foreground)"}
-        >
-          {rows.length}
-        </Ring>
-        <span className="text-aux text-muted-foreground">{gui.sessions_tab}</span>
-        {/* The word before the number, because the word is what makes the
-            number readable without pressing anything — and the state's
-            own colour, never a second one invented here. */}
-        {blocked > 0 && (
-          <span
-            data-node-blocked
-            className="text-aux tabular-nums"
-            style={{ color: "var(--state-blocked)" }}
-          >
-            {`${state.blocked} ${blocked}`}
-          </span>
-        )}
-      </button>
-    </div>
-  );
-}
-
-/**
- * The shell both cards wear.
+ * The shell a machine's card wears.
  *
  * Over the picture rather than beside it: this screen's whole width is
  * the picture, and a card that pushed the map aside would move every
@@ -292,10 +225,55 @@ function NodeCard({
  * it. The bytes, the core count, the strain word and the khor version
  * are a level in, on `MachineCard`, and they are not repeated here —
  * a preview that says everything is not a preview.
+ *
+ * # …and what it is holding: four counts, under a rule
+ *
+ * The user named all four (2026-08-28 —「几个 session、几个忙碌、几个
+ * 待批、几个完成」), and named where they belong (「会话是在机器节点点击
+ * 后看的」). So they are this machine's, filtered by `SessionRow::home`
+ * before they get here.
+ *
+ * **Counts, not a list.** The list is a landing of its own with a search
+ * box, a filter and its own order; a second, shorter, unsorted copy of
+ * it on the home screen would be a list nobody could trust to be the
+ * same one.
+ *
+ * **Three of the six words, and the three are not a ranking.** They are
+ * the three the user asked for, and they happen to be the three at the
+ * top of `State::rank` bar one — 待批 (an approval is owed), 忙碌
+ * (working, the one word that explicitly does not need you), 完成 (the
+ * turn ended, waiting to be read). 中断 / 失败 / 空闲 are not counted
+ * here and that is not this screen hiding them: 失败 沉底 by standing
+ * rule, and a count nobody asked for is a number to read past.
+ *
+ * **待批 is the only one that leads anywhere**, and the reason is in the
+ * word's definition rather than in its size: it is the one state of the
+ * six with a person on the other end of it (`khor_core::State::Blocked`
+ * — an action is stuck and an approval is the only way out). The other
+ * three are counts of things that are not asking for anything, so a
+ * press on them would land somewhere nobody was going.
+ *
+ * **The rule between the readings and the counts is doing work.** They
+ * are both rows of numbers under one heading and they are about
+ * different things — how hard this machine is working, and what it is
+ * working on. Without a line they read as one set of six.
  */
-function MachineNodeCard({ row, onClose }: { row: DeviceRow; onClose: () => void }) {
+function MachineNodeCard({
+  row,
+  rows,
+  onClose,
+  onPickWaiting,
+}: {
+  row: DeviceRow;
+  /** Only this machine's sessions — filtered by the caller, which is
+      the one holding the whole table. */
+  rows: SessionRow[];
+  onClose: () => void;
+  onPickWaiting: (row: SessionRow) => void;
+}) {
   const tracks = vitalsTracks(row);
   const aged = row.vitals ? ageIfOld(row.vitals.age_ms) : null;
+  const blocked = rows.filter((r) => r.word === "blocked");
   return (
     <NodeCard
       onClose={onClose}
@@ -331,6 +309,47 @@ function MachineNodeCard({ row, onClose }: { row: DeviceRow; onClose: () => void
           {cli.vitals_never}
         </div>
       )}
+      {/* This machine's sessions. **Zero of them is one sentence, not
+          four zeros**: four counts all reading 0 is a table of nothing,
+          and the list's own empty word already says it in one line. */}
+      <div data-node-card-sessions className="mt-in border-t pt-in">
+        {rows.length === 0 ? (
+          <div data-count-none className="text-aux text-muted-foreground">
+            {gui.empty_sessions}
+          </div>
+        ) : (
+          <div className="flex flex-wrap justify-center gap-row">
+            {/* **`全部`, not `会话`.** The three labels beside it are
+                state words, and this one is not a state — it is their
+                denominator. Reusing the rail landing's name here would
+                read as 「会话 (that station), 6」 rather than 「6 of them,
+                all told」; the catalog carries the rest of that judgment
+                on `sessions-all`. */}
+            <Count anchor="all" word={gui.sessions_all} n={rows.length} />
+            <Count
+              anchor="busy"
+              word={state.busy}
+              n={rows.filter((r) => r.word === "busy").length}
+            />
+            <Count
+              anchor="blocked"
+              word={state.blocked}
+              n={blocked.length}
+              // Only above zero. A zero in the alarm's own colour is
+              // the alarm pointing at nothing, and a mark that is
+              // always lit is not a mark — the same rule the seat's
+              // line is drawn by out on the map.
+              tone={blocked.length > 0 ? "var(--state-blocked)" : undefined}
+              onPress={blocked.length > 0 ? () => onPickWaiting(blocked[0]) : undefined}
+            />
+            <Count
+              anchor="done"
+              word={state.done}
+              n={rows.filter((r) => r.word === "done").length}
+            />
+          </div>
+        )}
+      </div>
       {/* Only once it is worth saying, the seat's own rule (`ageIfOld`):
           a reading taken a moment ago saying 「0 秒前」 reads as a fault. */}
       {aged !== null && (
@@ -356,66 +375,6 @@ function trackName(id: Track["id"]): string {
     default:
       return id;
   }
-}
-
-/**
- * The sessions card: four counts, and the user named all four
- * (2026-08-28 —「几个 session、几个忙碌、几个待批、几个完成」).
- *
- * **Counts, not a list.** The list is a landing of its own with a search
- * box, a filter and its own order; a second, shorter, unsorted copy of
- * it on the home screen would be a list nobody could trust to be the
- * same one.
- *
- * **Three of the six words, and the three are not a ranking.** They are
- * the three the user asked for, and they happen to be the three at the
- * top of `State::rank` bar one — 待批 (an approval is owed), 忙碌
- * (working, the one word that explicitly does not need you), 完成 (the
- * turn ended, waiting to be read). 中断 / 失败 / 空闲 are not counted
- * here and that is not this screen hiding them: 失败 沉底 by standing
- * rule, and a count nobody asked for is a number to read past.
- *
- * **待批 is the only one that leads anywhere**, and the reason is in the
- * word's definition rather than in its size: it is the one state of the
- * six with a person on the other end of it (`khor_core::State::Blocked`
- * — an action is stuck and an approval is the only way out). The other
- * three are counts of things that are not asking for anything, so a
- * press on them would land somewhere nobody was going.
- */
-function SessionNodeCard({
-  rows,
-  onClose,
-  onPickWaiting,
-}: {
-  rows: SessionRow[];
-  onClose: () => void;
-  onPickWaiting: (row: SessionRow) => void;
-}) {
-  const blocked = rows.filter((r) => r.word === "blocked");
-  return (
-    <NodeCard
-      onClose={onClose}
-      name={<span className="truncate text-fact">{gui.sessions_tab}</span>}
-    >
-      <div className="flex flex-wrap justify-center gap-row pt-in">
-        {/* **`全部`, not `会话`.** The three labels beside it are state
-            words, and this one is not a state — it is their denominator.
-            Reusing the rail landing's name here would read as 「会话 (that
-            station), 6」 rather than 「6 of them, all told」; the catalog
-            carries the rest of that judgment on `sessions-all`. */}
-        <Count anchor="all" word={gui.sessions_all} n={rows.length} />
-        <Count anchor="busy" word={state.busy} n={rows.filter((r) => r.word === "busy").length} />
-        <Count
-          anchor="blocked"
-          word={state.blocked}
-          n={blocked.length}
-          tone="var(--state-blocked)"
-          onPress={blocked.length > 0 ? () => onPickWaiting(blocked[0]) : undefined}
-        />
-        <Count anchor="done" word={state.done} n={rows.filter((r) => r.word === "done").length} />
-      </div>
-    </NodeCard>
-  );
 }
 
 /**

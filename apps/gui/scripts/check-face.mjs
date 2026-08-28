@@ -21,6 +21,8 @@
 //      target — the claim section 3's scope rests on, since a control
 //      the DOM does not admit to is one section 3 cannot find either;
 //   5. a dense pane has a reading order;
+//   5b. the quota strip runs across a wide pane and folds on a narrow
+//      one — the one panel on the home screen nothing watched;
 //   6. zero page errors while measuring — a half-drawn page answers
 //      probes too (the browser-check false-green family).
 //
@@ -1029,9 +1031,97 @@ try {
     }
   }
 
+  // 7) the quota strip runs across the pane, and folds when it cannot.
+  //
+  //    **Nothing watched this panel at all until now**, which is how it
+  //    shipped stacked into a pane a metre wide — 「水平排呀,现在垂直了
+  //    多丑,水平空间完全没用」 (the user, 2026-08-28). The layout is one
+  //    `auto-fit` track list, so what it does is decided by arithmetic
+  //    on the pane's width and is exactly the kind of claim a fixture
+  //    can hold: this gate already routes a two-window quota answer for
+  //    section 4, so the panel is on the glass here and nowhere else —
+  //    the smoke's homes have no Claude login, and faking one there
+  //    would be the hand-written mock `api.ts` refuses.
+  //
+  //    **Both directions, because one of them is the trap.** A row that
+  //    never folds is a phone with two windows squeezed into 294px;
+  //    a column that never runs across is what was just replaced. So
+  //    the wide posture must put them on one line and the narrow one
+  //    must not, and neither half can be satisfied by an implementation
+  //    that only ever does the other.
+  //    **And "side by side" is not the whole complaint.** Two arcs
+  //    packed into a 448px column in the middle of a metre-wide pane are
+  //    side by side and still leave the width unused, which is the half
+  //    the sentence 「水平空间完全没用」 is actually about — measured:
+  //    restoring the old `max-w-md` leaves the row arrangement intact
+  //    and this section green. So the strip's own width is read against
+  //    the pane it sits in. **No invented threshold**: the claim is that
+  //    there is no cap at all, so 0.9 is slack for padding rather than a
+  //    judgment about how wide is wide enough.
+  const quotaSeats = async (w, h) => {
+    await page.setViewportSize({ width: w, height: h });
+    await wait(500);
+    const boxes = await page.locator("[data-quota-window]").evaluateAll((els) =>
+      els.map((e) => {
+        const r = e.getBoundingClientRect();
+        return {
+          kind: e.getAttribute("data-quota-window"),
+          top: Math.round(r.top),
+          left: Math.round(r.left),
+        };
+      }),
+    );
+    const span = await page.evaluate(() => {
+      const strip = document.querySelector("[data-quota]");
+      const panel = document.querySelector("[data-quota-panel]");
+      if (!strip || !panel) return null;
+      return {
+        strip: Math.round(strip.getBoundingClientRect().width),
+        panel: Math.round(panel.getBoundingClientRect().width),
+      };
+    });
+    return { boxes, span };
+  };
+  const wide = await quotaSeats(1120, 1000);
+  const narrow = await quotaSeats(390, 844);
+  const wideQuota = wide.boxes;
+  const narrowQuota = narrow.boxes;
+  console.log(
+    `quota: wide ${JSON.stringify(wideQuota)} in ${JSON.stringify(wide.span)} · narrow ${JSON.stringify(narrowQuota)}`,
+  );
+  const CAPPED = 0.9;
+  if (!wide.span) {
+    fail("probe dead: the quota strip has no panel around it to be measured against");
+  } else if (wide.span.strip < wide.span.panel * CAPPED) {
+    fail(
+      `the quota strip is ${wide.span.strip} inside a ${wide.span.panel} pane — it is capped, and the width goes unused`,
+    );
+  }
+  if (wideQuota.length < 2 || narrowQuota.length < 2) {
+    // An empty `querySelectorAll` reads as「there is no such thing」and
+    // means「I did not find it」 — the two are told apart here rather
+    // than downstream, where "they are not side by side" would be the
+    // sentence a missing panel produced.
+    fail(
+      `probe dead: the quota strip drew ${wideQuota.length}/${narrowQuota.length} windows, so neither posture was measured`,
+    );
+  } else {
+    const rowsWide = new Set(wideQuota.map((q) => q.top));
+    const colsWide = new Set(wideQuota.map((q) => q.left));
+    if (rowsWide.size !== 1) {
+      fail(`the quota windows sit on ${rowsWide.size} lines at 1120 wide — the pane's width is going unused`);
+    }
+    if (colsWide.size !== wideQuota.length) {
+      fail(`${wideQuota.length} quota windows share ${colsWide.size} columns at 1120 wide — they are stacked on each other`);
+    }
+    if (new Set(narrowQuota.map((q) => q.top)).size !== narrowQuota.length) {
+      fail(`the quota windows stay on one line at 390 wide — two arcs and their sentences do not fit there`);
+    }
+  }
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
-      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, and a dense pane that leads",
+      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, and a quota strip that uses the width it has",
     );
 } finally {
   await browser?.close();

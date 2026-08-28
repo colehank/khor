@@ -16,13 +16,16 @@ import { ago, until } from "@/words";
 const SHELL = "border-t";
 
 /**
- * `max-w-md`, so a wide window does not stretch two arcs across a metre
- * of glass — the same column the network's now uses, for the same
- * reason: this is a short block of facts, not a table. The rule above
- * still spans the whole width, because what it separates is the whole
- * width.
+ * The whole width, and **this used to be `max-w-md`** on the reasoning
+ * that a short block of facts should not stretch across a metre of
+ * glass. 「下面的 usage 环,水平排呀,现在垂直了多丑,水平空间完全没用」 —
+ * the user, 2026-08-28. The cap was what made a horizontal row
+ * impossible: inside 448px two windows are two cramped columns, which
+ * is the measurement that put them one above the other in the first
+ * place. Widened, the arcs are the only thing in this strip and the
+ * strip is as wide as the map above it.
  */
-const COLUMN = "mx-auto w-full max-w-md p-4";
+const COLUMN = "mx-auto w-full p-4";
 
 /**
  * What the Claude subscription has left — the two windows, as arcs.
@@ -89,42 +92,57 @@ export function QuotaPanel({ quota }: { quota: QuotaAnswer | null }) {
   return (
     <section data-quota-panel className={SHELL}>
       <div data-quota className={cn(COLUMN, "flex flex-col gap-row")}>
-        {/* **One window per row, ring then sentence** — not two columns
-            side by side. Measured on the columns: they were 74 and 64
-            wide with 12 between them, and their reset lines — same size,
-            same colour, same baseline, 14 apart — read as one sentence,
-            「4 小时后重置 2 天后重置」. Widening the gutter to
-            `--gap-pane` bought 26, which is two characters: better, and
-            still two separate facts sitting on one line of the page.
-            Stacked, each window's words are the only words beside its
-            own arc and no gutter has to carry the meaning. Same height
-            either way — two rings tall is what two rings cost. */}
-        {q.windows.map((w) => (
-          <div key={w.kind} data-quota-window={w.kind} className="flex items-center gap-row">
-            {/* The percentage is what this panel exists to say, so it
-                reads at a size of its own — the tier tokens.css
-                describes as being for「a quota arc's centre」and which
-                had never been used at one. */}
-            <Ring fraction={w.used_pct / 100} color={gaugeColor(null)} centerClass="text-lg">
-              {`${Math.round(w.used_pct)}%`}
-            </Ring>
-            <span className="flex min-w-0 flex-col">
-              {/* 「5 小时窗口」, not 「5 小时」: with the reset line right
-                  under it there were two durations touching, one the
-                  length of the window and one what is left of it, and
-                  nothing on the glass said which was which. */}
-              <span className="text-fact">{windowName(w)}</span>
-              {/* Only when there is one. A window past its reset has none
-                  — the moment it names is behind it, and the reading
-                  beside it has already gone back to zero. */}
-              {w.resets_at !== null && (
-                <span data-quota-resets className="text-aux text-muted-foreground">
-                  {gui.quota_resets(until(w.resets_at * 1000))}
-                </span>
-              )}
-            </span>
-          </div>
-        ))}
+        {/* **Side by side, each window in a column of its own.**
+            The stacked version this replaces was measured and its
+            measurement was real: at `max-w-md` the two columns came out
+            74 and 64 wide with 12 between them, and their reset lines —
+            same size, same colour, same baseline, 14 apart — read as one
+            sentence,「4 小时后重置 2 天后重置」. **What changed is the
+            cap, not the judgment**: the gutter that was 12 is now
+            whatever is left of the pane after two cells of content, so
+            the words of one window are nowhere near the words of the
+            next and no rule has to be drawn to say so.
+
+            `auto-fit` with a floor rather than a fixed count: it is
+            horizontal wherever there is room for it and stacks itself on
+            a phone — which is the old layout, arrived at by measuring
+            instead of by decree, and khor has four window kinds to place
+            even though a personal plan shows two. */}
+        <div
+          className="grid gap-pane"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))" }}
+        >
+          {q.windows.map((w) => (
+            <div
+              key={w.kind}
+              data-quota-window={w.kind}
+              className="flex items-center justify-center gap-row"
+            >
+              {/* The percentage is what this panel exists to say, so it
+                  reads at a size of its own — the tier tokens.css
+                  describes as being for「a quota arc's centre」and which
+                  had never been used at one. */}
+              <Ring fraction={w.used_pct / 100} color={gaugeColor(null)} centerClass="text-lg">
+                {`${Math.round(w.used_pct)}%`}
+              </Ring>
+              <span className="flex min-w-0 flex-col">
+                {/* 「5 小时窗口」, not 「5 小时」: with the reset line right
+                    under it there were two durations touching, one the
+                    length of the window and one what is left of it, and
+                    nothing on the glass said which was which. */}
+                <span className="text-fact">{windowName(w)}</span>
+                {/* Only when there is one. A window past its reset has none
+                    — the moment it names is behind it, and the reading
+                    beside it has already gone back to zero. */}
+                {w.resets_at !== null && (
+                  <span data-quota-resets className="text-aux text-muted-foreground">
+                    {gui.quota_resets(until(w.resets_at * 1000))}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
         {/* Whose login this came through, and how old the reading is —
             **one line, because they are one kind of remark**: both
             qualify the arcs above and neither is a number. As two lines

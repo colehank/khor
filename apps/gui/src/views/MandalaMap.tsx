@@ -3,7 +3,7 @@ import type { DeviceRow } from "@/api";
 // in its place); the binding is the place itself.
 import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
-import { cli, gui } from "@/gen/catalog";
+import { cli, gui, state } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { ageIfOld, hopWord } from "@/words";
 
@@ -41,6 +41,23 @@ import { ageIfOld, hopWord } from "@/words";
  * card a level in, both of which draw rings with the percentages inside
  * them. A ring carries its own full, so it says how full without being
  * learnt; that is why the card may draw what the map may not.
+ *
+ * **待批 rides a seat, and it is not a reading.** A reading is a
+ * quantity out of some whole that has to be learnt before it means
+ * anything — which is what sank the bars. This is a count of rows in
+ * one named state (`khor_core::State::Blocked`: an action is stuck and
+ * an approval is the only way out), printed as the word plus the
+ * number, in the colour that state already wears on every row in the
+ * app. Nothing to learn and nothing to decode.
+ *
+ * It is here because sessions were moved onto the machines they live on
+ * (「会话是在机器节点点击后看的,不是在地图外面」 — the user,
+ * 2026-08-28), and a card is a press away. Without a mark out here, the
+ * one fact with a person on the other end of it would only be findable
+ * by opening every machine in turn; a screen that has to be searched
+ * for an alarm has no alarm. **Drawn only above zero** — a mark that is
+ * always present is not a mark, which is this repo's own rule about a
+ * badge that can never reach zero, read from the other end.
  *
  * **Every edge starts here**, and that is the data's shape, not a
  * style: the hop reading is first-hand — the same word the machine card
@@ -110,6 +127,7 @@ export function MandalaMap({
   rows,
   onOpen,
   selected,
+  waiting,
 }: {
   rows: DeviceRow[];
   /**
@@ -125,6 +143,13 @@ export function MandalaMap({
   onOpen?: (row: DeviceRow) => void;
   /** The machine whose card is open, if this map sits beside one. */
   selected?: string | null;
+  /**
+   * How many of each machine's sessions are waiting on a person, by
+   * device id (file head: 待批 rides a seat). Absent, and every seat
+   * draws none — a map with no session table behind it says nothing
+   * about sessions rather than saying zero.
+   */
+  waiting?: Record<string, number>;
 }) {
   // Which one is the middle is a fact about the machine, not about
   // where it was placed — mandala keeps those two apart even where they
@@ -205,9 +230,21 @@ export function MandalaMap({
                 </span>
               ),
           )}
-        <Seat row={me} big onOpen={onOpen} selected={selected} />
+        <Seat
+          row={me}
+          big
+          onOpen={onOpen}
+          selected={selected}
+          waiting={me ? (waiting?.[me.id] ?? 0) : 0}
+        />
         {others.map((row) => (
-          <Seat key={row.id} row={row} onOpen={onOpen} selected={selected} />
+          <Seat
+            key={row.id}
+            row={row}
+            onOpen={onOpen}
+            selected={selected}
+            waiting={waiting?.[row.id] ?? 0}
+          />
         ))}
       </div>
     </section>
@@ -301,11 +338,14 @@ function Seat({
   big,
   onOpen,
   selected,
+  waiting = 0,
 }: {
   row: DeviceRow | null;
   big?: boolean;
   onOpen?: (row: DeviceRow) => void;
   selected?: string | null;
+  /** This machine's waiting count — drawn only above zero. */
+  waiting?: number;
 }) {
   if (!row) return null;
   const reached = row.vitals !== null;
@@ -342,6 +382,24 @@ function Seat({
         >
           {row.name}
         </span>
+        {/* The one thing on this picture with a person on the other
+            end of it (file head). The word before the number, because
+            the word is what makes the number readable without pressing
+            anything — and the state's own colour, never a second one
+            invented here. */}
+        {waiting > 0 && (
+          <span
+            data-seat-blocked
+            className="max-w-full truncate text-xs tabular-nums"
+            style={{
+              fontSize: TEXT_FINE,
+              lineHeight: TEXT_RATIO,
+              color: "var(--state-blocked)",
+            }}
+          >
+            {`${state.blocked} ${waiting}`}
+          </span>
+        )}
         {/* The age — **only once it is worth saying** (`ageIfOld`) — or
             the third state. **This machine says neither**: it answers by
             looking, so there is no age to report and nothing to be
@@ -385,6 +443,7 @@ function Seat({
       type="button"
       data-seat={row.id}
       data-seat-me={row.me}
+      data-blocked={waiting}
       data-on={selected === row.id}
       onClick={() => onOpen(row)}
       className={cn(
@@ -412,7 +471,13 @@ function Seat({
       {body}
     </button>
   ) : (
-    <div data-seat={row.id} data-seat-me={row.me} className={shell} style={place}>
+    <div
+      data-seat={row.id}
+      data-seat-me={row.me}
+      data-blocked={waiting}
+      className={shell}
+      style={place}
+    >
       {body}
     </div>
   );
