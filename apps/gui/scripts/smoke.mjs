@@ -113,13 +113,12 @@
 //      knows membership, not reachability — asserted as a surplus-svg
 //      count, not as a hunt for lines nobody wrote), and pressing a face
 //      opens that machine;
-//  29. the app's mark opens the mesh and what it cost, on both faces —
-//      **the narrow one is the only way in there at all** — the place
-//      replaces the list-and-detail pair rather than filling it, a
-//      landing comes back out of it, the faces on it are not pressable
-//      (nothing in that space to open into), and every day and vendor
-//      the panel shows is one `khor usage` prints for the same home,
-//      with neither the day nor the word written in this file;
+//  29. the app's mark opens the mesh, on both faces — **the narrow one
+//      is the only way in there at all** — the place replaces the
+//      list-and-detail pair rather than filling it, a landing comes back
+//      out of it, every face on it is pressable and opens that machine's
+//      card, and the session count it prints is the one `khor sessions`
+//      lists for the same home, with no number written in this file;
 //  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
@@ -655,11 +654,16 @@ for line in sys.stdin:
   for (const d of [A, B, G]) mkdirSync(d, { recursive: true });
 
   // Something for beta's agents to have cost. **Written under beta's own
-  // home**, which is where its meter reads (`khor_node::usage`) — so the
-  // spending panel and `khor usage` are looking at one tree, and the
-  // comparison between them is about the two faces rather than about two
-  // sets of files. ASCII throughout: this is test data, not the thing
-  // under test.
+  // home**, which is where its meter reads (`khor_node::usage`).
+  //
+  // **Kept after the GUI stopped drawing a daily ledger** (2026-08-28:
+  // the mark's place shows the map and the subscription arcs, and what
+  // was spent per day is `khor usage`'s to print). It stays because the
+  // usage machinery still runs behind the app — the shell polls it, and
+  // a home with no spending at all would exercise only the empty path.
+  // Nothing below reads these numbers off a screen any more.
+  //
+  // ASCII throughout: this is test data, not the thing under test.
   const spent = join(B, ".claude/projects/p");
   mkdirSync(spent, { recursive: true });
   const billed = (id, day, out, cached) =>
@@ -1592,9 +1596,9 @@ for line in sys.stdin:
   //     button around it, no response to the pointer. That was right
   //     while it opened nothing, and it is now false — so it is turned
   //     over rather than deleted, because the new fact is the one worth
-  //     guarding. What it opens is asserted below (the map and the
-  //     spending); what is asserted here is that it looks like something
-  //     that opens anything at all.
+  //     guarding. What it opens is asserted below (the map, and the
+  //     cards its nodes open); what is asserted here is that it looks
+  //     like something that opens anything at all.
   const mark = page.locator("[data-rail-mark]");
   if ((await mark.count()) !== 1) throw new Error("no mark at the head of the rail");
   // Its artwork really loaded. A broken import renders an <img> all the
@@ -1638,18 +1642,68 @@ for line in sys.stdin:
   await until("rows on the session list", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
   const sessionIds = () =>
     page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
-  const pinButtons = page.locator("[data-row] [data-row-pin]");
+  // Pinning and closing a session moved off the row and into a context
+  // menu (right-click on a pointer, long-press on touch). Three
+  // mechanics decide how every assertion below is written, and each one
+  // fails in a way that reads like a broken product rather than a
+  // broken test:
+  //
+  //   1. **The menu is portalled to `body`.** `[data-row="x"] [data-row-menu]`
+  //      matches nothing, ever. Menu items are found globally.
+  //   2. **The menu is modal** — Radix marks the rest of the page
+  //      `aria-hidden`, so playwright judges every row unactionable
+  //      while it is open. Press Escape before touching the list again.
+  //   3. **Success closes it; failure does not.** That is the design
+  //      (a refusal has to be said on the thing that was pressed), so
+  //      whether an Escape is owed depends on which path was taken.
+  //   4. **Close is two presses.** The first only arms the item
+  //      (`[data-menu-item="close"][data-armed="true"]`); nothing has
+  //      happened yet. "Press close, wait for the row to go" hangs, and
+  //      the timeout says the row never left — which reads as closing
+  //      being broken rather than as a press being owed. Assert the
+  //      armed state between them, and the two-step is written into the
+  //      test instead of having to be learned from `RowMenu`.
+  //
+  // The trigger is the row's own open button — it now spans the row,
+  // and it is a button rather than the surrounding div so that a
+  // keyboard's Menu key lands somewhere that can receive it.
+  const openRowMenu = async (id) => {
+    await page.locator(`[data-row="${id}"] [data-row-open]`).click({ button: "right" });
+    await until(`the menu on ${id}`, 5_000, async () =>
+      (await page.locator('[data-menu-item="pin"]').count()) === 1,
+    );
+  };
+  const menuItemWord = async (which) =>
+    (await page.locator(`[data-menu-item="${which}"]`).innerText()).trim();
+  const closeRowMenu = async () => {
+    await page.keyboard.press("Escape");
+    await until("the menu to close", 5_000, async () =>
+      (await page.locator("[data-row-menu]").count()) === 0,
+    );
+  };
 
-  //     a. the control: nothing is pinned, and every row carries the pin
-  //     — "every row" is the reachability claim, and counting it against
-  //     the rows themselves is what makes it one.
+  //     a. the control: nothing is pinned, and **every row opens a menu**
+  //     — "every row" is the reachability claim, and walking the rows
+  //     themselves is what makes it one.
+  //
+  //     **Not "every row has a `[data-row-open]`"**: that was already
+  //     true before the menu existed, so it would assert nothing. What
+  //     is new is that pressing it the other way yields the actions.
   if ((await page.locator("[data-row][data-pinned=true]").count()) !== 0) {
     throw new Error("something is pinned before the test pinned anything — the control is void");
   }
-  if ((await pinButtons.count()) !== (await page.locator("[data-row]").count())) {
-    throw new Error(
-      `${await pinButtons.count()} pins for ${await page.locator("[data-row]").count()} rows — not every row can be pinned`,
-    );
+  for (const id of await sessionIds()) {
+    await openRowMenu(id).catch(() => {
+      throw new Error(`${id} opens no menu — its actions are unreachable`);
+    });
+    await closeRowMenu();
+  }
+  //     …and the row no longer carries a pin of its own. Asserted after
+  //     the walk above, which is the proof that the selectors here are
+  //     alive: a "there is no pin" read off a list that never drew is
+  //     the same string as a passing test.
+  if ((await page.locator("[data-row] [data-row-pin]").count()) !== 0) {
+    throw new Error("a session row still carries its own pin button beside the menu");
   }
 
   //     b. GUI → CLI. Pin the second row (not the first: a row already on
@@ -1661,7 +1715,15 @@ for line in sys.stdin:
   const plainLine = cliLineOf(envB, target);
   if (!plainLine) throw new Error(`probe dead: ${target} is not in beta's CLI list`);
 
-  await page.locator(`[data-row="${target}"] [data-row-pin]`).click();
+  //     …and the word on the menu item is read before pressing it, so
+  //     that c) below can compare it against the other state's.
+  await openRowMenu(target);
+  const restingWord = await menuItemWord("pin");
+  await page.locator('[data-menu-item="pin"]').click();
+  //     No Escape: a pin that took closes the menu itself. If it did not
+  //     take, the menu stays open wearing the failure — and the next
+  //     assertion times out saying the row never floated, which is the
+  //     honest reading of that state.
   await until("the pinned row to float to the top", 10_000, async () => {
     const now = await sessionIds();
     if (now[0] === target) return true;
@@ -1691,31 +1753,26 @@ for line in sys.stdin:
     throw new Error(`the CLI does not mark the pinned row: ${plainLine} -> ${markedLine}`);
   }
 
-  //     c. the two states are two shapes, not one shape in two colors.
-  //     Measured off the element: a painter that only swapped a color
-  //     would pass every other assertion here.
-  //     Both `transform` and the standalone `rotate` property are read:
-  //     tailwind v4 compiles `-rotate-45` to the latter, and reading only
-  //     the former returns "none" for a rotation that is plainly there.
-  const pinTransform = (id) =>
-    page.locator(`[data-row="${id}"] [data-row-pin] svg`).evaluate((el) => {
-      const s = getComputedStyle(el);
-      return `${s.transform}|${s.rotate}|${s.transformOrigin}`;
-    });
-  const pinnedShape = await pinTransform(target);
-  const restingShape = await pinTransform(idsBefore[0] === target ? idsBefore[1] : idsBefore[0]);
-  if (pinnedShape === restingShape) {
-    throw new Error(`pinned and unpinned draw the same shape: ${pinnedShape}`);
+  //     c. the two states are two different sentences.
+  //
+  //     **This is the old "two shapes, not one shape in two colours"
+  //     claim, kept and moved rather than dropped.** What it guarded is
+  //     that a control may not report its state by position alone — the
+  //     check "did the row jump to the top" is exactly the one that
+  //     fails when the row was already at the top. A session row has no
+  //     glyph any more, so here the state is carried by language: the
+  //     item says what pressing it will do, which is precisely the
+  //     negation of what is true now. The glyph half of the claim still
+  //     has a home and is asserted where the glyph still lives — on the
+  //     device list, in f) below.
+  await openRowMenu(target);
+  const pinnedWord = await menuItemWord("pin");
+  await closeRowMenu();
+  if (pinnedWord === restingWord) {
+    throw new Error(`pinned and unpinned offer the same word: ${pinnedWord}`);
   }
-  if (/\|none\|/.test(pinnedShape)) {
-    throw new Error(`the pinned state is not a rotation at all: ${pinnedShape}`);
-  }
-  //     …and the rotation happens around the middle. An SVG element's
-  //     transform-origin defaults to (0, 0), which would swing the pin
-  //     out of its own box — visibly wrong, and nothing else here looks.
-  const [, , origin] = pinnedShape.split("|");
-  if (/^0px 0px/.test(origin)) {
-    throw new Error(`the pin rotates around its corner, not its centre: ${origin}`);
+  if (!pinnedWord || !restingWord) {
+    throw new Error(`probe dead: a menu item printed nothing (${restingWord} / ${pinnedWord})`);
   }
 
   //     d. CLI → GUI, on the far machine. alpha pins one of its own rows
@@ -1731,7 +1788,8 @@ for line in sys.stdin:
   );
 
   //     e. taking it back travels the same way, and the row goes home.
-  await page.locator(`[data-row="${target}"] [data-row-pin]`).click();
+  await openRowMenu(target);
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the unpinned row to leave the top", 10_000, async () => {
     const now = await sessionIds();
     return now[0] !== target;
@@ -1764,6 +1822,34 @@ for line in sys.stdin:
   await until("beta's CLI to lead with gamma", 10_000, () =>
     cli(envB, "devices").split("\n")[0]?.startsWith("gamma"),
   );
+  //     …and **the glyph half of c) lives here**, because this is where
+  //     a glyph still is. The two states are two shapes, not one shape
+  //     in two colours: a painter that only swapped a colour would pass
+  //     every other assertion in this item. Both `transform` and the
+  //     standalone `rotate` are read — tailwind v4 compiles `-rotate-45`
+  //     to the latter, and reading only the former answers "none" for a
+  //     rotation that is plainly there.
+  const pinShape = (name) =>
+    page.locator(`[data-device="${name}"] [data-row-pin] svg`).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return `${s.transform}|${s.rotate}|${s.transformOrigin}`;
+    });
+  const gammaPinned = await pinShape("gamma");
+  const otherResting = await pinShape(
+    (await deviceNames()).find((n) => n !== "gamma") ?? "alpha",
+  );
+  if (gammaPinned === otherResting) {
+    throw new Error(`pinned and unpinned draw the same shape: ${gammaPinned}`);
+  }
+  if (/\|none\|/.test(gammaPinned)) {
+    throw new Error(`the pinned state is not a rotation at all: ${gammaPinned}`);
+  }
+  //     …and the rotation happens around the middle. An SVG element's
+  //     transform-origin defaults to (0, 0), which would swing the pin
+  //     out of its own box — visibly wrong, and nothing else here looks.
+  if (/^0px 0px/.test(gammaPinned.split("|")[2])) {
+    throw new Error(`the pin rotates around its corner, not its centre: ${gammaPinned}`);
+  }
   await page.locator('[data-device="gamma"] [data-row-pin]').click();
   await until("gamma to go back", 10_000, async () => (await deviceNames())[0] !== "gamma");
 
@@ -1878,7 +1964,8 @@ for line in sys.stdin:
   const arrangeIds = () =>
     page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
   const pinTarget = (await arrangeIds())[2];
-  await page.locator(`[data-row="${pinTarget}"] [data-row-pin]`).click();
+  await openRowMenu(pinTarget);
+  await page.locator('[data-menu-item="pin"]').click();
   for (const mode of ["recent", "category", "device", "state"]) {
     await chooseArrange(mode);
     await until(`${pinTarget} leading in ${mode}`, 15_000, async () => {
@@ -1886,7 +1973,8 @@ for line in sys.stdin:
       return now[0] === pinTarget;
     });
   }
-  await page.locator(`[data-row="${pinTarget}"] [data-row-pin]`).click();
+  await openRowMenu(pinTarget);
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the pin to come off again", 10_000, async () =>
     (await page.locator("[data-row][data-pinned=true]").count()) === 0,
   );
@@ -1943,42 +2031,92 @@ for line in sys.stdin:
     throw new Error("the narrow browser landing has no address bar, so it has no way in");
   }
 
-  // 18) the pin is reachable on the narrow face — the one where there is
-  //     no pointer to reveal it with. A hover-only row action is simply
-  //     absent on a phone, and it looks identical to a working one in
-  //     every screenshot taken with a mouse present.
+  // 18) the row's actions are reachable on the narrow face — the one
+  //     where there is no pointer at all. A hover-only row action is
+  //     simply absent on a phone, and it looks identical to a working
+  //     one in every screenshot taken with a mouse present.
   //
-  //     So: park the pointer far away, then measure that the button is
-  //     really painted (visible, non-zero box, not transparent) and that
-  //     pressing it does what it does on the wide face.
+  //     The actions now live behind a long press, which is the touch
+  //     half of the same gesture the pointer spells as right-click. So
+  //     what has to be proven here is the *press*, and playwright's
+  //     mouse and `touchscreen.tap()` produce neither: the trigger wants
+  //     a `pointerdown` whose `pointerType` is touch, held past its own
+  //     timer. That takes CDP.
+  //
+  //     **The premise was measured before anything was asserted on it**
+  //     (a listener-only probe on the real page confirmed this path
+  //     yields `pointerType: "touch"` held ~900ms). Without that, a menu
+  //     that appeared for some other reason would read as a pass.
   await openLanding("sessions");
   await until("rows on the narrow session list", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
   await pointerAway();
   await settle();
-  const narrowPin = page.locator("[data-row] [data-row-pin]").first();
-  const painted = await narrowPin.evaluate((el) => {
-    const s = getComputedStyle(el);
-    const box = el.getBoundingClientRect();
-    return { opacity: s.opacity, display: s.display, visibility: s.visibility, w: box.width, h: box.height };
-  });
-  if (
-    painted.display === "none" ||
-    painted.visibility === "hidden" ||
-    Number(painted.opacity) === 0 ||
-    painted.w === 0 ||
-    painted.h === 0
-  ) {
-    throw new Error(`the pin is hover-only on the narrow face: ${JSON.stringify(painted)}`);
-  }
-  // …and it still works down here, which is the half a visibility check
-  // cannot cover: a button can be perfectly visible and out of reach.
   const narrowIds = () =>
     page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
   const narrowTarget = (await narrowIds())[1];
-  await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
+  //     **Touch is switched on for this item and off again after it**,
+  //     rather than for the whole run. Measured, after the whole-run
+  //     version broke §14: a context with `hasTouch` reports
+  //     `(hover: hover)` and `(pointer: fine)` as **false**, and the
+  //     built stylesheet gates every hover rule behind `@media
+  //     (hover:hover)` — so every hover assertion in this file silently
+  //     stops being about anything. One flag for one item cost five
+  //     others; the scope is the fix.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+  const pressFor = async (id, ms) => {
+    const b = await page.locator(`[data-row="${id}"] [data-row-open]`).boundingBox();
+    if (!b) throw new Error(`probe dead: ${id} has no box to press`);
+    const x = Math.round(b.x + b.width / 2);
+    const y = Math.round(b.y + b.height / 2);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    await new Promise((r) => setTimeout(r, ms));
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  //     The negative half first, and it is the half that keeps this from
+  //     being a free pass: a short tap must **not** open it. Without
+  //     this, an implementation that opened the menu on any touch at all
+  //     would satisfy everything below.
+  await pressFor(narrowTarget, 120);
+  await settle();
+  if ((await page.locator("[data-row-menu]").count()) !== 0) {
+    throw new Error("a short tap opened the row menu — every tap would");
+  }
+  //     …and a short tap is not a no-op: it is a tap, so it opens the
+  //     row. On this face that replaces the list with the detail, which
+  //     is why the walk back is here rather than treated as a surprise.
+  //     (Measured the hard way: without it the next press looks for a
+  //     row that is no longer on screen, and the timeout reads as the
+  //     long press being broken.)
+  if ((await page.locator("[data-back]").count()) === 1) {
+    await page.locator("[data-back]").click();
+    await until("the list back after the tap", 10_000, async () =>
+      (await page.locator("[data-row]").count()) > 1,
+    );
+  } else if ((await page.locator("[data-row]").count()) === 0) {
+    throw new Error("the short tap left neither a list nor a way back to one");
+  }
+  await pressFor(narrowTarget, 900);
+  await until("the long press to open the row menu", 5_000, async () =>
+    (await page.locator('[data-menu-item="pin"]').count()) === 1,
+  );
+  //     …and it still works down here, which is the half a visibility
+  //     check cannot cover: a control can be perfectly visible and out
+  //     of reach.
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the narrow pin to float its row", 10_000, async () => (await narrowIds())[0] === narrowTarget);
-  await page.locator(`[data-row="${narrowTarget}"] [data-row-pin]`).click();
+  await pressFor(narrowTarget, 900);
+  await until("the menu again", 5_000, async () =>
+    (await page.locator('[data-menu-item="pin"]').count()) === 1,
+  );
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the narrow row to go back", 10_000, async () => (await narrowIds())[0] !== narrowTarget);
+  //     …and the pointer comes back, or everything downstream that asks
+  //     about a hover is asking a page that has no pointer.
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await until("the pointer to come back", 5_000, async () =>
+    page.evaluate(() => matchMedia("(hover: hover)").matches),
+  );
 
   // 18b) 手感三件套 (批②). Three motions, each asserted through what it
   //      actually leaves in the computed style rather than by watching
@@ -2060,8 +2198,16 @@ for line in sys.stdin:
   if (!(pressScale > 0 && pressScale < 1)) {
     throw new Error(`--press is not a give: ${pressScale}`);
   }
-  const pin = page.locator("[data-row] [data-row-pin]").first();
-  const pinnedBefore = await page.locator("[data-row][data-pinned=true]").count();
+  //      **Measured on the device list's pin**, because that is where
+  //      this control still is. The session row's pin moved into a menu
+  //      (§15), and a menu item is not this component — it is not a
+  //      `Button`, so the give this item asserts does not apply to it
+  //      and asserting it there would be inventing a rule. Same
+  //      component, same claim, a list over.
+  await openLanding("devices");
+  await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) > 0);
+  const pin = page.locator("[data-device] [data-row-pin]").first();
+  const pinnedBefore = await page.locator("[data-device][data-pinned=true]").count();
   const press = await pressing(pin);
   if (press.resting.scale !== 1) {
     throw new Error(`probe dead: the control is already scaled at rest: ${press.resting.transform}`);
@@ -2077,7 +2223,7 @@ for line in sys.stdin:
         `${press.resting.opacity} -> ${press.held.opacity}`,
     );
   }
-  if ((await page.locator("[data-row][data-pinned=true]").count()) !== pinnedBefore) {
+  if ((await page.locator("[data-device][data-pinned=true]").count()) !== pinnedBefore) {
     throw new Error("the press probe pressed something for real");
   }
   //      A row answers a press too — it is the most-pressed thing here —
@@ -2110,6 +2256,13 @@ for line in sys.stdin:
   if (stillScreen.animation !== "none") {
     throw new Error(`reduced motion must take the slide away: ${stillScreen.animation}`);
   }
+  //      Back to the sessions list, and **after the last reader of the
+  //      device pin** rather than straight after the first: the reduced
+  //      motion pass below uses the same locator, and moving the walk
+  //      back up here left it pointing at a list that was no longer on
+  //      screen — a timeout that reads as the pin having vanished.
+  await openLanding("sessions");
+  await until("rows again", 10_000, async () => (await page.locator("[data-row]").count()) > 0);
 
   //      The reordering. A pin floats its row, which moves every row it
   //      passed — and FLIP is the difference between rows walking there
@@ -2137,8 +2290,15 @@ for line in sys.stdin:
     });
   const rowIds = () => page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
   const flipTarget = (await rowIds())[2];
+  //      **The reordering action is still the pin; only its doorway
+  //      moved.** The menu is opened first and the frame counter starts
+  //      after it is up: the right-click itself reorders nothing, so
+  //      counting across it would spend frames on an event that cannot
+  //      move a row. The menu is portalled outside `[data-row]`, so it
+  //      cannot contribute a transform to the count either.
+  await openRowMenu(flipTarget);
   await watchTransforms();
-  await page.locator(`[data-row="${flipTarget}"] [data-row-pin]`).click();
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the pinned row to lead", 20_000, async () => (await rowIds())[0] === flipTarget);
   const movedFrames = await stopWatching();
   if (movedFrames === 0) {
@@ -2173,8 +2333,9 @@ for line in sys.stdin:
   // The same reorder under reduced motion moves nobody. The probe is
   // known alive: it just counted frames on the press above.
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await openRowMenu(flipTarget);
   await watchTransforms();
-  await page.locator(`[data-row="${flipTarget}"] [data-row-pin]`).click();
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the pin to come off", 20_000, async () => (await rowIds())[0] !== flipTarget);
   const stillFrames = await stopWatching();
   await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -3042,18 +3203,27 @@ for line in sys.stdin:
   //     the list, and picking a machine shows that machine's card). This
   //     is the only way in from there, so it is checked there first.
   //
-  //     What the panel says is compared against `khor usage` reading the
-  //     same home — the independent witness, and **no number and no word
-  //     is written in this file**: the day and the category are read off
-  //     the app and looked for in the terminal's output.
+  //     What the map says is compared against the node's own listing —
+  //     the independent witness, and **no number is written in this
+  //     file**: both sides are read and set against each other.
   await page.setViewportSize({ width: 390, height: 720 });
   await page.locator("[data-rail-mark]").click();
   await until("the mesh on the narrow face", 15_000, async () =>
     (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
   );
-  await until("the spending beside it", 30_000, async () =>
-    (await page.locator("[data-mark-place] [data-usage]").count()) === 1,
-  );
+  //     **The daily ledger is gone from this place and is not asserted
+  //     anywhere else.** It used to sit beside the map and be compared,
+  //     day by day, against `khor usage` — the independent witness this
+  //     item was built around. That screen no longer exists in the GUI
+  //     (`khor usage` still prints it), and moving the assertion
+  //     somewhere else would be leaving a gate on a thing that is not
+  //     there. What replaces the witness is below: the session count on
+  //     the map is compared against the node's own list.
+  //
+  //     The anchor stays `[data-mandala-map]` rather than the quota
+  //     panel: these homes have no Claude login, quota answers nothing,
+  //     and that section does not draw at all — waiting on it would fail
+  //     as "probe dead" for a reason that has nothing to do with this.
   //     …and the list is gone while it is up: this place is not a pane.
   if ((await page.locator("[data-list]").count()) !== 0) {
     throw new Error("the mark's place is showing a list beside it; it replaces the pair");
@@ -3076,46 +3246,108 @@ for line in sys.stdin:
   if ((await page.locator("[data-list]").count()) !== 0) {
     throw new Error("the wide shell kept the list beside the mesh; this place replaces the pair");
   }
-  //     Read off the **text on screen**, not off the data attributes
-  //     beside it. A first version compared the attributes and stayed
-  //     green when the heading was made to print a date nobody spent
-  //     anything on — it was checking that the app agrees with itself.
-  //     What a person reads is the words, so the words are what get
-  //     looked for in the terminal's output.
-  const spentDays = await page
-    .locator("[data-usage] [data-usage-row]")
-    .evaluateAll((els) =>
-      els.map((e) => ({
-        day: e.closest("[data-usage-day]")?.querySelector("[data-usage-date]")?.textContent?.trim()
-          ?? e.previousElementSibling?.textContent?.trim()
-          ?? "",
-        category: e.querySelector("[data-usage-category]")?.textContent?.trim() ?? "",
-      })),
-    );
-  if (spentDays.some((d) => !d.day || !d.category)) {
-    throw new Error(`probe dead: a row printed no day or no vendor: ${JSON.stringify(spentDays)}`);
-  }
-  if (spentDays.length === 0) {
-    throw new Error("probe dead: the panel shows no spending, so nothing below compares anything");
-  }
-  //     The faces on the map are not pressable here: there is no card in
-  //     this space to open into, and an affordance that answers nothing
-  //     is what the mark itself was forbidden from being.
-  const pressable = await page
+  //     **Every face here is pressable, and this assertion is the old
+  //     one turned over rather than deleted.** It used to demand that
+  //     none of them were: there was no card in this space to open into,
+  //     and an affordance that answers nothing teaches people to stop
+  //     trying the ones that do. There is a card now, so the fact worth
+  //     guarding is the opposite one — and a fact that has been
+  //     overturned is guarded by asserting the new one, not by removing
+  //     the old.
+  const seatsHere = await page
     .locator("[data-mark-place] [data-seat]")
-    .evaluateAll((els) => els.filter((e) => e.tagName === "BUTTON").length);
-  if (pressable !== 0) {
-    throw new Error(`${pressable} faces on the mesh offer to open something that is not there`);
+    .evaluateAll((els) => els.map((e) => e.tagName));
+  if (seatsHere.length === 0) {
+    throw new Error("probe dead: no seats on the mark's place to press");
   }
-  const printed = cli(envB, "usage", "--days", "30");
-  for (const { day, category } of spentDays) {
-    const line = printed.split("\n").find((l) => l.includes(day) && l.includes(category));
-    if (!line) {
-      throw new Error(
-        `the app shows ${category} spending on ${day} and \`khor usage\` prints no such line:\n${printed}`,
-      );
+  if (seatsHere.some((t) => t !== "BUTTON")) {
+    throw new Error(`a face here answers nothing: ${JSON.stringify(seatsHere)}`);
+  }
+  //     …and pressing one really opens that machine's card. Read off the
+  //     name it prints, so "a card opened" and "the right card opened"
+  //     are not the same pass.
+  const someSeat = await page
+    .locator("[data-mark-place] [data-seat]")
+    .first()
+    .getAttribute("data-seat");
+  await page.locator(`[data-mark-place] [data-seat="${someSeat}"]`).click();
+  await until("the machine card on the map", 10_000, async () =>
+    (await page.locator("[data-node-card]").count()) === 1,
+  );
+  await page.keyboard.press("Escape");
+  await until("the card to close", 5_000, async () =>
+    (await page.locator("[data-node-card]").count()) === 0,
+  );
+
+  //     **The waiting count is on the node itself, at rest.** This is
+  //     the one fact on this screen with a person on the other end of
+  //     it, and it may not need a press to be seen — the rail's badge
+  //     cannot stand in, since it counts waiting *or* unread and says
+  //     which of the two it means nowhere. Both directions are asserted:
+  //     an implementation that simply never draws it would satisfy the
+  //     absent half on its own.
+  const blockedOnScreen = Number(
+    (await page.locator("[data-session-node]").getAttribute("data-blocked")) ?? "-1",
+  );
+  //     The witness is the CLI, and **the word it prints is never
+  //     spelled here** — it is read off a row wearing that state key and
+  //     then looked for in the terminal's second column, the same way
+  //     every other word in this file is compared. When nothing is
+  //     waiting there is no row to read it from, and there is also
+  //     nothing to count: both sides are zero and the comparison is
+  //     skipped rather than faked with a guessed word.
+  //     **A skipped half says so.** With nothing waiting there is no
+  //     word to read and nothing to count, so the comparison cannot run
+  //     — and a silent `continue` here would print a run that reads as
+  //     "both directions asserted" while only the absent one executed.
+  //     An implementation that never drew the line would be green on
+  //     such a run. Same shape as a gate that walks to the door and
+  //     reports the house fine; the deterministic half is in 26 below,
+  //     where an offer provably puts a row into the waiting state.
+  if (blockedOnScreen > 0) {
+    const blockedWord = await page.evaluate(() => {
+      const seen = document.querySelector('[data-row][data-word="blocked"] [data-word-text]');
+      return seen ? seen.textContent.trim() : null;
+    });
+    if (blockedWord) {
+      const inCli = cli(envB, "sessions", "--all")
+        .split("\n")
+        .filter((l) => l.split("\t")[1] === blockedWord).length;
+      if (blockedOnScreen !== inCli) {
+        throw new Error(`the node says ${blockedOnScreen} waiting and the CLI lists ${inCli}`);
+      }
+    } else {
+      console.log("  note: nothing on screen wears the waiting key, so no word to compare against");
     }
+  } else {
+    console.log("  note: nothing is waiting on this run — the drawn half of the node's count was not exercised here (26 does it)");
   }
+  const noteDrawn = (await page.locator("[data-node-blocked]").count()) === 1;
+  if (noteDrawn !== blockedOnScreen > 0) {
+    throw new Error(
+      `the node counts ${blockedOnScreen} waiting and ${noteDrawn ? "draws" : "does not draw"} the line`,
+    );
+  }
+
+  //     **The independent witness, in its new form.** The sessions node
+  //     counts what this machine holds; `khor sessions` on the same home
+  //     counts the same thing from the other side. No number is written
+  //     in this file — both sides are read.
+  await page.locator("[data-session-node]").click();
+  await until("the sessions card", 10_000, async () =>
+    (await page.locator('[data-count="all"]').count()) === 1,
+  );
+  const shownAll = Number(
+    (await page.locator('[data-count="all"]').innerText()).replace(/\D+/g, ""),
+  );
+  if (!Number.isFinite(shownAll) || shownAll === 0) {
+    throw new Error(`probe dead: the sessions node counts nothing (${shownAll})`);
+  }
+  const cliRows = cli(envB, "sessions", "--all").split("\n").filter((l) => l.includes("\t")).length;
+  if (shownAll !== cliRows) {
+    throw new Error(`the map says ${shownAll} sessions and \`khor sessions\` lists ${cliRows}`);
+  }
+  await page.keyboard.press("Escape");
   await openLanding("devices");
 
   // 28) pressing a face on the map opens that machine.
@@ -4797,6 +5029,34 @@ for line in sys.stdin:
   await until("the offer pressing 待批 onto beta's window row", 30_000, async () =>
     (await page.locator('[data-row="chat/beta"][data-word="blocked"]').count()) === 1,
   );
+  //      **And with something provably waiting, the mark's place has to
+  //      say so without being pressed.** This is the half 29 above
+  //      cannot guarantee — whether anything is waiting when that item
+  //      runs is the run's business, and a gate whose positive case
+  //      depends on the weather is a gate that reports "both directions
+  //      asserted" having exercised one. Here the state was just
+  //      created, so the assertion holds every time.
+  await page.locator("[data-rail-mark]").click();
+  await until("the mark's place", 15_000, async () =>
+    (await page.locator("[data-session-node]").count()) === 1,
+  );
+  const waitingNow = Number(
+    (await page.locator("[data-session-node]").getAttribute("data-blocked")) ?? "0",
+  );
+  if (waitingNow < 1) {
+    throw new Error(`a row is waiting and the node counts ${waitingNow}`);
+  }
+  if ((await page.locator("[data-node-blocked]").count()) !== 1) {
+    throw new Error("something is waiting and the node's face does not say so at rest");
+  }
+  //      …read at rest: nothing here was pressed open, which is the
+  //      whole point — the count has to be legible before anyone asks.
+  if ((await page.locator("[data-node-card]").count()) !== 0) {
+    throw new Error("probe void: a card is open, so this was not read at rest");
+  }
+  await openLanding("sessions");
+  await until("the list back", 15_000, async () => (await page.locator("[data-row]").count()) > 0);
+
   //      **待批 does not announce itself.** The strip has watched the
   //      row arrive at 待批 and stayed empty: an offer waiting on THIS
   //      machine already has the badge and the top of the list, and the
@@ -4846,35 +5106,40 @@ for line in sys.stdin:
   //     The control comes first: the same button, pressed while the
   //     backend is there, must come back *not* wearing the face. A mark
   //     that is always on is not a failure report.
+  //     **Where the report lands moved with the control.** The action
+  //     is a menu item now, so the refusal is worn there — and the menu
+  //     **stays open** to wear it. That is the design: a menu that
+  //     closed on failure would take the only surface the sentence has
+  //     with it, which is the same "started something and nothing
+  //     happened" this file refuses everywhere else.
   const failTarget = (await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row)))[0];
-  const failPin = page.locator(`[data-row="${failTarget}"] [data-row-pin]`);
-  // **The colour is read after the button's own transitions finish**,
-  // not the instant the attribute flips. The button carries
-  // `transition-colors`, and a reading taken at t=0 of a transition is
-  // bit-for-bit the colour it is *leaving* — which is what one observed
-  // failure here reported, with the failure attribute already set and
-  // the built stylesheet putting the failure rule last. Waiting on the
-  // element's own animations is the "wait for the thing itself" rule; a
-  // fixed sleep would measure how busy the machine is, and two equal
-  // consecutive reads can both land before the transition starts moving.
-  const pinState = () =>
-    failPin.evaluate(async (el) => {
+  // **The colour is read after the item's own transitions finish**, not
+  // the instant the attribute flips. A reading taken at t=0 of a
+  // transition is bit-for-bit the colour it is *leaving* — which is what
+  // one observed failure here reported, with the failure attribute
+  // already set. Waiting on the element's own animations is the "wait
+  // for the thing itself" rule; a fixed sleep would measure how busy the
+  // machine is.
+  const pinItemState = () =>
+    page.locator('[data-menu-item="pin"]').evaluate(async (el) => {
       await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
-      return {
-        failed: el.dataset.pinFailed,
-        name: el.getAttribute("aria-label"),
-        color: getComputedStyle(el).color,
-      };
+      return { word: el.innerText.trim(), color: getComputedStyle(el).color };
     });
 
-  await failPin.click();
+  //     The control comes first: the same item, pressed while the
+  //     backend is there, must come back *not* wearing the face — and a
+  //     pin that takes closes the menu, which is itself the success
+  //     signal. A mark that is always on is not a failure report.
+  await openRowMenu(failTarget);
+  const okItem = await pinItemState();
+  if (!okItem.word) throw new Error("probe dead: the pin item prints nothing");
+  await page.locator('[data-menu-item="pin"]').click();
   await until("the pin to take while the backend is there", 10_000, async () =>
     (await page.locator(`[data-row="${failTarget}"][data-pinned=true]`).count()) === 1,
   );
-  const okState = await pinState();
-  if (okState.failed !== "false") {
-    throw new Error(`a pin that worked is wearing the failure face: ${JSON.stringify(okState)}`);
-  }
+  await until("the menu to close itself on success", 5_000, async () =>
+    (await page.locator("[data-row-menu]").count()) === 0,
+  );
 
   // What the failure colour actually computes to, measured off a probe
   // wearing the token rather than written down here — a hex compared
@@ -4899,27 +5164,53 @@ for line in sys.stdin:
     return r === null;
   });
 
-  await failPin.click();
-  await until("the failure face on the button that was pressed", 10_000, async () =>
-    (await pinState()).failed === "true",
-  );
-  const badState = await pinState();
-  // The name changes with it, so the report is not colour alone —
-  // compared against the working button's name rather than spelled
-  // here, because the words belong to the catalog.
-  if (!badState.name || badState.name === okState.name) {
-    throw new Error(`the failed pin kept its old name: ${JSON.stringify(badState)}`);
+  await openRowMenu(failTarget);
+  //     **The control is read here, not before the successful pin.**
+  //     Written the other way first, and it was a false gate: the good
+  //     pin legitimately turns 置顶 into 取消置顶, so "the word differs
+  //     from the one read at the start" is already true before anything
+  //     fails — the wait fell straight through and the colour was read
+  //     off an item in its ordinary state. A control has to be taken
+  //     from the moment the change is being measured against.
+  const beforeFail = await pinItemState();
+  if (beforeFail.color === failedColor) {
+    throw new Error(`the item already wears the failure colour: ${JSON.stringify(beforeFail)}`);
   }
-  if (badState.color !== failedColor) {
+  await page.locator('[data-menu-item="pin"]').click();
+  //     Three things, and the first is what makes the other two
+  //     readable: the menu is still there to be read.
+  await until("the menu to stay open on failure", 10_000, async () =>
+    (await page.locator("[data-row-menu]").count()) === 1,
+  );
+  await until("the failure word on the item that was pressed", 10_000, async () =>
+    (await pinItemState()).word !== beforeFail.word,
+  );
+  const badItem = await pinItemState();
+  // The word changes with it, so the report is not colour alone —
+  // compared against the word this same item wore a moment ago rather
+  // than spelled here, because the words belong to the catalog.
+  if (!badItem.word || badItem.word === beforeFail.word) {
+    throw new Error(`the failed item kept its old word: ${JSON.stringify(badItem)}`);
+  }
+  if (badItem.color !== failedColor) {
     throw new Error(
-      `the failed pin is not wearing the failure colour: ${badState.color} vs ${failedColor}`,
+      `the failed item is not wearing the failure colour: ${badItem.color} vs ${failedColor}`,
     );
   }
-  // …and it is that row's report, not the whole list going red.
-  const others = await page
-    .locator("[data-row-pin]")
-    .evaluateAll((els) => els.filter((e) => e.dataset.pinFailed === "true").length);
-  if (others !== 1) throw new Error(`${others} buttons wear the failure face; exactly one was pressed`);
+  // …and it is that row's report, not a mood the menu is in. Escape out,
+  // open another row's menu, and its item must be resting — which is a
+  // stronger claim than the old "only one button went red": this says
+  // the memory is kept per row rather than per screen.
+  await closeRowMenu();
+  const otherRow = (await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row)))
+    .find((id) => id !== failTarget);
+  if (!otherRow) throw new Error("probe dead: only one row to compare against");
+  await openRowMenu(otherRow);
+  const neighbour = await pinItemState();
+  if (neighbour.color === failedColor) {
+    throw new Error(`another row's menu inherited the failure: ${JSON.stringify(neighbour)}`);
+  }
+  await closeRowMenu();
 
   // 26b) 关会话失败也就地说 (批②). The same backend-away window, because
   //      this is the only place a close is *certain* to fail: whether a

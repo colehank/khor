@@ -1,4 +1,4 @@
-import type { DeviceRow, SessionRow, QuotaAnswer, Usage } from "@/api";
+import type { DeviceRow, SessionRow, QuotaAnswer } from "@/api";
 import type { Track } from "@/components/Ring";
 import { useEffect, useState } from "react";
 import { MachineAvatar } from "@/components/Avatar";
@@ -65,21 +65,6 @@ export function MarkPlace({
   rows: SessionRow[];
   devices: DeviceRow[];
   quota: QuotaAnswer | null;
-  /**
-   * **Neither of these is read any more, and both are still in the
-   * type on purpose.** The daily ledger was `usage`'s only consumer
-   * here and it is gone; `narrow` shaped the columns, and there are no
-   * columns — the map and the arcs stack the same way in both postures
-   * (a footing does not become a sidebar because the window got wide).
-   *
-   * They stay declared for exactly as long as it takes the shell to
-   * stop passing them. `App.tsx` belongs to another lane this hour;
-   * dropping them from this side alone turns two of its lines into type
-   * errors that somebody else has to find and that nothing on screen
-   * explains. Two lines, whenever that file is free.
-   */
-  usage?: Usage | null;
-  narrow?: boolean;
   /** Where the waiting call leads, when anything is waiting. */
   onPickWaiting: (row: SessionRow) => void;
 }) {

@@ -81,16 +81,10 @@ export function vitalsTracks(row: DeviceRow): Track[] | null {
   return tracks;
 }
 
-/**
- * The overview's readings: what a machine is **doing**.
- *
- * `vitalsTracks` minus the disk, because that is the one thing in the
- * stack that is not an activity — the star map's seat already stated the
- * rule in words ("a disk filling up is not doing"), and the network's
- * now printed the same three. Filtered from the full stack rather than
- * built again: one arithmetic, three magnifications.
- */
-export function doingTracks(row: DeviceRow): Track[] | null {
-  const all = vitalsTracks(row);
-  return all ? all.filter((t) => t.id !== "disk") : null;
-}
+/* The overview's per-machine readings used to be a fourth reader of
+   this arithmetic (`doingTracks`: the stack minus the disk, because a
+   filling disk is not something a machine is *doing*). Both overviews
+   stopped drawing readings on 2026-08-28 — three unlabelled bars need
+   as much learning as three numbers and carry less — so the function
+   went with its last caller. Rings on a machine's card are where a
+   reading is asked for now, and they read from `vitalsTracks` above. */
