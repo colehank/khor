@@ -152,22 +152,39 @@ export function MarkPlace({
 
 /**
  * The one node on this screen that is not a machine: how many sessions
- * khor is holding.
+ * khor is holding, **and whether any of them is waiting on you**.
  *
- * **A ring with a track and no arc, which is this app's way of writing
- * a number that is not out of anything** (`Ring`: `fraction` of null
- * draws the track alone). A count has no denominator — khor is not
- * allowed a maximum number of sessions — so an arc here would be a
- * fraction of something invented. The circle is doing one job: making
- * this read as a node rather than as a line of text that happens to sit
- * over a picture.
+ * # It has to answer that second question standing still
  *
- * **Always drawn, including at zero**, and that is the difference from
- * the 「N 等你的事」 call this replaces. That call appeared only when
- * something was waiting, so 「nothing is waiting」 and 「this screen
- * forgot about sessions」 looked identical — and a node you cannot count
- * on being there is a node nobody learns to press. The four numbers
- * behind it include 待批, which is the fact the old call carried.
+ * **This is the whole design of it, and the first version failed it.**
+ * That one drew the total and the word 会话 and put 待批 inside the card,
+ * one press away — which took the one state in the six with a person on
+ * the other end of it (`khor_core::State::Blocked`: an action is stuck
+ * and an approval is the only way out; `rank()` puts it at 0, ahead of
+ * 失败) and turned it from something seen into something looked up. The
+ * rail's badge cannot cover for it: that number counts rows that are
+ * waiting **or** unread and cannot say which.
+ *
+ * So 待批 rides the node itself, in two channels at once, and neither is
+ * a new piece of furniture:
+ *
+ *   - **the arc** — the ring goes from track-only to a real arc, and the
+ *     arc's fraction is 待批 out of the total. That is a denominator khor
+ *     actually holds, which is why the arc is allowed at all: a ring's
+ *     job is 「how much of this」 and here 「this」 is the number in the
+ *     middle;
+ *   - **the count**, printed under the word, in `--state-blocked` —
+ *     the same colour that state wears on every row in the app, so it is
+ *     recognised rather than decoded. A colour alone would have to be
+ *     learnt, which is the mistake the star map's bars were removed for.
+ *
+ * **Neither is drawn at zero**, and that is not the vanishing act the
+ * 「N 等你的事」 call was removed for. That call *was* the whole element,
+ * so its absence and 「this screen forgot about sessions」 looked the
+ * same. The node is always here; what changes is whether it is carrying
+ * an alarm. A permanent 待批 0 would be the other failure this repo has
+ * a rule for — a badge that can never reach zero is no badge, and its
+ * mirror is a badge that is always at zero.
  */
 function SessionNode({
   rows,
@@ -178,11 +195,13 @@ function SessionNode({
   on: boolean;
   onPress: () => void;
 }) {
+  const blocked = rows.filter((r) => r.word === "blocked").length;
   return (
     <div className="flex flex-none justify-center pt-pane">
       <button
         type="button"
         data-session-node
+        data-blocked={blocked}
         data-on={on}
         aria-expanded={on}
         onClick={onPress}
@@ -193,10 +212,28 @@ function SessionNode({
         // the day somebody shrinks the drawing.
         className="flex min-h-touch min-w-touch flex-col items-center gap-in rounded-lg px-2 py-1 hover:bg-accent data-[on=true]:bg-accent"
       >
-        <Ring fraction={null} color="var(--muted-foreground)">
+        {/* `null` while there is nothing to be a fraction of: a session
+            count is not out of anything, and at zero blocked there is no
+            share to draw either. */}
+        <Ring
+          fraction={blocked > 0 && rows.length > 0 ? blocked / rows.length : null}
+          color={blocked > 0 ? "var(--state-blocked)" : "var(--muted-foreground)"}
+        >
           {rows.length}
         </Ring>
         <span className="text-aux text-muted-foreground">{gui.sessions_tab}</span>
+        {/* The word before the number, because the word is what makes the
+            number readable without pressing anything — and the state's
+            own colour, never a second one invented here. */}
+        {blocked > 0 && (
+          <span
+            data-node-blocked
+            className="text-aux tabular-nums"
+            style={{ color: "var(--state-blocked)" }}
+          >
+            {`${state.blocked} ${blocked}`}
+          </span>
+        )}
       </button>
     </div>
   );
@@ -376,7 +413,12 @@ function SessionNodeCard({
       name={<span className="truncate text-fact">{gui.sessions_tab}</span>}
     >
       <div className="flex flex-wrap justify-center gap-row pt-in">
-        <Count anchor="all" word={gui.sessions_tab} n={rows.length} />
+        {/* **`全部`, not `会话`.** The three labels beside it are state
+            words, and this one is not a state — it is their denominator.
+            Reusing the rail landing's name here would read as 「会话 (that
+            station), 6」 rather than 「6 of them, all told」; the catalog
+            carries the rest of that judgment on `sessions-all`. */}
+        <Count anchor="all" word={gui.sessions_all} n={rows.length} />
         <Count anchor="busy" word={state.busy} n={rows.filter((r) => r.word === "busy").length} />
         <Count
           anchor="blocked"
