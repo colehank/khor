@@ -1,6 +1,7 @@
 import type { QuotaAnswer, QuotaWindow } from "@/api";
 import { Ring } from "@/components/Ring";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 import { gaugeColor } from "@/lib/vitals";
 import { until } from "@/words";
 
@@ -64,6 +65,30 @@ import { until } from "@/words";
  * a quota is cached for five minutes, so this can be up to that old and
  * nothing on the glass says so any more.
  */
+/**
+ * **Side by side, packed rather than spread.** The stacked version this
+ * replaces was measured and its measurement was real: inside a 448-wide
+ * column the two came out 74 and 64 with 12 between them, and their
+ * reset lines — same size, same colour, same baseline, 14 apart — read
+ * as one sentence,「4 小时后重置 2 天后重置」. What fixed that is each
+ * window taking the width its own words need, not a track list
+ * stretching them to the pane's edges: a grid of `1fr` columns put
+ * these two a third of a metre apart on the machine card while the
+ * readings right above them sat packed to the left, and two rows of
+ * rings arranged by different rules read as two unrelated things.
+ *
+ * **And the old objection does not come back at this gap, which was
+ * measured rather than assumed**: the two reset lines end up 100 apart,
+ * because what sits between them is not the 24 of `--gap-pane` — it is
+ * the gap plus the next window's whole ring. A ring between two
+ * sentences is a wall the 26 that widening bought never was.
+ *
+ * Wrapping is the narrow answer, and it arrives by measurement rather
+ * than by a breakpoint: past the point where two windows do not fit,
+ * the second goes under the first — which is the old layout.
+ */
+const ROW = "flex flex-wrap gap-pane";
+
 export function QuotaRings({
   quota,
   className,
@@ -82,7 +107,7 @@ export function QuotaRings({
   const trouble = troubleWord(quota);
   if (trouble) {
     return (
-      <div data-quota-panel className={className}>
+      <div data-quota-panel className={cn(ROW, className)}>
         <span data-quota-trouble className="text-aux text-muted-foreground">
           {trouble}
         </span>
@@ -92,55 +117,37 @@ export function QuotaRings({
   const q = quota.quota;
   if (!q || q.windows.length === 0) return null;
   return (
-    <div data-quota-panel className={className}>
-      {/* **Side by side, each window in a column of its own.** The
-          stacked version this replaces was measured and its measurement
-          was real: inside a 448-wide column the two came out 74 and 64
-          with 12 between them, and their reset lines — same size, same
-          colour, same baseline, 14 apart — read as one sentence,
-          「4 小时后重置 2 天后重置」.
-
-          `auto-fit` with a floor rather than a fixed count: it is
-          horizontal wherever there is room and stacks itself where there
-          is not — which is the old layout, arrived at by measuring
-          instead of by decree, and khor has four window kinds to place
-          even though a personal plan shows two. */}
-      <div
-        data-quota
-        className="grid gap-row"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))" }}
-      >
-        {q.windows.map((w) => (
-          <div
-            key={w.kind}
-            data-quota-window={w.kind}
-            className="flex items-center justify-center gap-row"
-          >
-            {/* The percentage is what this panel exists to say, so it
-                reads at a size of its own — the tier tokens.css
-                describes as being for「a quota arc's centre」and which
-                had never been used at one. */}
-            <Ring fraction={w.used_pct / 100} color={gaugeColor(null)} centerClass="text-lg">
-              {`${Math.round(w.used_pct)}%`}
-            </Ring>
-            <span className="flex min-w-0 flex-col">
-              {/* 「5 小时窗口」, not 「5 小时」: with the reset line right
-                  under it there were two durations touching, one the
-                  length of the window and one what is left of it, and
-                  nothing on the glass said which was which. */}
-              <span className="text-fact">{windowName(w)}</span>
-              {/* Only when there is one. A window past its reset has none
-                  — the moment it names is behind it, and the reading
-                  beside it has already gone back to zero. */}
-              {w.resets_at !== null && (
-                <span data-quota-resets className="text-aux text-muted-foreground">
-                  {gui.quota_resets(until(w.resets_at * 1000))}
-                </span>
-              )}
-            </span>
-          </div>
-        ))}
-      </div>
+    <div data-quota-panel data-quota className={cn(ROW, className)}>
+      {q.windows.map((w) => (
+        <div
+          key={w.kind}
+          data-quota-window={w.kind}
+          className="flex items-center gap-row"
+        >
+          {/* The percentage is what this panel exists to say, so it
+              reads at a size of its own — the tier tokens.css describes
+              as being for「a quota arc's centre」and which had never
+              been used at one. */}
+          <Ring fraction={w.used_pct / 100} color={gaugeColor(null)} centerClass="text-lg">
+            {`${Math.round(w.used_pct)}%`}
+          </Ring>
+          <span className="flex min-w-0 flex-col">
+            {/* 「5 小时窗口」, not 「5 小时」: with the reset line right
+                under it there were two durations touching, one the
+                length of the window and one what is left of it, and
+                nothing on the glass said which was which. */}
+            <span className="text-fact">{windowName(w)}</span>
+            {/* Only when there is one. A window past its reset has none
+                — the moment it names is behind it, and the reading
+                beside it has already gone back to zero. */}
+            {w.resets_at !== null && (
+              <span data-quota-resets className="text-aux text-muted-foreground">
+                {gui.quota_resets(until(w.resets_at * 1000))}
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

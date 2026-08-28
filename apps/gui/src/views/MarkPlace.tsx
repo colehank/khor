@@ -357,7 +357,7 @@ function MachineNodeCard({
           it is a third group of numbers and reads as one more row of
           them without a line. Draws nothing at all on a machine that is
           not this one, and nothing before the first answer is in. */}
-      <QuotaRings quota={quota} className="mt-in border-t pt-in" />
+      <QuotaRings quota={quota} className="mt-in justify-center border-t pt-in" />
       {/* Only once it is worth saying, the seat's own rule (`ageIfOld`):
           a reading taken a moment ago saying 「0 秒前」 reads as a fault. */}
       {aged !== null && (
