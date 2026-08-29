@@ -1,6 +1,5 @@
-import type { DeviceRow, SessionRow, Usage } from "@/api";
+import type { DeviceRow, SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { Bar } from "@/components/Gauge";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -8,11 +7,11 @@ import { word } from "@/words";
 
 /**
  * The network's now — what the biggest canvas in the app shows when no
- * session is picked. Three sections and no more: what waits on you,
- * the machines, today's spending. Every number and word here is a
- * second reading of data the shell already polls (the session rows,
- * the device table, the usage answer) — nothing is asked again, and
- * nothing is derived that the node did not say (docs/UX.md 状态呈现).
+ * session is picked. Two sections and no more: what waits on you, and
+ * the machines. Every number and word here is a second reading of data
+ * the shell already polls (the session rows, the device table) —
+ * nothing is asked again, and nothing is derived that the node did not
+ * say (docs/UX.md 状态呈现).
  *
  * The good news is said out loud: an empty section under 等你的事
  * would read as a query that failed, not as a clear conscience.
@@ -25,21 +24,30 @@ import { word } from "@/words";
  * ruling that only reached one of two screens showing one thing would
  * have left the bars the user could not read alive one landing away.
  *
- * 今天 keeps its bar, and the difference is the denominator: it is one
- * quantity against **the busiest day khor knows**, said in words right
- * beside it — not a share of something nobody named.
+ * **There was a third section, 今天, and it went the same way one
+ * landing later.** 「session 页这个今天输出 xx k 也不要」 — the user,
+ * 2026-08-29, and it is the second half of a ruling this file had
+ * already half-received: 「不显示输出 token 什么的」 took the day ledger
+ * off the home screen on 2026-08-28 while this canvas kept a bar and a
+ * number saying the same thing one press away. **A screen removed on
+ * one landing and kept on another is not removed** — the same mistake
+ * the bars above were caught in, and the reason this paragraph exists
+ * rather than a silent deletion.
+ *
+ * 花了多少 is not homeless: `khor usage` prints every day, every
+ * machine and all four token counts, and it is now the only place any
+ * of them is drawn. Nothing was hidden one press deeper — the app
+ * simply stopped being where that question is asked.
  */
 export function MeshNow({
   rows,
   devices,
-  usage,
   onPick,
   onDevice,
   onNew,
 }: {
   rows: SessionRow[];
   devices: DeviceRow[];
-  usage: Usage | null;
   onPick: (row: SessionRow) => void;
   onDevice: (row: DeviceRow) => void;
   onNew: () => void;
@@ -156,10 +164,6 @@ export function MeshNow({
             ))}
           </div>
         </section>
-        <section data-now-today>
-          <Heading text={gui.today} className="mb-in" />
-          <Today usage={usage} />
-        </section>
       </div>
     </div>
   );
@@ -171,84 +175,4 @@ export function MeshNow({
     would knock it off the row's centre line. */
 function Heading({ text, className }: { text: string; className?: string }) {
   return <div className={cn("text-xs font-label text-muted-foreground", className)}>{text}</div>;
-}
-
-/**
- * Today's spending: one number, and whether that is a lot.
- *
- * **Output, and a bar against the busiest day khor knows.** It printed
- * all four token counts in a row — 输入 734 读缓存 245.9M 写缓存 7.8M
- * 输出 270.2k — four quantities of wildly different magnitude, at one
- * size, with nothing to compare any of them to.
- *
- * Two judgments hold it up, and **this is the only place either of them
- * is still written down** — the day ledger that argued them out was
- * removed from the app on 2026-08-28 and its file went with it:
- *
- *   - **output, never a sum.** A total would be almost entirely cache
- *     reads (measured on the development machine: 16.2 billion cached
- *     input against 32 million output), so it moves with how often a
- *     conversation was resumed rather than with how much work was done
- *     (`khor_core::Tokens` carries that judgment);
- *   - **against the other days, never against an allowance.** Nobody
- *     has told khor what an allowance is, so a share of one would be a
- *     share of something invented. 「Busy day or quiet one」 has an
- *     obvious denominator and this bar uses that one.
- *
- * The remaining three numbers are one landing away — `khor usage`, and
- * that verb is now the only place they are drawn at all.
- *
- * "Today" is each machine's own civil day (`UsageDay::day`'s rule); this
- * screen filters by its clock's date, which is that rule read from the
- * one machine the person is sitting at.
- */
-function Today({ usage }: { usage: Usage | null }) {
-  // Nothing until the first answer: a 「nothing spent」 said while the
-  // answer is still coming would be telling a machine's whole history
-  // wrong for as long as it took to arrive.
-  if (!usage) return null;
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const rows = usage.days.filter((d) => d.day === today);
-  if (rows.length === 0) {
-    return <div data-now-unspent className="text-sm text-muted-foreground">{gui.today_none}</div>;
-  }
-  // Same-field sums across machines and vendors are the mark place's own
-  // precedent.
-  const output = rows.reduce((n, r) => n + r.tokens.output, 0);
-  const peak = Math.max(1, ...usage.days.map((d) => d.tokens.output));
-  return (
-    <div data-now-tokens className="flex items-center gap-row">
-      <Bar anchor="today" fraction={output / peak} len="100%" className="min-w-0 flex-1" />
-      <span data-now-output className="flex-none text-fact tabular-nums">
-        {cli.tokens_output(count(output))}
-      </span>
-    </div>
-  );
-}
-
-/**
- * A count as a person reads it: 1000-based, because tokens are counted,
- * not stored.
- *
- * **It lives here because this is the only screen left that draws one.**
- * It was exported from the day ledger's file, which had four callers in
- * it; that file is gone and re-exporting from a shared bag would give a
- * one-caller helper a second home to drift from.
- *
- * The CLI has its own copy (`crates/cli` `count`), deliberately —
- * formatting is painting, not judgment, and nothing depends on the two
- * producing identical characters. **Not the same function as the byte
- * one either**: 1024 is a property of memory, and a thousand tokens is a
- * thousand tokens.
- */
-function count(n: number): string {
-  const units = ["", "k", "M", "G"];
-  let v = n;
-  let u = 0;
-  while (v >= 1000 && u + 1 < units.length) {
-    v /= 1000;
-    u += 1;
-  }
-  return u === 0 ? `${n}` : `${v.toFixed(1)}${units[u]}`;
 }

@@ -953,22 +953,25 @@ mesh-map = "网里的机器"
 from-device = "来自 {0}"
 pick-a-session = "选一个 session"
 empty-sessions = "还没有 session"
-# The big canvas behind no selection: the network's now, three
+# The big canvas behind no selection: the network's now — **two**
 # headings and what stands under each. 等你的事 is the blocked rows —
 # the word's own definition (docs/SESSION.md 待批: an approval this
 # machine owes) — and when there are none the good news is said out
 # loud: an empty section under that heading would read as a query
-# that failed, not as a clear conscience. 今天 heads what today cost —
-# **one number, the output, against the busiest day khor knows** (the
-# reasoning for both halves is on `MeshNow`'s `Today`, which is the
-# only screen still drawing it); when nothing was spent yet the day
-# says so in its own tense — usage-none speaks of days plural and
-# would overclaim here. The machines section borrows devices-tab:
-# same fact, same word.
+# that failed, not as a clear conscience. The machines section borrows
+# devices-tab: same fact, same word.
+#
+# **墓碑(2026-08-29):这儿原来有第三节 `今天`,和它的空态 `today-none`
+# (「今天还没花」)。** 「session 页这个今天输出 xx k 也不要」——用户,
+# 2026-08-29。它是 2026-08-28「不显示输出 token 什么的」那一判的后半截:
+# 那天日账从主页撤了,而这块画布上还留着一根条和一个数在说同一件事。
+# **一处撤掉、另一处留着,不叫撤掉。**
+#
+# `today` 这个键还活着,别当它是遗留:`MachineChat` 拿它做日期分隔。
+# 花了多少去 `khor usage`,那是它现在唯一被画出来的地方。
 waiting-on-you = "等你的事"
 none-waiting = "没有等你的事"
 today = "今天"
-today-none = "今天还没花"
 # The conversation's day line, one word back: 今天 above serves both
 # (same fact, same word). Days further back print their own date — a
 # word per day would be a calendar rewritten in prose.

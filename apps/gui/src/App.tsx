@@ -5,7 +5,6 @@ import {
   fetchHooks,
   fetchSessions,
   fetchQuota,
-  fetchUsage,
   openTermOn,
   installHooks,
   closeSession,
@@ -16,7 +15,6 @@ import {
   type DeviceRow,
   type HooksState,
   type SessionRow,
-  type Usage,
   type QuotaAnswer,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -353,14 +351,13 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   // Whether the mark's place is showing. See `Mark`.
   const [mark, setMark] = useState<Mark>(false);
-  // What the agents have cost. **Asked for only while the place that
-  // shows it is open**, and not on the two-second poll the rows ride:
-  // the answer is every day there has ever been, and on the machine
-  // answering it a first pass is eighteen seconds
-  // (`khor_node::usage::Meters::tally`). Every one after that is cheap,
-  // so a slower beat of its own is enough for a number that changes as
-  // fast as somebody can type.
-  const [usage, setUsage] = useState<Usage | null>(null);
+  // **What the agents have cost is no longer asked for here at all.**
+  // This used to hold a `usage` answer beside the quota — every day
+  // there has ever been, eighteen seconds for the first pass on the
+  // machine answering it (`khor_node::usage::Meters::tally`). Its last
+  // reader was the network's-now 今天 line, removed 2026-08-29, and a
+  // poll nobody reads is not free: it is that tally, on a timer, for a
+  // number nothing draws. `khor usage` is where that question lives.
   const [quota, setQuota] = useState<QuotaAnswer | null>(null);
 
   // This machine's hooks, polled with everything else rather than read
@@ -402,38 +399,39 @@ export default function App() {
     // wait — no extra wiring, and nothing to remember to clear.
   }, [arrangeBy, hidden]);
 
-  // The spending answer feeds two places now: the mark's panel and the
-  // network's-now canvas behind no selection. One beat, one effect —
-  // the gate widens, the period does not.
-  const meshNow = !mark && landing === "sessions" && !selected;
+  // The subscription's arcs, on a beat of their own.
+  //
+  // **This effect used to carry two answers and now carries one**: the
+  // spending tally went with the 今天 line that read it, and what is
+  // left costs nothing per beat — the endpoint behind the quota is not
+  // touched per poll, since one fetch answers for five minutes and the
+  // whole machine shares it (`khor_node::quota`), so this reaches a
+  // cache and stops. Polling slower would only make the arcs staler
+  // than the number they are allowed to show.
+  //
+  // **The gate is still both places**, and it is wider than the arcs'
+  // own surface on purpose: they are drawn on this machine's card,
+  // which opens from the mark's place *and* from the devices landing,
+  // and a gate that only counted the first would leave the second
+  // showing whatever was last fetched.
   useEffect(() => {
-    if (!mark && !meshNow) return;
+    if (!mark && landing !== "devices") return;
     let live = true;
     const tick = () => {
-      fetchUsage()
-        .then((u) => live && setUsage(u))
-        .catch(() => {});
-      // **On the same beat as the spending, and that costs nothing.**
-      // The endpoint behind this is not touched per poll: one fetch
-      // answers for five minutes and the whole machine shares it
-      // (`khor_node::quota`), so this beat reaches a cache and stops.
-      // Polling slower here would only make the panel staler than the
-      // number it is allowed to show.
       fetchQuota()
         .then((q) => live && setQuota(q))
         .catch(() => {});
     };
     tick();
     // Left alone by the hidden pace on purpose: its beat already **is**
-    // the hidden beat, and it only runs while the panel showing it is
-    // open. Adding the flag here would buy nothing and cost a refetch —
-    // the expensive kind — on every switch back to the window.
+    // the hidden beat, and it only runs while a surface that can show it
+    // is open.
     const t = setInterval(tick, USAGE_POLL_MS);
     return () => {
       live = false;
       clearInterval(t);
     };
-  }, [mark, meshNow]);
+  }, [mark, landing]);
 
   const onSelect = useCallback((row: SessionRow) => {
     setSelected(row.id);
@@ -954,13 +952,13 @@ export default function App() {
       onBack={() => setScreen("list")}
       onNew={() => setSheet("new")}
       // The network's now, painted from the shell's own polled state —
-      // rows, devices and the usage answer all already on their beats
-      // (the usage effect widens its gate to feed this, same beat).
+      // rows and devices, both already on their beats. It asked for a
+      // third thing until 2026-08-29 (the spending tally, for the 今天
+      // line) and asks for nothing of its own now.
       empty={
         <MeshNow
           rows={rows}
           devices={devices}
-          usage={usage}
           onPick={onSelect}
           onDevice={(d) => {
             setLanding("devices");

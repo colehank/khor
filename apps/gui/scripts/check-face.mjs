@@ -169,21 +169,13 @@ try {
   await page.route("**/hooks_state", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify({ installed: false }) }),
   );
-  // The mark's place asks for these two, and section 4 measures it. A
-  // fortnight of spending, because the wall this gate was written about
-  // only exists at that length.
-  const days = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86_400_000);
-    days.push({
-      day: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
-      category: "claude",
-      tokens: { input: 1500, cached_input: 246_000_000, cache_write: 7_800_000, output: 280_000 - i * 12_000 },
-    });
-  }
-  await page.route("**/usage", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify({ days, unreadable: 0 }) }),
-  );
+  // **No `**/usage` route any more, and its absence is not an
+  // oversight.** This used to answer a fortnight of spending because
+  // the wall section 4 was written about only exists at that length.
+  // Nothing in the app asks for it since 2026-08-29 — the network's-now
+  // 今天 line was its last reader — so a route here would be this gate
+  // holding a fixture open for a call that is never made, which is the
+  // kind of scaffolding that later reads as evidence the call exists.
   await page.route("**/quota", (r) =>
     r.fulfill({
       contentType: "application/json",

@@ -167,11 +167,14 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });
 export const fetchDevices = () => call<DeviceRow[]>("devices");
-/** What every machine has spent, by day and by vendor — the whole
-    answer, because a screen scrolls. Asked on its own rather than riding
-    the device rows: those are polled every couple of seconds and this is
-    a list of every day there has ever been. */
-export const fetchUsage = () => call<Usage>("usage");
+/* **There is no `fetchUsage` any more**, and its absence is the point.
+   It asked the node for every day there has ever been — an eighteen
+   second first pass on the machine answering (`khor_node::usage`) — for
+   one line on one screen, and that line went on 2026-08-29 (「session 页
+   这个今天输出 xx k 也不要」). The op is still there and still answered:
+   `khor usage` is the landing for 花了多少, and the type below is still
+   exported because the bindings barrel exports every binding. Adding
+   this call back means having somewhere to draw it first. */
 /** What this machine's Claude subscription has left — read through the
     login Claude Code already stored here. Never rejects: every way it
     can come back empty is a reason the person might act on, so the

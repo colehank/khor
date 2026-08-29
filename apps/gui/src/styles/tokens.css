@@ -515,24 +515,26 @@
   --kind-mark: 14px;
   --kind-mark-glyph: 11px;
 
-  /* The thickness of a reading drawn as a bar, and the length one takes
-   * in a caption.
+  /* Tombstone (2026-08-29): `--gauge-bar` / `--gauge-bar-len` — the
+   * thickness of a reading drawn as a bar and the length one took in a
+   * caption. **There is no bar left in this app.**
    *
-   * **A reading in an overview is a shape, not a number.** The star map
-   * and the network's now each used to print `CPU 24% 内存 80% GPU 63%`
-   * under every machine — measured on the map: sixteen pieces of text,
-   * every one of them the same size and the same weight, so the name,
-   * the age and three readings all arrived at once with no reading
-   * order. What an overview is asked is "who is busy", and a bar answers
-   * that at a glance; "how busy, exactly" is the machine card's
-   * question, one press away, where the rings and the byte counts live.
+   * They were minted on the judgment that "a reading in an overview is
+   * a shape, not a number", against a map that printed `CPU 24% 内存
+   * 80% GPU 63%` under every machine. The judgment turned out to be
+   * half right and the wrong half was the expensive one: the user's
+   * word for the shapes was 「看不懂,可以取消」 (2026-08-28) — **an
+   * unlabelled bar has to be learnt exactly like a number does, and it
+   * has one thing less to learn from.** What replaced it is flatter:
+   * an overview carries no readings at all, and where a real "full"
+   * exists a ring says it, because the shape carries its own whole
+   * (`components/Ring`).
    *
-   * The bar is deliberately thinner than any type token: it must read as
-   * a mark on the page rather than as another line of text competing
-   * with the name above it. The length is what the caption can spare —
-   * three of them plus their gaps sit inside a face's own width. */
-  --gauge-bar: 3px;
-  --gauge-bar-len: 22px;
+   * The last bar standing was 今天's, kept because its denominator was
+   * named out loud (「和最忙的一天比」); it went with the 今天 line on
+   * 2026-08-29. Its component (`components/Gauge.tsx`) went with it —
+   * **a primitive whose last caller left is not a spare part, it is a
+   * second way to draw something this app has decided not to draw.** */
 
   /* The ring of state around a machine's face on a session row, and the
    * clear space between the two.
@@ -723,8 +725,6 @@
   --spacing-icon-mark: var(--icon-mark);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
-  --spacing-gauge-bar: var(--gauge-bar);
-  --spacing-gauge-bar-len: var(--gauge-bar-len);
 
   /* the four gaps → utilities (gap-in, mb-group, pt-pane…) */
   --spacing-in: var(--gap-in);
