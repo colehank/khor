@@ -14,9 +14,13 @@
 //      weight distribution is {400,500,600}, not the flat {400} this
 //      gate was born from;
 //   3. **every pressable thing on every surface the rail reaches** is at
-//      least `--touch` on both sides, in both postures — or is waived by
-//      name, with why the floor is the wrong criterion for that one and
-//      what the waiver does not buy;
+//      least `--touch` on both sides, in both postures **and with a
+//      finger on the glass** — or is waived by name, with why the floor
+//      is the wrong criterion for that one and what the waiver does not
+//      buy;
+//   3b. and the breadcrumb spends that width only where the finger is —
+//      with a mouse no step is padded more than its neighbour for
+//      having a shorter name;
 //   4. and every press handler is on something that **says** it is a
 //      target — the claim section 3's scope rests on, since a control
 //      the DOM does not admit to is one section 3 cannot find either;
@@ -376,6 +380,42 @@ try {
   // on the narrow face because that is the posture with fingers, and on
   // the wide face too: a desktop is where a trackpad's imprecision and
   // the web face on an iPad both live.
+  //
+  // **And measured with a finger on the glass, which it was not until
+  // 2026-08-30.** The floor is a floor for fingers — the token says so,
+  // HIG and WCAG say so, and every waiver below is argued in those
+  // terms — while this walk ran in a plain desktop Chrome that reports
+  // `(pointer: fine)` and `(hover: hover)`. Two postures of one
+  // *viewport* is not two postures of one *pointer*, and the day a
+  // control was made to wear the width floor only under `(pointer:
+  // coarse)` this section went red against a screen that has no finger
+  // anywhere near it — a red that was true of nothing (the breadcrumb,
+  // `FilesKind.tsx`; 「目录显示很丑,有很多奇怪的空格」 was the same
+  // width, seen from the other side). A gate that demands a finger's
+  // floor on a mouse's screen does not merely miss things: it argues
+  // for the bug.
+  //
+  // So the walk turns the finger on. `Emulation.setTouchEmulationEnabled`
+  // is what does it — **and `Emulation.setEmulatedMedia` with a
+  // `pointer` feature is not**, which is worth writing down because it
+  // is the obvious thing to reach for and it fails silently: measured,
+  // the call is accepted and `matchMedia("(pointer: coarse)")` stays
+  // `false`, so a gate built on it would report a green it never
+  // measured. Blink honours that override for `prefers-*` and friends,
+  // not for the pointer. The touch flag is the same one smoke.mjs §18
+  // reaches for, and it is asserted every posture rather than trusted:
+  // an override that stopped taking would leave every stop measuring
+  // the mouse again under a heading that says finger.
+  //
+  // **What it costs, and it is paid on purpose**: with touch on,
+  // `(hover: hover)` is false, so hover-revealed controls are not
+  // revealed. They are still laid out and still measured (the excuses
+  // below turn on layout and visibility, not on opacity), and a control
+  // a finger can never summon is not a control this section can speak
+  // for anyway. The flag goes off again before section 5, and that the
+  // pointer came back is asserted, not hoped for — the scar is
+  // smoke.mjs's: one item's flag left on cost five other items their
+  // meaning without a word.
   //
   // **The scope is the claim, and it used to be one sixth of it.** This
   // section measured `[data-rail-item]` — six buttons — and stayed green
@@ -784,6 +824,8 @@ try {
   // Same collapsing for section 4: one carrier, one line, however many
   // surfaces it rides on.
   const carriers = new Map();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
   for (const [posture, vp] of [
     ["narrow", { width: 390, height: 844 }],
     ["wide", { width: 1400, height: 900 }],
@@ -791,6 +833,18 @@ try {
     await page.setViewportSize(vp);
     await page.reload({ waitUntil: "load" });
     await wait(900);
+    // The instrument, before the readings. A floor asserted on a screen
+    // with no finger on it is the false red this section was rewritten
+    // for; the same override quietly not taking would be its false
+    // green, and the two look identical in the output.
+    const finger = await page.evaluate(() => ({
+      coarse: matchMedia("(pointer: coarse)").matches,
+      hover: matchMedia("(hover: hover)").matches,
+    }));
+    if (!finger.coarse) {
+      fail(`probe void: ${posture} is being measured with no finger on the glass — the touch override did not take, so every floor below is asserted against a mouse`);
+    }
+    console.log(`posture ${posture}: ${vp.width}×${vp.height}, pointer coarse ${finger.coarse}, hover ${finger.hover}`);
     for (const stop of STOPS) {
       await stop.go();
       const here = `${posture} · ${stop.name}`;
@@ -925,6 +979,131 @@ try {
         `on any stop — either the debt was paid (delete its line) or the walk stopped ` +
         `reaching the surface it lives on (fix the walk).`,
     );
+  }
+
+  // ── 3b) the breadcrumb spends the floor only on the finger ────────
+  // Section 3 above now asks its question of a hand. This asks the other
+  // half of the same question, and it exists because section 3 **cannot
+  // fail on it**: a control that is 44 wide for everybody clears the
+  // finger's floor forever, and the screen it ruins is the one section 3
+  // has stopped visiting.
+  //
+  // What ruins it: a step in a path is as wide as its name, and a floor
+  // applied to all of them makes the gap after a step **inversely
+  // proportional to the length of its name** — 40px of nothing after
+  // `/`, 26 after `nfs`, 4 after `workingdir`. That is not spacing, it
+  // reads as damage, and it is what a person actually said out loud
+  // (「目录显示很丑,有很多奇怪的空格」, 2026-08-29).
+  //
+  // **So the assertion is on the spread, not on the width.** Any fixed
+  // padding is fine and the number is the stylesheet's business; what
+  // may not happen is one step being padded more than another *because
+  // its name is shorter*. Written as「every step is its own natural
+  // width」the check would be a second copy of `px-0.5` living in this
+  // file, red the day somebody changes the padding for a good reason.
+  //
+  // The two halves are one section on purpose: the finger half is what
+  // keeps「no floor at all」from passing, and the mouse half is what
+  // keeps「the floor for everybody」from passing. Either alone is a
+  // green that argues for the other bug.
+  const crumbSpend = () =>
+    page.evaluate(() => {
+      const crumbs = [...document.querySelectorAll("[data-crumb]")].map((el) => {
+        const box = el.getBoundingClientRect();
+        // The name's own width, measured on the text rather than
+        // computed from a font: a Range over the button's contents is
+        // what the browser actually laid out.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const text = range.getBoundingClientRect();
+        return {
+          label: (el.textContent || "").trim(),
+          // The last step is not a step: it takes the blank tail so
+          // that pressing the empty part of the bar opens the editor
+          // (`FilesKind.tsx` says why it is one target and not two), so
+          // its width is about the bar, not about its name.
+          rest: el.hasAttribute("data-address-rest"),
+          text: Math.round(text.width * 10) / 10,
+          box: Math.round(box.width * 10) / 10,
+        };
+      });
+      return {
+        floor: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--touch")),
+        coarse: matchMedia("(pointer: coarse)").matches,
+        crumbs,
+      };
+    });
+  const atCrumbs = async () => {
+    await press(rail("files"));
+    // The walk left a tab open, so the new-tab page and its `[data-place]`
+    // need not be there — pressing it is an attempt, not a requirement.
+    await press("[data-place]");
+    return (await page.locator("[data-crumb]").count()) > 0;
+  };
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const spend = {};
+  for (const [posture, coarse] of [
+    ["finger", true],
+    ["mouse", false],
+  ]) {
+    await cdp.send("Emulation.setTouchEmulationEnabled", coarse ? { enabled: true, maxTouchPoints: 1 } : { enabled: false });
+    await wait(300);
+    if (!(await atCrumbs())) {
+      fail(`probe dead: no breadcrumb on the files landing under a ${posture}`);
+      continue;
+    }
+    const seen = await crumbSpend();
+    if (seen.coarse !== coarse) {
+      fail(`probe void: asked for a ${posture} and got pointer coarse=${seen.coarse} — the override did not take`);
+      continue;
+    }
+    spend[posture] = seen;
+    console.log(
+      `crumbs · ${posture}: ` +
+        seen.crumbs
+          .map((c) => `${JSON.stringify(c.label)} ${c.text}→${c.box}${c.rest ? " (the tail)" : ""}`)
+          .join(", "),
+    );
+  }
+  // …and the pointer is back, which sections 5 and 5b are measured
+  // under. Asserted rather than assumed: this is the moment smoke.mjs
+  // §14 was lost at.
+  if (!(await page.evaluate(() => matchMedia("(hover: hover)").matches))) {
+    fail("the pointer never came back after section 3 — everything below this line is measuring a screen with no hover");
+  }
+  if (!spend.finger || !spend.mouse) {
+    fail("probe dead: the breadcrumb was not read in both postures, so neither half below judged");
+  } else {
+    const steps = (s) => s.crumbs.filter((c) => !c.rest);
+    // Both halves are vacuous on a path whose every name is already
+    // wider than the floor — there would be nothing for a floor to
+    // raise and nothing for a mouse to hand back. The fixture's path is
+    // `/home/peer/work`, so this holds; it is asserted because a fixture
+    // is a thing somebody edits.
+    if (steps(spend.finger).length < 3) {
+      fail(`probe dead: ${steps(spend.finger).length} steps in the breadcrumb — the fixture's path is too shallow to judge`);
+    } else if (!steps(spend.mouse).some((c) => c.text < spend.mouse.floor)) {
+      fail("probe void: every step's name is already wider than the floor, so neither half of this section is about anything — deepen the fixture's path");
+    } else {
+      for (const c of steps(spend.finger)) {
+        if (c.box + 0.5 < spend.finger.floor) {
+          fail(`with a finger, the step ${JSON.stringify(c.label)} is ${c.box} wide against a ${spend.finger.floor} floor — ${whereIs("data-crumb")}`);
+        }
+      }
+      const slack = steps(spend.mouse).map((c) => Math.round((c.box - c.text) * 10) / 10);
+      const spread = Math.round((Math.max(...slack) - Math.min(...slack)) * 10) / 10;
+      console.log(`crumbs · with a mouse the slack after each step is ${JSON.stringify(slack)}, spread ${spread}`);
+      // 1px of spread is sub-pixel text metrics, not a floor: a floor
+      // shows up here as tens of pixels (40 after `/`, 4 after a long
+      // name) because it is the *difference* from the name's width.
+      if (spread > 1) {
+        fail(
+          `with a mouse the steps are padded unevenly — slack ${JSON.stringify(slack)}, spread ${spread}px. ` +
+            `A step's gap must not depend on the length of its name; that is a touch floor being spent on a ` +
+            `screen with no finger on it (src/views/FilesKind.tsx).`,
+        );
+      }
+    }
   }
 
   // ── 5) a dense screen has a reading order ─────────────────────────

@@ -123,34 +123,53 @@ function PathCrumbs({ at, onGo, onEdit }: RestProps) {
               data-address-rest={last || undefined}
               aria-label={last ? gui.address_dir : undefined}
               onClick={last ? onEdit : () => onGo(c.to)}
-              // **The floor under a finger, in both directions**
-              // (tokens.css `--touch`). The tall half is free — the bar
-              // is already that tall around the machine chip — and the
-              // wide half is the one with a price, paid here rather than
-              // dodged: a step whose name is one or two letters is a
+              // **The tall floor always; the wide floor only where
+              // there is a finger** (tokens.css `--touch`).
+              //
+              // The tall half is free — the bar is already that tall
+              // around the machine chip. The wide half was taken
+              // unconditionally, with the price written down and
+              // accepted: a step whose name is one or two letters is a
               // target of about that many pixels otherwise, and a
               // breadcrumb is the only thing a person can press on this
               // face at rest.
               //
-              // **Where the slack goes, once a step is wider than its
-              // name.** Held to the start, it always falls *after* a
-              // step and never between a slash and the name it
-              // introduces, so `/var` and `/folders` stay whole and the
-              // gaps land at the joins — centred, it would fall on both
-              // sides of every short step, which is the spelling this
-              // file already threw out for reading as a row of words.
+              // **What was never priced is what it does to the bar when
+              // nobody's finger is anywhere near it.** 「目录显示很丑,
+              // 有很多奇怪的空格」 — the user, 2026-08-29. Measured on
+              // this path, on a pointer machine: `/` is 3.8px of text in
+              // a 44px box, `t1` 10.3 in 44, `nfs` 18 in 44, while
+              // `workingdir` at 61.5 sits in 65.5. **So the hole after a
+              // step is inversely proportional to how short its name
+              // is** — which is why the raggedness reads as arbitrary
+              // rather than as spacing. Ten steps came to 1256.6px of
+              // bar for 417.5px of name.
               //
-              // The root is the exception because it is the one step
-              // whose name *is* the separator: with nothing to stay
-              // joined to, held to the start it sits against the chip
-              // with its whole width between it and the first name.
-              // Centred, that distance is halved and falls on both
-              // sides, which is what a lone slash wants — unless the
-              // root is also where you are standing, in which case it
-              // is the step that takes the whole tail and centring
-              // would strand one slash in the middle of the bar.
+              // `(pointer: coarse)` is the fact that decides it, and it
+              // is the same shape as the scrollbar batch's `(hover:
+              // hover)`: the floor exists for fingers, a mouse is not a
+              // finger, and the page can be asked which one it has. Not
+              // a width breakpoint — a phone in landscape is still a
+              // finger, and a narrow desktop window is still a mouse.
+              //
+              // **Where the slack goes, when there is slack.** Held to
+              // the start, it always falls *after* a step and never
+              // between a slash and the name it introduces, so `/var`
+              // and `/folders` stay whole and the gaps land at the
+              // joins — centred, it would fall on both sides of every
+              // short step, which is the spelling this file already
+              // threw out for reading as a row of words. The root is the
+              // exception because it is the one step whose name *is* the
+              // separator: with nothing to stay joined to, centring
+              // halves the distance to the first name and puts it on
+              // both sides, which is what a lone slash wants — unless
+              // the root is also where you are standing, in which case
+              // it takes the whole tail and centring would strand one
+              // slash in the middle of the bar. All of that is now a
+              // coarse-pointer sentence; with a mouse there is nothing
+              // to place.
               className={cn(
-                "inline-flex min-h-touch min-w-touch cursor-pointer items-center rounded-sm px-0.5 text-sm whitespace-nowrap hover:bg-muted",
+                "inline-flex min-h-touch pointer-coarse:min-w-touch cursor-pointer items-center rounded-sm px-0.5 text-sm whitespace-nowrap hover:bg-muted",
                 i === 0 && !last ? "justify-center" : "justify-start",
                 last && "grow shrink-0",
               )}

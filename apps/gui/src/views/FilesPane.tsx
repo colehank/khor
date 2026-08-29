@@ -252,8 +252,25 @@ export function FilesPane({
                 <div
                   key={e.name}
                   data-file={e.name}
+                  // **The floor is worn, not padded around.** A file row
+                  // holds a control that already carries `min-h-touch`,
+                  // so `py-2` on the row was 8 + 44 + 8: measured 60
+                  // against a directory row's 44, and since a directory
+                  // listing draws its directories first, the list's
+                  // rhythm broke at the first file and stayed broken.
+                  // The row is the floor's height and the button fills
+                  // it, which is the same arrangement the directory row
+                  // above arrived at from the other side.
+                  //
+                  // **`min-h-touch` on the row rather than only on the
+                  // button**, because the button is not always there:
+                  // once a file has been taken the row is a word, and a
+                  // row that shrank to the height of its text would put
+                  // the break back in the same list — one row further
+                  // down and only after a press, which is the harder
+                  // version of the same bug to see.
                   className={cn(
-                    "group flex items-center gap-3 px-4 py-2 text-sm",
+                    "group flex min-h-touch items-center gap-3 px-4 text-sm",
                     faded && "text-muted-foreground",
                   )}
                 >
