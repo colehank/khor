@@ -246,7 +246,12 @@ export function SessionsList({
   // empty list is a render this component still does, and hooks that
   // ran only on the non-empty path would change in number between two
   // renders.
-  const days = useDayStrips(useStripWidth(box));
+  //
+  // The second argument is not decoration: the box below is not rendered
+  // on the empty path, so on the first render there is nothing to
+  // measure and a ref alone would never tell the observer that changed
+  // (`useStripWidth` has what that cost, measured).
+  const days = useDayStrips(useStripWidth(box, shown.length > 0));
   if (shown.length === 0) {
     // "Nothing here" and "nothing matched" are different facts, and the
     // wrong one is a lie the user has no way to catch: someone who

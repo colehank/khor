@@ -63,8 +63,27 @@ export function cellsFor(widthPx: number): number {
  *
  * A `ResizeObserver` rather than a resize listener, because most of the
  * ways this box changes width are not window resizes.
+ *
+ * # `present` exists because a ref is not a dependency
+ *
+ * The box being watched does not exist on the first render: the list
+ * paints its empty state until the first poll answers, and the wrapper
+ * this ref points at is not rendered on that path. An effect keyed only
+ * on the ref object runs once, finds `current` null, gives up, and
+ * **never runs again** — the ref object itself never changes, so
+ * nothing re-triggers it when the node finally arrives.
+ *
+ * Measured, not reasoned: the strip shipped this way for one round and
+ * the browser showed zero requests for a day strip on a list with four
+ * rows and a wrapper 287 wide. Nothing threw, nothing was red, and the
+ * band simply was not there — the failure of a ref-only dependency is
+ * always silent, because "no node yet" and "no node ever" look the same
+ * from inside the effect.
+ *
+ * So the caller says when there is something to observe, and that is a
+ * value, which is a thing an effect can depend on.
  */
-export function useStripWidth(box: RefObject<HTMLElement | null>): number {
+export function useStripWidth(box: RefObject<HTMLElement | null>, present: boolean): number {
   const [width, setWidth] = useState(0);
   useEffect(() => {
     const el = box.current;
@@ -76,7 +95,7 @@ export function useStripWidth(box: RefObject<HTMLElement | null>): number {
     });
     watch.observe(el);
     return () => watch.disconnect();
-  }, [box]);
+  }, [box, present]);
   return width;
 }
 
