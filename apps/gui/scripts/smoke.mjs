@@ -2338,6 +2338,7 @@ for line in sys.stdin:
       `probe dead: no unpinned row below the top to float — ${JSON.stringify(rowPins)}`,
     );
   }
+  const wasAt = rowPins.findIndex(([id]) => id === flipTarget);
   //      **The reordering action is still the pin; only its doorway
   //      moved.** The menu is opened first and the frame counter starts
   //      after it is up: the right-click itself reorders nothing, so
@@ -2347,20 +2348,45 @@ for line in sys.stdin:
   await openRowMenu(flipTarget);
   await watchTransforms();
   await page.locator('[data-menu-item="pin"]').click();
-  //      Say what the screen actually looks like when it does not
-  //      happen. 「last: false」 names neither the row that was pressed
-  //      nor where it went, and「the pin never reached the node」 and
-  //      「it reached the node and nothing moved」 are different bugs
-  //      that fail identically from here — §15b's wait carries the same
-  //      three readings for the same reason.
-  await until("the pinned row to lead", 20_000, async () => {
+  //      **What this waits for is that the row moved up and that the
+  //      screen agrees with the node — not that it leads.**
+  //
+  //      「It leads」 was the third wrong spelling of this in one day and
+  //      the other two are worth keeping, because each was a smaller
+  //      version of the same mistake — *asserting a position when the
+  //      property wanted is a relation*:
+  //
+  //        1. `rowIds()[2]` as the subject: index 2 is not「a row with
+  //           something above it」, it is a guess at one, and on some
+  //           runs it was already pinned — the press unpinned it and the
+  //           row correctly did not move up;
+  //        2. 「the pinned row leads」 with an unpinned subject: pinning
+  //           floats a row into the pinned **group**, and it only
+  //           reaches index 0 when that group was empty. Measured on the
+  //           run that caught this: `data-pinned=true`, order
+  //           `[tui/cafe1 chat/alpha chat/beta chat/gamma]`, and
+  //           `khor sessions` led with `tui/cafe1` too — **the product
+  //           and the CLI agreed with each other and disagreed with the
+  //           test**. That is the shape of a false red: it read as
+  //          「pinning is broken」 while nothing was.
+  //
+  //      So the claim is the one this layer is allowed to make (§15's
+  //      own words): the row the node put where it put it *is* there.
+  //      Two halves — it climbed, and the DOM order is the node's order
+  //      — and the first would pass on a list that reshuffled at random
+  //      while the second would pass on a list that never moved.
+  await until("the pinned row to climb, and the screen to agree with the node", 20_000, async () => {
     const now = await rowIds();
-    if (now[0] === flipTarget) return true;
+    const nowAt = now.indexOf(flipTarget);
+    const backend = cli(envB, "sessions")
+      .split("\n")
+      .filter((l) => l.includes("\t"))
+      .map((l) => l.split("\t")[0]);
+    if (nowAt >= 0 && nowAt < wasAt && now.join(" ") === backend.join(" ")) return true;
     const pinnedAttr = await page.locator(`[data-row="${flipTarget}"]`).getAttribute("data-pinned");
-    const backend = cli(envB, "sessions").split("\n").filter((l) => l.includes("\t"))[0] ?? "";
     throw new Error(
-      `target=${flipTarget} data-pinned=${pinnedAttr} order=[${now.join(" ")}] ` +
-        `cli-first=${backend.split("\t")[0]}`,
+      `target=${flipTarget} data-pinned=${pinnedAttr} was #${wasAt} now #${nowAt}; ` +
+        `screen=[${now.join(" ")}] node=[${backend.join(" ")}]`,
     );
   });
   const movedFrames = await stopWatching();
