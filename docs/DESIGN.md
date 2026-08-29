@@ -47,6 +47,7 @@
 | `npm run test` | `pretest` → `gen` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |
 | `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome) | 不拿 |
+| `npm run day` | `check-day.mjs`,会话行那条状态条真的上没上屏(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
@@ -74,6 +75,11 @@
   和 `npm run face`(渲染)。**两条都要**:一条证明没人写字面量,另一条证明
   规则真落到了屏上,少任何一条另一条都只是一半;
 - **动了颜色或 `tokens.css` 的调色板** → 加 `npm run palette`;
+- **动了会话行那条状态条,或它背后的 `khor_node::day`** → 加 `npm run day`。
+  它守的是别的门**结构上看不见**的那一样:那条带子有没有真的画在屏上。
+  它立于 2026-08-30——那条带子发出去过一版**一格都没画**,而当时
+  `cargo test`、`tsc`、`check-px`、`check-icons` 全绿、`pageerror` 为空。
+  没有任何一道门退化了,它们从来就量不到这件事;
 - **动了导轨** → 加 `npm run rail`;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,

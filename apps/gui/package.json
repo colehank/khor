@@ -14,6 +14,7 @@
     "rail": "node scripts/check-rail.mjs",
     "type": "node scripts/check-type.mjs",
     "face": "node scripts/check-face.mjs",
+    "day": "node scripts/check-day.mjs",
     "palette": "node scripts/check-palette.mjs",
     "tabs": "node scripts/check-tabs.mjs",
     "smoke": "node scripts/smoke.mjs",
