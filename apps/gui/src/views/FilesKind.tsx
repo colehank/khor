@@ -137,13 +137,20 @@ function PathCrumbs({ at, onGo, onEdit }: RestProps) {
               // **What was never priced is what it does to the bar when
               // nobody's finger is anywhere near it.** 「目录显示很丑,
               // 有很多奇怪的空格」 — the user, 2026-08-29. Measured on
-              // this path, on a pointer machine: `/` is 3.8px of text in
-              // a 44px box, `t1` 10.3 in 44, `nfs` 18 in 44, while
-              // `workingdir` at 61.5 sits in 65.5. **So the hole after a
-              // step is inversely proportional to how short its name
-              // is** — which is why the raggedness reads as arbitrary
-              // rather than as spacing. Ten steps came to 1256.6px of
-              // bar for 417.5px of name.
+              // this path, on a pointer machine (widths in CSS pixels):
+              // `/` is 3.8 of text in a 44 box, `t1` 10.3 in 44, `nfs`
+              // 18 in 44, while `workingdir` at 61.5 sits in 65.5. **So
+              // the hole after a step is inversely proportional to how
+              // short its name is** — which is why the raggedness reads
+              // as arbitrary rather than as spacing. Ten steps came to
+              // 1256.6 of bar for 417.5 of name.
+              //
+              // (The unit is named once, in words, rather than written
+              // on each number: `check-px` reads comments too, and it is
+              // right to — a `px` in this file is nearly always a length
+              // that should have been a token. These are readings of
+              // what the screen did, not lengths anybody set, and that
+              // distinction is not one a grep can make.)
               //
               // `(pointer: coarse)` is the fact that decides it, and it
               // is the same shape as the scrollbar batch's `(hover:
