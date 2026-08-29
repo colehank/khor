@@ -21,6 +21,8 @@
 //   3b. and the breadcrumb spends that width only where the finger is —
 //      with a mouse no step is padded more than its neighbour for
 //      having a shorter name;
+//   3c. and a directory listing's rows agree with each other on height
+//      and on both gutters, whichever branch drew them;
 //   4. and every press handler is on something that **says** it is a
 //      target — the claim section 3's scope rests on, since a control
 //      the DOM does not admit to is one section 3 cannot find either;
@@ -45,6 +47,25 @@ import { chromium } from "playwright-core";
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const PORT = Number(process.env.FACE_PORT ?? 1451);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// A bounded poll where a fixed sleep used to be. Every「probe dead」in
+// this file is the claim *this surface never drew*, and a fixed wait
+// turns「slower than 500ms this once」into exactly that claim — a red
+// about the machine wearing the words of a red about the product, which
+// is the most expensive kind to receive: it sends somebody to look at a
+// screen that is fine. Measured 2026-08-30 on an idle machine (load
+// 1.75): two consecutive runs failed at two *different* stops
+// (`wide · settings never drew`, `the peer's node card never opened`)
+// and each was green on the next run. Waiting for the thing itself is
+// both truthful and, in the ordinary case, faster than the sleep it
+// replaces.
+const until = async (ms, ok) => {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (await ok()) return true;
+    if (Date.now() > end) return false;
+    await wait(100);
+  }
+};
 const fail = (m) => {
   console.error(m);
   process.exitCode = 1;
@@ -848,7 +869,7 @@ try {
     for (const stop of STOPS) {
       await stop.go();
       const here = `${posture} · ${stop.name}`;
-      if ((await page.locator(stop.anchor).count()) === 0) {
+      if (!(await until(5_000, async () => (await page.locator(stop.anchor).count()) > 0))) {
         fail(`probe dead: ${here} never drew (${stop.anchor}) — the walk, not the controls`);
         await stop.after?.();
         continue;
@@ -1106,6 +1127,106 @@ try {
     }
   }
 
+  // ── 3c) one listing, one row ──────────────────────────────────────
+  // A directory listing draws two kinds of row from two different
+  // branches, and **nothing above this line can see them drift apart**:
+  // section 3 measures how big a target is, and both rows' targets were
+  // always fine while the rows around them were not. Two ways they
+  // drifted, both shipped, both found by a person looking at the screen
+  // rather than by anything here:
+  //
+  //   - **height.** A file row holds a control wearing the touch floor,
+  //     so `py-2` around it made the row 8 + 44 + 8 = 60 against a
+  //     directory row's 44. A listing draws its directories first, so
+  //     the list's rhythm broke at the first file and stayed broken.
+  //   - **gutter.** The directory row's `pr-2` against everything
+  //     else's `px-4`: a pin sat 8 from the edge while the 拿过来 in
+  //     the row below it sat 16, so the right edge of the list stepped
+  //     sideways at the same seam.
+  //
+  // **The criterion is sameness, not a number.** 16 is what this pane
+  // happens to use and this file is not where that is decided — a gate
+  // that asserted 16 would be a second copy of `px-4` living in
+  // `scripts/`, red the day somebody retunes the pane on purpose. What
+  // may not happen is one row in a listing being laid out unlike the
+  // row above it.
+  //
+  // **Both kinds of row have to be on screen or this judges nothing** —
+  // comparing directories to directories is satisfied by any listing at
+  // all, which is the「a shallower fixture quietly narrowed the claim」
+  // shape. Asserted, because a fixture is a thing somebody edits.
+  //
+  // **What it does not block**: a row that is internally ragged (the
+  // size, the date and the verb drifting apart inside a row whose two
+  // edges are right), and a listing whose rows agree with each other
+  // and with nothing else on the face.
+  await atCrumbs();
+  const listing = await page.evaluate(() => {
+    const px = (n) => Math.round(n * 10) / 10;
+    const rows = [];
+    for (const el of document.querySelectorAll("[data-up],[data-dir],[data-file]")) {
+      // The directory row is the wrapper that holds the name *and* the
+      // pin; the other two kinds are the row themselves.
+      const row = el.hasAttribute("data-dir") ? el.parentElement : el;
+      const r = row.getBoundingClientRect();
+      // Left is where the row's first word starts, not where its first
+      // box does: on a directory row the box is a full-width button and
+      // the padding that matters is inside it.
+      const leaf = [...row.querySelectorAll("*")].find(
+        (e) => e.children.length === 0 && e.textContent.trim(),
+      );
+      let left;
+      if (leaf) left = px(leaf.getBoundingClientRect().left - r.left);
+      else {
+        const range = document.createRange();
+        range.selectNodeContents(row);
+        left = px(range.getBoundingClientRect().left - r.left);
+      }
+      // Right is where the row's last control ends — or, on a row with
+      // nothing on its right at all, the row's own padding. Both are
+      // 「how much space is left over there」, which is the thing a
+      // reader's eye follows down the edge of the list.
+      const kids = [...row.children].filter((c) => c.getClientRects().length);
+      const right = kids.length
+        ? px(r.right - Math.max(...kids.map((c) => c.getBoundingClientRect().right)))
+        : px(parseFloat(getComputedStyle(row).paddingRight));
+      rows.push({
+        what: el.getAttribute("data-dir") ?? el.getAttribute("data-file") ?? "上一级",
+        kind: el.hasAttribute("data-dir") ? "dir" : el.hasAttribute("data-file") ? "file" : "up",
+        h: px(r.height),
+        left,
+        right,
+      });
+    }
+    return rows;
+  });
+  console.log(
+    `listing: ${listing.map((r) => `${r.kind} ${JSON.stringify(r.what)} h${r.h} ⊢${r.left} ${r.right}⊣`).join(", ")}`,
+  );
+  const kinds = new Set(listing.map((r) => r.kind));
+  if (!kinds.has("dir") || !kinds.has("file")) {
+    fail(
+      `probe void: the listing on screen has ${[...kinds].join("+") || "no"} rows — this section compares a ` +
+        `directory row against a file row and cannot do it with one kind (deepen the **/ls fixture)`,
+    );
+  } else {
+    for (const [axis, of] of [
+      ["height", (r) => r.h],
+      ["left gutter", (r) => r.left],
+      ["right gutter", (r) => r.right],
+    ]) {
+      const seen = listing.map(of);
+      // Sub-pixel is text metrics; this bug is whole steps of padding.
+      if (Math.max(...seen) - Math.min(...seen) > 0.5) {
+        fail(
+          `the rows of one listing disagree on ${axis}: ` +
+            listing.map((r) => `${r.kind} ${JSON.stringify(r.what)} ${of(r)}`).join(", ") +
+            ` — one listing is one rhythm, whatever the number is (src/views/FilesPane.tsx)`,
+        );
+      }
+    }
+  }
+
   // ── 5) a dense screen has a reading order ─────────────────────────
   // **What sections 2 and 3 cannot see.** Section 2 asks whether the
   // three weights exist *somewhere on the page*, which the rail and the
@@ -1224,7 +1345,10 @@ try {
   //    walk proves the positive one two presses earlier: the finder is
   //    known to work before it is asked to report an absence.
   const quotaOn = async (what) => {
-    await wait(400);
+    // Wait for the card, then a beat for the arcs inside it — bounded,
+    // for the reason `until` is written down at the top of this file.
+    await until(5_000, async () => (await page.locator(what).count()) > 0);
+    await wait(300);
     const seen = await page.evaluate((sel) => {
       const card = document.querySelector(sel);
       if (!card) return null;

@@ -189,8 +189,23 @@ export function FilesPane({
               return e.dir ? (
                 <div
                   key={e.name}
+                  // **One gutter for the whole listing, and 16 is the
+                  // number the rest of this pane already uses** — the
+                  // 上一级 row, the refusal, the empty word and the
+                  // truncation note are all `p-4`, and every row's name
+                  // starts at 16 from the left. This row was the only
+                  // thing at 8, so a directory's pin sat half a step
+                  // closer to the edge than a file's 拿过来 right under
+                  // it, and the right edge of the list wobbled at
+                  // exactly the row where the listing changes from
+                  // directories to files. Measured 8 against 16.
+                  //
+                  // **The 8 goes to the name, not to a spacer.** The
+                  // other way to line these up is to give the file row a
+                  // hole the size of a pin, and that is worse than the
+                  // wobble: it is blank space defended by a rule.
                   className={cn(
-                    "group flex items-center pr-2 hover:bg-muted/50",
+                    "group flex items-center pr-4 hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
