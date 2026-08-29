@@ -5,9 +5,10 @@
 //
 //   1. a resting glyph is legible — its filled half against whatever it
 //      actually sits on, in both themes;
-//   2. the app's mark is its own group — the distance between it and the
-//      four landings is larger than the distance between the landings,
-//      by the amount that was meant, and the same at the foot;
+//   2. the way into the mesh is its own group — it sits at the foot,
+//      wearing this machine's face, a whole `--gap-group` further from
+//      the settings glyph than the landings sit from each other, on
+//      both faces;
 //   3. being the open one is said the same way by all five items.
 //
 // **Why none of this is a static check.** Every one of those facts is a
@@ -203,7 +204,13 @@ try {
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
 
   const item = (tab) => page.locator(`[data-rail-item][data-landing="${tab}"]`);
-  const mark = page.locator("[data-rail-item]", { has: page.locator("[data-rail-mark]") });
+  // **The rail item that opens the mark's place**, whatever picture it
+  // is wearing. It was the app's own logo at the head of the rail until
+  // 2026-08-29 and it is this machine's face at the foot now; what this
+  // gate measures — that it is a control, that it stands apart from the
+  // landings — did not change with the picture, so neither did the
+  // attribute or this locator.
+  const mesh = page.locator("[data-rail-item]", { has: page.locator("[data-rail-mark]") });
   const bgOf = (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
   const boxOf = async (loc) => {
     const b = await loc.boundingBox();
@@ -253,13 +260,27 @@ try {
   }
   await page.emulateMedia({ colorScheme: "light" });
 
-  // ── 2) the mark is its own group ──────────────────────────────────
+  // ── 2) the way into the mesh is its own group, at the foot ────────
   //
   // Measured as positions, never as "it looks separated". The amount is
   // read off the page's own `--gap-group` rather than written here: the
   // claim is "the distance that was meant is the distance on screen",
   // and a number copied into this file would keep passing after somebody
   // changed the token.
+  //
+  // **This used to measure the head of the rail**, where the app's mark
+  // sat above the landings; 「取而代之,用左下角的点击作为原来的 khor
+  // 页面」 (the user, 2026-08-29) moved the door to the foot and gave it
+  // this machine's face. The claim is the same sentence with one word
+  // changed — *this is not a fifth landing* — so it is measured in the
+  // same place it always was: the gap either side of the group.
+  //
+  // **And it is measured on both faces now, which it was not.** The
+  // foot half used to be wide-only, with the reason written down: the
+  // narrow rail had no face on it. That is no longer true, and a
+  // wide-only check on the one door a phone has would be the exact
+  // shape this repo keeps paying for — a ruling verified on one of two
+  // screens showing one thing.
   const wanted = await page.evaluate(() =>
     Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-group")),
   );
@@ -302,7 +323,7 @@ try {
     const over = await page.locator("nav").evaluate((el) => el.scrollWidth - el.clientWidth);
     if (over > 0) fail(`${face}: the rail overflows its own box by ${over}`);
 
-    const boxes = { mark: await boxOf(mark) };
+    const boxes = {};
     for (const tab of LANDINGS) boxes[tab] = await boxOf(item(tab));
 
     // Inside the group first: four landings at one distance. Without
@@ -317,38 +338,32 @@ try {
       fail(`${face}: the four landings are not evenly spaced — gaps ${inside.map((g) => g.toFixed(1))}`);
     }
     const within = Math.min(...inside);
-    const toMark = near(boxes[LANDINGS[0]]) - far(boxes.mark);
-    console.log(`${face}: landings ${within.toFixed(1)}px apart, the mark ${toMark.toFixed(1)}px away`);
+
+    const settings = page.locator("[data-rail-item]:not([data-landing])", { hasNot: page.locator("[data-rail-mark]") });
+    if ((await settings.count()) !== 1) throw new Error("probe dead: cannot find the settings glyph");
+    if ((await mesh.count()) !== 1) throw new Error("probe dead: no way into the mesh in the rail");
+    // **It is wearing a face, and either form of one counts.** The
+    // derived SVG when a backend answered, the blank when none did —
+    // this gate deliberately runs without a mesh behind it, and the two
+    // wear the same classes and occupy the same box. Asserted rather
+    // than assumed: a door that lost its picture would still pass every
+    // measurement below, since a box is a box.
+    const wearsFace = await mesh.locator("[data-face], [data-face-blank]").count();
+    if (wearsFace !== 1) {
+      fail(`${face}: the way into the mesh is not wearing this machine's face`);
+    }
+    const gap = near(await boxOf(mesh)) - far(await boxOf(settings));
+    console.log(
+      `${face}: landings ${within.toFixed(1)}px apart, the mesh door ${gap.toFixed(1)}px past settings`,
+    );
     // A tolerance of one pixel, not a fraction of the amount: the claim
     // is that a whole `--gap-group` was added, and subpixel layout is
     // the only thing allowed to eat into it.
-    if (toMark - within < wanted - 1) {
+    if (gap - within < wanted - 1) {
       fail(
-        `${face}: the mark sits ${toMark.toFixed(1)}px from the landings, only ` +
-          `${(toMark - within).toFixed(1)}px more than they sit from each other — ${wanted}px was meant`,
+        `${face}: the mesh door sits ${gap.toFixed(1)}px past settings, only ` +
+          `${(gap - within).toFixed(1)}px more than the landings sit from each other — ${wanted}px was meant`,
       );
-    }
-
-    // The foot, same rule, wide only: the narrow rail has no face on it.
-    if (vertical) {
-      const settings = page.locator("[data-rail-item]:not([data-landing])", { hasNot: page.locator("[data-rail-mark]") });
-      if ((await settings.count()) !== 1) throw new Error("probe dead: cannot find the settings glyph");
-      // Either form of this machine's face. It is the derived SVG when
-      // a backend answered and the blank when none did, and this gate
-      // deliberately runs without one — the two wear the same classes
-      // and occupy the same box, which is the only property being
-      // measured here. Matching only `[data-face]` made this half of
-      // the gate un-runnable without a whole mesh behind it.
-      const foot = page.locator("nav > [data-face], nav > [data-face-blank]");
-      if ((await foot.count()) !== 1) throw new Error("probe dead: nothing at the foot of the rail");
-      const gap = near(await boxOf(foot)) - far(await boxOf(settings));
-      console.log(`wide: this machine's face sits ${gap.toFixed(1)}px below the settings glyph`);
-      if (gap - within < wanted - 1) {
-        fail(
-          `wide: the face is only ${(gap - within).toFixed(1)}px further from settings than a landing ` +
-            `is from a landing — it is not a control, and sitting at a control's distance says it is`,
-        );
-      }
     }
   }
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -356,10 +371,12 @@ try {
 
   // ── 3) one way of saying "this is the open one" ───────────────────
   //
-  // Five items, five presses, one reading. The mark is in the list on
-  // purpose: it is the item that used to carry the only filled block in
-  // the rail, and it is the one item that is not a place to go.
-  const openable = [["mark", mark], ...LANDINGS.map((tab) => [tab, item(tab)])];
+  // Five items, five presses, one reading. The mesh door is in the list
+  // on purpose: it is the item that used to carry the only filled block
+  // in the rail, and the one whose picture is not a stroke glyph — so
+  // it is the one an "open" look drawn as a text colour would silently
+  // skip.
+  const openable = [["mesh", mesh], ...LANDINGS.map((tab) => [tab, item(tab)])];
   const resting = await bgOf(item("devices"));
   const lit = [];
   for (const [name, loc] of openable) {

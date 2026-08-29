@@ -38,11 +38,17 @@
 //      pane offering to search files would be naming something it
 //      cannot find). Files has no pane bar to describe — its box
 //      belongs to a tab (24c);
-//  14. the app's mark is at the head of the rail, its artwork actually
-//      loaded, and it is not a control: no button around it and no
-//      hover response — with a rail glyph measured the same way as the
-//      control, since "nothing changed" is also what a broken probe
-//      says;
+//  14. the way into the mark's place is at the foot of the rail, really
+//      drew something (this machine's face), and **is** a control: a
+//      rail button around it and a hover response — with a rail glyph
+//      measured the same way as the control, since "nothing changed" is
+//      also what a broken probe says.
+//      **This line said the opposite of item 14 for some time**: it read
+//      「it is not a control: no button around it and no hover response」
+//      while the body below asserted the hover. The body was turned over
+//      when the mark started opening the map; this summary was not, and
+//      a summary that contradicts the thing it summarises is worse than
+//      no summary — it is the one a reader trusts without scrolling;
 //  15. pinning crosses the CLI/GUI seam in both directions: a row
 //      pinned in the app leads beta's own `khor sessions` and gets a
 //      mark there, a row pinned from alpha's terminal shows as pinned
@@ -199,24 +205,22 @@ const GUI_RUN = join(RUN, "gui");
 /** What vite needs and nothing else — no `node_modules` (linked), no
     `dist`, no rust crates.
 
-    The last entry is the one import in this app that reaches outside
-    `src` (`KhorMark`'s glyph, which lives with the tauri icons). It is
-    named rather than solved by copying `src-tauri` wholesale, which is
-    a rust crate with build output in it.
+    **Nothing in `src` reaches outside it any more.** There was one
+    entry here for the one import that did — the app's own mark, whose
+    glyph lives with the tauri icons — and it went with the mark when
+    the rail's door became this machine's face (2026-08-29). Removed
+    rather than left as a harmless extra file: a path listed here is
+    read as「something needs this」, and the next person tracing what
+    escapes `src` would find a file nothing imports and go looking for
+    the importer.
 
-    **A new escaping import would break the snapshot, and it says so.**
-    This one was found exactly that way: the first assertion came back
-    inside a minute with `the rail has nothing … console: 500`, and the
-    dev server's log named the file and the line. That is the whole
-    reason the rail check is first. */
-const GUI_PARTS = [
-  "index.html",
-  "vite.config.ts",
-  "tsconfig.json",
-  "package.json",
-  "src",
-  "src-tauri/icons/src/mandala-glass.svg",
-];
+    **A new escaping import breaks this snapshot, and it says so.** The
+    one that used to be listed was found exactly that way: the first
+    assertion came back inside a minute with `the rail has nothing …
+    console: 500`, and the dev server's log named the file and the line.
+    That is the whole reason the rail check is first — and it is why
+    this list stays a list rather than becoming `apps/gui`. */
+const GUI_PARTS = ["index.html", "vite.config.ts", "tsconfig.json", "package.json", "src"];
 const A = join(SCRATCH, "alpha");
 const B = join(SCRATCH, "beta");
 const G = join(SCRATCH, "gamma");
@@ -1380,7 +1384,13 @@ for line in sys.stdin:
     );
   }
 
-  const railFace = page.locator("nav > [data-face]");
+  //    **`[data-rail-mark]`, not `nav > [data-face]`.** The face at the
+  //    foot of the rail stopped being a direct child of the nav on
+  //    2026-08-29, when it became the door into the mark's place and
+  //    moved inside a rail button. The old locator was a path through
+  //    the layout; this one names the thing, and the thing is what this
+  //    assertion is about — one machine, two places, one picture.
+  const railFace = page.locator("nav [data-rail-mark] [data-face]");
   const betaRow = page.locator('[data-device="beta"] [data-face]');
   if ((await railFace.count()) !== 1) throw new Error("probe dead: no face at the foot of the rail");
   if ((await betaRow.count()) !== 1) throw new Error("probe dead: no face on beta's own row");
@@ -1590,24 +1600,41 @@ for line in sys.stdin:
     throw new Error("the sessions pane borrowed the machine pane's search label");
   }
 
-  // 14) the mark at the head of the rail — **and it answers now.**
+  // 14) the way into the mark's place — **and it answers.**
   //
   //     This item used to assert the opposite, in as much detail: no
-  //     button around it, no response to the pointer. That was right
-  //     while it opened nothing, and it is now false — so it is turned
-  //     over rather than deleted, because the new fact is the one worth
-  //     guarding. What it opens is asserted below (the map, and the
-  //     cards its nodes open); what is asserted here is that it looks
-  //     like something that opens anything at all.
+  //     button, no response to the pointer. That was right while the
+  //     mark opened nothing, and it went false when it started to — so
+  //     it was turned over rather than deleted, because the new fact is
+  //     the one worth guarding. What it opens is asserted below (the
+  //     map, and the cards its nodes open); what is asserted here is
+  //     that it looks like something that opens anything at all.
+  //
+  //     **The door moved and changed its picture on 2026-08-29**: it was
+  //     the app's own logo at the head of the rail, and it is this
+  //     machine's face at the foot. `[data-rail-mark]` names the door
+  //     rather than the artwork, so everything below is untouched by
+  //     that — the one line that was not is the one that reached for an
+  //     `<img>`'s `naturalWidth`, and what replaced it is the same claim
+  //     in the new medium: **something was really drawn there.** A door
+  //     that lost its picture passes every other assertion here, because
+  //     a hover is a hover and a box is a box.
   const mark = page.locator("[data-rail-mark]");
-  if ((await mark.count()) !== 1) throw new Error("no mark at the head of the rail");
-  // Its artwork really loaded. A broken import renders an <img> all the
-  // same, and every other assertion here would still pass.
-  const drew = await mark.evaluate((el) => el.complete && el.naturalWidth > 0);
-  if (!drew) throw new Error("the mark's artwork did not load");
+  if ((await mark.count()) !== 1) throw new Error("no way into the mark's place in the rail");
+  //     Either form of a face counts: the derived SVG, or the blank that
+  //     stands for「no identity to draw one from」. Which of the two it
+  //     should be is 12b's question, and it answers it against beta's
+  //     own row — one machine, two places, one picture.
+  if ((await mark.locator("[data-face], [data-face-blank]").count()) !== 1) {
+    throw new Error("the door into the mark's place is not wearing this machine's face");
+  }
+  const doorBox = await mark.boundingBox();
+  if (!doorBox || doorBox.width < 1 || doorBox.height < 1) {
+    throw new Error("the door into the mark's place has been drawn to nothing");
+  }
   const markButton = page.locator("[data-rail-item]", { has: mark });
   if ((await markButton.count()) !== 1) {
-    throw new Error("the mark is not a rail item, so it is not reachable by keyboard either");
+    throw new Error("the door is not a rail item, so it is not reachable by keyboard either");
   }
   const bg = (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
   const settle = () => new Promise((r) => setTimeout(r, 300));
@@ -2289,7 +2316,28 @@ for line in sys.stdin:
       return window.__moved;
     });
   const rowIds = () => page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
-  const flipTarget = (await rowIds())[2];
+  //      **The subject is chosen by what it is, not by where it sits.**
+  //      This used to take `rowIds()[2]` — a row with something above it
+  //      to displace, which is the property this item needs — and index
+  //      2 is not that property, it is a guess at it. Earlier items
+  //      leave pins behind and the list is ordered by the node, so on
+  //      some runs index 2 was **already pinned**: the press then
+  //      correctly unpinned it, the row correctly did not lead, and the
+  //      wait below timed out with 「last: false」. Two runs out of four
+  //      on 2026-08-29, and both read as「pinning is broken」 while the
+  //      product was doing exactly the right thing.
+  //
+  //      So: the first row that is not pinned and is not already at the
+  //      top. Same property, stated instead of guessed.
+  const rowPins = await page
+    .locator("[data-row]")
+    .evaluateAll((els) => els.map((e) => [e.dataset.row, e.dataset.pinned]));
+  const flipTarget = rowPins.slice(1).find(([, pinned]) => pinned !== "true")?.[0];
+  if (!flipTarget) {
+    throw new Error(
+      `probe dead: no unpinned row below the top to float — ${JSON.stringify(rowPins)}`,
+    );
+  }
   //      **The reordering action is still the pin; only its doorway
   //      moved.** The menu is opened first and the frame counter starts
   //      after it is up: the right-click itself reorders nothing, so
@@ -2299,7 +2347,22 @@ for line in sys.stdin:
   await openRowMenu(flipTarget);
   await watchTransforms();
   await page.locator('[data-menu-item="pin"]').click();
-  await until("the pinned row to lead", 20_000, async () => (await rowIds())[0] === flipTarget);
+  //      Say what the screen actually looks like when it does not
+  //      happen. 「last: false」 names neither the row that was pressed
+  //      nor where it went, and「the pin never reached the node」 and
+  //      「it reached the node and nothing moved」 are different bugs
+  //      that fail identically from here — §15b's wait carries the same
+  //      three readings for the same reason.
+  await until("the pinned row to lead", 20_000, async () => {
+    const now = await rowIds();
+    if (now[0] === flipTarget) return true;
+    const pinnedAttr = await page.locator(`[data-row="${flipTarget}"]`).getAttribute("data-pinned");
+    const backend = cli(envB, "sessions").split("\n").filter((l) => l.includes("\t"))[0] ?? "";
+    throw new Error(
+      `target=${flipTarget} data-pinned=${pinnedAttr} order=[${now.join(" ")}] ` +
+        `cli-first=${backend.split("\t")[0]}`,
+    );
+  });
   const movedFrames = await stopWatching();
   if (movedFrames === 0) {
     throw new Error("rows teleported: no row carried a transform while the order changed");

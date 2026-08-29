@@ -25,7 +25,6 @@ import {
   IconMore,
   IconSessions,
 } from "@/components/icons";
-import { KhorMark } from "@/components/KhorMark";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
@@ -89,8 +88,13 @@ type Mark = boolean;
 type Sheet = "new" | "tell" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
-/** How often the spending answer is re-asked while it is on screen. See
-    where it is used for why it is not the rows' beat. */
+/** How often the subscription's arcs are re-asked while a surface that
+    can show them is open. **Named for the spending answer it used to
+    share a beat with**, which left on 2026-08-29 with the 今天 line —
+    kept rather than renamed on its own, because a constant's name is
+    not worth a line of diff in a file five people edit; the next thing
+    to touch this effect should rename it. Not the rows' beat: see where
+    it is used. */
 const USAGE_POLL_MS = 10_000;
 
 /**
@@ -772,30 +776,6 @@ export default function App() {
         narrow ? "flex-row justify-around gap-in border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
-      {/* The app's mark, on both faces now. It used to be wide-only,
-          because the narrow rail is a row of places to go and this was
-          not one of them; it is now, so the reason went with the
-          inertness (see `KhorMark`). */}
-      <RailItem
-        label={gui.mesh_map}
-        on={mark}
-        narrow={narrow}
-        onClick={() => {
-          setMark(true);
-          setScreen("list");
-        }}
-        // Whitespace is the whole separator, and it is deliberately not
-        // a line. A rule would have to be drawn twice to say one thing —
-        // horizontal in the column rail, vertical in the narrow bottom
-        // bar — and this is one fact (the mark is not a fifth landing),
-        // so it should be said in the one form that does not change
-        // shape with the rail. The eye already has the difference too:
-        // the mark is a picture among stroke glyphs, so the distance
-        // only has to confirm it, not invent it.
-        className={narrow ? "me-group" : "mb-group"}
-      >
-        <KhorMark />
-      </RailItem>
       {LANDINGS.map((l) => (
         <RailItem
           key={l.key}
@@ -830,21 +810,60 @@ export default function App() {
       <RailItem label={gui.settings} narrow={narrow} onClick={() => setSettings(true)}>
         <IconMore />
       </RailItem>
-      {/* This machine, at the foot of the rail. Same derivation as its
-          row in the device list, so the two are the same picture — that
-          is the whole promise, and it is checkable on one screen. */}
-      {/* A group of its own, at `--gap-group` from the settings glyph
-          above it. **Not decoration: it is not a button.** Everything
-          else in this rail opens something, and a face parked at a
-          control's distance from a control reads as one more thing to
-          press — the spacing is what says it is a fact about this
-          machine rather than a place to go. */}
-      {!narrow && (
-        <MachineAvatar
-          face={devices.find((d) => d.me)?.face ?? null}
-          className="mt-group size-avatar"
-        />
-      )}
+      {/* This machine, at the foot of the rail — **and it is the way
+          into the mesh now**.
+          「不要右上角的 icon 了吧。取而代之,用左下角的点击作为原来的
+          khor 页面」 — the user, 2026-08-29. The app's mark used to sit
+          at the head of this rail and open the mark's place; the face
+          sat down here as a fact about this machine that was
+          deliberately **not** a button.
+
+          Both halves of that swapped, and the second half is the one
+          worth writing down: the old comment here argued that a face
+          parked at a control's distance from a control reads as one
+          more thing to press, and used spacing to say it was not one.
+          **It is one now, so the argument is not patched, it is
+          spent** — what is left is the spacing, which now says the same
+          thing the mark's `mb-group` used to say at the other end: this
+          is not a fifth landing.
+
+          It reads better than the mark did, and that is why this is not
+          merely obedience: the mark's place is this machine in the
+          middle of the mesh, so pressing **this machine's own face** to
+          get there says where you are going. A logo says nothing about
+          where it leads — it was the app's identity being asked to
+          double as navigation.
+
+          Drawn on both faces, unlike before. The face used to be
+          wide-only because it was decoration and a phone's rail has no
+          room for decoration; it is the only door to the mesh now, and
+          a door cannot be wide-only. */}
+      <RailItem
+        label={gui.mesh_map}
+        on={mark}
+        narrow={narrow}
+        onClick={() => {
+          setMark(true);
+          setScreen("list");
+        }}
+        // Whitespace is the whole separator, and it is deliberately not
+        // a line. A rule would have to be drawn twice to say one thing —
+        // horizontal in the column rail, vertical in the narrow bottom
+        // bar — so it is said in the one form that does not change shape
+        // with the rail.
+        className={narrow ? "ms-group" : "mt-group"}
+      >
+        {/* `data-rail-mark` names **the way into the mark's place**, not
+            the artwork that used to wear it — that is what every gate
+            and the smoke reach for, and what they are checking did not
+            change when the picture did. Same derivation as this
+            machine's row in the device list, so the two are the same
+            picture; that is the whole promise, and it is checkable on
+            one screen. */}
+        <span data-rail-mark className="block size-avatar">
+          <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-full" />
+        </span>
+      </RailItem>
     </nav>
   );
 
