@@ -13,6 +13,16 @@ fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
     khor_gui_core::list_sessions(&Node::root_from_env(), &by)
 }
 
+/// The day strips, on their own beat rather than riding the row list
+/// (`khor_gui_core::day_strips`). `cells` is how many the strip has room
+/// for, measured by the screen.
+#[tauri::command]
+fn day_strips(
+    cells: u32,
+) -> Result<std::collections::BTreeMap<String, Vec<khor_gui_core::DayRun>>, String> {
+    khor_gui_core::day_strips(&Node::root_from_env(), cells)
+}
+
 #[tauri::command]
 async fn devices() -> Result<Vec<DeviceRow>, String> {
     khor_gui_core::list_devices(&Node::root_from_env()).await
@@ -450,6 +460,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             sessions,
+            day_strips,
             devices,
             usage,
             quota,

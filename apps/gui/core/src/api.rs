@@ -71,6 +71,10 @@ pub fn answer(
     };
     match cmd {
         "sessions" => to_json(&crate::list_sessions(root, &arg("by")?)?),
+        // `cells` is required rather than defaulted: it is a measured
+        // pixel width, and a default would be this layer inventing a
+        // resolution for a screen it cannot see.
+        "day_strips" => to_json(&crate::day_strips(root, num("cells")? as u32)?),
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         "usage" => to_json(&crate::usage(root)?),
         // No `root`: a subscription is an account's, not an

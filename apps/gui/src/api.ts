@@ -6,6 +6,8 @@
 import { msg } from "./gen/catalog";
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
+import type { DayRun } from "./gen/bindings/DayRun";
+import type { DayMark } from "./gen/bindings/DayMark";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
@@ -33,6 +35,8 @@ import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
 export type {
   SessionRow,
   DeviceRow,
+  DayRun,
+  DayMark,
   FaceChoices,
   HooksState,
   Ticket,
@@ -166,6 +170,17 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });
+/** Each row's last 24 hours, keyed by session id (`khor_node::day`).
+
+    **Its own call, deliberately not a field on `SessionRow`.** The row
+    list is a two-second heartbeat and a day of cells does not belong on
+    one. `cells` is how many blocks the strip has room for — a pixel
+    count only the screen knows — and every merge down to it happened in
+    the node: `khor_core::DayCell::rank` decides which of several cells
+    a coarser one shows, and this layer must never re-derive that
+    (docs/UX.md 状态呈现). */
+export const fetchDayStrips = (cells: number) =>
+  call<Record<string, DayRun[]>>("day_strips", { cells });
 export const fetchDevices = () => call<DeviceRow[]>("devices");
 /* **There is no `fetchUsage` any more**, and its absence is the point.
    It asked the node for every day there has ever been — an eighteen

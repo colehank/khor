@@ -392,6 +392,127 @@ pub struct StateStamp {
     pub at: Millis,
 }
 
+/// What one cell of a session's day strip shows: the last 24 hours of
+/// the list, one stretch of time at a time (`khor_node::day`).
+///
+/// # Two of the three are kinds of nothing, and they are not the same
+///
+/// The tempting shape is "a word, or blank". That shape is the same
+/// trap [`Hop`] took apart one size down: an answer khor cannot give
+/// does not become *no value*, it becomes **whichever neighbour it is
+/// folded into**. Here the two nothings are:
+///
+/// - [`DayCell::Unwatched`] — *khor was not looking*. No resident was
+///   running on this machine for that stretch (it was off, or khor was
+///   not installed yet), so nothing was recorded about anything.
+///   Machine-wide: it is the same for every row.
+/// - [`DayCell::Absent`] — *khor was looking and this row was not
+///   there*. The session had not started yet, or it was closed. Per
+///   row, and a real observation rather than a gap.
+///
+/// Folded into one, "khor was off all night" and "this session started
+/// this morning" paint identically — and the second is by far the more
+/// common, so the fold would teach people to read every gap as "nothing
+/// happened". Folded into 空闲 they would be worse still: that is a
+/// word, and the six words are for what a session *was*, never for what
+/// khor failed to see (docs/SESSION.md 离线不是第七个词).
+///
+/// **Neither nothing may be painted in one of the six colours**, for
+/// the same reason. Faces draw them as ground and texture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DayCell {
+    Word(State),
+    Unwatched,
+    Absent,
+}
+
+impl DayCell {
+    /// Which cell a coarser cell shows when several of them fall into
+    /// it. **One order, defined here** — the same argument
+    /// [`State::rank`] makes: a strip is drawn at whatever resolution
+    /// the screen has, so somebody always has to merge, and a second
+    /// enumeration of these three is how a fourth gets invented.
+    ///
+    /// Words lead, among themselves by [`State::rank`]. That is the
+    /// deliberate bias and it is the product's: 待批 is the one word
+    /// worth a strip at all, and a merge that let a neighbouring 空闲
+    /// swallow it would hide exactly what someone is looking for. The
+    /// price is stated rather than hidden — **a cell says "at some
+    /// point in here it was 待批", never "it was 待批 for this long"**.
+    /// If a strip ever reads as a duration, the fix is a narrower cell,
+    /// not a different order.
+    ///
+    /// [`DayCell::Absent`] is last because it is the strongest claim of
+    /// the three: *khor was watching and there was nothing*. A cell may
+    /// only make it when every minute in it says so.
+    pub const fn rank(self) -> u8 {
+        match self {
+            DayCell::Word(word) => word.rank(),
+            DayCell::Unwatched => 6,
+            DayCell::Absent => 7,
+        }
+    }
+}
+
+#[cfg(test)]
+mod day_cell_tests {
+    use super::{DayCell, State};
+
+    /// **The two nothings are two.** Folded, "khor was off" and "this
+    /// row was not there" wear one cell, and the strip stops being able
+    /// to say which — see the type's own head for why that is the
+    /// expensive direction.
+    #[test]
+    fn the_two_nothings_stay_apart() {
+        assert_ne!(DayCell::Unwatched, DayCell::Absent);
+        assert_ne!(DayCell::Unwatched.rank(), DayCell::Absent.rank());
+        // And neither may collide with a word: a merge decides by rank,
+        // and two things at the same rank merge arbitrarily.
+        for word in State::ALL {
+            assert_ne!(DayCell::Word(word).rank(), DayCell::Unwatched.rank());
+            assert_ne!(DayCell::Word(word).rank(), DayCell::Absent.rank());
+        }
+    }
+
+    /// **A word that happened is never merged away.** The property, and
+    /// it holds for all six — including 失败, which is last among the
+    /// words and would be the one a lazy order dropped.
+    #[test]
+    fn any_word_outranks_either_nothing() {
+        for word in State::ALL {
+            assert!(DayCell::Word(word).rank() < DayCell::Unwatched.rank(), "{word:?}");
+            assert!(DayCell::Word(word).rank() < DayCell::Absent.rank(), "{word:?}");
+        }
+    }
+
+    /// The enumeration beside the property above, because the property
+    /// alone is satisfied by implementations that are plainly wrong —
+    /// one that ranks all six words the same passes it, and so does one
+    /// that swaps the two nothings. This one pins each of the eight.
+    #[test]
+    fn each_cell_sits_where_it_is_supposed_to() {
+        assert_eq!(DayCell::Word(State::Blocked).rank(), 0);
+        assert_eq!(DayCell::Word(State::Errored).rank(), 1);
+        assert_eq!(DayCell::Word(State::Done).rank(), 2);
+        assert_eq!(DayCell::Word(State::Busy).rank(), 3);
+        assert_eq!(DayCell::Word(State::Idle).rank(), 4);
+        assert_eq!(DayCell::Word(State::Failed).rank(), 5);
+        assert_eq!(DayCell::Unwatched.rank(), 6);
+        assert_eq!(DayCell::Absent.rank(), 7);
+    }
+
+    /// The word half of the order **is** [`State::rank`], not a second
+    /// copy of it. A copy is how the two would come to disagree about
+    /// where 待批 sits, and that disagreement would be invisible: both
+    /// orders are plausible on their own.
+    #[test]
+    fn the_word_order_is_the_lists_own_order() {
+        for word in State::ALL {
+            assert_eq!(DayCell::Word(word).rank(), word.rank());
+        }
+    }
+}
+
 /// How full one thing is: bytes in use out of bytes there are.
 ///
 /// Both halves travel, never the percentage alone — "78%" and "78% of

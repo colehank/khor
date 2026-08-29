@@ -1140,7 +1140,7 @@ fn read_pair(dir: &Path) -> Result<(Meta, LiveState), String> {
 
 /// Whole-file write via tmp+rename: concurrent readers (serve deriving
 /// rows) and writers (hooks) never meet a half-written file.
-fn write_whole(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, bytes).map_err(|e| msg::cant_write(path.display(), e))?;
     fs::rename(&tmp, path).map_err(|e| msg::cant_place(path.display(), e))

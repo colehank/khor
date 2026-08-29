@@ -435,6 +435,66 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .collect())
 }
 
+/// One cell of a day strip, in the shape the frontend can paint.
+///
+/// **Three cases and three TS shapes, on purpose.** The words are one
+/// namespace and the two nothings are outside it: an externally tagged
+/// enum lands in TypeScript as `{ word: string } | "unwatched" |
+/// "absent"`, so `var(--state-${…})` cannot be reached for a nothing.
+/// Spelled as one string in one namespace, `--state-unwatched` would
+/// resolve to nothing and paint transparent — silently folding 不知道
+/// into 没有这一行, which is the exact collapse `khor_core::DayCell`
+/// exists to prevent, re-introduced in CSS.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DayMark {
+    /// A state key (`busy`…), looked up like every other word.
+    Word(String),
+    Unwatched,
+    Absent,
+}
+
+/// A stretch of identical cells: what the face paints as one block, as
+/// wide as `cells` out of the total it asked for.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DayRun {
+    pub mark: DayMark,
+    #[ts(type = "number")]
+    pub cells: u32,
+}
+
+/// Each row's last 24 hours, keyed by session id
+/// (`khor_node::day`).
+///
+/// **Its own call on its own beat, not a field on [`SessionRow`].** The
+/// row list is polled every two seconds; a day of cells hung on it would
+/// be a log riding a heartbeat. Nothing here judges: `cells` is a pixel
+/// count the screen measured, and every merge down to it happened in the
+/// node (`khor_core::DayCell::rank`).
+pub fn day_strips(
+    root: &Path,
+    cells: u32,
+) -> Result<std::collections::BTreeMap<String, Vec<DayRun>>, String> {
+    let n = open(root)?;
+    Ok(n.day_strips(cells as usize)?
+        .into_iter()
+        .map(|(id, runs)| {
+            let runs = runs
+                .into_iter()
+                .map(|r| DayRun {
+                    mark: match r.cell {
+                        khor_core::DayCell::Word(word) => DayMark::Word(word.key().to_owned()),
+                        khor_core::DayCell::Unwatched => DayMark::Unwatched,
+                        khor_core::DayCell::Absent => DayMark::Absent,
+                    },
+                    cells: r.cells,
+                })
+                .collect();
+            (id, runs)
+        })
+        .collect())
+}
+
 /// Async only because of the road reading: it is the resident's answer,
 /// fetched once for the whole table (`khor_node::Node::hops`).
 pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {

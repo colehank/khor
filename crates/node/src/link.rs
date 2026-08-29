@@ -243,6 +243,18 @@ impl Node {
             let n = node.clone();
             tokio::spawn(async move { n.satellite_sampler().await });
         }
+        // The day strip's sampler (`crates/node/src/day.rs`), on the same
+        // footing and for the same reason: one sample is a whole
+        // `sessions()`, and it is synchronous — the two things the 5s
+        // pump must not take on. **The record only exists while a
+        // resident does**, which is not a gap in the design: every skin
+        // embeds one (this file's own head, and `gui-core`'s), and the
+        // minutes with nobody looking are the ones the strip paints as
+        // 不知道 rather than inventing a word for.
+        {
+            let n = node.clone();
+            tokio::spawn(async move { n.day_sampler().await });
+        }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         loop {

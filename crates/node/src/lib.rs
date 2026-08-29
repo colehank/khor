@@ -11,6 +11,7 @@ pub mod adaptor;
 pub mod cagent;
 pub mod codexagent;
 pub mod chat;
+pub mod day;
 pub mod files;
 pub mod gui_host;
 pub mod host;
@@ -921,6 +922,93 @@ impl Node {
         Ok(list::arrange(views, mode, &|home: &DeviceId| {
             by_id.get(&home.hex()).cloned()
         }))
+    }
+
+    /// Writes one sample of the day strip: what the list says right now
+    /// (`crates/node/src/day.rs`).
+    ///
+    /// **The derived list, not the registry.** Half the words here were
+    /// never written to disk by anything — `live::face` derives 失败 and
+    /// 中断 at read time, `live::settle_done` turns 完成 into 空闲 when
+    /// another machine's watermark moves, and discovered rows have no
+    /// registry entry at all. This is the only place that sees them.
+    ///
+    /// Reported rows are skipped: a peer's row is one report with an age
+    /// on it, not a history, and recording the cache would turn an
+    /// afternoon nobody could reach that machine into an afternoon it
+    /// was 忙碌 (`day::unwatched` has the full argument).
+    ///
+    /// Load-modify-save each time rather than holding the record in
+    /// memory: the file is then never behind by more than one sample, so
+    /// the newest cell a reader sees is as new as the strip can be, and
+    /// a resident that dies takes at most one sample with it.
+    pub fn record_day(&self) -> Result<(), String> {
+        let views = self.sessions()?;
+        let now = crate::live::now_ms();
+        let mut record = day::Day::load(&self.root, now);
+        record.observe(
+            now,
+            views
+                .into_iter()
+                .filter(|v| v.source.is_none())
+                .map(|v| (v.session.id.0, v.session.state.state)),
+        );
+        record.save(&self.root)
+    }
+
+    /// Each row's last day, merged down to `cells` cells — one entry per
+    /// row the list is showing, keyed by session id.
+    ///
+    /// **`cells` is the face's to decide and nothing else's.** How many
+    /// cells fit is a pixel width, which only the screen knows; which
+    /// cell wins when several merge is a judgment, which stays here
+    /// (`khor_core::DayCell::rank`). A face that took the raw minutes
+    /// and merged them itself would be a second copy of that order.
+    ///
+    /// This asks `sessions` again rather than taking the caller's rows:
+    /// the reported-or-not decision below has to be made from the same
+    /// snapshot the strips are cut from, and a row the caller's poll
+    /// has and this one does not simply paints nothing for a tick.
+    pub fn day_strips(
+        &self,
+        cells: usize,
+    ) -> Result<std::collections::BTreeMap<String, Vec<day::Run>>, String> {
+        let views = self.sessions()?;
+        let record = day::read(&self.root);
+        Ok(views
+            .into_iter()
+            .map(|v| {
+                let runs = if v.source.is_some() {
+                    day::unwatched(cells)
+                } else {
+                    record.strip_of(&v.session.id.0, cells)
+                };
+                (v.session.id.0, runs)
+            })
+            .collect())
+    }
+
+    /// Takes a sample every [`day::SAMPLE_EVERY`], for as long as the
+    /// resident lives.
+    ///
+    /// **Its own task on its own beat**, the judgment `satellite_sampler`
+    /// already made one door down: a sample is a whole `sessions()` —
+    /// 13.2 ms of process table and vendor files on this machine's debug
+    /// build — and the 5s sync pump must not inherit that weight. It is
+    /// also synchronous work, which is the one thing `reactor.rs` exists
+    /// to catch starving the runtime, so it goes to a blocking thread
+    /// rather than being awaited inline.
+    ///
+    /// A failing sample is skipped, not logged and not fatal: the strip
+    /// is a record of what could be seen, and a minute nobody could
+    /// sample is exactly the 不知道 the strip already has a cell for.
+    pub(crate) async fn day_sampler(self: std::sync::Arc<Self>) {
+        let mut tick = tokio::time::interval(day::SAMPLE_EVERY);
+        loop {
+            tick.tick().await;
+            let me = self.clone();
+            let _ = tokio::task::spawn_blocking(move || me.record_day()).await;
+        }
     }
 
     /// Pins or unpins a session, for everyone.
