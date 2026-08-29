@@ -20,10 +20,14 @@
  *
  *   identity — the avatar palettes and the app's own mark. The values
  *              live in `crates/core/src/avatar.rs`; `--lq1..3` below
- *              mirror them for reference and nothing in this stylesheet
- *              consumes them.
+ *              mirror them, and `--lq3` is the one thing in this
+ *              stylesheet anything else is built from: the rail's open
+ *              block is mixed from it rather than written out again.
+ *              (`--accent` still carries the literal, and is the older
+ *              of the two.)
  *   state    — 完成, and only that one of the six words.
- *   soft fill— `--accent`: a tint to lie *behind* something, never to
+ *   soft fill— `--accent`, and the rail's open block (`--rail-on`,
+ *              2026-08-30): a tint to lie *behind* something, never to
  *              be read as a shape or a word.
  *   ~~action~~ gone. The main action is ink on paper (`--primary`),
  *              which is also the only thing on either theme with
@@ -269,46 +273,69 @@
   --rail-ink: rgba(26, 26, 20, 0.72);
   --icon-body: 0.7;
 
-  /* The block behind whichever item is open.
+  /* The block behind whichever item is open — the brand green, thinned.
    *
    * **Its own colour rather than `--secondary`**, which the ghost button
    * already spends on hover (`ui/button.tsx`). Were they the same, an
    * item you are merely pointing at would be indistinguishable from the
    * one that is actually open, and the rail would read as having two
-   * selected items for as long as the mouse was in it. Measured against
-   * the ground the rail sits on: hover 1.13, open 1.27 — the open one
-   * has to be the heavier of the two, or the pointer would outshout the
-   * place you are actually in.
+   * selected items for as long as the mouse was in it. The open one has
+   * to be the heavier of the two, or the pointer would outshout the
+   * place you are actually in. Measured against the ground the rail
+   * sits on, light / dark: hover 1.13 / 1.16, open 1.30 / 1.61.
    *
-   * Neutral rather than the brand green, for three reasons that agree.
+   * ── it was neutral ink until 2026-08-30 ──────────────────
+   * 「ui 还是丑,侧边栏还是高亮品牌绿好了」 (the user). This was
+   * `rgba(26,26,20,.12)` / `rgba(238,238,231,.12)`, measuring 1.27 /
+   * 1.33, and three arguments were written here for keeping it so. Two
+   * were product judgements and the user has overruled them; the third
+   * was arithmetic and still stands — and which is which is the whole
+   * reason this is a *block* and not an ink:
    *
-   * **It cannot be read.** `--primary` measures 2.39 against the light
-   * card and **cannot** reach 3.0 against any light background at all —
-   * its luminance caps the ratio at 2.45 — so a green glyph is
-   * physically incapable of being what makes "open" legible on this
-   * theme. The block carries the substance and the ink carries the
-   * weight instead.
+   *   ~~already spoken for~~ — the six words above give green to 完成,
+   *     so a rail spending it on "you are here" spends a state's colour
+   *     on a place. Overruled: a tint lying behind a glyph is not a word
+   *     at the end of a row, and nothing in the rail is trying to say
+   *     完成.
+   *   ~~the rule, not this rail's exception~~ — green stopped carrying
+   *     text and stopped meaning "press me" app-wide the same day this
+   *     was written, and this block was that rule's first instance.
+   *     Overruled inside the rule rather than against it: green keeps
+   *     three posts (top of this file) and **soft fill** is one of them.
+   *     The other two, identity and 完成, are untouched, and green still
+   *     carries no text and still does not mean "press me" — an open
+   *     rail item is where you already are, not a thing to press.
+   *   **it cannot be read — still true, and it is why the ink did not
+   *     move.** The green's luminance caps its contrast at 2.45 against
+   *     *any* light background (2.39 against the card), under the 3.0 a
+   *     non-text graphic needs, so a green *glyph* on the light theme is
+   *     physically incapable of being what makes "open" legible. The
+   *     block carries the colour; the open item's ink stays
+   *     `--foreground` (`App.tsx`), which is what `check-rail.mjs`
+   *     measures as "the open glyph is heavier than a resting one".
    *
-   * **It is already spoken for.** The six words above give green to
-   * 完成, and a rail that spends it on "you are here" is spending a
-   * state's colour on a place.
+   * **Two percentages rather than one, and the dark one is capped by
+   * arithmetic, not taste.** Green is a light colour, so the same
+   * fraction of it reads far louder against near-black than against
+   * paper — the asymmetry `--scroll-thumb` carries below, in the same
+   * direction. 22% on the light theme lands the block at 1.17, inside
+   * the noise of a 1.15 floor; 35% lands 1.30. On the dark theme the
+   * block *lifts the ground the open glyph stands on*, so a heavier
+   * block dims the very glyph it is meant to be lighting: at 30% the
+   * open glyph falls to 7.68 against a resting 8.76 and the rail gate
+   * goes red (measured, 2026-08-30). 22% leaves it at 9.57.
    *
-   * **And it is now the rule rather than this rail's exception.** The
-   * palette question this raised was taken up and settled the same day:
-   * green stops carrying text and stops meaning "press me" anywhere in
-   * the app, keeping identity (the avatar family), state (完成), and
-   * soft fills — one colour, one job. The app-wide half of that (the
-   * primary button going to ink, and `--ring`, which measures the same
-   * 2.39 and is why a keyboard user cannot presently see where they
-   * are) is a separate change that had not landed when this was
-   * written. This block is the first instance of the rule, arrived at
-   * before it — which is why the argument above is made from
-   * measurements rather than from the rule.
+   * `color-mix` rather than the green written out a second time: the
+   * value is "the brand green, thinned", and a copied literal is the
+   * form of that sentence that drifts. `check-rail.mjs` asserts the
+   * painted block is still `--lq3` — a neutral of the same weight
+   * clears every contrast floor there, so the colour needs its own
+   * assertion or it is not being held by anything.
    *
    * No `--color-` mapping on purpose: the rule that applies this has to
    * sit outside Tailwind's layer in order to beat hover, and a utility
    * cannot do that. See `app.css`. */
-  --rail-on: rgba(26, 26, 20, 0.12);
+  --rail-on: color-mix(in srgb, var(--lq3) 35%, transparent);
 
   /* ── the scrollbar's thumb ────────────────────────────
    * The one mark in this app that has to be ignorable at rest and
@@ -659,7 +686,12 @@
     /* Only the ink flips; `--icon-body` is a ratio and stays one number
        for both themes — see the light block for why that is the point. */
     --rail-ink: rgba(238, 238, 231, 0.72);
-    --rail-on: rgba(238, 238, 231, 0.12);
+    /* Less of the green than light's 35%, for the two reasons written
+       on the light block: the same fraction reads louder against
+       near-black, and here the block is standing behind an almost-white
+       glyph rather than an ink one, so it has a ceiling as well as a
+       floor. */
+    --rail-on: color-mix(in srgb, var(--lq3) 22%, transparent);
 
     /* Lower than the light theme's .25 on purpose — see the light
        block: the same alpha reads louder against near-black, and what

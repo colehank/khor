@@ -47,6 +47,11 @@
 //   - one item saying "I am the open one" in a way the others cannot —
 //     the mark used to be the only item with a filled block behind it,
 //     and it is the one item that is not a place to go;
+//   - the open block drifting off the brand green. It is 「侧边栏还是
+//     高亮品牌绿好了」 (the user, 2026-08-30) and no floor here can
+//     hold that half of it: a neutral of the same weight clears every
+//     number below, which is exactly what this block was until that
+//     sentence. So the colour is asserted as a colour;
 //   - the whole rail failing to paint, which is why nothing here is
 //     asserted before a probe has proved it can see a glyph at all.
 //
@@ -77,7 +82,7 @@ const FLOOR = 3.0;
 // complaint that started this was "选中态几乎没有实体表达", and an
 // assertion that the block merely exists is satisfied by an alpha of
 // .002. This is the level below which there is nothing to see; the
-// block measures 1.27 light / 1.33 dark.
+// block measures 1.30 light / 1.61 dark.
 const BLOCK_FLOOR = 1.15;
 // And the outline's own floor: what it measured *before* the ink was
 // given its own token (4.73 light, 5.51 dark), rounded down a step. The
@@ -106,11 +111,40 @@ function flatten(over, under) {
   return [0, 1, 2].map((i) => over[i] * a + under[i] * (1 - a));
 }
 
+/**
+ * The three forms this file actually meets, all to `[r, g, b, a]` in 0..255.
+ *
+ * Neither of the two extra branches is housekeeping — each was a wrong
+ * number first:
+ *
+ *   `#rrggbb`   `--lq3` is read straight off the custom property to compare
+ *               against, and the number regex below finds digits inside
+ *               `#93b04d`, so a hex fell through as a colour rather than as
+ *               an error.
+ *   `color(srgb r g b / a)`  what Chrome hands back for a `color-mix`, with
+ *               channels in **0..1**. Read on the 0..255 scale it is a
+ *               near-black carrying the right alpha — which composites to a
+ *               perfectly plausible ratio and asserts the wrong thing. It
+ *               read 2.41 for a block that measures 1.30.
+ */
 function parse(css) {
-  const n = css.match(/-?[\d.]+/g);
+  const t = String(css).trim();
+  if (t.startsWith("#")) {
+    const h = t.slice(1);
+    const parts = h.length === 3 ? h.split("").map((c) => c + c) : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
+    return [...parts.map((c) => parseInt(c, 16)), 1];
+  }
+  const n = t.match(/-?[\d.]+/g);
   if (!n) throw new Error(`unreadable colour: ${css}`);
-  return [Number(n[0]), Number(n[1]), Number(n[2]), n[3] === undefined ? 1 : Number(n[3])];
+  const scale = t.startsWith("color(") ? 255 : 1;
+  return [Number(n[0]) * scale, Number(n[1]) * scale, Number(n[2]) * scale, n[3] === undefined ? 1 : Number(n[3])];
 }
+
+/** The same paint, whatever alpha each of the two carries. */
+const same = (a, b) => {
+  const [x, y] = [parse(a), parse(b)];
+  return [0, 1, 2].every((i) => Math.abs(x[i] - y[i]) < 1);
+};
 
 const fail = (m) => {
   console.error(m);
@@ -376,80 +410,122 @@ try {
   // in the rail, and the one whose picture is not a stroke glyph — so
   // it is the one an "open" look drawn as a text colour would silently
   // skip.
+  //
+  // **Both themes, which this was not.** It ran on the light theme only
+  // for as long as the block was neutral ink: the two themes were then
+  // the same alpha of the same theme's own ink, and reading one told you
+  // the other. The block is the brand green now (`tokens.css`), and
+  // green is one colour rather than a mirrored pair — so the two themes
+  // are no longer each other's reflection, and on the dark one the two
+  // assertions below actually pull against each other: the block lifts
+  // the ground the open glyph stands on, so making the block heavier
+  // dims the glyph it is lighting. A ceiling that only exists on the
+  // theme nobody measured is the shape this repo keeps paying for.
   const openable = [["mesh", mesh], ...LANDINGS.map((tab) => [tab, item(tab)])];
-  const resting = await bgOf(item("devices"));
-  const lit = [];
-  for (const [name, loc] of openable) {
-    await loc.click();
-    await wait(300);
-    if ((await loc.getAttribute("data-on")) !== "true") {
-      throw new Error(`probe dead: pressing ${name} did not light it`);
-    }
-    lit.push([name, await bgOf(loc)]);
-  }
-  const [, first] = lit[0];
-  console.log(`open: ${first}   resting: ${resting}`);
-  for (const [name, bg] of lit) {
-    if (bg !== first) {
-      fail(`${name} says it is open with ${bg}, while the others say it with ${first}`);
-    }
-  }
-
-  // The block is actually there to see. Measured against the ground the
-  // rail sits on rather than trusted from its alpha, because the alpha
-  // is only one of the two numbers that decide it.
-  const ground = parse(await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor));
-  const block = contrast(flatten(parse(first), ground), ground);
-  console.log(`open block: ${say(block)} against the rail's ground`);
-  if (block < BLOCK_FLOOR) {
-    fail(`the open item's block measures ${say(block)} — under ${BLOCK_FLOOR}, there is nothing to see`);
-  }
-
-  // And the other half of the expression: the open glyph is heavier
-  // than a resting one. Without this the block could be carrying the
-  // whole statement while the ink silently went back to the brand green
-  // — which is where this started, and which measures *worse* than a
-  // resting glyph on the light theme.
-  const openLine = measure(await page.evaluate(READ('[data-rail-item][data-on="true"] svg [data-body]')));
-  const restLine = measure(await page.evaluate(READ('[data-rail-item][data-on="false"] svg [data-body]')));
-  console.log(`open glyph: line ${say(openLine.line)} against resting ${say(restLine.line)}`);
-  if (!(openLine.line > restLine.line)) {
-    fail(`the open glyph measures ${say(openLine.line)}, no heavier than a resting ${say(restLine.line)}`);
-  }
-
-  // Selection outranks the pointer, and the probe that proves the
-  // reading is alive: an unselected glyph must answer a hover, or
-  // "nothing changed" on the selected one would mean nothing.
   const away = () => page.mouse.move(1200, 800);
-  const [, open] = lit[lit.length - 1];
-  await away();
-  await wait(300);
-  const cold = await bgOf(item("devices"));
-  await item("devices").hover();
-  await wait(300);
-  if ((await bgOf(item("devices"))) === cold) {
-    throw new Error("probe dead: a resting glyph shows no hover, so nothing measured here means anything");
-  }
-  const hovered = await bgOf(item("devices"));
-  // Pointed at and open must not look alike. They are different facts,
-  // and a rail where the mouse makes an item look open has two open
-  // items in it for as long as the pointer is inside.
-  const hoverBlock = contrast(flatten(parse(hovered), ground), ground);
-  console.log(`hovered block: ${say(hoverBlock)}, against the open ${say(block)}`);
-  if (hovered === first) {
-    fail(`hover paints ${hovered}, the very thing that means open`);
-  }
-  if (!(block > hoverBlock)) {
-    fail(`the open block (${say(block)}) is no heavier than a hovered one (${say(hoverBlock)})`);
-  }
 
-  const openItem = openable[openable.length - 1][1];
-  await openItem.hover();
-  await wait(300);
-  if ((await bgOf(openItem)) !== open) {
-    fail("hovering the open item changed its block — being open must outrank being pointed at");
+  for (const scheme of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await away();
+    await wait(400);
+
+    const resting = await bgOf(item("devices"));
+    const lit = [];
+    for (const [name, loc] of openable) {
+      await loc.click();
+      await wait(300);
+      if ((await loc.getAttribute("data-on")) !== "true") {
+        throw new Error(`probe dead in ${scheme}: pressing ${name} did not light it`);
+      }
+      lit.push([name, await bgOf(loc)]);
+    }
+    const [, first] = lit[0];
+    console.log(`${scheme}: open ${first}   resting: ${resting}`);
+    for (const [name, bg] of lit) {
+      if (bg !== first) {
+        fail(`${scheme}: ${name} says it is open with ${bg}, while the others say it with ${first}`);
+      }
+    }
+
+    // The block is actually there to see. Measured against the ground
+    // the rail sits on rather than trusted from its alpha, because the
+    // alpha is only one of the two numbers that decide it.
+    const ground = parse(await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor));
+    const block = contrast(flatten(parse(first), ground), ground);
+    console.log(`${scheme}: open block ${say(block)} against the rail's ground`);
+    if (block < BLOCK_FLOOR) {
+      fail(`${scheme}: the open item's block measures ${say(block)} — under ${BLOCK_FLOOR}, there is nothing to see`);
+    }
+
+    // And *which* colour it is. Every number in this section is blind to
+    // that: the neutral this replaced cleared them all, and so would any
+    // grey of the same weight. The green is the thing the user asked for
+    // and the thing a later "let's calm the rail down" would take away
+    // without any of the floors noticing, so it is asserted as a colour
+    // — read off `--lq3` rather than written here, because a literal
+    // copied into this file would keep passing after the brand moved.
+    // Alpha is not compared: how much of the green is painted is what
+    // the floors above and below are for.
+    const lq3 = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--lq3").trim(),
+    );
+    if (!lq3) throw new Error(`probe dead in ${scheme}: --lq3 did not resolve`);
+    if (!same(first, lq3)) {
+      fail(`${scheme}: the open item's block paints ${first}, which is not the brand green ${lq3}`);
+    }
+
+    // And the other half of the expression: the open glyph is heavier
+    // than a resting one. Without this the block could be carrying the
+    // whole statement while the ink silently went to the brand green —
+    // which is where this started, and which measures *worse* than a
+    // resting glyph on the light theme. On the dark theme it is also
+    // what caps the block: an almost-white glyph standing on a green
+    // plate loses contrast as the plate gets heavier.
+    const openLine = measure(await page.evaluate(READ('[data-rail-item][data-on="true"] svg [data-body]')));
+    const restLine = measure(await page.evaluate(READ('[data-rail-item][data-on="false"] svg [data-body]')));
+    console.log(`${scheme}: open glyph line ${say(openLine.line)} against resting ${say(restLine.line)}`);
+    if (!(openLine.line > restLine.line)) {
+      fail(
+        `${scheme}: the open glyph measures ${say(openLine.line)}, no heavier than a resting ${say(restLine.line)}`,
+      );
+    }
+
+    // Selection outranks the pointer, and the probe that proves the
+    // reading is alive: an unselected glyph must answer a hover, or
+    // "nothing changed" on the selected one would mean nothing.
+    const [, open] = lit[lit.length - 1];
+    await away();
+    await wait(300);
+    const cold = await bgOf(item("devices"));
+    await item("devices").hover();
+    await wait(300);
+    if ((await bgOf(item("devices"))) === cold) {
+      throw new Error(
+        `probe dead in ${scheme}: a resting glyph shows no hover, so nothing measured here means anything`,
+      );
+    }
+    const hovered = await bgOf(item("devices"));
+    // Pointed at and open must not look alike. They are different facts,
+    // and a rail where the mouse makes an item look open has two open
+    // items in it for as long as the pointer is inside.
+    const hoverBlock = contrast(flatten(parse(hovered), ground), ground);
+    console.log(`${scheme}: hovered block ${say(hoverBlock)}, against the open ${say(block)}`);
+    if (hovered === first) {
+      fail(`${scheme}: hover paints ${hovered}, the very thing that means open`);
+    }
+    if (!(block > hoverBlock)) {
+      fail(`${scheme}: the open block (${say(block)}) is no heavier than a hovered one (${say(hoverBlock)})`);
+    }
+
+    const openItem = openable[openable.length - 1][1];
+    await openItem.hover();
+    await wait(300);
+    if ((await bgOf(openItem)) !== open) {
+      fail(`${scheme}: hovering the open item changed its block — being open must outrank being pointed at`);
+    }
+    await away();
   }
-  await away();
+  await page.emulateMedia({ colorScheme: "light" });
 
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
   if (!process.exitCode) console.log("rail gate: legible, grouped, and one way of being open");
