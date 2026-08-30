@@ -403,13 +403,22 @@ try {
       // is 完成/中断 at 30° on the dark theme, which predates this and is
       // why the floor is 25 rather than the 48 the light theme happens
       // to have.
-      for (let i = 0; i < HUED.length; i++) {
-        for (let j = i + 1; j < HUED.length; j++) {
-          const d = Math.abs(chromas[HUED[i]].h - chromas[HUED[j]].h);
+      //
+      // **Only among the ones that actually carry a colour.** A
+      // near-neutral has a hue angle the way noise has a direction, and
+      // reporting「忙碌 sits 19° from 完成」about a grey would send
+      // somebody to move 完成. The chroma failure above already says the
+      // true thing about that word; this stays quiet rather than adding
+      // a red that points at the wrong token (the false-red rule: a gate
+      // that misreports is a gate people turn off).
+      const coloured = HUED.filter((w) => chromas[w].c >= CHROMA_FLOOR);
+      for (let i = 0; i < coloured.length; i++) {
+        for (let j = i + 1; j < coloured.length; j++) {
+          const d = Math.abs(chromas[coloured[i]].h - chromas[coloured[j]].h);
           const apart = Math.min(d, 360 - d);
           if (apart < HUE_APART) {
             fail(
-              `${scheme}: ${HUED[i]} and ${HUED[j]} sit ${apart.toFixed(0)}° apart in hue, under ` +
+              `${scheme}: ${coloured[i]} and ${coloured[j]} sit ${apart.toFixed(0)}° apart in hue, under ` +
                 `${HUE_APART}° — hue is the only thing saying which word this is`,
             );
           }
