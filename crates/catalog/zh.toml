@@ -134,10 +134,11 @@ usage = """
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
-  agents [add <名字> -- <命令...> | rm <名字>]
+  agents [known | add <名字> [-- <命令...> | @<id>] | rm <名字>]
                         登记会说 ACP 的 agent:不带参数看登记过哪些。
                         登记一次全网都认得(命令在不在各机器上,起的时候才知道);
-                        claude、codex、khor、shell 这四个名字 khor 自己在用
+                        claude、codex、khor、shell 这四个名字 khor 自己在用。
+                        known 看随包带的 ACP 注册表快照;@<id> 直接用快照里那条命令
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   rename <session> [名字...]
@@ -371,6 +372,23 @@ agents-forgotten = "不再登记: {0}"
 # for a world without it, and that is the world. But it must not print
 # 「不再登记」 either, or a typo reads as a success.
 agents-was-not-there = "本来就没登记过: {0}"
+# The snapshot of the ACP registry khor ships with (`khor agents known`).
+# **「khor 起得来」不是「它能用」**:目录只知道一条 argv,而它跑不跑得起来、
+# 要不要先登录、协议实现了哪半边,全都要握手才知道。这行字里不敢有任何
+# 一个词像是承诺。
+agents-known-startable = "khor 起得来"
+# The other half: khor has no argv for it because it ships a platform
+# binary. **不是「接不了」**——把它装好、把命令告诉 khor,和第一天一样能用。
+# 两句话必须读起来不一样,不然人会以为这些 agent 用不了。
+agents-known-byhand = "自己装,然后 khor agents add <名字> -- <命令...>"
+# Heading for the list, carrying the two things that keep it honest:
+# where it came from and when.
+agents-known-head = "ACP 注册表快照({0},{1} 个,其中 {2} 个 khor 起得来)"
+# `add` was given `@<id>` and the snapshot has no such id.
+agents-unknown-id = "快照里没有这个 id: {0}(khor agents known 看有哪些)"
+# `add` was given `@<id>` that exists but ships a binary, so there is no
+# argv to expand into.
+agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动命令——装好之后: khor agents add <名字> -- <命令...>"
 # An agent that has to run *somewhere*, and `--on` names another
 # machine. Refused out loud rather than ignored: a flag that is accepted
 # and does nothing is a session quietly opened on the wrong machine, and
@@ -1146,6 +1164,16 @@ chat-no-record = "没有找到这段对话的记录"
 # boundary with 失败. Sits beside the input because the input is what
 # it gives back.
 chat-stop = "停止"
+# In the conversation face, when the agent on the other end cannot replay
+# its own past (`session/load`). **「没有」和「拿不到」是两件事**:一段空
+# 白的对话读起来像「还没人说过话」,而实情是这个 agent 不会回放——
+# 上面可能有过很多话,只是这扇窗看不到。29/32 的注册表 agent 会回放,
+# 剩下的不会,所以这句话是接第三方 agent 之后才真正用得上的。
+chat-no-replay = "这个 agent 不回放以前的对话——之前说过什么,这里看不到"
+# When the agent advertises ways to log in. Said as a likely cause, not
+# as a verdict: khor 没法替谁走完某家的登录流程,能做的是在第一句话之前
+# 就说清楚为什么什么都没有,而不是让人对着一个不回话的框猜。
+chat-needs-login = "这个 agent 要先登录才开得了对话"
 # This conversation's own context, as a share of the window the agent
 # reported. **Not a token count**: the numbers are six digits long and
 # nobody acts on them, while "how full" is the one thing a person

@@ -51,6 +51,11 @@ use khor_sync::agents::{agents_dir, AgentDoc};
 /// Re-exported because `Node::agents` hands it out, and a type a public
 /// method returns that callers cannot name is a method they cannot use.
 pub use khor_sync::agents::Spec as AgentSpec;
+/// The shipped snapshot of the ACP registry (`khor_sync::agents::registry`).
+/// Re-exported here for the same reason `AgentSpec` is: the CLI talks to
+/// the node, and a second path into the sync crate would be a second
+/// place to keep in step.
+pub use khor_sync::agents::registry as agent_registry;
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
 /// What sort of place a recorded visit was to

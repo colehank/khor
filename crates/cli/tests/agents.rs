@@ -329,10 +329,27 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
 
-    let GuiNote::Agent { name, replays } = read_frame::<GuiNote>(&mut conn).unwrap() else {
+    // Spelled out rather than `..` on purpose: this runs against a
+    // **real** claude, so it is the one place the whole handshake is
+    // read off something khor did not write, and a field added to the
+    // note without a thought about what an agent actually reports
+    // should stop here.
+    let GuiNote::Agent { name, replays, images, embeds, lists, needs_login } =
+        read_frame::<GuiNote>(&mut conn).unwrap()
+    else {
         panic!("the facts come first")
     };
-    println!("agent says: name={name:?} replays={replays}");
+    println!(
+        "agent says: name={name:?} replays={replays} images={images} \
+         embeds={embeds} lists={lists} needs_login={needs_login}"
+    );
+    // khor's own 垫片 advertises replay (`cagent`'s initialize), and
+    // this asserts it rather than printing it: it is the capability the
+    // conversation face acts on, and the one whose absence has no shape
+    // of its own — a shim that quietly stopped advertising it would
+    // leave every GUI session painting "no past" for a conversation
+    // that has one.
+    assert!(replays, "khor's claude 垫片 advertises session/load");
 
     // A turn that is likely to want permission — the ask is answered if
     // it comes and not asserted if it does not: whether an agent gates

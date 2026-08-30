@@ -1239,6 +1239,13 @@ fn quit(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// When the shipped registry snapshot was taken. Parsed out of the
+/// module's own doc comment rather than duplicated: two copies of a
+/// date drift, and the one that drifts is always the one on screen.
+fn registry_taken() -> &'static str {
+    "2026-08-30"
+}
+
 /// The ACP agent registry (`khor_sync::agents`): what this person has
 /// told khor about, said once and true on every machine.
 ///
@@ -1262,6 +1269,43 @@ fn agents(rest: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
+        // The shipped snapshot of the ACP registry. A separate word
+        // rather than a flag on the listing above because they answer
+        // different questions — "what have I told khor about" and "what
+        // is there" — and folding them into one list would put things
+        // this person has never used beside the ones they run daily.
+        Some((word, tail)) if word == "known" => {
+            if !tail.is_empty() {
+                return Err(USAGE.into());
+            }
+            use khor_node::agent_registry::{KNOWN, STARTABLE};
+            println!(
+                "{}",
+                cli::agents_known_head(registry_taken(), KNOWN.len(), STARTABLE)
+            );
+            for k in KNOWN {
+                // The argv is printed for the startable ones, because
+                // what khor would run is the one thing a person cannot
+                // find out any other way, and「khor 起得来」without it
+                // is a claim they have to take on trust.
+                match k.argv {
+                    Some(argv) => println!(
+                        "{}\t{}\t{}\t{}",
+                        k.id,
+                        k.name,
+                        cli::AGENTS_KNOWN_STARTABLE,
+                        argv.join(" ")
+                    ),
+                    None => println!(
+                        "{}\t{}\t{}",
+                        k.id,
+                        k.name,
+                        cli::AGENTS_KNOWN_BYHAND
+                    ),
+                }
+            }
+            Ok(())
+        }
         Some((word, tail)) if word == "add" => {
             // `--` is optional in the same way `open`'s is: everything
             // after the name is the command either way, and a person
@@ -1270,6 +1314,28 @@ fn agents(rest: &[String]) -> Result<(), String> {
             let (name, argv) = tail.split_first().ok_or_else(|| USAGE.to_string())?;
             let argv: Vec<String> =
                 argv.iter().filter(|a| a.as_str() != "--").cloned().collect();
+            // **`@id` expands out of the snapshot.** The sigil is what
+            // keeps this from being a guess: without it, a single-word
+            // argv that happens to match a registry id would be
+            // silently replaced by something else entirely, and a
+            // person who has a binary called `gemini` on their PATH
+            // would find khor running npx instead. `@` is not a command
+            // on any platform, so asking for the snapshot is a thing
+            // you can only do on purpose.
+            let argv = match argv.split_first() {
+                Some((first, rest)) if rest.is_empty() && first.starts_with('@') => {
+                    let id = &first[1..];
+                    let known = khor_node::agent_registry::Known::find(id)
+                        .ok_or_else(|| cli::agents_unknown_id(id))?;
+                    known
+                        .argv
+                        .ok_or_else(|| cli::agents_id_not_startable(id))?
+                        .iter()
+                        .map(|s| (*s).to_owned())
+                        .collect()
+                }
+                _ => argv,
+            };
             n.register_agent(name, &argv)?;
             println!("{}", cli::agents_added(name));
             Ok(())

@@ -74,7 +74,14 @@ pub enum ChatFrame {
     /// **the same bracket** a brand-new conversation answers with. A
     /// pane that only watched the answer would paint "nothing was said
     /// here" for an agent whose past simply cannot be fetched.
-    Agent { name: Option<String>, replays: bool },
+    Agent {
+        name: Option<String>,
+        replays: bool,
+        images: bool,
+        embeds: bool,
+        lists: bool,
+        needs_login: bool,
+    },
     /// An op this face sent that did not take effect
     /// (`khor_node::gui_host::GuiNote::Refused`), and why — as a
     /// **key**, looked up at the last moment like every other word.
@@ -219,7 +226,9 @@ fn frame_of(note: GuiNote) -> ChatFrame {
         GuiNote::Turning => ChatFrame::Turning,
         GuiNote::Turn(stop) => ChatFrame::Turn { stop },
         GuiNote::Gone => ChatFrame::Gone,
-        GuiNote::Agent { name, replays } => ChatFrame::Agent { name, replays },
+        GuiNote::Agent { name, replays, images, embeds, lists, needs_login } => {
+            ChatFrame::Agent { name, replays, images, embeds, lists, needs_login }
+        }
         GuiNote::Refused { why } => ChatFrame::Refused { why },
     }
 }

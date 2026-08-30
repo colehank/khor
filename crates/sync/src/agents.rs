@@ -57,6 +57,8 @@ use serde::{Deserialize, Serialize};
 use crate::glue;
 use crate::store::Doc;
 
+pub mod registry;
+
 pub const REL_DIR: &str = ".khor/agents";
 
 pub fn agents_dir(home: &std::path::Path) -> std::path::PathBuf {

@@ -451,6 +451,18 @@ export function ChatView({
       learning to read a field is what makes attaching one of them a
       matter of configuration rather than of code. */
   const [title, setTitle] = useState<string | null>(null);
+  /** What the agent on the other end said it can do, from the handshake.
+      **Nothing read this frame until now** — `replays` had crossed the
+      wire since the day it was added, with `gui_host`'s own note saying
+      a face must act on it, and no face did. That was survivable while
+      both agents khor spoke to were ones khor wrote (both replay); it
+      is not survivable now that khor ships a registry snapshot, because
+      3 of the registry's 32 probed agents do not replay and 19 refuse
+      to open a session before a login. */
+  const [facts, setFacts] = useState<{
+    replays: boolean;
+    needsLogin: boolean;
+  } | null>(null);
   const [text, setText] = useState("");
   /** Which line of the "/" menu is under the keyboard. */
   const [pick, setPick] = useState(0);
@@ -536,6 +548,11 @@ export function ChatView({
             // and what it types is dropped (one turn at a time is the
             // host's rule — `gui_host` `GuiNote::Turning`).
             if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
+            for (const f of batch.frames) {
+              if (f.kind === "agent") {
+                setFacts({ replays: f.replays, needsLogin: f.needs_login });
+              }
+            }
             // A refused line never reached the agent, so this face is
             // not in a turn — and the words are given back rather than
             // retyped. Only into an empty box: whatever was typed in
@@ -774,6 +791,21 @@ export function ChatView({
         {title && (
           <div data-chat-title className="pb-1 text-lg font-title text-foreground">
             {title}
+          </div>
+        )}
+        {/* **Why this conversation starts empty, when it does.** An
+            empty column reads as "nobody has said anything yet", and
+            for an agent that cannot replay its own past that reading is
+            wrong in the one direction that matters: there may be a
+            great deal above, and this window simply cannot see it.
+
+            Only while the column is actually empty. Once anything has
+            been said here the line has nothing left to explain, and a
+            standing notice about a limitation nobody is hitting is the
+            kind of chrome this app's copy rules exist to keep out. */}
+        {facts && items.length === 0 && (facts.needsLogin || !facts.replays) && (
+          <div data-chat-facts className="pb-1 text-xs text-muted-foreground">
+            {facts.needsLogin ? gui.chat_needs_login : gui.chat_no_replay}
           </div>
         )}
         {items.map((item, i) =>

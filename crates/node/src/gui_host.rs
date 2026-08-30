@@ -148,7 +148,30 @@ pub enum GuiNote {
     /// answer to go on paints "no past" for both, and one of those two
     /// is a lie. Told rather than inferred: the capability is on the
     /// handshake, which happened before any face existed.
-    Agent { name: Option<String>, replays: bool },
+    ///
+    /// **The other three are here for the same reason and were added
+    /// when the reason stopped being hypothetical.** khor now ships a
+    /// snapshot of the ACP registry, so the agent on the other end can
+    /// be one nobody here wrote — and「支持 ACP」is a spectrum, not a
+    /// switch: the registry's own probe on 2026-08-30 had 31 of 32
+    /// agents reach `initialize`, 29 do `session/load`, 20 do
+    /// `session/list`, **1** do `session/stop`, and 19 refuse to open a
+    /// session at all until somebody logs in. A face that offers every
+    /// agent everything finds out which of those it is by failing.
+    Agent {
+        name: Option<String>,
+        replays: bool,
+        /// Images may be attached to a prompt.
+        images: bool,
+        /// Files may ride along as embedded context.
+        embeds: bool,
+        /// The agent can enumerate its own sessions.
+        lists: bool,
+        /// The agent advertises ways to log in, so「nothing opened」has
+        /// a likely cause that a face can name **before** the first
+        /// turn instead of after it.
+        needs_login: bool,
+    },
     /// An op that did not take effect, told to **the face that sent it
     /// and to nobody else**. Tail-appended.
     ///
@@ -495,6 +518,10 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         let agent_note = GuiNote::Agent {
             name: handle.facts().name.clone(),
             replays: handle.facts().replays,
+            images: handle.facts().images,
+            embeds: handle.facts().embeds,
+            lists: handle.facts().lists,
+            needs_login: handle.facts().needs_login,
         };
         let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
         let handle = Arc::new(handle);

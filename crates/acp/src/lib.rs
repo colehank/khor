@@ -90,6 +90,34 @@ pub struct Facts {
     /// to decide anything — khor's answer to "whose session is this"
     /// is the user's, not the agent's self-description.
     pub name: Option<String>,
+    /// The agent takes images in a prompt (`promptCapabilities.image`).
+    ///
+    /// **Read for the same reason `replays` is, and the reason is the
+    /// whole shape of this struct**: a capability nobody reads does not
+    /// grow a shape, so a face offers everything to everyone and finds
+    /// out what is missing by having it fail. That was affordable while
+    /// every agent khor spoke to was one khor wrote; it stops being
+    /// affordable the moment somebody attaches an agent off the
+    /// registry, because「支持 ACP」is a spectrum and not a switch —
+    /// the registry's own probe on 2026-08-30 had 29 of 32 agents doing
+    /// `session/load`, 20 doing `session/list`, and **1** doing
+    /// `session/stop`.
+    pub images: bool,
+    /// The agent takes resource links / embedded context in a prompt
+    /// (`promptCapabilities.embeddedContext`). What khor's file
+    /// attachments ride on.
+    pub embeds: bool,
+    /// The agent can list its own sessions (`sessionCapabilities.list`).
+    pub lists: bool,
+    /// The agent said it needs somebody to log in before a session can
+    /// open — carried from the handshake rather than discovered by
+    /// failing, so a face can say so before the first turn instead of
+    /// after it.
+    ///
+    /// Not the same fact as [`Refusal::Login`]: that one is a session
+    /// that was actually refused, this one is the agent advertising
+    /// that it has ways to log in at all.
+    pub needs_login: bool,
 }
 
 /// Why no session exists.
@@ -378,9 +406,27 @@ async fn open_one(
     if hello.protocol_version != ProtocolVersion::V1 {
         return Err(Refusal::Version(hello.protocol_version.to_string()));
     }
+    let caps = &hello.agent_capabilities;
+    let (replays, images, embeds, lists) = (
+        caps.load_session,
+        caps.prompt_capabilities.image,
+        caps.prompt_capabilities.embedded_context,
+        caps.session_capabilities.list.is_some(),
+    );
+    let needs_login = !hello.auth_methods.is_empty();
     let facts = Facts {
-        replays: hello.agent_capabilities.load_session,
+        replays,
         name: hello.agent_info.map(|i| i.name),
+        images,
+        embeds,
+        lists,
+        // **Advertising a way in means there is a door.** An agent with
+        // no auth methods at all cannot be asking anyone to log in;
+        // one that lists them is telling a client to expect it. Read as
+        // a boolean rather than carried whole because khor cannot walk
+        // anybody through a vendor's login anyway — what a face can do
+        // with this is say why nothing opened, which needs one bit.
+        needs_login,
     };
     let session = match resume {
         Some(sid) => {

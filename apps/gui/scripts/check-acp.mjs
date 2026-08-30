@@ -43,6 +43,11 @@
 //      to its transcript and nothing to the stream), so this claim is
 //      about registry agents — and an ability nothing exercises is one
 //      nobody finds out is broken.
+//   8. the handshake's facts reach the face, and only while there is
+//      something for them to explain. `ChatFrame::Agent` had carried
+//      `replays` since the day it was added, with `gui_host`'s own note
+//      saying a face must act on it — **and no face read the frame at
+//      all**. Both agents khor wrote replay, so nothing ever showed.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -195,9 +200,11 @@ const probe = () => {
     share: (u.querySelector("[data-usage-share]")?.textContent ?? "").trim(),
     cost: (u.querySelector("[data-usage-cost]")?.textContent ?? "").trim(),
   };
+  const factsLine = document.querySelector("[data-chat-facts]");
   const title = document.querySelector("[data-chat-title]");
   return {
     lines, failedToken, paragraphs, usage,
+    facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
   };
@@ -231,7 +238,8 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion }) => {
+  const look = async ({ scheme, motion, frames: override }) => {
+    const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
       colorScheme: scheme,
@@ -260,7 +268,7 @@ try {
     let served = false;
     await page.route("**/chat_poll", (r) => {
       const body = served ? { frames: [], next: 4, gone: false, lost: false }
-                          : { frames, next: 4, gone: false, lost: false };
+                          : { frames: feed, next: 4, gone: false, lost: false };
       served = true;
       r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     });
@@ -274,6 +282,38 @@ try {
   };
 
   const WANT = ["completed", "failed", "in_progress"];
+
+  // ── batch 3: the handshake's facts reach the face ────────────────
+  //
+  // A separate fixture rather than more frames on the one above,
+  // because the claim is about an **empty** conversation: the line only
+  // exists while there is nothing to explain it away, and adding it to
+  // a painted conversation would assert the opposite of the rule.
+  for (const [label, agentFrame, want] of [
+    ["cannot replay", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, "不回放"],
+    ["needs a login", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: true }, "要先登录"],
+    ["ordinary agent", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, null],
+  ]) {
+    const m = await look({ scheme: "dark", motion: "no-preference", frames: [agentFrame, { kind: "history_end" }] });
+    if (m.errs.length) fail(`facts/${label}: the page threw — ${m.errs[0]}`);
+    // The positive control: this fixture paints no conversation, so the
+    // *column* is what proves the face got that far. Without it a
+    // never-rendered chat would satisfy the "ordinary agent" row by
+    // being absent, which is the negative-assertion trap.
+    if (!m.column) {
+      fail(`facts/${label}: probe dead — the conversation face never painted`);
+      continue;
+    }
+    if (want === null) {
+      if (m.facts !== null) {
+        fail(`facts/${label}: an agent with nothing to explain drew ${JSON.stringify(m.facts)}`);
+      }
+    } else if (!m.facts || !m.facts.includes(want)) {
+      fail(`facts/${label}: wanted a line containing ${want}, got ${JSON.stringify(m.facts)}`);
+    } else {
+      console.log(`facts · ${label}: ${m.facts}`);
+    }
+  }
 
   for (const scheme of ["dark", "light"]) {
     for (const motion of ["no-preference", "reduce"]) {
