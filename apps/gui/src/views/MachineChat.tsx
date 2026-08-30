@@ -228,7 +228,10 @@ export function MachineChat({ id }: { id: string }) {
               send();
             }
           }}
-          className="min-h-0 flex-1 resize-none rounded-md border bg-background px-3 py-1.5 text-sm outline-none"
+          // No size of its own, for the reason the shared box gives up
+          // its own (`ui/textarea`): the size belongs to the column this
+          // sits in, and a person should write in the size they read in.
+          className="min-h-0 flex-1 resize-none rounded-md border bg-background px-3 py-1.5 outline-none"
         />
         <Button size="sm" data-chat-send disabled={sending || !draft.trim()} onClick={send}>
           {gui.send_it}

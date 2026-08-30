@@ -33,6 +33,13 @@
 //      aux ink;
 //   4. the reading size is larger than the shell's base — the borrowing
 //      this batch ended cannot come back by one token being edited;
+//   4b. and the box a person writes into is the size they are reading.
+//      It was two steps under (12.5 against 15) while already matching
+//      the column's *width*, which made the mismatch in size the louder
+//      of the two. This one is worth a gate of its own because the
+//      obvious way to fix it is the way that silently does not work —
+//      a `text-read` handed down from the caller loses to a `md:`
+//      prefixed size inside `cn()`, and loses only above the breakpoint;
 //   5. a tool call and a blockquote are not the same picture. They were:
 //      the same `border-l-2 pl-2`, the same border colour, the same
 //      gutter — one shape saying two things;
@@ -248,6 +255,12 @@ const probe = () => {
   // The shell's own base, read off the page rather than repeated here.
   const base = getComputedStyle(document.body).fontSize;
 
+  // The box this conversation is written into. The two faces name theirs
+  // differently — one goes through the shared control, one is a bare
+  // textarea — so both are asked for and whichever is on screen answers.
+  const box = document.querySelector("[data-chat-input], [data-chat-composer]");
+  const boxCs = box ? getComputedStyle(box) : null;
+
   if (!p || !column || !scroller) {
     return { drew: false, hasColumn: !!column, hasP: !!p, hasScroller: !!scroller };
   }
@@ -274,6 +287,7 @@ const probe = () => {
     colFontSize: colCs.fontSize,
     bodyFontSize: cs.fontSize,
     baseFontSize: base,
+    boxFontSize: boxCs ? boxCs.fontSize : null,
     lineHeight: lh,
     cjkPerLine: +(w / advance(cs, CJK)).toFixed(1),
     latPerLine: +(w / advance(cs, LAT)).toFixed(1),
@@ -454,6 +468,16 @@ try {
         fail(
           `${say(m)}: the conversation reads at ${m.bodyFontSize} against a shell base of ` +
             `${m.baseFontSize} — the borrowing this batch ended is back`,
+        );
+      }
+
+      // 4b) and the box is the size of what is being read.
+      if (m.boxFontSize === null) {
+        fail(`${say(m)}: probe dead — this face drew no box to write into`);
+      } else if (m.boxFontSize !== m.bodyFontSize) {
+        fail(
+          `${say(m)}: the box writes at ${m.boxFontSize} while the conversation reads at ` +
+            `${m.bodyFontSize} — a person is typing in a size they are not reading in`,
         );
       }
 
