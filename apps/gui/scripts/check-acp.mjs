@@ -34,6 +34,15 @@
 //   5. nothing threw while being measured. React drops only the
 //      subtree that threw, so a half-painted conversation answers
 //      geometry questions perfectly well.
+//   6. a `usage_update` reaches the screen *as a share*. The DOM keeps
+//      both numbers, and the assertion is on the printed string —
+//      dividing the wrong way holds the right two numbers and prints
+//      313%, which is a bug no assertion on the numbers can see.
+//   7. a `session_info_update` title is drawn. **claude never sends
+//      one** (measured off a real stream-json run: it writes `ai-title`
+//      to its transcript and nothing to the stream), so this claim is
+//      about registry agents — and an ability nothing exercises is one
+//      nobody finds out is broken.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -86,6 +95,16 @@ const frames = [
   { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "Bash cargo test -p khor-node", kind: "execute", status: "in_progress" } } },
   { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed" } } },
   { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_run", title: "Grep kind_of", kind: "search", status: "in_progress" } } },
+  // Batch 2. `used`/`size` are the shape claude actually puts on the
+  // wire (captured 2026-08-30: 32126 tokens against a 1 000 000 window),
+  // so the share the face prints is a real one and not a round number
+  // chosen to make the arithmetic obvious.
+  { kind: "history", update: { update: { sessionUpdate: "usage_update", used: 320000, size: 1000000, cost: { amount: 0.38777300000000003, currency: "USD" } } } },
+  // A title, which claude never sends — see `ChatView`'s note. In the
+  // fixture because the *face's* ability to read it is what the next
+  // batch depends on, and an ability nothing exercises is one nobody
+  // finds out is broken.
+  { kind: "history", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
   {
     kind: "history",
     update: {
@@ -169,7 +188,19 @@ const probe = () => {
   // The positive control for claim 0: something this fixture certainly
   // paints, found by a different selector than the one under test.
   const paragraphs = document.querySelectorAll("[data-chat-column] p").length;
-  return { lines, failedToken, paragraphs, column: !!document.querySelector("[data-chat-column]") };
+  const u = document.querySelector("[data-chat-usage]");
+  const usage = u && {
+    used: Number(u.getAttribute("data-usage-used")),
+    size: Number(u.getAttribute("data-usage-size")),
+    share: (u.querySelector("[data-usage-share]")?.textContent ?? "").trim(),
+    cost: (u.querySelector("[data-usage-cost]")?.textContent ?? "").trim(),
+  };
+  const title = document.querySelector("[data-chat-title]");
+  return {
+    lines, failedToken, paragraphs, usage,
+    title: title ? (title.textContent ?? "").trim() : null,
+    column: !!document.querySelector("[data-chat-column]"),
+  };
 };
 
 /** sRGB → L*. The same conversion `check-palette` uses. */
@@ -311,6 +342,31 @@ try {
               `a seventh colour was invented for a word that already exists`,
           );
         }
+      }
+
+      // 6) the context reading reached the screen, as a share.
+      if (!m.usage) {
+        fail(`${say}: usage_update carried a reading and nothing drew it`);
+      } else {
+        if (m.usage.used !== 320_000 || m.usage.size !== 1_000_000) {
+          fail(`${say}: the reading arrived as ${m.usage.used}/${m.usage.size}, not 320000/1000000`);
+        }
+        // 32% — asserted as the *printed* string, because the bug this
+        // is about is arithmetic reaching a person, not a number
+        // reaching a variable. A face that divided the wrong way would
+        // hold the right two numbers in the DOM and print 313%.
+        if (!m.usage.share.includes("32")) {
+          fail(`${say}: 320000 of 1000000 printed as "${m.usage.share}" — 32 is nowhere in it`);
+        }
+        if (!m.usage.cost.includes("0.39")) {
+          fail(`${say}: the cost printed as "${m.usage.cost}", wanted 0.39 in it`);
+        }
+      }
+
+      // 7) the agent's own title, which claude never sends and other
+      //    agents do.
+      if (m.title !== "把工具调用的状态接上") {
+        fail(`${say}: session_info_update carried a title and the face drew ${JSON.stringify(m.title)}`);
       }
 
       // 4) with motion off, the running line is still marked as running.

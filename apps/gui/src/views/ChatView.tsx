@@ -153,6 +153,10 @@ type Update = {
   toolCallId?: string;
   kind?: string;
   status?: string;
+  /** `usage_update`: how much of the window this conversation holds. */
+  used?: number;
+  size?: number;
+  cost?: { amount?: number; currency?: string } | null;
   /** `available_commands_update`'s payload. The spelling is pinned by a
       test on the Rust side (`cagent`'s `wire_tests`) — this face reads
       the protocol's JSON by hand, so a rename there would leave the "/"
@@ -176,6 +180,41 @@ function commandsIn(frame: ChatFrame): { name: string; description: string }[] |
     .map((c) => ({ name: c.name ?? "", description: c.description ?? "" }))
     .filter((c) => c.name);
 }
+
+/** This conversation's context reading, if this frame carries one.
+    Replaces rather than accumulates: `used` is the whole window's
+    occupancy at that moment, so the newest frame is simply the truth
+    and adding them up would be a number with no meaning. */
+function usageIn(frame: ChatFrame): { used: number; size: number; cost: Cost | null } | null {
+  const u = updateOf(frame);
+  if (u?.sessionUpdate !== "usage_update") return null;
+  // A size of zero is not a reading. The 垫片 will not send one (it
+  // reports nothing until the agent tells it the window), but a
+  // third-party agent might, and dividing by it paints Infinity%.
+  if (typeof u.used !== "number" || typeof u.size !== "number" || u.size <= 0) return null;
+  const c = u.cost;
+  return {
+    used: u.used,
+    size: u.size,
+    cost:
+      c && typeof c.amount === "number"
+        ? { amount: c.amount, currency: c.currency ?? "USD" }
+        : null,
+  };
+}
+
+/** The agent's own name for this conversation, if this frame carries
+    one. An empty string counts as "cleared": the protocol distinguishes
+    a field that was not sent from one sent as null, and this face's
+    `null` means "no title", which is what both of those come to here. */
+function titleIn(frame: ChatFrame): string | null | undefined {
+  const u = updateOf(frame);
+  if (u?.sessionUpdate !== "session_info_update") return undefined;
+  const t = u.title;
+  return typeof t === "string" && t.trim() ? t : null;
+}
+
+type Cost = { amount: number; currency: string };
 
 function updateOf(frame: ChatFrame): Update | null {
   if (frame.kind !== "note" && frame.kind !== "history") return null;
@@ -399,6 +438,19 @@ export function ChatView({
   const [taking, setTaking] = useState(false);
   const [takeErr, setTakeErr] = useState<string | null>(null);
   const [inTurn, setInTurn] = useState(false);
+  /** This conversation's own context window, as the agent last reported
+      it. `null` until an agent says — never a default: the whole reason
+      the 垫片 learns the size instead of tabulating it is that a made-up
+      denominator draws a gauge nobody measured. */
+  const [usage, setUsage] = useState<{ used: number; size: number; cost: Cost | null } | null>(null);
+  /** The agent's own name for this conversation, if it has one.
+      **claude never sends this** — measured 2026-08-30 off a real
+      `--output-format stream-json` run: it writes an `ai-title` record
+      into its transcript on disk and puts nothing on the stream. It is
+      read here because other ACP agents do send it, and the face
+      learning to read a field is what makes attaching one of them a
+      matter of configuration rather than of code. */
+  const [title, setTitle] = useState<string | null>(null);
   const [text, setText] = useState("");
   /** Which line of the "/" menu is under the keyboard. */
   const [pick, setPick] = useState(0);
@@ -513,6 +565,10 @@ export function ChatView({
             for (const f of batch.frames) {
               const list = commandsIn(f);
               if (list) setCommands(list);
+              const u = usageIn(f);
+              if (u) setUsage(u);
+              const t = titleIn(f);
+              if (t !== undefined) setTitle(t);
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
@@ -699,6 +755,27 @@ export function ChatView({
             thinks was superseded. Measured: the paragraph came back at
             the shell's base with the theme's own leading. */}
         <div data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
+        {/* **The agent's own name for this conversation.** Scrolls with
+            the conversation rather than sitting in a fixed header: it
+            names the thing below it, and a title pinned over a
+            conversation somebody has scrolled two screens into is
+            labelling something no longer on screen.
+
+            khor's own row already has a name (`token-63`), which is the
+            *session's* — where it lives and what it is. This is the
+            agent's, which is what it is *about*, and the two are not
+            competing for one slot.
+
+            **Nothing draws it today from claude**, which sends no such
+            frame (it writes `ai-title` to its transcript and puts it on
+            no stream). It is here for the agents in the registry that
+            do, and because a face that cannot read a field is the
+            reason attaching one of them would otherwise need code. */}
+        {title && (
+          <div data-chat-title className="pb-1 text-lg font-title text-foreground">
+            {title}
+          </div>
+        )}
         {items.map((item, i) =>
           item.who === "user" ? (
             <div key={i} className="flex justify-end">
@@ -913,6 +990,36 @@ export function ChatView({
             and `text-read` ride together here for the reason they do
             above. */}
         <div className="mx-auto w-full max-w-measure text-read">
+        {/* **The conversation's own context, above the box it fills.**
+            Placed here and not in the header because it is consulted
+            *before typing* — the decision it feeds is "keep going or
+            start a new conversation", and that decision is made with a
+            hand already on the box.
+
+            A share, not a token count: `32126 / 1000000` is two
+            six-digit numbers nobody acts on, and the one thing a person
+            does act on is how full it is. The count stays in the DOM
+            (`data-chat-usage`) for anything that wants to assert on it.
+
+            Absent until an agent reports a window — see `usageIn`. A
+            face that showed "0%" while it had no denominator would be
+            claiming an empty context, which for a conversation with
+            history behind it is the opposite of true. */}
+        {usage && (
+          <div
+            data-chat-usage
+            data-usage-used={usage.used}
+            data-usage-size={usage.size}
+            className="flex justify-end gap-2 px-2 pb-1 text-xs text-muted-foreground"
+          >
+            <span data-usage-share>
+              {gui.chat_context(String(Math.round((usage.used / usage.size) * 100)))}
+            </span>
+            {usage.cost && (
+              <span data-usage-cost>{gui.chat_cost(usage.cost.amount.toFixed(2))}</span>
+            )}
+          </div>
+        )}
         {gone ? (
           <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_over}</div>
         ) : (

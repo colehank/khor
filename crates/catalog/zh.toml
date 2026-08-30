@@ -1146,6 +1146,25 @@ chat-no-record = "没有找到这段对话的记录"
 # boundary with 失败. Sits beside the input because the input is what
 # it gives back.
 chat-stop = "停止"
+# This conversation's own context, as a share of the window the agent
+# reported. **Not a token count**: the numbers are six digits long and
+# nobody acts on them, while "how full" is the one thing a person
+# decides from — whether to keep going or start a new conversation.
+#
+# The word is 上下文 rather than 记忆 or 窗口: it is the agent's own
+# vocabulary, so a person who has seen it anywhere else already knows
+# what it counts, and this face does not get to rename it.
+#
+# It says nothing until an agent reports a window. That is not a
+# fallback — a share needs a denominator, and khor's 垫片 refuses to
+# invent one (`cagent::window_in`), so no reading and a reading of zero
+# must not look the same here.
+chat-context = "上下文 {0}%"
+# What this conversation has cost, when the agent reports it. Cumulative
+# for the session, which is the agent's own definition of the field —
+# so it grows and never resets, and a reader watching it move is
+# watching the session, not the turn.
+chat-cost = "${0}"
 # The way back to the tail, and what it says when something arrived
 # while the reader was up in the past. One control, two words: where it
 # takes you never changes, so a second control would be two buttons

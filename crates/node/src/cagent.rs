@@ -44,8 +44,8 @@ use agent_client_protocol::schema::v1::{
     InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
     PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCall, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind,
+    Cost, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallStatus, ToolCallUpdate,
+    ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
@@ -65,6 +65,21 @@ pub(crate) const AGENT_ENV: &str = "KHOR_AGENT";
 
 /// One claude child and the turn in flight against it.
 struct Shim {
+    /// How many tokens fit in this model's context, as **claude last
+    /// reported it** — not a table of model names to sizes here.
+    ///
+    /// A table would be the obvious way and it is the wrong one: it
+    /// dates the moment a model ships, it is wrong rather than absent
+    /// when it is out of date, and being wrong here draws a gauge that
+    /// reads half-full when it is nearly full. claude puts the real
+    /// number on the wire (`result.modelUsage[<model>].contextWindow`),
+    /// so this is a memory of something measured.
+    ///
+    /// **`None` until the first turn ends**, and while it is `None` no
+    /// usage is reported at all: the protocol's `UsageUpdate` requires a
+    /// size, and inventing one to fill the field would put a number on
+    /// the screen that no one measured.
+    window: Mutex<Option<u64>>,
     root: PathBuf,
     /// Where the claude reader thread delivers parsed frames; `drain`
     /// on the runtime picks them up.
@@ -103,6 +118,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         session: Mutex::new(None),
         turn: Mutex::new(None),
         interrupted: AtomicBool::new(false),
+        window: Mutex::new(None),
     });
     let s_new = shim.clone();
     let s_prompt = shim.clone();
@@ -367,6 +383,19 @@ async fn drain(
                         let _ = conn.send_notification(SessionNotification::new(sid.clone(), u));
                     }
                 }
+                // **Live context, but only once the size is known.** The
+                // window is learned from a `result` frame, so the very
+                // first turn of a session reports nothing until it ends
+                // — and that is the honest shape: a `used` with an
+                // invented `size` is a gauge, and a gauge is a claim
+                // about how much room is left.
+                let size = *shim.window.lock().unwrap();
+                if let (Some(size), Some(usage)) = (size, f["message"].get("usage")) {
+                    let _ = conn.send_notification(SessionNotification::new(
+                        sid.clone(),
+                        SessionUpdate::UsageUpdate(UsageUpdate::new(tokens_in(usage), size)),
+                    ));
+                }
             }
             // The other half of a tool call. claude reports a finished
             // tool as a `tool_result` block riding a *user* line — the
@@ -405,6 +434,23 @@ async fn drain(
                 answer_permission(&shim, conn, &sid, &f).await;
             }
             Some("result") => {
+                // The one frame that carries the window size, so it is
+                // both where the size is learned and the only place the
+                // first turn of a session can report usage at all.
+                if let Some(w) = window_in(&f) {
+                    *shim.window.lock().unwrap() = Some(w);
+                }
+                let size = *shim.window.lock().unwrap();
+                if let (Some(size), Some(usage)) = (size, f.get("usage")) {
+                    let mut u = UsageUpdate::new(tokens_in(usage), size);
+                    if let Some(c) = cost_in(&f) {
+                        u = u.cost(c);
+                    }
+                    let _ = conn.send_notification(SessionNotification::new(
+                        sid.clone(),
+                        SessionUpdate::UsageUpdate(u),
+                    ));
+                }
                 let reason = if shim.interrupted.swap(false, Ordering::SeqCst) {
                     StopReason::Cancelled
                 } else {
@@ -579,6 +625,71 @@ mod wire_tests {
         assert!(super::settled(&words).is_none());
     }
 
+    /// **The numbers are the ones a real claude put on the wire**, not
+    /// a shape invented to match the reader. Captured 2026-08-30 from
+    /// `claude -p … --output-format stream-json` on this machine and
+    /// trimmed, keeping every key the reader touches plus the ones that
+    /// would trip a careless sum: `iterations` repeats the same four
+    /// numbers a second time inside the object, so a reader that walked
+    /// the tree instead of naming its four keys would double the answer.
+    #[test]
+    fn the_context_is_the_four_piles_added_once() {
+        let usage = serde_json::json!({
+            "input_tokens": 2,
+            "cache_creation_input_tokens": 18707,
+            "cache_read_input_tokens": 13413,
+            "output_tokens": 4,
+            "output_tokens_details": { "thinking_tokens": 0 },
+            "cache_creation": { "ephemeral_1h_input_tokens": 18707, "ephemeral_5m_input_tokens": 0 },
+            "iterations": [{
+                "input_tokens": 2, "output_tokens": 4,
+                "cache_read_input_tokens": 13413, "cache_creation_input_tokens": 18707
+            }]
+        });
+        // 2 + 18707 + 13413 + 4. Written out rather than as a sum so
+        // that a change to the rule has to change this number by hand.
+        assert_eq!(super::tokens_in(&usage), 32126);
+
+        // An empty object is 0, not a panic: claude omits `usage` on
+        // some frames and a reader that unwrapped would take the shim
+        // down mid-conversation.
+        assert_eq!(super::tokens_in(&serde_json::json!({})), 0);
+    }
+
+    /// **The window is read off the frame, and the largest one wins.**
+    /// A turn that used a subagent on a smaller model carries two
+    /// entries; reporting the small one would draw a context with room
+    /// left as nearly full, which is the reading that makes somebody
+    /// compact a conversation they did not need to.
+    #[test]
+    fn the_window_comes_from_the_agent_and_the_largest_one_wins() {
+        let one = serde_json::json!({
+            "type": "result", "subtype": "success", "total_cost_usd": 0.38777300000000003,
+            "modelUsage": { "claude-fable-5": {
+                "inputTokens": 2, "outputTokens": 4, "costUSD": 0.38777300000000003,
+                "contextWindow": 1_000_000, "maxOutputTokens": 64000
+            }}
+        });
+        assert_eq!(super::window_in(&one), Some(1_000_000));
+        assert_eq!(super::cost_in(&one).map(|c| c.amount), Some(0.38777300000000003));
+
+        let two = serde_json::json!({ "modelUsage": {
+            "big": { "contextWindow": 1_000_000 },
+            "small": { "contextWindow": 200_000 },
+        }});
+        assert_eq!(super::window_in(&two), Some(1_000_000));
+
+        // **No size is `None`, never a default.** The whole reason the
+        // shim carries a learned window is that a made-up one draws a
+        // gauge nobody measured; a zero would do the same while looking
+        // like an answer.
+        assert_eq!(super::window_in(&serde_json::json!({ "modelUsage": {} })), None);
+        assert_eq!(super::window_in(&serde_json::json!({ "modelUsage": { "m": {} } })), None);
+        assert_eq!(super::window_in(&serde_json::json!({ "modelUsage": { "m": { "contextWindow": 0 } } })), None);
+        assert_eq!(super::window_in(&serde_json::json!({})), None);
+        assert!(super::cost_in(&serde_json::json!({})).is_none());
+    }
+
     /// **Named one by one, not「every name gets a kind」.** That weaker
     /// sentence is true of a function that answers `Other` to
     /// everything, so it would hold while the feature was gone. These
@@ -690,6 +801,50 @@ fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
         id.to_owned(),
         ToolCallUpdateFields::new().status(status),
     )))
+}
+
+/// The tokens sitting in the context after a claude `usage` object.
+///
+/// **All four are summed, and none of them double-counts.** claude's
+/// `input_tokens` excludes the cached part — the opposite of codex,
+/// which includes it (`crate::usage` carries that difference and the
+/// readings behind it). So input, cache-read, cache-write and output
+/// are four disjoint piles, and the context is their sum.
+fn tokens_in(usage: &serde_json::Value) -> u64 {
+    let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    n("input_tokens")
+        + n("cache_read_input_tokens")
+        + n("cache_creation_input_tokens")
+        + n("output_tokens")
+}
+
+/// The context window claude reported on a `result` frame, if it did.
+///
+/// `modelUsage` is keyed by model name and this takes the largest
+/// window in it rather than picking a key: a turn can touch more than
+/// one model (a subagent on a smaller one), and of the two ways to be
+/// wrong, reporting the small window makes a half-full context look
+/// nearly full and would have people compacting a conversation that has
+/// room. Same-model turns — every ordinary one — have a single entry
+/// and the max is that entry.
+fn window_in(f: &serde_json::Value) -> Option<u64> {
+    let models = f.get("modelUsage")?.as_object()?;
+    models
+        .values()
+        .filter_map(|m| m.get("contextWindow").and_then(serde_json::Value::as_u64))
+        .max()
+        .filter(|w| *w > 0)
+}
+
+/// What a turn's `result` frame says was spent on it, in USD.
+///
+/// **Cumulative for the session, not for the turn** — claude's own
+/// field is `total_cost_usd`, and the protocol's `Cost` says the same
+/// ("total cumulative cost for session"), so the two agree and nothing
+/// here has to add anything up.
+fn cost_in(f: &serde_json::Value) -> Option<Cost> {
+    let amount = f.get("total_cost_usd").and_then(serde_json::Value::as_f64)?;
+    Some(Cost::new(amount, "USD"))
 }
 
 /// Which of the protocol's tool kinds a claude tool name is.
