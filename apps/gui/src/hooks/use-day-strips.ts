@@ -46,7 +46,30 @@ const MIN_CELLS = 24;
     would be asking the node to invent detail it does not have. */
 const MAX_CELLS = 1440;
 
+/**
+ * How many cells to ask for when the width could not be measured.
+ *
+ * **A width nobody could read is not a reason to draw nothing.** That
+ * was the shape of the second failure here: `width` began at zero, zero
+ * meant "do not ask", and every path where a measurement was missing or
+ * late — a collapsed pane, a box not laid out yet, a `ResizeObserver`
+ * delivery that never came — silently switched the whole feature off,
+ * with no error and nothing on screen to notice.
+ *
+ * It is this codebase's own rule turned on this file: **一档接不上不会
+ * 变成「没有值」，它会变成旁边那一档**. "I do not know how wide" must
+ * land on *a resolution*, not on *no strip*. Being wrong about the count
+ * is a cosmetic error that the next measurement corrects and that anyone
+ * can see; asking for none is the feature being absent, which is exactly
+ * the thing nobody can see.
+ *
+ * The number is what the list's own default width yields, so the common
+ * unmeasured case is not merely safe but right.
+ */
+const CELLS_UNMEASURED = 144;
+
 export function cellsFor(widthPx: number): number {
+  if (!Number.isFinite(widthPx) || widthPx <= 0) return CELLS_UNMEASURED;
   const wanted = Math.round(widthPx / CELL_WIDTH);
   return Math.min(MAX_CELLS, Math.max(MIN_CELLS, wanted));
 }
@@ -88,6 +111,14 @@ export function useStripWidth(box: RefObject<HTMLElement | null>, present: boole
   useEffect(() => {
     const el = box.current;
     if (!el) return;
+    // **Read it here, synchronously, before trusting the observer with
+    // anything.** An effect runs after layout, so the box already has
+    // its size — and taking it now means the first strip does not wait
+    // on an asynchronous delivery that may be late, may arrive as zero
+    // while the pane is collapsed, or may never come at all in a tab
+    // that is not being rendered. The observer's job is narrowed to
+    // what it is actually good at: telling us when the width *changes*.
+    setWidth(el.getBoundingClientRect().width);
     const watch = new ResizeObserver(([entry]) => {
       // `contentRect`, so padding is not counted as strip: the band is
       // full-bleed inside this box and that is exactly its width.
@@ -111,9 +142,14 @@ export function useStripWidth(box: RefObject<HTMLElement | null>, present: boole
 export function useDayStrips(width: number): Record<string, DayRun[]> {
   const [strips, setStrips] = useState<Record<string, DayRun[]>>({});
   const hidden = useHidden();
-  const cells = width > 0 ? cellsFor(width) : 0;
+  // No "zero means do not ask" branch any more, and its absence is the
+  // fix: an unmeasured width now resolves to a resolution rather than to
+  // silence (`cellsFor`). While the pane is collapsed this costs one
+  // request for a band nobody can see, which is the right side of that
+  // trade — the alternative was a band nobody could see *because it was
+  // never fetched*, on a pane that was wide open.
+  const cells = cellsFor(width);
   useEffect(() => {
-    if (cells === 0) return;
     let live = true;
     const tick = () => {
       fetchDayStrips(cells)

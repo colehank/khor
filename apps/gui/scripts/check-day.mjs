@@ -294,6 +294,63 @@ try {
   console.log(
     `axis: ${seen.boxes.map((b) => `${b.id} ${b.stripL}..${b.stripR} h${b.stripH} ⊢${b.contentL} ${b.runs} runs`).join(", ")}`,
   );
+
+  // ── 4) a browser that has been here before ────────────────────────
+  //
+  // **Everything above ran in a blank profile, and that is the one
+  // state a returning user is never in.** Their browser carries a
+  // dragged pane width, a collapsed pane, an arrangement, filter words
+  // — and the strip's width comes from measuring that pane. Measured
+  // 2026-08-30: with the pane stored collapsed the box is zero wide,
+  // and the strip asked for nothing and painted nothing while fifteen
+  // rows sat in the DOM. Every claim above passed that page, because
+  // every one of them ran against a profile that had never been used.
+  //
+  // So: the same page, with the state a returning browser can hold.
+  // The claim is deliberately weaker than the three above — a
+  // zero-width pane has no geometry and no colours worth asserting —
+  // and it is the one that matters: **stored state must not be able to
+  // switch the feature off.**
+  const returning = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await returning.addInitScript(() => {
+    try {
+      localStorage.setItem("khor.list-width", '{"w":462,"collapsed":true}');
+    } catch {
+      /* a profile that refuses storage is simply the blank case again */
+    }
+  });
+  const back = await returning.newPage();
+  const backThrew = [];
+  back.on("pageerror", (e) => backThrew.push(String(e)));
+  await back.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+  const backSeen = await (async () => {
+    const end = Date.now() + 25_000;
+    let last = { rows: 0, strips: 0, boxW: null };
+    while (Date.now() < end) {
+      last = await back.evaluate(() => {
+        const box = document.querySelector("[data-row]")?.parentElement;
+        return {
+          rows: document.querySelectorAll("[data-row]").length,
+          strips: document.querySelectorAll("[data-day-strip]").length,
+          boxW: box ? Math.round(box.getBoundingClientRect().width) : null,
+        };
+      });
+      if (last.rows > 0 && last.strips > 0) return last;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return last;
+  })();
+  if (backThrew.length) fail(`④ the returning page threw: ${backThrew.join(" | ")}`);
+  if (backSeen.rows === 0) {
+    fail("probe dead: the returning page listed no rows — ④ would pass with nothing to switch off");
+  } else if (backSeen.strips !== backSeen.rows) {
+    fail(
+      `④ a returning browser lost the strip: ${backSeen.rows} rows, ${backSeen.strips} strips, ` +
+        `pane ${backSeen.boxW}px. Stored state must not be able to switch the feature off.`,
+    );
+  }
+  console.log(`returning: rows=${backSeen.rows} strips=${backSeen.strips} pane=${backSeen.boxW}px (collapsed)`);
+  await returning.close();
 } finally {
   if (browser) await browser.close();
   for (const p of [vite, bridge]) if (p && !p.killed) p.kill("SIGTERM");
