@@ -42,7 +42,17 @@ import { cn } from "@/lib/utils";
 type Node = { children?: ReactNode; className?: string };
 
 const parts: Components = {
-  p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0 leading-relaxed">{children}</p>,
+  // **No leading of its own.** It used to carry `leading-relaxed`, which
+  // is a ratio and therefore a second opinion about the line height for
+  // whatever size the pane happened to hand down — the thing the type
+  // scale forbids ("a size that floats between leadings is two sizes
+  // wearing one name", tokens.css). The reading size arrives with the
+  // leading it was chosen with; a paragraph's job is not to re-decide it.
+  //
+  // The gap between paragraphs grew with that leading: at the old one it
+  // was a third of a line, which is barely a gap, and blocks of prose
+  // this long need to be told apart from the lines inside them.
+  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   // Three levels of heading, then flat: a chat turn that needs a fourth
   // is not a document the pane should try to typeset.
   h1: ({ children }) => <h1 className="mt-3 mb-1 text-lg font-title first:mt-0">{children}</h1>,
@@ -53,18 +63,35 @@ const parts: Components = {
   h6: ({ children }) => <h6 className="mt-2 mb-1 font-title first:mt-0">{children}</h6>,
   ul: ({ children }) => <ul className="my-1.5 list-disc space-y-0.5 pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>,
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  li: ({ children }) => <li>{children}</li>,
   strong: ({ children }) => <strong className="font-title">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
+  // **The rule down the left is this element's alone now.** A tool call
+  // in `ChatView` wore the same two utilities, down to the same border
+  // and the same gutter, so a record of something the agent *did* and a
+  // passage somebody *said* were one picture. The tool line gave the
+  // shape up rather than tinting it: a left rule is what quotation has
+  // always been marked with, and colour in this app is spoken for.
   blockquote: ({ children }) => (
-    <blockquote className="my-1.5 border-l-2 pl-2 text-muted-foreground">{children}</blockquote>
+    <blockquote className="my-2 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>
   ),
   hr: () => <hr className="my-3 border-t" />,
   // `pre` is the block's frame — the scroller, the paper and the corner.
   // Its `code` child drops back to a bare run so the inline treatment
   // below does not paint a second box inside this one.
+  //
+  // **An edge and room to breathe, with no library added.** The paper
+  // alone is a faint tint, and against the reading column it read as a
+  // paragraph that had gone slightly grey rather than as a different
+  // kind of thing; a border draws the boundary the tint was failing to.
+  // The inner room is asymmetric on purpose: the left gutter is where
+  // the eye lands looking for the start of each line of code, and it was
+  // the same as the gap above, which made the first line sit in the
+  // corner. This is the whole of what is being done for code this batch
+  // — no highlighting, so nothing here colours a token or parses a
+  // language.
   pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs leading-normal">
+    <pre className="my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-code">
       {children}
     </pre>
   ),
@@ -77,7 +104,7 @@ const parts: Components = {
     return (
       <code
         className={cn(
-          "font-mono text-xs",
+          "font-mono text-code",
           !fenced && "rounded-sm bg-muted px-1 py-0.5 [pre_&]:bg-transparent [pre_&]:p-0",
         )}
       >
@@ -89,7 +116,7 @@ const parts: Components = {
   // inside its own frame rather than pushing the conversation sideways.
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-xs">{children}</table>
+      <table className="w-full border-collapse text-aux">{children}</table>
     </div>
   ),
   th: ({ children }) => <th className="border px-2 py-1 text-left font-title">{children}</th>,

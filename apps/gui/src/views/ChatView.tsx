@@ -567,24 +567,61 @@ export function ChatView({
           setAway(!near);
           if (near) setFresh(false);
         }}
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
       >
+        {/* **The reading column, and the one place it is set.** The pane
+            is as wide as the window lets it be; a line of prose is not.
+            Unbounded, this face measured 88 Chinese characters to a
+            line at a 1482 window — two and a half times the top of the
+            band a paragraph is read in, and the width at which the eye
+            stops finding the start of the next line.
+
+            It caps the *whole* conversation rather than each turn, so
+            the person's own bubble hangs off the same right edge the
+            agent's text ends at. Centred, because in the wide posture
+            this pane sits beside a list and a column pinned left would
+            leave the reading against the divider.
+
+            `text-read` is on this element and not further in **because
+            the cap is an em** (`--measure`): both classes have to ride
+            together or the column comes out narrower than it says.
+
+            The size lives here and the ink lives on the children for a
+            second reason, found while proving the gate fires: handing
+            `Markdown` both at once (`text-read text-read-ink`) loses
+            the size. It goes through `cn()`, and tailwind-merge reads
+            `text-read-ink` as another font-size — it has no way to know
+            the tail of that name is a colour — so it drops the class it
+            thinks was superseded. Measured: the paragraph came back at
+            the shell's base with the theme's own leading. */}
+        <div data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
         {items.map((item, i) =>
           item.who === "user" ? (
             <div key={i} className="flex justify-end">
               <div
                 data-said
-                className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-1.5 text-sm"
+                className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-1.5 text-read-ink"
               >
                 {item.text}
               </div>
             </div>
           ) : item.who === "agent" ? (
-            <Markdown key={i} text={item.text} className="text-sm" />
+            <Markdown key={i} text={item.text} className="text-read-ink" />
           ) : item.who === "thought" ? (
-            <Markdown key={i} text={item.text} className="text-sm text-muted-foreground" />
+            <Markdown key={i} text={item.text} className="text-muted-foreground" />
           ) : item.who === "tool" ? (
-            <div key={i} className="border-l-2 pl-2 text-xs text-muted-foreground">
+            // **A tool line gives up the left rule, and that is the
+            // whole of the fix.** It wore `border-l-2 pl-2` and so did
+            // a blockquote (`Markdown`), down to the same border colour
+            // and the same gutter — one shape saying two things, which
+            // is the reading it may not have: a rule down the left is
+            // quotation's own mark, and this is not somebody's words,
+            // it is a record that the agent did something.
+            //
+            // What tells them apart now is shape, not colour (the six
+            // words own the colours): no rule, and mono — the content
+            // is a verb and a path, which is code and was never prose.
+            <div key={i} className="font-mono text-code text-muted-foreground">
               {item.title}
             </div>
           ) : item.who === "ask" ? (
@@ -645,6 +682,7 @@ export function ChatView({
             </span>
           </div>
         )}
+        </div>
       </div>
       {/* The way back to the tail. It hangs over the conversation rather
           than inside it: a strip that took a row of its own would move
@@ -729,6 +767,18 @@ export function ChatView({
         </div>
       ) : (
       <div className="flex-none border-t p-2">
+        {/* The composer stands in the column the conversation is read in.
+            At the pane's full width it would be a control several times
+            wider than the text it writes into, and the eye would have to
+            cross that gap to find what it just said.
+
+            The rule stays on the outer element so the conversation is
+            still divided from the composer by a line across the pane —
+            it separates two regions, and half a line would say the
+            column ends rather than that the reading does. The measure
+            and `text-read` ride together here for the reason they do
+            above. */}
+        <div className="mx-auto w-full max-w-measure text-read">
         {gone ? (
           <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_over}</div>
         ) : (
@@ -868,6 +918,7 @@ export function ChatView({
             )}
           </div>
         )}
+        </div>
       </div>
       )}
     </div>

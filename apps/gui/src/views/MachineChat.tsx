@@ -144,8 +144,17 @@ export function MachineChat({ id }: { id: string }) {
           const el = e.currentTarget;
           stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
       >
+        {/* The same reading column the agent conversation is set in
+            (`ChatView`), and it is here because of 两端对齐的是事实
+            (docs/UX.md): a message is read the same way whichever
+            conversation it arrived in, so the two faces may not be two
+            different sizes of type. What is *not* copied over is that
+            face's controls — this one has its own.
+
+            The measure is an em, so it and `text-read` ride together. */}
+        <div data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
         {log && log.broken > 0 && (
           <div data-chat-broken className="text-center text-xs text-muted-foreground">
             {cli.broken_blocks(log.broken)}
@@ -159,6 +168,7 @@ export function MachineChat({ id }: { id: string }) {
             onAccepted={refresh}
           />
         ))}
+        </div>
       </div>
       {/* The file leg's own two lines, above the composer: the upload's
           in-between (browser forms only — the app's picker is its own
@@ -174,7 +184,12 @@ export function MachineChat({ id }: { id: string }) {
           {gui.send_file_failed}: {fileError}
         </div>
       )}
-      <div className="flex flex-none items-end gap-2 border-t bg-card px-3 py-2">
+      {/* The rule spans the pane, the controls stand in the column — the
+          same split as the agent conversation's composer, and for the
+          same reason: the line divides two regions, the column is where
+          the writing is. */}
+      <div className="flex-none border-t bg-card px-3 py-2">
+      <div className="mx-auto flex w-full max-w-measure items-end gap-2 text-read">
         <Button
           variant="ghost"
           size="icon"
@@ -218,6 +233,7 @@ export function MachineChat({ id }: { id: string }) {
         <Button size="sm" data-chat-send disabled={sending || !draft.trim()} onClick={send}>
           {gui.send_it}
         </Button>
+      </div>
       </div>
     </div>
   );
@@ -291,7 +307,7 @@ function MsgLine({
           <div
             data-msg-text
             className={cn(
-              "whitespace-pre-wrap rounded-lg px-3 py-1.5 text-sm",
+              "whitespace-pre-wrap rounded-lg px-3 py-1.5 text-read-ink",
               m.from_me ? "bg-accent" : "border bg-card",
             )}
           >

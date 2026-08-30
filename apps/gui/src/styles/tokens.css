@@ -84,6 +84,30 @@
   --secondary-foreground: rgba(26, 26, 20, 0.78);
   --muted: rgba(26, 26, 20, 0.06);
   --muted-foreground: rgba(26, 26, 20, 0.62);
+  /* The ink a conversation is read in — softer than `--foreground`, and
+   * worn only by prose. Measures 12.07 on this theme's paper, where
+   * `--foreground` measures 13.60.
+   *
+   * **Why prose gets an ink of its own rather than the page moving.**
+   * The case for coming down off the top of the range is a case about
+   * text that *wraps* and is looked at for minutes. It is not a case
+   * about a session's title at aux size, which is read in a glance and
+   * wants every bit of separation there is — so `--foreground` stays
+   * where it is and this sits beside it. One token moved, one surface
+   * changed.
+   *
+   * **Why it stops at 12 and does not keep going.** Not the 4.5 of the
+   * standard: two other things bind first. A CJK glyph carries several
+   * times the strokes of a letter at the same size, and thinning the
+   * ink closes the gaps between strokes faster than it dims a
+   * letterform. And the aux ink above measures 4.73 on purpose — body
+   * has to stay plainly above it, or that demotion stops saying
+   * anything.
+   *
+   * The two themes are held to one reading, which they were not: 13.60
+   * light against 15.17 dark meant the same paragraph had two weights
+   * depending on an OS setting nobody had written down. */
+  --read-ink: rgba(26, 26, 20, 0.9);
   --accent: rgba(147, 176, 77, 0.16);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
@@ -509,6 +533,34 @@
    * essay eats the conversation it is being written into; without the
    * growth the box lies about how much has been typed. */
   --chat-box: 160px;
+  /* How wide a line of prose may get — **in `em`, and the unit is the
+   * whole point.** A CJK glyph's advance is exactly 1em in this app's
+   * font stack (measured 2026-08-30 in system Chrome, at 11, 12.5, 14,
+   * 15, 16 and 17: the advance came back equal to the size every time),
+   * so this number *is* the count of Chinese characters on a line, not
+   * a length that happens to produce one. Latin follows from the same
+   * measurement at .465–.514em a character, which is the only reason
+   * one cap can answer for both scripts at once.
+   *
+   * **Whatever wears `max-w-measure` must also carry `text-read`.** An
+   * em is resolved against the element's own font size, so this cap on
+   * a wrapper left at the shell's base would come out a sixth narrower
+   * than it reads. Both places that use it put the two classes on one
+   * element for that reason.
+   *
+   * **38 is a choice inside a window, not the window.** The reading
+   * band is 30–45 characters for CJK and 45–75 for Latin, and those two
+   * intersect at 30–35 — but both bands were written about text in one
+   * script, while these paragraphs run 32% to 74% CJK. Held to the
+   * intersection the column lands at 32, which costs 71% of the
+   * characters on screen (measured: 3250 → 930 in a 755-tall pane);
+   * for comparison Claude's own reading column runs past 75 Latin
+   * characters. So the Latin ceiling is the one this gives ground on,
+   * knowingly, and 38 is where it was left: 38 CJK, 74–82 Latin.
+   *
+   * It is one token so that turning it is one edit — the band is
+   * arithmetic, the point inside it is a matter of eyes. */
+  --measure: 38em;
   --avatar: 32px;
   /* A machine's face on its own card. Its own token rather than a class
    * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`
@@ -623,6 +675,12 @@
        Secondary text on this theme reads better for the same reason it
        had to move: it was sitting on the floor too. */
     --muted-foreground: rgba(238, 238, 231, 0.6);
+    /* 12.23 against this theme's ground, against the light theme's
+       12.07 — the pair is the point, and the reasoning is on the light
+       value. This theme is the one that was out of band: `--foreground`
+       measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
+       has, which is where a dark page starts to glare. */
+    --read-ink: rgba(238, 238, 231, 0.86);
     --accent: rgba(183, 207, 117, 0.14);
     --accent-foreground: rgba(238, 238, 231, 0.96);
     --destructive: #d4756b;
@@ -714,6 +772,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-read-ink: var(--read-ink);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -750,6 +809,12 @@
   --spacing-tab: var(--tab-w);
   --spacing-tab-min: var(--tab-w-min);
   --spacing-chat-box: var(--chat-box);
+  /* `max-w-measure`. Through the spacing namespace rather than a
+     `--container-*` of its own because `max-w` reads `--max-width`,
+     `--spacing` and `--container` in that order (tailwind's own
+     resolution list), and the spacing table is where this app's named
+     widths already live. */
+  --spacing-measure: var(--measure);
   --spacing-avatar: var(--avatar);
   --spacing-avatar-lg: var(--avatar-lg);
   --spacing-avatar-xl: var(--avatar-xl);
@@ -782,6 +847,39 @@
    * has nothing to say at this size. */
   --text-hero: 26px;
   --text-hero--line-height: 32px;
+
+  /* ── the reading size, and its code ──────────────────
+   * **A conversation is not a dashboard, and the scale above is a
+   * dashboard's.** Every size in it is tuned for a line that reports
+   * one fact and never wraps — which is why the tiers below are named
+   * title / fact / aux, and why a paragraph is none of the three. The
+   * conversation face borrowed `--text-sm` (the *aux* size) for the
+   * only text in this app that is read rather than scanned, and that
+   * borrowing is what this pair ends. `--text-hero` is the precedent:
+   * one size, one job, written down.
+   *
+   * 15 rather than 14, which is the shell's base: at the base a turn of
+   * an agent's writing is exactly as loud as a machine's name in a
+   * list, and the whole judgment here is that it should not be. 15
+   * rather than 16, which would leave one pixel between the body of a
+   * conversation and `--text-title`, flattening the shell around it.
+   *
+   * **The leading is looser than the ~1.45 the scale runs at, and the
+   * departure is the point.** At 1.45 leading is only separating rows;
+   * in prose it has to carry the eye back to the *start* of the next
+   * line, and CJK gives it no help doing so — no x-height, no
+   * ascenders and descenders patterning the line's edge. 26 over 15 is
+   * 1.73.
+   *
+   * The code size answers to the reading size, not to the scale: mono
+   * reads smaller than sans at equal nominal size, and the usual
+   * .875 of the body puts it here. Below this a fenced block inside a
+   * paragraph is a second, quieter voice rather than the same voice in
+   * another face. */
+  --text-read: 15px;
+  --text-read--line-height: 26px;
+  --text-code: 13px;
+  --text-code--line-height: 20px;
 
   /* ── ink weights ─────────────────────────────────────
    * Three pressures of the same pen, named for what a line *does* —
