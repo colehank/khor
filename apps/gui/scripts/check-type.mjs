@@ -79,8 +79,88 @@ if (!cssYield || !tsYield) {
   );
 }
 
+// ── and the sizes survive being merged ───────────────────────────────
+//
+// **A size can be written correctly and still not reach the screen.**
+// `cn()` is tailwind-merge, which knows Tailwind's own size names and
+// files every other `text-*` as a colour — so this app's six own sizes
+// were in the colour group, and any colour class in the same call
+// superseded them. A paragraph came back at the shell's base with the
+// browser's leading: no error, `tsc` clean, build clean. `lib/utils.ts`
+// registers them; this holds that it worked.
+//
+// **Behaviour, not the presence of a line.** Grepping `utils.ts` for
+// `extendTailwindMerge` would go red the day somebody writes it another
+// way, and stay green the day the registration is right there but wrong.
+//
+// **And both directions.** That file changes the merge rules for the
+// whole app, so「the new names work」is half a claim; the other half is
+// that the names that already worked still do, and still *conflict*.
+{
+  const { cn } = await import("../src/lib/utils.ts");
+  const css = readFileSync(join(root, "src/styles/tokens.css"), "utf8");
+  // Every size the theme declares, the companions dropped: `--text-x`
+  // is a size, `--text-x--line-height` is its leading.
+  const sizes = [...css.matchAll(/^\s*--text-([a-z0-9-]+):/gm)]
+    .map((m) => m[1])
+    .filter((n) => !n.endsWith("--line-height"));
+
+  // The probe. A parse that found nothing would let the loop below pass
+  // by doing nothing, and「all sizes survive」would be a sentence about
+  // an empty list.
+  if (sizes.length < 6) {
+    offenders.push(`merge: probe dead — only ${sizes.length} --text-* found in tokens.css`);
+  } else {
+    // 1) every size the theme has, next to a colour, in both orders.
+    //    Read against a colour that is *not* a size, which is the shape
+    //    the failure took: `text-read text-read-ink` lost the size.
+    for (const n of sizes) {
+      for (const [a, b] of [
+        [`text-${n}`, "text-muted-foreground"],
+        ["text-muted-foreground", `text-${n}`],
+      ]) {
+        const out = cn(a, b);
+        if (!out.includes(`text-${n}`)) {
+          offenders.push(
+            `merge: cn("${a}", "${b}") = "${out}" — the size is gone. ` +
+              `--text-${n} exists in tokens.css but nothing told tailwind-merge it is a size ` +
+              `(lib/utils.ts), so it is being filed as a colour and superseded`,
+          );
+        }
+      }
+    }
+    // 2) the sizes really joined the size group rather than being made
+    //    inert: two of them in one call must still resolve to the last.
+    const twoOwn = cn("text-read", "text-aux");
+    if (twoOwn !== "text-aux") {
+      offenders.push(`merge: cn("text-read", "text-aux") = "${twoOwn}", want "text-aux"`);
+    }
+    const ownAndStock = cn("text-read", "text-sm");
+    if (ownAndStock !== "text-sm") {
+      offenders.push(`merge: cn("text-read", "text-sm") = "${ownAndStock}", want "text-sm"`);
+    }
+    // 3) nothing that already worked was broken by the registration.
+    for (const [call, want] of [
+      [["text-sm", "text-lg"], "text-lg"],
+      [["text-lg", "text-sm"], "text-sm"],
+      [["text-sm", "text-muted-foreground"], "text-sm text-muted-foreground"],
+      [["text-foreground", "text-muted-foreground"], "text-muted-foreground"],
+      [["p-2", "p-4"], "p-4"],
+      [["font-mono", "font-sans"], "font-sans"],
+    ]) {
+      const out = cn(...call);
+      if (out !== want) {
+        offenders.push(
+          `merge: cn(${call.map((c) => `"${c}"`).join(", ")}) = "${out}", want "${want}" — ` +
+            `registering this app's sizes changed a rule it was not meant to touch`,
+        );
+      }
+    }
+  }
+}
+
 if (offenders.length) {
   console.error("type outside tokens — use a token (docs/DESIGN.md):\n" + offenders.join("\n"));
   process.exit(1);
 }
-console.log("type gate: tokens own the letterforms");
+console.log("type gate: tokens own the letterforms, and cn() keeps them");
