@@ -15,9 +15,21 @@
 //   every message), while *replayed* user text is painted — in history
 //   this face said nothing, the record is all there is. The cost: a
 //   line said from another attached face shows up only via replay.
-// - **Tool lines never change.** `tool_call_update` is not painted, so
-//   a line shows the call's title and no status — no status is honest
-//   where a stale "running" would be a lie shaped like a fact.
+// - **Tool lines carry status now, and the note they replace was right
+//   when it was written.** It said: `tool_call_update` is not painted,
+//   so a line shows a title and no status, because "no status is honest
+//   where a stale *running* would be a lie shaped like a fact." The
+//   premise was that nothing ever sent a status — khor's own claude
+//   垫片 built every `ToolCall` with the default and never followed it
+//   up, so a painted status could only have been invented here. The
+//   垫片 now reports both ends (`cagent`: `InProgress` at `tool_use`,
+//   `Completed`/`Failed` at the `tool_result` riding a user line), so
+//   the status is a fact off the wire and the old note's own reasoning
+//   is what says to paint it.
+//   **`pending` is still never seen from this agent** and is drawn like
+//   `in_progress` if it ever arrives: a third agent may use it, and the
+//   two readings differ by "has not started" versus "is running",
+//   which is not a difference a reader of this line can act on.
 // - **The agent's text is markdown, the user's is verbatim.** Agents
 //   write markdown and their TUI renders it, so a chat face that showed
 //   the source would be the worse reading of the same words
@@ -75,7 +87,22 @@ type Item =
   | { who: "user"; text: string }
   | { who: "agent"; text: string }
   | { who: "thought"; text: string }
-  | { who: "tool"; title: string }
+  | {
+      who: "tool";
+      /** The protocol's `toolCallId`. Carried because a later
+          `tool_call_update` names the call it is about, and matching by
+          title would fold two calls to the same tool into one. */
+      id: string;
+      title: string;
+      /** The protocol's `ToolKind`, lowercase off the wire. Unused by
+          this face today and carried anyway: it is the field that lets
+          tools from *other* agents group by what they do rather than by
+          what their author called them, which is what the next batch
+          needs and what a title can never give. */
+      kind: string;
+      /** `pending` | `in_progress` | `completed` | `failed`. */
+      status: string;
+    }
   | {
       who: "ask";
       ask: number;
@@ -122,6 +149,10 @@ type Update = {
   sessionUpdate?: string;
   content?: { type?: string; text?: string };
   title?: string | null;
+  /** `tool_call` and `tool_call_update` both name their call with it. */
+  toolCallId?: string;
+  kind?: string;
+  status?: string;
   /** `available_commands_update`'s payload. The spelling is pinned by a
       test on the Rust side (`cagent`'s `wire_tests`) — this face reads
       the protocol's JSON by hand, so a rename there would leave the "/"
@@ -233,12 +264,85 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     case "user_message_chunk":
       return paintUser ? chunk("user", textOf(u)) : false;
     case "tool_call":
-      out.push({ who: "tool", title: u.title ?? "" });
+      out.push({
+        who: "tool",
+        id: u.toolCallId ?? "",
+        title: u.title ?? "",
+        kind: u.kind ?? "other",
+        status: u.status ?? "pending",
+      });
       return true;
-    // tool_call_update, plan, and the rest: unpainted (module head).
+    case "tool_call_update": {
+      // **Backwards, and only within this half.** A call and its result
+      // land in the same array (both halves are folded whole: history
+      // is rebuilt from its own frames, live grows from live ones), and
+      // the newest matching line is the one this update is about — an
+      // agent that calls the same tool twice gets two ids, but an id
+      // reused across a replay boundary must not reach back into the
+      // past and edit a line the record already settled.
+      const id = u.toolCallId;
+      if (!id) return false;
+      for (let i = out.length - 1; i >= 0; i--) {
+        const at = out[i];
+        if (at.who !== "tool" || at.id !== id) continue;
+        // Every field is optional on an update frame, and **absent is
+        // not empty**: the protocol sends only what changed, so a frame
+        // that carries a status and no title must not blank the title.
+        out[i] = {
+          ...at,
+          status: u.status ?? at.status,
+          title: u.title ?? at.title,
+          kind: u.kind ?? at.kind,
+        };
+        return true;
+      }
+      // An update naming a call this face never painted. Dropped rather
+      // than pushed as a new line: a status with no call to attach to
+      // would appear as a tool that ran with no name.
+      return false;
+    }
+    // plan, usage, session info and the rest: unpainted this batch.
     default:
       return false;
   }
+}
+
+/** Whether a tool call is still open.
+    `pending` counts: this agent never sends it (`cagent` opens at
+    `in_progress`), but a third-party agent may, and of the two possible
+    wrong pictures — "running" for something not yet started, versus
+    "finished" for something that has not run — only the second one
+    tells the reader the turn is further along than it is. */
+function running(status: string): boolean {
+  return status === "in_progress" || status === "pending";
+}
+
+/**
+ * The ink a tool line is written in, by what happened to it.
+ *
+ * **Running is full ink and settled is muted — the pen's own pressures,
+ * not a state hue.** The first version painted a running tool in
+ * 忙碌's colour, on the reasoning that reusing a state word beats
+ * inventing one. `check-acp` failed it before it ever shipped: in the
+ * light theme 忙碌 and `--muted-foreground` are **ΔL* 1.03** apart.
+ * That is not a mistake in the colour, it is what the colour is for —
+ * 忙碌's indigo was placed at grey's exact loudness on purpose, so that
+ * a session row could gain a hue without gaining weight. A hue built to
+ * have no lightness difference cannot then be asked to carry one.
+ *
+ * It matters most with motion off: the breath stops (app.css), and if
+ * hue were the only carrier there would be nothing left. Ink weight
+ * survives both that and a reader who does not separate those hues.
+ *
+ * 失败 keeps its own colour, because there the word and the ink agree:
+ * a tool that failed is that word's subject, and the alternative was
+ * the state before this batch, where a tool that failed and a tool that
+ * worked were the same grey line.
+ */
+function toolInk(status: string): string {
+  if (status === "failed") return "var(--state-failed)";
+  if (running(status)) return "var(--foreground)";
+  return "var(--muted-foreground)";
 }
 
 /** One poll's worth of frames, folded into the picture. Answers the
@@ -621,8 +725,38 @@ export function ChatView({
             // What tells them apart now is shape, not colour (the six
             // words own the colours): no rule, and mono — the content
             // is a verb and a path, which is code and was never prose.
-            <div key={i} className="font-mono text-code text-muted-foreground">
-              {item.title}
+            // **The hue carries the fact and the breath does not.**
+            // A running tool wears 忙碌's colour and 忙碌's markup
+            // (`data-word`/`data-word-text`, app.css), so it inherits
+            // the breath and the reduced-motion guard that stops it —
+            // and because the colour is still there when the breath is
+            // not, a reader who has motion turned off loses nothing.
+            // That is the same split the waiting indicator below runs
+            // on, and reusing it is why no seventh state word gets
+            // invented for tools.
+            //
+            // A failed tool wears 失败's colour for the same reason the
+            // word exists: **before this, a tool that failed and a tool
+            // that worked were the same grey line**, and the whole of
+            // what the person could see about a broken turn was that
+            // the text after it read oddly.
+            //
+            // Settled-and-fine stays muted on purpose. A conversation
+            // holds many finished tools and one running one; if the
+            // finished ones were coloured too, the colour would stop
+            // meaning anything — the same reason a badge that is never
+            // zero is not a badge.
+            <div
+              key={i}
+              data-chat-tool
+              data-tool-status={item.status}
+              data-tool-kind={item.kind}
+              data-word={running(item.status) ? "busy" : undefined}
+              className="font-mono text-code"
+            >
+              <span data-word-text style={{ color: toolInk(item.status) }}>
+                {item.title}
+              </span>
             </div>
           ) : item.who === "ask" ? (
             <div

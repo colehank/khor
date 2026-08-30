@@ -44,7 +44,8 @@ use agent_client_protocol::schema::v1::{
     InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
     PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCall, ToolCallUpdate, ToolCallUpdateFields,
+    SessionUpdate, StopReason, TextContent, ToolCall, ToolCallStatus, ToolCallUpdate,
+    ToolCallUpdateFields, ToolKind,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
@@ -362,25 +363,21 @@ async fn drain(
         match f.get("type").and_then(|t| t.as_str()) {
             Some("assistant") => {
                 for block in f["message"]["content"].as_array().into_iter().flatten() {
-                    let update = match block.get("type").and_then(|t| t.as_str()) {
-                        Some("text") => block["text"].as_str().map(|t| {
-                            SessionUpdate::AgentMessageChunk(ContentChunk::new(
-                                ContentBlock::Text(TextContent::new(t.to_owned())),
-                            ))
-                        }),
-                        Some("thinking") => block["thinking"].as_str().map(|t| {
-                            SessionUpdate::AgentThoughtChunk(ContentChunk::new(
-                                ContentBlock::Text(TextContent::new(t.to_owned())),
-                            ))
-                        }),
-                        Some("tool_use") => {
-                            let id = block["id"].as_str().unwrap_or("tool");
-                            let name = block["name"].as_str().unwrap_or("tool");
-                            Some(SessionUpdate::ToolCall(ToolCall::new(id.to_owned(), name.to_owned())))
-                        }
-                        _ => None,
-                    };
-                    if let Some(u) = update {
+                    if let Some(u) = said(block) {
+                        let _ = conn.send_notification(SessionNotification::new(sid.clone(), u));
+                    }
+                }
+            }
+            // The other half of a tool call. claude reports a finished
+            // tool as a `tool_result` block riding a *user* line — the
+            // machine answering itself — so this arm is what turns a
+            // call that is drawn as running into one that is drawn as
+            // finished. Without it every tool ever called stays
+            // `InProgress` on the screen for the life of the
+            // conversation, which is the shape the face had before.
+            Some("user") => {
+                for block in f["message"]["content"].as_array().into_iter().flatten() {
+                    if let Some(u) = settled(block) {
                         let _ = conn.send_notification(SessionNotification::new(sid.clone(), u));
                     }
                 }
@@ -526,6 +523,90 @@ mod wire_tests {
         assert_eq!(json["availableCommands"][0]["name"], "compact");
         assert_eq!(json["availableCommands"][0]["description"], "squeeze the context");
     }
+
+    /// **A tool call crosses the wire wearing both halves the face
+    /// draws with — and the JSON going in is claude's, not ours.**
+    /// `said` is fed the shape a real `assistant` line carries, so this
+    /// fails if the shim stops setting either field. An earlier version
+    /// of this test built the `ToolCall` itself and asserted its
+    /// spelling; that assertion holds no matter what the shim does, and
+    /// it stayed green through a run with `.kind()`/`.status()` deleted.
+    /// Same names asserted, different subject, and the subject was the
+    /// whole of the bug.
+    #[test]
+    fn a_tool_call_is_spelled_the_way_the_face_reads_it() {
+        let block = serde_json::json!({
+            "type": "tool_use", "id": "toolu_01", "name": "Read",
+            "input": { "file_path": "/tmp/x" }
+        });
+        let json = serde_json::to_value(super::said(&block).expect("an update")).unwrap();
+        assert_eq!(json["sessionUpdate"], "tool_call");
+        assert_eq!(json["toolCallId"], "toolu_01");
+        assert_eq!(json["title"], "Read");
+        assert_eq!(json["kind"], "read");
+        // Not `pending` — see `said`.
+        assert_eq!(json["status"], "in_progress");
+    }
+
+    /// **And its closing half, from the line claude actually sends it
+    /// on.** A `tool_result` rides a *user* line, which is also where a
+    /// person's own words arrive, so this asserts both directions: the
+    /// result becomes an update, and the text beside it does not.
+    ///
+    /// The frame carries a status and no title on purpose — the face
+    /// reads absent as "leave it alone", so a frame that spelled an
+    /// empty title would blank the line instead of settling it.
+    #[test]
+    fn a_finished_tool_call_says_only_what_changed() {
+        let ok = serde_json::json!({
+            "type": "tool_result", "tool_use_id": "toolu_01", "content": "…"
+        });
+        let json = serde_json::to_value(super::settled(&ok).expect("an update")).unwrap();
+        assert_eq!(json["sessionUpdate"], "tool_call_update");
+        assert_eq!(json["toolCallId"], "toolu_01");
+        assert_eq!(json["status"], "completed");
+        assert!(json.get("title").is_none() || json["title"].is_null());
+
+        let bad = serde_json::json!({
+            "type": "tool_result", "tool_use_id": "toolu_02",
+            "content": "boom", "is_error": true
+        });
+        let json = serde_json::to_value(super::settled(&bad).expect("an update")).unwrap();
+        assert_eq!(json["status"], "failed");
+
+        // A person talking on the same kind of line is not a tool.
+        let words = serde_json::json!({ "type": "text", "text": "look at the docs" });
+        assert!(super::settled(&words).is_none());
+    }
+
+    /// **Named one by one, not「every name gets a kind」.** That weaker
+    /// sentence is true of a function that answers `Other` to
+    /// everything, so it would hold while the feature was gone. These
+    /// are the mappings themselves, and the last two are the ones that
+    /// keep the mapping honest rather than eager: an MCP tool can be
+    /// anything and gets `Other`, and `Bash` stays `Execute` even
+    /// though claude deletes through it — reading the shell line to
+    /// promote it to `Delete` is the guess this deliberately does not
+    /// make.
+    #[test]
+    fn each_claude_tool_lands_on_the_kind_it_actually_is() {
+        use agent_client_protocol::schema::v1::ToolKind;
+        for (name, want) in [
+            ("Read", ToolKind::Read),
+            ("Edit", ToolKind::Edit),
+            ("Write", ToolKind::Edit),
+            ("Bash", ToolKind::Execute),
+            ("Grep", ToolKind::Search),
+            ("Glob", ToolKind::Search),
+            ("WebFetch", ToolKind::Fetch),
+            ("Task", ToolKind::Think),
+            ("ExitPlanMode", ToolKind::SwitchMode),
+            ("mcp__github__create_issue", ToolKind::Other),
+            ("rm -rf", ToolKind::Other),
+        ] {
+            assert_eq!(super::kind_of(name), want, "{name}");
+        }
+    }
 }
 
 /// The flags that turn this session into **the network's scheduler**
@@ -541,6 +622,111 @@ mod wire_tests {
 ///
 /// Off by default. A khor session is an ordinary agent session
 /// unless somebody asked for the other thing.
+/// One block of a claude `assistant` line, as the update it is.
+///
+/// **A function rather than a `match` inside the pump, and the reason
+/// is a test that was green while the feature was gone.** The first
+/// version of the tool-status work asserted the wire spelling by
+/// building a `ToolCall` in the test itself — which holds whether or
+/// not this shim sets anything, and did: deleting `.status(...)` from
+/// the pump left that assertion passing. Translation that only exists
+/// inside an `async fn` holding a live connection cannot be asserted
+/// on, so it was moved out here, where the claim can be "this JSON
+/// produces this update" instead of "this protocol type spells itself
+/// this way".
+fn said(block: &serde_json::Value) -> Option<SessionUpdate> {
+    match block.get("type").and_then(|t| t.as_str()) {
+        Some("text") => block["text"].as_str().map(|t| {
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(t.to_owned()),
+            )))
+        }),
+        Some("thinking") => block["thinking"].as_str().map(|t| {
+            SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(t.to_owned()),
+            )))
+        }),
+        Some("tool_use") => {
+            let id = block["id"].as_str().unwrap_or("tool");
+            let name = block["name"].as_str().unwrap_or("tool");
+            // **`InProgress`, not the default.** A `ToolCall` built
+            // without a status serialises as `pending`, and claude
+            // announces a `tool_use` when it is about to run the tool,
+            // not when it is queued — so the default would draw a
+            // running tool as one that has not started. The other end
+            // of this pair is `settled`.
+            Some(SessionUpdate::ToolCall(
+                ToolCall::new(id.to_owned(), name.to_owned())
+                    .kind(kind_of(name))
+                    .status(ToolCallStatus::InProgress),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// One block of a claude `user` line, as the update it is — which is
+/// only ever a tool call closing.
+///
+/// claude reports a finished tool as a `tool_result` block riding a
+/// *user* line: the machine answering itself. Everything else on such a
+/// line is a person talking, and this face paints the user's own words
+/// first-hand, so nothing else here becomes an update.
+fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
+    if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+        return None;
+    }
+    let id = block["tool_use_id"].as_str()?;
+    // **Absent `is_error` means success.** claude writes the key only
+    // when the tool failed. Of the two ways to be wrong about a missing
+    // key, reading it as failure paints every healthy tool as broken,
+    // which is the louder and the more expensive one.
+    let status = if block["is_error"].as_bool().unwrap_or(false) {
+        ToolCallStatus::Failed
+    } else {
+        ToolCallStatus::Completed
+    };
+    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+        id.to_owned(),
+        ToolCallUpdateFields::new().status(status),
+    )))
+}
+
+/// Which of the protocol's tool kinds a claude tool name is.
+///
+/// **The kind is what a face can draw before it knows anything else.**
+/// A title is a string and reads as one; a kind is a small closed set,
+/// so an icon or a shape can stand for it and a reader can tell "it
+/// read a file" from "it ran something" without parsing words.
+///
+/// **What this cannot do is be right about tools it has never seen.**
+/// The names below are claude's own; an MCP tool arrives as
+/// `mcp__<server>__<tool>` and could be anything, so it lands in
+/// `Other` — which is the honest answer, not a gap. The protocol has
+/// `Other` for exactly this, and a guess from substrings ("everything
+/// containing `read`") would produce confident wrong icons on other
+/// people's tools, which is worse than a plain one.
+///
+/// **`Delete` and `Move` are deliberately unreachable here.** claude
+/// deletes and moves through `Bash`, so those two kinds would be a
+/// claim about the *contents* of a shell line, which this shim does not
+/// read. They stay `Execute`, and a `rm` shows up as something that ran
+/// rather than as a deletion. Said out loud because the alternative —
+/// grepping the command — is the kind of thing that looks like an
+/// improvement right up until it mislabels `grep -r delete`.
+fn kind_of(name: &str) -> ToolKind {
+    match name {
+        "Read" | "NotebookRead" => ToolKind::Read,
+        "Write" | "Edit" | "NotebookEdit" => ToolKind::Edit,
+        "Bash" | "BashOutput" | "KillShell" => ToolKind::Execute,
+        "Glob" | "Grep" => ToolKind::Search,
+        "WebFetch" | "WebSearch" => ToolKind::Fetch,
+        "Task" => ToolKind::Think,
+        "ExitPlanMode" => ToolKind::SwitchMode,
+        _ => ToolKind::Other,
+    }
+}
+
 fn khor_tools() -> Result<Vec<String>, String> {
     if std::env::var(AGENT_ENV).is_err() {
         return Ok(Vec::new());

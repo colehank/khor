@@ -49,6 +49,7 @@
 | `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run day` | `check-day.mjs`,会话行那条状态条真的上没上屏(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
+| `npm run acp` | `check-acp.mjs`,协议里带状态的帧有没有变成屏幕上的状态:`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
@@ -77,6 +78,9 @@
   规则真落到了屏上,少任何一条另一条都只是一半;
 - **动了颜色或 `tokens.css` 的调色板** → 加 `npm run palette`;
 - **动了会话行那条状态条,或它背后的 `khor_node::day`** → 加 `npm run day`。
+- **动了 `cagent`/`codexagent` 往外发的 `SessionUpdate`,或 `ChatView` 那个 fold** → 加 `npm run acp`。
+  它守的是**协议的状态有没有到屏幕上**:今天 khor 自己的垫片是唯一的来源,接了注册表里的 agent 之后,
+  同样的字段会从线上真的来——那时候「掉在 `default` 分支里」就不是「还没做」,是**收到了然后扔掉**。
   它守的是别的门**结构上看不见**的那一样:那条带子有没有真的画在屏上。
   它立于 2026-08-30——那条带子发出去过一版**一格都没画**,而当时
   `cargo test`、`tsc`、`check-px`、`check-icons` 全绿、`pageerror` 为空。

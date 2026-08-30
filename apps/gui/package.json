@@ -16,6 +16,7 @@
     "face": "node scripts/check-face.mjs",
     "read": "node scripts/check-read.mjs",
     "day": "node scripts/check-day.mjs",
+    "acp": "node scripts/check-acp.mjs",
     "palette": "node scripts/check-palette.mjs",
     "tabs": "node scripts/check-tabs.mjs",
     "smoke": "node scripts/smoke.mjs",
