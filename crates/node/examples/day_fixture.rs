@@ -68,16 +68,36 @@ fn main() -> Result<(), String> {
     // exist. A gate whose fixture only produces one word cannot tell
     // "coloured by its word" from "all one colour".
     for m in 0..day::MINUTES as i64 {
-        // Two hours in the middle with no resident running at all.
-        if (600..720).contains(&m) {
+        // **The first eight hours: khor was not running at all.** This is
+        // what a young install looks like and it is the shape that
+        // actually reached a user — a long leading stretch of 不知道 with
+        // the coloured part only at the right. It is also the shape that
+        // exposed two bugs in a row (an invisible tier read as blank, and
+        // then a hairline tier read as a second object), so the fixture
+        // has to produce it rather than a tidy full day.
+        if m < 480 {
+            continue;
+        }
+        // And half an hour further on with nobody sampling: a restart in
+        // the middle of a day khor was otherwise watching. The leading
+        // stretch alone would not tell a gap from a beginning.
+        if (900..930).contains(&m) {
             continue;
         }
         let mut sample: Vec<(String, State)> = Vec::new();
         sample.push((
             "tui/agent".to_owned(),
             match m {
-                240..=300 => State::Blocked,
-                900..=960 => State::Done,
+                // **待批 has to land inside the watched window**, and it
+                // did not for one round: it sat at 240–300, the leading
+                // eight hours moved to 不知道, and the fixture quietly
+                // stopped producing the one word this whole product is
+                // built around — the gate went green measuring five words
+                // instead of six and said so only in a count nobody was
+                // reading. Any change to the window has to be checked
+                // against this line.
+                600..=660 => State::Blocked,
+                1000..=1060 => State::Done,
                 1200..=1260 => State::Errored,
                 _ => State::Busy,
             },

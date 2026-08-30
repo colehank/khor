@@ -16,26 +16,37 @@ import type { DayRun } from "@/api";
  * working?* — would silently be wrong for any row whose indent differs.
  * Edge to edge, every row on the list shares one axis by construction.
  *
- * # Three materials, because two of the three are not colours
+ * # One axis, three tiers — and the third is the absence of ink
  *
  * The six words are painted in their own tokens and nothing else is
  * (docs/UX.md 状态呈现: 六词之外无第七词). The two nothings
- * (`khor_core::DayCell`) had to be told apart from the words *and from
- * each other* without inventing a seventh hue, so what separates them is
- * **shape**:
+ * (`khor_core::DayCell`) have to be told apart from the words *and from
+ * each other* without inventing a seventh hue:
  *
- * - a word — the full height of the band, solid, in its own colour.
- * - 不知道 (`unwatched`, nobody was sampling) — a hairline down the
- *   middle of the band in the app's quietest ink. A flatline: signal
- *   absent, which is exactly what it means.
+ * - a word — a block the full height of the band, in its own colour.
+ * - 不知道 (`unwatched`, nobody was sampling) — a block of the same
+ *   height, in a quiet tint of the page's own ink. No hue, because it
+ *   is not a state.
  * - 那时没有这一行 (`absent`, khor was sampling and this session was not
- *   there) — nothing at all, the row's own ground.
+ *   there) — **no element at all**, the row's own ground.
  *
- * **Not one tint at three opacities**, which is what a lazy version of
- * this would be and is the way the two nothings would quietly fold back
- * into one on screen after everything below the glass worked to keep
- * them apart. Full block, hairline, nothing: three different amounts of
- * substance, legible before colour is read at all.
+ * # Why this is not the thing this comment used to forbid
+ *
+ * It used to say "not one tint at three opacities" and drew 不知道 as a
+ * **hairline** to make sure. That defended the right thing — the two
+ * nothings must not differ only by how light they are — and it is still
+ * defended here, because **one of them has no ink at all**. What the
+ * hairline bought on top of that was not distinction, it was a second
+ * kind of object: a user reading a real strip said 「左边有一条细线,
+ * 右边才是 bar」 — a line, and a bar. Two nouns for one time axis, and
+ * the axis is the thing the strip exists to be.
+ *
+ * So the geometry went back to one, and the separation moved into
+ * weight, where there is room for it: 不知道 is ×2.9 lighter than the
+ * faintest word (`--day-unwatched` carries the measurements). The pair
+ * that has to stay apart is now 不知道 and **空闲** — the one word left
+ * without a hue — and the gate measures exactly that gap rather than
+ * trusting this paragraph.
  *
  * # Which end is now, said without a word of explanation
  *
@@ -80,8 +91,8 @@ export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
           // frame to frame even when its width changes.
           key={i}
           data-day-mark={typeof run.mark === "string" ? run.mark : run.mark.word}
-          // A grid rather than a plain box so the hairline case has
-          // somewhere to be centred; a word simply fills it.
+          // Every tier that has ink fills this box; the one that has
+          // none renders nothing into it.
           className="grid h-full place-items-center"
           style={{ width: `${(run.cells / total) * 100}%` }}
         >
@@ -107,23 +118,17 @@ function Mark({ mark }: { mark: DayRun["mark"] }) {
   // ground, and deliberately no element: "nothing here" is the one of
   // the three that should cost no ink at all.
   if (mark === "absent") return null;
-  // Nobody was sampling. The flatline.
-  //
-  // **`--day-unwatched`, and it used to be `--border`.** The app's
-  // hairline weight is 1.22 against this ground in both themes, which is
-  // not a faint line — it is no line. The three materials this file
-  // argues for were three in the data and two on the glass: 不知道 and
-  // 那时没有这一行 both read as blank, and with khor young the blank ran
-  // most of the way across, so a person read the axis as running
-  // right-to-left. The token carries the measurements and the pair of
-  // bounds it has to sit between.
+  // Nobody was sampling — the same block a word gets, in ink with no
+  // hue. The token carries what it has to sit between and why (a floor
+  // for a filled block, and a factor below 空闲); this file's head has
+  // why it stopped being a hairline.
   //
   // Read through an inline `var()` like the word branch below, rather
   // than through a Tailwind colour utility: that would need a second
   // entry in `@theme inline` naming the same fact, and the sibling three
   // lines down already resolves its token this way.
   if (mark === "unwatched") {
-    return <span className="h-px w-full" style={{ backgroundColor: "var(--day-unwatched)" }} />;
+    return <span className="h-full w-full" style={{ backgroundColor: "var(--day-unwatched)" }} />;
   }
   return (
     <span

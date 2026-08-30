@@ -27,11 +27,15 @@
 //      as a **derivation**, this row's cell against this row's word,
 //      never against a colour written in this file. A palette pinned
 //      here would keep passing after the six moved;
-//   2. the two nothings (`khor_core::DayCell`) are told apart from the
-//      words and from each other **by substance, not by tint**: a word
-//      is a full-height block, 不知道 is a hairline, 那时没有这一行 is
-//      no element at all. Tint alone is how they would quietly fold
-//      back into one on screen after the node worked to keep them apart;
+//   2. one axis, three tiers (`khor_core::DayCell`): every tier that has
+//      ink fills the same height, so the band reads as one line rather
+//      than a line beside a bar — 不知道 was a hairline until a user
+//      called it 「一条细线」 and the coloured part 「bar」, two nouns for
+//      one axis. What separates the tiers instead is **ink**: a word has
+//      a hue, 不知道 has a quiet tint of the page's own ink, and
+//      那时没有这一行 has no element at all. Measured as a floor *and* a
+//      factor below the faintest word, because the pair that can now
+//      collapse is 不知道 against 空闲 — the one word left without a hue;
 //   3. the strips share one axis — each spans its whole row, and starts
 //      left of where the row's content begins. A strip is a timeline
 //      and timelines only compare if they line up; nested into the
@@ -238,6 +242,20 @@ try {
         "words this cannot tell 「coloured by its word」 from 「all one colour」 (deepen day_fixture)",
     );
   }
+  // **待批 by name, and only this one.** Four distinct words is enough to
+  // tell a derivation from a constant, and it stayed enough while the
+  // fixture quietly stopped producing 待批 at all — a window change moved
+  // that stretch into the unwatched hours, the count fell from six words
+  // to five, and nothing was red. It is the word the strip exists for
+  // (`khor_core::DayCell::rank` biases every merge toward it), so a
+  // fixture that has stopped emitting it is a fixture no longer covering
+  // the case that matters, whatever else it still shows.
+  if (!kinds.has("blocked")) {
+    fail(
+      `probe dead: no 待批 cell on screen (saw ${[...kinds].sort().join("+")}) — the merge is biased ` +
+        "toward that word and nothing here is exercising it (day_fixture's window moved past it)",
+    );
+  }
   if (unwatched.length === 0) fail("probe dead: no 不知道 cells — claim 2's first half would pass by vacuum");
   if (absent.length === 0) fail("probe dead: no 那时没有这一行 cells — claim 2's second half would pass by vacuum");
 
@@ -257,28 +275,51 @@ try {
   for (const m of absent) {
     if (m.kids !== 0) fail(`② 那时没有这一行 should paint nothing at all, has ${m.kids} children`);
   }
+  // **One axis, not a line beside a bar.** 不知道 fills the same height
+  // a word does. This used to assert the opposite — that it was thinner
+  // — and it was green while a user read the band as two objects:
+  // 「左边有一条细线,右边才是 bar」. A time axis whose tiers are
+  // different *kinds of thing* stops being read as one axis, and every
+  // comparison along it goes with it.
   const hair = unwatched[0]?.kidH ?? null;
   const block = words[0]?.kidH ?? null;
-  if (hair !== null && block !== null && !(hair < block)) {
-    fail(`② the two must differ by substance: hairline is ${hair} and a word block is ${block}`);
+  if (hair !== null && block !== null && hair !== block) {
+    fail(
+      `② 不知道 is ${hair} tall and a word is ${block} — one axis means one height. ` +
+        "A tier of a different shape reads as a different object, not as a stretch of the same line.",
+    );
   }
 
-  // ── 2b) and the hairline has to be visible, which geometry cannot say
+  // ── 2b) and the ink has to be visible, which geometry cannot say
   //
-  // **A line one pixel tall in an ink nobody can see is not a faint
-  // line, it is no line.** The claim above measures that 不知道 is
-  // thinner than a word; that was true and green while the ink was
-  // `--border` at 1.22 against this ground, and on screen 不知道 and
-  // 那时没有这一行 were the same thing: blank. With khor young most of
-  // every strip is 不知道, so the blank ran most of the way across and a
-  // person read the axis as running right-to-left.
+  // **An ink nobody can see is not a faint tier, it is no tier.** The
+  // height claim above cannot see this: it was green while the ink was
+  // `--border` at 1.22, and on screen 不知道 and 那时没有这一行 were the
+  // same thing — blank. With khor young most of every strip is 不知道,
+  // so the blank ran most of the way across and a person read the axis
+  // as running right-to-left.
   //
   // Two bounds, both themes, because either alone is satisfiable by
-  // something wrong: a floor of 3.0 (what a non-text graphic needs to be
-  // made out — `check-rail` uses the same number), and *under the
-  // faintest of the six words*, because it is not a state and must not
-  // out-shout one.
-  const INK_FLOOR = 3.0;
+  // something plainly wrong.
+  //
+  // **The floor is 1.15 and not 3.0**, and that is a change of subject
+  // rather than a relaxation: 3.0 is what a *stroke* needs to be made
+  // out, and 不知道 is now a filled block. `check-rail` carries both
+  // numbers for exactly this reason, and its own rail block ships at
+  // 1.30 / 1.61 — measured, and judged visible.
+  //
+  // **The ceiling is the harder one now, and it moved.** It used to be
+  // "under the faintest word". That is too weak once the tier is a block
+  // the same size and shape as a word: 空闲 is the one word left with no
+  // hue (忙碌 took indigo), so a 不知道 block drifting up in weight ends
+  // as two grey blocks separated only by lightness — 「没有数据」 painted
+  // as 「空闲」, the thing this batch exists to refuse. So the gap is
+  // required to be a *factor*, not a margin.
+  const INK_FLOOR = 1.15;
+  // How much lighter than the faintest word 不知道 has to be. Two is
+  // well inside what the shipped value clears (×2.9 light, ×2.61 dark)
+  // and well outside what a nudge toward 空闲 would leave.
+  const INK_GAP = 2.0;
   for (const scheme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: scheme });
     // Its own call and a frame: computed style read in the same task as
@@ -350,22 +391,26 @@ try {
       return { hair: ratio(over(hairInk, ground), ground), faintestWord: Math.min(...wordRatios) };
     });
     if (ink === null) {
-      fail(`probe dead: no 不知道 hairline to measure in ${scheme} — ② b asserted nothing`);
+      fail(`probe dead: no 不知道 block to measure in ${scheme} — ② b asserted nothing`);
       continue;
     }
     if (ink.hair < INK_FLOOR) {
       fail(
-        `② ${scheme}: the 不知道 hairline is ${ink.hair} against its ground, under the ${INK_FLOOR} ` +
-          "a non-text graphic needs. A line nobody can see is not a faint line, it is no line.",
+        `② ${scheme}: the 不知道 block is ${ink.hair} against its ground, under the ${INK_FLOOR} ` +
+          "a filled block needs. An ink nobody can see is not a faint tier, it is no tier.",
       );
     }
-    if (ink.hair >= ink.faintestWord) {
+    const gap = Math.round((ink.faintestWord / ink.hair) * 100) / 100;
+    if (gap < INK_GAP) {
       fail(
-        `② ${scheme}: the 不知道 hairline is ${ink.hair}, at or above the faintest state word ` +
-          `(${ink.faintestWord}). It is not a state and must not out-shout one.`,
+        `② ${scheme}: the 不知道 block is ${ink.hair} against the faintest word's ${ink.faintestWord} ` +
+          `— only ×${gap} lighter, under the ×${INK_GAP} required. Two blocks of the same size and ` +
+          "shape separated by that little are 「没有数据」 wearing 「空闲」's face.",
       );
     }
-    console.log(`ink ${scheme}: hairline ${ink.hair} (floor ${INK_FLOOR}, faintest word ${ink.faintestWord})`);
+    console.log(
+      `ink ${scheme}: 不知道 ${ink.hair} (floor ${INK_FLOOR}) vs faintest word ${ink.faintestWord} — ×${gap} lighter (need ×${INK_GAP})`,
+    );
   }
   await page.emulateMedia({ colorScheme: "light" });
 
@@ -396,7 +441,7 @@ try {
     `cells: ${words.length} word (${[...kinds].sort().join("+")}), ` +
       `${unwatched.length} 不知道, ${absent.length} 那时没有这一行`,
   );
-  console.log(`substance: hairline ${hair}, word block ${block}`);
+  console.log(`heights: 不知道 ${hair}, word ${block} — one axis`);
   console.log(
     `axis: ${seen.boxes.map((b) => `${b.id} ${b.stripL}..${b.stripR} h${b.stripH} ⊢${b.contentL} ${b.runs} runs`).join(", ")}`,
   );
