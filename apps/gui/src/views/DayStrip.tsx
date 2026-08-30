@@ -89,9 +89,24 @@ function Mark({ mark }: { mark: DayRun["mark"] }) {
   // ground, and deliberately no element: "nothing here" is the one of
   // the three that should cost no ink at all.
   if (mark === "absent") return null;
-  // Nobody was sampling. The flatline — `bg-border` is the app's
-  // hairline weight, the quietest ink it has, and not one of the six.
-  if (mark === "unwatched") return <span className="h-px w-full bg-border" />;
+  // Nobody was sampling. The flatline.
+  //
+  // **`--day-unwatched`, and it used to be `--border`.** The app's
+  // hairline weight is 1.22 against this ground in both themes, which is
+  // not a faint line — it is no line. The three materials this file
+  // argues for were three in the data and two on the glass: 不知道 and
+  // 那时没有这一行 both read as blank, and with khor young the blank ran
+  // most of the way across, so a person read the axis as running
+  // right-to-left. The token carries the measurements and the pair of
+  // bounds it has to sit between.
+  //
+  // Read through an inline `var()` like the word branch below, rather
+  // than through a Tailwind colour utility: that would need a second
+  // entry in `@theme inline` naming the same fact, and the sibling three
+  // lines down already resolves its token this way.
+  if (mark === "unwatched") {
+    return <span className="h-px w-full" style={{ backgroundColor: "var(--day-unwatched)" }} />;
+  }
   return (
     <span
       className="h-full w-full"

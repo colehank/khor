@@ -263,6 +263,112 @@ try {
     fail(`② the two must differ by substance: hairline is ${hair} and a word block is ${block}`);
   }
 
+  // ── 2b) and the hairline has to be visible, which geometry cannot say
+  //
+  // **A line one pixel tall in an ink nobody can see is not a faint
+  // line, it is no line.** The claim above measures that 不知道 is
+  // thinner than a word; that was true and green while the ink was
+  // `--border` at 1.22 against this ground, and on screen 不知道 and
+  // 那时没有这一行 were the same thing: blank. With khor young most of
+  // every strip is 不知道, so the blank ran most of the way across and a
+  // person read the axis as running right-to-left.
+  //
+  // Two bounds, both themes, because either alone is satisfiable by
+  // something wrong: a floor of 3.0 (what a non-text graphic needs to be
+  // made out — `check-rail` uses the same number), and *under the
+  // faintest of the six words*, because it is not a state and must not
+  // out-shout one.
+  const INK_FLOOR = 3.0;
+  for (const scheme of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme: scheme });
+    // Its own call and a frame: computed style read in the same task as
+    // the change comes back as it was before the change. The `dark`
+    // read-back is the probe — this measurement was wrong twice while
+    // both columns quietly came back identical.
+    await new Promise((r) => setTimeout(r, 500));
+    const isDark = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches);
+    if (isDark !== (scheme === "dark")) {
+      fail(`probe dead: asked for ${scheme}, the page reports dark=${isDark} — ② b measured nothing`);
+      continue;
+    }
+    const ink = await page.evaluate(() => {
+      // `color(srgb …)` as well as rgb()/rgba(): that is what
+      // `color-mix` computes to and its channels are 0..1, so reading it
+      // as 0..255 gives a near-black with a plausible alpha — every
+      // number after it wrong, and wrong plausibly.
+      const parse = (v) => {
+        const t = String(v);
+        const s = t.match(/color\(srgb\s+([^)]+)\)/);
+        if (s) {
+          const n = s[1].split(/[\s/]+/).filter(Boolean).map(Number);
+          return { r: n[0] * 255, g: n[1] * 255, b: n[2] * 255, a: n.length > 3 ? n[3] : 1 };
+        }
+        const m = t.match(/rgba?\(([^)]+)\)/);
+        if (!m) return null;
+        const n = m[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+        return { r: n[0], g: n[1], b: n[2], a: n.length > 3 ? n[3] : 1 };
+      };
+      const over = (f, b) => ({
+        r: f.r * f.a + b.r * (1 - f.a),
+        g: f.g * f.a + b.g * (1 - f.a),
+        b: f.b * f.a + b.b * (1 - f.a),
+        a: 1,
+      });
+      const lum = (c) => {
+        const g = (v) => {
+          v /= 255;
+          return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * g(c.r) + 0.7152 * g(c.g) + 0.0722 * g(c.b);
+      };
+      const ratio = (a, b) => {
+        const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+        return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100;
+      };
+      // The ground it actually sits on, walked up until something paints
+      // — not `--card` assumed.
+      const line = document.querySelector('[data-day-mark="unwatched"] > *');
+      let el = line;
+      let ground = null;
+      while (el && !ground) {
+        const bg = parse(getComputedStyle(el).backgroundColor);
+        if (bg && bg.a > 0 && el !== line) ground = bg;
+        el = el.parentElement;
+      }
+      if (!line || !ground) return null;
+      const hairInk = parse(getComputedStyle(line).backgroundColor);
+      const words = ["busy", "blocked", "done", "errored", "failed", "idle"];
+      const sw = document.createElement("span");
+      document.body.appendChild(sw);
+      const wordRatios = words.map((w) => {
+        sw.style.backgroundColor = "";
+        sw.style.backgroundColor = `var(--state-${w})`;
+        const c = parse(getComputedStyle(sw).backgroundColor);
+        return c ? ratio(over(c, ground), ground) : Infinity;
+      });
+      sw.remove();
+      return { hair: ratio(over(hairInk, ground), ground), faintestWord: Math.min(...wordRatios) };
+    });
+    if (ink === null) {
+      fail(`probe dead: no 不知道 hairline to measure in ${scheme} — ② b asserted nothing`);
+      continue;
+    }
+    if (ink.hair < INK_FLOOR) {
+      fail(
+        `② ${scheme}: the 不知道 hairline is ${ink.hair} against its ground, under the ${INK_FLOOR} ` +
+          "a non-text graphic needs. A line nobody can see is not a faint line, it is no line.",
+      );
+    }
+    if (ink.hair >= ink.faintestWord) {
+      fail(
+        `② ${scheme}: the 不知道 hairline is ${ink.hair}, at or above the faintest state word ` +
+          `(${ink.faintestWord}). It is not a state and must not out-shout one.`,
+      );
+    }
+    console.log(`ink ${scheme}: hairline ${ink.hair} (floor ${INK_FLOOR}, faintest word ${ink.faintestWord})`);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+
   // ── 3) one axis ───────────────────────────────────────────────────
   for (const b of seen.boxes) {
     if (b.stripL === null) {

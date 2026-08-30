@@ -235,6 +235,30 @@
      weight, not a second hue. */
   --strain: #7a3b5e;
 
+  /* The day strip's 不知道 — **no signal**, not a seventh word
+   * (`khor_core::DayCell`). Deliberately a tint of the page's own ink
+   * and not a hue: a hue here would be a colour people learn to read as
+   * a state, which is the one thing this must never become. It is drawn
+   * as a hairline down the middle of the band, so what it has to survive
+   * is being one pixel of four.
+   *
+   * **Measured, and the two numbers are a pair.** Composited on the row
+   * it sits on: **3.51 light / 5.05 dark**.
+   * - a floor of 3.0, both themes — the level a non-text graphic needs
+   *   to be made out at all (`check-rail` uses the same one). It was
+   *   `--border` before this, which is **1.22 in both themes**: the user
+   *   read the whole left half of every strip as blank and concluded the
+   *   axis ran right-to-left. 「不知道」和「那时没有这一行」看起来是同一
+   *   件事,而下面每一层都在费力把它们分开;
+   * - and under the faintest of the six words (空闲, 4.79 / 5.36), both
+   *   themes, so it stays quieter than any state. 50% would sit at 3.05
+   *   light — over the floor by a rounding error; 60% reaches 5.76 dark
+   *   and overtakes 空闲. 55% is the value with room on both sides.
+   *
+   * A tint of `--foreground` rather than a literal per theme, so it
+   * follows the ink when the ink moves. */
+  --day-unwatched: color-mix(in srgb, var(--foreground) 55%, transparent);
+
   --badge: #b23a2e;
   --badge-foreground: #ffffff;
 
