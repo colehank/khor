@@ -15,6 +15,13 @@
 // - **No raw HTML.** `react-markdown` refuses it by default and nothing
 //   here re-enables it: this is a *remote* agent's output painted into
 //   the app's own window (`_cagent` relays whatever the model emits).
+//   The one `dangerouslySetInnerHTML` below is not a hole in that and
+//   the difference is worth stating precisely: what it sets is not the
+//   agent's markup, it is markup highlight.js *generated* after escaping
+//   every character the agent wrote. Nothing an agent types can reach
+//   the DOM as an element, and that is asserted rather than believed —
+//   the gate paints a block containing a script tag and reads back the
+//   element count and the text (`scripts/check-read.mjs`).
 // - **A link opens where this machine opens pages.** Not by navigating
 //   this window (there is nothing here to navigate *to*) and not
 //   through 借网 either: borrowing another machine's network is a
@@ -29,17 +36,27 @@
 // Streaming is safe by construction: an unterminated fence is a code
 // block that runs to the end of the text (CommonMark), so a half-arrived
 // block paints as a growing code block rather than as three backticks
-// that later disappear.
-import { memo, useState, type ReactNode } from "react";
+// that later disappear. **That same fact is what keeps syntax colouring
+// out of the streaming path**: the block that is still arriving is
+// exactly the block whose fence has not closed, so it is left plain and
+// the highlighter is called once, when the fence lands.
+import { memo, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import { openLink } from "@/api";
+import { languageOf, openFenceAt, paint } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 
 /** The shape every component override receives from react-markdown. */
 type Node = { children?: ReactNode; className?: string };
+
+/** What react-markdown hands down beside the props above. `code` is the
+    one override here that needs it: `mdast-util-to-hast` patches the
+    fenced block's source position onto this element, which is how a
+    block that is still arriving is told from one that has closed. */
+type Positioned = { node?: { position?: { start?: { offset?: number } } } };
 
 const parts: Components = {
   // **No leading of its own.** It used to carry `leading-relaxed`, which
@@ -87,31 +104,18 @@ const parts: Components = {
   // The inner room is asymmetric on purpose: the left gutter is where
   // the eye lands looking for the start of each line of code, and it was
   // the same as the gap above, which made the first line sit in the
-  // corner. This is the whole of what is being done for code this batch
-  // — no highlighting, so nothing here colours a token or parses a
-  // language.
+  // corner.
+  //
+  // (This paragraph used to end「no highlighting, so nothing here
+  // colours a token or parses a language」. That was true of the batch
+  // that wrote it and stopped being true one batch later — the sentence
+  // is kept as its own correction because a note that describes the
+  // *previous* state reads exactly like a note describing this one.)
   pre: ({ children }) => (
     <pre className="my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-code">
       {children}
     </pre>
   ),
-  code: ({ children, className }: Node) => {
-    // react-markdown marks a fenced block's code with `language-*`, and
-    // an indented block with nothing — but an indented block's parent is
-    // still `pre`, and there it must not wear the inline box either. The
-    // `[pre_&]` variant asks the DOM instead of guessing from the class.
-    const fenced = /language-/.test(className ?? "");
-    return (
-      <code
-        className={cn(
-          "font-mono text-code",
-          !fenced && "rounded-sm bg-muted px-1 py-0.5 [pre_&]:bg-transparent [pre_&]:p-0",
-        )}
-      >
-        {children}
-      </code>
-    );
-  },
   // A table is the one part that can be wider than the pane; it scrolls
   // inside its own frame rather than pushing the conversation sideways.
   table: ({ children }) => (
@@ -126,6 +130,68 @@ const parts: Components = {
   // that was written here.
   img: ({ alt }) => <span className="text-muted-foreground">{alt || ""}</span>,
 };
+
+/**
+ * The `code` override, which is the only one that has to know something
+ * about the *whole* text: where the unterminated fence starts, if there
+ * is one. Hence a factory rather than an entry in the table above.
+ *
+ * **A block is painted only once it has closed.** `openAt` is the offset
+ * an unterminated fence begins at (`lib/highlight`), and a block at or
+ * after it is still arriving — its language may be half-typed and its
+ * last line is half a token. Skipping it is not only correctness: it is
+ * what keeps the highlighter out of the streaming path entirely, so a
+ * turn that drips twenty thousand characters calls it zero times and
+ * then once.
+ *
+ * Where the position is missing it is treated as still arriving, which
+ * is the conservative direction — plain rather than a guess. That
+ * cannot fail silently: the gate asserts a *closed* block does get
+ * classes, so a build where positions stopped arriving goes red rather
+ * than quietly going plain (`scripts/check-read.mjs`).
+ */
+const codePart =
+  (openAt: number | null): Components["code"] =>
+  ({ children, className, node }: Node & Positioned) => {
+    // react-markdown marks a fenced block's code with `language-*`, and
+    // an indented block with nothing — but an indented block's parent is
+    // still `pre`, and there it must not wear the inline box either. The
+    // `[pre_&]` variant asks the DOM instead of guessing from the class.
+    const fenced = /language-/.test(className ?? "");
+    const dress = cn(
+      "font-mono text-code",
+      !fenced && "rounded-sm bg-muted px-1 py-0.5 [pre_&]:bg-transparent [pre_&]:p-0",
+    );
+    const html = fenced ? html_of(String(children ?? ""), className ?? "", node, openAt) : null;
+    // **The one place this file emits markup, and the ban it looks like
+    // it breaks is intact.** The module head refuses raw HTML because
+    // the text is a remote agent's; this is not the agent's markup, it
+    // is markup highlight.js generated *from* the agent's text after
+    // escaping every character of it. The difference is measured, not
+    // asserted: the gate paints a block containing a script tag and an
+    // event handler and reads back both the element count and the text,
+    // character for character.
+    return html === null ? (
+      <code className={dress}>{children}</code>
+    ) : (
+      <code className={dress} dangerouslySetInnerHTML={{ __html: html }} />
+    );
+  };
+
+/** The painted HTML for a closed, whitelisted block — else `null`. */
+function html_of(
+  code: string,
+  className: string,
+  node: Positioned["node"],
+  openAt: number | null,
+): string | null {
+  if (openAt !== null) {
+    const at = node?.position?.start?.offset;
+    if (at === undefined || at >= openAt) return null;
+  }
+  const lang = languageOf(/language-(\S+)/.exec(className)?.[1] ?? "");
+  return lang === null ? null : paint(code, lang);
+}
 
 /** A link in an agent's text: pressed, it goes to this machine's own
     browser. A refusal (a scheme that is not a page) puts the address on
@@ -179,9 +245,16 @@ export const Markdown = memo(function Markdown({
   text: string;
   className?: string;
 }) {
+  // One table per text rather than one for the module, because `code`
+  // has to be told where the unterminated fence is. It is rebuilt
+  // exactly when the text changes — which is exactly when the parse
+  // below runs anyway, so it rides along with work already being done
+  // rather than adding a pass. The scan itself is one walk of the
+  // lines, against a parse that is proportional to the same string.
+  const components = useMemo(() => ({ ...parts, code: codePart(openFenceAt(text)) }), [text]);
   return (
     <div data-md className={cn("min-w-0 break-words", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={parts}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
         {text}
       </ReactMarkdown>
     </div>

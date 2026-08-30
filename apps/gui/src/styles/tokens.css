@@ -108,6 +108,34 @@
    * light against 15.17 dark meant the same paragraph had two weights
    * depending on an OS setting nobody had written down. */
   --read-ink: rgba(26, 26, 20, 0.9);
+  /* The one colour syntax highlighting is allowed, and it means **a
+   * string literal** — nothing else. Comments take the aux ink they
+   * already are; every other token in a code block stays body ink. Three
+   * roles, one new colour (`lib/highlight.ts` for why not six).
+   *
+   * **What it is not: a seventh word.** The six state words share a
+   * lightness band (L* held together so they read as one family), and
+   * this deliberately does *not* stand in that band — it is a tint of
+   * ink, not a status. A colour sitting at the words' lightness with a
+   * hue of its own is a colour a person will eventually read as
+   * meaning something about the session.
+   *
+   * **Measured rather than picked.** On the code block's real ground
+   * (`--muted` over the page, rgb(231,231,226) here) it contrasts 10.99,
+   * which is level with the body ink beside it at 10.92 — a low-colour
+   * scheme's string must not be louder than the code around it. Its
+   * distance in OKLab from every colour this app has already given a
+   * job to: blocked .176, strain .178, failed .264, errored .266, done
+   * .272, the brand green .479. For scale, the closest pair this app
+   * already ships as two different colours is done/errored at .090.
+   *
+   * The gate holds both halves — the separation and the contrast — so
+   * neither can be lost to a later nudge (`scripts/check-read.mjs`).
+   *
+   * No `--color-` mapping: nothing wears this as a utility. The rules
+   * that apply it name highlight.js's own class names, which only a
+   * stylesheet can reach (`styles/app.css`). */
+  --code-string: #321c71;
   --accent: rgba(147, 176, 77, 0.16);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
@@ -234,30 +262,6 @@
      either would read as a session's face. Escalation within strain is
      weight, not a second hue. */
   --strain: #7a3b5e;
-
-  /* The day strip's 不知道 — **no signal**, not a seventh word
-   * (`khor_core::DayCell`). Deliberately a tint of the page's own ink
-   * and not a hue: a hue here would be a colour people learn to read as
-   * a state, which is the one thing this must never become. It is drawn
-   * as a hairline down the middle of the band, so what it has to survive
-   * is being one pixel of four.
-   *
-   * **Measured, and the two numbers are a pair.** Composited on the row
-   * it sits on: **3.51 light / 5.05 dark**.
-   * - a floor of 3.0, both themes — the level a non-text graphic needs
-   *   to be made out at all (`check-rail` uses the same one). It was
-   *   `--border` before this, which is **1.22 in both themes**: the user
-   *   read the whole left half of every strip as blank and concluded the
-   *   axis ran right-to-left. 「不知道」和「那时没有这一行」看起来是同一
-   *   件事,而下面每一层都在费力把它们分开;
-   * - and under the faintest of the six words (空闲, 4.79 / 5.36), both
-   *   themes, so it stays quieter than any state. 50% would sit at 3.05
-   *   light — over the floor by a rounding error; 60% reaches 5.76 dark
-   *   and overtakes 空闲. 55% is the value with room on both sides.
-   *
-   * A tint of `--foreground` rather than a literal per theme, so it
-   * follows the ink when the ink moves. */
-  --day-unwatched: color-mix(in srgb, var(--foreground) 55%, transparent);
 
   --badge: #b23a2e;
   --badge-foreground: #ffffff;
@@ -705,6 +709,12 @@
        measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
        has, which is where a dark page starts to glare. */
     --read-ink: rgba(238, 238, 231, 0.86);
+    /* 10.26 on this theme's code ground against the body ink's 10.76 —
+       a shade quieter than the code it sits among, which is the right
+       side to err on. Distances in OKLab: blocked .126, failed .126,
+       strain .126, done .194, the brand green .196, errored .197. The
+       reasoning is on the light value. */
+    --code-string: #c8c7fe;
     --accent: rgba(183, 207, 117, 0.14);
     --accent-foreground: rgba(238, 238, 231, 0.96);
     --destructive: #d4756b;

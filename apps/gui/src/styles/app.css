@@ -372,3 +372,31 @@ input[type="search"]::-webkit-search-decoration {
     transition: none;
   }
 }
+
+/* Syntax colour, at the one intensity this app has room for. Three
+ * roles: a comment is aux ink, a string literal is `--code-string`, and
+ * everything else — keywords, types, names, numbers — is the body ink it
+ * already inherits, said here by *not being named*. That silence is the
+ * design: a rule per token class is how a six-colour theme starts, and
+ * this palette has no six colours to give (`lib/highlight.ts`,
+ * `tokens.css` on `--code-string`).
+ *
+ * Here rather than as utilities because these are highlight.js's own
+ * class names on spans this app never writes — there is no element to
+ * hang a utility on.
+ *
+ * Scoped under `[data-md]` so the names cannot start meaning something
+ * elsewhere: they arrive only in a rendered agent turn.
+ *
+ * A regular expression joins the string role rather than the silent
+ * majority: it is a literal, and left as body ink a `/…/` reads as a
+ * pair of operators with words in between. */
+[data-md] .hljs-comment,
+[data-md] .hljs-quote {
+  color: var(--muted-foreground);
+}
+
+[data-md] .hljs-string,
+[data-md] .hljs-regexp {
+  color: var(--code-string);
+}

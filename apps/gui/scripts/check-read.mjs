@@ -46,7 +46,20 @@
 //   6. and both conversation faces are held to it, not just the agent
 //      one (两端对齐的是事实, docs/UX.md): the machine conversation is
 //      routed in and measured by the same code;
-//   7. zero page errors while measuring.
+//   7. syntax colour is three roles and no more: a comment is the aux
+//      ink, a string is `--code-string`, and a keyword — standing for
+//      everything else — is the body ink it inherits. The fourth role is
+//      the one a低色 scheme loses one rule at a time;
+//   8. and the new colour is genuinely new: further in OKLab from every
+//      colour this app has already given a job to than those colours are
+//      from each other;
+//   9. a fence that has not closed carries no highlight at all — the
+//      block still arriving is both a guess and work on every chunk;
+//  10. what `dangerouslySetInnerHTML` receives is this build's markup and
+//      never the agent's: a block whose *content* is a script tag and an
+//      event handler grows no element and comes back character for
+//      character;
+//  11. zero page errors while measuring.
 //
 // **What it cannot block.** Whether 38 is a better column than 44 — the
 // band is arithmetic and the point inside it is a matter of eyes, which
@@ -108,6 +121,16 @@ const fail = (m) => {
   process.exitCode = 1;
 };
 
+/**
+ * A block whose *content* is markup. The painted output reaches the DOM
+ * through `dangerouslySetInnerHTML`, so this is the input that decides
+ * whether that is safe: highlight.js escapes before it wraps, and this
+ * gate reads back both the element count and the text rather than taking
+ * that on trust. A JSON block because JSON is on the whitelist, so this
+ * text goes through the painter rather than around it.
+ */
+const EVIL = `{"marker": "escape-probe", "a": "<script>alert(1)</script>", "b": "<img src=x onerror=alert(2)>"}`;
+
 /** The sample. Mixed on purpose — a pure-CJK or pure-Latin paragraph
     would let one script's band be satisfied while the other's was not
     even exercised, and the whole difficulty here is that one cap has to
@@ -119,8 +142,17 @@ The conversation face borrowed the dashboard's size tier, which was tuned for ro
 > 一段引用，用来和上面那条工具调用比形状。
 
 \`\`\`ts
+// a comment, which is the aux ink
 const items = useMemo(() => [...paint.past, ...paint.live], [paint]);
-\`\`\``;
+const where = "a string literal, which is the one new colour";
+\`\`\`
+
+\`\`\`json
+${EVIL}
+\`\`\`
+
+\`\`\`rust
+fn still_arriving() {`;
 
 const frames = [
   {
@@ -255,6 +287,80 @@ const probe = () => {
   // The shell's own base, read off the page rather than repeated here.
   const base = getComputedStyle(document.body).fontSize;
 
+  // ── the code blocks ──────────────────────────────────────────────
+  // Found by their content rather than by their order, so a change to
+  // the sample above cannot silently point an assertion at a different
+  // block than the one it was written about.
+  const blocks = [...(scroller?.querySelectorAll("pre code") ?? [])];
+  const withText = (needle) => blocks.find((b) => (b.textContent ?? "").includes(needle)) ?? null;
+  const closed = withText("useMemo");
+  const arriving = withText("still_arriving");
+  // Found by a marker that stays *text* whatever happens: if escaping
+  // broke, `onerror` becomes an attribute and leaves `textContent`, so a
+  // finder keyed on it would lose the block exactly when the bug appears
+  // and report「never drew」instead of「escaping failed」.
+  const evil = withText("escape-probe");
+  const inkOf = (el, sel) => {
+    const t = sel ? el?.querySelector(sel) : el;
+    return t ? getComputedStyle(t).color : null;
+  };
+  const root = getComputedStyle(document.documentElement);
+  // **Through the engine, not by reading the declaration.** A token is
+  // written however it was convenient — `#005a6c`, `rgba(…)`, or a
+  // `var()` that resolves to either — while what comes off an element is
+  // always `rgb()`. Comparing the two forms is how this gate was green
+  // for a value that had been set to a state word's own colour: the hex
+  // went through a number-scraping parse, which found `005`, `6` and `c`
+  // and computed a distance from noise. Handing the value back to the
+  // engine as a colour is the only normalisation that cannot drift from
+  // what the page actually paints.
+  const probeEl = document.createElement("span");
+  document.body.appendChild(probeEl);
+  const token = (name) => {
+    const raw = root.getPropertyValue(name).trim();
+    if (!raw) return "";
+    probeEl.style.color = "";
+    probeEl.style.color = raw;
+    const out = getComputedStyle(probeEl).color;
+    // An unparseable value leaves the element at its inherited colour,
+    // which would read as a perfectly ordinary rgb() and quietly compare
+    // as「some other colour」. Say so instead.
+    return probeEl.style.color === "" ? `unparseable:${raw}` : out;
+  };
+  // Flattened onto the ground they are all seen against, because that is
+  // the comparison a person makes: two inks with different alphas over
+  // one paper, not two declarations.
+  const onPaper = (colour, paper) =>
+    `rgb(${over(parse(colour), paper).map((n) => Math.round(n)).join(", ")})`;
+  const spans = (el) => (el ? el.querySelectorAll('[class*="hljs-"]').length : -1);
+  const code = {
+    closedFound: closed !== null,
+    closedSpans: spans(closed),
+    stringInk: inkOf(closed, ".hljs-string"),
+    commentInk: inkOf(closed, ".hljs-comment"),
+    keywordInk: inkOf(closed, ".hljs-keyword"),
+    bodyInk: inkOf(closed, null),
+    arrivingFound: arriving !== null,
+    arrivingSpans: spans(arriving),
+    evilFound: evil !== null,
+    // Anything that would be an *element* rather than text. If escaping
+    // failed anywhere, one of these is how it shows.
+    evilElements: evil ? evil.querySelectorAll("script, img, iframe, object, embed, svg").length : -1,
+    // The trailing newline is the fence's own, not the agent's.
+    evilText: evil ? (evil.textContent ?? "").replace(/\n$/, "") : null,
+    codeString: token("--code-string"),
+    spokenFor: Object.fromEntries(
+      ["busy", "blocked", "done", "errored", "failed", "idle", "strain", "lq3"].map((n) => [
+        n,
+        (() => {
+          const c = token(n === "strain" || n === "lq3" ? `--${n}` : `--state-${n}`);
+          return c.startsWith("rgb") && closed ? onPaper(c, groundOf(closed)) : c;
+        })(),
+      ]),
+    ),
+  };
+  probeEl.remove();
+
   // The box this conversation is written into. The two faces name theirs
   // differently — one goes through the shared control, one is a bare
   // textarea — so both are asked for and whichever is on screen answers.
@@ -303,8 +409,114 @@ const probe = () => {
     overflows: scroller.scrollWidth > scroller.clientWidth,
     quote: shapeOf(quote),
     tool: shapeOf(tool),
+    code,
   };
 };
+
+/** Perceptual distance between two CSS colours, in OKLab. Used for the
+    one claim a plain inequality cannot carry: a *new* colour has to be
+    further from every colour this app already uses than those colours
+    are from each other, and `!==` is satisfied by one bit. */
+function apart(a, b) {
+  const rgb = (s) => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const oklab = ([r, g, bb]) => {
+    const f = (c) => {
+      c /= 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const [R, G, B] = [f(r), f(g), f(bb)];
+    const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+    const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+    const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+    return [
+      0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+    ];
+  };
+  const [A, B] = [oklab(rgb(a)), oklab(rgb(b))];
+  return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]);
+}
+
+/**
+ * How far a new colour has to sit from every colour already spoken for.
+ *
+ * **Not a round number picked to pass.** The closest pair this app
+ * already ships as two different colours is 完成/中断 at .090 in the
+ * light theme (完成/the brand green is .024, but those two are meant to
+ * be the same family). A colour arriving now has to be more clearly new
+ * than two old neighbours are from each other, so the floor is above
+ * that, and the values it was written for clear it with room: .176 in
+ * the light theme, .126 in the dark.
+ */
+const APART = 0.1;
+
+// ── the streaming decision, measured on the functions themselves ─────
+//
+// The DOM claims below prove the *outcome* on a finished turn. This
+// proves the two things a finished page cannot show: that a fence which
+// has not closed is still seen as open at every size the text passes
+// through on its way in, and that a block which has closed is painted
+// once rather than once per remaining chunk.
+//
+// Measured rather than reasoned: node runs this module directly (it
+// strips the types), and highlight.js's own entry point is wrapped
+// before the module loads, so the count is of real calls.
+{
+  const core = (await import("highlight.js/lib/core")).default;
+  const real = core.highlight.bind(core);
+  let calls = 0;
+  core.highlight = (...args) => {
+    calls += 1;
+    return real(...args);
+  };
+  const { paint, openFenceAt, languageOf } = await import("../src/lib/highlight.ts");
+
+  // The probe first: a build where nothing ever paints satisfies both
+  // 「zero while open」and「one when closed」by doing nothing at all.
+  const sample = 'const s = "hi"; // c';
+  if (languageOf("tsx") === null) fail("probe dead: the whitelist resolves nothing, so nothing below is exercised");
+  else if (paint(sample, "typescript") === null) fail("probe dead: the painter answered nothing for a whitelisted language");
+  else if (calls === 0) fail("probe dead: the wrapper never saw a call, so the count below means nothing");
+  else {
+    const first = calls;
+    paint(sample, "typescript");
+    paint(sample, "typescript");
+    paint(sample, "typescript");
+    if (calls !== first) {
+      fail(
+        `a closed block is re-highlighted: ${calls - first} extra call(s) for the same text. ` +
+          `Closing a fence is not the end of a turn — the prose after it keeps arriving, and each ` +
+          `chunk re-renders the whole turn`,
+      );
+    }
+  }
+
+  // Every prefix a streaming turn passes through, at the size the
+  // protocol delivers. While the fence is open it must *stay* open —
+  // one prefix that reads as closed is one paint of a half-written
+  // block, and a guess at a language that is still being typed.
+  const turn = '前面一段话。\n\n```ts\n// c\nconst s = "hi";\nconst t = [1, 2, 3];\n```\n\n收尾的一段话，它在围栏封口之后还在继续到达。';
+  const fenceAt = turn.indexOf("```");
+  const closeAt = turn.indexOf("```", fenceAt + 3) + 3;
+  let openWhileArriving = 0;
+  let leaked = 0;
+  for (let n = fenceAt + 3; n < closeAt; n += 8) {
+    openWhileArriving += 1;
+    if (openFenceAt(turn.slice(0, n)) === null) leaked += 1;
+  }
+  if (openWhileArriving === 0) fail("probe dead: no prefix landed inside the fence, so nothing was measured");
+  if (leaked > 0) {
+    fail(`${leaked} of ${openWhileArriving} prefixes inside an open fence read as closed — those are paints of a block still being typed`);
+  }
+  if (openFenceAt(turn) !== null) {
+    fail("a turn whose fences are all closed still reads as open — nothing in it would ever be painted");
+  }
+  console.log(
+    `stream: ${openWhileArriving} prefixes inside the fence, ${leaked} painted; ` +
+      `a closed block costs ${calls} call(s) however many chunks follow it`,
+  );
+}
 
 let vite = null;
 let browser = null;
@@ -479,6 +691,100 @@ try {
           `${say(m)}: the box writes at ${m.boxFontSize} while the conversation reads at ` +
             `${m.bodyFontSize} — a person is typing in a size they are not reading in`,
         );
+      }
+
+      // 7) syntax colour: three roles, and only where the fence closed.
+      //    Agent face only — a machine's message is not markdown.
+      if (which === "agent") {
+        const c = m.code;
+        // The probe, and it is the whole of section 8's positive half:
+        // if nothing painted, "the arriving block is not painted" and
+        // "the string ink is not a state colour" both pass by vacuum.
+        if (!c.closedFound) {
+          fail(`${say(m)}: probe dead — the closed code block never drew`);
+        } else if (c.closedSpans === 0) {
+          fail(
+            `${say(m)}: the closed fence carries no highlight at all — either the whitelist stopped ` +
+              `resolving or the painter is never being reached`,
+          );
+        } else if (c.stringInk === null || c.commentInk === null || c.keywordInk === null) {
+          fail(
+            `${say(m)}: probe dead — the painted block has no ` +
+              `${c.stringInk === null ? "string" : c.commentInk === null ? "comment" : "keyword"} token to read a role off`,
+          );
+        } else {
+          // Three roles, three values. Stated as inequality between the
+          // three *rendered* inks rather than against the tokens, so a
+          // rule that failed to reach the page reads as one role, not as
+          // a token mismatch.
+          if (c.stringInk === c.bodyInk) {
+            fail(`${say(m)}: a string reads as body ink (${c.bodyInk}) — the string role is not landing`);
+          }
+          if (c.commentInk === c.bodyInk) {
+            fail(`${say(m)}: a comment reads as body ink (${c.bodyInk}) — the comment role is not landing`);
+          }
+          if (c.commentInk === c.stringInk) {
+            fail(`${say(m)}: comment and string are one colour (${c.stringInk})`);
+          }
+          // And everything else really is left alone: a keyword is the
+          // body ink. This is the half that keeps a low-colour scheme
+          // low — without it, four more roles can arrive one at a time.
+          if (c.keywordInk !== c.bodyInk) {
+            fail(
+              `${say(m)}: a keyword paints ${c.keywordInk} against the body's ${c.bodyInk} — ` +
+                `this batch gives syntax three roles, and a fourth has arrived`,
+            );
+          }
+          // The new colour is genuinely new.
+          for (const [name, colour] of Object.entries(c.spokenFor)) {
+            // The probe this claim needs most: a colour in a form the
+            // comparison cannot read is a colour it will call far away.
+            // This gate was green with the string set to 待批's exact
+            // value because the token came back as hex and the distance
+            // was computed from the digits inside it.
+            if (!colour.startsWith("rgb")) {
+              fail(
+                `${say(m)}: probe dead — ${name} came back as「${colour}」, which the comparison ` +
+                  `cannot read, so its separation was never checked`,
+              );
+              continue;
+            }
+            const d = apart(c.stringInk, colour);
+            if (d < APART) {
+              fail(
+                `${say(m)}: the string colour sits ${d.toFixed(3)} from ${name} in OKLab, under ${APART} — ` +
+                  `close enough to be read as saying what that colour says`,
+              );
+            }
+          }
+        }
+
+        // 8) and the block that is still arriving is left alone.
+        if (!c.arrivingFound) {
+          fail(`${say(m)}: probe dead — the unterminated fence never drew, so claim 8 has nothing to look at`);
+        } else if (c.arrivingSpans !== 0) {
+          fail(
+            `${say(m)}: the unterminated fence carries ${c.arrivingSpans} highlight span(s) — a block that ` +
+              `is still arriving is being painted, which is both a guess and work on every chunk`,
+          );
+        }
+
+        // 9) painted markup is this build's, never the agent's.
+        if (!c.evilFound) {
+          fail(`${say(m)}: probe dead — the block carrying markup never drew`);
+        } else {
+          if (c.evilElements !== 0) {
+            fail(
+              `${say(m)}: ${c.evilElements} element(s) grew out of a code block's *text* — escaping is ` +
+                `not holding and the agent's words are reaching the DOM as markup`,
+            );
+          }
+          if (c.evilText !== EVIL) {
+            fail(
+              `${say(m)}: a code block's text came back changed.\n  wanted: ${EVIL}\n  got:    ${c.evilText}`,
+            );
+          }
+        }
       }
 
       // 5) two shapes, two meanings. Only the agent face paints a tool
