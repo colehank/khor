@@ -84,10 +84,36 @@ const NARROW = 390;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The reading band for Chinese characters on a line. Both ends are the
- * ordinary long-form range.
+ * Chinese characters on a line.
+ *
+ * **The ceiling is a citation, not a preference.** WCAG 2.x SC 1.4.8
+ * (Visual Presentation, AAA) caps a line at 80 characters — **40 if
+ * CJK**, on the ground that a CJK glyph is about twice as wide as a
+ * Latin character at the same legibility. It was 45 here until
+ * 2026-08-30, which is 12% past that, and the value it was guarding had
+ * been walked from 32 to 38 to 44 chasing「the screen is not full」
+ * before anybody looked the standard up.
+ *
+ * **The floor is not from the standard and is not pretending to be.**
+ * Nothing published says a line may not be too *short*, but 32 was
+ * measured to cost 71% of the characters on screen (3250 → 930 in a
+ * 755-tall pane), so a column that narrow is a defect this gate should
+ * still catch. 30 is the bottom of the same long-form range the ceiling
+ * used to come from — the one number here that is still a matter of
+ * reading practice rather than a rule.
+ *
+ * **What this deliberately does not assert, and why it is not a hole.**
+ * The same SC caps non-CJK at 80, and at the ceiling above a line holds
+ * ~87 Latin characters (40 × the 2.17 measured below) — seven over.
+ * Both halves hold only at a cap of 36.9em or less. The standard's two
+ * numbers were written for text in one script; these paragraphs run
+ * 32–74% CJK, so one half has to give and it is the half for the script
+ * this app is not mostly in. Asserting it would make this gate red on
+ * the value the product ships, which is a gate that gets turned off
+ * rather than a gate that gets obeyed — so it is written down here
+ * instead, with the arithmetic, where the next person can weigh it.
  */
-const CJK_BAND = [30, 45];
+const CJK_BAND = [30, 40];
 /**
  * **There is no Latin band any more, and removing it is not the same as
  * widening it.**

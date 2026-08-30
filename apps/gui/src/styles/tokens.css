@@ -651,31 +651,35 @@
    * than it reads. Both places that use it put the two classes on one
    * element for that reason.
    *
-   * **44 is a choice inside a window, not the window.** The reading band
-   * for CJK is 30–45 characters, and this sits at the top of it, chosen
-   * by the person reading the app after seeing 32, 38 and 44 side by
-   * side on real text. The number moved twice: 32 first (the arithmetic
-   * floor, and it cost 71% of the characters on screen — measured 3250 →
-   * 930), then 38, then here.
+   * **40, and the ceiling is a published one.** WCAG 2.x SC 1.4.8
+   * (Visual Presentation, AAA) puts a line at no more than 80 characters
+   * — **40 if CJK**, because a CJK glyph is about twice a Latin
+   * character's width at the same legibility. This app's paragraphs are
+   * mostly CJK, so 40 is the number, and the cap being an em makes it
+   * literally「40 glyphs」rather than a length that approximates one.
    *
-   * Measured at 44, on the pane it actually gets: 660 wide, **44 CJK /
-   * 95.5 Latin** to a line, 1264 Chinese characters visible in a
-   * 745-tall pane. At 48 it would be 720 / 48 / 104.1 / 1379.
+   * **Tombstone, and the round trip is the point.** This was 32, then 38, then
+   * **44** (`280ad2b`), on the way to 48 — each step chasing「the screen
+   * is not full」and each one further from a standard nobody had looked
+   * up yet. 44 is 10% past the line and 48 is 20% past. It is written
+   * here rather than quietly reverted because the round trip is the
+   * lesson: **a reader's preference is a real signal about a real
+   * problem, and it is not evidence about where the limit is.**
    *
-   * **The ceiling is not arithmetic and should not be dressed as it.**
-   * 48 is about where a reader stops being able to find the start of the
-   * next line without hunting — Claude's own reading column runs 45–50
-   * CJK — and past that this batch's whole point is being handed back.
-   * The gate holds 30–45 rather than the exact number here, so moving
-   * inside the band is one edit and leaving it is a red.
+   * **What is still not satisfied, said out loud.** The same SC also
+   * caps non-CJK at 80, and with this font stack a Latin character is
+   * 1/2.17 of a CJK one — so 40 glyphs of CJK is **86.8** of Latin, over
+   * that half by seven characters. Both halves hold only at ≤36.9em.
+   * The standard's two numbers were written for text in one script;
+   * these paragraphs run 32–74% CJK, so one of the two has to give and
+   * it is the one for the script this app is not mostly in.
    *
-   * (The Latin count used to be a second band, 45–75. It is not one any
-   * more and `check-read.mjs` says why: with the cap fixed, the Latin
-   * count is the CJK count times a font constant, so a Latin band was
-   * the CJK band restated rather than a second claim. What it *could*
-   * catch on its own — the font stack's two scripts drifting apart — is
-   * asserted there directly, as a ratio.) */
-  --measure: 44em;
+   * **The real answer to「the screen is not full」is a different axis**
+   * and is not in this batch: the column is 40 glyphs *of the reading
+   * size*, so a larger size on a wider window fills more of it with the
+   * same 40 glyphs a line. That is a change to `--text-read`, not to
+   * this. */
+  --measure: 40em;
   --avatar: 32px;
   /* A machine's face on its own card. Its own token rather than a class
    * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`
