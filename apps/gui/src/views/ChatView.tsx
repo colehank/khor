@@ -102,6 +102,16 @@ type Item =
       kind: string;
       /** `pending` | `in_progress` | `completed` | `failed`. */
       status: string;
+      /** What the tool was handed, verbatim. The title is a summary and
+          summaries lose things; this is the thing itself, and it is
+          what a line opens onto. */
+      raw: unknown;
+      /** Files the call names, for a face that wants to offer them. */
+      where: string[];
+      /** The diff an edit carries, if it is an edit. */
+      diff: { path: string; old: string | null; next: string } | null;
+      /** What the tool said when it finished. */
+      out: string | null;
     }
   | {
       who: "ask";
@@ -145,14 +155,33 @@ type Painting = {
 
 const BLANK: Painting = { past: [], arriving: [], live: [] };
 
+/** One `ToolCallContent`, the protocol's three-tag union. */
+type ToolContent = {
+  type?: string;
+  content?: { type?: string; text?: string };
+  path?: string;
+  oldText?: string | null;
+  newText?: string;
+};
+
 type Update = {
   sessionUpdate?: string;
-  content?: { type?: string; text?: string };
+  /** **The protocol overloads this key.** On a message chunk it is one
+      content block; on a tool call it is a *list* of `ToolCallContent`.
+      One field with both shapes, narrowed at each reader, rather than
+      two names for one wire key — two names would let a reader take the
+      wrong one and get `undefined` rather than a type error. */
+  content?: { type?: string; text?: string } | ToolContent[];
   title?: string | null;
   /** `tool_call` and `tool_call_update` both name their call with it. */
   toolCallId?: string;
   kind?: string;
   status?: string;
+  /** `tool_call` / `tool_call_update`: what the tool was given and what
+      it produced. `content` is the protocol's tagged union — `content`,
+      `diff` or `terminal`. */
+  rawInput?: unknown;
+  locations?: { path?: string; line?: number }[];
   /** `plan`: the agent's own list of what it is doing. */
   entries?: { content?: string; status?: string; priority?: string }[];
   /** `usage_update`: how much of the window this conversation holds. */
@@ -249,7 +278,14 @@ function updateOf(frame: ChatFrame): Update | null {
 }
 
 function textOf(u: Update): string {
-  return u.content?.type === "text" ? (u.content.text ?? "") : "";
+  const c = u.content;
+  if (!c || Array.isArray(c)) return "";
+  return c.type === "text" ? (c.text ?? "") : "";
+}
+
+/** The tool half of the overloaded `content` key. */
+function toolContent(u: Update): ToolContent[] {
+  return Array.isArray(u.content) ? u.content : [];
 }
 
 /**
@@ -333,6 +369,10 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
         title: u.title ?? "",
         kind: u.kind ?? "other",
         status: u.status ?? "pending",
+        raw: u.rawInput ?? null,
+        where: (u.locations ?? []).map((l) => l.path ?? "").filter(Boolean),
+        diff: diffIn(u),
+        out: contentIn(u),
       });
       return true;
     case "tool_call_update": {
@@ -356,6 +396,9 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
           status: u.status ?? at.status,
           title: u.title ?? at.title,
           kind: u.kind ?? at.kind,
+          raw: u.rawInput ?? at.raw,
+          diff: diffIn(u) ?? at.diff,
+          out: contentIn(u) ?? at.out,
         };
         return true;
       }
@@ -368,6 +411,29 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     default:
       return false;
   }
+}
+
+/** The diff a tool frame carries, if it carries one.
+    The protocol's `content` is a tagged union and `diff` is one of its
+    three tags; the others (`content`, `terminal`) are read elsewhere or
+    not at all, so this picks rather than assumes. */
+function diffIn(u: Update): { path: string; old: string | null; next: string } | null {
+  for (const c of toolContent(u)) {
+    if (c.type === "diff" && typeof c.newText === "string") {
+      return { path: c.path ?? "", old: c.oldText ?? null, next: c.newText };
+    }
+  }
+  return null;
+}
+
+/** The text a tool frame carries as plain content. */
+function contentIn(u: Update): string | null {
+  for (const c of toolContent(u)) {
+    if (c.type === "content" && c.content?.type === "text" && c.content.text) {
+      return c.content.text;
+    }
+  }
+  return null;
 }
 
 /** Whether a tool call is still open.
@@ -510,6 +576,12 @@ export function ChatView({
   const [shots, setShots] = useState<[string, string][]>([]);
   /** Why the last paste did not attach, if it did not. */
   const [shotErr, setShotErr] = useState<string | null>(null);
+  /** Which tool lines are open. **Closed by default and per line**: a
+      conversation is read for what was said, and twenty shell commands
+      unfolded is a transcript of the machine rather than of the work.
+      Keyed by the protocol's own id, so a line keeps its state while
+      new frames land above and below it. */
+  const [open, setOpen] = useState<Set<string>>(new Set());
   /** What the agent on the other end said it can do, from the handshake.
       **Nothing read this frame until now** — `replays` had crossed the
       wire since the day it was added, with `gui_host`'s own note saying
@@ -1005,18 +1077,96 @@ export function ChatView({
             // finished ones were coloured too, the colour would stop
             // meaning anything — the same reason a badge that is never
             // zero is not a badge.
-            <div
-              key={i}
-              data-chat-tool
-              data-tool-status={item.status}
-              data-tool-kind={item.kind}
-              data-word={running(item.status) ? "busy" : undefined}
-              className="font-mono text-code"
-            >
-              <span data-word-text style={{ color: toolInk(item.status) }}>
-                {item.title}
-              </span>
-            </div>
+            (() => {
+              // What there is to see if this line is opened. A line
+              // with nothing behind it is **not** made to look
+              // openable: a control that opens onto nothing is worse
+              // than no control, and until this batch every tool line
+              // had nothing behind it.
+              const more =
+                item.diff !== null || item.out !== null || item.raw !== null;
+              const shown = open.has(item.id);
+              return (
+                <div
+                  key={i}
+                  data-chat-tool
+                  data-tool-status={item.status}
+                  data-tool-kind={item.kind}
+                  data-tool-open={more ? (shown ? "yes" : "no") : undefined}
+                  data-word={running(item.status) ? "busy" : undefined}
+                  className="font-mono text-code"
+                >
+                  {more ? (
+                    <button
+                      data-tool-toggle
+                      className="block w-full min-h-touch text-left pointer-fine:min-h-0"
+                      onClick={() =>
+                        setOpen((now) => {
+                          const next = new Set(now);
+                          if (!next.delete(item.id)) next.add(item.id);
+                          return next;
+                        })
+                      }
+                    >
+                      <span data-word-text style={{ color: toolInk(item.status) }}>
+                        {item.title}
+                      </span>
+                    </button>
+                  ) : (
+                    <span data-word-text style={{ color: toolInk(item.status) }}>
+                      {item.title}
+                    </span>
+                  )}
+                  {shown && (
+                    <div data-tool-body className="mt-1 flex flex-col gap-1 pl-2">
+                      {item.diff && (
+                        <div data-tool-diff className="flex flex-col gap-1">
+                          {item.diff.old !== null && (
+                            <pre
+                              data-diff-before
+                              className="overflow-x-auto rounded-md bg-muted px-2 py-1 text-muted-foreground"
+                            >
+                              {gui.chat_diff_before}
+                              {"\n"}
+                              {item.diff.old}
+                            </pre>
+                          )}
+                          <pre
+                            data-diff-after
+                            className="overflow-x-auto rounded-md bg-muted px-2 py-1"
+                          >
+                            {gui.chat_diff_after}
+                            {"\n"}
+                            {item.diff.next}
+                          </pre>
+                        </div>
+                      )}
+                      {item.out !== null && (
+                        <pre
+                          data-tool-out
+                          className="max-h-64 overflow-auto rounded-md bg-muted px-2 py-1 text-muted-foreground"
+                        >
+                          {item.out}
+                        </pre>
+                      )}
+                      {/* The raw input, last and only when nothing
+                          better stood in for it: for an edit the diff
+                          *is* the input said properly, and printing the
+                          JSON underneath it would be the same fact
+                          twice, the second time unreadably. */}
+                      {!item.diff && item.raw !== null && (
+                        <pre
+                          data-tool-raw
+                          className="max-h-64 overflow-auto rounded-md bg-muted px-2 py-1 text-muted-foreground"
+                        >
+                          {JSON.stringify(item.raw, null, 1)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
           ) : item.who === "ask" ? (
             <div
               key={i}

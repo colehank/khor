@@ -45,8 +45,8 @@ use agent_client_protocol::schema::v1::{
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
     PromptCapabilities, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
     SessionNotification,
-    Cost, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind, UsageUpdate,
+    Content, Cost, Diff, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
+    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
@@ -638,7 +638,10 @@ mod wire_tests {
         let json = serde_json::to_value(super::said(&block).expect("an update")).unwrap();
         assert_eq!(json["sessionUpdate"], "tool_call");
         assert_eq!(json["toolCallId"], "toolu_01");
-        assert_eq!(json["title"], "Read");
+        // **Was `"Read"`, and the change is the point of this batch.**
+        // The title is the tool's *name* no longer: a conversation of
+        // twenty shell commands was twenty lines reading `Bash`.
+        assert_eq!(json["title"], "Read tmp/x");
         assert_eq!(json["kind"], "read");
         // Not `pending` — see `said`.
         assert_eq!(json["status"], "in_progress");
@@ -740,6 +743,105 @@ mod wire_tests {
         assert!(super::cost_in(&serde_json::json!({})).is_none());
     }
 
+    /// **A conversation full of lines reading `Bash` was the bug.**
+    /// Each case here is one real tool's real input shape, and the
+    /// assertion is the line a person would read.
+    ///
+    /// The last two are the ones that keep it from over-reaching: a
+    /// tool nobody anticipated keeps its bare name (the state this
+    /// replaces, so nothing regresses), and `description` beats every
+    /// rule below it because it is the agent's own sentence.
+    #[test]
+    fn a_tool_line_says_which_one_it_was() {
+        let t = |name: &str, input: serde_json::Value| super::titled(name, &input);
+        assert_eq!(
+            t("Bash", serde_json::json!({ "command": "cargo test", "description": "跑测试" })),
+            "跑测试",
+            "the agent's own sentence wins"
+        );
+        assert_eq!(
+            t("Bash", serde_json::json!({ "command": "ls -la" })),
+            "Bash ls -la",
+            "no description, so the command is the point"
+        );
+        assert_eq!(
+            t("Read", serde_json::json!({ "file_path": "/Users/z/khor/crates/node/src/cagent.rs" })),
+            "Read src/cagent.rs",
+            "the tail is the half a reader recognises"
+        );
+        assert_eq!(t("Read", serde_json::json!({ "file_path": "cagent.rs" })), "Read cagent.rs");
+        assert_eq!(t("Grep", serde_json::json!({ "pattern": "kind_of" })), "Grep kind_of");
+        // A tool this shim has never heard of, and one whose input says
+        // nothing: both keep the bare name rather than inventing a line.
+        assert_eq!(t("SomeFutureTool", serde_json::json!({ "x": 1 })), "SomeFutureTool");
+        assert_eq!(t("Bash", serde_json::json!({})), "Bash");
+        // An empty description is not a description.
+        assert_eq!(t("Bash", serde_json::json!({ "description": "  ", "command": "id" })), "Bash id");
+    }
+
+    /// **An edit crosses as a diff, and a call carries what it was
+    /// given.** Before this the whole of a tool line was a word, so a
+    /// person could see that a file had been edited and never what the
+    /// edit was.
+    #[test]
+    fn an_edit_crosses_the_wire_as_its_own_diff() {
+        let block = serde_json::json!({
+            "type": "tool_use", "id": "toolu_e", "name": "Edit",
+            "input": {
+                "file_path": "/Users/z/khor/src/a.rs",
+                "old_string": "let x = 1;",
+                "new_string": "let x = 2;",
+                "replace_all": false
+            }
+        });
+        let json = serde_json::to_value(super::said(&block).expect("an update")).unwrap();
+        assert_eq!(json["title"], "Edit src/a.rs");
+        assert_eq!(json["kind"], "edit");
+        assert_eq!(json["locations"][0]["path"], "/Users/z/khor/src/a.rs");
+        assert_eq!(json["content"][0]["type"], "diff");
+        assert_eq!(json["content"][0]["oldText"], "let x = 1;");
+        assert_eq!(json["content"][0]["newText"], "let x = 2;");
+        // The input is carried whole beside the summary of it.
+        assert_eq!(json["rawInput"]["replace_all"], false);
+    }
+
+    /// **A finished tool says what it said.** Both content shapes claude
+    /// writes, the empty case, and the cut — an unmarked truncation is a
+    /// lie about what the tool returned, and a reader would act on the
+    /// incomplete output believing it whole.
+    #[test]
+    fn a_finished_tool_carries_its_own_output() {
+        let one = serde_json::json!({
+            "type": "tool_result", "tool_use_id": "t", "content": "3 files changed"
+        });
+        let json = serde_json::to_value(super::settled(&one).expect("an update")).unwrap();
+        assert_eq!(json["content"][0]["type"], "content");
+        assert_eq!(json["content"][0]["content"]["text"], "3 files changed");
+
+        // The other shape: a list of blocks.
+        let many = serde_json::json!({
+            "type": "tool_result", "tool_use_id": "t",
+            "content": [{ "type": "text", "text": "line one" }, { "type": "text", "text": "line two" }]
+        });
+        let json = serde_json::to_value(super::settled(&many).expect("an update")).unwrap();
+        assert_eq!(json["content"][0]["content"]["text"], "line one\nline two");
+
+        // Nothing said is no panel, not an empty one.
+        let empty = serde_json::json!({ "type": "tool_result", "tool_use_id": "t", "content": "  " });
+        let json = serde_json::to_value(super::settled(&empty).expect("an update")).unwrap();
+        assert!(json.get("content").is_none() || json["content"].is_null());
+
+        // A long output is cut **and says so**. The sample is CJK on
+        // purpose: the cut lands mid-codepoint at 16 KiB and slicing a
+        // Rust string there panics.
+        let long = "上下文".repeat(20_000);
+        let big = serde_json::json!({ "type": "tool_result", "tool_use_id": "t", "content": long });
+        let json = serde_json::to_value(super::settled(&big).expect("an update")).unwrap();
+        let text = json["content"][0]["content"]["text"].as_str().unwrap();
+        assert!(text.len() < 17 * 1024, "cut, {} bytes", text.len());
+        assert!(text.ends_with(khor_catalog::msg::TOOL_OUTPUT_CUT), "and marked as cut");
+    }
+
     /// **Named one by one, not「every name gets a kind」.** That weaker
     /// sentence is true of a function that answers `Other` to
     /// everything, so it would hold while the feature was gone. These
@@ -810,17 +912,40 @@ fn said(block: &serde_json::Value) -> Option<SessionUpdate> {
         Some("tool_use") => {
             let id = block["id"].as_str().unwrap_or("tool");
             let name = block["name"].as_str().unwrap_or("tool");
-            // **`InProgress`, not the default.** A `ToolCall` built
-            // without a status serialises as `pending`, and claude
-            // announces a `tool_use` when it is about to run the tool,
-            // not when it is queued — so the default would draw a
-            // running tool as one that has not started. The other end
-            // of this pair is `settled`.
-            Some(SessionUpdate::ToolCall(
-                ToolCall::new(id.to_owned(), name.to_owned())
-                    .kind(kind_of(name))
-                    .status(ToolCallStatus::InProgress),
-            ))
+            let input = &block["input"];
+            let mut call = ToolCall::new(id.to_owned(), titled(name, input))
+                .kind(kind_of(name))
+                // **`InProgress`, not the default.** A `ToolCall` built
+                // without a status serialises as `pending`, and claude
+                // announces a `tool_use` when it is about to run the
+                // tool, not when it is queued — so the default would
+                // draw a running tool as one that has not started. The
+                // other end of this pair is `settled`.
+                .status(ToolCallStatus::InProgress)
+                // The whole input, so a face can open a line up and
+                // show what was actually run. The title is a summary
+                // and summaries lose things; this is the thing itself.
+                .raw_input(input.clone());
+            if let Some(path) = input.get("file_path").and_then(|p| p.as_str()) {
+                call = call.locations(vec![ToolCallLocation::new(path)]);
+            }
+            // An edit carries its own before and after, so the protocol
+            // can carry the diff rather than the sentence "a file was
+            // edited". `Edit` is the only claude tool that hands over
+            // both sides; `Write` gives only the new text, which the
+            // protocol accepts (`old_text` is optional) and which reads
+            // correctly as "all of this is new".
+            if let (Some(path), Some(new_text)) = (
+                input.get("file_path").and_then(|p| p.as_str()),
+                input.get("new_string").or_else(|| input.get("content")).and_then(|t| t.as_str()),
+            ) {
+                let mut diff = Diff::new(path, new_text.to_owned());
+                if let Some(old) = input.get("old_string").and_then(|t| t.as_str()) {
+                    diff = diff.old_text(old.to_owned());
+                }
+                call = call.content(vec![ToolCallContent::Diff(diff)]);
+            }
+            Some(SessionUpdate::ToolCall(call))
         }
         _ => None,
     }
@@ -847,10 +972,57 @@ fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
     } else {
         ToolCallStatus::Completed
     };
-    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-        id.to_owned(),
-        ToolCallUpdateFields::new().status(status),
-    )))
+    let mut fields = ToolCallUpdateFields::new().status(status);
+    // **What the tool actually said.** A finished tool used to settle
+    // with nothing but a colour, so「跑完了」and「跑完了,输出是这个」
+    // looked identical — and for a failed one the whole of what a
+    // person needs is the message it failed with.
+    //
+    // claude writes `content` as a string most of the time and as a
+    // list of blocks the rest, so both are read. A tool that returned
+    // nothing gets no content rather than an empty block: an empty
+    // panel that opens onto nothing is worse than no panel.
+    if let Some(text) = result_text(block) {
+        fields = fields.content(vec![ToolCallContent::Content(Content::new(
+            ContentBlock::Text(TextContent::new(text)),
+        ))]);
+    }
+    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(id.to_owned(), fields)))
+}
+
+/// The text a `tool_result` block carries, in either of the two shapes
+/// claude writes it in.
+///
+/// **Bounded at 16 KiB.** A `Read` of a large file comes back whole,
+/// and every byte of it would cross khor's wire, sit in a face's memory
+/// and re-render on every poll — for a panel nobody scrolls to the
+/// bottom of. The cut is marked so a reader knows there was more; an
+/// unmarked truncation is a lie about what the tool returned.
+fn result_text(block: &serde_json::Value) -> Option<String> {
+    const MAX: usize = 16 * 1024;
+    let raw = match block.get("content")? {
+        serde_json::Value::String(t) => t.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.len() <= MAX {
+        return Some(raw.to_owned());
+    }
+    // On a char boundary: `raw` is UTF-8 and slicing mid-codepoint
+    // panics, which for a Chinese-heavy transcript is not a rare case.
+    let mut cut = MAX;
+    while cut > 0 && !raw.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    Some(format!("{}\n… {}", &raw[..cut], msg::TOOL_OUTPUT_CUT))
 }
 
 /// The tokens sitting in the context after a claude `usage` object.
@@ -895,6 +1067,61 @@ fn window_in(f: &serde_json::Value) -> Option<u64> {
 fn cost_in(f: &serde_json::Value) -> Option<Cost> {
     let amount = f.get("total_cost_usd").and_then(serde_json::Value::as_f64)?;
     Some(Cost::new(amount, "USD"))
+}
+
+/// What one line about this tool call should say.
+///
+/// **The bug this exists for: a conversation full of lines reading
+/// `Bash`.** The title used to be the tool's *name*, so twenty shell
+/// commands were twenty identical lines and the one thing a reader
+/// wants — which command — was nowhere on screen.
+///
+/// The keys below are claude's own, read off this machine's transcripts
+/// (2026-08-30) rather than guessed:
+///
+/// | tool | the key carrying the information |
+/// |---|---|
+/// | `Bash`, `Monitor`, `Agent` | `description` — claude writes a short human line itself |
+/// | `Read`, `Edit`, `Write`, `NotebookEdit` | `file_path` |
+/// | `Grep`, `Glob` | `pattern` |
+/// | `WebFetch`, `WebSearch` | `url` / `query` |
+/// | `Skill` | `skill` |
+/// | `Task*`, `ListAgents` | ids or nothing, so the name stands |
+///
+/// **`description` wins wherever it exists**, because it is the agent's
+/// own sentence about what it is doing and no rule written here beats
+/// that. Everything unanticipated falls back to the bare name — the
+/// state this replaces — so a tool nobody thought of is no worse off.
+///
+/// A path shows its last two segments rather than all of them: an
+/// absolute path in a 736-wide column pushes the part that identifies
+/// the file off the end, and the tail is the half a reader recognises.
+fn titled(name: &str, input: &serde_json::Value) -> String {
+    let s = |k: &str| input.get(k).and_then(|v| v.as_str()).filter(|v| !v.trim().is_empty());
+    if let Some(d) = s("description") {
+        return d.to_owned();
+    }
+    let detail = match name {
+        "Read" | "Edit" | "Write" | "NotebookEdit" => s("file_path").map(tail_of),
+        "Grep" | "Glob" => s("pattern").map(str::to_owned),
+        "WebFetch" | "WebSearch" => s("url").or_else(|| s("query")).map(str::to_owned),
+        "Skill" => s("skill").map(str::to_owned),
+        "Bash" | "BashOutput" => s("command").map(str::to_owned),
+        _ => None,
+    };
+    match detail {
+        Some(d) => format!("{name} {d}"),
+        None => name.to_owned(),
+    }
+}
+
+/// The last two segments of a path, which is the part a reader knows.
+fn tail_of(path: &str) -> String {
+    if path.matches('/').count() < 2 {
+        return path.trim_start_matches('/').to_owned();
+    }
+    let parts: Vec<&str> = path.rsplit('/').take(2).collect();
+    format!("{}/{}", parts[1], parts[0])
 }
 
 /// Which of the protocol's tool kinds a claude tool name is.

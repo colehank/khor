@@ -59,6 +59,14 @@
 //      is a claim a page that never rendered satisfies for free — so
 //      the positive row has to find the very thing the negative row
 //      must not.
+//  10b. a tool line says which call it was, and three different calls
+//      paint three different lines. The second half is the complaint —
+//      「大量 bash,不可展开也没有标题」— and a per-line check alone is
+//      satisfied by three correct titles that happen to be identical.
+//  11. a tool line opens onto its diff or its output, and a line with
+//      nothing behind it grows no control at all. Then it is actually
+//      opened and the diff and the output are read back — a title that
+//      claims to open is not the same as one that does.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -106,10 +114,21 @@ const frames = [
       },
     },
   },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_ok", title: "Read src/views/ChatView.tsx", kind: "read", status: "in_progress" } } },
+  // An edit, which carries its own diff — the payload shape khor's
+  // 垫片 builds out of claude's `old_string`/`new_string`.
+  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_ok", title: "Edit src/lib.rs", kind: "edit", status: "in_progress",
+    rawInput: { file_path: "/w/khor/src/lib.rs", old_string: "let x = 1;", new_string: "let x = 2;" },
+    locations: [{ path: "/w/khor/src/lib.rs" }],
+    content: [{ type: "diff", path: "/w/khor/src/lib.rs", oldText: "let x = 1;", newText: "let x = 2;" }] } } },
   { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_ok", status: "completed" } } },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "Bash cargo test -p khor-node", kind: "execute", status: "in_progress" } } },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed" } } },
+  // A failed shell command that said why.
+  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "跑一遍测试", kind: "execute", status: "in_progress",
+    rawInput: { command: "cargo test -p khor-node", description: "跑一遍测试" } } } },
+  { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed",
+    content: [{ type: "content", content: { type: "text", text: "error[E0425]: cannot find value `x`" } }] } } },
+  // A call still running, with nothing behind it — the one line that
+  // must **not** grow a control, because a control onto nothing is
+  // worse than no control.
   { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_run", title: "Grep kind_of", kind: "search", status: "in_progress" } } },
   // Batch 2. `used`/`size` are the shape claude actually puts on the
   // wire (captured 2026-08-30: 32126 tokens against a 1 000 000 window),
@@ -189,6 +208,11 @@ const probe = () => {
       status: el.getAttribute("data-tool-status"),
       kind: el.getAttribute("data-tool-kind"),
       word: el.getAttribute("data-word"),
+      openable: el.getAttribute("data-tool-open"),
+      title: (el.querySelector("[data-word-text]")?.textContent ?? "").trim(),
+      body: !!el.querySelector("[data-tool-body]"),
+      diff: !!el.querySelector("[data-tool-diff]"),
+      out: (el.querySelector("[data-tool-out]")?.textContent ?? "").trim(),
       raw: getComputedStyle(text).color,
       ink: fg ? flatten(fg, groundOf(el)) : null,
       title: (el.textContent ?? "").trim(),
@@ -269,7 +293,7 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion, frames: override, paste = false }) => {
+  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false }) => {
     const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -307,6 +331,14 @@ try {
     await wait(900);
     await page.locator("[data-list] [data-row-open]").nth(0).click();
     await wait(1200);
+    if (openTools) {
+      // **Opened for real, not asserted from a flag.** A line that
+      // wears `data-tool-open=no` is claiming it can open; only
+      // pressing it shows whether anything is behind the claim.
+      const toggles = await page.locator("[data-tool-toggle]").all();
+      for (const t of toggles) await t.click();
+      await wait(400);
+    }
     if (paste) {
       // A real paste event carrying a real PNG. Synthesised rather than
       // driven through the OS clipboard because the OS clipboard is not
@@ -435,8 +467,70 @@ try {
         );
       }
       const kinds = m.lines.map((l) => l.kind).join();
-      if (kinds !== "read,execute,search") {
-        fail(`${say}: kinds reached the DOM as [${kinds}], wanted [read,execute,search]`);
+      if (kinds !== "edit,execute,search") {
+        fail(`${say}: kinds reached the DOM as [${kinds}], wanted [edit,execute,search]`);
+      }
+
+      // 10b) **The line says which call it was.** This is the
+      //      complaint itself: a conversation of lines all reading
+      //      `Bash`. Asserted as the *painted* text and as
+      //      distinctness — the second half is the bug, because three
+      //      correct-but-identical titles satisfy any per-line check.
+      const titles = m.lines.map((l) => l.title);
+      const wantTitles = ["Edit src/lib.rs", "跑一遍测试", "Grep kind_of"];
+      for (const [i, want] of wantTitles.entries()) {
+        if (titles[i] !== want) {
+          fail(`${say}: tool line ${i} reads ${JSON.stringify(titles[i])}, wanted ${JSON.stringify(want)}`);
+        }
+      }
+      if (new Set(titles).size !== titles.length) {
+        fail(
+          `${say}: three different calls painted ${new Set(titles).size} distinct line(s) — ` +
+            `[${titles.join(" | ")}]. This is the bug, not a near miss`,
+        );
+      }
+
+      // 11) **A tool line opens onto what it did — and only when there
+      //     is something there.** The complaint this answers was a
+      //     conversation of identical un-openable lines. Both halves
+      //     are asserted because the negative one ("no control") is
+      //     free for a page that never rendered, and the positive one
+      //     is what proves the probe alive.
+      const [edit, shell, bare] = m.lines;
+      if (edit.openable !== "no") {
+        fail(`${say}: the edit carries a diff and its line is data-tool-open=${edit.openable}`);
+      }
+      if (shell.openable !== "no") {
+        fail(`${say}: the failed command said why and its line is data-tool-open=${shell.openable}`);
+      }
+      if (bare.openable !== null) {
+        fail(
+          `${say}: a call with nothing behind it grew a control (data-tool-open=${bare.openable}) — ` +
+            `a control that opens onto nothing is worse than none`,
+        );
+      }
+      if (m.lines.some((l) => l.body)) {
+        fail(`${say}: a tool line was already open; closed is the default and the reason is the noise`);
+      }
+
+      // …and opened, which is a different claim from openable.
+      const o = await look({ scheme, motion, openTools: true });
+      if (o.errs.length) {
+        fail(`${say}: the page threw while a tool line was opened — ${o.errs[0]}`);
+      } else if (o.lines.length !== 3) {
+        fail(`${say}: probe dead — ${o.lines.length} tool line(s) after opening`);
+      } else {
+        const [oEdit, oShell, oBare] = o.lines;
+        if (!oEdit.diff) {
+          fail(`${say}: the edit was opened and no diff drew`);
+        }
+        if (!oShell.out.includes("E0425")) {
+          fail(`${say}: the failed command was opened and its message is ${JSON.stringify(oShell.out)}`);
+        }
+        if (oBare.body) {
+          fail(`${say}: the line with nothing behind it opened onto something`);
+        }
+        console.log(`${say}: opened — diff ${oEdit.diff}, output ${oShell.out.length} chars`);
       }
 
       // 2) three inks a person can tell apart.
