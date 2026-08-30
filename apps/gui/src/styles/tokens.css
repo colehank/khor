@@ -651,35 +651,47 @@
    * than it reads. Both places that use it put the two classes on one
    * element for that reason.
    *
-   * **40, and the ceiling is a published one.** WCAG 2.x SC 1.4.8
-   * (Visual Presentation, AAA) puts a line at no more than 80 characters
-   * — **40 if CJK**, because a CJK glyph is about twice a Latin
-   * character's width at the same legibility. This app's paragraphs are
-   * mostly CJK, so 40 is the number, and the cap being an em makes it
-   * literally「40 glyphs」rather than a length that approximates one.
+   * **46, transcribed from claude.ai.** Measured 2026-08-30 in a 1580
+   * window: its paragraph column is 736 wide at size 16, which is 46
+   * glyphs of CJK. 46 × 16 = 736 here, to the pixel.
    *
-   * **Tombstone, and the round trip is the point.** This was 32, then 38, then
-   * **44** (`280ad2b`), on the way to 48 — each step chasing「the screen
-   * is not full」and each one further from a standard nobody had looked
-   * up yet. 44 is 10% past the line and 48 is 20% past. It is written
-   * here rather than quietly reverted because the round trip is the
-   * lesson: **a reader's preference is a real signal about a real
-   * problem, and it is not evidence about where the limit is.**
+   * **This version knowingly does not meet WCAG 2.x SC 1.4.8 (AAA),
+   * and the standard stays written down for exactly that reason.** That
+   * SC caps a line at 80 characters — **40 if CJK**, because a CJK
+   * glyph is about twice a Latin character's width at the same
+   * legibility. 46 is 15% past the CJK half; the Latin half is missed
+   * too (below). The reference product misses both as well, at 46 and
+   * 88.3. Deleting the citation and never having looked it up read the
+   * same to the next person, so it is here, with the gap stated.
+   *
+   * **Tombstone, and the round trip is the point.** 32 → 38 → 44
+   * (`280ad2b`, chasing「the screen is not full」) → 40 (`caec6d2`,
+   * pulled back once the standard was looked up) → 46 (here, matching
+   * the reference product the reader actually reads). Two of those
+   * moves were corrections of the move before. The lesson that survives
+   * all of them: **a reader's preference is a real signal about a real
+   * problem, and it is not evidence about where the limit is** — which
+   * is why the standard is still quoted above even though this value
+   * does not satisfy it.
    *
    * **What is still not satisfied, said out loud.** The same SC also
    * caps non-CJK at 80, and with this font stack a Latin character is
-   * 1/2.17 of a CJK one — so 40 glyphs of CJK is **86.8** of Latin, over
-   * that half by seven characters. Both halves hold only at ≤36.9em.
-   * The standard's two numbers were written for text in one script;
-   * these paragraphs run 32–74% CJK, so one of the two has to give and
-   * it is the one for the script this app is not mostly in.
+   * 1/2.17 of a CJK one — so 46 glyphs of CJK is **~100** of Latin.
+   * Both halves hold only at ≤36.9em. The standard's two numbers were
+   * written for text in one script; these paragraphs run 32–74% CJK.
+   *
+   * **And this is where「match it exactly」stops being possible**: the
+   * reference product holds 88.3 Latin characters on the same 46-glyph
+   * line, because its face is a different one (a serif whose Latin runs
+   * wider against the same CJK). The *column* and the *CJK count* are
+   * transcribed; the Latin count cannot be, and no cap makes it so.
    *
    * **The real answer to「the screen is not full」is a different axis**
    * and is not in this batch: the column is 40 glyphs *of the reading
    * size*, so a larger size on a wider window fills more of it with the
    * same 40 glyphs a line. That is a change to `--text-read`, not to
    * this. */
-  --measure: 40em;
+  --measure: 46em;
   --avatar: 32px;
   /* A machine's face on its own card. Its own token rather than a class
    * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`
@@ -1007,26 +1019,42 @@
    * borrowing is what this pair ends. `--text-hero` is the precedent:
    * one size, one job, written down.
    *
-   * 15 rather than 14, which is the shell's base: at the base a turn of
-   * an agent's writing is exactly as loud as a machine's name in a
-   * list, and the whole judgment here is that it should not be. 15
-   * rather than 16, which would leave one pixel between the body of a
-   * conversation and `--text-title`, flattening the shell around it.
+   * **16/24, and both numbers are measured off claude.ai rather than
+   * reasoned to.** 2026-08-30, a real conversation in a 1580 window:
+   * paragraph column 736 wide, size 16, leading 24. The person reading
+   * this app asked for that face, so the three numbers that make it —
+   * this size, this leading and `--measure` — are transcriptions, and
+   * 46 × 16 = 736 lands on it to the pixel.
    *
-   * **The leading is looser than the ~1.45 the scale runs at, and the
-   * departure is the point.** At 1.45 leading is only separating rows;
-   * in prose it has to carry the eye back to the *start* of the next
-   * line, and CJK gives it no help doing so — no x-height, no
-   * ascenders and descenders patterning the line's edge. 26 over 15 is
-   * 1.73.
+   * **Tombstone: this was 15, and the leading was 26 (1.73).** The
+   * argument for the looser leading was not a guess and is not
+   * withdrawn — in prose leading has to carry the eye back to the
+   * *start* of the next line, and CJK gives it no help doing that: no
+   * x-height, no ascenders and descenders patterning the line's edge.
+   * Typesetting practice for CJK body text puts the leading around 1.7,
+   * which is where 1.73 came from and where it sat.
    *
-   * The code size answers to the reading size, not to the scale: mono
-   * reads smaller than sans at equal nominal size, and the usual
-   * .875 of the body puts it here. Below this a fenced block inside a
-   * paragraph is a second, quieter voice rather than the same voice in
-   * another face. */
-  --text-read: 15px;
-  --text-read--line-height: 26px;
+   * **1.5 is tighter than that, it was raised as an objection, and it
+   * is still what shipped.** The objection reached the person reading
+   * the app; they chose to match the reference product whole rather
+   * than keep the one number where this app was arguably ahead of it.
+   * That is a decision, not an oversight, and it is written here so the
+   * next reader does not "fix" it back.
+   *
+   * 15 → 16 also ends the old note about 16 crowding `--text-title`
+   * (17): one pixel between the body of a conversation and the title
+   * above it is now the arrangement, and it holds because the title
+   * carries weight (600) as well as size.
+   *
+   * **The code size did NOT follow, and that is a loose end rather than
+   * a decision.** The rule it was set by is ".875 of the body", which
+   * at 15 gave 13; at 16 the rule gives 14 and this is still 13, i.e.
+   * .81. Nothing measured says which is right — there is no reading of
+   * the reference product's code blocks here — so it is left where it
+   * is and named, rather than moved on the strength of arithmetic
+   * alone. */
+  --text-read: 16px;
+  --text-read--line-height: 24px;
   --text-code: 13px;
   --text-code--line-height: 20px;
 

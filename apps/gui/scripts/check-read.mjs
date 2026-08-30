@@ -86,13 +86,22 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * Chinese characters on a line.
  *
- * **The ceiling is a citation, not a preference.** WCAG 2.x SC 1.4.8
- * (Visual Presentation, AAA) caps a line at 80 characters — **40 if
- * CJK**, on the ground that a CJK glyph is about twice as wide as a
- * Latin character at the same legibility. It was 45 here until
- * 2026-08-30, which is 12% past that, and the value it was guarding had
- * been walked from 32 to 38 to 44 chasing「the screen is not full」
- * before anybody looked the standard up.
+ * **The ceiling is transcribed from claude.ai, measured 2026-08-30**: a
+ * real conversation in a 1580 window has a 736-wide paragraph column at
+ * size 16, which is 46 CJK glyphs. The person reading this app asked
+ * for that face whole, so the number here follows the product it is
+ * matching rather than a rule.
+ *
+ * **It therefore does not satisfy WCAG 2.x SC 1.4.8 (AAA), and that is
+ * recorded rather than removed.** The SC caps a line at 80 characters —
+ * **40 if CJK**, on the ground that a CJK glyph is about twice as wide
+ * as a Latin character at the same legibility. 46 is 15% past it. The
+ * reference product does not satisfy it either (46 CJK / 88.3 Latin).
+ * The ceiling here has been 45, then 40 (when the standard was first
+ * looked up), and now 46; **a gate whose citation gets deleted the
+ * moment the product stops obeying it teaches the next reader that
+ * nobody ever checked** — so the citation stays, above the value that
+ * departs from it.
  *
  * **The floor is not from the standard and is not pretending to be.**
  * Nothing published says a line may not be too *short*, but 32 was
@@ -104,7 +113,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  *
  * **What this deliberately does not assert, and why it is not a hole.**
  * The same SC caps non-CJK at 80, and at the ceiling above a line holds
- * ~87 Latin characters (40 × the 2.17 measured below) — seven over.
+ * ~100 Latin characters (46 × the 2.17 measured below).
  * Both halves hold only at a cap of 36.9em or less. The standard's two
  * numbers were written for text in one script; these paragraphs run
  * 32–74% CJK, so one half has to give and it is the half for the script
@@ -113,7 +122,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  * rather than a gate that gets obeyed — so it is written down here
  * instead, with the arithmetic, where the next person can weigh it.
  */
-const CJK_BAND = [30, 40];
+const CJK_BAND = [30, 46];
 /**
  * **There is no Latin band any more, and removing it is not the same as
  * widening it.**
