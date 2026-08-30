@@ -253,10 +253,20 @@
    * change is hue and nothing else.
    *
    * Measured on all three grounds a word lands on (card / paper /
-   * selected row, the last being the worst): **5.25 / 4.88 / 4.63**,
-   * against 空闲's 4.56 and the four loud ones' 6.28–7.01. Chroma .126,
-   * inside the register the other words live in (.077–.158). */
-  --state-busy: #5864b4;
+   * selected row, the last being the worst): **5.26 / 4.90 / 4.65**,
+   * against 空闲's 4.56 and the four loud ones' 6.28–7.01. ΔL* 8.1.
+   *
+   * **The chroma is at the palette's own ceiling, and getting there was
+   * free.** The first indigo landed at .125 and the person reading the
+   * app said it was hard to tell from the grey it replaced. Chroma is
+   * what that complaint is about — the grey measures .007 — so it was
+   * walked up with everything else held: at .158 the contrast, the ΔL*
+   * and the order are all where they were at .125 (measured at .13,
+   * .14, .15, .158 — the readings move by hundredths). .158 is where it
+   * stops because that is 失败's chroma, the most saturated word this
+   * theme already has; past it this would be introducing a new loudest
+   * colour rather than joining the ones there. */
+  --state-busy: #5560c7;
   --state-blocked: #005a6c;              /* the only cold color */
   --state-done: #425b00;                 /* green = go collect */
   --state-errored: #754f00;
@@ -837,14 +847,25 @@
      * its chroma drops about a fifth and it lands a lighter coral. That
      * is a gamut fact rather than a choice — the alternative was leaving
      * it dimmer than 忙碌, which is the bug. */
-    /* The same hue arrived at from the other side, and the same
-       discipline: placed at **exactly today's loudness** so only the hue
-       changed. Measured card / paper / selected row: **6.90 / 7.52 /
-       5.11**, against 空闲's 4.55 and the four loud ones' 6.62–7.89;
-       ΔL* to that group 8.4, the number it already was. Chroma .116,
-       inside the register (.085–.120 on this theme).
-       The reasoning, and what this replaced, are on the light value. */
-    --state-busy: #8d9eec;
+    /* The same hue from the other side, at the same loudness: card /
+       paper / selected row **6.90 / 7.52 / 5.11**, against 空闲's 4.55
+       and the four loud ones' 6.62–7.89; ΔL* 8.4 — every one of those
+       is the number it was before this word had a hue at all.
+
+       **Chroma .14, and this theme is the one where that is a
+       judgment.** The light theme could climb to its own ceiling for
+       free (失败 is already .158 there); this theme's other words top
+       out at .120, so .14 makes 忙碌 the most saturated word on it by
+       .02. Held to .120 the dark theme would have gained almost nothing
+       from this pass — .116 to .120 — while the complaint that started
+       it was「it does not read apart from the grey」, and grey is .007.
+       Measured, the cost of .14 is zero: contrast and ΔL* are unmoved.
+       The cost starts at .15 (4.97 on a selected row) and by .158 it is
+       4.72, which is why it stops here rather than at the gamut's edge.
+
+       **What .02 of chroma is not**: a rank. Lightness carries whether
+       a word wants you, and this one's lightness did not move. */
+    --state-busy: #8a9cfb;
     --state-blocked: #4fd4f0;
     --state-done: #b6c671;
     --state-errored: #d7b55f;
