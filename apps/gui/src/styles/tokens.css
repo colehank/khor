@@ -1046,17 +1046,38 @@
    * above it is now the arrangement, and it holds because the title
    * carries weight (600) as well as size.
    *
-   * **The code size did NOT follow, and that is a loose end rather than
-   * a decision.** The rule it was set by is ".875 of the body", which
-   * at 15 gave 13; at 16 the rule gives 14 and this is still 13, i.e.
-   * .81. Nothing measured says which is right — there is no reading of
-   * the reference product's code blocks here — so it is left where it
-   * is and named, rather than moved on the strength of arithmetic
-   * alone. */
+   * **The code size followed later, and it is a measurement now, not
+   * the ".875 of the body" rule it used to be.** That rule gave 13 at a
+   * body of 15 and would give 14 at 16; the reference product gives
+   * **.9**, so 14.4. Measured 2026-08-30 in a real conversation: every
+   * one of its 16 inline `code` runs came back at 14.4px against a
+   * 16px body, with no spread to average away.
+   *
+   * **The block half of this token is extrapolated, and the difference
+   * matters.** One token dresses three things here — a fenced block, an
+   * inline run, and the tool line in `ChatView` — and the conversation
+   * that was measured contained **no fenced block at all** (`pre code`
+   * came back empty). An empty result reads like "they have no separate
+   * block size", and it is not that reading: it is "this conversation
+   * had none". So the inline number is transcribed and the block number
+   * is the same number *assumed*, which is a weaker claim wearing the
+   * same digits.
+   *
+   * **What would settle it** is one reading of a reference conversation
+   * that actually contains a fenced block. Until then, a future reader
+   * who finds blocks want their own size should split this token rather
+   * than re-derive it — the two halves have different evidence behind
+   * them and only one of them is a transcription.
+   *
+   * The leading is 1.5, the same ratio prose runs at above (24/16), so
+   * that a code line and a prose line sit on the same rhythm when they
+   * alternate. It is not measured: the reference's inline leading is
+   * 14.4 — a 1.0 that says only "inline leading does not lay anything
+   * out", which is true of ours too and answers nothing about blocks. */
   --text-read: 16px;
   --text-read--line-height: 24px;
-  --text-code: 13px;
-  --text-code--line-height: 20px;
+  --text-code: 14.4px;
+  --text-code--line-height: 21.6px;
 
   /* ── ink weights ─────────────────────────────────────
    * Three pressures of the same pen, named for what a line *does* —
