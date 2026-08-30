@@ -1,8 +1,10 @@
 /* The one table every screen draws from — shadcn/ui's standard variable
  * scheme carrying mandala's palette (tokens repo, styles.css): warm
  * paper / warm near-black, the liquid-green brand family, and its state
- * doctrine — busy takes no hue (it breathes), green belongs to done,
- * blocked is the app's only cold color, red sinks with failed.
+ * doctrine — green belongs to done, blocked is the app's only cold
+ * color, red sinks with failed. (This line said "busy takes no hue (it
+ * breathes)" until 2026-08-30; 忙碌 has a hue now and the reasoning is
+ * on the token.)
  *
  * ── what the brand green is for, and what it is not ──────────
  *
@@ -223,7 +225,38 @@
    * invitation: the red proof in 批⑨b simulated exactly this edit — one
    * word nudged past its neighbour to tidy the ramp — and the gate
    * catches it, but the gate cannot explain why it is red. This can. */
-  --state-busy: var(--muted-foreground); /* no hue; it breathes */
+  /* 忙碌, indigo since 2026-08-30.
+   *
+   * **Tombstone: it said `var(--muted-foreground)` here, with the note
+   * "no hue; it breathes".** The argument was that a word which asks for
+   * nothing needs no colour of its own, and that the breath is what
+   * tells it from 空闲. Both halves were true and the conclusion still
+   * came out wrong: the other five words are found by hue, so the one
+   * word without one is the one word a person has to identify by
+   * elimination — and it is the word this app shows most. The user asked
+   * for it, saw the alternatives side by side, and chose the indigo.
+   *
+   * **The hue is the empty slot.** H≈275 in OKLCH, 57° from 待批 (218)
+   * and 92° from 完成 — the widest gap this palette has. Yellow (16°
+   * from 中断), orange (between 失败 and 中断) and green (11° from 完成)
+   * were the alternatives and all three collide.
+   *
+   * **The lightness is the part that is easy to get wrong, and it did
+   * not move.** In this palette hue says *which word* and lightness says
+   * *whether it wants you* — and 忙碌 is the one word that explicitly
+   * says「I am working, I need nothing」, so it has to stay in the quiet
+   * band with 空闲. The value proposed was `#505ba7`, which is the right
+   * hue at the wrong lightness: measured, it put 忙碌 at ΔL* 4.5 from
+   * the four that call you, under the 8 this file's own doctrine
+   * requires, and `check-palette` goes red on it. This one is placed at
+   * **exactly today's loudness** — 4.63 at worst, ΔL* 8.2 — so the
+   * change is hue and nothing else.
+   *
+   * Measured on all three grounds a word lands on (card / paper /
+   * selected row, the last being the worst): **5.25 / 4.88 / 4.63**,
+   * against 空闲's 4.56 and the four loud ones' 6.28–7.01. Chroma .126,
+   * inside the register the other words live in (.077–.158). */
+  --state-busy: #5864b4;
   --state-blocked: #005a6c;              /* the only cold color */
   --state-done: #425b00;                 /* green = go collect */
   --state-errored: #754f00;
@@ -718,14 +751,20 @@
     --secondary: rgba(244, 244, 239, 0.07);
     --secondary-foreground: rgba(238, 238, 231, 0.72);
     --muted: rgba(244, 244, 239, 0.07);
-    /* .60, up from .55 — and **this move was forced by the six words,
-       not chosen for secondary text.** 忙碌 *is* this token, so it sets
-       the ceiling 空闲 has to sit under; at .55 that ceiling measured
-       4.55 while the floor a word answers to is 4.5, leaving 空闲 a
-       window of five hundredths — arithmetic room, no visible room. At
-       .60 (5.11) there is somewhere for the quietest word to be quiet.
-       Secondary text on this theme reads better for the same reason it
-       had to move: it was sitting on the floor too. */
+    /* .60, up from .55.
+       **Tombstone: the reason this number is .60 expired on 2026-08-30.**
+       It read「this move was forced by the six words, not chosen for
+       secondary text: 忙碌 *is* this token, so it sets the ceiling 空闲
+       has to sit under」— and that stopped being true the moment 忙碌
+       got a colour of its own (`--state-busy` above). This token no
+       longer sets any word's ceiling.
+       What holds it at .60 now is the second half of that old note,
+       which was true on its own: secondary text on this theme was
+       sitting on the floor at .55. **Whether .55 is available again is
+       an open question and was not asked here** — the words that used to
+       depend on it no longer do, but every piece of secondary text in
+       the app does, and that is a different measurement from the one
+       that set this. */
     --muted-foreground: rgba(238, 238, 231, 0.6);
     /* 12.23 against this theme's ground, against the light theme's
        12.07 — the pair is the point, and the reasoning is on the light
@@ -778,7 +817,14 @@
      * its chroma drops about a fifth and it lands a lighter coral. That
      * is a gamut fact rather than a choice — the alternative was leaving
      * it dimmer than 忙碌, which is the bug. */
-    --state-busy: var(--muted-foreground);
+    /* The same hue arrived at from the other side, and the same
+       discipline: placed at **exactly today's loudness** so only the hue
+       changed. Measured card / paper / selected row: **6.90 / 7.52 /
+       5.11**, against 空闲's 4.55 and the four loud ones' 6.62–7.89;
+       ΔL* to that group 8.4, the number it already was. Chroma .116,
+       inside the register (.085–.120 on this theme).
+       The reasoning, and what this replaced, are on the light value. */
+    --state-busy: #8d9eec;
     --state-blocked: #4fd4f0;
     --state-done: #b6c671;
     --state-errored: #d7b55f;

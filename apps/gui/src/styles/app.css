@@ -306,7 +306,30 @@ input[type="search"]::-webkit-search-decoration {
     0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-color);
 }
 
-/* Busy takes no hue — it breathes (mandala's state doctrine). */
+/* The breath, and why it outlived the argument that put it here.
+ *
+ * **Tombstone: this comment read「Busy takes no hue — it breathes」.**
+ * That was the whole justification: 忙碌 had no colour, so it needed
+ * some other channel to be told apart from 空闲, and motion was it.
+ * On 2026-08-30 忙碌 was given a hue (`tokens.css`, `--state-busy`), and
+ * the premise is gone.
+ *
+ * **It stays, on a different reason.** Hue answers「which word」; the
+ * breath answers something no colour can — **that this is happening
+ * right now**. A session that is 忙碌 has a process running in it, and
+ * that is the one fact on this screen with a tense. The other five words
+ * describe a state that will sit there until something changes; this one
+ * is the only one where the thing is in motion while you look at it.
+ *
+ * **What it is not**: a second way of saying which word. If the hue ever
+ * failed to arrive, the breath would not rescue the identification — a
+ * moving grey word is not「忙碌」, it is「some word, moving」. The colour
+ * carries identity alone, which is why `check-palette` asserts the hue
+ * and not this.
+ *
+ * The reduced-motion guard below already leaves the word standing still
+ * and legible, and that was true before this change and stays true: the
+ * breath is never load-bearing. */
 @keyframes breath {
   0%,
   100% {

@@ -112,6 +112,50 @@ const GROUP_GAP = 8.0;
  */
 const ORDER = ["idle", "busy", "errored", "done", "blocked", "failed"];
 
+/**
+ * The words a person finds by *colour*. 空闲 is the one that is not one
+ * of these: nothing is happening, and a neutral is the honest picture of
+ * that.
+ *
+ * 忙碌 joined this list on 2026-08-30. Before that it was the app's
+ * neutral and this rule had a written exception — which meant the most
+ * frequently shown word of the six was the one you had to identify by
+ * ruling the others out.
+ */
+const HUED = ["busy", "blocked", "done", "errored", "failed"];
+/**
+ * Where a colour stops being a colour. The five above measure .077–.158
+ * (light) and .085–.120 (dark); the app's neutrals measure .007. There
+ * is nothing in between to argue about, so the floor sits where the two
+ * populations are furthest apart rather than at a threshold anybody
+ * would have to defend.
+ */
+const CHROMA_FLOOR = 0.05;
+/**
+ * How far apart two of them have to be. The tight pair is 完成/中断 at
+ * 30° on the dark theme and predates this claim — the floor is under
+ * that on purpose, so this gate reports the rule it was written for
+ * (忙碌's slot, 57° from its nearest neighbour) rather than an old pair
+ * nobody was asked to move.
+ */
+const HUE_APART = 25;
+
+/** OKLCH of an already-composited colour — the space this palette's own
+    decisions are made in (`tokens.css`, the six words). */
+function oklch(rgb) {
+  const f = (c) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const [R, G, B] = rgb.map(f);
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+  const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+  const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const b = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return { c: Math.hypot(a, b), h: (Math.atan2(b, a) * 180) / Math.PI + (b < 0 ? 360 : 0) };
+}
+
 /** CIE L* of an already-composited colour. */
 function lstar(rgb) {
   const y = luminance(rgb);
@@ -312,6 +356,65 @@ try {
     const order = [...readings].sort((a, b) => a.worst - b.worst).map((r) => r.word);
     if (order.join() !== ORDER.join()) {
       fail(`${scheme}: the six words read ${order.join(" < ")}, not ${ORDER.join(" < ")}`);
+    }
+
+    // ── hue is what says *which* word ─────────────────────────────
+    //
+    // The lightness claims above hold the two groups apart — whether a
+    // word wants you. Nothing above holds the other axis, and until
+    // 2026-08-30 nothing had to: 忙碌 was the app's neutral, so「five
+    // words are found by hue」was five-sixths of a rule with a written
+    // exception. It has a hue now, and the exception is gone.
+    //
+    // **What this catches that nothing else does: 忙碌 going back to
+    // grey.** Every claim above stays green through that — a neutral
+    // passes the floor, keeps its place in the order, and sits in the
+    // quiet band. The word simply stops being findable except by
+    // elimination, and no number moves.
+    const chromas = Object.fromEntries(
+      [...HUED, ...QUIET.filter((w) => w !== "busy")].map((w) => [
+        w,
+        oklch(flatten(parse(t.words[w]), rgb(t.card))),
+      ]),
+    );
+    console.log(
+      `${scheme}: hues ${HUED.map((w) => `${w} ${chromas[w].h.toFixed(0)}°/C${chromas[w].c.toFixed(3)}`).join(", ")}`,
+    );
+    // The probe, and it is the one this claim cannot do without: if the
+    // chroma reading cannot tell the app's neutral apart from its
+    // colours, then「all five carry a hue」is a sentence about a
+    // function that answers the same thing to everything.
+    if (!(chromas.idle.c < CHROMA_FLOOR)) {
+      fail(
+        `${scheme}: probe dead — 空闲 measures chroma ${chromas.idle.c.toFixed(3)}, at or above the ` +
+          `${CHROMA_FLOOR} floor meant to separate a neutral from a colour, so the hue claim below ` +
+          `cannot tell them apart either`,
+      );
+    } else {
+      for (const w of HUED) {
+        if (chromas[w].c < CHROMA_FLOOR) {
+          fail(
+            `${scheme}: ${w} carries chroma ${chromas[w].c.toFixed(3)}, under ${CHROMA_FLOOR} — it is a ` +
+              `neutral, and a word without a hue is a word found by elimination`,
+          );
+        }
+      }
+      // And no two of them close enough to be mistaken. The tight pair
+      // is 完成/中断 at 30° on the dark theme, which predates this and is
+      // why the floor is 25 rather than the 48 the light theme happens
+      // to have.
+      for (let i = 0; i < HUED.length; i++) {
+        for (let j = i + 1; j < HUED.length; j++) {
+          const d = Math.abs(chromas[HUED[i]].h - chromas[HUED[j]].h);
+          const apart = Math.min(d, 360 - d);
+          if (apart < HUE_APART) {
+            fail(
+              `${scheme}: ${HUED[i]} and ${HUED[j]} sit ${apart.toFixed(0)}° apart in hue, under ` +
+                `${HUE_APART}° — hue is the only thing saying which word this is`,
+            );
+          }
+        }
+      }
     }
 
     // The one post green kept that still touches text: the word 完成,
