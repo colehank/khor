@@ -134,7 +134,17 @@ pub fn answer(
                     .collect(),
                 _ => Vec::new(),
             };
-            crate::chat::chat_say_with(&arg("id")?, &arg("text")?, images)?;
+            let files: Vec<(String, String)> = match args.get("files") {
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(|p| {
+                        let pair = p.as_array()?;
+                        Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            crate::chat::chat_say_with(&arg("id")?, &arg("text")?, images, files)?;
             Ok("null".to_owned())
         }
         "chat_answer" => {

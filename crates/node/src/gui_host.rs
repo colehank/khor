@@ -105,7 +105,19 @@ pub enum GuiOp {
     /// because the face that has the image may be on another machine
     /// entirely — a web face on a phone pasting a screenshot has no
     /// path this host could open.
-    SayWith { text: String, images: Vec<(String, String)> },
+    /// `images` are `(mime, base64)`; `files` are `(name, text)` and
+    /// ride as the protocol's embedded resources.
+    ///
+    /// **Both lists on the one variant, and it never grows a third**:
+    /// this frame is positional msgpack, so the shape it ships with is
+    /// the shape it keeps. Anything else attachable later gets its own
+    /// variant at the tail, which fails loudly on an old host instead
+    /// of being misread as this one.
+    SayWith {
+        text: String,
+        images: Vec<(String, String)>,
+        files: Vec<(String, String)>,
+    },
 }
 
 /// What the host tells every connected face.
@@ -600,9 +612,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     // things that have each been got wrong once already
                     // and must not exist twice.
                     Some((who, op @ (GuiOp::Say(_) | GuiOp::SayWith { .. }))) => {
-                        let (text, images) = match op {
-                            GuiOp::Say(t) => (t, Vec::new()),
-                            GuiOp::SayWith { text, images } => (text, images),
+                        let (text, images, files) = match op {
+                            GuiOp::Say(t) => (t, Vec::new(), Vec::new()),
+                            GuiOp::SayWith { text, images, files } => (text, images, files),
                             _ => unreachable!("the pattern above admits nothing else"),
                         };
                         if in_turn.is_some() {
@@ -623,7 +635,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         let turn_tx = turn_tx.clone();
                         in_turn = Some(tokio::spawn(async move {
                             let out = handle
-                                .prompt_with(&text, &images)
+                                .prompt_with(&text, &images, &files)
                                 .await
                                 .map(|stop| format!("{stop:?}"));
                             let _ = turn_tx.send(out);

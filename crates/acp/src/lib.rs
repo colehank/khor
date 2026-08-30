@@ -58,10 +58,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, ImageContent, InitializeRequest, LoadSessionRequest,
-    NewSessionRequest, PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    CancelNotification, ContentBlock, EmbeddedResource, EmbeddedResourceResource, ImageContent,
+    InitializeRequest, LoadSessionRequest, NewSessionRequest, PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    StopReason, TextContent,
+    StopReason, TextContent, TextResourceContents,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo, ErrorCode};
@@ -220,7 +220,7 @@ impl Handle {
     /// One turn: send the text, resolve when the agent finishes it.
     /// Updates stream through [`Event::Note`] while this is pending.
     pub async fn prompt(&self, text: &str) -> Result<StopReason, String> {
-        self.prompt_with(text, &[]).await
+        self.prompt_with(text, &[], &[]).await
     }
 
     /// The same turn, with images riding along.
@@ -240,12 +240,30 @@ impl Handle {
         &self,
         text: &str,
         images: &[(String, String)],
+        files: &[(String, String)],
     ) -> Result<StopReason, String> {
         let mut blocks = vec![ContentBlock::Text(TextContent::new(text.to_owned()))];
         for (mime, data) in images {
             blocks.push(ContentBlock::Image(ImageContent::new(
                 data.clone(),
                 mime.clone(),
+            )));
+        }
+        // `(name, text)` as an embedded resource, which is what the
+        // protocol calls a file riding along with the question rather
+        // than a path the agent is told to go and read.
+        //
+        // **The difference is not cosmetic on this product.** khor is a
+        // mesh: the face holding the file may be a phone, and a path
+        // means nothing to an agent on another machine. Carrying the
+        // contents is the only version of "here, look at this" that
+        // works across the net khor exists to be.
+        for (name, body) in files {
+            blocks.push(ContentBlock::Resource(EmbeddedResource::new(
+                EmbeddedResourceResource::TextResourceContents(TextResourceContents::new(
+                    body.clone(),
+                    format!("file://{name}"),
+                )),
             )));
         }
         let request = PromptRequest::new(self.session.clone(), blocks);

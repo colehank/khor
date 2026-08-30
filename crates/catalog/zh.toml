@@ -1197,6 +1197,11 @@ chat-diff-after = "改后"
 # a pasted screenshot has no filename, and「截图 1」是它在这一刻唯一
 # 诚实的身份。
 chat-image = "图 {0}"
+# One attached file, waiting to be sent. 用文件自己的名字,不编号——
+# 它有名字,而图没有,这就是两者该长得不一样的地方。
+chat-file = "{0}"
+# The file was too big. 同样带两个数,理由和图片那条一样。
+chat-file-too-big = "{0} 有 {1}KB,超过 {2}KB 发不出去"
 # The image was too big to send. **带上两个数**——一句「太大了」会让人
 # 反复试;知道多大和上限多少,一次就够。
 chat-image-too-big = "这张图 {0}MB,超过 {1}MB 发不出去"

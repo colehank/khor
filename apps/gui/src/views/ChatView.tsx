@@ -606,6 +606,8 @@ export function ChatView({
   /** Images attached to the line being written, as `[mime, base64]`.
       Cleared by sending, like the text beside them. */
   const [shots, setShots] = useState<[string, string][]>([]);
+  /** Files attached to the line being written, as `[name, text]`. */
+  const [docs, setDocs] = useState<[string, string][]>([]);
   /** Why the last paste did not attach, if it did not. */
   const [shotErr, setShotErr] = useState<string | null>(null);
   /** Which tool lines are open. **Closed by default and per line**: a
@@ -627,6 +629,8 @@ export function ChatView({
     needsLogin: boolean;
     /** The gate on attaching a picture at all. */
     images: boolean;
+    /** The gate on attaching a file's contents. */
+    embeds: boolean;
   } | null>(null);
   const [text, setText] = useState("");
   /** Which line of the "/" menu is under the keyboard. */
@@ -715,7 +719,12 @@ export function ChatView({
             if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
             for (const f of batch.frames) {
               if (f.kind === "agent") {
-                setFacts({ replays: f.replays, needsLogin: f.needs_login, images: f.images });
+                setFacts({
+                  replays: f.replays,
+                  needsLogin: f.needs_login,
+                  images: f.images,
+                  embeds: f.embeds,
+                });
               }
             }
             // A refused line never reached the agent, so this face is
@@ -865,16 +874,43 @@ export function ChatView({
    * `facts` being `null` (the handshake has not landed yet) also
    * refuses — an unknown capability is not a yes.
    */
+  /** How large one attached file may be, as source text. */
+  const DOC_MAX = 256 * 1024;
+
   const takeShot = async (e: React.ClipboardEvent) => {
-    if (!facts?.images) return;
-    const files = [...e.clipboardData.items]
-      .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
-      .map((i) => i.getAsFile())
-      .filter((f): f is File => f !== null);
-    if (files.length === 0) return;
-    // Only once something image-shaped is actually in hand: a paste of
-    // plain text must still reach the box.
+    // **Two capabilities on one affordance, each gating only its own
+    // kind.** An agent that takes pictures but not files must accept
+    // the picture and leave the file alone — one combined gate would
+    // make each capability answer for the other.
+    const wanted = [...e.clipboardData.items].filter((i) => i.kind === "file");
+    const pics = facts?.images
+      ? wanted.filter((i) => i.type.startsWith("image/")).map((i) => i.getAsFile())
+      : [];
+    const texts = facts?.embeds
+      ? wanted
+          .filter((i) => !i.type.startsWith("image/"))
+          .map((i) => i.getAsFile())
+          .filter((f): f is File => f !== null && looksTextual(f))
+      : [];
+    if (pics.length === 0 && texts.length === 0) return;
+    const files = pics.filter((f): f is File => f !== null);
     e.preventDefault();
+    for (const f of texts) {
+      if (f.size > DOC_MAX) {
+        setShotErr(
+          gui.chat_file_too_big(
+            f.name,
+            String(Math.round(f.size / 1024)),
+            String(DOC_MAX / 1024),
+          ),
+        );
+        continue;
+      }
+      const body = await f.text();
+      setShotErr(null);
+      setDocs((now) => [...now, [f.name, body]]);
+    }
+    if (files.length === 0) return;
     for (const f of files) {
       if (f.size > SHOT_MAX) {
         setShotErr(
@@ -898,13 +934,35 @@ export function ChatView({
     }
   };
 
+  /**
+   * Whether a dropped file is text this face can read.
+   *
+   * **By type, and by a short allow-list of extensions when the type is
+   * empty.** The OS reports no MIME for plenty of ordinary source files
+   * (`.rs`, `.toml`, `.mjs` all come through blank here), so type alone
+   * would refuse exactly the files a coding agent is for. Guessing
+   * *wider* than this is the failure to avoid: reading a binary as text
+   * produces a wall of replacement characters that costs a turn to
+   * discover.
+   */
+  const looksTextual = (f: File): boolean => {
+    if (f.type.startsWith("text/")) return true;
+    if (["application/json", "application/xml", "application/x-yaml"].includes(f.type)) return true;
+    if (f.type !== "") return false;
+    return /\.(rs|ts|tsx|js|mjs|jsx|py|go|java|rb|sh|zsh|toml|yaml|yml|json|md|txt|css|html|sql|c|h|cpp|hpp|swift|kt)$/i.test(
+      f.name,
+    );
+  };
+
   const say = () => {
     const line = text.trim();
     if (!line || inTurn || gone) return;
     setText("");
     setInTurn(true);
     const carried = shots;
+    const carriedDocs = docs;
     setShots([]);
+    setDocs([]);
     setShotErr(null);
     // Painted first-hand, at the end of the live half (module head).
     // It used to be pinned to a count of live frames and slotted back
@@ -917,7 +975,7 @@ export function ChatView({
     // it back is the difference between "it did not go in" and "it did
     // not go in and you get to type it again".
     sent.current = line;
-    chatSay(id, line, carried).catch(() => setInTurn(false));
+    chatSay(id, line, carried, carriedDocs).catch(() => setInTurn(false));
   };
 
   // The "/" menu: the agent's own commands, filtered by what has been
@@ -1425,7 +1483,7 @@ export function ChatView({
               Each one can be taken back off — the picture is still on
               the clipboard, so this undoes the attaching and not the
               having. */}
-          {(shots.length > 0 || shotErr) && (
+          {(shots.length > 0 || docs.length > 0 || shotErr) && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-xs">
               {shots.map(([, data], i) => (
                 <span
@@ -1443,6 +1501,23 @@ export function ChatView({
                     ×
                   </button>
                   <span className="sr-only">{data.length}</span>
+                </span>
+              ))}
+              {docs.map(([name], i) => (
+                <span
+                  key={`d${i}`}
+                  data-chat-doc
+                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-muted-foreground"
+                >
+                  {gui.chat_file(name)}
+                  <button
+                    data-chat-doc-drop
+                    aria-label={gui.remove}
+                    className="min-h-touch min-w-touch px-1 pointer-fine:min-h-0 pointer-fine:min-w-0"
+                    onClick={() => setDocs((now) => now.filter((_, k) => k !== i))}
+                  >
+                    ×
+                  </button>
                 </span>
               ))}
               {shotErr && (

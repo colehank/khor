@@ -45,7 +45,7 @@ use agent_client_protocol::schema::v1::{
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
     PromptCapabilities, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
     SessionNotification,
-    Content, Cost, CurrentModeUpdate, Diff, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
+    Content, Cost, CurrentModeUpdate, Diff, EmbeddedResourceResource, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
     ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
@@ -143,7 +143,13 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                                 // face offers the control and the turn
                                 // fails with the picture already sent.
                                 .prompt_capabilities(
-                                    PromptCapabilities::new().image(true),
+                                    PromptCapabilities::new()
+                                        .image(true)
+                                        // A file rides along as text —
+                                        // see the prompt handler for
+                                        // the translation and why it is
+                                        // written down.
+                                        .embedded_context(true),
                                 ),
                         ),
                 )
@@ -184,6 +190,36 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         _ => None,
                     })
                     .collect();
+                // **A translation, not a passthrough — say so.** The
+                // protocol has an embedded resource; claude's
+                // stream-json has `text`, `image`, `tool_result` and
+                // `document`, and nothing shaped like a named file of
+                // text. So it is inlined as text, fenced and labelled
+                // with its uri, which is what a person pasting a file
+                // into a chat does by hand anyway.
+                //
+                // Written out rather than done quietly because the
+                // fence is *this shim's invention*: an agent reading it
+                // sees markup khor chose, and the next person to wonder
+                // where it came from should find the answer here.
+                let files: Vec<String> = prompt
+                    .prompt
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Resource(r) => match &r.resource {
+                            EmbeddedResourceResource::TextResourceContents(t) => {
+                                Some(format!("<file uri=\"{}\">\n{}\n</file>", t.uri, t.text))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect();
+                let text = if files.is_empty() {
+                    text
+                } else {
+                    format!("{}\n\n{}", files.join("\n\n"), text)
+                };
                 let (tx, rx) = oneshot::channel::<StopReason>();
                 {
                     let mut turn = s_prompt.turn.lock().unwrap();

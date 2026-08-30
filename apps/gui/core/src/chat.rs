@@ -305,10 +305,11 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
 
 /// One user turn.
 pub fn chat_say(id: &str, text: &str) -> Result<(), String> {
-    chat_say_with(id, text, Vec::new())
+    chat_say_with(id, text, Vec::new(), Vec::new())
 }
 
-/// One user turn with images attached, as `(mime, base64)` pairs.
+/// One user turn with things attached: images as `(mime, base64)`,
+/// files as `(name, text)`.
 ///
 /// **A different op on the wire, not a longer one** — `GuiOp` is
 /// positional msgpack, so `Say` keeps its shape forever and
@@ -324,10 +325,11 @@ pub fn chat_say_with(
     id: &str,
     text: &str,
     images: Vec<(String, String)>,
+    files: Vec<(String, String)>,
 ) -> Result<(), String> {
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::SayWith { text: text.to_owned(), images })
+    write_frame(&mut *conn, &GuiOp::SayWith { text: text.to_owned(), images, files })
 }
 
 /// The answer to an [`ChatFrame::Ask`]: the chosen option id, or `None`

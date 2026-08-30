@@ -308,8 +308,18 @@ export const chatPoll = (id: string, since: number) =>
     non-empty when the agent said it takes them (`ChatFrame::Agent`'s
     `images`) — the host puts them on a different op (`GuiOp::SayWith`),
     so an empty list costs the old frame exactly nothing. */
-export const chatSay = (id: string, text: string, images: [string, string][] = []) =>
-  call<null>("chat_say", images.length ? { id, text, images } : { id, text });
+export const chatSay = (
+  id: string,
+  text: string,
+  images: [string, string][] = [],
+  files: [string, string][] = [],
+) =>
+  call<null>("chat_say", {
+    id,
+    text,
+    ...(images.length ? { images } : {}),
+    ...(files.length ? { files } : {}),
+  });
 export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });

@@ -54,8 +54,10 @@
 //      has 128 entries and nothing todo-shaped; an earlier note in this
 //      repo said the plan would come from a `TodoWrite` tool, and there
 //      is no such tool.
-//  10. an image pastes into the composer **only when the agent said it
-//      takes images**. Both directions, because "no attach affordance"
+//  10. an image and a file paste into the composer **only when the
+//      agent said it takes each kind** — asserted against each other in
+//      one paste, because separate runs let each capability answer for
+//      the other. Both directions, because "no attach affordance"
 //      is a claim a page that never rendered satisfies for free — so
 //      the positive row has to find the very thing the negative row
 //      must not.
@@ -260,11 +262,12 @@ const probe = () => {
   const title = document.querySelector("[data-chat-title]");
   const modeEl = document.querySelector("[data-chat-mode]");
   const shots = document.querySelectorAll("[data-chat-shot]").length;
+  const docs = document.querySelectorAll("[data-chat-doc]").length;
   const hasInput = !!document.querySelector("[data-chat-input]");
   return {
     lines, failedToken, paragraphs, usage,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
-    plan: planRows, shots, hasInput,
+    plan: planRows, shots, docs, hasInput,
     mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
@@ -299,7 +302,7 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false }) => {
+  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false }) => {
     const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -326,6 +329,19 @@ try {
     await page.route("**/web_pins", json([]));
     await page.route("**/recents", json([]));
     await page.route("**/chat_open", json(true));
+    // What the face actually put on the wire when 发送 was pressed.
+    // **Attaching and sending are two claims**: a chip on screen and a
+    // frame carrying the file are different facts, and the first is
+    // satisfied by a send path that drops the second.
+    const sent = [];
+    await page.route("**/chat_say", (r) => {
+      try {
+        sent.push(JSON.parse(r.request().postData() ?? "{}"));
+      } catch {
+        sent.push(null);
+      }
+      r.fulfill({ contentType: "application/json", body: "null" });
+    });
     let served = false;
     await page.route("**/chat_poll", (r) => {
       const body = served ? { frames: [], next: 4, gone: false, lost: false }
@@ -356,16 +372,26 @@ try {
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
         ), (c) => c.charCodeAt(0));
         const file = new File([png], "shot.png", { type: "image/png" });
+        // A source file with **no MIME type**, which is what the OS
+        // reports for `.rs` here — the case a type-only test would
+        // wrongly pass by never exercising.
+        const doc = new File(["fn main() {}\n"], "main.rs", { type: "" });
         const dt = new DataTransfer();
         dt.items.add(file);
+        dt.items.add(doc);
         const box = document.querySelector("[data-chat-input]");
         box?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
       });
       await wait(600);
     }
     const out = await page.evaluate(probe);
+    if (send) {
+      await page.locator("[data-chat-input]").fill("看看这个");
+      await page.locator("[data-chat-send]").click();
+      await wait(500);
+    }
     await ctx.close();
-    return { ...out, errs, scheme, motion };
+    return { ...out, errs, scheme, motion, sent };
   };
 
   const WANT = ["completed", "failed", "in_progress"];
@@ -456,30 +482,60 @@ try {
   // run showed the difference between `!facts?.images` and
   // `facts && !facts.images` changing nothing — because every fixture
   // handed the face an agent frame first, so "unknown" never happened.
-  for (const [label, agentFrame, wantPaste] of [
-    ["takes images", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true],
-    ["takes none", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false],
-    ["not said yet", null, false],
+  //
+  // **The two capabilities are asserted against each other**, not each
+  // on its own: a single paste carries one image and one file, and an
+  // agent that takes only pictures has to take the picture *and* leave
+  // the file. One combined gate would let each capability answer for
+  // the other, and the run would look identical.
+  for (const [label, agentFrame, wantPaste, wantDoc] of [
+    ["images only", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true, false],
+    ["files only", { kind: "agent", name: "reg", replays: true, images: false, embeds: true, lists: false, needs_login: false }, false, true],
+    ["both", { kind: "agent", name: "reg", replays: true, images: true, embeds: true, lists: false, needs_login: false }, true, true],
+    ["neither", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false, false],
+    ["not said yet", null, false, false],
   ]) {
     const m = await look({
       scheme: "dark",
       motion: "no-preference",
       frames: agentFrame ? [agentFrame, { kind: "history_end" }] : [{ kind: "history_end" }],
       paste: true,
+      send: true,
     });
     if (m.errs.length) fail(`images/${label}: the page threw — ${m.errs[0]}`);
     if (!m.hasInput) {
       fail(`images/${label}: probe dead — the composer never drew, so nothing below means anything`);
       continue;
     }
-    const attached = m.shots > 0;
-    if (attached !== wantPaste) {
+    const okPic = m.shots > 0 === wantPaste;
+    const okDoc = m.docs > 0 === wantDoc;
+    if (!okPic || !okDoc) {
       fail(
-        `images/${label}: pasting an image attached ${m.shots} — this agent must ` +
-          `${wantPaste ? "take" : "refuse"} it`,
+        `attach/${label}: one paste of an image and a file attached ` +
+          `${m.shots} image(s) and ${m.docs} file(s); wanted ` +
+          `${wantPaste ? 1 : 0} and ${wantDoc ? 1 : 0}`,
       );
     } else {
-      console.log(`images · ${label}: pasted → ${m.shots} attached`);
+      // …and what was on screen is what went. A chip that never
+      // reaches the frame is the same bug as one that never drew,
+      // arriving later and harder to see.
+      const body = m.sent[0];
+      if (!body) {
+        fail(`attach/${label}: 发送 was pressed and no chat_say went out`);
+      } else {
+        const gotPic = (body.images ?? []).length;
+        const gotDoc = (body.files ?? []).length;
+        if (gotPic !== (wantPaste ? 1 : 0) || gotDoc !== (wantDoc ? 1 : 0)) {
+          fail(
+            `attach/${label}: the frame carried ${gotPic} image(s) and ${gotDoc} file(s), ` +
+              `while the screen showed ${m.shots} and ${m.docs}`,
+          );
+        } else {
+          console.log(
+            `attach · ${label}: ${m.shots} image(s), ${m.docs} file(s) — and the frame carried the same`,
+          );
+        }
+      }
     }
   }
 
