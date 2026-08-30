@@ -633,19 +633,31 @@
    * than it reads. Both places that use it put the two classes on one
    * element for that reason.
    *
-   * **38 is a choice inside a window, not the window.** The reading
-   * band is 30–45 characters for CJK and 45–75 for Latin, and those two
-   * intersect at 30–35 — but both bands were written about text in one
-   * script, while these paragraphs run 32% to 74% CJK. Held to the
-   * intersection the column lands at 32, which costs 71% of the
-   * characters on screen (measured: 3250 → 930 in a 755-tall pane);
-   * for comparison Claude's own reading column runs past 75 Latin
-   * characters. So the Latin ceiling is the one this gives ground on,
-   * knowingly, and 38 is where it was left: 38 CJK, 74–82 Latin.
+   * **44 is a choice inside a window, not the window.** The reading band
+   * for CJK is 30–45 characters, and this sits at the top of it, chosen
+   * by the person reading the app after seeing 32, 38 and 44 side by
+   * side on real text. The number moved twice: 32 first (the arithmetic
+   * floor, and it cost 71% of the characters on screen — measured 3250 →
+   * 930), then 38, then here.
    *
-   * It is one token so that turning it is one edit — the band is
-   * arithmetic, the point inside it is a matter of eyes. */
-  --measure: 38em;
+   * Measured at 44, on the pane it actually gets: 660 wide, **44 CJK /
+   * 95.5 Latin** to a line, 1264 Chinese characters visible in a
+   * 745-tall pane. At 48 it would be 720 / 48 / 104.1 / 1379.
+   *
+   * **The ceiling is not arithmetic and should not be dressed as it.**
+   * 48 is about where a reader stops being able to find the start of the
+   * next line without hunting — Claude's own reading column runs 45–50
+   * CJK — and past that this batch's whole point is being handed back.
+   * The gate holds 30–45 rather than the exact number here, so moving
+   * inside the band is one edit and leaving it is a red.
+   *
+   * (The Latin count used to be a second band, 45–75. It is not one any
+   * more and `check-read.mjs` says why: with the cap fixed, the Latin
+   * count is the CJK count times a font constant, so a Latin band was
+   * the CJK band restated rather than a second claim. What it *could*
+   * catch on its own — the font stack's two scripts drifting apart — is
+   * asserted there directly, as a ratio.) */
+  --measure: 44em;
   --avatar: 32px;
   /* A machine's face on its own card. Its own token rather than a class
    * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`

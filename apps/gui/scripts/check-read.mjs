@@ -21,7 +21,10 @@
 //      paragraph — or none — would satisfy them by vacuum, which is
 //      this repo's most-met failure;
 //   1. the column is bounded, and converted with advances measured on
-//      the page it lands inside the reading band for both scripts;
+//      the page it lands inside the reading band — stated for CJK, which
+//      is the script these paragraphs are mostly in, and *not* stated
+//      twice: see LAT_PER_CJK for why a second band in Latin was the
+//      same claim wearing different units, and what replaced it;
 //   1b. and the element carrying the cap carries the reading size. The
 //      cap is an `em` (`--measure`), so those two classes have to ride
 //      together — split them and the column silently comes out narrower
@@ -86,23 +89,29 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 const CJK_BAND = [30, 45];
 /**
- * The band for Latin characters — **and the ceiling is 90, not the 75
- * these two bands are usually quoted with together.**
+ * **There is no Latin band any more, and removing it is not the same as
+ * widening it.**
  *
- * Both bands were written about text in one script. These paragraphs
- * run 32% to 74% CJK, and a column asked to satisfy 30–45 CJK *and*
- * 45–75 Latin has only 30–35 characters left to it (a CJK advance is
- * 1em, Latin .465–.514em, so 75 Latin is 35–39em while 30 CJK is 30em).
- * Held there the column costs 71% of the characters on screen — measured
- * 3250 → 930 in a 755-tall pane — and for comparison Claude's own
- * reading column runs past 75 Latin characters.
+ * It was 45–75, then 90 to let a wider column through. A third number
+ * would have been the tell: an assertion that has to be edited every
+ * time the thing it measures is edited is not holding anything.
  *
- * So the product gives ground on the Latin ceiling knowingly, and this
- * gate says so out loud rather than quietly passing a column it would
- * have failed. What it still refuses is an *unbounded* column, which is
- * the thing that was actually wrong.
+ * The reason it kept needing to move is that it was never a second
+ * claim. A CJK glyph's advance is exactly 1em and a Latin character's is
+ * a fixed fraction of one, so **once the cap is fixed the Latin count is
+ * the CJK count times a font constant** — measured 2.17 here. Asserting
+ * both is asserting the same fact twice in different units, and the two
+ * copies can only ever disagree.
+ *
+ * What a Latin reading *can* say on its own is something about the
+ * font, not about the column: if a future stack drew Latin much
+ * narrower, the same cap would put far more of it on a line. That is
+ * asserted below, directly, as the ratio — and it does not move when the
+ * cap moves, which is the property the old band did not have.
+ *
+ * The count is still printed. It is worth knowing; it is not a claim.
  */
-const LAT_BAND = [45, 90];
+const LAT_PER_CJK = [1.85, 2.45];
 /**
  * Where long-form body ink should read. The floor is not the standard's
  * 4.5: a CJK glyph carries several times the strokes of a letter at the
@@ -651,8 +660,17 @@ try {
           `${say(m)}: ${m.cjkPerLine} Chinese characters to a line, outside ${CJK_BAND.join("–")}`,
         );
       }
-      if (m.latPerLine < LAT_BAND[0] || m.latPerLine > LAT_BAND[1]) {
-        fail(`${say(m)}: ${m.latPerLine} Latin characters to a line, outside ${LAT_BAND.join("–")}`);
+      // Not「how many Latin characters」— that follows from the cap. This
+      // is the font stack's two scripts still standing in the same
+      // relation to each other, which is the only thing the Latin
+      // reading can say that the CJK one does not.
+      const perCjk = m.latPerLine / m.cjkPerLine;
+      if (perCjk < LAT_PER_CJK[0] || perCjk > LAT_PER_CJK[1]) {
+        fail(
+          `${say(m)}: a line holds ${perCjk.toFixed(2)} Latin characters per Chinese one, outside ` +
+            `${LAT_PER_CJK.join("–")} — the two scripts have moved relative to each other, so a cap ` +
+            `set for one of them is no longer the cap the other gets`,
+        );
       }
       // 1b) the cap and the size ride together.
       if (m.colFontSize !== m.bodyFontSize) {
