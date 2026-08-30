@@ -63,6 +63,10 @@
 //      paint three different lines. The second half is the complaint —
 //      「大量 bash,不可展开也没有标题」— and a per-line check alone is
 //      satisfied by three correct titles that happen to be identical.
+//  12. the agent's mode shows when it is not the ordinary one, and
+//      **stays silent when it is** — that second half is the design,
+//      and it is a negative claim, so the rows around it have to find
+//      the element it must not.
 //  11. a tool line opens onto its diff or its output, and a line with
 //      nothing behind it grows no control at all. Then it is actually
 //      opened and the diff and the output are read back — a title that
@@ -254,12 +258,14 @@ const probe = () => {
     };
   });
   const title = document.querySelector("[data-chat-title]");
+  const modeEl = document.querySelector("[data-chat-mode]");
   const shots = document.querySelectorAll("[data-chat-shot]").length;
   const hasInput = !!document.querySelector("[data-chat-input]");
   return {
     lines, failedToken, paragraphs, usage,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
     plan: planRows, shots, hasInput,
+    mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
   };
@@ -393,6 +399,46 @@ try {
       fail(`facts/${label}: wanted a line containing ${want}, got ${JSON.stringify(m.facts)}`);
     } else {
       console.log(`facts · ${label}: ${m.facts}`);
+    }
+  }
+
+  // ── the mode marker ──────────────────────────────────────────────
+  //
+  // **The load-bearing row is `default → nothing`.** A marker that is
+  // always there is not a marker, and a negative claim like that is
+  // satisfied for free by a page that never painted — so the rows
+  // around it have to find the very element it must not.
+  for (const [id, want] of [
+    ["plan", "只看不改"],
+    ["acceptEdits", "改文件不问"],
+    ["bypassPermissions", "全部不问"],
+    // A mode this face has never heard of is still not the default.
+    ["someFutureMode", "someFutureMode"],
+    ["default", null],
+  ]) {
+    const m = await look({
+      scheme: "dark",
+      motion: "no-preference",
+      frames: [
+        { kind: "history", update: { update: { sessionUpdate: "current_mode_update", currentModeId: id } } },
+        { kind: "history_end" },
+      ],
+    });
+    if (m.errs.length) fail(`mode/${id}: the page threw — ${m.errs[0]}`);
+    if (!m.column) {
+      fail(`mode/${id}: probe dead — the conversation face never painted`);
+      continue;
+    }
+    if (want === null) {
+      if (m.mode !== null) {
+        fail(`mode/${id}: the ordinary mode drew ${JSON.stringify(m.mode)} — a marker that is always there is not one`);
+      } else {
+        console.log(`mode · ${id}: silent, as it must be`);
+      }
+    } else if (m.mode !== want) {
+      fail(`mode/${id}: drew ${JSON.stringify(m.mode)}, wanted ${JSON.stringify(want)}`);
+    } else {
+      console.log(`mode · ${id}: ${m.mode}`);
     }
   }
 

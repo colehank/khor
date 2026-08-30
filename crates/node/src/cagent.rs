@@ -45,7 +45,7 @@ use agent_client_protocol::schema::v1::{
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
     PromptCapabilities, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
     SessionNotification,
-    Content, Cost, Diff, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
+    Content, Cost, CurrentModeUpdate, Diff, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
     ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
@@ -462,6 +462,21 @@ async fn drain(
                 }
             }
             Some("system") if f.get("subtype").and_then(|s| s.as_str()) == Some("init") => {
+                // **The mode the agent is actually in.** claude puts
+                // `permissionMode` on its init frame and it is the real
+                // one — launched with `--permission-mode plan` it comes
+                // back `plan` (measured 2026-08-30). It changes what
+                // the agent will *do*, and until now a face had no way
+                // to know: a session that will not edit anything and
+                // one that edits without asking looked identical.
+                if let Some(mode) = f["permissionMode"].as_str().filter(|m| !m.is_empty()) {
+                    let _ = conn.send_notification(SessionNotification::new(
+                        sid.clone(),
+                        SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(
+                            mode.to_owned(),
+                        )),
+                    ));
+                }
                 let commands: Vec<AvailableCommand> = f["slash_commands"]
                     .as_array()
                     .into_iter()
@@ -840,6 +855,20 @@ mod wire_tests {
         let text = json["content"][0]["content"]["text"].as_str().unwrap();
         assert!(text.len() < 17 * 1024, "cut, {} bytes", text.len());
         assert!(text.ends_with(khor_catalog::msg::TOOL_OUTPUT_CUT), "and marked as cut");
+    }
+
+    /// **The mode crosses the wire under the name the face reads**, and
+    /// it is the agent's own word rather than one this shim renames.
+    /// claude puts `permissionMode` on its init frame and it is the
+    /// real one — launched with `--permission-mode plan` it comes back
+    /// `plan` (measured 2026-08-30 off a real stream-json run).
+    #[test]
+    fn the_mode_the_agent_is_in_is_spelled_the_way_the_face_reads_it() {
+        use agent_client_protocol::schema::v1::CurrentModeUpdate;
+        let update = SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new("plan"));
+        let json = serde_json::to_value(&update).unwrap();
+        assert_eq!(json["sessionUpdate"], "current_mode_update");
+        assert_eq!(json["currentModeId"], "plan");
     }
 
     /// **Named one by one, not「every name gets a kind」.** That weaker

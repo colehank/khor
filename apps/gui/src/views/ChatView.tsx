@@ -182,6 +182,8 @@ type Update = {
       `diff` or `terminal`. */
   rawInput?: unknown;
   locations?: { path?: string; line?: number }[];
+  /** `current_mode_update`: which mode the agent is in. */
+  currentModeId?: string;
   /** `plan`: the agent's own list of what it is doing. */
   entries?: { content?: string; status?: string; priority?: string }[];
   /** `usage_update`: how much of the window this conversation holds. */
@@ -255,6 +257,34 @@ function planIn(frame: ChatFrame): PlanEntry[] | null {
 }
 
 type PlanEntry = { content: string; status: string };
+
+/**
+ * What to say about the mode the agent is in — **and `null` for the
+ * ordinary one**, which is the whole design.
+ *
+ * `default` is what nearly every session is, and a marker that is
+ * always there is not a marker (docs/UX.md 角标可归零). The three that
+ * do show are the ones where a reader's expectation would otherwise be
+ * wrong: one that will not touch a file, and two that will touch one
+ * without asking. A mode this face has never heard of is shown as the
+ * agent's own word rather than hidden — an unknown mode is still not
+ * the default, and「something is different here」is the fact.
+ */
+function modeSaid(id: string): string | null {
+  switch (id) {
+    case "default":
+    case "":
+      return null;
+    case "plan":
+      return gui.chat_mode_plan;
+    case "acceptEdits":
+      return gui.chat_mode_accept_edits;
+    case "bypassPermissions":
+      return gui.chat_mode_bypass;
+    default:
+      return id;
+  }
+}
 
 /** The agent's own name for this conversation, if this frame carries
     one. An empty string counts as "cleared": the protocol distinguishes
@@ -571,6 +601,8 @@ export function ChatView({
   const [title, setTitle] = useState<string | null>(null);
   /** The agent's plan, as of the last frame that carried one. */
   const [plan, setPlan] = useState<PlanEntry[]>([]);
+  /** The mode the agent is in, when it has said. */
+  const [mode, setMode] = useState<string | null>(null);
   /** Images attached to the line being written, as `[mime, base64]`.
       Cleared by sending, like the text beside them. */
   const [shots, setShots] = useState<[string, string][]>([]);
@@ -721,6 +753,10 @@ export function ChatView({
               if (t !== undefined) setTitle(t);
               const pl = planIn(f);
               if (pl) setPlan(pl);
+              const u2 = updateOf(f);
+              if (u2?.sessionUpdate === "current_mode_update" && u2.currentModeId) {
+                setMode(u2.currentModeId);
+              }
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
@@ -1337,6 +1373,20 @@ export function ChatView({
             face that showed "0%" while it had no denominator would be
             claiming an empty context, which for a conversation with
             history behind it is the opposite of true. */}
+        {/* **What is different about this session, above the box.**
+            Beside the context reading and for the same reason: both are
+            things a person checks before typing, and neither is worth a
+            row of its own. */}
+        {mode !== null && modeSaid(mode) !== null && (
+          <div
+            data-chat-mode
+            data-mode-id={mode}
+            className="flex justify-end px-2 pb-1 text-xs"
+            style={{ color: "var(--state-blocked)" }}
+          >
+            {modeSaid(mode)}
+          </div>
+        )}
         {usage && (
           <div
             data-chat-usage

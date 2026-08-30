@@ -1180,6 +1180,15 @@ chat-needs-login = "这个 agent 要先登录才开得了对话"
 # The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
 # 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
 chat-plan = "在做的事"
+# The agent's current mode, when it is not the ordinary one. **只在不是
+# 默认档的时候出现**——一个常年挂着的标记等于没有标记,而这三档恰恰是
+# 「这次不一样」才要说的。
+#
+# 词用 agent 自己的口径,不另起中文名:`plan` 在 claude 那边就叫计划模式,
+# 用户在别处见过它,这个面没有资格改名。
+chat-mode-plan = "只看不改"
+chat-mode-accept-edits = "改文件不问"
+chat-mode-bypass = "全部不问"
 # The diff panel's two halves inside an opened tool line. 一个字的标签,
 # 因为旁边就是内容本身,而「修改前的内容」这种话是在解释一个人已经看见的东西。
 chat-diff-before = "改前"
