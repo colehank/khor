@@ -1174,6 +1174,9 @@ chat-no-replay = "这个 agent 不回放以前的对话——之前说过什么,
 # as a verdict: khor 没法替谁走完某家的登录流程,能做的是在第一句话之前
 # 就说清楚为什么什么都没有,而不是让人对着一个不回话的框猜。
 chat-needs-login = "这个 agent 要先登录才开得了对话"
+# The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
+# 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
+chat-plan = "在做的事"
 # This conversation's own context, as a share of the window the agent
 # reported. **Not a token count**: the numbers are six digits long and
 # nobody acts on them, while "how full" is the one thing a person

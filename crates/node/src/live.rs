@@ -878,8 +878,30 @@ impl LiveKind {
                     .strip_prefix(&format!("{}/", khor_core::kind::TUI))
                     .map(str::to_owned)
             });
-            if let Some(said) = leaf.and_then(|l| claude.last_said(&l)) {
-                r.last = Some(said);
+            // **One resolution, two answers.** Both of these walk the
+            // same projects directory to find the same file, so the
+            // leaf is computed once and the two readers share the trip
+            // — and both cache, so a poll over an unchanged transcript
+            // costs stats rather than reads.
+            if let Some(l) = leaf {
+                if let Some(said) = claude.last_said(&l) {
+                    r.last = Some(said);
+                }
+                // claude's own name for the conversation, when it has
+                // made one, in place of `tokens-50`.
+                //
+                // **The mechanical name was kept for uniqueness** (this
+                // machine runs three claude sessions in one repo, and
+                // the directory name would print the same title three
+                // times), and the title does that job better rather
+                // than worse: it describes what the session is *about*,
+                // and two sessions in one repo are about different
+                // things. Where there is none — measured, 49 of 93
+                // transcripts — the row keeps exactly what it printed
+                // before.
+                if let Some(title) = claude.ai_title(&l) {
+                    r.title = title;
+                }
             }
         }
         out

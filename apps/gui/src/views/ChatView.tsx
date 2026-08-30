@@ -153,6 +153,8 @@ type Update = {
   toolCallId?: string;
   kind?: string;
   status?: string;
+  /** `plan`: the agent's own list of what it is doing. */
+  entries?: { content?: string; status?: string; priority?: string }[];
   /** `usage_update`: how much of the window this conversation holds. */
   used?: number;
   size?: number;
@@ -202,6 +204,28 @@ function usageIn(frame: ChatFrame): { used: number; size: number; cost: Cost | n
         : null,
   };
 }
+
+/** The agent's plan, if this frame carries one.
+    **Replaces, never appends.** The protocol re-sends the whole list
+    every time any entry moves, so keeping the newest is the truth and
+    accumulating would paint the same three steps five times over.
+
+    **claude sends none of these**, measured 2026-08-30: its tool list
+    on this machine has 128 entries and not one of them is todo-shaped
+    (`Task`/`TaskOutput`/`TaskStop` are how it runs subagents, not how
+    it plans). An earlier note in this repo said the plan would come
+    from a `TodoWrite` tool; there is no such tool here. So this reads a
+    frame khor's own 垫片 will never send, for the same reason the title
+    does. */
+function planIn(frame: ChatFrame): PlanEntry[] | null {
+  const u = updateOf(frame);
+  if (u?.sessionUpdate !== "plan") return null;
+  return (u.entries ?? [])
+    .map((e) => ({ content: e.content ?? "", status: e.status ?? "pending" }))
+    .filter((e) => e.content);
+}
+
+type PlanEntry = { content: string; status: string };
 
 /** The agent's own name for this conversation, if this frame carries
     one. An empty string counts as "cleared": the protocol distinguishes
@@ -357,6 +381,34 @@ function running(status: string): boolean {
 }
 
 /**
+ * The ink a **plan entry** is written in — a different function from
+ * `toolInk`, and the difference is the word `pending`.
+ *
+ * **The same word means opposite things in the two places.** On a tool
+ * call `pending` is a state khor's own 垫片 never sends and a
+ * third-party one rarely does, and of the two possible wrong pictures —
+ * "running" for something not yet started versus "finished" for
+ * something still going — only the second misleads about where the turn
+ * is; so `toolInk` draws it as running. In a plan `pending` is the
+ * normal state of most entries and means exactly "not started", and
+ * drawing those like the step being worked erases the one thing a plan
+ * is read for: **which line is now**.
+ *
+ * So here the present is full ink and everything else — done behind,
+ * not started ahead — is muted. Two states sharing a weight is correct:
+ * neither is the present, and three weights for three statuses would
+ * spend contrast on a distinction the order already carries.
+ *
+ * Caught by `check-acp` printing `in_progress L*90.8  pending L*90.8`
+ * on a run whose assertion covered only the done/doing pair — and the
+ * comment beside that assertion described this split while the code
+ * still shared `toolInk`.
+ */
+function planInk(status: string): string {
+  return status === "in_progress" ? "var(--foreground)" : "var(--muted-foreground)";
+}
+
+/**
  * The ink a tool line is written in, by what happened to it.
  *
  * **Running is full ink and settled is muted — the pen's own pressures,
@@ -451,6 +503,8 @@ export function ChatView({
       learning to read a field is what makes attaching one of them a
       matter of configuration rather than of code. */
   const [title, setTitle] = useState<string | null>(null);
+  /** The agent's plan, as of the last frame that carried one. */
+  const [plan, setPlan] = useState<PlanEntry[]>([]);
   /** What the agent on the other end said it can do, from the handshake.
       **Nothing read this frame until now** — `replays` had crossed the
       wire since the day it was added, with `gui_host`'s own note saying
@@ -586,6 +640,8 @@ export function ChatView({
               if (u) setUsage(u);
               const t = titleIn(f);
               if (t !== undefined) setTitle(t);
+              const pl = planIn(f);
+              if (pl) setPlan(pl);
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
@@ -803,6 +859,36 @@ export function ChatView({
             been said here the line has nothing left to explain, and a
             standing notice about a limitation nobody is hitting is the
             kind of chrome this app's copy rules exist to keep out. */}
+        {/* **The agent's plan, above the conversation it is working
+            through.** Not inside the stream: the plan is a *state* and
+            the conversation is a record — folding it in as items would
+            paint the same three steps again every time one of them
+            moved, which is what the protocol's re-send would produce.
+
+            The present is full ink and everything else is muted —
+            see `planInk`, which is deliberately *not* `toolInk`: the
+            word `pending` means "not started" here and "probably
+            running" there, and one function for both drew the
+            not-yet-started steps exactly like the current one.
+
+            No count, no progress bar. The list is short by
+            construction, and「3/7」is a number nobody acts on beside
+            the steps themselves. */}
+        {plan.length > 0 && (
+          <div data-chat-plan className="pb-1 text-xs">
+            <div className="pb-0.5 text-muted-foreground">{gui.chat_plan}</div>
+            {plan.map((e, i) => (
+              <div
+                key={i}
+                data-plan-entry
+                data-plan-status={e.status}
+                style={{ color: planInk(e.status) }}
+              >
+                {e.content}
+              </div>
+            ))}
+          </div>
+        )}
         {facts && items.length === 0 && (facts.needsLogin || !facts.replays) && (
           <div data-chat-facts className="pb-1 text-xs text-muted-foreground">
             {facts.needsLogin ? gui.chat_needs_login : gui.chat_no_replay}

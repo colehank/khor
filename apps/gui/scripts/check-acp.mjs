@@ -48,6 +48,12 @@
 //      `replays` since the day it was added, with `gui_host`'s own note
 //      saying a face must act on it — **and no face read the frame at
 //      all**. Both agents khor wrote replay, so nothing ever showed.
+//   9. a `plan` reaches the screen in order, and a finished step reads
+//      differently from the one being worked. **claude sends no plan
+//      either** — measured 2026-08-30, its tool list on this machine
+//      has 128 entries and nothing todo-shaped; an earlier note in this
+//      repo said the plan would come from a `TodoWrite` tool, and there
+//      is no such tool.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -110,6 +116,14 @@ const frames = [
   // batch depends on, and an ability nothing exercises is one nobody
   // finds out is broken.
   { kind: "history", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
+  // A plan, which claude also never sends — its 128-tool list here has
+  // nothing todo-shaped. Three entries so all three statuses are
+  // present at once, which is what claim 9 measures them against.
+  { kind: "history", update: { update: { sessionUpdate: "plan", entries: [
+    { content: "读那个文件", status: "completed", priority: "medium" },
+    { content: "改那个文件", status: "in_progress", priority: "high" },
+    { content: "跑测试", status: "pending", priority: "low" },
+  ] } } },
   {
     kind: "history",
     update: {
@@ -201,10 +215,20 @@ const probe = () => {
     cost: (u.querySelector("[data-usage-cost]")?.textContent ?? "").trim(),
   };
   const factsLine = document.querySelector("[data-chat-facts]");
+  const planEls = [...document.querySelectorAll("[data-plan-entry]")];
+  const planRows = planEls.map((el) => {
+    const fg = rgba(getComputedStyle(el).color);
+    return {
+      status: el.getAttribute("data-plan-status"),
+      text: (el.textContent ?? "").trim(),
+      ink: fg ? flatten(fg, groundOf(el)) : null,
+    };
+  });
   const title = document.querySelector("[data-chat-title]");
   return {
     lines, failedToken, paragraphs, usage,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
+    plan: planRows,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
   };
@@ -400,6 +424,62 @@ try {
         }
         if (!m.usage.cost.includes("0.39")) {
           fail(`${say}: the cost printed as "${m.usage.cost}", wanted 0.39 in it`);
+        }
+      }
+
+      // 9) the plan reaches the screen, in order, with its statuses —
+      //    and a finished step reads differently from the one being
+      //    worked. Order is asserted on its own: a plan is a sequence,
+      //    and a face that painted it as a set would drop the one thing
+      //    that makes it readable.
+      const wantPlan = [
+        ["completed", "读那个文件"],
+        ["in_progress", "改那个文件"],
+        ["pending", "跑测试"],
+      ];
+      if (m.plan.length !== 3) {
+        fail(`${say}: the plan carried 3 entries and ${m.plan.length} drew`);
+      } else {
+        for (const [i, [st, text]] of wantPlan.entries()) {
+          if (m.plan[i].status !== st || m.plan[i].text !== text) {
+            fail(
+              `${say}: plan row ${i} is ${JSON.stringify([m.plan[i].status, m.plan[i].text])}, ` +
+                `wanted ${JSON.stringify([st, text])}`,
+            );
+          }
+        }
+        const pl = m.plan.map((r) => lstar(r.ink));
+        if (pl.some((x) => x === null)) {
+          fail(`${say}: probe dead — a plan ink did not parse as rgb`);
+        } else {
+          console.log(
+            `${say}: plan ` + m.plan.map((r, i) => `${r.status} L*${pl[i].toFixed(1)}`).join("  "),
+          );
+          // **Both pairs against the present, not just one.** The
+          // first version of this asserted only done-vs-doing, and the
+          // run printed `in_progress L*90.8  pending L*90.8` — a plan
+          // whose not-yet-started steps were drawn exactly like the one
+          // being worked, which is the single thing a plan is read for.
+          // The assertion was true and too narrow to see it.
+          for (const i of [0, 2]) {
+            const d = Math.abs(pl[i] - pl[1]);
+            if (d < DELTA_L) {
+              fail(
+                `${say}: the step being worked and a ${m.plan[i].status} one are ` +
+                  `ΔL* ${d.toFixed(2)} apart, under ${DELTA_L} — a plan that does not ` +
+                  `say which line is now is not a plan`,
+              );
+            }
+          }
+          // And the two that are *not* the present stay together: three
+          // weights for three statuses would spend contrast on a
+          // distinction the order already carries.
+          if (Math.abs(pl[0] - pl[2]) > 0.5) {
+            fail(
+              `${say}: done and not-yet are ΔL* ${Math.abs(pl[0] - pl[2]).toFixed(2)} apart; ` +
+                `neither is the present and they should share a weight`,
+            );
+          }
         }
       }
 

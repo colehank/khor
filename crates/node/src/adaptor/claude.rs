@@ -175,6 +175,76 @@ impl Claude {
         })
     }
 
+    /// The name claude gave this conversation itself, if it has given
+    /// one — what its own UI shows instead of `tokens-50`.
+    ///
+    /// # Why the head, and why 256 lines
+    ///
+    /// claude writes an `ai-title` record into the transcript, and
+    /// writes it **over and over**: measured across this machine's
+    /// transcripts on 2026-08-30, one 26 MB file carried 441 of them
+    /// and **every one held the same string**. So the first is the
+    /// answer and there is nothing later to prefer.
+    ///
+    /// The bound matters because these files get large — the biggest
+    /// here is 280 MB, and a list poll touches one per row. Measured on
+    /// that file, reading 128 lines costs **0.30 ms**. Across 93
+    /// transcripts the first `ai-title` sat at line 1 at the earliest,
+    /// 17 in the median, and **130 at the worst**; 256 is that worst
+    /// case with room, and still under a millisecond.
+    ///
+    /// **What a session past the bound degrades to is the row it has
+    /// today** — claude's own `tokens-50` — not a blank and not a
+    /// guess. That is the whole reason a bound is allowed here.
+    ///
+    /// # The cache is stronger than `last_said`'s, for a measured reason
+    ///
+    /// A found title is cached **forever**, with no mtime check,
+    /// because the value does not change within a file. A miss is
+    /// re-checked whenever the file moves: 49 of 93 transcripts had no
+    /// title at all, and a short session that has not earned one yet
+    /// may earn one later.
+    pub fn ai_title(&self, leaf: &str) -> Option<String> {
+        use std::collections::HashMap;
+        use std::io::{BufRead, BufReader};
+        use std::sync::{Mutex, OnceLock};
+        /// The worst first-occurrence seen was 130. See above.
+        const MAX_LINES: usize = 256;
+        type Cache = HashMap<PathBuf, (std::time::SystemTime, Option<String>)>;
+        static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+        let (path, mtime) = self.transcript_path(leaf)?;
+        let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Some((t, title)) = cache.lock().unwrap().get(&path) {
+            // A hit is final; a miss is only as good as the file it was
+            // taken from.
+            if title.is_some() || *t == mtime {
+                return title.clone();
+            }
+        }
+        let found = std::fs::File::open(&path).ok().and_then(|f| {
+            BufReader::new(f)
+                .lines()
+                .take(MAX_LINES)
+                .map_while(Result::ok)
+                .find_map(|l| {
+                    // Cheap reject before parsing: most of these lines
+                    // are large assistant messages, and parsing 256 of
+                    // them per row per poll is the cost this avoids.
+                    if !l.contains("\"ai-title\"") {
+                        return None;
+                    }
+                    let v: serde_json::Value = serde_json::from_str(&l).ok()?;
+                    if v.get("type")?.as_str()? != "ai-title" {
+                        return None;
+                    }
+                    let t = v.get("aiTitle")?.as_str()?.trim();
+                    (!t.is_empty()).then(|| t.to_owned())
+                })
+        });
+        cache.lock().unwrap().insert(path, (mtime, found.clone()));
+        found
+    }
+
     fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
         let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
         let projects = std::fs::read_dir(self.projects_dir()).ok()?;
@@ -1072,6 +1142,92 @@ mod tests {
     }
 
     /// The hook glue end to end on payloads: an observed session
+    /// **The agent's own name for a conversation, and the three ways it
+    /// is not there.** Shapes taken from real transcripts on this
+    /// machine (2026-08-30): the record is `{"type":"ai-title",
+    /// "aiTitle":…,"sessionId":…}`, it repeats, and every repeat in a
+    /// file carries the same string.
+    ///
+    /// The bound is asserted from both sides. A title at line 200 is
+    /// found (the worst real first-occurrence was 130); one pushed past
+    /// 256 is not, and **the miss is the point** — it is what lets a
+    /// list poll touch a 280 MB file for a fraction of a millisecond,
+    /// and what it degrades to is the row's existing name, tested
+    /// beside it.
+    #[test]
+    fn a_conversation_can_carry_the_name_the_agent_gave_it() {
+        let root = std::env::temp_dir().join(format!("khor-aititle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let proj = root.join("projects").join("-home-u-proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let c = Claude::at(root.clone());
+
+        let filler = |n: usize| {
+            (0..n)
+                .map(|i| format!(r#"{{"type":"user","uuid":"u{i}","cwd":"/home/u/proj"}}"#))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let title = |t: &str| format!(r#"{{"type":"ai-title","aiTitle":"{t}","sessionId":"s"}}"#);
+
+        // 1) Found near the head, and **repeated** — the same string
+        //    several times over, which is what claude actually writes.
+        let a = "aaaaaaaa-1111-2222-3333-444444444444";
+        std::fs::write(
+            proj.join(format!("{a}.jsonl")),
+            format!("{}\n{}\n{}\n{}\n", filler(3), title("把工具调用的状态接上"), filler(5), title("把工具调用的状态接上")),
+        )
+        .unwrap();
+        assert_eq!(
+            c.ai_title(&crate::live::clean_leaf(a)).as_deref(),
+            Some("把工具调用的状态接上")
+        );
+
+        // 2) Deep but inside the bound: 200 lines in, past every real
+        //    first-occurrence measured.
+        let b = "bbbbbbbb-1111-2222-3333-444444444444";
+        std::fs::write(
+            proj.join(format!("{b}.jsonl")),
+            format!("{}\n{}\n", filler(200), title("deep but reachable")),
+        )
+        .unwrap();
+        assert_eq!(
+            c.ai_title(&crate::live::clean_leaf(b)).as_deref(),
+            Some("deep but reachable")
+        );
+
+        // 3) Past the bound: not found, on purpose. Asserted so that
+        //    raising or dropping the bound is a decision somebody makes
+        //    rather than a number that drifts.
+        let d = "dddddddd-1111-2222-3333-444444444444";
+        std::fs::write(
+            proj.join(format!("{d}.jsonl")),
+            format!("{}\n{}\n", filler(400), title("past the bound")),
+        )
+        .unwrap();
+        assert_eq!(c.ai_title(&crate::live::clean_leaf(d)), None);
+
+        // 4) No title at all — 49 of 93 transcripts here. Distinct from
+        //    (3) in cause and identical in effect, which is the point:
+        //    both leave the row wearing the name it already had.
+        let e = "eeeeeeee-1111-2222-3333-444444444444";
+        std::fs::write(proj.join(format!("{e}.jsonl")), format!("{}\n", filler(10))).unwrap();
+        assert_eq!(c.ai_title(&crate::live::clean_leaf(e)), None);
+
+        // 5) An empty title is not a title. A row wearing "" would be a
+        //    session with no name at all on screen, which is worse than
+        //    the mechanical one it replaced.
+        let f = "ffffffff-1111-2222-3333-444444444444";
+        std::fs::write(
+            proj.join(format!("{f}.jsonl")),
+            format!("{}\n{}\n", title("   "), filler(3)),
+        )
+        .unwrap();
+        assert_eq!(c.ai_title(&crate::live::clean_leaf(f)), None);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// registers itself on first sight; the idle-notification does NOT
     /// become 待批 (a badge that cannot reach zero is no badge); a
     /// permission ask does; SessionEnd settles it.
