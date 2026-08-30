@@ -351,6 +351,79 @@ try {
   }
   console.log(`returning: rows=${backSeen.rows} strips=${backSeen.strips} pane=${backSeen.boxW}px (collapsed)`);
   await returning.close();
+
+  // ── 5) an observer whose callback never arrives ───────────────────
+  //
+  // **The failure that actually reached a user.** A page loaded in a
+  // background tab: the browser does not run the rendering steps there,
+  // and a `ResizeObserver` callback is delivered *as part of* those
+  // steps — so the observer attaches, is never called, and the width it
+  // was the only source of stays zero. Nothing throws. The band is
+  // simply not there, and it never heals, until something forces one
+  // render (measured 2026-08-30: screenshotting the tab took it from 0
+  // strips to 15, with nothing else touched).
+  //
+  // **This simulates the condition, not the cause, and that is on
+  // purpose — but the cause could not be produced here and that is
+  // worth writing down.** Chrome's
+  // `Emulation.setPageVisibilityOverride` is gone from the protocol
+  // ("wasn't found", measured), and a headless browser has no occluded
+  // window to hide behind; driving two tabs left the page reporting
+  // `visibilityState: "visible"` throughout, so that attempt tested
+  // nothing. What is stubbed here is a **browser API**, never the app:
+  // an observer that accepts `observe` and never calls back is exactly
+  // what the page had, and asserting against it is stricter and
+  // deterministic where the real cause is neither.
+  //
+  // What it therefore does not cover: anything else a background tab
+  // suppresses (timers, animation frames). If a future strip comes to
+  // depend on one of those, this case will not notice.
+  //
+  // **And it asserts the outcome, not either mechanism.** Two
+  // independent things now keep the strip alive here — the width is
+  // read synchronously when the observer is attached, and an unmeasured
+  // width falls back to a resolution instead of to silence — and either
+  // one alone is enough. So this goes red only when *both* are gone,
+  // which is the right assertion for what the user loses but no help at
+  // all in saying which guard was removed. Whoever sees it red should
+  // read `use-day-strips` rather than trust the message to point.
+  const deaf = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await deaf.addInitScript(() => {
+    // Accepts everything, delivers nothing.
+    window.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+  const quiet = await deaf.newPage();
+  const quietThrew = [];
+  quiet.on("pageerror", (e) => quietThrew.push(String(e)));
+  await quiet.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+  const quietSeen = await (async () => {
+    const end = Date.now() + 25_000;
+    let last = { rows: 0, strips: 0 };
+    while (Date.now() < end) {
+      last = await quiet.evaluate(() => ({
+        rows: document.querySelectorAll("[data-row]").length,
+        strips: document.querySelectorAll("[data-day-strip]").length,
+      }));
+      if (last.rows > 0 && last.strips > 0) return last;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return last;
+  })();
+  if (quietThrew.length) fail(`⑤ the page threw with a silent observer: ${quietThrew.join(" | ")}`);
+  if (quietSeen.rows === 0) {
+    fail("probe dead: no rows with a silent observer — ⑤ would pass with nothing to lose");
+  } else if (quietSeen.strips !== quietSeen.rows) {
+    fail(
+      `⑤ a ResizeObserver that never calls back lost the strip: ${quietSeen.rows} rows, ` +
+        `${quietSeen.strips} strips. The width must not depend on a delivery ever arriving.`,
+    );
+  }
+  console.log(`silent observer: rows=${quietSeen.rows} strips=${quietSeen.strips}`);
+  await deaf.close();
 } finally {
   if (browser) await browser.close();
   for (const p of [vite, bridge]) if (p && !p.killed) p.kill("SIGTERM");
