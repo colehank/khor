@@ -43,7 +43,8 @@ use agent_client_protocol::schema::v1::{
     AgentCapabilities, AvailableCommand, AvailableCommandsUpdate, ContentBlock, ContentChunk,
     InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
-    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionNotification,
+    PromptCapabilities, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    SessionNotification,
     Cost, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallStatus, ToolCallUpdate,
     ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
@@ -133,7 +134,18 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             async move |initialize: InitializeRequest, responder, _connection| {
                 responder.respond(
                     InitializeResponse::new(initialize.protocol_version)
-                        .agent_capabilities(AgentCapabilities::new().load_session(true)),
+                        .agent_capabilities(
+                            AgentCapabilities::new()
+                                .load_session(true)
+                                // **Advertised because it is now true.**
+                                // A capability advertised before it
+                                // works is worse than one missing: a
+                                // face offers the control and the turn
+                                // fails with the picture already sent.
+                                .prompt_capabilities(
+                                    PromptCapabilities::new().image(true),
+                                ),
+                        ),
                 )
             },
             agent_client_protocol::on_receive_request!(),
@@ -158,6 +170,20 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
+                // Images, in the order they were attached. Kept apart
+                // from the text rather than interleaved because this
+                // 垫片 writes one `user` line and the text is what the
+                // person typed — see `Shim::say_with`.
+                let images: Vec<(String, String)> = prompt
+                    .prompt
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Image(i) => {
+                            Some((i.mime_type.clone(), i.data.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
                 let (tx, rx) = oneshot::channel::<StopReason>();
                 {
                     let mut turn = s_prompt.turn.lock().unwrap();
@@ -167,7 +193,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     *turn = Some(tx);
                 }
                 s_prompt.interrupted.store(false, Ordering::SeqCst);
-                if let Err(e) = s_prompt.say(&text) {
+                if let Err(e) = s_prompt.say_with(&text, &images) {
                     *s_prompt.turn.lock().unwrap() = None;
                     return responder.respond_with_internal_error(e);
                 }
@@ -344,9 +370,33 @@ impl Shim {
 
     /// One user turn onto claude's stdin.
     fn say(&self, text: &str) -> Result<(), String> {
+        self.say_with(text, &[])
+    }
+
+    /// One user turn with images, onto claude's stdin.
+    ///
+    /// **The block shape is claude's own, read off a real transcript
+    /// rather than inferred from the docs** (2026-08-30):
+    /// `{"type":"image","source":{"type":"base64","media_type":…,
+    /// "data":…}}`. The protocol's own field is `mimeType` and claude's
+    /// is `media_type`; they are the same fact under two spellings, and
+    /// a 垫片 that passed the protocol's spelling through would have
+    /// claude reject every image without saying why.
+    ///
+    /// **Text first.** The person wrote a sentence about a picture, not
+    /// a picture about a sentence, and while claude reads either order
+    /// only one of them is what was meant.
+    fn say_with(&self, text: &str, images: &[(String, String)]) -> Result<(), String> {
+        let mut content = vec![serde_json::json!({ "type": "text", "text": text })];
+        for (mime, data) in images {
+            content.push(serde_json::json!({
+                "type": "image",
+                "source": { "type": "base64", "media_type": mime, "data": data },
+            }));
+        }
         self.write_line(&serde_json::json!({
             "type": "user",
-            "message": { "role": "user", "content": [{ "type": "text", "text": text }] },
+            "message": { "role": "user", "content": content },
         }))
     }
 

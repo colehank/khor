@@ -58,8 +58,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, InitializeRequest, LoadSessionRequest, NewSessionRequest,
-    PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    CancelNotification, ContentBlock, ImageContent, InitializeRequest, LoadSessionRequest,
+    NewSessionRequest, PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
     StopReason, TextContent,
 };
@@ -220,10 +220,35 @@ impl Handle {
     /// One turn: send the text, resolve when the agent finishes it.
     /// Updates stream through [`Event::Note`] while this is pending.
     pub async fn prompt(&self, text: &str) -> Result<StopReason, String> {
-        let request = PromptRequest::new(
-            self.session.clone(),
-            vec![ContentBlock::Text(TextContent::new(text.to_owned()))],
-        );
+        self.prompt_with(text, &[]).await
+    }
+
+    /// The same turn, with images riding along.
+    ///
+    /// **Separate from [`Handle::prompt`] rather than one call with an
+    /// empty slice everywhere**, because the caller that has no images
+    /// should not have to say so — and because the two are gated
+    /// differently upstream: a face may only offer an attachment when
+    /// the agent said it takes one (`Facts::images`), and text is not
+    /// gated on anything.
+    ///
+    /// **The blocks go text-first.** A prompt that led with an image
+    /// would have the agent reading the picture before the sentence
+    /// asking about it, and while every agent here tolerates either
+    /// order, only one of them is the order a person wrote in.
+    pub async fn prompt_with(
+        &self,
+        text: &str,
+        images: &[(String, String)],
+    ) -> Result<StopReason, String> {
+        let mut blocks = vec![ContentBlock::Text(TextContent::new(text.to_owned()))];
+        for (mime, data) in images {
+            blocks.push(ContentBlock::Image(ImageContent::new(
+                data.clone(),
+                mime.clone(),
+            )));
+        }
+        let request = PromptRequest::new(self.session.clone(), blocks);
         let response =
             self.conn.send_request(request).block_task().await.map_err(|e| e.to_string())?;
         Ok(response.stop_reason)

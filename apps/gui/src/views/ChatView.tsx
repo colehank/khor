@@ -505,6 +505,11 @@ export function ChatView({
   const [title, setTitle] = useState<string | null>(null);
   /** The agent's plan, as of the last frame that carried one. */
   const [plan, setPlan] = useState<PlanEntry[]>([]);
+  /** Images attached to the line being written, as `[mime, base64]`.
+      Cleared by sending, like the text beside them. */
+  const [shots, setShots] = useState<[string, string][]>([]);
+  /** Why the last paste did not attach, if it did not. */
+  const [shotErr, setShotErr] = useState<string | null>(null);
   /** What the agent on the other end said it can do, from the handshake.
       **Nothing read this frame until now** — `replays` had crossed the
       wire since the day it was added, with `gui_host`'s own note saying
@@ -516,6 +521,8 @@ export function ChatView({
   const [facts, setFacts] = useState<{
     replays: boolean;
     needsLogin: boolean;
+    /** The gate on attaching a picture at all. */
+    images: boolean;
   } | null>(null);
   const [text, setText] = useState("");
   /** Which line of the "/" menu is under the keyboard. */
@@ -604,7 +611,7 @@ export function ChatView({
             if (batch.frames.some((f) => f.kind === "turning")) setInTurn(true);
             for (const f of batch.frames) {
               if (f.kind === "agent") {
-                setFacts({ replays: f.replays, needsLogin: f.needs_login });
+                setFacts({ replays: f.replays, needsLogin: f.needs_login, images: f.images });
               }
             }
             // A refused line never reached the agent, so this face is
@@ -729,11 +736,68 @@ export function ChatView({
     setFresh(false);
   };
 
+  /**
+   * How large one attached image may be, in bytes of source data.
+   *
+   * **5 MB, and the limit exists because the transport is a frame, not
+   * a stream.** The picture crosses as base64 inside one msgpack frame
+   * — base64 is 4/3 of the source, so this is ~6.7 MB on the wire —
+   * and a frame is read whole at both ends. A phone screenshot is under
+   * a megabyte; a raw camera photo is not, and the person who pastes
+   * one deserves the number rather than a turn that hangs.
+   */
+  const SHOT_MAX = 5 * 1024 * 1024;
+
+  /**
+   * A pasted image becomes an attachment, when the agent takes images.
+   *
+   * **The gate is here, not at the send.** An affordance that accepts a
+   * picture and then refuses it has already cost the person the paste;
+   * one that never accepts it costs nothing and says the same thing.
+   * `facts` being `null` (the handshake has not landed yet) also
+   * refuses — an unknown capability is not a yes.
+   */
+  const takeShot = async (e: React.ClipboardEvent) => {
+    if (!facts?.images) return;
+    const files = [...e.clipboardData.items]
+      .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (files.length === 0) return;
+    // Only once something image-shaped is actually in hand: a paste of
+    // plain text must still reach the box.
+    e.preventDefault();
+    for (const f of files) {
+      if (f.size > SHOT_MAX) {
+        setShotErr(
+          gui.chat_image_too_big(
+            (f.size / 1024 / 1024).toFixed(1),
+            String(SHOT_MAX / 1024 / 1024),
+          ),
+        );
+        continue;
+      }
+      const buf = new Uint8Array(await f.arrayBuffer());
+      // Chunked rather than `String.fromCharCode(...buf)`: spreading a
+      // multi-megabyte array into an argument list overflows the call
+      // stack, and it does it at a size that a test image never reaches.
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) {
+        bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      }
+      setShotErr(null);
+      setShots((now) => [...now, [f.type, btoa(bin)]]);
+    }
+  };
+
   const say = () => {
     const line = text.trim();
     if (!line || inTurn || gone) return;
     setText("");
     setInTurn(true);
+    const carried = shots;
+    setShots([]);
+    setShotErr(null);
     // Painted first-hand, at the end of the live half (module head).
     // It used to be pinned to a count of live frames and slotted back
     // in by the fold; appended here it lands in the same place for the
@@ -745,7 +809,7 @@ export function ChatView({
     // it back is the difference between "it did not go in" and "it did
     // not go in and you get to type it again".
     sent.current = line;
-    chatSay(id, line).catch(() => setInTurn(false));
+    chatSay(id, line, carried).catch(() => setInTurn(false));
   };
 
   // The "/" menu: the agent's own commands, filtered by what has been
@@ -1151,6 +1215,43 @@ export function ChatView({
           // Bottom-aligned, not centred: the box is the only thing in
           // this row that changes height, and centring would walk the
           // two buttons up the screen line by line as somebody typed.
+          <>
+          {/* **What is going to be sent, before it is sent.** A paste
+              that vanished into state with nothing on screen is a
+              person pressing 发送 without knowing what goes along.
+
+              Numbered, not named: a pasted screenshot has no filename,
+              and「图 1」is the only honest identity it has right now.
+              Each one can be taken back off — the picture is still on
+              the clipboard, so this undoes the attaching and not the
+              having. */}
+          {(shots.length > 0 || shotErr) && (
+            <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-xs">
+              {shots.map(([, data], i) => (
+                <span
+                  key={i}
+                  data-chat-shot
+                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-muted-foreground"
+                >
+                  {gui.chat_image(String(i + 1))}
+                  <button
+                    data-chat-shot-drop
+                    aria-label={gui.remove}
+                    className="min-h-touch min-w-touch px-1 pointer-fine:min-h-0 pointer-fine:min-w-0"
+                    onClick={() => setShots((now) => now.filter((_, k) => k !== i))}
+                  >
+                    ×
+                  </button>
+                  <span className="sr-only">{data.length}</span>
+                </span>
+              ))}
+              {shotErr && (
+                <span data-chat-shot-error style={{ color: "var(--state-failed)" }}>
+                  {shotErr}
+                </span>
+              )}
+            </div>
+          )}
           <div className="relative flex items-end gap-2">
             {/* The agent's own commands, above the box that will carry
                 them. Absolute so opening it does not push the
@@ -1196,6 +1297,7 @@ export function ChatView({
             <Textarea
               ref={box}
               data-chat-input
+              onPaste={takeShot}
               rows={1}
               value={text}
               placeholder={gui.chat_input}
@@ -1276,6 +1378,7 @@ export function ChatView({
               </Button>
             )}
           </div>
+          </>
         )}
         </div>
       </div>

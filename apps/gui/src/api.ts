@@ -304,7 +304,12 @@ export const takeoverTerm = (id: string) => call<null>("takeover_term", { id });
 export const chatStop = (id: string) => call<null>("chat_stop", { id });
 export const chatPoll = (id: string, since: number) =>
   call<ChatBatch>("chat_poll", { id, since });
-export const chatSay = (id: string, text: string) => call<null>("chat_say", { id, text });
+/** One user turn. `images` are `[mime, base64]` pairs and are only ever
+    non-empty when the agent said it takes them (`ChatFrame::Agent`'s
+    `images`) — the host puts them on a different op (`GuiOp::SayWith`),
+    so an empty list costs the old frame exactly nothing. */
+export const chatSay = (id: string, text: string, images: [string, string][] = []) =>
+  call<null>("chat_say", images.length ? { id, text, images } : { id, text });
 export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });

@@ -1177,6 +1177,13 @@ chat-needs-login = "这个 agent 要先登录才开得了对话"
 # The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
 # 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
 chat-plan = "在做的事"
+# One attached image, waiting to be sent. Numbered rather than named:
+# a pasted screenshot has no filename, and「截图 1」是它在这一刻唯一
+# 诚实的身份。
+chat-image = "图 {0}"
+# The image was too big to send. **带上两个数**——一句「太大了」会让人
+# 反复试;知道多大和上限多少,一次就够。
+chat-image-too-big = "这张图 {0}MB,超过 {1}MB 发不出去"
 # This conversation's own context, as a share of the window the agent
 # reported. **Not a token count**: the numbers are six digits long and
 # nobody acts on them, while "how full" is the one thing a person

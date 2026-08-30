@@ -120,7 +120,21 @@ pub fn answer(
         "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?)?),
         "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
         "chat_say" => {
-            crate::chat::chat_say(&arg("id")?, &arg("text")?)?;
+            // `images` absent is the ordinary turn. Read as an array of
+            // `[mime, base64]` pairs rather than an object so the two
+            // ends agree by position, the way everything else here
+            // does.
+            let images: Vec<(String, String)> = match args.get("images") {
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(|p| {
+                        let pair = p.as_array()?;
+                        Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            crate::chat::chat_say_with(&arg("id")?, &arg("text")?, images)?;
             Ok("null".to_owned())
         }
         "chat_answer" => {

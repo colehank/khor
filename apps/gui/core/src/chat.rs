@@ -305,9 +305,29 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
 
 /// One user turn.
 pub fn chat_say(id: &str, text: &str) -> Result<(), String> {
+    chat_say_with(id, text, Vec::new())
+}
+
+/// One user turn with images attached, as `(mime, base64)` pairs.
+///
+/// **A different op on the wire, not a longer one** — `GuiOp` is
+/// positional msgpack, so `Say` keeps its shape forever and
+/// `SayWith` sits at the tail. A host too old to know the new variant
+/// fails to decode the frame, which is loud; a host that misread an
+/// extended `Say` would run the turn with the text silently mangled.
+///
+/// Sending this at all is gated on the agent having said it takes
+/// images (`Facts::images`, carried to the face as `ChatFrame::Agent`).
+/// The gate is up in the face rather than here because refusing after
+/// the picture has crossed the wire is a refusal nobody can act on.
+pub fn chat_say_with(
+    id: &str,
+    text: &str,
+    images: Vec<(String, String)>,
+) -> Result<(), String> {
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::Say(text.to_owned()))
+    write_frame(&mut *conn, &GuiOp::SayWith { text: text.to_owned(), images })
 }
 
 /// The answer to an [`ChatFrame::Ask`]: the chosen option id, or `None`

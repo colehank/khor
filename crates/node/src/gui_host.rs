@@ -92,6 +92,20 @@ pub enum GuiOp {
     /// 空闲: stopping it was the user's own act, so nothing is broken.
     /// Tail-appended.
     Stop,
+    /// One user turn with images attached.
+    ///
+    /// **Tail-appended, and a separate variant rather than a field on
+    /// [`GuiOp::Say`]** — these frames are positional msgpack, so a
+    /// field added inside `Say` would be read by an old host as a
+    /// different `Say`, silently. A variant at the end fails to decode
+    /// instead, which is the whole rule this enum's `Close` comment
+    /// already states.
+    ///
+    /// `(mime, base64)` pairs. The data is carried rather than a path
+    /// because the face that has the image may be on another machine
+    /// entirely — a web face on a phone pasting a screenshot has no
+    /// path this host could open.
+    SayWith { text: String, images: Vec<(String, String)> },
 }
 
 /// What the host tells every connected face.
@@ -579,7 +593,18 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     }
                 }
                 op = ops_rx.recv() => match op {
-                    Some((who, GuiOp::Say(text))) => {
+                    // **One arm for both.** `SayWith` is `Say` with a
+                    // list that is usually empty, and splitting the
+                    // handler would be two copies of the turn-in-flight
+                    // refusal, the 忙碌 report and the spawn — three
+                    // things that have each been got wrong once already
+                    // and must not exist twice.
+                    Some((who, op @ (GuiOp::Say(_) | GuiOp::SayWith { .. }))) => {
+                        let (text, images) = match op {
+                            GuiOp::Say(t) => (t, Vec::new()),
+                            GuiOp::SayWith { text, images } => (text, images),
+                            _ => unreachable!("the pattern above admits nothing else"),
+                        };
                         if in_turn.is_some() {
                             // One turn at a time; a queue would answer
                             // "who said what when" wrongly on every face.
@@ -598,7 +623,7 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         let turn_tx = turn_tx.clone();
                         in_turn = Some(tokio::spawn(async move {
                             let out = handle
-                                .prompt(&text)
+                                .prompt_with(&text, &images)
                                 .await
                                 .map(|stop| format!("{stop:?}"));
                             let _ = turn_tx.send(out);

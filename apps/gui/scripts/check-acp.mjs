@@ -54,6 +54,11 @@
 //      has 128 entries and nothing todo-shaped; an earlier note in this
 //      repo said the plan would come from a `TodoWrite` tool, and there
 //      is no such tool.
+//  10. an image pastes into the composer **only when the agent said it
+//      takes images**. Both directions, because "no attach affordance"
+//      is a claim a page that never rendered satisfies for free — so
+//      the positive row has to find the very thing the negative row
+//      must not.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -225,10 +230,12 @@ const probe = () => {
     };
   });
   const title = document.querySelector("[data-chat-title]");
+  const shots = document.querySelectorAll("[data-chat-shot]").length;
+  const hasInput = !!document.querySelector("[data-chat-input]");
   return {
     lines, failedToken, paragraphs, usage,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
-    plan: planRows,
+    plan: planRows, shots, hasInput,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
   };
@@ -262,7 +269,7 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion, frames: override }) => {
+  const look = async ({ scheme, motion, frames: override, paste = false }) => {
     const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -300,6 +307,24 @@ try {
     await wait(900);
     await page.locator("[data-list] [data-row-open]").nth(0).click();
     await wait(1200);
+    if (paste) {
+      // A real paste event carrying a real PNG. Synthesised rather than
+      // driven through the OS clipboard because the OS clipboard is not
+      // available here — but the event is the browser's own
+      // `ClipboardEvent` with a `File` in its items, which is exactly
+      // what the handler reads.
+      await page.evaluate(() => {
+        const png = Uint8Array.from(atob(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        ), (c) => c.charCodeAt(0));
+        const file = new File([png], "shot.png", { type: "image/png" });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const box = document.querySelector("[data-chat-input]");
+        box?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+      });
+      await wait(600);
+    }
     const out = await page.evaluate(probe);
     await ctx.close();
     return { ...out, errs, scheme, motion };
@@ -336,6 +361,47 @@ try {
       fail(`facts/${label}: wanted a line containing ${want}, got ${JSON.stringify(m.facts)}`);
     } else {
       console.log(`facts · ${label}: ${m.facts}`);
+    }
+  }
+
+  // ── batch 3b: the image gate ─────────────────────────────────────
+  //
+  // **A negative claim, so it needs a positive control first.** "no
+  // attach affordance" is satisfied by a page that never rendered, by a
+  // renamed selector, and by a typo — so the same probe is run against
+  // an agent that *does* take images, and that row has to find the
+  // thing the other row must not.
+  //
+  // The third row is the one the first two cannot reach: **before any
+  // handshake has landed**, the capability is unknown, and the code
+  // says an unknown capability is not a yes. Written after a red-proof
+  // run showed the difference between `!facts?.images` and
+  // `facts && !facts.images` changing nothing — because every fixture
+  // handed the face an agent frame first, so "unknown" never happened.
+  for (const [label, agentFrame, wantPaste] of [
+    ["takes images", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true],
+    ["takes none", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false],
+    ["not said yet", null, false],
+  ]) {
+    const m = await look({
+      scheme: "dark",
+      motion: "no-preference",
+      frames: agentFrame ? [agentFrame, { kind: "history_end" }] : [{ kind: "history_end" }],
+      paste: true,
+    });
+    if (m.errs.length) fail(`images/${label}: the page threw — ${m.errs[0]}`);
+    if (!m.hasInput) {
+      fail(`images/${label}: probe dead — the composer never drew, so nothing below means anything`);
+      continue;
+    }
+    const attached = m.shots > 0;
+    if (attached !== wantPaste) {
+      fail(
+        `images/${label}: pasting an image attached ${m.shots} — this agent must ` +
+          `${wantPaste ? "take" : "refuse"} it`,
+      );
+    } else {
+      console.log(`images · ${label}: pasted → ${m.shots} attached`);
     }
   }
 
