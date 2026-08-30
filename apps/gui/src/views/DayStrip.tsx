@@ -37,6 +37,24 @@ import type { DayRun } from "@/api";
  * them apart. Full block, hairline, nothing: three different amounts of
  * substance, legible before colour is read at all.
  *
+ * # Which end is now, said without a word of explanation
+ *
+ * The strip runs oldest to newest, and nothing on it says so. What says
+ * it is free: **the rightmost cell is painted in the same colour as the
+ * state word at the end of the row**, a hand's width away — so the live
+ * end of the band and the row's current word are the same colour at the
+ * same moment, and the eye joins them without being told.
+ *
+ * That cue was there all along and was invisible for a while, because
+ * the 不知道 ink was invisible: a young khor has recorded only a few
+ * hours, most of the band was 不知道, and a band that is blank on the
+ * left and coloured on the right reads as time running right-to-left —
+ * which is what a user concluded. **The blank was doing the arguing, not
+ * the axis.** So there is deliberately no legend here (docs/UX.md
+ * 装饰性说明归零); if the question comes back now that the line is
+ * visible, that judgment was wrong and what it earns is a one-time hint,
+ * never a permanent key.
+ *
  * # It paints, it does not decide
  *
  * The runs arrive merged to the cell count this list asked for, and
