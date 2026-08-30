@@ -366,26 +366,17 @@ pub fn history(root: &Path, id: &str) -> Result<Vec<ChatFrame>, String> {
     let said = n.transcript_of(&SessionId(id.to_owned()))?;
     let mut frames: Vec<ChatFrame> = said
         .into_iter()
-        .map(|u| {
-            use khor_node::adaptor::claude::Utterance;
-            let update = match u {
-                Utterance::User(text) => serde_json::json!({
-                    "sessionUpdate": "user_message_chunk",
-                    "content": { "type": "text", "text": text },
-                }),
-                Utterance::Agent(text) => serde_json::json!({
-                    "sessionUpdate": "agent_message_chunk",
-                    "content": { "type": "text", "text": text },
-                }),
-                Utterance::Thought(text) => serde_json::json!({
-                    "sessionUpdate": "agent_thought_chunk",
-                    "content": { "type": "text", "text": text },
-                }),
-                Utterance::Tool(name) => serde_json::json!({
-                    "sessionUpdate": "tool_call",
-                    "title": name,
-                }),
-            };
+        // **The one translation, shared with the live stream.** This
+        // used to be a third hand-written copy of it, and the copies
+        // drifted the moment the live one learned anything: tool lines
+        // here went on saying `Bash` while a watched conversation
+        // showed the command, its status and its diff. Almost
+        // everything a person reads in an existing conversation comes
+        // through here, so the copy that mattered most was the one that
+        // never got fixed.
+        .filter_map(khor_node::replayed_update)
+        .map(|update| {
+            let update = serde_json::to_value(&update).unwrap_or(serde_json::Value::Null);
             ChatFrame::History { update: serde_json::json!({ "sessionId": id, "update": update }) }
         })
         .collect();

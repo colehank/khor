@@ -275,7 +275,10 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     .transcript(&crate::live::clean_leaf(&sid))
                     .unwrap_or_default();
                 for u in said {
-                    let update = replayed(u);
+                    // `None` for a recorded block with nothing to
+                    // paint; skipped rather than turned into an empty
+                    // line about a tool nobody can see.
+                    let Some(update) = replayed(u) else { continue };
                     let _ = connection
                         .send_notification(SessionNotification::new(sid.clone(), update));
                 }
@@ -631,19 +634,38 @@ async fn answer_permission(
 /// reads identically whether it was loaded here or read from disk.
 /// `pub(crate)`: the codex shim replays through the same mapping, so
 /// the two vendors' pasts read alike too.
-pub(crate) fn replayed(u: crate::adaptor::claude::Utterance) -> SessionUpdate {
+///
+/// **Tool calls now go through the very same [`said`] and [`settled`]
+/// the live stream does, and that is the whole point of this shape.**
+/// They used to have their own answer here — `ToolCall::new("replayed",
+/// name)` — and it drifted the moment the live path was improved: the
+/// live one grew titles out of the tool's input, kinds, statuses,
+/// diffs and outputs, while every *replayed* conversation went on
+/// painting line after line reading `Bash`, each wearing the same id
+/// `"replayed"`, so no update could ever match one either.
+///
+/// **That is what a person actually looks at**: almost everything on
+/// screen in an existing conversation is replayed, so a fix to the live
+/// path alone changes nothing they can see. A conversation read from
+/// the record and the same conversation watched live are the same
+/// conversation, and one translation is the only way that stays true.
+pub fn replayed(u: crate::adaptor::claude::Utterance) -> Option<SessionUpdate> {
     use crate::adaptor::claude::Utterance;
     match u {
-        Utterance::User(t) => SessionUpdate::UserMessageChunk(ContentChunk::new(
+        Utterance::User(t) => Some(SessionUpdate::UserMessageChunk(ContentChunk::new(
             ContentBlock::Text(TextContent::new(t)),
-        )),
-        Utterance::Agent(t) => SessionUpdate::AgentMessageChunk(ContentChunk::new(
+        ))),
+        Utterance::Agent(t) => Some(SessionUpdate::AgentMessageChunk(ContentChunk::new(
             ContentBlock::Text(TextContent::new(t)),
-        )),
-        Utterance::Thought(t) => SessionUpdate::AgentThoughtChunk(ContentChunk::new(
+        ))),
+        Utterance::Thought(t) => Some(SessionUpdate::AgentThoughtChunk(ContentChunk::new(
             ContentBlock::Text(TextContent::new(t)),
-        )),
-        Utterance::Tool(name) => SessionUpdate::ToolCall(ToolCall::new("replayed", name)),
+        ))),
+        // `None` where the block carries nothing paintable — a
+        // `tool_result` with no content, say. Dropping it is right:
+        // the alternative is a line about a tool nobody can see.
+        Utterance::Tool(block) => said(&block),
+        Utterance::ToolDone(block) => settled(&block),
     }
 }
 
@@ -905,6 +927,51 @@ mod wire_tests {
         let json = serde_json::to_value(&update).unwrap();
         assert_eq!(json["sessionUpdate"], "current_mode_update");
         assert_eq!(json["currentModeId"], "plan");
+    }
+
+    /// **A replayed tool call and a live one are the same call**, and
+    /// this asserts it by comparing the two paths' output rather than
+    /// by checking each against a written expectation — two
+    /// expectations can both be updated, and the bug was exactly that
+    /// only one of them ever was.
+    ///
+    /// What a person looks at in an existing conversation is almost
+    /// entirely replayed, so「the live path improved」and「the screen
+    /// changed」were different facts for as long as there were two
+    /// translations. There is now one, and this is what says so.
+    #[test]
+    fn a_replayed_tool_call_is_the_same_call_as_a_live_one() {
+        use crate::adaptor::claude::Utterance;
+        let block = serde_json::json!({
+            "type": "tool_use", "id": "toolu_x", "name": "Bash",
+            "input": { "command": "cargo test", "description": "跑测试" }
+        });
+        let live = serde_json::to_value(super::said(&block).expect("live")).unwrap();
+        let past =
+            serde_json::to_value(super::replayed(Utterance::Tool(block.clone())).expect("replayed"))
+                .unwrap();
+        assert_eq!(live, past, "one translation, or the copies drift");
+        // And it is the good answer, not merely a matching one: a test
+        // that only compared the two would pass with both broken.
+        assert_eq!(past["title"], "跑测试");
+        assert_eq!(past["status"], "in_progress");
+        assert_eq!(past["toolCallId"], "toolu_x");
+
+        let done = serde_json::json!({
+            "type": "tool_result", "tool_use_id": "toolu_x", "content": "ok", "is_error": true
+        });
+        let live = serde_json::to_value(super::settled(&done).expect("live")).unwrap();
+        let past = serde_json::to_value(
+            super::replayed(Utterance::ToolDone(done.clone())).expect("replayed"),
+        )
+        .unwrap();
+        assert_eq!(live, past);
+        assert_eq!(past["status"], "failed");
+        // **The ids match across the pair**, which is what lets a
+        // replayed failure settle the replayed call it belongs to.
+        // Every replayed call used to wear the id `"replayed"`, so no
+        // update could match one — twenty tools, one id.
+        assert_eq!(past["toolCallId"], "toolu_x");
     }
 
     /// **Named one by one, not「every name gets a kind」.** That weaker

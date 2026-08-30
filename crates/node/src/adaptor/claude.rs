@@ -327,7 +327,7 @@ fn tail_said(path: &std::path::Path) -> Option<String> {
         // A thought or a tool name is the machine's bookkeeping — a
         // preview line should say what was *said*, and skipping back to
         // the newest real sentence reads better than "Read".
-        Utterance::Thought(_) | Utterance::Tool(_) => None,
+        Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) => None,
     })
 }
 
@@ -337,10 +337,27 @@ pub enum Utterance {
     User(String),
     Agent(String),
     Thought(String),
-    /// A tool call, by name only: a name is a fact about the
-    /// conversation, an input is a payload nobody asked a chat view to
-    /// carry.
-    Tool(String),
+    /// A tool call, as **claude's own `tool_use` block, whole**.
+    ///
+    /// **It used to be the name alone**, on the reasoning that "a name
+    /// is a fact about the conversation, an input is a payload nobody
+    /// asked a chat view to carry". That reasoning was wrong in a way
+    /// only visible on screen: a replayed conversation came out as
+    /// forty lines all reading `Bash`, because the name is the one
+    /// thing every shell call has in common.
+    ///
+    /// Carrying the block rather than a widened tuple is what lets
+    /// [`crate::cagent::said`] be the **only** translation from claude's
+    /// shape to the protocol's. Two translations is how this bug
+    /// happened: the live one was taught titles, statuses and diffs,
+    /// and the replay one silently kept its own older answer.
+    Tool(serde_json::Value),
+    /// A tool call finishing, as claude's `tool_result` block, whole.
+    ///
+    /// New with the block above and for the same reason: a replayed
+    /// conversation had no way to say which of its tools failed, so
+    /// every one of them was drawn as though it had worked.
+    ToolDone(serde_json::Value),
 }
 
 /// Transcript JSONL in, utterances out. Only `user` and `assistant`
@@ -387,7 +404,13 @@ fn utterances_of(text: &str) -> Vec<Utterance> {
                             out.push(Utterance::Thought(field("thinking").to_owned()));
                         }
                         (Some("tool_use"), false) if !field("name").is_empty() => {
-                            out.push(Utterance::Tool(field("name").to_owned()));
+                            out.push(Utterance::Tool(b.clone()));
+                        }
+                        // The machine answering itself, on a user line.
+                        // Skipped entirely before this, which is why a
+                        // replayed tool could never be drawn as failed.
+                        (Some("tool_result"), true) => {
+                            out.push(Utterance::ToolDone(b.clone()));
                         }
                         _ => {}
                     }
@@ -963,7 +986,19 @@ mod tests {
                 Utterance::User("look at the docs".into()),
                 Utterance::Thought("reading".into()),
                 Utterance::Agent("here is what I found".into()),
-                Utterance::Tool("Bash".into()),
+                Utterance::Tool(serde_json::json!({"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}})),
+                // **Tombstone: this line used to be absent, and the
+                // absence was deliberate.** A `tool_result` was
+                // classed as「vendor bookkeeping」and dropped with the
+                // snapshots and the slash-commands. It is not
+                // bookkeeping: it is the only record of whether the
+                // tool worked, and dropping it meant a replayed
+                // conversation drew every tool that had failed exactly
+                // like every tool that had not. The rule this test's
+                // name states still holds — speech in, plumbing out —
+                // and what changed is which side of that line a result
+                // sits on.
+                Utterance::ToolDone(serde_json::json!({"type":"tool_result","tool_use_id":"t1","content":"...","is_error":false})),
                 Utterance::Agent("done".into()),
             ]
         );

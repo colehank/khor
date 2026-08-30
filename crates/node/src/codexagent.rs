@@ -237,7 +237,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     .transcript(&sid)
                     .unwrap_or_default();
                 for u in said {
-                    let update = crate::cagent::replayed(u);
+                    let Some(update) = crate::cagent::replayed(u) else { continue };
                     let _ = connection
                         .send_notification(SessionNotification::new(sid.clone(), update));
                 }

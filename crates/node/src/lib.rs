@@ -56,6 +56,18 @@ pub use khor_sync::agents::Spec as AgentSpec;
 /// the node, and a second path into the sync crate would be a second
 /// place to keep in step.
 pub use khor_sync::agents::registry as agent_registry;
+/// One recorded utterance as the protocol update a face paints
+/// (`cagent::replayed`).
+///
+/// **Exported because there were three copies of this translation and
+/// the bug was that only one of them was ever fixed.** The live stream,
+/// the 垫片's `session/load` replay, and `gui-core`'s reading of a
+/// discovered session's transcript each had their own answer; the live
+/// one grew tool titles, kinds, statuses and diffs, and the other two
+/// silently kept painting a line that said `Bash`. A person looking at
+/// an existing conversation sees almost only replayed lines, so the
+/// improvement was invisible where it mattered most.
+pub use crate::cagent::replayed as replayed_update;
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
 /// What sort of place a recorded visit was to

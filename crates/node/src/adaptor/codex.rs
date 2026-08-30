@@ -222,7 +222,23 @@ impl Codex {
                         Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
                     ) {
                         if let Some(name) = p["name"].as_str() {
-                            out.push(Utterance::Tool(name.to_owned()));
+                            // Shaped as claude's `tool_use` block so
+                            // that both vendors' pasts go through the
+                            // one translation (`cagent::said`). codex
+                            // records an id and arguments under its own
+                            // names; they are carried across rather
+                            // than dropped, so an opened line shows
+                            // what was actually run here too.
+                            out.push(Utterance::Tool(serde_json::json!({
+                                "type": "tool_use",
+                                "id": p["call_id"].as_str().unwrap_or(name),
+                                "name": name,
+                                "input": p.get("arguments")
+                                    .and_then(|a| a.as_str())
+                                    .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
+                                    .unwrap_or_else(|| p.get("arguments").cloned()
+                                        .unwrap_or(serde_json::Value::Null)),
+                            })));
                         }
                     }
                 }
@@ -560,7 +576,14 @@ mod tests {
             matches!(&past[0], Utterance::User(t) if t == "hello from the file"),
             "{past:?}"
         );
-        assert!(matches!(&past[1], Utterance::Tool(n) if n == "shell"), "{past:?}");
+        // Shaped as claude's `tool_use` block, because both vendors'
+        // pasts go through one translation now (`cagent::replayed`) —
+        // two of them is how a replayed tool line went on saying
+        // `Bash` for as long as the live one had been improved.
+        assert!(
+            matches!(&past[1], Utterance::Tool(b) if b["name"] == "shell" && b["type"] == "tool_use"),
+            "{past:?}"
+        );
         assert!(matches!(&past[2], Utterance::Agent(t) if t == "answered"), "{past:?}");
         assert_eq!(past.len(), 3, "codex's bookkeeping lines must not leak into the past");
         let _ = std::fs::remove_dir_all(&home);
