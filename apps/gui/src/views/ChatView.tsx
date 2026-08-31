@@ -449,7 +449,24 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
       // would appear as a tool that ran with no name.
       return false;
     }
-    // plan, usage, session info and the rest: unpainted this batch.
+    // **Everything named here was once in this line and is not any
+    // more** — plan, usage, session info, the mode and the tool
+    // payloads all have readers above or beside this fold. What is
+    // still unpainted, named so the next reader does not have to
+    // re-derive it from the protocol:
+    //
+    // - `config_option_update` — a session's own settings changing.
+    //   Nothing offers those settings yet, so a notice that one moved
+    //   would be about a control this face does not have.
+    // - `ToolCallContent::Terminal` — a tool whose output is a live
+    //   terminal rather than text. khor's own 垫片 never sends one;
+    //   `Content` and `Diff` are read (`contentIn`, `diffIn`).
+    // - the unstable plan operations (`plan_update`, `plan_removed`),
+    //   which are behind a feature flag in the protocol crate and may
+    //   change or go.
+    //
+    // A list like this rots, and this one already did: it used to name
+    // three things that are painted now.
     default:
       return false;
   }
