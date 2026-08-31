@@ -709,7 +709,7 @@ impl Node {
         cwd: Option<std::path::PathBuf>,
     ) -> Result<khor_acp::Listing, String> {
         let spec = self.agent_or_refuse(name)?;
-        let launch = spec.launch();
+        let launch = Self::agent_launch(&spec)?;
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -906,6 +906,116 @@ impl Node {
     /// what moved (一期: sponsor 本机才有这条路).
     pub fn send_to_satellite(&self, host: &str, path: &Path) -> Result<u64, String> {
         satellite::push_file(host, path)
+    }
+
+    /// Where khor looks for the programs it spawns, and what it hands
+    /// them as `PATH`.
+    ///
+    /// # The bug this exists for
+    ///
+    /// **A GUI process on macOS does not have the user's `PATH`.**
+    /// `khor serve` here is a launchd agent, and launchd hands it
+    /// `/usr/bin:/bin:/usr/sbin:/sbin` — while `npx` lives in
+    /// `/opt/homebrew/bin`. Every one of the 22 startable entries in
+    /// the shipped registry is an `npx` line, so **not one of them
+    /// could be started from the app**, while the same command from a
+    /// terminal worked perfectly: a terminal has the login shell's
+    /// `PATH` and launchd does not. Measured 2026-08-31, same binary,
+    /// same agent, only the `PATH` differing.
+    ///
+    /// It hid behind every green there was — `cargo test`, `tsc`, the
+    /// browser gates (routed fixtures, no process), and even a real
+    /// backend through the dev bridge, **because the bridge inherits
+    /// the shell of whoever started it**. Only the launchd process was
+    /// broken, and nothing in this repo ran there.
+    ///
+    /// # Asked of the login shell, once
+    ///
+    /// `$SHELL -lic` is what every GUI developer tool on this platform
+    /// does about this, for want of anything better: the login shell is
+    /// the only thing that knows what the user's `PATH` is, because the
+    /// user's `PATH` is something their rc files compute.
+    ///
+    /// **The cost is real and it is why this is cached**: measured
+    /// 0.78s cold and 0.42s warm on this machine, and it *runs the
+    /// user's rc files*, side effects and all. So it happens once per
+    /// process — [`warm_user_path`] pays it at `khor serve` start,
+    /// where a person is not waiting, and everything after reads the
+    /// answer.
+    ///
+    /// **`KHOR_PATH` overrides it**, which is not a nicety: an rc file
+    /// that hangs, prompts, or prints would otherwise leave khor with
+    /// no way to be told where things are.
+    ///
+    /// **Not a list of likely directories.** `/opt/homebrew/bin`,
+    /// `/usr/local/bin`, nvm's several — that table rots, and the day
+    /// it rots nothing goes red: it just fails to find something again,
+    /// and (now) says so politely. A table that rots and an assertion
+    /// that cannot fail are the same object.
+    pub fn user_path() -> &'static str {
+        static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        PATH.get_or_init(|| {
+            let here = std::env::var("PATH").unwrap_or_default();
+            if let Ok(told) = std::env::var("KHOR_PATH") {
+                if !told.trim().is_empty() {
+                    return told;
+                }
+            }
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+            // `-l` for the login files, `-i` because on zsh the
+            // interactive ones are where a `PATH` is usually built.
+            let out = std::process::Command::new(&shell)
+                .args(["-lic", "printf %s \"$PATH\""])
+                .stdin(std::process::Stdio::null())
+                .output();
+            let asked = match out {
+                Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_owned(),
+                _ => String::new(),
+            };
+            // **The shell's answer is added to, never swapped for,
+            // what this process already had.** A shell that answers
+            // with something short or strange must not be able to take
+            // away directories that were working — the failure mode
+            // being avoided is the one this whole function is about.
+            merge_paths(&asked, &here)
+        })
+    }
+
+    /// Pays for [`Self::user_path`] now rather than on the first spawn.
+    /// Called where nobody is waiting on it (`khor serve`'s start).
+    pub fn warm_user_path() {
+        let _ = Self::user_path();
+    }
+
+    /// The launch JSON for one agent, with its command resolved and the
+    /// user's `PATH` attached — **or a refusal that names the program
+    /// khor could not find**.
+    ///
+    /// Every spawn of an ACP agent goes through here, khor's own two
+    /// shims included: they are absolute paths so the lookup is free,
+    /// and they need the `PATH` too, because what *they* spawn is the
+    /// vendor's own binary.
+    ///
+    /// **The command is resolved to an absolute path here rather than
+    /// left for the spawn to look up.** Two reasons, and the second is
+    /// the one that matters: it makes the failure khor's to report
+    /// instead of an exit status to interpret, and it does not depend
+    /// on which `PATH` the process-spawning layer decides to search.
+    pub fn agent_launch(spec: &AgentSpec) -> Result<String, String> {
+        Self::launch_on(spec, Self::user_path())
+    }
+
+    /// [`Self::agent_launch`], against a stated `PATH`. Split out so
+    /// the refusal is testable without a login shell in the loop.
+    pub(crate) fn launch_on(spec: &AgentSpec, path: &str) -> Result<String, String> {
+        let found = find_program(&spec.command, path)
+            .ok_or_else(|| msg::agent_command_not_found(&spec.command, path))?;
+        serde_json::to_string(&serde_json::json!({
+            "command": found,
+            "args": spec.args,
+            "env": { "PATH": path },
+        }))
+        .map_err(|e| e.to_string())
     }
 
     /// The argv the shipped snapshot holds for a registry id, refusing
@@ -2693,6 +2803,58 @@ pub(crate) fn device_id_from_hex(s: &str) -> Result<DeviceId, String> {
         out[i] = (hi << 4) | lo;
     }
     Ok(DeviceId(out))
+}
+
+/// The login shell's answer **added to** what this process already
+/// had, in that order, without repeats.
+///
+/// **Added to, never swapped for.** A shell that answers with
+/// something short or strange must not be able to take away
+/// directories that were working — which is this whole bug pointing
+/// the other way, and it would be the harder one to see. An empty
+/// answer (no shell, a shell that failed) leaves what was there.
+pub(crate) fn merge_paths(asked: &str, here: &str) -> String {
+    if asked.trim().is_empty() {
+        return here.to_owned();
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for dir in asked.split(':').chain(here.split(':')) {
+        if !dir.is_empty() && !seen.contains(&dir) {
+            seen.push(dir);
+        }
+    }
+    seen.join(":")
+}
+
+/// Resolves a program name the way a shell would, against a stated
+/// `PATH`: a name with a separator in it is taken as written, anything
+/// else is looked for in each directory in turn.
+///
+/// **Executable, not merely present.** A directory named `npx`, or a
+/// data file of that name, is not something that starts — and a lookup
+/// that answered "found" for one would move the failure back to where
+/// it was, a child that dies with nothing to say.
+fn find_program(command: &str, path: &str) -> Option<String> {
+    let runnable = |p: &std::path::Path| -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        }
+        #[cfg(not(unix))]
+        {
+            p.is_file()
+        }
+    };
+    if command.contains('/') {
+        let p = std::path::Path::new(command);
+        return runnable(p).then(|| command.to_owned());
+    }
+    path.split(':')
+        .filter(|d| !d.is_empty())
+        .map(|d| std::path::Path::new(d).join(command))
+        .find(|p| runnable(p))
+        .map(|p| p.display().to_string())
 }
 
 #[cfg(test)]

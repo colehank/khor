@@ -776,7 +776,11 @@ fn open(rest: &[String]) -> Result<(), String> {
             // grows two (docs/KHOR.md — the faces are equivalent
             // because they are one call).
             let spec = n.agent_or_refuse(name)?;
-            cmd = vec![spec.launch()];
+            // Resolved and carrying the user's PATH — see
+            // `Node::user_path`. A terminal has that PATH already, so
+            // this line changes nothing here; it is the same call the
+            // faces make, and one judgment is the point.
+            cmd = vec![khor_node::Node::agent_launch(&spec)?];
             Some(name.clone())
         }
         None => None,
@@ -1061,6 +1065,14 @@ fn serve(_rest: &[String]) -> Result<(), String> {
         let _ = std::fs::write(dot.join("serve.pid"), std::process::id().to_string());
         return khor_node::keeper::keep();
     }
+    // **Paid here, where nobody is waiting.** Finding the user's PATH
+    // means running their login shell (0.78s cold, and it runs their rc
+    // files) — see `Node::user_path`, which exists because launchd
+    // hands this process `/usr/bin:/bin:/usr/sbin:/sbin` and every
+    // agent khor can start lives somewhere else. Doing it now rather
+    // than on the first spawn keeps that second out of the middle of
+    // somebody pressing 问一次.
+    khor_node::Node::warm_user_path();
     let n = node()?;
     eprintln!("{}", cli::serve_banner(n.name()));
     start_web_face(&Node::root_from_env());

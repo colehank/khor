@@ -210,7 +210,7 @@ pub fn resume_session(root: &std::path::Path, agent: &str, session: &str) -> Res
     let id = n.reopen_gui_as(
         std::path::Path::new(&seen.cwd),
         &title,
-        &[spec.launch()],
+        &[Node::agent_launch(&spec)?],
         agent,
         session,
     )?;

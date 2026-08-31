@@ -1360,3 +1360,100 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
     );
     let _ = fs::remove_dir_all(&r);
 }
+
+/// **The `PATH` a GUI process gets is not the one a person has**, and
+/// khor now says so by name instead of letting the child die with
+/// nothing to report.
+///
+/// The control is the one that found the bug on 2026-08-31: the same
+/// binary, the same agent, the same machine, only the `PATH` differing
+/// — from a terminal it listed 85 conversations, and from `khor serve`
+/// (a launchd agent, `PATH=/usr/bin:/bin:/usr/sbin:/sbin`) it said
+/// **"the agent ended before it answered"**, which is a sentence about
+/// the agent and the agent was fine.
+mod finding_the_program {
+    use crate::{AgentSpec, Node};
+
+    fn spec(command: &str) -> AgentSpec {
+        AgentSpec { command: command.into(), args: vec!["-y".into(), "some-acp@1.0.0".into()] }
+    }
+
+    /// The two halves in one test, because the claim is a *difference*:
+    /// a `PATH` that has the program and one that does not, asked the
+    /// same question. Either half alone is satisfied by a function
+    /// that always answers the same way.
+    #[test]
+    fn a_program_off_the_path_is_refused_by_name_and_one_on_it_is_not() {
+        // `sh` stands in for `npx`: it is on every unix, in a directory
+        // that is on the minimal PATH, so this half cannot fail for
+        // being about this machine.
+        let ok = Node::launch_on(&spec("sh"), "/usr/bin:/bin")
+            .expect("sh is on /bin");
+        assert!(ok.contains("/bin/sh"), "the command is resolved, not left as a bare name: {ok}");
+
+        let why = Node::launch_on(&spec("npx"), "/usr/bin:/bin:/usr/sbin:/sbin")
+            .expect_err("launchd's PATH has no npx");
+        // **The name of the program has to be in the sentence.** That
+        // is the whole fix: without it the message is about the agent,
+        // and a person goes and checks an agent that is not broken.
+        assert!(why.contains("npx"), "the refusal must name what was not found: {why}");
+        // …and where khor looked, which is the other half of the next
+        // step: install it, or point khor somewhere else.
+        assert!(why.contains("/usr/sbin"), "the refusal must say where it looked: {why}");
+    }
+
+    /// The launch carries the `PATH` onward, or the child finds the
+    /// program and then cannot find what *it* needs — `npx` without
+    /// `node` beside it is the same failure one level down.
+    #[test]
+    fn the_launch_hands_the_path_to_the_child() {
+        let out = Node::launch_on(&spec("sh"), "/usr/bin:/bin").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["env"]["PATH"], "/usr/bin:/bin");
+        assert_eq!(v["args"][1], "some-acp@1.0.0", "the arguments survive: {out}");
+    }
+
+    /// **Executable, not merely present.** A directory named like the
+    /// program, or a data file, would otherwise resolve and push the
+    /// failure back to a child that dies with nothing to say.
+    #[test]
+    fn something_that_is_not_a_program_does_not_count_as_finding_one() {
+        let dir = std::env::temp_dir().join(format!("khor-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("npx")).unwrap();
+        std::fs::write(dir.join("data"), b"not a program").unwrap();
+        let here = dir.display().to_string();
+
+        assert!(Node::launch_on(&spec("npx"), &here).is_err(), "a directory is not a program");
+        assert!(Node::launch_on(&spec("data"), &here).is_err(), "a data file is not a program");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **The shell's answer is added to what this process had, never
+    /// swapped for it.** A login shell that answers with something
+    /// short must not be able to take away directories that were
+    /// already working — that is this bug pointing the other way.
+    #[test]
+    fn the_probed_path_keeps_what_the_process_already_had() {
+        // **The merge itself is called, not re-written here.** The
+        // first draft of this test built the union in the test body
+        // and compared it to itself — true, green, and asserting
+        // nothing about khor. `user_path` is a `OnceLock` around a
+        // login shell, so the part worth testing is split out.
+        assert_eq!(
+            crate::merge_paths("/opt/khor-test-bin", "/usr/bin:/bin"),
+            "/opt/khor-test-bin:/usr/bin:/bin",
+            "the shell's answer leads and what was here follows"
+        );
+        assert_eq!(
+            crate::merge_paths("", "/usr/bin:/bin"),
+            "/usr/bin:/bin",
+            "a shell that answered nothing takes nothing away"
+        );
+        assert_eq!(
+            crate::merge_paths("/bin:/usr/bin", "/usr/bin:/bin"),
+            "/bin:/usr/bin",
+            "and a directory named twice appears once"
+        );
+    }
+}

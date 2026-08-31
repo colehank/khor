@@ -758,15 +758,29 @@ impl Picked {
     /// registered agent runs the command it was registered with, as the
     /// launch JSON the protocol crate reads — one spelling from the
     /// registry to the child, so there is no translation step to drift.
+    /// **All three go out as a launch JSON carrying the user's `PATH`**
+    /// (`Node::agent_launch`), khor's own two included — and the two
+    /// need it as much as a registry agent does, for a reason one step
+    /// removed: what `_cagent` spawns is `claude`, by bare name, and on
+    /// this machine `claude` lives in `~/.local/bin`, which launchd's
+    /// `PATH` does not contain. So a conversation started from the app
+    /// could not start khor's own agent either, and said so in the
+    /// agent's voice rather than khor's.
     fn launch(&self) -> Result<(Vec<String>, String), String> {
         let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
             let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
-            Ok((vec![exe.display().to_string(), shim.to_owned()], vendor.to_owned()))
+            let spec = khor_node::AgentSpec {
+                command: exe.display().to_string(),
+                args: vec![shim.to_owned()],
+            };
+            Ok((vec![khor_node::Node::agent_launch(&spec)?], vendor.to_owned()))
         };
         match self {
             Picked::Claude => mine("_cagent", khor_node::adaptor::claude::VENDOR),
             Picked::Codex => mine("_codexagent", khor_node::adaptor::codex::VENDOR),
-            Picked::Registered(name, spec) => Ok((vec![spec.launch()], name.clone())),
+            Picked::Registered(name, spec) => {
+                Ok((vec![khor_node::Node::agent_launch(spec)?], name.clone()))
+            }
         }
     }
 }

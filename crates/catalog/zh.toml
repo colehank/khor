@@ -748,6 +748,18 @@ agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动�
 # 的 id 缺的不是它自己,是它的地址。说清下一步是「去问那个 agent」,
 # 不然人会以为这段对话没了。
 resume-unknown-session = "没问到过这段对话: {0}——先问一次 {1}"
+# khor 要起一个 agent,而它的命令在 PATH 上找不到。
+#
+# **这句话存在的理由是它之前说的是别的。** 2026-08-31:`khor serve` 是
+# launchd 起的,拿的是 `/usr/bin:/bin:/usr/sbin:/sbin`,而 `npx` 在
+# `/opt/homebrew/bin`——注册表里 22 个「khor 起得来」的全是 npx 行,于是
+# 界面上一个都起不来,而屏幕上写的是「这个 agent 没起来,或者它不说 ACP」。
+# **一个关于别人家软件的错结论**,照着它去查的是一个没坏的东西。
+#
+# 所以这句必须带上那个可执行文件的名字,和 khor 到底在哪儿找过——两个
+# 事实两个下一步:装个 node / 这个 agent 的命令写错了。PATH 很长,照样
+# 整条印出来:**把答案裁掉的短句子,不比长句子好。**
+agent-command-not-found = "找不到这个命令: {0}。khor 在这条 PATH 上找过: {1}。装上它,或者设 KHOR_PATH 指给 khor"
 no-such-dir = "没有这个目录: {0}"
 # Two machines sharing one home (a cluster's NFS export is the usual
 # way) would share one identity. Says whose it is and what to do, in
