@@ -1516,4 +1516,22 @@ mod finding_the_program {
         assert!(!crate::says_utf8("C"), "and a locale that does not, does not");
         assert!(!crate::says_utf8(""), "nor does an empty one");
     }
+
+    /// **Asking the login shell is a repair, not a policy.** It costs
+    /// 0.78s and it runs the person's rc files, so a khor whose own
+    /// `PATH` can answer must never pay it — and every khor started
+    /// from a terminal is one of those. Only the one launchd started,
+    /// whose four directories hold neither `tmux` nor `claude`, goes
+    /// past this line.
+    #[test]
+    fn the_login_shell_is_only_asked_when_this_process_cannot_answer() {
+        assert!(
+            !crate::repair_needed("sh", "/usr/bin:/bin"),
+            "a PATH that can find the program is the answer, and no shell is run"
+        );
+        assert!(
+            crate::repair_needed("khor-no-such-program", "/usr/bin:/bin"),
+            "and one that cannot is the only case that goes further"
+        );
+    }
 }

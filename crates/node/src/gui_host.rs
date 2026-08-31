@@ -333,6 +333,19 @@ fn spawn_ghost(
     } else {
         c.env_remove("KHOR_AGENT");
     }
+    // **The environment launchd does not give a GUI process**, handed
+    // down here rather than at each caller. Two of the callers build
+    // their argv by hand and so never pass through `Node::agent_launch`
+    // (the takeover is one), and what a ghost spawns next is khor's own
+    // shim — which then spawns `claude` or `codex`, both of them in
+    // `~/.local/bin` and neither of them on launchd's four directories.
+    // Putting it on the spawn closes the hole structurally instead of
+    // once per call site (`Node::user_path`, `Node::user_locale`).
+    c.env(crate::PATH_ENV, crate::Node::user_path());
+    c.env("PATH", crate::Node::user_path());
+    for (name, value) in crate::Node::user_locale() {
+        c.env(name, value);
+    }
     c.arg("_ghost")
         .arg(&ready)
         .arg(title)

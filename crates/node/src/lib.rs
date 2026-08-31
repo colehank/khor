@@ -2984,10 +2984,17 @@ pub(crate) fn read_shell_answer(said: &str) -> Asked {
 /// a child an exec error nobody will ever read.
 pub(crate) fn spawn_path(command: &str) -> String {
     let here = std::env::var("PATH").unwrap_or_default();
-    if find_program(command, &here).is_some() {
-        return here;
+    if repair_needed(command, &here) {
+        return Node::user_path().to_owned();
     }
-    Node::user_path().to_owned()
+    here
+}
+
+/// [`spawn_path`]'s judgment, split out so it is testable without a
+/// login shell in the loop: whether this process's own `PATH` has to
+/// be gone beyond for `command`.
+pub(crate) fn repair_needed(command: &str, here: &str) -> bool {
+    find_program(command, here).is_none()
 }
 
 /// Resolves a program name the way a shell would, against a stated

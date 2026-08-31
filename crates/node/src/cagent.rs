@@ -356,8 +356,16 @@ impl Shim {
         if self.session.lock().unwrap().is_some() {
             return Err(msg::CAGENT_ONE_SESSION.into());
         }
-        let bin = std::env::var(CLAUDE_ENV).unwrap_or_else(|_| "claude".into());
+        let named = std::env::var(CLAUDE_ENV).unwrap_or_else(|_| "claude".into());
+        // Looked up by khor rather than left to the spawn, so a missing
+        // vendor binary is something khor reports by name and by where
+        // it searched — not an `ENOENT` a reader has to guess at
+        // (`crate::spawn_path`, and the launchd `PATH` it exists for).
+        let path = crate::spawn_path(&named);
+        let bin = crate::find_program(&named, &path)
+            .ok_or_else(|| msg::command_not_found(&named, &path))?;
         let mut c = std::process::Command::new(&bin);
+        c.env("PATH", &path);
         c.args([
             "--print",
             "--input-format",
