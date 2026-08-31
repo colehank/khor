@@ -107,6 +107,17 @@ pub const KNOWN: &[Known] = &[
 /// somebody reads, not a number that quietly gets smaller.
 pub const STARTABLE: usize = 22;
 
+/// The day this snapshot was taken, for the faces that print it.
+///
+/// **A table that ages has to say when it is from**, or a list of 40
+/// agents reads as "these are the agents there are". Here rather than
+/// at each face: two faces print it now, and a date copied into a face
+/// drifts from the table it describes — silently, because the copy is
+/// the half on screen. (`khor-cli` held a copy until 2026-08-31, under
+/// a doc comment claiming it was parsed out of this module. It was a
+/// literal.)
+pub const TAKEN: &str = "2026-08-30";
+
 impl Known {
     /// The entry with this id, if the snapshot has one.
     pub fn find(id: &str) -> Option<&'static Known> {

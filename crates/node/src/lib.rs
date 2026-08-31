@@ -908,6 +908,51 @@ impl Node {
         satellite::push_file(host, path)
     }
 
+    /// The argv the shipped snapshot holds for a registry id, refusing
+    /// by name when there is none.
+    ///
+    /// **Here rather than in the CLI, because two faces expand `@id`
+    /// now.** The judgment has two refusals in it — "no such id" and
+    /// "that one ships a binary, khor has no command for it" — and the
+    /// second is the one a copy would get wrong, because it reads as
+    /// the first unless somebody remembered [`registry::Known::argv`]
+    /// can be `None` for an entry that is perfectly real.
+    pub fn known_argv(&self, id: &str) -> Result<Vec<String>, String> {
+        let known = agent_registry::Known::find(id).ok_or_else(|| msg::agents_unknown_id(id))?;
+        let argv = known.argv.ok_or_else(|| msg::agents_id_not_startable(id))?;
+        Ok(argv.iter().map(|s| (*s).to_owned()).collect())
+    }
+
+    /// Registers a snapshot entry under `name` ([`Self::known_argv`]
+    /// then [`Self::register_agent`]).
+    ///
+    /// **The argv never crosses a wire to get here.** A face asks for
+    /// an id and this looks the command up; the alternative — a face
+    /// that posts the argv it read — is a face that can ask khor to
+    /// spawn anything at all, and the browser skin is the second
+    /// caller of this table (`khor_gui_core::api`'s head).
+    pub fn register_known_agent(&self, name: &str, id: &str) -> Result<(), String> {
+        let argv = self.known_argv(id)?;
+        self.register_agent(name, &argv)
+    }
+
+    /// One conversation this agent was recorded as having, by the id it
+    /// gave — `None` for an id nobody recorded under this name.
+    ///
+    /// **What this is for is the cwd.** `session/load` has to be told
+    /// where the conversation was opened, and the only place that
+    /// survives is the row the agent itself handed over at
+    /// [`Self::refresh_agent_sessions`]. A caller that passed the
+    /// directory somebody happened to be standing in would be handing
+    /// the agent a different conversation's address.
+    pub fn agent_seen_row(&self, name: &str, session: &str) -> Result<Option<AgentSeen>, String> {
+        let rows = match self.agent_seen(name)? {
+            Some(AgentAnswer::Sessions { rows }) => rows,
+            _ => return Ok(None),
+        };
+        Ok(rows.into_iter().find(|r| r.id == session))
+    }
+
     /// Forgets one. A name nobody registered is not an error — the
     /// caller asked for a world without it, and that is the world.
     pub fn forget_agent(&self, name: &str) -> Result<(), String> {
@@ -1945,14 +1990,31 @@ impl Node {
     /// `Facts::replays`, and the check belongs before the process is
     /// spawned rather than after — the alternative is a row that exists
     /// and lies.
+    ///
+    /// **`cwd` is the conversation's own, not the caller's.**
+    /// `session/load` carries the directory the session was opened in
+    /// (`khor_acp::Handle`), and a real adaptor is entitled to refuse a
+    /// mismatch — so the only honest source is the row the agent handed
+    /// over when it listed ([`Self::agent_seen_row`]). This took `None`
+    /// until 2026-08-31, which loaded every resumed conversation at
+    /// whatever directory the process happened to start in: it survived
+    /// its first end-to-end run because that run stood in the right
+    /// place, which is exactly the shape of a bug that waits.
     pub fn reopen_gui_as(
         &self,
+        cwd: &std::path::Path,
         title: &str,
         cmd: &[String],
         agent: &str,
         session: &str,
     ) -> Result<SessionId, String> {
-        gui_host::spawn_gui_host_reopen(None, title, cmd, Some(agent), session)
+        // Refused here rather than at the spawn: a directory that is
+        // gone comes back from the child as a launch failure, and the
+        // thing a person can act on is the path.
+        if !cwd.is_dir() {
+            return Err(msg::no_such_dir(&cwd.display().to_string()));
+        }
+        gui_host::spawn_gui_host_reopen(Some(cwd), title, cmd, Some(agent), session)
     }
 
     /// `open_gui`, born in a chosen directory (the wizard's 目录 field);

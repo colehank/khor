@@ -387,11 +387,6 @@ agents-known-byhand = "自己装,然后 khor agents add <名字> -- <命令...>"
 # Heading for the list, carrying the two things that keep it honest:
 # where it came from and when.
 agents-known-head = "ACP 注册表快照({0},{1} 个,其中 {2} 个 khor 起得来)"
-# `add` was given `@<id>` and the snapshot has no such id.
-agents-unknown-id = "快照里没有这个 id: {0}(khor agents known 看有哪些)"
-# `add` was given `@<id>` that exists but ships a binary, so there is no
-# argv to expand into.
-agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动命令——装好之后: khor agents add <名字> -- <命令...>"
 # `khor agents sessions <名字>`:这个 agent 说它有哪些会话(`session/list`)。
 #
 # **下面两句必须读起来完全不同,那是这组文案存在的理由。** 「它答不了」和
@@ -738,6 +733,21 @@ codexagent-bad-answer = "codex 对 {0} 的回答不是垫片认得的形状"
 agent-name-blank = "得给它起个名字"
 agent-name-reserved = "这个名字 khor 自己在用: {0}(claude、codex、khor、shell 都留着)"
 agent-needs-a-command = "得说清它怎么起:khor agents add <名字> -- <命令...>"
+# 拿注册表快照里的一个 id 去登记(`@<id>`,或者界面上那颗「接进来」),
+# 两种失法。**从 [cli] 挪到这儿是因为它们不再只有一张脸**——2026-08-31
+# 起 `Node::known_argv` 是两张脸共用的那一个判断。
+#
+# 下面两句必须读起来不一样:第一句是「没这个东西」,第二句是「有,而且
+# 好好的,只是 khor 没有它的启动命令」。合成一句的话,18 个发二进制的
+# agent 会被读成「接不了」。
+agents-unknown-id = "快照里没有这个 id: {0}(khor agents known 看有哪些)"
+agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动命令——装好之后: khor agents add <名字> -- <命令...>"
+# 续一段对话,而这段对话不在 khor 记下来的那批里。**不是「找不到」,是
+# 「没问到过」**——两张脸都拿记下来的那条记录里的目录去续(`session/load`
+# 得报出这段对话当初开在哪儿,真适配器会拒绝对不上的),所以一个没被记过
+# 的 id 缺的不是它自己,是它的地址。说清下一步是「去问那个 agent」,
+# 不然人会以为这段对话没了。
+resume-unknown-session = "没问到过这段对话: {0}——先问一次 {1}"
 no-such-dir = "没有这个目录: {0}"
 # Two machines sharing one home (a cluster's NFS export is the usual
 # way) would share one identity. Says whose it is and what to do, in
@@ -960,6 +970,42 @@ new-session-agent = "智能体"
 # failed — "you have none" and "we could not ask" are different facts,
 # and the second one has its own line.
 new-session-more-agents = "别的 agent 用 khor agents add 接进来"
+# 随包带的 ACP 注册表快照,就地展开在智能体那一行底下(`khor agents
+# known` 的同一份数据)。**在界面上开这扇门的理由,和上面那句是同一个**:
+# 只用界面的人没有第二条路知道这 40 个的存在。
+new-session-add-agent = "接一个"
+new-session-registry = "khor 认得的 agent"
+# 出处和日期,和 CLI 那份头一样带着——**一张会过期的表必须自己说出它是
+# 什么时候的**,不然它读起来像「现在有这些」。
+new-session-registry-taken = "{0} 的快照,共 {1} 个"
+new-session-search = "找 agent"
+new-session-attach = "接进来"
+# 已经登记过的那些。画成一个不可点的状态而不是把它们藏掉:藏掉的话
+# 「我明明记得有这个」会让人以为快照缩水了。
+new-session-attached = "已接入"
+# 另外 18 个:khor 没有它们的启动命令,因为它们发的是各平台的二进制。
+# **和「接不了」必须读起来不一样**(cli 那两句同一个理由):装好之后
+# 用命令行把命令告诉 khor,和第一天一样能用。
+new-session-byhand = "自己装,再用命令行接进来"
+# 一个登记过的 agent 自己报过的历史对话。只在选中的是登记过的 agent 时
+# 出现——claude 和 codex 的对话 khor 是读它们的磁盘拿到的,这一节对它们
+# 没有主语。
+#
+# 「点一段接着走」写在标题里,因为点一行和底下那颗「建立」是两个动作:
+# 它不开新的,而且它去的是那段对话自己的目录,不是上面填的那个。
+new-session-seen = "已有的对话——点一段接着走"
+# 起一个真的 agent 进程:对真的 `@claude-acp` 实测 1.5 秒(npm 包已缓存)、
+# 冷启 5.64 秒;读记下来的同一个答案 0.017 秒。**所以它是一颗人按的按钮,
+# 永远不跟着轮询走。**
+new-session-seen-ask = "问一次"
+new-session-seen-asking = "问着…"
+# 下面三句必须读起来完全不同,那是这组文案存在的理由,也是这一批最容易
+# 塌的地方——**一个空列表会把前两种压成同一个**,而人的下一步三个方向:
+# 去问 / 别再问 / 开新的。后端本来就是三态(`Option<AgentAnswer>`),
+# 界面上不许压平。
+new-session-seen-unasked = "还没问过它"
+new-session-seen-cannot = "它列不出自己的对话——协议里这一项是可选的"
+new-session-seen-none = "它说它一段对话都没有"
 chat-readonly = "只读——它正在自己的终端里跑"
 takeover = "接管"
 takeover-busy = "它正忙,接管会打断这一轮;那边的终端会结束,对话从这里继续"

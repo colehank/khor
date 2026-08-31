@@ -539,6 +539,348 @@ try {
     }
   }
 
+  // ── batch 4: the wizard reaches what only the CLI could ──────────
+  //
+  // Two things live behind `khor agents` and nowhere else: the shipped
+  // registry snapshot, and what a registered agent said about its own
+  // past conversations. Somebody who never opens a terminal has no way
+  // to either — so these claims are about a door existing, and about
+  // the door not lying once it is open.
+  //
+  // 13. **the four answers stay four sentences.** This is the one that
+  //     collapses: an empty list makes 「还没问过」, 「它答不了」 and
+  //     「它说它没有」 into one shape, and the person's next move
+  //     differs in all three (go ask / stop asking / open a new one).
+  //     Asserted per case *and* pairwise-distinct — a face with three
+  //     branches and one sentence satisfies every per-case check that
+  //     only looks for non-empty text.
+  // 14. **nothing asks on its own.** Asking starts an agent process
+  //     (1.5s measured warm, 5.64s cold); reading what was recorded is
+  //     0.017s. So the
+  //     count of `agent_ask` after opening the dialog and sitting
+  //     through two poll ticks must be **zero**, and one press must
+  //     make it exactly one. The positive control is `agent_seen`
+  //     having been called at all — otherwise "no asks" is satisfied
+  //     by a face that never spoke to the backend.
+  // 15. the snapshot's two halves are drawn as two halves: a startable
+  //     entry grows 接进来, one that ships a binary grows a sentence
+  //     and **no control**. The negative half needs the positive one in
+  //     the same run, because "no button" is free for a panel that
+  //     never rendered.
+  // 16. attaching goes out **by id**, and opening one of the listed
+  //     conversations goes out as a resume carrying that agent and that
+  //     id. A row on screen and a frame on the wire are different
+  //     facts, and the first is satisfied by a click that sends
+  //     nothing (`attach`'s precedent above).
+  //
+  // The 40/22/18 counts are **not** asserted here: they are the
+  // table's, not the face's, and `khor_gui_core::agents`' own test
+  // holds them. A second copy of those numbers in a JS fixture would
+  // be a number that drifts from the table it claims to describe.
+  const KNOWN_FIXTURE = [
+    { id: "gemini", name: "Gemini CLI", about: "Google's official CLI for Gemini",
+      argv: "npx -y @google/gemini-cli@0.57.0 --acp" },
+    { id: "claude-acp", name: "Claude Agent", about: "ACP wrapper for Anthropic's Claude",
+      argv: "npx -y @agentclientprotocol/claude-agent-acp@0.70.0" },
+    // The other half of the table: real agents khor has no argv for.
+    { id: "goose", name: "goose", about: "A local, extensible, open source AI agent", argv: null },
+    { id: "cursor", name: "Cursor", about: "Cursor's coding agent", argv: null },
+  ];
+  const SEEN_ROWS = [
+    { id: "sess-a", cwd: "/w/khor", title: "接上注册表", updated_at: "2026-08-30T10:00:00Z" },
+    { id: "sess-b", cwd: "/w/other", title: null, updated_at: null },
+  ];
+
+  /** Opens the wizard and reads the two new sections off it.
+   *
+   * `seen` is the `agent_seen` answer under test; `registered` is what
+   * `agents` returns. Every call the face makes is counted, because
+   * two of these claims are about a call **not** happening. */
+  const wizard = async ({
+    seen,
+    registered = [{ name: "gemini", command: "npx gemini" }],
+    pick = "gemini",
+    settle = 900,
+    press = null,
+    attachId = null,
+    resumeId = null,
+  }) => {
+    const ctx = await browser.newContext({
+      viewport: { width: WIDE, height: 900 },
+      colorScheme: "dark",
+      reducedMotion: "no-preference",
+      deviceScaleFactor: 1,
+    });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(String(e)));
+    const json = (b) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
+    await page.route("**/sessions", json([]));
+    await page.route("**/devices", json([]));
+    await page.route("**/hooks_state", json({ installed: false }));
+    await page.route("**/quota", json({ quota: null, trouble: null }));
+    await page.route("**/dir_pins", json([]));
+    await page.route("**/web_pins", json([]));
+    await page.route("**/recents", json([]));
+    await page.route("**/agents", json(registered));
+    await page.route("**/agents_known", json(KNOWN_FIXTURE));
+    await page.route("**/agents_known_taken", json(["2026-08-30", 40, 22]));
+    const calls = { seen: 0, ask: 0 };
+    const sent = { register: [], resume: [] };
+    await page.route("**/agent_seen", (r) => {
+      calls.seen += 1;
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(seen) });
+    });
+    await page.route("**/agent_ask", (r) => {
+      calls.ask += 1;
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(seen) });
+    });
+    await page.route("**/register_known_agent", (r) => {
+      try {
+        sent.register.push(JSON.parse(r.request().postData() ?? "{}"));
+      } catch {
+        sent.register.push(null);
+      }
+      r.fulfill({ contentType: "application/json", body: "null" });
+    });
+    await page.route("**/resume_session", (r) => {
+      try {
+        sent.resume.push(JSON.parse(r.request().postData() ?? "{}"));
+      } catch {
+        sent.resume.push(null);
+      }
+      r.fulfill({ contentType: "application/json", body: JSON.stringify("gui/resumed") });
+    });
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+    await wait(700);
+    await page.locator("[data-pane-new]").first().click();
+    await page.locator('[data-new-item="new"]').click();
+    await wait(400);
+    if (attachId !== null) {
+      await page.locator("[data-new-session-add-agent]").click();
+      await wait(400);
+    }
+    const panel = attachId !== null
+      ? await page.evaluate(() => {
+          const rows = [...document.querySelectorAll("[data-registry-row]")].map((el) => ({
+            id: el.getAttribute("data-registry-row"),
+            startable: el.getAttribute("data-registry-startable") === "true",
+            attach: !!el.querySelector("[data-registry-attach]"),
+            byhand: !!el.querySelector("[data-registry-byhand]"),
+            attached: !!el.querySelector("[data-registry-attached]"),
+          }));
+          const t = document.querySelector("[data-registry-taken]");
+          return { rows, taken: (t?.textContent ?? "").trim() };
+        })
+      : null;
+    if (attachId !== null && attachId !== "") {
+      await page.locator(`[data-registry-attach="${attachId}"]`).click();
+      await wait(600);
+    }
+    if (pick) {
+      await page.locator(`[data-new-session-agent="${pick}"]`).click();
+      await wait(400);
+    }
+    // **Two poll ticks (POLL_MS is 2000).** The claim is that nothing
+    // on a timer asks, and a window shorter than the timer measures
+    // the sampling rather than the system.
+    await wait(settle);
+    const before = { ...calls };
+    if (press) {
+      await page.locator("[data-agent-ask]").click();
+      await wait(600);
+    }
+    if (resumeId) {
+      await page.locator(`[data-seen-row="${resumeId}"]`).click();
+      await wait(600);
+    }
+    const out = await page.evaluate(() => {
+      const box = document.querySelector("[data-agent-seen]");
+      return {
+        // Null and "" are different: no section at all versus a section
+        // that drew nothing.
+        said: box ? box.getAttribute("data-said") : null,
+        text: box
+          ? (box.querySelector("[data-agent-seen-text]")?.textContent ?? "").trim()
+          : null,
+        rows: [...document.querySelectorAll("[data-seen-row]")].map((el) => ({
+          id: el.getAttribute("data-seen-row"),
+          text: (el.textContent ?? "").trim(),
+        })),
+        // The positive control for every negative claim below: the
+        // dialog is open and painting agent buttons at all.
+        buttons: document.querySelectorAll("[data-new-session-agent]").length,
+        askButton: !!document.querySelector("[data-agent-ask]"),
+      };
+    });
+    await ctx.close();
+    return { ...out, errs, calls, before, sent, panel };
+  };
+
+  // 13) the four answers, four sentences.
+  const answers = [
+    ["还没问过", { said: "unasked" }, "unasked"],
+    ["它答不了", { said: "cannot" }, "cannot"],
+    ["它说它没有", { said: "sessions", rows: [] }, "none"],
+    ["它列出来了", { said: "sessions", rows: SEEN_ROWS }, "sessions"],
+  ];
+  const sentences = new Map();
+  for (const [label, seen, wantMark] of answers) {
+    const w = await wizard({ seen });
+    const say = `wizard/${label}`;
+    if (w.errs.length) fail(`${say}: the page threw — ${w.errs[0]}`);
+    if (w.buttons === 0) {
+      fail(`${say}: probe dead — the wizard never painted an agent button, so nothing below means anything`);
+      continue;
+    }
+    if (w.said !== wantMark) {
+      fail(`${say}: the section reads data-said=${JSON.stringify(w.said)}, wanted ${wantMark}`);
+      continue;
+    }
+    if (wantMark === "sessions") {
+      // The listing says itself; the rows are the answer.
+      if (w.rows.length !== SEEN_ROWS.length) {
+        fail(`${say}: ${SEEN_ROWS.length} recorded conversations and ${w.rows.length} drew`);
+      } else {
+        // Its own name where it has one, and where it lives where it
+        // does not — the id alone is not something a person picks by.
+        if (!w.rows[0].text.includes("接上注册表")) {
+          fail(`${say}: the named conversation reads ${JSON.stringify(w.rows[0].text)}`);
+        }
+        if (!w.rows[1].text.includes("/w/other")) {
+          fail(`${say}: the unnamed conversation must fall back to where it lives, got ${JSON.stringify(w.rows[1].text)}`);
+        }
+        // Where it lands is on screen, because a click does not go to
+        // the 目录 box above.
+        if (!w.rows[0].text.includes("/w/khor")) {
+          fail(`${say}: a row does not say where opening it lands: ${JSON.stringify(w.rows[0].text)}`);
+        }
+      }
+      console.log(`${say}: ${w.rows.length} conversation(s) drew`);
+      continue;
+    }
+    if (!w.text) {
+      fail(`${say}: data-said=${wantMark} and the section said nothing`);
+      continue;
+    }
+    sentences.set(wantMark, w.text);
+    console.log(`${say}: ${JSON.stringify(w.text)}`);
+  }
+  // **The load-bearing half.** Three correct branches that print one
+  // sentence pass every per-case check above.
+  if (sentences.size !== 3) {
+    fail(`wizard: 3 sentences expected, ${sentences.size} were read — the rest of this claim is vacuous`);
+  } else {
+    const said = [...sentences.values()];
+    if (new Set(said).size !== said.length) {
+      fail(
+        `wizard: 「还没问过」「它答不了」「它说它没有」 printed ${new Set(said).size} distinct ` +
+          `sentence(s) — [${said.join(" | ")}]. This is the bug, not a near miss`,
+      );
+    }
+  }
+
+  // 14) nothing asks on its own; one press asks once.
+  {
+    const idle = await wizard({ seen: { said: "unasked" }, settle: 5000 });
+    if (idle.errs.length) fail(`wizard/idle: the page threw — ${idle.errs[0]}`);
+    if (idle.calls.seen === 0) {
+      fail(
+        `wizard/idle: probe dead — the face never read what was recorded either, so ` +
+          `「0 次去问」 is satisfied by a dialog that talked to nothing`,
+      );
+    } else if (idle.calls.ask !== 0) {
+      fail(
+        `wizard/idle: ${idle.calls.ask} agent_ask in 5s with nobody pressing anything — ` +
+          `each one starts an agent process (1.5s warm, 5.64s cold)`,
+      );
+    } else {
+      console.log(`wizard/idle: ${idle.calls.seen} read(s), ${idle.calls.ask} ask(s) over 5s`);
+    }
+    const pressed = await wizard({ seen: { said: "unasked" }, press: true });
+    if (!pressed.askButton) {
+      fail(`wizard/press: probe dead — there is no 问一次 to press`);
+    } else if (pressed.calls.ask - pressed.before.ask !== 1) {
+      fail(
+        `wizard/press: one press produced ${pressed.calls.ask - pressed.before.ask} ask(s), wanted 1`,
+      );
+    } else {
+      console.log(`wizard/press: one press → ${pressed.calls.ask} ask`);
+    }
+  }
+
+  // 15 & 16) the snapshot's two halves, and what goes on the wire.
+  {
+    const w = await wizard({ seen: { said: "unasked" }, attachId: "claude-acp", pick: null });
+    const say = "wizard/registry";
+    if (w.errs.length) fail(`${say}: the page threw — ${w.errs[0]}`);
+    const rows = w.panel?.rows ?? [];
+    if (rows.length !== KNOWN_FIXTURE.length) {
+      fail(`${say}: probe dead — the snapshot has ${KNOWN_FIXTURE.length} entries and ${rows.length} drew`);
+    } else {
+      // The positive half first: without it, "no button on the binary
+      // ones" is a claim a blank panel satisfies.
+      const startable = rows.filter((r) => r.startable);
+      const byhand = rows.filter((r) => !r.startable);
+      if (startable.filter((r) => r.attach || r.attached).length !== startable.length) {
+        fail(`${say}: a startable entry grew neither 接进来 nor 已接入 — ${JSON.stringify(startable)}`);
+      }
+      // gemini is already registered in the fixture, so it must read
+      // as attached rather than offering to attach twice.
+      const gem = rows.find((r) => r.id === "gemini");
+      if (!gem?.attached || gem?.attach) {
+        fail(`${say}: an already-registered entry must read 已接入 and offer no second attach — ${JSON.stringify(gem)}`);
+      }
+      for (const r of byhand) {
+        if (r.attach) {
+          fail(`${say}: ${r.id} ships a binary and khor has no command for it, yet it grew 接进来`);
+        }
+        if (!r.byhand) {
+          fail(`${say}: ${r.id} has no command and said nothing — 「自己装」 and 「接不了」 are different sentences`);
+        }
+      }
+      console.log(`${say}: ${startable.length} startable, ${byhand.length} by hand — ${w.panel.taken}`);
+    }
+    // A table that ages says when it is from.
+    if (!(w.panel?.taken ?? "").includes("2026-08-30")) {
+      fail(`${say}: the snapshot does not say when it was taken (${JSON.stringify(w.panel?.taken)})`);
+    }
+    // 16a) …and the attach went out as an id.
+    if (w.sent.register.length !== 1 || w.sent.register[0]?.id !== "claude-acp") {
+      fail(`${say}: 接进来 put ${JSON.stringify(w.sent.register)} on the wire, wanted one {id:"claude-acp"}`);
+    } else {
+      console.log(`${say}: 接进来 → register_known_agent {id:"claude-acp"}`);
+    }
+    // …and attaching asks once, the way `khor agents add` does. The
+    // two faces telling a person different things about the same
+    // agent is what this row is against.
+    if (w.calls.ask !== 1) {
+      fail(`${say}: attaching produced ${w.calls.ask} ask(s); the command line asks exactly once at this point`);
+    }
+  }
+  {
+    const w = await wizard({
+      seen: { said: "sessions", rows: SEEN_ROWS },
+      resumeId: "sess-a",
+    });
+    const say = "wizard/resume";
+    if (w.errs.length) fail(`${say}: the page threw — ${w.errs[0]}`);
+    const body = w.sent.resume[0];
+    if (!body) {
+      fail(`${say}: a recorded conversation was clicked and no resume_session went out`);
+    } else if (body.agent !== "gemini" || body.session !== "sess-a") {
+      fail(`${say}: the frame carried ${JSON.stringify(body)}, wanted {agent:"gemini",session:"sess-a"}`);
+    } else {
+      console.log(`${say}: click → resume_session ${JSON.stringify(body)}`);
+    }
+    // **A resume is not the wizard's four answers.** Sending the 目录
+    // box would hand the agent another conversation's address, which
+    // `session/load` is entitled to refuse.
+    if (body && ("dir" in body || "form" in body)) {
+      fail(`${say}: the resume carried the wizard's answers too: ${JSON.stringify(body)}`);
+    }
+  }
+
   for (const scheme of ["dark", "light"]) {
     for (const motion of ["no-preference", "reduce"]) {
       const m = await look({ scheme, motion });

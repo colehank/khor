@@ -823,7 +823,20 @@ fn open(rest: &[String]) -> Result<(), String> {
         }
         // No terminal exists to attach to; the id is the deliverable.
         let id = match (&vendor, &resume) {
-            (Some(v), Some(sid)) => n.reopen_gui_as(&title, &cmd, v, sid)?,
+            (Some(v), Some(sid)) => {
+                // **Where that conversation lives, not where this
+                // process stands.** `session/load` names a cwd and the
+                // real adaptor refuses a mismatch (`khor_acp::Handle`),
+                // so the address has to come from the row the agent
+                // itself handed over. Until 2026-08-31 this passed no
+                // cwd at all and resumed at whatever directory the
+                // command was typed in — which worked in the one run
+                // that happened to be typed in the right place.
+                let seen = n
+                    .agent_seen_row(v, sid)?
+                    .ok_or_else(|| khor_catalog::msg::resume_unknown_session(sid, v))?;
+                n.reopen_gui_as(std::path::Path::new(&seen.cwd), &title, &cmd, v, sid)?
+            }
             // The name is the user's own answer to "whose session is
             // this" — being told is not the guess `Session::category`
             // forbids (`gui_host`'s vendor door).
@@ -1257,13 +1270,6 @@ fn quit(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// When the shipped registry snapshot was taken. Parsed out of the
-/// module's own doc comment rather than duplicated: two copies of a
-/// date drift, and the one that drifts is always the one on screen.
-fn registry_taken() -> &'static str {
-    "2026-08-30"
-}
-
 /// The ACP agent registry (`khor_sync::agents`): what this person has
 /// told khor about, said once and true on every machine.
 ///
@@ -1296,11 +1302,8 @@ fn agents(rest: &[String]) -> Result<(), String> {
             if !tail.is_empty() {
                 return Err(USAGE.into());
             }
-            use khor_node::agent_registry::{KNOWN, STARTABLE};
-            println!(
-                "{}",
-                cli::agents_known_head(registry_taken(), KNOWN.len(), STARTABLE)
-            );
+            use khor_node::agent_registry::{KNOWN, STARTABLE, TAKEN};
+            println!("{}", cli::agents_known_head(TAKEN, KNOWN.len(), STARTABLE));
             for k in KNOWN {
                 // The argv is printed for the startable ones, because
                 // what khor would run is the one thing a person cannot
@@ -1400,17 +1403,13 @@ fn agents(rest: &[String]) -> Result<(), String> {
             // would find khor running npx instead. `@` is not a command
             // on any platform, so asking for the snapshot is a thing
             // you can only do on purpose.
+            //
+            // **The expansion itself lives on `Node`** (2026-08-31):
+            // the wizard expands `@id` too now, and this repo's own
+            // judgment is that a rule written on two faces grows two.
             let argv = match argv.split_first() {
                 Some((first, rest)) if rest.is_empty() && first.starts_with('@') => {
-                    let id = &first[1..];
-                    let known = khor_node::agent_registry::Known::find(id)
-                        .ok_or_else(|| cli::agents_unknown_id(id))?;
-                    known
-                        .argv
-                        .ok_or_else(|| cli::agents_id_not_startable(id))?
-                        .iter()
-                        .map(|s| (*s).to_owned())
-                        .collect()
+                    n.known_argv(&first[1..])?
                 }
                 _ => argv,
             };

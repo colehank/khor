@@ -411,6 +411,47 @@ fn agents() -> Result<Vec<khor_gui_core::AgentRow>, String> {
     khor_gui_core::agents(&Node::root_from_env())
 }
 
+/// The ACP registry snapshot khor ships with, and when it was taken —
+/// the same data `khor agents known` prints. The wizard is the only
+/// way somebody who never opens a terminal finds out these exist.
+#[tauri::command]
+fn agents_known() -> Vec<khor_gui_core::agents::KnownAgent> {
+    khor_gui_core::agents::agents_known()
+}
+
+#[tauri::command]
+fn agents_known_taken() -> (String, usize, usize) {
+    khor_gui_core::agents::agents_known_taken()
+}
+
+/// Attaches a snapshot entry, **by id**: the command is looked up on
+/// the far side, never sent from the face.
+#[tauri::command]
+fn register_known_agent(id: String) -> Result<(), String> {
+    khor_gui_core::agents::register_known(&Node::root_from_env(), &id)
+}
+
+/// What this agent was recorded as saying — no process (0.017s).
+#[tauri::command]
+fn agent_seen(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> {
+    khor_gui_core::agents::agent_seen(&Node::root_from_env(), &name)
+}
+
+/// Puts the question to the agent itself. **Starts it — measured
+/// 1.5s with the package cached, 5.64s without** — so it hangs off a
+/// person's press and nothing else.
+#[tauri::command]
+fn agent_ask(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> {
+    khor_gui_core::agents::agent_ask(&Node::root_from_env(), &name)
+}
+
+/// Opens a conversation the agent already has, at **its own** cwd —
+/// not a fresh one, and not the wizard's 目录 answer.
+#[tauri::command]
+fn resume_session(agent: String, session: String) -> Result<String, String> {
+    khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
+}
+
 #[tauri::command]
 fn invite() -> Result<khor_gui_core::Ticket, String> {
     khor_gui_core::invite(&Node::root_from_env())
@@ -508,6 +549,12 @@ pub fn run() {
             send_path,
             pick_and_send,
             agents,
+            agents_known,
+            agents_known_taken,
+            register_known_agent,
+            agent_seen,
+            agent_ask,
+            resume_session,
             takeover,
             takeover_term,
             invite,

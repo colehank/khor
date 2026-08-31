@@ -264,6 +264,34 @@ pub fn answer(
         "machine_log" => to_json(&crate::machine_log(root, &arg("id")?)?),
         "accept_transfer" => to_json(&rt.block_on(crate::accept_transfer(root, &arg("msg")?))?),
         "agents" => to_json(&crate::agents(root)?),
+        // The shipped ACP registry snapshot, and when it was taken.
+        // Two arms rather than one object because the list is 40 rows
+        // and the provenance is three scalars — a face redraws the
+        // first on every keystroke of its filter and the second never.
+        "agents_known" => to_json(&crate::agents::agents_known()),
+        "agents_known_taken" => to_json(&crate::agents::agents_known_taken()),
+        // **By id, never by argv.** The command is looked up on this
+        // side (`Node::register_known_agent`); an arm that accepted the
+        // argv would be an arm that spawns whatever it is handed, and
+        // this table's second caller is a listener a phone opens.
+        "register_known_agent" => {
+            crate::agents::register_known(root, &arg("id")?)?;
+            Ok("null".to_owned())
+        }
+        // **These two are the same question and must stay two arms.**
+        // `agent_seen` reads what was recorded (0.017s); `agent_ask`
+        // starts the agent to ask it (1.5s warm, 5.64s cold). One arm with a
+        // flag would put the expensive one a typo away from a poll, and
+        // the whole judgment here is that asking only ever happens
+        // behind something a person did.
+        "agent_seen" => to_json(&crate::agents::agent_seen(root, &arg("name")?)?),
+        "agent_ask" => to_json(&crate::agents::agent_ask(root, &arg("name")?)?),
+        // Not `open_session` with a flag: a conversation that exists
+        // brings its own directory and its own name, so the wizard's
+        // answers do not apply to it (`agents::resume_session`).
+        "resume_session" => {
+            to_json(&crate::agents::resume_session(root, &arg("agent")?, &arg("session")?)?)
+        }
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

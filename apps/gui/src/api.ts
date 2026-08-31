@@ -25,6 +25,9 @@ import type { TermScreen } from "./gen/bindings/TermScreen";
 import type { TermRun } from "./gen/bindings/TermRun";
 import type { TermColor } from "./gen/bindings/TermColor";
 import type { AgentRow } from "./gen/bindings/AgentRow";
+import type { KnownAgent } from "./gen/bindings/KnownAgent";
+import type { AgentSaid } from "./gen/bindings/AgentSaid";
+import type { SeenSession } from "./gen/bindings/SeenSession";
 import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
 import type { QuotaWindow } from "./gen/bindings/QuotaWindow";
 import type { QuotaTrouble } from "./gen/bindings/QuotaTrouble";
@@ -54,6 +57,9 @@ export type {
   TermRun,
   TermColor,
   AgentRow,
+  KnownAgent,
+  AgentSaid,
+  SeenSession,
   QuotaAnswer,
   QuotaWindow,
   QuotaTrouble,
@@ -239,6 +245,45 @@ export const uploadFile = async (machine: string, file: File): Promise<string> =
     **khor's own two are not in here** — they are not registrations, and
     the wizard puts them beside this list rather than inside it. */
 export const agents = () => call<AgentRow[]>("agents");
+/** The ACP registry snapshot khor ships with (`khor agents known`) —
+    all 40, not just the ones khor can start. Listing the other 18 is
+    the point: 「khor 不替你装这个」 and 「khor 接不了这个」 are
+    different sentences and only the first is true. */
+export const agentsKnown = () => call<KnownAgent[]>("agents_known");
+/** `[when it was taken, how many, how many khor can start]`. A table
+    that ages has to say when it is from. */
+export const agentsKnownTaken = () => call<[string, number, number]>("agents_known_taken");
+/** Attaches one snapshot entry, **by id** — the command is looked up on
+    the far side and never travels from here. It registers under the id
+    as the name, which is the one word two machines both already have.
+    Starts nothing. */
+export const registerKnownAgent = (id: string) =>
+  call<null>("register_known_agent", { id });
+/** What khor **remembers** this agent said about its own conversations
+    — a document read, no process (0.01s). This is what a face calls
+    when a person picks an agent.
+
+    The answer is three-shaped on purpose (`AgentSaid`): never asked,
+    asked and it cannot list, and it answered — where answering with
+    nothing is its own case. `rows` exists on the last variant only, so
+    a reader cannot reach for a list on an answer that is not one. */
+export const agentSeen = (name: string) => call<AgentSaid>("agent_seen", { name });
+/** Puts the question to the agent itself and records the answer.
+
+    **This starts a real agent process — measured 1.5s with the package
+    cached and 5.64s without, against 0.017s for {@link agentSeen}.** So
+    it hangs off something a person
+    pressed and nothing else: no poll, no effect that re-runs, no
+    "refresh while we're here". */
+export const agentAsk = (name: string) => call<AgentSaid>("agent_ask", { name });
+/** Opens a conversation the agent already has, by the id it gave.
+
+    **Not {@link openSession} with an extra argument.** That one answers
+    the wizard's four questions for a conversation that does not exist;
+    this one exists, and brings its own directory and its own name —
+    which is why neither is passed. Answers the new row's id. */
+export const resumeSession = (agent: string, session: string) =>
+  call<string>("resume_session", { agent, session });
 /** The wizard (会话身份批B): a fresh agent session in `dir`, as a
     conversation ("chat") or a terminal ("term"), for the chosen agent.
     `agent` is an **open position** since 批⑥: "claude", "codex", or the

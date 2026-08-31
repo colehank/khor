@@ -49,7 +49,7 @@
 | `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run day` | `check-day.mjs`,会话行那条状态条真的上没上屏(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
-| `npm run acp` | `check-acp.mjs`,协议里带状态的帧有没有变成屏幕上的状态:`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在(自起 vite + 系统 Chrome) | 不拿 |
+| `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
@@ -85,6 +85,14 @@
   它立于 2026-08-30——那条带子发出去过一版**一格都没画**,而当时
   `cargo test`、`tsc`、`check-px`、`check-icons` 全绿、`pageerror` 为空。
   没有任何一道门退化了,它们从来就量不到这件事;
+- **动了新会话对话框、`khor_gui_core::agents`、或注册表快照** → 也加 `npm run acp`
+  (2026-08-31 起它多了第二批)。这一批守的不是「画没画」,是**四种答案有没有被压平**:
+  「还没问过」「它答不了」「它说它没有」「它列出来了」在屏幕上必须是四句不同的话,
+  而一个空列表会把前三种画成同一个样子——人的下一步却是去问 / 别再问 / 开新的,
+  三个方向。**「两两不同」那半才是扛事的那半**:三个分支印同一句话,逐句检查全过。
+  它还守着那条最贵的:**问一次要起一个真进程(对真 `@claude-acp` 实测 1.5 秒,
+  npm 包没缓存时 5.64 秒),读记下来的同一个答案 0.017 秒**,
+  所以坐着两个轮询周期必须一次 `agent_ask` 都发不出去;
 - **动了导轨** → 加 `npm run rail`;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,
