@@ -445,6 +445,29 @@ pub enum Utterance {
 /// opening with one of the CLI's own tags is plumbing a person never
 /// typed, and a `tool_result` block is the machine answering itself —
 /// both stay unpainted.
+///
+/// # Not everything on a user line was typed by the user
+///
+/// **`user` is the CLI's word for「went in through the prompt」, not
+/// for「a person wrote this」.** A message from another agent session
+/// arrives on a user line too, and it used to be painted as the
+/// person's own words: verbatim, in their bubble, on their side of the
+/// conversation. Two things were wrong at once — the attribution, and
+/// (because this face renders only the agent's text as markdown) a wall
+/// of raw markdown source.
+///
+/// **The protocol cannot help here.** ACP has no notion of an author:
+/// `SessionUpdate` offers `UserMessageChunk`, `AgentMessageChunk` and
+/// `AgentThoughtChunk` and nothing else, and there is no `author` /
+/// `role` / `sender` field anywhere in its schema (checked against
+/// `agent-client-protocol-schema` 1.5.0, 2026-08-31). `_meta` exists,
+/// and the spec says implementations **MUST NOT** make assumptions
+/// about what is in it — so it is for two ends that agreed privately,
+/// not for telling khor who spoke.
+///
+/// So the judgment has to be made **here, where the evidence is** —
+/// reading the vendor's own file, which is the only place the envelope
+/// is visible at all.
 fn utterances_of(text: &str) -> Vec<Utterance> {
     const PLUMBING: [&str; 4] = [
         "<command-name>",
@@ -452,12 +475,34 @@ fn utterances_of(text: &str) -> Vec<Utterance> {
         "<local-command-caveat>",
         "<system-reminder>",
     ];
+    /// The sentence the CLI writes above a message from another agent
+    /// session.
+    ///
+    /// **Matched at the start, like `PLUMBING`**, and not by looking
+    /// for `<teammate-message` anywhere in the text: a person who
+    /// *writes about* teammate messages — reporting one, quoting one,
+    /// asking about the tag — would have their own words reattributed
+    /// to a machine. `starts_with` on a whole sentence is a thing to
+    /// type by accident and not by discussion.
+    ///
+    /// **If the CLI ever rewords this, the message goes back to being
+    /// painted as the person's** — the state before this, which is
+    /// wrong but not broken. That is the failure this is allowed to
+    /// have; the other direction (a person's words moved to the
+    /// machine's side) is not.
+    const FROM_ANOTHER_AGENT: &str = "Another Claude session sent a message:";
     let user_text = |s: &str| -> Option<Utterance> {
         if s.is_empty() || PLUMBING.iter().any(|tag| s.starts_with(tag)) {
-            None
-        } else {
-            Some(Utterance::User(s.to_owned()))
+            return None;
         }
+        // Machine text, so it is painted where machine text is painted
+        // — the agent's side, rendered as the markdown it is. The line
+        // it keeps says whose it was, which is why this does not need
+        // a fourth kind of its own.
+        if s.starts_with(FROM_ANOTHER_AGENT) {
+            return Some(Utterance::Agent(s.to_owned()));
+        }
+        Some(Utterance::User(s.to_owned()))
     };
     let mut out = Vec::new();
     for line in text.lines() {
@@ -1256,6 +1301,60 @@ mod tests {
     }
 
     /// The hook glue end to end on payloads: an observed session
+    /// **A message from another agent session is machine text, and a
+    /// person *writing about* one is not.**
+    ///
+    /// `user` is the CLI's word for「went in through the prompt」. A
+    /// teammate message arrives on a user line, and painting it as the
+    /// person's own words got two things wrong at once: whose words
+    /// they were, and (because only the agent's side is rendered as
+    /// markdown) a wall of raw source.
+    ///
+    /// The second case is the one that decides the *shape* of the
+    /// check. Matching `<teammate-message` anywhere in the text would
+    /// reattribute a person who quotes the tag — reporting one, asking
+    /// about it — to a machine, **and that direction is the expensive
+    /// one**: a wrongly-attributed machine message is untidy, a
+    /// wrongly-attributed person is the app putting words in their
+    /// mouth. So it is `starts_with` on a whole sentence.
+    #[test]
+    fn a_message_from_another_agent_is_not_the_person_talking() {
+        let line = |content: &str| {
+            format!(
+                r#"{{"type":"user","message":{{"role":"user","content":{}}}}}"#,
+                serde_json::Value::String(content.to_owned())
+            )
+        };
+        let from_peer = concat!(
+            "Another Claude session sent a message:\n",
+            "<teammate-message teammate_id=\"lane-88\" color=\"pink\">\n",
+            "## 收工\n\n88.3 是错的\n</teammate-message>"
+        );
+        let got = utterances_of(&line(from_peer));
+        assert!(
+            matches!(&got[0], Utterance::Agent(t) if t.starts_with("Another Claude session")),
+            "machine text belongs on the machine's side: {got:?}"
+        );
+
+        // **The direction that must not happen.** Someone reporting a
+        // teammate message, or asking about the tag, is a person
+        // talking — and the whole text is theirs.
+        for typed in [
+            "队友那条 <teammate-message> 渲染成用户消息了,应该是 Claude 的",
+            "what does <teammate-message teammate_id=\"x\"> mean?",
+            "I read: Another Claude session sent a message: is that a bug?",
+        ] {
+            let got = utterances_of(&line(typed));
+            assert!(
+                matches!(&got[0], Utterance::User(t) if t == typed),
+                "a person writing about it is still a person: {got:?}"
+            );
+        }
+
+        // And the plumbing filter still holds — this did not widen it.
+        assert!(utterances_of(&line("<system-reminder>x</system-reminder>")).is_empty());
+    }
+
     /// **A followed transcript, through the three things a file can do
     /// between two reads.**
     ///

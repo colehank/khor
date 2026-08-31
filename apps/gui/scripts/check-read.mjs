@@ -327,12 +327,23 @@ const probe = () => {
 
   const column = document.querySelector("[data-chat-column]");
   const md = document.querySelector("[data-md]");
-  // The two faces write their bodies differently and neither is wrong:
-  // an agent writes markdown and gets a `p`, a machine's message is the
-  // characters somebody typed and stays a pre-wrapped run (`ChatView`'s
-  // own rule about the user's bubble). What is being measured is a
-  // wrapped line of prose, which both of those are.
-  const p = md?.querySelector("p") ?? document.querySelector("[data-msg-text]");
+  // **The reading column is the agent's side, and since 2026-08-31 the
+  // user's bubble is markdown too — so it has to be stepped over.**
+  //
+  // This used to take the document's first `[data-md]`, which was the
+  // agent's because the bubble was a pre-wrapped run of the characters
+  // somebody typed. Once the bubble started rendering markdown it came
+  // first in DOM order and the gate measured *it*: on a 390 phone it
+  // reported a 192-wide column, which was simply how wide that
+  // sentence was — a bubble shrink-wraps its text and is capped at 85%
+  // besides, so it was never the column this gate is about.
+  //
+  // Not a widened band and not an excused failure: the probe was
+  // pointing at the wrong element, and the number it read was true of
+  // the element it found.
+  const mds = [...document.querySelectorAll("[data-md]")];
+  const prose = mds.find((el) => !el.closest("[data-said]")) ?? md;
+  const p = prose?.querySelector("p") ?? document.querySelector("[data-msg-text]");
   const scroller = document.querySelector("[data-chat-scroll]") ?? column?.parentElement;
 
   // The tool line and the blockquote, found the same way: by walking the

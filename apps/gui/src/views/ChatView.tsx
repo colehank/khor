@@ -30,12 +30,26 @@
 //   `in_progress` if it ever arrives: a third agent may use it, and the
 //   two readings differ by "has not started" versus "is running",
 //   which is not a difference a reader of this line can act on.
-// - **The agent's text is markdown, the user's is verbatim.** Agents
-//   write markdown and their TUI renders it, so a chat face that showed
-//   the source would be the worse reading of the same words
-//   (`components/Markdown`). The user's own bubble is not rendered: they
-//   typed those characters, and an asterisk they meant as an asterisk
-//   must not come back as emphasis.
+// - **Both sides are markdown now, and the second half of this note is
+//   a tombstone.** It read: the agent's text is markdown and the user's
+//   is verbatim, because「they typed those characters, and an asterisk
+//   they meant as an asterisk must not come back as emphasis」.
+//
+//   That reasoning is still true and it is still the cost. It was
+//   overruled deliberately, by the person reading this app, after two
+//   things showed up together: a user line is where a **message from
+//   another agent session** arrives (see `utterances_of` — `user` is
+//   the CLI's word for「went in through the prompt」, not for「a person
+//   wrote this」), and the people writing into this box write markdown.
+//   A wall of raw source on one side of a conversation and rendered
+//   text on the other reads as a bug, and it was one half of the time.
+//
+//   **What was traded away, said plainly:** a literal asterisk, or
+//   underscore, or leading `#`, typed as itself, now comes back as
+//   emphasis or a heading. Nothing warns about it. If that turns out to
+//   cost more than the walls of source did, the way back is this one
+//   element — the fold and the frames are unchanged, which is why the
+//   change is reversible and this note can be short.
 import { takeover as takeoverCall } from "@/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -1213,9 +1227,9 @@ export function ChatView({
             <div key={i} className="flex justify-end">
               <div
                 data-said
-                className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-1.5 text-read-ink"
+                className="max-w-[85%] rounded-lg bg-muted px-3 py-1.5 text-read-ink"
               >
-                {item.text}
+                <Markdown text={item.text} />
               </div>
             </div>
           ) : item.who === "agent" ? (
