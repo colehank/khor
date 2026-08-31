@@ -342,3 +342,42 @@ async fn asking_what_an_agent_has_never_opens_a_session() {
     let Listing::Sessions(rows) = out else { panic!("wanted sessions") };
     assert_eq!(rows.len(), 2, "an agent that refuses session/new still lists");
 }
+
+/// **A listed session can actually be reopened, and it comes back with
+/// its past.** The two halves of the discovery story: `session/list`
+/// says an id exists, and `session/load` is what makes that id worth
+/// having. An id nobody can open is a row that lies.
+///
+/// The stub replays a scripted past on load, so this asserts on the
+/// agent's own account rather than on this side's bookkeeping.
+#[tokio::test]
+async fn a_session_the_agent_listed_can_be_opened_with_its_past() {
+    use khor_acp::{list, start_resume, Listing};
+
+    let cmd = stub_with("KHOR_STUB_LISTS", "1");
+    let Listing::Sessions(rows) = list(&cmd, None).await.expect("a listing") else {
+        panic!("wanted sessions");
+    };
+    let first = &rows[0];
+
+    let (handle, mut events) =
+        start_resume(&cmd, std::env::temp_dir(), &first.id).await.expect("it reopens");
+    // The id khor now holds is **the agent's**, not one khor minted —
+    // which is what makes this the same conversation rather than a new
+    // one that happens to know things.
+    assert_eq!(handle.session().to_string(), first.id);
+
+    // And the past arrived. `session/load` MUST replay (the spec's own
+    // word), so a load that produced no notes would be an agent
+    // breaking the protocol — or, far likelier, this side never having
+    // asked for a load at all.
+    let mut notes = 0;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(3), events.recv()).await {
+        match event {
+            Event::Note(_) => notes += 1,
+            Event::Ready { .. } => break,
+            _ => {}
+        }
+    }
+    assert!(notes > 0, "session/load MUST replay, and nothing came back");
+}

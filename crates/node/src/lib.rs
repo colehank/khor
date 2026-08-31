@@ -1875,6 +1875,32 @@ impl Node {
         gui_host::spawn_gui_host(None, title, cmd, Some(agent), false)
     }
 
+    /// Reopens a conversation the agent itself says it has
+    /// (`session/list` → `session/load`).
+    ///
+    /// **Not [`Node::takeover`], and the difference is that nothing is
+    /// running.** Takeover ends a live TUI and re-seats its row; there
+    /// is nothing here to end and no row to re-seat. What arrives is a
+    /// new row wearing the vendor's own session id, with its past
+    /// replayed into it — which is what makes it the *same*
+    /// conversation rather than a fresh one that happens to know things.
+    ///
+    /// **The agent has to be able to replay**, or the reopened
+    /// conversation comes up empty and reads as "nobody has said
+    /// anything" for a session that may have hundreds of lines. That is
+    /// `Facts::replays`, and the check belongs before the process is
+    /// spawned rather than after — the alternative is a row that exists
+    /// and lies.
+    pub fn reopen_gui_as(
+        &self,
+        title: &str,
+        cmd: &[String],
+        agent: &str,
+        session: &str,
+    ) -> Result<SessionId, String> {
+        gui_host::spawn_gui_host_reopen(None, title, cmd, Some(agent), session)
+    }
+
     /// `open_gui`, born in a chosen directory (the wizard's 目录 field);
     /// the agent underneath inherits it as the session's cwd.
     ///

@@ -259,6 +259,25 @@ pub fn spawn_gui_host_resume(
     spawn_ghost(cwd, title, cmd, Some(session), None, false)
 }
 
+/// [`spawn_gui_host`], but the conversation already exists on the agent
+/// and is loaded rather than created.
+///
+/// **Separate from [`spawn_gui_host_resume`] because a takeover and a
+/// reopen differ in what is already there.** A takeover re-seats a row
+/// that exists (a live TUI it just ended) and so must not register a
+/// vendor; a reopen has no row at all — the conversation was only ever
+/// a record on the agent's side — so it registers one like any new
+/// session, vendor and all.
+pub fn spawn_gui_host_reopen(
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+    vendor: Option<&str>,
+    session: &str,
+) -> Result<SessionId, String> {
+    spawn_ghost(cwd, title, cmd, Some(session), vendor, false)
+}
+
 /// How `_ghost` learns it resumes: env, not argv — the argv convention
 /// stays what every existing binary parses (`VIEWER_ENV`'s precedent).
 const RESUME_ENV: &str = "KHOR_GHOST_RESUME";

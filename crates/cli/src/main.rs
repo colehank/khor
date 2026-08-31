@@ -732,6 +732,7 @@ fn open(rest: &[String]) -> Result<(), String> {
     let mut cmd: Vec<String> = Vec::new();
     let mut on: Option<String> = None;
     let mut agent: Option<String> = None;
+    let mut resume: Option<String> = None;
     let mut it = rest.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -748,6 +749,13 @@ fn open(rest: &[String]) -> Result<(), String> {
             "--agent" if cmd.is_empty() => {
                 agent = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
                 gui = true;
+            }
+            // A conversation the agent already has, by the id it gave
+            // (`khor agents sessions`). The agent loads it instead of
+            // opening a fresh one, so the row that appears is the same
+            // conversation rather than a new one beside it.
+            "--resume" if cmd.is_empty() => {
+                resume = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
             }
             "--title" if cmd.is_empty() => {
                 title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
@@ -804,13 +812,23 @@ fn open(rest: &[String]) -> Result<(), String> {
         if on.is_some() {
             return Err(cli::GUI_NOT_ON_ANOTHER_MACHINE.into());
         }
+        // **A resume needs to know whose conversation it is**, and the
+        // only thing that knows is the registration — an id with no
+        // agent beside it names nothing this machine can start.
+        // Refused rather than guessed: the alternative is opening a
+        // fresh conversation on some default and calling it the one
+        // that was asked for.
+        if resume.is_some() && vendor.is_none() {
+            return Err(cli::RESUME_NEEDS_AGENT.into());
+        }
         // No terminal exists to attach to; the id is the deliverable.
-        let id = match &vendor {
+        let id = match (&vendor, &resume) {
+            (Some(v), Some(sid)) => n.reopen_gui_as(&title, &cmd, v, sid)?,
             // The name is the user's own answer to "whose session is
             // this" — being told is not the guess `Session::category`
             // forbids (`gui_host`'s vendor door).
-            Some(v) => n.open_gui_as(&title, &cmd, v)?,
-            None => n.open_gui(&title, &cmd)?,
+            (Some(v), None) => n.open_gui_as(&title, &cmd, v)?,
+            (None, _) => n.open_gui(&title, &cmd)?,
         };
         println!("{}", id.0);
         return Ok(());

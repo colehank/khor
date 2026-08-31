@@ -125,10 +125,11 @@ usage = """
   log <机器>            看那个窗口的消息
   run [--tui] [--title 名] -- <命令...>
                         临时 session:跟着这个终端活,全程网里可见
-  open [-d] [--tui|--gui] [--agent 名字] [--on 机器] [--title 名] [-- 命令]
+  open [-d] [--tui|--gui] [--agent 名字 [--resume id]] [--on 机器] [--title 名] [-- 命令]
                         持久 session:终端关了还在,能重连(默认接上;-d 只开;
                         --gui 走 ACP 协议,khor 画对话,给会说这个协议的 agent;
                         --agent 用登记过的那个 agent(见 agents),自带 --gui;
+                        --resume 续上它自己列出来的某段对话(见 agents sessions);
                         --on 在别的机器上开,不给命令就用那台自己的 shell;
                         --gui 目前只在本机起得来,配 --on 会被拒)
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
@@ -401,6 +402,9 @@ agents-sessions-cannot = "{0} 不支持列出会话——协议里这一项是�
 agents-sessions-none = "{0} 说它一个会话都没有"
 # Head of the listing. 带上问的是谁,因为这条命令会起一个真的 agent 进程。
 agents-sessions-head = "{0} 说它有 {1} 个会话:"
+# `--resume` given without `--agent`. **不猜**:一个光秃秃的 id 说不出
+# 该由谁去起,拿默认的去开会开出一段新对话然后管它叫那段旧的。
+resume-needs-agent = "--resume 要和 --agent 一起用:光有 id 说不出该由哪个 agent 去续"
 # An agent that has to run *somewhere*, and `--on` names another
 # machine. Refused out loud rather than ignored: a flag that is accepted
 # and does nothing is a session quietly opened on the wrong machine, and
