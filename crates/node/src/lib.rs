@@ -964,30 +964,76 @@ impl Node {
                     return told;
                 }
             }
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-            // `-l` for the login files, `-i` because on zsh the
-            // interactive ones are where a `PATH` is usually built.
-            let out = std::process::Command::new(&shell)
-                .args(["-lic", "printf %s \"$PATH\""])
-                .stdin(std::process::Stdio::null())
-                .output();
-            let asked = match out {
-                Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_owned(),
-                _ => String::new(),
-            };
             // **The shell's answer is added to, never swapped for,
             // what this process already had.** A shell that answers
             // with something short or strange must not be able to take
             // away directories that were working — the failure mode
             // being avoided is the one this whole function is about.
-            merge_paths(&asked, &here)
+            merge_paths(&asked_shell().path, &here)
         })
     }
 
-    /// Pays for [`Self::user_path`] now rather than on the first spawn.
-    /// Called where nobody is waiting on it (`khor serve`'s start).
+    /// The locale variables to put on a spawned child, **empty when
+    /// this process already has a UTF-8 one** — which is every khor
+    /// started from a terminal.
+    ///
+    /// # The bug this exists for
+    ///
+    /// The third thing launchd's environment does not have, after
+    /// `TERM` and `PATH`. A `khor serve` started by launchd has no
+    /// `LANG`, no `LC_ALL`, no `LC_CTYPE` — and a tmux client with no
+    /// UTF-8 locale runs in **non-UTF-8 mode**: it draws its rules with
+    /// the DEC line-drawing set (a literal `q` in khor's screen model)
+    /// and replaces every character it cannot encode with `_`.
+    ///
+    /// Measured 2026-08-31 against tmux's own judgment — same tmux
+    /// server, same command, only `LANG` differing:
+    ///
+    /// ```text
+    /// tmux list-clients -F '#{client_utf8}'
+    ///   host spawned with no LANG (launchd's shape) → 0
+    ///   host spawned with LANG=zh_CN.UTF-8          → 1
+    /// ```
+    ///
+    /// What reached the person was a whole screen of `_` and `q` where
+    /// their conversation had been — and the tmux *server* was holding
+    /// it perfectly the whole time, which is how it was found.
+    ///
+    /// # Passed through, not invented
+    ///
+    /// Unlike `TERM` — which the host states outright, because it
+    /// describes khor's own emulator — a locale carries the person's
+    /// language and collation as well as the encoding. khor has no
+    /// business choosing those, so it takes **their own**, from the
+    /// same login shell `user_path` asks, and adds nothing when they
+    /// have none: a khor that invented a locale their terminal does
+    /// not have would differ from their terminal, which is the
+    /// opposite of the point.
+    ///
+    /// Only variables that actually name UTF-8 are carried, so a shell
+    /// answering with a non-UTF-8 locale cannot make this worse than
+    /// silence.
+    pub fn user_locale() -> &'static [(&'static str, String)] {
+        static LOCALE: std::sync::OnceLock<Vec<(&'static str, String)>> =
+            std::sync::OnceLock::new();
+        LOCALE.get_or_init(|| {
+            if LOCALE_VARS.iter().any(|v| says_utf8(&std::env::var(v).unwrap_or_default())) {
+                // This process is already speaking UTF-8; touching a
+                // child's locale here could only make it differ from
+                // the terminal khor was started from.
+                return Vec::new();
+            }
+            asked_shell().locale.clone()
+        })
+    }
+
+    /// Pays for the login-shell probe now rather than on the first
+    /// spawn. Called where nobody is waiting on it (`khor serve`'s
+    /// start), and it covers the locale as well as the `PATH` because
+    /// there is only ever one probe.
     pub fn warm_user_path() {
         let _ = Self::user_path();
+        let _ = Self::user_locale();
     }
 
     /// The launch JSON for one agent, with its command resolved and the
@@ -2833,6 +2879,94 @@ pub(crate) fn merge_paths(asked: &str, here: &str) -> String {
 /// [`Node::user_path`] and handed down to spawned `_host` processes so
 /// they inherit the answer instead of re-deriving it.
 pub(crate) const PATH_ENV: &str = "KHOR_PATH";
+
+/// The three that decide a program's character encoding, most
+/// authoritative first — which is POSIX's order, not a preference.
+pub(crate) const LOCALE_VARS: [&str; 3] = ["LC_ALL", "LC_CTYPE", "LANG"];
+
+/// Whether a locale value names UTF-8. Both spellings are in the wild
+/// (`zh_CN.UTF-8`, `en_US.utf8`), and macOS Terminal's bare `UTF-8`
+/// is a third.
+pub(crate) fn says_utf8(value: &str) -> bool {
+    let v = value.to_ascii_lowercase().replace('-', "");
+    v.contains("utf8")
+}
+
+/// What the person's login shell says, asked **once per process** —
+/// the one place that runs it.
+///
+/// `$SHELL -lic` is what every GUI developer tool on this platform
+/// does about this, for want of anything better: the login shell is
+/// the only thing that knows what the user's environment is, because
+/// the user's environment is something their rc files compute.
+///
+/// **The cost is real and it is why this is cached**: measured 0.78s
+/// cold on this machine, and it *runs the user's rc files*, side
+/// effects and all. One probe answers both questions asked of it — a
+/// second `Command` for the locale would double a price already paid.
+pub(crate) struct Asked {
+    pub path: String,
+    pub locale: Vec<(&'static str, String)>,
+}
+
+pub(crate) fn asked_shell() -> &'static Asked {
+    static ASKED: std::sync::OnceLock<Asked> = std::sync::OnceLock::new();
+    ASKED.get_or_init(|| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        let out = std::process::Command::new(&shell)
+            .args(["-lic", &probe_script()])
+            .stdin(std::process::Stdio::null())
+            .output();
+        let said = match out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+            _ => String::new(),
+        };
+        read_shell_answer(&said)
+    })
+}
+
+/// The one line the login shell is asked to run.
+///
+/// `-l` for the login files, `-i` because on zsh the interactive ones
+/// are where a `PATH` is usually built. NUL between the fields because
+/// every one of them can hold anything a filesystem can.
+///
+/// **Built here rather than written inline so it can be run in a
+/// test**, and that is not tidiness. The first draft of this spelled
+/// the separator `"\0"` in Rust — a real NUL *character* in the argv,
+/// where what `printf` needs is the two characters `\` and `0`. A NUL
+/// in an argument makes `Command::spawn` fail outright, and this
+/// function's error arm is an empty answer: the probe became a silent
+/// no-op, `merge_paths` handed back the `PATH` that was already there,
+/// and **the repair this whole family of functions exists for
+/// quietly stopped happening while every test stayed green.** The
+/// branch that could not connect did not become "no value"; it became
+/// the value next door.
+pub(crate) fn probe_script() -> String {
+    format!(
+        "printf '%s\\0' \"$PATH\" {}",
+        LOCALE_VARS.iter().map(|v| format!("\"${v}\"")).collect::<Vec<_>>().join(" ")
+    )
+}
+
+/// [`asked_shell`]'s parsing, split out so it is testable without a
+/// login shell in the loop.
+///
+/// **A shell that answered nothing gives nothing**, and a locale that
+/// does not name UTF-8 is dropped rather than carried: the whole point
+/// is the encoding, and passing a non-UTF-8 one along could only take
+/// away a UTF-8 locale that was already in place.
+pub(crate) fn read_shell_answer(said: &str) -> Asked {
+    let mut fields = said.split('\0');
+    let path = fields.next().unwrap_or_default().trim().to_owned();
+    let locale = LOCALE_VARS
+        .iter()
+        .zip(fields)
+        .filter(|(_, value)| says_utf8(value.trim()))
+        .map(|(name, value)| (*name, value.trim().to_owned()))
+        .collect();
+    Asked { path, locale }
+}
 
 /// The `PATH` to spawn `command` against: **this process's own, unless
 /// this process's own cannot find it.**

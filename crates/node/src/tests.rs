@@ -1456,4 +1456,64 @@ mod finding_the_program {
             "and a directory named twice appears once"
         );
     }
+
+    /// **The line handed to the login shell is actually run here**,
+    /// against a shell with a known environment, and its answer is
+    /// parsed by the same function the real probe uses.
+    ///
+    /// This is the test the first draft did not have, and the thing it
+    /// caught is worth stating: the separator had been spelled `"\0"`
+    /// in Rust — a NUL *character* in the argument vector, where
+    /// `printf` needs the two characters `\` and `0`. `Command::spawn`
+    /// refuses an argument containing NUL, `asked_shell`'s error arm is
+    /// an empty answer, and an empty answer is indistinguishable from
+    /// "your shell had nothing to add". **The probe became a no-op and
+    /// nothing anywhere went red** — `merge_paths` still returned a
+    /// perfectly good `PATH`, the one that was already there.
+    ///
+    /// So this test does the one thing the unit tests around it cannot:
+    /// it runs the string.
+    #[test]
+    fn the_line_the_login_shell_is_given_answers_with_all_four_fields() {
+        let out = std::process::Command::new("/bin/sh")
+            .args(["-c", &crate::probe_script()])
+            .env("PATH", "/khor-test/bin")
+            .env("LC_ALL", "")
+            .env("LC_CTYPE", "")
+            .env("LANG", "zh_CN.UTF-8")
+            .output()
+            .expect("the probe line must be runnable at all");
+        assert!(out.status.success(), "the probe line must not error");
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(
+            said.matches('\0').count(),
+            4,
+            "one NUL per field, so a value holding anything still parses: {said:?}"
+        );
+        let asked = crate::read_shell_answer(&said);
+        assert_eq!(asked.path, "/khor-test/bin", "the PATH must survive the round trip");
+        assert_eq!(
+            asked.locale,
+            vec![("LANG", "zh_CN.UTF-8".to_owned())],
+            "and only the locale variables that actually name UTF-8"
+        );
+    }
+
+    /// A shell that answered with a locale that is **not** UTF-8 must
+    /// add nothing: khor's only business here is the encoding, and
+    /// carrying a non-UTF-8 locale onto a child could only take away a
+    /// UTF-8 one that was already in place.
+    #[test]
+    fn a_locale_that_does_not_name_utf8_is_not_carried() {
+        let asked = crate::read_shell_answer("/bin\0\0\0en_US.ISO8859-1\0");
+        assert_eq!(asked.path, "/bin");
+        assert!(asked.locale.is_empty(), "got {:?}", asked.locale);
+
+        // …and the three spellings that are all really UTF-8.
+        for spelling in ["zh_CN.UTF-8", "en_US.utf8", "UTF-8"] {
+            assert!(crate::says_utf8(spelling), "{spelling} names UTF-8");
+        }
+        assert!(!crate::says_utf8("C"), "and a locale that does not, does not");
+        assert!(!crate::says_utf8(""), "nor does an empty one");
+    }
 }

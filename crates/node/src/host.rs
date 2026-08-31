@@ -376,6 +376,12 @@ fn spawn_host_with(
     // the override that already exists for exactly "khor, here is where
     // things are" — no second mechanism.
     c.env(crate::PATH_ENV, crate::Node::user_path());
+    // The locale travels the same way and for the same reason: `_host`
+    // is a fresh process, and a repaired locale set here is one it does
+    // not have to go back to the login shell for.
+    for (name, value) in crate::Node::user_locale() {
+        c.env(name, value);
+    }
     let marker = host_file_path(dir);
     let complaint = host_error_path(dir);
     // A leftover from a previous failed spawn must never answer for
@@ -562,6 +568,17 @@ fn host_serving(
     let mut builder = CommandBuilder::new(&found);
     builder.args(&cmd[1..]);
     builder.env("PATH", &path);
+    // **The person's own locale, when this process has none.**
+    // launchd's environment has no `LANG`, and a tmux client without a
+    // UTF-8 locale falls back to the DEC line-drawing set and writes
+    // `_` for every character it cannot encode — so a screen of
+    // markdown came through as `_` and `q` while the tmux server was
+    // holding it perfectly (`Node::user_locale`, which has tmux's own
+    // reading of the two arms). Empty for every khor started from a
+    // terminal, which already has one.
+    for (name, value) in crate::Node::user_locale() {
+        builder.env(name, value);
+    }
     builder.env("KHOR_SESSION", &id.0);
     // **The host is the terminal, so the host says what it is.**
     // Inheriting `TERM` names whatever shell happened to start khor,
