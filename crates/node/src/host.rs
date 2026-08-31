@@ -72,6 +72,31 @@ pub fn host_file_path(dir: &Path) -> PathBuf {
     dir.join("host.json")
 }
 
+/// Where a host that died on the way up leaves the reason, for the
+/// opener that is watching for [`host_file_path`] to appear.
+///
+/// # Why a file
+///
+/// The host is spawned detached, `setsid`, with stdin/stdout/stderr on
+/// `/dev/null` — that is what lets the opener's terminal go away
+/// without taking the session along, and it is also why nothing the
+/// host says can be heard. So the opener had exactly one sentence for
+/// every way a host can fail to come up: 宿主没在 5 秒内就位.
+///
+/// **That sentence is about speed, and most of these failures have no
+/// speed.** 2026-08-31: a `khor serve` started by launchd searches
+/// `/usr/bin:/bin:/usr/sbin:/sbin`, `tmux` is in `/opt/homebrew/bin`,
+/// and so every tui row's terminal died at exec in about a
+/// millisecond — while the person watched a five-second wait and was
+/// then told the host had been slow. **Two people would draw the wrong
+/// conclusion from that and go look at a machine that is not sick.**
+///
+/// Written by the host, read by the opener, and removed before each
+/// spawn so a stale one can never answer for a live host.
+pub fn host_error_path(dir: &Path) -> PathBuf {
+    dir.join("host-error.txt")
+}
+
 /// The terminal's last non-empty line, as the host keeps it beside its
 /// state (`last.txt`) — the row preview's source for hosted sessions.
 /// Absent file, absent preview; nothing here invents one.
@@ -344,11 +369,40 @@ fn spawn_host_with(
             Ok(())
         });
     }
-    c.spawn().map_err(msg::host_wont_start)?;
+    // The `PATH` this process worked out travels down rather than
+    // being worked out again: `_host` is a fresh process and would
+    // otherwise re-run the user's login shell on every single spawn
+    // (measured 0.78s cold, and it runs their rc files). `KHOR_PATH` is
+    // the override that already exists for exactly "khor, here is where
+    // things are" — no second mechanism.
+    c.env(crate::PATH_ENV, crate::Node::user_path());
     let marker = host_file_path(dir);
+    let complaint = host_error_path(dir);
+    // A leftover from a previous failed spawn must never answer for
+    // this one; nothing else writes this file.
+    let _ = std::fs::remove_file(&complaint);
+    let mut child = c.spawn().map_err(msg::host_wont_start)?;
     for _ in 0..100 {
         if marker.exists() {
             return Ok(());
+        }
+        // The host's own words beat the timeout whenever it managed to
+        // leave any (`host_error_path`).
+        if let Ok(why) = std::fs::read_to_string(&complaint) {
+            let why = why.trim();
+            if !why.is_empty() {
+                return Err(why.to_owned());
+            }
+        }
+        // **A host that is already gone is not going to be ready.**
+        // Without this the person waits the whole five seconds for a
+        // process that died in a millisecond, and the wait itself is
+        // the misleading part.
+        if matches!(child.try_wait(), Ok(Some(_))) && !marker.exists() {
+            return Err(match std::fs::read_to_string(&complaint) {
+                Ok(why) if !why.trim().is_empty() => why.trim().to_owned(),
+                _ => msg::HOST_DIED_MUTE.to_string(),
+            });
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -445,6 +499,29 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
         .map_err(|e| e.to_string())?;
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
     let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+    // **The host's own words, left where the opener will look.** The
+    // host is spawned detached with all three streams on /dev/null, so
+    // until now every reason it had for dying went nowhere and the
+    // opener had one sentence for all of them — a timeout
+    // (`HOST_NEVER_READY`). See `host_error_path` for what that cost.
+    let served = host_serving(&live, &dir, &id, size, &cmd);
+    if let Err(why) = &served {
+        let _ = std::fs::write(host_error_path(&dir), why);
+    }
+    served
+}
+
+fn host_serving(
+    live: &LiveKind,
+    dir: &Path,
+    id: &SessionId,
+    size: (u16, u16),
+    cmd: &[String],
+) -> Result<(), String> {
+    let dir = dir.to_path_buf();
+    let id = id.clone();
+    let live = live.clone();
+    let cmd = cmd.to_vec();
     let kind = id.0.split('/').next().unwrap_or("").to_owned();
     // A PTY carrying a tmux client shows tmux's status bar as its
     // bottom line, so its "last non-empty line" is chrome, never the
@@ -467,8 +544,24 @@ pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String
     let pty = native_pty_system()
         .openpty(PtySize { rows: size.1, cols: size.0, pixel_width: 0, pixel_height: 0 })
         .map_err(msg::cant_open_pty)?;
-    let mut builder = CommandBuilder::new(&cmd[0]);
+    // **The PTY's command is looked up by khor, against a `PATH` that
+    // can answer** — `crate::spawn_path`. A `khor serve` under launchd
+    // has `/usr/bin:/bin:/usr/sbin:/sbin` and `tmux` lives in
+    // `/opt/homebrew/bin`, so every tui row's terminal died here at
+    // exec; and because this process is detached onto /dev/null, what
+    // reached the person was 宿主没在 5 秒内就位 — a sentence about
+    // *speed*, for something that was never going to work at all
+    // (measured 2026-08-31, same binary, only the `PATH` differing).
+    //
+    // The child is handed that same `PATH`: khor is this terminal, and
+    // a shell opened here with launchd's four directories is not the
+    // shell the person would have got from their own terminal.
+    let path = crate::spawn_path(&cmd[0]);
+    let found = crate::find_program(&cmd[0], &path)
+        .ok_or_else(|| msg::command_not_found(&cmd[0], &path))?;
+    let mut builder = CommandBuilder::new(&found);
     builder.args(&cmd[1..]);
+    builder.env("PATH", &path);
     builder.env("KHOR_SESSION", &id.0);
     // **The host is the terminal, so the host says what it is.**
     // Inheriting `TERM` names whatever shell happened to start khor,

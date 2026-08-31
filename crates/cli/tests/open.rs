@@ -282,3 +282,110 @@ fn closing_a_live_hosted_session_leaves_no_process_behind() {
 
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// **The person is told what khor could not find, not how long it
+/// waited.**
+///
+/// 2026-08-31, on the machine this is written on: `khor serve` is a
+/// launchd agent, so it searches `/usr/bin:/bin:/usr/sbin:/sbin` —
+/// and `tmux`, which every tui row's terminal is a client of, lives in
+/// `/opt/homebrew/bin`. The host died at exec in about a millisecond,
+/// its three streams were on `/dev/null` because that is what makes it
+/// outlive its opener, and so the one thing the person saw was the
+/// opener's timeout: 宿主没在 5 秒内就位.
+///
+/// **A sentence about speed, for something that never waited.** Read
+/// straight, it says the machine is slow or the session is wedged, and
+/// both send somebody to look at a thing that is not sick — the same
+/// shape as the `npx` refusal that blamed a working agent for not
+/// speaking ACP.
+///
+/// The `PATH`s are pinned on purpose, both of them: with an ambient
+/// `PATH` this passes on any developer's machine, where the program is
+/// found and no message is ever produced, and would stay broken exactly
+/// where everybody is affected. `KHOR_PATH` is pinned too because
+/// otherwise the login-shell repair finds the program and there is
+/// nothing to report.
+#[test]
+fn a_host_that_cannot_find_its_program_says_so_instead_of_timing_out() {
+    let home = std::env::temp_dir().join(format!("khor-nopath-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let bare = "/usr/bin:/bin:/usr/sbin:/sbin";
+    let out = khor(&home)
+        .env("PATH", bare)
+        .env("KHOR_PATH", bare)
+        .args(["open", "-d", "--", "khor-no-such-program", "--hello"])
+        .output()
+        .unwrap();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "it cannot have opened: {said}");
+    assert!(
+        said.contains("khor-no-such-program"),
+        "the refusal must name the program khor could not find: {said}"
+    );
+    assert!(
+        said.contains("/usr/sbin"),
+        "and where it looked, which is the other half of the next step: {said}"
+    );
+    assert!(
+        !said.contains("5 秒"),
+        "and it must not be reported as a wait — it never waited: {said}"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// The control the sentence above cannot supply: **the same command,
+/// the same binary, the same everything, and only `KHOR_PATH`
+/// differing.** Without this the test above passes for an
+/// implementation that merely says a nicer sentence and still cannot
+/// start anything — a message is not a repair.
+#[test]
+fn the_same_command_starts_once_khor_is_told_where_to_look() {
+    let home = std::env::temp_dir().join(format!("khor-onpath-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    // A real program, reachable only through a directory that is not on
+    // `PATH` — which is the whole of what launchd does to `khor serve`.
+    let prog = bin.join("khor-test-only-here");
+    std::fs::write(&prog, "#!/bin/sh\nsleep 30\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&prog, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let bare = "/usr/bin:/bin:/usr/sbin:/sbin";
+
+    let blind = khor(&home)
+        .env("PATH", bare)
+        .env("KHOR_PATH", bare)
+        .args(["open", "-d", "--", "khor-test-only-here"])
+        .output()
+        .unwrap();
+    assert!(!blind.status.success(), "the control arm has to actually fail");
+
+    let told = khor(&home)
+        .env("PATH", bare)
+        .env("KHOR_PATH", format!("{}:{bare}", bin.display()))
+        .args(["open", "-d", "--", "khor-test-only-here"])
+        .output()
+        .unwrap();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&told.stdout),
+        String::from_utf8_lossy(&told.stderr)
+    );
+    assert!(told.status.success(), "only KHOR_PATH differs, and it must now start: {said}");
+
+    let sid = String::from_utf8_lossy(&told.stdout).trim().to_owned();
+    let dir = home.join(".khor").join("sessions").join(sid.replace('/', "-"));
+    let hf: HostFile =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("host.json")).unwrap()).unwrap();
+    let _reap = Reaper(hf.child_pid);
+    let _ = khor(&home).args(["close", &sid]).output();
+    let _ = std::fs::remove_dir_all(&home);
+}

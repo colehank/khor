@@ -748,18 +748,26 @@ agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动�
 # 的 id 缺的不是它自己,是它的地址。说清下一步是「去问那个 agent」,
 # 不然人会以为这段对话没了。
 resume-unknown-session = "没问到过这段对话: {0}——先问一次 {1}"
-# khor 要起一个 agent,而它的命令在 PATH 上找不到。
+# khor 要起一个程序,而它的命令在 PATH 上找不到。
 #
-# **这句话存在的理由是它之前说的是别的。** 2026-08-31:`khor serve` 是
-# launchd 起的,拿的是 `/usr/bin:/bin:/usr/sbin:/sbin`,而 `npx` 在
-# `/opt/homebrew/bin`——注册表里 22 个「khor 起得来」的全是 npx 行,于是
-# 界面上一个都起不来,而屏幕上写的是「这个 agent 没起来,或者它不说 ACP」。
-# **一个关于别人家软件的错结论**,照着它去查的是一个没坏的东西。
+# **这句话存在的理由是它之前说的是别的**,而且是两次,同一个病灶两处
+# 出口。2026-08-31:`khor serve` 是 launchd 起的,拿的是
+# `/usr/bin:/bin:/usr/sbin:/sbin`——
 #
-# 所以这句必须带上那个可执行文件的名字,和 khor 到底在哪儿找过——两个
-# 事实两个下一步:装个 node / 这个 agent 的命令写错了。PATH 很长,照样
-# 整条印出来:**把答案裁掉的短句子,不比长句子好。**
-agent-command-not-found = "找不到这个命令: {0}。khor 在这条 PATH 上找过: {1}。装上它,或者设 KHOR_PATH 指给 khor"
+#   - `npx` 在 `/opt/homebrew/bin`。注册表里 22 个「khor 起得来」的全是
+#     npx 行,于是界面上一个都起不来,而屏幕上写的是「这个 agent 没起来,
+#     或者它不说 ACP」。**一句关于别人家软件的错结论。**
+#   - `tmux` 也在 `/opt/homebrew/bin`。于是在界面上切到任何一个 tui 行的
+#     终端,宿主一落地就死在 exec 上,而屏幕上写的是「宿主没在 5 秒内
+#     就位」。**一句关于速度的错结论**——那件事一秒都没花,它是当场不可能。
+#
+# 两次都指着一个没坏的东西。所以这句必须带上那个可执行文件的名字,和
+# khor 到底在哪儿找过——两个事实两个下一步:装上它 / 这条命令写错了。
+# PATH 很长,照样整条印出来:**把答案裁掉的短句子,不比长句子好。**
+#
+# **键名不带 agent**:同一句话现在也归终端用,而一个只描述了一半用处的
+# 键名,会掩护下一个把它读窄了的人。
+command-not-found = "找不到这个命令: {0}。khor 在这条 PATH 上找过: {1}。装上它,或者设 KHOR_PATH 指给 khor"
 no-such-dir = "没有这个目录: {0}"
 # Two machines sharing one home (a cluster's NFS export is the usual
 # way) would share one identity. Says whose it is and what to do, in
@@ -865,7 +873,18 @@ frame-too-big = "帧超限: {0}"
 half-a-frame = "帧读了一半: {0}"
 cant-find-self = "找不到自己的可执行文件: {0}"
 host-wont-start = "宿主起不来: {0}"
+# **This is now the "it really did hang" answer and nothing else.**
+# A host that dies on the way up leaves its own sentence behind
+# (`khor_node::host::host_error_path`) and the opener says that
+# instead — because until 2026-08-31 this one stood in for every
+# failure there is, and the commonest of them (`tmux` not on a launchd
+# `PATH`) took about a millisecond. **A sentence about waiting, for
+# something that never waited.**
 host-never-ready = "宿主没在 5 秒内就位"
+# The host process ended before it was reachable and left nothing
+# behind — the residue of the case above, kept honest: khor says the
+# host is gone rather than inventing a reason for it.
+host-died-mute = "宿主一起来就没了,没留下话"
 # The conversation host's own wait, which is thirty seconds rather than
 # five: an ACP agent has to boot and answer two requests before it can
 # say a session exists. A separate key rather than a shared one with the

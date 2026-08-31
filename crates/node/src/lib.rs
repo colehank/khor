@@ -953,10 +953,13 @@ impl Node {
     /// and (now) says so politely. A table that rots and an assertion
     /// that cannot fail are the same object.
     pub fn user_path() -> &'static str {
+        // (the override's name lives at `PATH_ENV`, because the host
+        // spawner hands it down to `_host` rather than making that
+        // process ask the login shell all over again)
         static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
         PATH.get_or_init(|| {
             let here = std::env::var("PATH").unwrap_or_default();
-            if let Ok(told) = std::env::var("KHOR_PATH") {
+            if let Ok(told) = std::env::var(PATH_ENV) {
                 if !told.trim().is_empty() {
                     return told;
                 }
@@ -1009,7 +1012,7 @@ impl Node {
     /// the refusal is testable without a login shell in the loop.
     pub(crate) fn launch_on(spec: &AgentSpec, path: &str) -> Result<String, String> {
         let found = find_program(&spec.command, path)
-            .ok_or_else(|| msg::agent_command_not_found(&spec.command, path))?;
+            .ok_or_else(|| msg::command_not_found(&spec.command, path))?;
         serde_json::to_string(&serde_json::json!({
             "command": found,
             "args": spec.args,
@@ -2826,6 +2829,33 @@ pub(crate) fn merge_paths(asked: &str, here: &str) -> String {
     seen.join(":")
 }
 
+/// Told to khor by hand: "here is where the programs are." Read by
+/// [`Node::user_path`] and handed down to spawned `_host` processes so
+/// they inherit the answer instead of re-deriving it.
+pub(crate) const PATH_ENV: &str = "KHOR_PATH";
+
+/// The `PATH` to spawn `command` against: **this process's own, unless
+/// this process's own cannot find it.**
+///
+/// Asking the login shell is a repair, not a policy. It costs 0.78s
+/// cold and it runs the user's rc files, so a khor that already has a
+/// working `PATH` — every khor started from a terminal — must not pay
+/// it. A khor that does not (launchd's `khor serve`, whose four
+/// directories hold neither `tmux` nor `npx`) pays it once per process
+/// and gets a `PATH` that can answer.
+///
+/// **The fallback is still allowed to fail**, and it should: when the
+/// program is genuinely not installed, the caller gets to say so and
+/// name where it looked ([`msg::command_not_found`]) rather than hand
+/// a child an exec error nobody will ever read.
+pub(crate) fn spawn_path(command: &str) -> String {
+    let here = std::env::var("PATH").unwrap_or_default();
+    if find_program(command, &here).is_some() {
+        return here;
+    }
+    Node::user_path().to_owned()
+}
+
 /// Resolves a program name the way a shell would, against a stated
 /// `PATH`: a name with a separator in it is taken as written, anything
 /// else is looked for in each directory in turn.
@@ -2834,7 +2864,7 @@ pub(crate) fn merge_paths(asked: &str, here: &str) -> String {
 /// data file of that name, is not something that starts — and a lookup
 /// that answered "found" for one would move the failure back to where
 /// it was, a child that dies with nothing to say.
-fn find_program(command: &str, path: &str) -> Option<String> {
+pub(crate) fn find_program(command: &str, path: &str) -> Option<String> {
     let runnable = |p: &std::path::Path| -> bool {
         #[cfg(unix)]
         {
