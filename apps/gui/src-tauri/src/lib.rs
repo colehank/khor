@@ -163,6 +163,14 @@ fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
     khor_gui_core::chat::history(&Node::root_from_env(), &id)
 }
 
+/// A discovered conversation, **followed**: whatever its transcript has
+/// said since `from`, and where to continue. The read-only half of
+/// watching a session that is running in its own terminal.
+#[tauri::command]
+fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Followed, String> {
+    khor_gui_core::chat::history_follow(&Node::root_from_env(), &id, from)
+}
+
 /// One machine's directory, for the files landing. Async because the
 /// machine may be far away (the same reason `pair` is).
 #[tauri::command]
@@ -525,6 +533,7 @@ pub fn run() {
             chat_replay,
             chat_leave,
             history,
+            history_follow,
             ls,
             pull,
             dir_pins,

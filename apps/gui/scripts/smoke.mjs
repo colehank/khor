@@ -199,13 +199,22 @@ const repo = join(gui, "../..");
 const BUILT_KHOR = join(repo, "target/debug/khor");
 const BUILT_BRIDGE = join(repo, "target/debug/bridge");
 
-/** Every `.rs` under `crates/` and `apps/gui/core/` — what the two
-    binaries above are built from.
+/** Every `.rs` the two binaries above are actually built from.
+    **Named roots, not the whole repo** — and the first spelling of this
+    walked the whole repo while its own comment said otherwise. It then
+    refused to run because `apps/gui/src-tauri` was newer, which is a
+    third binary with its own build that `--bins` does not touch: a
+    comment describing an intent the code did not implement, and the
+    code was the wrong half.
 
-    Walked rather than globbed because this script has no dependencies,
-    and `target/` is skipped because it holds a copy of the sources for
-    every crate ever vendored. */
-function rustSources(dir = repo, out = []) {
+    Walked rather than globbed because this script has no dependencies.
+    `target/` never appears because neither root contains it. */
+const RUST_ROOTS = ["crates", join("apps", "gui", "core")];
+function rustSources(dir, out = []) {
+  if (dir === undefined) {
+    for (const r of RUST_ROOTS) rustSources(join(repo, r), out);
+    return out;
+  }
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (e.name === "target" || e.name === "node_modules" || e.name.startsWith(".")) continue;
     const full = join(dir, e.name);
