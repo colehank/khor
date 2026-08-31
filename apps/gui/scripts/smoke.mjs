@@ -170,9 +170,10 @@ import {
   readdirSync,
   copyFileSync,
   chmodSync,
+  statSync,
   symlinkSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -197,6 +198,22 @@ const repo = join(gui, "../..");
 // edits mid-run, and a link to it still resolves from the snapshot.
 const BUILT_KHOR = join(repo, "target/debug/khor");
 const BUILT_BRIDGE = join(repo, "target/debug/bridge");
+
+/** Every `.rs` under `crates/` and `apps/gui/core/` — what the two
+    binaries above are built from.
+
+    Walked rather than globbed because this script has no dependencies,
+    and `target/` is skipped because it holds a copy of the sources for
+    every crate ever vendored. */
+function rustSources(dir = repo, out = []) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === "target" || e.name === "node_modules" || e.name.startsWith(".")) continue;
+    const full = join(dir, e.name);
+    if (e.isDirectory()) rustSources(full, out);
+    else if (e.name.endsWith(".rs")) out.push(full);
+  }
+  return out;
+}
 const SCRATCH = process.env.SMOKE_DIR ?? join(repo, "target/gui-smoke");
 const RUN = join(SCRATCH, "run");
 const KHOR = join(RUN, "khor");
@@ -566,6 +583,27 @@ try {
   ]) {
     if (!existsSync(built)) {
       throw new Error(`${built} is not built — cargo build -p khor-cli -p khor-gui-core --bins`);
+    }
+    // **And it must not be older than what it is meant to be testing.**
+    // Existence was the whole check, and a binary from yesterday passes
+    // it: a run against one cost an afternoon of debugging a feature
+    // that was never in the thing being run — the new bridge command
+    // simply did not exist, so the page reported "no record" and three
+    // plausible causes were chased before the timestamps were read.
+    //
+    // Refused rather than rebuilt: building takes a minute and this
+    // script starts servers and browsers, so a silent rebuild in the
+    // middle of it is a surprise on a machine somebody else may be
+    // compiling on. The sentence names the command.
+    const sources = rustSources();
+    const bin = statSync(built).mtimeMs;
+    const newer = sources.filter((f) => statSync(f).mtimeMs > bin);
+    if (newer.length > 0) {
+      throw new Error(
+        `${built} is older than ${newer.length} source file(s) — ` +
+          `${relative(repo, newer[0])} and others. ` +
+          `cargo build -p khor-cli -p khor-gui-core --bins`,
+      );
     }
     copyFileSync(built, here);
     chmodSync(here, 0o755);

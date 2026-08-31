@@ -146,6 +146,60 @@ impl Claude {
         Ok(utterances_of(&text))
     }
 
+    /// What was appended to a transcript since byte `from`.
+    ///
+    /// **Only the new bytes are read.** A watched conversation's file
+    /// grows all afternoon and the biggest one on this machine is
+    /// 280 MB; re-reading it to find the last paragraph is the cost
+    /// that made a discovered session read-once in the first place.
+    /// Seeking past what has been seen turns that into a cost
+    /// proportional to what was *said*, which is a few hundred bytes.
+    ///
+    /// # The three things a file can do between two reads
+    ///
+    /// - **Grow** — the ordinary case, and the whole point: the new
+    ///   utterances come back and `at` moves to the new end.
+    /// - **Stay put** — nothing to say. Empty, and `at` unchanged.
+    /// - **Shrink, or be replaced** — a compaction, a rotation, a
+    ///   different file behind the same leaf. Byte 400 of the new file
+    ///   is not byte 400 of the old one, so continuing from `from`
+    ///   would splice two conversations together. Answered with
+    ///   `rewound: true` and the file whole, and the caller repaints
+    ///   rather than appends.
+    ///
+    /// **A partial last line is left for next time.** The writer
+    /// appends a whole JSON object per line but not atomically, so a
+    /// read can land mid-object; `at` stops at the last newline, and
+    /// the tail is read again when it is complete. Parsing what is
+    /// there and skipping the rest would drop that utterance forever.
+    pub fn transcript_since(&self, leaf: &str, from: u64) -> Result<Follow, String> {
+        use std::io::{Read, Seek, SeekFrom};
+        let (path, _) = self.transcript_path(leaf).ok_or_else(|| msg::no_such_session(leaf))?;
+        let mut f = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        let len = f.metadata().map_err(|e| e.to_string())?.len();
+        let rewound = len < from;
+        let start = if rewound { 0 } else { from };
+        if len == start {
+            return Ok(Follow { said: Vec::new(), at: len, rewound, following: true });
+        }
+        f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+        let mut buf = Vec::new();
+        f.take(len - start).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        // Cut at the last newline: everything after it is a line the
+        // writer has not finished.
+        let end = match buf.iter().rposition(|b| *b == b'\n') {
+            Some(i) => i + 1,
+            // Not one whole line yet — wait rather than parse a
+            // fragment.
+            None => return Ok(Follow { said: Vec::new(), at: start, rewound, following: true }),
+        };
+        // Lossy on purpose: a byte range that begins mid-codepoint
+        // cannot happen (the cut is at a newline both times), and a
+        // genuinely corrupt line is one `utterances_of` already skips.
+        let text = String::from_utf8_lossy(&buf[..end]);
+        Ok(Follow { said: utterances_of(&text), at: start + end as u64, rewound, following: true })
+    }
+
     /// The transcript file behind a leaf, with its mtime — the shared
     /// resolution `transcript` and `last_said` both run.
     /// The vendor's **full** session id behind a lossy leaf — the
@@ -329,6 +383,31 @@ fn tail_said(path: &std::path::Path) -> Option<String> {
         // the newest real sentence reads better than "Read".
         Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) => None,
     })
+}
+
+/// What a transcript said since it was last read.
+#[derive(Debug)]
+pub struct Follow {
+    /// The new utterances, in speaking order. Empty when nothing was
+    /// said — which is most reads, and is not an error.
+    pub said: Vec<Utterance>,
+    /// Where to continue from next time.
+    pub at: u64,
+    /// The file was shorter than the cursor, so this is the whole of it
+    /// and the caller must repaint rather than append. **Not an error**
+    /// — a compaction is an ordinary thing for a long conversation.
+    pub rewound: bool,
+    /// Whether asking again will ever say anything new.
+    ///
+    /// **`false` means「this is all there is, stop asking」**, and it
+    /// exists because the alternative was silently expensive: a
+    /// transcript nothing can seek falls back to being read whole, and
+    /// without a way to say so the caller re-read the entire file every
+    /// 700 ms and repainted the pane from scratch each time. The smoke
+    /// caught it as a flake — a page rebuilding itself mid-assertion —
+    /// which is the cheapest way that particular waste ever announces
+    /// itself.
+    pub following: bool,
 }
 
 /// One utterance of a recorded conversation, in speaking order.
@@ -1177,6 +1256,94 @@ mod tests {
     }
 
     /// The hook glue end to end on payloads: an observed session
+    /// **A followed transcript, through the three things a file can do
+    /// between two reads.**
+    ///
+    /// Grows / stays put / is replaced. The third is the one that costs
+    /// something to get wrong: byte 400 of a new file is not byte 400
+    /// of the old one, so continuing from the cursor would splice two
+    /// conversations together and the reader would never see the seam.
+    ///
+    /// The partial-line case is asserted too, because it is the one a
+    /// test with tidy fixtures never produces: the writer appends whole
+    /// JSON objects but not atomically, so a read lands mid-object
+    /// often enough. Parsing what is there and moving the cursor past
+    /// it would drop that utterance permanently.
+    #[test]
+    fn a_followed_transcript_grows_holds_still_and_starts_over() {
+        let root = std::env::temp_dir().join(format!("khor-follow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let proj = root.join("projects").join("-home-u-proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let c = Claude::at(root.clone());
+        let uuid = "aaaaaaaa-9999-2222-3333-444444444444";
+        let file = proj.join(format!("{uuid}.jsonl"));
+        let leaf = crate::live::clean_leaf(uuid);
+        let line = |t: &str| {
+            format!(
+                r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"{t}"}}]}}}}"#
+            )
+        };
+
+        // 1) First read of a file with one line.
+        std::fs::write(&file, format!("{}\n", line("one"))).unwrap();
+        let a = c.transcript_since(&leaf, 0).unwrap();
+        assert_eq!(a.said, vec![Utterance::Agent("one".into())]);
+        assert!(!a.rewound);
+        assert_eq!(a.at, std::fs::metadata(&file).unwrap().len());
+
+        // 2) Nothing was said. Empty, cursor unmoved — **not an error**,
+        //    which is what most reads of a live file are.
+        let b = c.transcript_since(&leaf, a.at).unwrap();
+        assert!(b.said.is_empty());
+        assert_eq!(b.at, a.at);
+        assert!(!b.rewound);
+
+        // 3) It grew. **Only the new line comes back** — the first is
+        //    already on screen, and returning it again would paint it
+        //    twice.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+            writeln!(f, "{}", line("two")).unwrap();
+        }
+        let d = c.transcript_since(&leaf, b.at).unwrap();
+        assert_eq!(d.said, vec![Utterance::Agent("two".into())]);
+        assert!(!d.rewound);
+
+        // 4) A line the writer has not finished. Nothing comes back and
+        //    **the cursor does not move past it**, so it is read again
+        //    when it is whole.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+            write!(f, "{{\"type\":\"assist").unwrap();
+        }
+        let e = c.transcript_since(&leaf, d.at).unwrap();
+        assert!(e.said.is_empty(), "half a line is not an utterance");
+        assert_eq!(e.at, d.at, "and the cursor waits for the rest of it");
+
+        // …and when it is finished, it arrives.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+            writeln!(f, "ant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"three\"}}]}}}}").unwrap();
+        }
+        let f2 = c.transcript_since(&leaf, e.at).unwrap();
+        assert_eq!(f2.said, vec![Utterance::Agent("three".into())]);
+
+        // 5) Replaced by something shorter — a compaction. The whole
+        //    file comes back and `rewound` says to repaint, because
+        //    appending across that seam joins two conversations.
+        std::fs::write(&file, format!("{}\n", line("fresh"))).unwrap();
+        let g = c.transcript_since(&leaf, f2.at).unwrap();
+        assert!(g.rewound, "a shorter file is a different file");
+        assert_eq!(g.said, vec![Utterance::Agent("fresh".into())]);
+        assert_eq!(g.at, std::fs::metadata(&file).unwrap().len());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// **The agent's own name for a conversation, and the three ways it
     /// is not there.** Shapes taken from real transcripts on this
     /// machine (2026-08-30): the record is `{"type":"ai-title",

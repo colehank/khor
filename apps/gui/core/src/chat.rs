@@ -384,6 +384,61 @@ pub fn history(root: &Path, id: &str) -> Result<Vec<ChatFrame>, String> {
     Ok(frames)
 }
 
+/// A discovered conversation, followed: whatever its transcript has
+/// said since `from`, and where to continue.
+///
+/// **Appended lines come back as `note` frames, not `history` ones**,
+/// and that is what makes this work without touching the fold: a
+/// `history` batch is closed by `HistoryEnd` and *replaces* the past,
+/// which is right for a first read and wrong for a continuation — it
+/// would leave the pane holding only the newest paragraph. Notes
+/// append, which is exactly what an appended line is.
+///
+/// A rewound file (compaction, rotation) comes back the other way:
+/// whole, as `history`, ending in `HistoryEnd`, so the pane repaints.
+/// Byte 400 of a new file is not byte 400 of the old one, and appending
+/// across that seam would splice two conversations together.
+pub fn history_follow(root: &Path, id: &str, from: u64) -> Result<Followed, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let follow = n.transcript_follow(&SessionId(id.to_owned()), from)?;
+    let kind_of = |update: serde_json::Value| {
+        let wrapped = serde_json::json!({ "sessionId": id, "update": update });
+        if follow.rewound {
+            ChatFrame::History { update: wrapped }
+        } else {
+            ChatFrame::Note { update: wrapped }
+        }
+    };
+    let mut frames: Vec<ChatFrame> = follow
+        .said
+        .into_iter()
+        // The one translation, shared with the live stream — see
+        // `history` above for why there is exactly one.
+        .filter_map(khor_node::replayed_update)
+        .map(|u| kind_of(serde_json::to_value(&u).unwrap_or(serde_json::Value::Null)))
+        .collect();
+    if follow.rewound {
+        frames.push(ChatFrame::HistoryEnd);
+    }
+    Ok(Followed { frames, at: follow.at, following: follow.following })
+}
+
+/// [`history_follow`]'s answer: what to paint, and where to continue.
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct Followed {
+    pub frames: Vec<ChatFrame>,
+    /// Byte offset to hand back next time. **Carried by the caller
+    /// rather than remembered here**: this function opens the node and
+    /// answers, and a cursor kept on this side would be one per
+    /// process, shared by every face watching every session.
+    pub at: u64,
+    /// Whether asking again can say anything new. `false` is a record
+    /// nothing can seek: this answer is the whole of it, and a caller
+    /// that kept asking would re-read the file forever.
+    pub following: bool,
+}
+
 /// Detaches one holder; the socket closes when the last one leaves
 /// (`Chat::holds`). **Not a close**: the session and its agent live
 /// on, and closing is [`crate::close_session`]'s job — a detail view

@@ -47,7 +47,7 @@ import {
   chatReplay,
   chatSay,
   chatStop,
-  fetchHistory,
+  followHistory,
   type ChatFrame,
 } from "@/api";
 import { IconBack } from "@/components/icons";
@@ -81,6 +81,18 @@ import { word } from "@/words";
  */
 const LIVE_MS = 50;
 const IDLE_MS = 500;
+/**
+ * How often a *discovered* conversation's transcript is re-read.
+ *
+ * **Slower than the live pane on purpose, and the reason is what is
+ * being watched.** A hosted conversation polls at 50ms during a turn
+ * because khor is the thing streaming it and the latency is khor's own.
+ * A discovered one is a file somebody else is appending to: the writer
+ * flushes in bursts, so a faster read finds the same bytes again and
+ * pays for the finding. 700ms is under the eye's tolerance for「it is
+ * happening」and an order of magnitude off the wasteful end.
+ */
+const STILL_MS = 700;
 
 /** One painted item, folded from the protocol's chunks. */
 type Item =
@@ -534,7 +546,7 @@ function toolInk(status: string): string {
 
 /** One poll's worth of frames, folded into the picture. Answers the
     same object when nothing was painted, so React stops there. */
-function absorb(paint: Painting, frames: ChatFrame[]): Painting {
+function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Painting {
   let { past, arriving, live } = paint;
   let moved = false;
   for (const f of frames) {
@@ -555,7 +567,20 @@ function absorb(paint: Painting, frames: ChatFrame[]): Painting {
       continue;
     }
     if (live === paint.live) live = live.slice();
-    if (eat(live, f, false)) moved = true;
+    // **Whether a live user line is painted depends on whether this
+    // face is the one that said it.** A hosted conversation paints its
+    // own words first-hand as they are sent, so the protocol's echo of
+    // them is skipped — painting both doubles every message. A
+    // *followed* conversation says nothing: it is a record of somebody
+    // else's terminal, and every user line in it is one this face has
+    // never seen.
+    //
+    // Found by the smoke, which watches a recorded conversation whose
+    // whole content is one user line: the follower sent it down the
+    // live path and the fold dropped it, so a page that had been
+    // painting fine went blank — silently, because agent text still
+    // came through.
+    if (eat(live, f, readOnly)) moved = true;
   }
   if (!moved && arriving === paint.arriving) return paint;
   return { past, arriving, live };
@@ -662,15 +687,57 @@ export function ChatView({
     let stopped = false;
     let cursor = 0;
     if (still) {
-      fetchHistory(id)
-        .then((frames) => {
-          if (!stopped) setPaint((prev) => absorb(prev, frames));
-        })
-        .catch(() => {
-          if (!stopped) setGone(true);
-        });
+      // **Read-only, but not read-once.** This used to fetch the
+      // transcript a single time, on the reasoning that a discovered
+      // session has「no attachment, no polling, and no input, since
+      // there is no protocol channel to say anything into」. That is
+      // true of *input* — there is still no way to speak here, and the
+      // composer stays a read-only line with 接管 beside it. It was
+      // never true of output: the agent's transcript is growing on disk
+      // the whole time, and khor already reads its tail every few
+      // seconds for the row's preview line. So a session running in its
+      // own terminal sat frozen on screen while the row beside it
+      // updated.
+      //
+      // Followed by byte offset, so the cost is what was *said* rather
+      // than the size of the file — the biggest transcript on this
+      // machine is 280 MB, and re-reading it to find one new paragraph
+      // is what made this read-once in the first place.
+      let from = 0;
+      let timer: number | null = null;
+      const tick = () => {
+        followHistory(id, from)
+          .then((batch) => {
+            if (stopped) return;
+            from = batch.at;
+            if (batch.frames.length > 0) {
+              setPaint((prev) => absorb(prev, batch.frames, true));
+            }
+            // **Some records cannot be followed**, and khor says which
+            // — a codex rollout, or a leaf nothing resolves. There the
+            // answer is the whole file and asking again returns the
+            // same file, so this stops: the read-once behaviour it
+            // replaced, kept where following is not on offer. Without
+            // it the pane re-read and repainted the entire transcript
+            // every 700 ms, which the smoke found as a flake.
+            if (!batch.following) stopped = true;
+          })
+          .catch(() => {
+            // A transcript that cannot be read at all is a conversation
+            // with no record — the same fact `fetchHistory` reported,
+            // and the same answer. Only on the *first* read: a follow
+            // that fails later is a moment, not an ending, and calling
+            // it one would blank a conversation that is on screen.
+            if (!stopped && from === 0) setGone(true);
+          })
+          .finally(() => {
+            if (!stopped) timer = window.setTimeout(tick, STILL_MS);
+          });
+      };
+      tick();
       return () => {
         stopped = true;
+        if (timer !== null) window.clearTimeout(timer);
       };
     }
     // A self-scheduling wait rather than an interval, because the wait

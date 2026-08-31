@@ -328,6 +328,17 @@ export const chatLeave = (id: string) => call<null>("chat_leave", { id });
     replay-shaped frames, whole, ending in history_end — so the same
     fold paints it and a live replay alike. */
 export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id });
+
+/** A discovered session's transcript, **followed**: whatever it has said
+    since `from`, and where to continue.
+
+    Appended lines come back as `note` frames and append; a rewound file
+    (a compaction) comes back whole as `history` + `history_end` and
+    repaints. Both shapes are ones the fold already knows — see
+    `chat::history_follow` for why that split is the design and not a
+    convenience. */
+export const followHistory = (id: string, from: number) =>
+  call<{ frames: ChatFrame[]; at: number; following: boolean }>("history_follow", { id, from });
 /** One machine's directory — order, cap and the answered-about path
     all come from the node; `""` asks for that machine's home. */
 export const fetchLs = (machine: string, path: string) =>

@@ -2329,6 +2329,51 @@ impl Node {
         }
     }
 
+    /// A discovered conversation, followed: what its transcript has said
+    /// since byte `from`.
+    ///
+    /// **Following is the fast path, never the only one.** Only claude's
+    /// reader can seek — codex's rollout is a different shape, and a
+    /// khor-minted leaf may resolve through neither — so anything the
+    /// seek cannot serve falls back to reading the record whole, marked
+    /// `rewound` so the face repaints instead of appending.
+    ///
+    /// **Written this way because the first version was not**, and the
+    /// smoke caught it: it failed where [`Node::transcript_of`]
+    /// succeeds, and a first read that fails is a conversation the
+    /// screen reports as having no record at all. A faster path that
+    /// can *lose* a conversation is not a faster path.
+    pub fn transcript_follow(
+        &self,
+        id: &SessionId,
+        from: u64,
+    ) -> Result<adaptor::claude::Follow, String> {
+        let seek = id
+            .0
+            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
+            .map(|leaf| self.live.vendor_leaf_of(id).unwrap_or_else(|| leaf.to_owned()))
+            .and_then(|leaf| {
+                let vhome = adaptor::vendor_home(&self.root);
+                adaptor::claude::Claude::at(vhome.join(".claude"))
+                    .transcript_since(&leaf, from)
+                    .ok()
+            });
+        if let Some(follow) = seek {
+            return Ok(follow);
+        }
+        // The whole record, once, for a session nothing can seek —
+        // and `following: false` so the caller stops there. That last
+        // field is the difference between this and a silent waste: the
+        // first version answered the same way every time and the pane
+        // re-read and repainted the whole transcript every 700 ms.
+        Ok(adaptor::claude::Follow {
+            said: self.transcript_of(id)?,
+            at: 0,
+            rewound: true,
+            following: false,
+        })
+    }
+
     /// Adds khor's hooks to claude's settings, leaving the rest of that
     /// file alone. See `adaptor::claude::install_hooks`.
     pub fn install_hooks(&self) -> Result<adaptor::claude::HookInstall, String> {

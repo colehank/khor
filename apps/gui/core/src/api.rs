@@ -118,6 +118,11 @@ pub fn answer(
         "install_hooks" => to_json(&crate::install_hooks(root)?),
         "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),
         "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?)?),
+        "history_follow" => to_json(&crate::chat::history_follow(
+            root,
+            &arg("id")?,
+            args.get("from").and_then(serde_json::Value::as_u64).unwrap_or(0),
+        )?),
         "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
