@@ -96,12 +96,28 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  * recorded rather than removed.** The SC caps a line at 80 characters —
  * **40 if CJK**, on the ground that a CJK glyph is about twice as wide
  * as a Latin character at the same legibility. 46 is 15% past it. The
- * reference product does not satisfy it either (46 CJK / 88.3 Latin).
+ * reference product does not satisfy it either (46 CJK / 99.3 Latin).
  * The ceiling here has been 45, then 40 (when the standard was first
  * looked up), and now 46; **a gate whose citation gets deleted the
  * moment the product stops obeying it teaches the next reader that
  * nobody ever checked** — so the citation stays, above the value that
  * departs from it.
+ *
+ * **Tombstone: that Latin figure read 88.3 until 2026-08-31, and the
+ * wrong number is worth more here than the right one.** 88.3 was a
+ * single reading that had never been reproduced; re-measuring the live
+ * product gives 99.3, with 100 counted directly on a 736 line box. The
+ * reference face is 1.3% wider a character than this one, not 12%.
+ * **The first attempt to re-check it concluded「the webfont is not
+ * rendering, so the measurement is of a fallback」— and that was wrong
+ * too**: the control deleted `anthropic-serif` from the stack, and the
+ * entry sitting behind it is a `size-adjust`ed metric-matched fallback,
+ * so both arms of that control were built to measure the same width. It
+ * cannot come back anything but「no difference」. `document.fonts
+ * .check()` is no help either; it returns `true` for a family that does
+ * not exist. To prove a face is really rendering, drop the
+ * metric-matched fallbacks too and show the number moves. The full
+ * arithmetic is on `--measure` in `tokens.css`.
  *
  * **The floor is not from the standard and is not pretending to be.**
  * Nothing published says a line may not be too *short*, but 32 was

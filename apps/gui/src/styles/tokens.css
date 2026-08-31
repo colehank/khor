@@ -661,7 +661,7 @@
    * glyph is about twice a Latin character's width at the same
    * legibility. 46 is 15% past the CJK half; the Latin half is missed
    * too (below). The reference product misses both as well, at 46 and
-   * 88.3. Deleting the citation and never having looked it up read the
+   * 99.3. Deleting the citation and never having looked it up read the
    * same to the next person, so it is here, with the gap stated.
    *
    * **Tombstone, and the round trip is the point.** 32 → 38 → 44
@@ -680,11 +680,41 @@
    * Both halves hold only at ≤36.9em. The standard's two numbers were
    * written for text in one script; these paragraphs run 32–74% CJK.
    *
-   * **And this is where「match it exactly」stops being possible**: the
-   * reference product holds 88.3 Latin characters on the same 46-glyph
-   * line, because its face is a different one (a serif whose Latin runs
-   * wider against the same CJK). The *column* and the *CJK count* are
-   * transcribed; the Latin count cannot be, and no cap makes it so.
+   * **「Match it exactly」turns out to be possible in Latin too, and
+   * the paragraph that used to stand here was arithmetic on a bad
+   * number.** Re-measured 2026-08-31 against a live claude.ai
+   * conversation: the same 736 column at the same 16px prose holds
+   * **46** CJK and **99.3** Latin — 100 of them counted directly,
+   * character by character, on one line box — against 100.7 here. Its
+   * face (`anthropic-serif`) does run wider than this stack's
+   * `system-ui`, but by 1.3% a character, .463em against .457em. That
+   * is 1.4 characters on a line. The *column*, the *CJK count* and the
+   * *Latin count* all transcribe; no cap had to be bent to make them.
+   *
+   * **Tombstone: this read 88.3 until 2026-08-31, and concluded from it
+   * that the Latin count could not be matched at all.** 88.3 was one
+   * measurement, never reproduced, and it was 12% off. Its likely
+   * origin, stated as inference and not as record: the same face and
+   * the same sample measured at **18px** gives 736 / 8.3268 = 88.4. The
+   * column and the CJK count were read off the prose's real 16px and
+   * the Latin count off 18 — one fact carried in two units. What is
+   * measured is only that 18px reproduces the number; why it was 18 is
+   * not known, so it is not asserted.
+   *
+   * **The re-check that mattered is the one that failed first, and it
+   * failed green.** The obvious control — drop `anthropic-serif` from
+   * the stack and see whether the width moves — cannot answer the
+   * question it is asked: the next entry is `"Anthropic Serif Fallback
+   * Georgia"`, a `size-adjust`ed face built to match its metrics. It
+   * measures 7.4407 a character against the real face's 7.4092, 0.4%
+   * apart, so it reports「same width, so the webfont never rendered」
+   * whether or not the webfont rendered. `document.fonts.check()` is no
+   * better — it answered `true` for a family name that does not exist.
+   * The control that does discriminate drops the metric-matched
+   * fallbacks as well: plain Georgia measures 7.1033, a 4.3% move, and
+   * the full stack then matches `anthropic-serif` in isolation to four
+   * decimals. **A control whose two arms were built to agree is not a
+   * control** — and its answer reads exactly like a finding.
    *
    * **The real answer to「the screen is not full」is a different axis**
    * and is not in this batch: the column is 40 glyphs *of the reading
