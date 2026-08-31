@@ -4348,9 +4348,22 @@ for line in sys.stdin:
   // Markdown is the agent's medium, and the fake echoes what it was
   // told — so one line of it makes the round trip and must arrive
   // *rendered*. Two assertions, because one cannot tell the two ways
-  // this breaks apart: nothing rendered, or everything rendered. The
-  // user's own bubble keeps the source it was typed in (ChatView head:
-  // an asterisk they meant as an asterisk).
+  // this breaks apart: nothing rendered, or everything rendered.
+  //
+  // **Both sides render now, and the second assertion is a tombstone.**
+  // It read: the user's own bubble keeps the source it was typed in
+  // (ChatView head — an asterisk they meant as an asterisk). That was
+  // overruled on 2026-08-31 by the person using this app, after a user
+  // line turned out to be where a **message from another agent
+  // session** arrives as well: one side of a conversation showing raw
+  // markdown while the other showed rendered text read as a bug, and
+  // half the time it was one.
+  //
+  // So the claim flipped rather than went away. It is still two
+  // assertions and they still catch different halves — nothing
+  // rendered, versus the marks left on screen — only now the bubble is
+  // held to the same standard as the agent's side instead of the
+  // opposite one.
   // ASCII on purpose: this is test data, not the thing under test
   // (the NEEDLE rule above).
   await say(page, "**bold** and *slant*");
@@ -4361,9 +4374,15 @@ for line in sys.stdin:
   if (rendered.includes("**")) {
     throw new Error(`the agent's marks are still on screen: ${rendered}`);
   }
-  const typed = await page.locator("[data-said]").last().innerText();
-  if (!typed.includes("**bold**")) {
-    throw new Error(`the user's own line must stay verbatim: ${typed}`);
+  const typed = await page.locator("[data-said]").last();
+  if ((await typed.locator("strong").count()) === 0) {
+    throw new Error(
+      `the user's own line did not render: ${await typed.innerText()}`,
+    );
+  }
+  const typedText = await typed.innerText();
+  if (typedText.includes("**")) {
+    throw new Error(`the user's own marks are still on screen: ${typedText}`);
   }
   // A link in an agent's text is a control that carries its address.
   // **Not clicked here**: pressing it hands the page to this machine's

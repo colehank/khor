@@ -28,9 +28,10 @@
  *              (`--accent` still carries the literal, and is the older
  *              of the two.)
  *   state    — 完成, and only that one of the six words.
- *   soft fill— `--accent`, and the rail's open block (`--rail-on`,
- *              2026-08-30): a tint to lie *behind* something, never to
- *              be read as a shape or a word.
+ *   soft fill— `--accent`: a tint to lie *behind* something, never to
+ *              be read as a shape or a word. (The rail's open block was
+ *              the other one and is gone — 2026-08-31, tombstone below
+ *              on `--rail-on`; the rail says「open」on the glyph now.)
  *   ~~action~~ gone. The main action is ink on paper (`--primary`),
  *              which is also the only thing on either theme with
  *              contrast to spare.
@@ -400,69 +401,28 @@
   --rail-ink: rgba(26, 26, 20, 0.72);
   --icon-body: 0.7;
 
-  /* The block behind whichever item is open — the brand green, thinned.
+  /* **Tombstone: `--rail-on` was the block behind whichever rail item
+   * was open, and there is no block any more (2026-08-31).**
    *
-   * **Its own colour rather than `--secondary`**, which the ghost button
-   * already spends on hover (`ui/button.tsx`). Were they the same, an
-   * item you are merely pointing at would be indistinguishable from the
-   * one that is actually open, and the rail would read as having two
-   * selected items for as long as the mouse was in it. The open one has
-   * to be the heavier of the two, or the pointer would outshout the
-   * place you are actually in. Measured against the ground the rail
-   * sits on, light / dark: hover 1.13 / 1.16, open 1.30 / 1.61.
+   * It was the brand green thinned to 35% light / 22% dark, and the two
+   * percentages were not taste: green is a light colour, so the same
+   * fraction reads far louder against near-black than against paper.
+   * 22% put the light block at 1.17 and 35% at 1.30, against a 1.15
+   * floor for「there is something there」; on the dark theme the block
+   * *lifted the ground the open glyph stood on*, so a heavier block
+   * dimmed the very glyph it was lighting — at 30% the open glyph fell
+   * to 7.68 against a resting 8.76 and `check-rail` went red.
    *
-   * ── it was neutral ink until 2026-08-30 ──────────────────
-   * 「ui 还是丑,侧边栏还是高亮品牌绿好了」 (the user). This was
-   * `rgba(26,26,20,.12)` / `rgba(238,238,231,.12)`, measuring 1.27 /
-   * 1.33, and three arguments were written here for keeping it so. Two
-   * were product judgements and the user has overruled them; the third
-   * was arithmetic and still stands — and which is which is the whole
-   * reason this is a *block* and not an ink:
+   * **Why it is gone**: the person using this app said the icon should
+   * change, not the icon's background. The signal moved entirely onto
+   * the glyph, which was already carrying half of it. See `app.css`.
    *
-   *   ~~already spoken for~~ — the six words above give green to 完成,
-   *     so a rail spending it on "you are here" spends a state's colour
-   *     on a place. Overruled: a tint lying behind a glyph is not a word
-   *     at the end of a row, and nothing in the rail is trying to say
-   *     完成.
-   *   ~~the rule, not this rail's exception~~ — green stopped carrying
-   *     text and stopped meaning "press me" app-wide the same day this
-   *     was written, and this block was that rule's first instance.
-   *     Overruled inside the rule rather than against it: green keeps
-   *     three posts (top of this file) and **soft fill** is one of them.
-   *     The other two, identity and 完成, are untouched, and green still
-   *     carries no text and still does not mean "press me" — an open
-   *     rail item is where you already are, not a thing to press.
-   *   **it cannot be read — still true, and it is why the ink did not
-   *     move.** The green's luminance caps its contrast at 2.45 against
-   *     *any* light background (2.39 against the card), under the 3.0 a
-   *     non-text graphic needs, so a green *glyph* on the light theme is
-   *     physically incapable of being what makes "open" legible. The
-   *     block carries the colour; the open item's ink stays
-   *     `--foreground` (`App.tsx`), which is what `check-rail.mjs`
-   *     measures as "the open glyph is heavier than a resting one".
-   *
-   * **Two percentages rather than one, and the dark one is capped by
-   * arithmetic, not taste.** Green is a light colour, so the same
-   * fraction of it reads far louder against near-black than against
-   * paper — the asymmetry `--scroll-thumb` carries below, in the same
-   * direction. 22% on the light theme lands the block at 1.17, inside
-   * the noise of a 1.15 floor; 35% lands 1.30. On the dark theme the
-   * block *lifts the ground the open glyph stands on*, so a heavier
-   * block dims the very glyph it is meant to be lighting: at 30% the
-   * open glyph falls to 7.68 against a resting 8.76 and the rail gate
-   * goes red (measured, 2026-08-30). 22% leaves it at 9.57.
-   *
-   * `color-mix` rather than the green written out a second time: the
-   * value is "the brand green, thinned", and a copied literal is the
-   * form of that sentence that drifts. `check-rail.mjs` asserts the
-   * painted block is still `--lq3` — a neutral of the same weight
-   * clears every contrast floor there, so the colour needs its own
-   * assertion or it is not being held by anything.
-   *
-   * No `--color-` mapping on purpose: the rule that applies this has to
-   * sit outside Tailwind's layer in order to beat hover, and a utility
-   * cannot do that. See `app.css`. */
-  --rail-on: color-mix(in srgb, var(--lq3) 35%, transparent);
+   * **What went with it**: the brand green is no longer anywhere in the
+   * rail, against an earlier instruction on this same rail. It cannot
+   * be both — green measures 2.22 as a mark on the light ground (under
+   * SC 1.4.11's 3.0) and works only as a plate, and a plate is a
+   * background. The way to have both is mandala's: a hairline bar down
+   * the open item's edge, which is a graphic and not a ground. */
 
   /* ── the scrollbar's thumb ────────────────────────────
    * The one mark in this app that has to be ignorable at rest and
@@ -764,7 +724,16 @@
      and two sizes a few pixels apart would read as a rendering accident
      rather than as a statement. */
   --avatar-xl: 96px;
-  --icon-rail: 28px;
+  /* **32, up from 28 on 2026-08-31.** mandala's rail glyph is 30 and
+   * the person reading both said that one is comfortable and this one
+   * is not — but mandala's sits in a 36-tall row *beside its own
+   * label*, and this one stands alone in a 64 column with nothing to
+   * share the work. **An icon that is the only thing gets more than one
+   * that has a word helping it**, which is the whole of why this is not
+   * simply 30. The button around it is `min-w-touch` and `px-2`, so at
+   * 32 the box is 48 — still inside the 64 rail, with the 44 finger
+   * floor cleared by the glyph alone. */
+  --icon-rail: 32px;
   /* The app mark at the head of the rail. Larger than a rail glyph and
    * smaller than this machine's face at the foot: it is the app, not a
    * place to go and not a machine, so it should not measure the same as
@@ -965,12 +934,9 @@
     /* Only the ink flips; `--icon-body` is a ratio and stays one number
        for both themes — see the light block for why that is the point. */
     --rail-ink: rgba(238, 238, 231, 0.72);
-    /* Less of the green than light's 35%, for the two reasons written
-       on the light block: the same fraction reads louder against
-       near-black, and here the block is standing behind an almost-white
-       glyph rather than an ink one, so it has a ceiling as well as a
-       floor. */
-    --rail-on: color-mix(in srgb, var(--lq3) 22%, transparent);
+    /* (`--rail-on`'s dark half went with the light one on 2026-08-31 —
+       the rail has no block any more. The tombstone, with both
+       percentages and why they differed, is on the light theme's side.) */
 
     /* Lower than the light theme's .25 on purpose — see the light
        block: the same alpha reads louder against near-black, and what

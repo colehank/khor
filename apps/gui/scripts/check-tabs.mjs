@@ -566,22 +566,39 @@ try {
   if (lit.join(",") !== "files") fail(`on the files landing the rail lights ${JSON.stringify(lit)}`);
   else ok("the rail lights files, and only files");
   //   …and the attribute really reaches the paint. `data-on` is a fact
-  //   in the DOM; the block behind the glyph is what a person sees, and
-  //   a stylesheet that stopped applying would leave the first true and
-  //   the second false. Pointer parked away first — hover paints the
-  //   same kind of block, and it would answer this question for the
-  //   wrong reason.
+  //   in the DOM; what a person sees is a different fact, and a
+  //   stylesheet that stopped applying would leave the first true and
+  //   the second false. **That claim is unchanged; what a person sees
+  //   is not.** Until 2026-08-31 it was a block behind the glyph and
+  //   this read `backgroundColor`; the open item wears no block now
+  //   (`app.css` carries the tombstone), and the whole statement lives
+  //   on the glyph — the body fills from `--icon-body` to solid. So
+  //   this reads the fill.
+  //
+  //   Pointer parked away first. It mattered more when hover painted
+  //   the same kind of block as being open; it still matters, because
+  //   a hover wash under the glyph moves what the fill composites
+  //   against and this is meant to be a question about the rule, not
+  //   about where the mouse is.
   await page.mouse.move(2, 400);
   await page.waitForTimeout(300);
   const blocks = await page
     .locator("[data-rail-item][data-landing]")
     .evaluateAll((els) =>
-      els.map((e) => [e.dataset.landing, getComputedStyle(e).backgroundColor]),
+      els.map((e) => {
+        const body = e.querySelector("svg [data-body]");
+        return [e.dataset.landing, body ? getComputedStyle(body).fillOpacity : "no-glyph"];
+      }),
     );
-  console.log(`     rail backgrounds: ${JSON.stringify(blocks)}`);
-  const painted = blocks.filter(([, bg]) => !/rgba\(0, 0, 0, 0\)|transparent/.test(bg));
+  console.log(`     rail glyph fills: ${JSON.stringify(blocks)}`);
+  // The probe before the claim: every item has a glyph to read, or
+  // "only one is solid" would be satisfied by the others being absent.
+  if (blocks.some(([, fill]) => fill === "no-glyph")) {
+    fail(`a rail item has no glyph to read: ${JSON.stringify(blocks)}`);
+  }
+  const painted = blocks.filter(([, fill]) => Number(fill) === 1);
   if (painted.length !== 1 || painted[0][0] !== "files") {
-    fail(`the rail paints a block on ${JSON.stringify(painted)}, with files the open landing`);
+    fail(`the rail fills the glyph on ${JSON.stringify(painted)}, with files the open landing`);
   } else {
     ok(`one block, on files: ${painted[0][1]}`);
   }

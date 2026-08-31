@@ -272,13 +272,14 @@ function RailItem({
         // Measured before this: every rail item was 44×30, under every
         // guideline's floor (`check-face.mjs` now holds the line).
         "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
-        // Open takes the full ink, not the brand green: green cannot
-        // reach a legible ratio against any light background, and the
-        // app's rule is now that it carries no text at all (the whole
-        // argument, with the numbers, sits on `--rail-on` in
-        // `tokens.css`). The block behind the glyph is what says
-        // *open*; this says how much louder the open one is than its
-        // neighbours.
+        // **Open takes the full ink, and since 2026-08-31 that is the
+        // whole of what says open** — the block behind the glyph is
+        // gone (`app.css` carries the tombstone and the numbers). Not
+        // the brand green: measured, `--lq3` on the light ground is
+        // 2.22, under the 3.0 SC 1.4.11 asks of a graphic, so green
+        // works as a plate and not as a mark. The other half of the
+        // signal is the body filling solid, one rule away in the same
+        // file.
         on && "text-foreground",
         className,
       )}

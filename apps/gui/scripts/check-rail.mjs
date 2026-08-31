@@ -77,13 +77,23 @@ const PORT = Number(process.env.RAIL_PORT ?? 1449);
 
 // The floor for the solid half of a glyph, against whatever it sits on.
 const FLOOR = 3.0;
-// And a floor for the open item's block against the same ground. Not a
-// legibility threshold — nothing has to be *read* off a block — but the
-// complaint that started this was "选中态几乎没有实体表达", and an
-// assertion that the block merely exists is satisfied by an alpha of
-// .002. This is the level below which there is nothing to see; the
-// block measures 1.30 light / 1.61 dark.
-const BLOCK_FLOOR = 1.15;
+// How much heavier the open glyph has to be than a resting one.
+//
+// **This replaced `BLOCK_FLOOR` on 2026-08-31**, when the open item
+// stopped wearing a block at all. That constant was 1.15 — a floor for
+//「there is something there」on a plate nobody reads. The complaint it
+// came from was「选中态几乎没有实体表达」and the answer was a block;
+// the complaint that replaced it was「选中是整个 icon 变色,而不是
+// icon 的背景变色」, so the same demand for a substantial open state
+// now has to be met by the ink.
+//
+// **2.0 is a ratio of ratios, not a contrast**: the open glyph is
+// asserted to clear a resting one by that margin, measured against the
+// same ground. Today it clears by ~4.4 (13.12 against 8.76 dark,
+// 13.60 against 6.59 light), so the margin is not tight — it is the
+// level below which two items on one rail stop being distinguishable
+// now that nothing else tells them apart.
+const GLYPH_MARGIN = 2.0;
 // And the outline's own floor: what it measured *before* the ink was
 // given its own token (4.73 light, 5.51 dark), rounded down a step. The
 // body's problem must not be paid for out of the layer that was already
@@ -437,6 +447,12 @@ try {
       if ((await loc.getAttribute("data-on")) !== "true") {
         throw new Error(`probe dead in ${scheme}: pressing ${name} did not light it`);
       }
+      // **Pointer away before reading.** A click leaves the pointer on
+      // the item, so this used to read「open + hovered」and call it the
+      // open block — invisible for as long as the open block outranked
+      // hover, and the first thing to surface when the block went away.
+      await away();
+      await wait(200);
       lit.push([name, await bgOf(loc)]);
     }
     const [, first] = lit[0];
@@ -447,81 +463,100 @@ try {
       }
     }
 
-    // The block is actually there to see. Measured against the ground
-    // the rail sits on rather than trusted from its alpha, because the
-    // alpha is only one of the two numbers that decide it.
-    const ground = parse(await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor));
-    const block = contrast(flatten(parse(first), ground), ground);
-    console.log(`${scheme}: open block ${say(block)} against the rail's ground`);
-    if (block < BLOCK_FLOOR) {
-      fail(`${scheme}: the open item's block measures ${say(block)} — under ${BLOCK_FLOOR}, there is nothing to see`);
-    }
-
-    // And *which* colour it is. Every number in this section is blind to
-    // that: the neutral this replaced cleared them all, and so would any
-    // grey of the same weight. The green is the thing the user asked for
-    // and the thing a later "let's calm the rail down" would take away
-    // without any of the floors noticing, so it is asserted as a colour
-    // — read off `--lq3` rather than written here, because a literal
-    // copied into this file would keep passing after the brand moved.
-    // Alpha is not compared: how much of the green is painted is what
-    // the floors above and below are for.
-    const lq3 = await page.evaluate(() =>
-      getComputedStyle(document.documentElement).getPropertyValue("--lq3").trim(),
-    );
-    if (!lq3) throw new Error(`probe dead in ${scheme}: --lq3 did not resolve`);
-    if (!same(first, lq3)) {
-      fail(`${scheme}: the open item's block paints ${first}, which is not the brand green ${lq3}`);
-    }
-
-    // And the other half of the expression: the open glyph is heavier
-    // than a resting one. Without this the block could be carrying the
-    // whole statement while the ink silently went to the brand green —
-    // which is where this started, and which measures *worse* than a
-    // resting glyph on the light theme. On the dark theme it is also
-    // what caps the block: an almost-white glyph standing on a green
-    // plate loses contrast as the plate gets heavier.
-    const openLine = measure(await page.evaluate(READ('[data-rail-item][data-on="true"] svg [data-body]')));
-    const restLine = measure(await page.evaluate(READ('[data-rail-item][data-on="false"] svg [data-body]')));
-    console.log(`${scheme}: open glyph line ${say(openLine.line)} against resting ${say(restLine.line)}`);
-    if (!(openLine.line > restLine.line)) {
+    // **There is no block, and that is the assertion now** (2026-08-31).
+    //
+    // This section used to require one: that it be visible against the
+    // ground, and that it be the brand green. Both are gone with it —
+    // the person using this app said the icon should change, not the
+    // icon's background, and green is legible as a plate and not as a
+    // mark (`--lq3` on the light ground measures 2.22, under the 3.0
+    // SC 1.4.11 asks of a graphic; the tombstone with the rest of the
+    // numbers is on `--rail-on` in `tokens.css`).
+    //
+    // Asserted rather than merely dropped: a block creeping back is
+    // exactly the shape of「someone reads this rail as needing one」,
+    // and it would land on the very reading that was overruled.
+    if (first !== resting) {
       fail(
-        `${scheme}: the open glyph measures ${say(openLine.line)}, no heavier than a resting ${say(restLine.line)}`,
+        `${scheme}: the open item paints ${first} where a resting one paints ${resting} — ` +
+          `the rail says open on the glyph now, not behind it`,
       );
     }
 
-    // Selection outranks the pointer, and the probe that proves the
-    // reading is alive: an unselected glyph must answer a hover, or
-    // "nothing changed" on the selected one would mean nothing.
-    const [, open] = lit[lit.length - 1];
+    // **So the whole statement is on the glyph, and this is what holds
+    // it up.** Two depths of one colour: the line goes from `--rail-ink`
+    // to `--foreground` and the body fills from `--icon-body` to solid.
+    // Without a block to lean on, an open item that failed this would be
+    // indistinguishable from its neighbours — there is nothing else left
+    // to tell them apart.
+    const openLine = measure(await page.evaluate(READ('[data-rail-item][data-on="true"] svg [data-body]')));
+    const restLine = measure(await page.evaluate(READ('[data-rail-item][data-on="false"] svg [data-body]')));
+    console.log(`${scheme}: open glyph line ${say(openLine.line)} against resting ${say(restLine.line)}`);
+    if (!(openLine.line > restLine.line + GLYPH_MARGIN)) {
+      fail(
+        `${scheme}: the open glyph measures ${say(openLine.line)} against a resting ${say(restLine.line)} — ` +
+          `under a ${GLYPH_MARGIN} margin, and it is the only thing saying which item is open`,
+      );
+    }
+
+    // **Being pointed at and being open now live on different channels**
+    // — the pointer paints the ground, open paints the glyph — so the
+    // question is no longer "which block is heavier" but "does hovering
+    // erase the answer". It must not: a person dragging the pointer
+    // down the rail would otherwise lose track of where they are.
     await away();
     await wait(300);
     const cold = await bgOf(item("devices"));
     await item("devices").hover();
     await wait(300);
-    if ((await bgOf(item("devices"))) === cold) {
+    const hovered = await bgOf(item("devices"));
+    // The probe, before the claim: a resting item must answer a hover,
+    // or "hovering changed nothing" below would mean nothing.
+    if (hovered === cold) {
       throw new Error(
         `probe dead in ${scheme}: a resting glyph shows no hover, so nothing measured here means anything`,
       );
     }
-    const hovered = await bgOf(item("devices"));
-    // Pointed at and open must not look alike. They are different facts,
-    // and a rail where the mouse makes an item look open has two open
-    // items in it for as long as the pointer is inside.
-    const hoverBlock = contrast(flatten(parse(hovered), ground), ground);
-    console.log(`${scheme}: hovered block ${say(hoverBlock)}, against the open ${say(block)}`);
-    if (hovered === first) {
-      fail(`${scheme}: hover paints ${hovered}, the very thing that means open`);
-    }
-    if (!(block > hoverBlock)) {
-      fail(`${scheme}: the open block (${say(block)}) is no heavier than a hovered one (${say(hoverBlock)})`);
+    const hoveredLine = measure(
+      await page.evaluate(READ('[data-rail-item][data-on="false"]:hover svg [data-body]')),
+    );
+    if (hoveredLine.line !== null && hoveredLine.line >= openLine.line) {
+      fail(
+        `${scheme}: a hovered resting glyph measures ${say(hoveredLine.line)} against the open ` +
+          `${say(openLine.line)} — pointing at an item must not make it look like the open one`,
+      );
     }
 
+    // **And the open item still reads as open while it is pointed at.**
+    //
+    // The first spelling of this asserted that hovering leaves the open
+    // glyph's number *unchanged*, and it failed: 13.60 → 12.20 light.
+    // Nothing moved the ink — the hover wash moved the **ground the
+    // glyph is measured against**, and a composite of the two is what
+    // these numbers are. The assertion was on a different axis from the
+    // risk: what a person can lose here is not a constant, it is the
+    // ability to tell the open item from the others while dragging the
+    // pointer down the rail.
+    //
+    // So it is the margin that has to survive, not the value.
     const openItem = openable[openable.length - 1][1];
     await openItem.hover();
     await wait(300);
-    if ((await bgOf(openItem)) !== open) {
-      fail(`${scheme}: hovering the open item changed its block — being open must outrank being pointed at`);
+    const openHovered = measure(
+      await page.evaluate(READ('[data-rail-item][data-on="true"] svg [data-body]')),
+    );
+    if (openHovered.line === null) {
+      fail(`${scheme}: the open glyph could not be read while hovered`);
+    } else if (!(openHovered.line > restLine.line + GLYPH_MARGIN)) {
+      fail(
+        `${scheme}: hovered, the open glyph measures ${say(openHovered.line)} against a resting ` +
+          `${say(restLine.line)} — under the ${GLYPH_MARGIN} margin, so pointing at it costs ` +
+          `the one thing that says it is open`,
+      );
+    } else {
+      console.log(
+        `${scheme}: open glyph hovered ${say(openHovered.line)}, still clear of resting ${say(restLine.line)}`,
+      );
     }
     await away();
   }

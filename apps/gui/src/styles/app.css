@@ -22,41 +22,35 @@
   fill-opacity: 1;
 }
 
-/* Being the open one, said once and the same way by all five items.
+/* **Tombstone: the open item used to wear a block, and it does not now.**
  *
- * **Unlayered on purpose.** This has to outrank the ghost button's
- * `hover:bg-secondary` (`ui/button.tsx`), because hover and open are two
- * different facts about one item, they cannot both own
- * `background-color`, and if the pointer won then pointing at the open
- * item would erase the only thing on screen saying where you are.
+ * It was `background-color: var(--rail-on)` — the brand green, thinned —
+ * and the reasoning was sound as far as it went: green cannot be an
+ * icon's colour on the light theme (measured 2026-08-31, `--lq3` on
+ * `--background` is **2.22**, under the 3.0 that SC 1.4.11 asks of a
+ * graphic), while a *block* only has to be noticed, not read, so the
+ * block could carry the colour that the glyph could not.
  *
- * The measurement, since the reasoning here is easy to get half right —
- * all three of these were run (`scripts/check-rail.mjs`, which asserts
- * the outcome):
+ * What that reasoning did not weigh is which of the two a person reads
+ * as the answer to「我在哪一页」. The person using this app said it
+ * plainly: the icon should change, not the icon's background. So the
+ * signal is now entirely on the glyph, where it was already half
+ * living — `--rail-ink` → `--foreground` (6.59 → 13.60 light,
+ * 8.76 → 15.17 dark) **and** the body filling from `--icon-body` to
+ * solid, which is the rule directly above.
  *
- *   unlayered          → open stays `--rail-on` under the pointer ✓
- *   `@layer utilities` → also holds, but only because this file is
- *                        imported after Tailwind's own utilities, so it
- *                        is source order doing the work, not the layer
- *   `@layer base`      → **hover wins**; the open item reads
- *                        `--secondary` and the block is gone
+ * **The brand green is now nowhere in the rail**, and that is the cost:
+ * an earlier instruction on this same rail was「侧边栏还是高亮品牌绿好了」.
+ * It cannot be both — green is legible as a plate and not as a mark,
+ * and only one of those is a background. If it is missed, mandala's own
+ * answer is a hairline bar down the open item's edge (`.nav-item.on`,
+ * `box-shadow: inset`), which is a graphic rather than a ground.
  *
- * So the load-bearing property is "outranks the utility layer", and
- * unlayered is the only form of it that does not quietly depend on
- * which file was imported last.
- *
- * An open item is still not inert: the press answers a click through the
- * rule above, which is a different channel and does not fight this one.
- *
- * One expression for all five, including the mark. The mark used to be
- * the only item in the rail wearing a block — and it is the one item
- * that is not a place to go, so the rail was drawing its emphasis in
- * exactly the wrong place. A block works on a picture and on a stroke
- * glyph alike, which is the only reason the mark ever needed a private
- * way of saying this. */
-[data-rail-item][data-on="true"] {
-  background-color: var(--rail-on);
-}
+ * Hover keeps its wash and needs no rule to outrank: the two facts now
+ * live on different channels — being pointed at paints the ground,
+ * being open paints the glyph — so neither can be mistaken for the
+ * other and neither has to win a specificity fight. */
+
 
 /* A reading turns over.
  *
