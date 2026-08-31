@@ -22,6 +22,15 @@
 //! | `KHOR_STUB_REPLAYS=0` | advertises no `load_session`, and refuses `session/load` |
 //! | `KHOR_STUB_VERSION=<n>` | answers `initialize` with version `n`, whatever was asked |
 //! | `KHOR_STUB_LOGIN=1` | answers `session/new` with `auth_required` (-32000) |
+//! | `KHOR_STUB_LISTS=1` | advertises `sessionCapabilities.list`, and answers `session/list` |
+//! | `KHOR_STUB_LISTS=empty` | advertises it and answers with **no** sessions |
+//!
+//! `KHOR_STUB_LISTS` has three settings rather than two because the
+//! fact being tested has three states: an agent that cannot list, one
+//! that lists nothing, and one that lists something. **The first two
+//! are what a `Vec` alone would flatten into each other**, and that
+//! flattening is the bug the client's `Listing` enum exists to prevent
+//! — so the stub has to be able to be each of them separately.
 //!
 //! `KHOR_STUB_REPLAYS` does **both** halves on purpose: an agent that
 //! advertises a capability it does not have, or hides one it does, is a
@@ -30,11 +39,14 @@
 
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, ContentBlock, ContentChunk, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    NewSessionRequest, NewSessionResponse,
     PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
     RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
-    StopReason, TextContent, ToolCallUpdate, ToolCallUpdateFields,
+    SessionCapabilities, SessionInfo, SessionListCapabilities, StopReason, TextContent,
+    ToolCallUpdate, ToolCallUpdateFields,
 };
+use std::path::PathBuf;
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Stdio};
 
@@ -50,6 +62,17 @@ fn replays() -> bool {
     std::env::var("KHOR_STUB_REPLAYS").as_deref() != Ok("0")
 }
 
+/// Whether this stub lists its sessions, and whether it has any.
+/// Off unless asked — `session/list` is optional in the protocol, and
+/// the default stub is a plain one.
+fn lists() -> Option<bool> {
+    match std::env::var("KHOR_STUB_LISTS").as_deref() {
+        Ok("1") => Some(true),
+        Ok("empty") => Some(false),
+        _ => None,
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> agent_client_protocol::Result<()> {
     Agent
@@ -63,10 +86,38 @@ async fn main() -> agent_client_protocol::Result<()> {
                     Ok(n) => ProtocolVersion::from(n.parse::<u16>().unwrap_or(0)),
                     Err(_) => request.protocol_version,
                 };
-                responder.respond(
-                    InitializeResponse::new(version)
-                        .agent_capabilities(AgentCapabilities::new().load_session(replays())),
-                )
+                let mut caps = AgentCapabilities::new().load_session(replays());
+                if lists().is_some() {
+                    caps = caps.session_capabilities(
+                        SessionCapabilities::new().list(SessionListCapabilities::new()),
+                    );
+                }
+                responder.respond(InitializeResponse::new(version).agent_capabilities(caps))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_request: ListSessionsRequest, responder, _connection| {
+                // Only reachable when advertised — a client that asked
+                // without checking would get an answer here and pass a
+                // test it should fail, so this mirrors a real agent by
+                // refusing when it never claimed the capability.
+                let Some(has) = lists() else {
+                    return responder
+                        .respond_with_error(agent_client_protocol::Error::method_not_found());
+                };
+                let sessions = if has {
+                    vec![
+                        SessionInfo::new("sess-a", PathBuf::from("/w/one")).title("先看看那个文件"),
+                        // No title: an agent may have none, and the
+                        // client must not turn that into an empty
+                        // string on screen.
+                        SessionInfo::new("sess-b", PathBuf::from("/w/two")),
+                    ]
+                } else {
+                    vec![]
+                };
+                responder.respond(ListSessionsResponse::new(sessions))
             },
             agent_client_protocol::on_receive_request!(),
         )

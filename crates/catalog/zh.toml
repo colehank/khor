@@ -134,11 +134,12 @@ usage = """
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
-  agents [known | add <名字> [-- <命令...> | @<id>] | rm <名字>]
+  agents [known | sessions <名字> | add <名字> [-- <命令...> | @<id>] | rm <名字>]
                         登记会说 ACP 的 agent:不带参数看登记过哪些。
                         登记一次全网都认得(命令在不在各机器上,起的时候才知道);
                         claude、codex、khor、shell 这四个名字 khor 自己在用。
-                        known 看随包带的 ACP 注册表快照;@<id> 直接用快照里那条命令
+                        known 看随包带的 ACP 注册表快照;@<id> 直接用快照里那条命令。
+                        sessions 起一个 agent 问它自己有哪些会话(不是每个都答得了)
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   rename <session> [名字...]
@@ -389,6 +390,17 @@ agents-unknown-id = "快照里没有这个 id: {0}(khor agents known 看有哪�
 # `add` was given `@<id>` that exists but ships a binary, so there is no
 # argv to expand into.
 agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动命令——装好之后: khor agents add <名字> -- <命令...>"
+# `khor agents sessions <名字>`:这个 agent 说它有哪些会话(`session/list`)。
+#
+# **下面两句必须读起来完全不同,那是这组文案存在的理由。** 「它答不了」和
+# 「它没有」是两个事实,而一个空列表会把它们画成同一个样子——一个正忙的
+# agent 会被报成全新的。协议里 `session/list` 不是必答项(必答的只有
+# new/prompt/cancel/update),注册表 2026-08-30 实测 32 个里 20 个有,
+# 所以「答不了」是常态,不是故障。
+agents-sessions-cannot = "{0} 不支持列出会话——协议里这一项是可选的,它没实现"
+agents-sessions-none = "{0} 说它一个会话都没有"
+# Head of the listing. 带上问的是谁,因为这条命令会起一个真的 agent 进程。
+agents-sessions-head = "{0} 说它有 {1} 个会话:"
 # An agent that has to run *somewhere*, and `--on` names another
 # machine. Refused out loud rather than ignored: a flag that is accepted
 # and does nothing is a session quietly opened on the wrong machine, and

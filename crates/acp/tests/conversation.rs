@@ -273,3 +273,72 @@ async fn a_real_agent_answers_one_tiny_turn() {
     println!("stop: {stop:?}, notes: {notes}");
     assert!(notes > 0, "a real turn streams at least one update");
 }
+
+/// **Three answers, and the point is that they are three.**
+///
+/// khor's only way to know what an agent it did not write a reader for
+/// has done before is to ask it (`session/list`). The protocol makes
+/// that optional — only `session/new`, `session/prompt`,
+/// `session/cancel` and `session/update` are mandatory, and the ACP
+/// registry's own probe on 2026-08-30 had **20 of 32** agents implement
+/// listing. So「it cannot tell you」is a normal answer, not a fault.
+///
+/// A `Vec<_>` alone would flatten that answer into「it has none」, and
+/// a face reading only the count would report a perfectly busy agent as
+/// fresh. This is the assertion that keeps the two apart, and it is
+/// written as one test over the three cases so that the *difference*
+/// between them is what is being claimed — three separate tests can
+/// each pass while two of them return the same value.
+#[tokio::test]
+async fn what_an_agent_has_done_before_has_three_answers_not_two() {
+    use khor_acp::{list, Listing};
+
+    // 1) An ordinary agent: the capability was never advertised, so
+    //    nothing was asked, and the answer is not an error.
+    let plain = list(STUB, None).await.expect("a plain agent still answers");
+    assert_eq!(plain, Listing::Cannot);
+
+    // 2) It lists, and has nothing. **Not the same value as (1)** —
+    //    this is the whole assertion.
+    let empty = list(&stub_with("KHOR_STUB_LISTS", "empty"), None)
+        .await
+        .expect("an empty listing is an answer");
+    assert_eq!(empty, Listing::Sessions(vec![]));
+    assert_ne!(empty, plain, "「cannot」and「none」must not be one value");
+
+    // 3) It lists, and has some.
+    let some = list(&stub_with("KHOR_STUB_LISTS", "1"), None).await.expect("a listing");
+    let Listing::Sessions(rows) = some else { panic!("wanted sessions, got {some:?}") };
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].id, "sess-a");
+    assert_eq!(rows[0].title.as_deref(), Some("先看看那个文件"));
+    assert_eq!(rows[0].cwd, std::path::PathBuf::from("/w/one"));
+    // **A session with no title keeps `None`.** Turning it into `""`
+    // would put a nameless row on screen that looks like a bug rather
+    // than like a session nobody named.
+    assert_eq!(rows[1].id, "sess-b");
+    assert_eq!(rows[1].title, None);
+}
+
+/// **Asking never opens a conversation.** The protocol allows
+/// `session/list` straight after `initialize`, and a listing that
+/// opened a session to ask would leave the agent holding one nobody
+/// wanted — on a metered agent, one that costs money.
+///
+/// Asserted through the stub's own accounting: it answers `session/new`
+/// with a session id, and a listing that opened one would have had to
+/// go through that handler. `KHOR_STUB_LOGIN=1` makes `session/new`
+/// refuse outright, so a listing that still succeeds is one that never
+/// went near it.
+#[tokio::test]
+async fn asking_what_an_agent_has_never_opens_a_session() {
+    use khor_acp::{list, Listing};
+    let cmd = serde_json::json!({
+        "command": STUB,
+        "env": { "KHOR_STUB_LISTS": "1", "KHOR_STUB_LOGIN": "1" }
+    })
+    .to_string();
+    let out = list(&cmd, None).await.expect("listing does not need a session");
+    let Listing::Sessions(rows) = out else { panic!("wanted sessions") };
+    assert_eq!(rows.len(), 2, "an agent that refuses session/new still lists");
+}

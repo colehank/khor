@@ -59,7 +59,8 @@ use std::str::FromStr;
 
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, EmbeddedResource, EmbeddedResourceResource, ImageContent,
-    InitializeRequest, LoadSessionRequest, NewSessionRequest, PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    InitializeRequest, ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
+    PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
     StopReason, TextContent, TextResourceContents,
 };
@@ -331,6 +332,140 @@ pub async fn start_resume(
     session: &str,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     start_with(command, cwd, Some(session.to_owned())).await
+}
+
+/// One session an agent says it has, in khor's own words.
+///
+/// The protocol's `SessionInfo` narrowed to what a person picking from
+/// a list needs. Narrowed here rather than passed through so that
+/// callers — a CLI verb, a face — do not each depend on the schema
+/// crate for a struct they only read four fields of.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Recorded {
+    pub id: String,
+    pub cwd: PathBuf,
+    /// The agent's own name for it, when it has one.
+    pub title: Option<String>,
+    /// RFC 3339, as the agent wrote it. Kept as text: khor does not
+    /// need to do arithmetic on it, and parsing a timestamp only to
+    /// print it back is a place to be wrong about time zones.
+    pub updated_at: Option<String>,
+}
+
+/// What asking an agent for its sessions answered.
+///
+/// **Three answers, not two, and the third is the whole reason this is
+/// an enum.** "This agent cannot list its sessions" and "this agent has
+/// no sessions" are different facts that an empty `Vec` would render
+/// identical — the same trap `Facts::replays` exists for, where a face
+/// with only the answer to go on paints "no past" for both and one of
+/// those is a lie.
+///
+/// It matters more here than there: `session/list` is **not** in the
+/// protocol's mandatory set (only `session/new`, `session/prompt`,
+/// `session/cancel` and `session/update` are), and the registry's own
+/// probe on 2026-08-30 had 20 of 32 agents implement it. So a third of
+/// the agents khor can now start will answer `Cannot`, and that is
+/// normal rather than broken.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Listing {
+    /// The agent lists, and this is what it has. Possibly empty, which
+    /// here really does mean "none".
+    Sessions(Vec<Recorded>),
+    /// The agent does not implement `session/list`.
+    Cannot,
+}
+
+/// Starts `command`, asks what sessions it has, and stops.
+///
+/// **No session is opened.** The protocol allows `session/list` right
+/// after `initialize`, and opening one to ask would leave the agent
+/// holding a conversation nobody wanted — which for an agent that
+/// charges per session is not a free mistake.
+///
+/// `cwd` narrows the answer to sessions rooted there when the agent
+/// honours it; `None` asks for everything it knows.
+///
+/// # Why khor needs this at all
+///
+/// khor discovers sessions by reading vendors' files on disk, which
+/// works only for the two vendors khor wrote readers for. An agent out
+/// of the ACP registry writes its records wherever it likes, in
+/// whatever shape it likes, and **`session/list` is the only way khor
+/// can know it has a past at all**. The alternative is that every
+/// registry agent looks brand new every time it is opened.
+pub async fn list(command: &str, cwd: Option<PathBuf>) -> Result<Listing, Refusal> {
+    let agent = AcpAgent::from_str(command).map_err(|e| Refusal::Wont(e.to_string()))?;
+    let (ready_tx, ready_rx) = oneshot::channel::<Result<Listing, Refusal>>();
+
+    tokio::spawn(async move {
+        let mut ready_tx = Some(ready_tx);
+        let _ = Client
+            .builder()
+            // A listing connection answers nothing: it asks one
+            // question and leaves. An agent that sends updates or asks
+            // permission before being prompted is not a case to
+            // support — dropping them is what "no session was opened"
+            // means.
+            .connect_with(agent, |connection: ConnectionTo<Agent>| async move {
+                let out = ask_for_sessions(&connection, cwd).await;
+                let refused = out.as_ref().err().map(|r| r.said().to_owned());
+                if let Some(tx) = ready_tx.take() {
+                    let _ = tx.send(out);
+                }
+                match refused {
+                    Some(said) => Err(agent_client_protocol::util::internal_error(said)),
+                    // Returning ends the connection, which drops the
+                    // transport, which kills the agent's process group.
+                    // That is the whole lifetime of a listing.
+                    None => Ok(()),
+                }
+            })
+            .await;
+    });
+
+    ready_rx
+        .await
+        .map_err(|_| Refusal::Wont("the agent ended before it answered".to_owned()))?
+}
+
+/// `initialize`, then `session/list` **only if the handshake said so**.
+async fn ask_for_sessions(
+    connection: &ConnectionTo<Agent>,
+    cwd: Option<PathBuf>,
+) -> Result<Listing, Refusal> {
+    let hello = connection
+        .send_request(InitializeRequest::new(ProtocolVersion::V1))
+        .block_task()
+        .await
+        .map_err(refusal)?;
+    if hello.protocol_version != ProtocolVersion::V1 {
+        return Err(Refusal::Version(hello.protocol_version.to_string()));
+    }
+    // **Asked only when advertised.** Sending `session/list` to an
+    // agent that does not implement it comes back as a method-not-found
+    // error, and an error is what khor shows when something went wrong
+    // — while nothing went wrong here at all.
+    if hello.agent_capabilities.session_capabilities.list.is_none() {
+        return Ok(Listing::Cannot);
+    }
+    let mut request = ListSessionsRequest::new();
+    if let Some(cwd) = cwd {
+        request = request.cwd(cwd);
+    }
+    let answer = connection.send_request(request).block_task().await.map_err(refusal)?;
+    Ok(Listing::Sessions(
+        answer
+            .sessions
+            .into_iter()
+            .map(|s| Recorded {
+                id: s.session_id.to_string(),
+                cwd: s.cwd,
+                title: s.title.filter(|t| !t.trim().is_empty()),
+                updated_at: s.updated_at,
+            })
+            .collect(),
+    ))
 }
 
 async fn start_with(

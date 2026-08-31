@@ -68,6 +68,14 @@ pub use khor_sync::agents::registry as agent_registry;
 /// an existing conversation sees almost only replayed lines, so the
 /// improvement was invisible where it mattered most.
 pub use crate::cagent::replayed as replayed_update;
+
+/// What asking an agent for its sessions answered
+/// (`khor_acp::Listing`), and one of them.
+///
+/// Re-exported for the reason `AgentSpec` and `agent_registry` are: the
+/// CLI and the faces talk to the node, and a second path into the
+/// protocol crate is a second place to keep in step.
+pub use khor_acp::{Listing, Recorded};
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
 /// What sort of place a recorded visit was to
@@ -668,6 +676,43 @@ impl Node {
     /// One of them, or `None` for a name nobody registered.
     pub fn agent(&self, name: &str) -> Result<Option<AgentSpec>, String> {
         Ok(self.agents_loaded()?.doc.get(name))
+    }
+
+    /// What sessions a registered agent says it has (`session/list`).
+    ///
+    /// **This is the only discovery path khor has for an agent it did
+    /// not write a reader for.** khor finds claude's and codex's
+    /// sessions by reading their files on disk; an agent out of the ACP
+    /// registry keeps its records wherever and however it likes, so
+    /// asking it is the whole of what can be known.
+    ///
+    /// It is **not** something every agent can answer. The protocol
+    /// makes only `session/new`, `session/prompt`, `session/cancel` and
+    /// `session/update` mandatory; `session/list` sits behind a
+    /// capability, and the registry's own probe on 2026-08-30 had 20 of
+    /// 32 agents implement it. [`khor_acp::Listing::Cannot`] is that
+    /// answer, and it is deliberately not the same value as an empty
+    /// list — **「it cannot tell you」and「it has none」are different
+    /// facts**, and a caller that collapsed them would report a
+    /// perfectly busy agent as fresh.
+    ///
+    /// Starts the agent, asks, and stops it. No session is opened: the
+    /// protocol allows the question straight after `initialize`, and
+    /// opening one to ask would leave a conversation nobody wanted
+    /// behind — which on a metered agent is not free.
+    pub fn agent_sessions(
+        &self,
+        name: &str,
+        cwd: Option<std::path::PathBuf>,
+    ) -> Result<khor_acp::Listing, String> {
+        let spec = self.agent_or_refuse(name)?;
+        let launch = spec.launch();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?
+            .block_on(khor_acp::list(&launch, cwd))
+            .map_err(|r| r.said().to_owned())
     }
 
     /// The registration behind a name, or a refusal that **names what

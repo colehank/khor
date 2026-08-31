@@ -1306,6 +1306,40 @@ fn agents(rest: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
+        // **Ask the agent itself what it has.** The only discovery
+        // path for an agent khor did not write a disk reader for —
+        // and one that starts a real process, so it is a verb a person
+        // types rather than something a list poll does behind them.
+        Some((word, tail)) if word == "sessions" => {
+            let [name] = tail else { return Err(USAGE.into()) };
+            match n.agent_sessions(name, None)? {
+                khor_node::Listing::Cannot => {
+                    println!("{}", cli::agents_sessions_cannot(name));
+                }
+                khor_node::Listing::Sessions(rows) if rows.is_empty() => {
+                    println!("{}", cli::agents_sessions_none(name));
+                }
+                khor_node::Listing::Sessions(rows) => {
+                    println!("{}", cli::agents_sessions_head(name, rows.len()));
+                    for r in rows {
+                        // Title where there is one, cwd where there is
+                        // not: an id alone is not something a person
+                        // recognises, and the cwd is the next best
+                        // thing they do.
+                        let said = r
+                            .title
+                            .unwrap_or_else(|| r.cwd.display().to_string());
+                        println!(
+                            "{}\t{}\t{}",
+                            r.id,
+                            said,
+                            r.updated_at.unwrap_or_default()
+                        );
+                    }
+                }
+            }
+            Ok(())
+        }
         Some((word, tail)) if word == "add" => {
             // `--` is optional in the same way `open`'s is: everything
             // after the name is the command either way, and a person
