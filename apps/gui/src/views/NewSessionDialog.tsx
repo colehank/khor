@@ -294,7 +294,13 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle>{gui.new_session}</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3">
+        {/* **`min-w-0` on every one of these, and it is load-bearing.**
+            `DialogContent` is a grid and this is its item; a grid (or
+            flex) item defaults to `min-width: auto`, so one long cwd
+            in the lists below pushes the whole dialog past its
+            `max-w-lg` — inputs, buttons and all — and `truncate`
+            never fires because nothing above it agreed to shrink. */}
+        <div className="flex min-w-0 flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.new_session_dir}</span>
             <Input
@@ -349,7 +355,7 @@ export function NewSessionDialog({
               </Button>
             </div>
             {browsing && (
-              <div data-new-session-registry className="flex flex-col gap-1">
+              <div data-new-session-registry className="flex min-w-0 flex-col gap-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs">{gui.new_session_registry}</span>
                   {/* **When it was taken, on screen.** A pinned table
@@ -367,7 +373,7 @@ export function NewSessionDialog({
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
-                <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+                <div className="flex max-h-56 min-w-0 flex-col gap-1 overflow-y-auto">
                   {(snapshot ?? [])
                     .filter((k) => {
                       const q = query.trim().toLowerCase();
@@ -381,13 +387,11 @@ export function NewSessionDialog({
                         key={k.id}
                         data-registry-row={k.id}
                         data-registry-startable={k.argv !== null}
-                        className="flex items-baseline gap-2 text-xs"
+                        className="flex min-w-0 flex-col text-xs"
                       >
-                        <span className="shrink-0">{k.id}</span>
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          {k.name}
-                        </span>
-                        {registered(k.id) ? (
+                        <div className="flex min-w-0 items-baseline gap-2">
+                          <span className="min-w-0 flex-1 truncate">{k.id}</span>
+                          {registered(k.id) ? (
                           // Shown, not hidden: an entry that vanished
                           // once attached reads as the snapshot having
                           // shrunk.
@@ -415,6 +419,26 @@ export function NewSessionDialog({
                             {gui.new_session_attach}
                           </Button>
                         )}
+                        </div>
+                        {/* **What it is, and what khor would run.**
+                            The blurb is the registry's own line, and
+                            the argv is the one thing a person cannot
+                            find out any other way — 「khor 起得来」
+                            without it is a claim they take on trust
+                            (`khor agents known` prints it for the same
+                            reason). Read here, never sent back: the
+                            attach goes out as the id. */}
+                        <span className="min-w-0 truncate text-muted-foreground">
+                          {k.about}
+                        </span>
+                        {k.argv !== null && (
+                          <span
+                            data-registry-argv={k.id}
+                            className="min-w-0 truncate text-muted-foreground"
+                          >
+                            {k.argv}
+                          </span>
+                        )}
                       </div>
                     ))}
                 </div>
@@ -436,7 +460,7 @@ export function NewSessionDialog({
               it at them would paint 「还没问过」 about a question that
               does not apply to them. */}
           {registered(agent) && (
-            <div data-agent-seen data-said={mark} className="flex flex-col gap-1 text-sm">
+            <div data-agent-seen data-said={mark} className="flex min-w-0 flex-col gap-1 text-sm">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-muted-foreground">{gui.new_session_seen}</span>
                 {/* **The only thing here that starts a process.** It is
@@ -464,7 +488,7 @@ export function NewSessionDialog({
                 </span>
               )}
               {rows.length > 0 && (
-                <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
+                <div className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto">
                   {rows.map((r) => (
                     <button
                       key={r.id}
@@ -472,7 +496,7 @@ export function NewSessionDialog({
                       data-seen-row={r.id}
                       disabled={opening}
                       onClick={() => resume(r.id)}
-                      className="flex items-baseline justify-between gap-2 text-left text-xs hover:bg-accent"
+                      className="flex w-full min-w-0 items-baseline justify-between gap-2 text-left text-xs hover:bg-accent"
                     >
                       {/* Its own name where it has one, and where it
                           lives where it does not — an id is not
@@ -485,8 +509,8 @@ export function NewSessionDialog({
                           {r.cwd}
                         </span>
                       )}
-                      <span className="shrink-0 text-muted-foreground">
-                        {r.updated_at ?? ""}
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {(r.updated_at ?? "").slice(0, 10)}
                       </span>
                     </button>
                   ))}

@@ -567,6 +567,17 @@ try {
   //     and **no control**. The negative half needs the positive one in
   //     the same run, because "no button" is free for a panel that
   //     never rendered.
+  // 17. **the dialog does not burst.** Every claim above reads
+  //     attributes and text, and all of them passed on a build whose
+  //     conversation rows painted their cwd and their date *outside*
+  //     the dialog — the 问一次 button pushed off-screen with them,
+  //     and the 目录 box, which this batch never touched, dragged out
+  //     with it. `DialogContent` is a grid and a grid item defaults to
+  //     `min-width: auto`, so one long cwd widens the whole box and
+  //     `truncate` never fires. **A gate that only asks the DOM what it
+  //     contains cannot see this**, which is the same lesson as
+  //     measuring computed style rather than reading the token: ask the
+  //     engine where things landed.
   // 16. attaching goes out **by id**, and opening one of the listed
   //     conversations goes out as a resume carrying that agent and that
   //     id. A row on screen and a frame on the wire are different
@@ -598,6 +609,7 @@ try {
    * two of these claims are about a call **not** happening. */
   const wizard = async ({
     seen,
+    known = KNOWN_FIXTURE,
     registered = [{ name: "gemini", command: "npx gemini" }],
     pick = "gemini",
     settle = 900,
@@ -623,7 +635,7 @@ try {
     await page.route("**/web_pins", json([]));
     await page.route("**/recents", json([]));
     await page.route("**/agents", json(registered));
-    await page.route("**/agents_known", json(KNOWN_FIXTURE));
+    await page.route("**/agents_known", json(known));
     await page.route("**/agents_known_taken", json(["2026-08-30", 40, 22]));
     const calls = { seen: 0, ask: 0 };
     const sent = { register: [], resume: [] };
@@ -668,6 +680,7 @@ try {
             attach: !!el.querySelector("[data-registry-attach]"),
             byhand: !!el.querySelector("[data-registry-byhand]"),
             attached: !!el.querySelector("[data-registry-attached]"),
+            argv: (el.querySelector("[data-registry-argv]")?.textContent ?? "").trim(),
           }));
           const t = document.querySelector("[data-registry-taken]");
           return { rows, taken: (t?.textContent ?? "").trim() };
@@ -711,6 +724,30 @@ try {
         // dialog is open and painting agent buttons at all.
         buttons: document.querySelectorAll("[data-new-session-agent]").length,
         askButton: !!document.querySelector("[data-agent-ask]"),
+        // **Where things actually landed**, asked of the engine. `box`
+        // is the dialog; `worst` is how far past its right edge any
+        // descendant reaches. Measured against the painted box rather
+        // than against `scrollWidth`, because a child positioned
+        // outside an `overflow:visible` parent does not grow it.
+        geom: (() => {
+          const box = document.querySelector("[data-new-session-dialog]");
+          if (!box) return null;
+          const r = box.getBoundingClientRect();
+          let worst = 0;
+          let who = "";
+          for (const el of box.querySelectorAll("*")) {
+            const b = el.getBoundingClientRect();
+            if (b.width === 0 && b.height === 0) continue;
+            const over = b.right - r.right;
+            if (over > worst) {
+              worst = over;
+              who = el.getAttribute("data-seen-row")
+                ?? el.getAttribute("data-registry-row")
+                ?? el.tagName.toLowerCase();
+            }
+          }
+          return { width: Math.round(r.width), over: Math.round(worst), who };
+        })(),
       };
     });
     await ctx.close();
@@ -780,6 +817,45 @@ try {
     }
   }
 
+  // 17) the dialog holds its own edges, on the widest thing it can be
+  //     asked to paint: a listing of long directories. **A few pixels
+  //     of tolerance and no more** — the failure this is written
+  //     against was 503.
+  //
+  //     **The snapshot panel had a case here and it was removed**: it
+  //     could not be made to fail. Its `min-w-0` was pulled off the
+  //     row, off the scroll box and off the panel itself, one at a
+  //     time, and the overhang stayed 0 every time — the panel's rows
+  //     are a column of truncating spans, whose min-content width is
+  //     zero, so nothing in there can push. An assertion that holds
+  //     for free is this repo's own first kind of false green, and a
+  //     second geometry row would have read as two surfaces covered
+  //     while one of them was never being watched.
+  for (const [label, opts] of [
+    ["a listing of long paths", {
+      seen: { said: "sessions", rows: [
+        ...SEEN_ROWS,
+        { id: "sess-long", cwd: "/Users/somebody/Desktop/working/khor/apps/gui/src/views/deeply/nested",
+          title: "Use the TodoWrite tool right now to record exactly three todos: read the file, change the file, run the tests",
+          updated_at: "2026-08-30T10:00:00Z" },
+      ] },
+    }],
+  ]) {
+    const w = await wizard(opts);
+    const say = `wizard/geometry · ${label}`;
+    if (!w.geom) {
+      fail(`${say}: probe dead — the dialog was not on screen to measure`);
+    } else if (w.geom.over > 4) {
+      fail(
+        `${say}: something reaches ${w.geom.over}px past the dialog's right edge ` +
+          `(${w.geom.who}), on a box ${w.geom.width}px wide — a grid item's ` +
+          `min-width:auto widens the whole dialog and truncate never fires`,
+      );
+    } else {
+      console.log(`${say}: box ${w.geom.width}px, worst overhang ${w.geom.over}px`);
+    }
+  }
+
   // 14) nothing asks on its own; one press asks once.
   {
     const idle = await wizard({ seen: { said: "unasked" }, settle: 5000 });
@@ -831,7 +907,19 @@ try {
       if (!gem?.attached || gem?.attach) {
         fail(`${say}: an already-registered entry must read 已接入 and offer no second attach — ${JSON.stringify(gem)}`);
       }
+      // **「khor 起得来」without the command is a claim taken on
+      // trust.** Asserted as the painted argv, and as its absence on
+      // the ones khor has no command for — where printing one would
+      // be khor inventing it.
+      for (const r of startable) {
+        if (!r.argv.startsWith("npx ")) {
+          fail(`${say}: ${r.id} claims khor can start it and shows ${JSON.stringify(r.argv)} as the command`);
+        }
+      }
       for (const r of byhand) {
+        if (r.argv) {
+          fail(`${say}: ${r.id} ships a binary and khor printed a command for it: ${JSON.stringify(r.argv)}`);
+        }
         if (r.attach) {
           fail(`${say}: ${r.id} ships a binary and khor has no command for it, yet it grew 接进来`);
         }
