@@ -204,6 +204,12 @@ struct Term {
     conn: Mutex<TcpStream>,
     /// The screen the reader thread overwrites in place.
     parser: Mutex<vt100::Parser>,
+    /// **Lives as long as the screen, because `ESC ( 0` is a mode.**
+    /// A program sets the graphics charset once and then draws through
+    /// it across many reads; a filter rebuilt per read would translate
+    /// the first chunk and hand the rest to the parser as `q`s
+    /// (`crate::acs`).
+    acs: Mutex<crate::acs::Acs>,
     /// Bumped on every byte batch — the poll skips an unchanged screen.
     seq: AtomicU64,
     gone: AtomicBool,
@@ -309,6 +315,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     let term = Arc::new(Term {
         conn: Mutex::new(conn),
         parser: Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK)),
+        acs: Mutex::new(crate::acs::Acs::default()),
         seq: AtomicU64::new(0),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
@@ -323,18 +330,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
             match reading.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    // The catch is inside the lock scope on purpose: the
-                    // guard then drops normally and the mutex is never
-                    // poisoned. On a panic (vt100's corner cases — see
-                    // `plock`) the screen is replaced at the same size
-                    // and a same-size resize is sent, which is a
-                    // SIGWINCH: the program repaints the whole frame
-                    // into the fresh screen (mandala's self-heal trick).
-                    let mut g = plock(&reader.parser);
-                    if catch_unwind(AssertUnwindSafe(|| g.process(&buf[..n]))).is_err() {
-                        let (rows, cols) = g.screen().size();
-                        *g = vt100::Parser::new(rows, cols, SCROLLBACK);
-                        drop(g);
+                    if let Some((cols, rows)) = paint(&reader.acs, &reader.parser, &buf[..n]) {
                         let mut conn = plock(&reader.conn);
                         let _ = write_frame(&mut *conn, &ClientOp::Resize { cols, rows });
                     }
@@ -346,6 +342,42 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     });
     registry.insert(id.to_owned(), term);
     Ok(())
+}
+
+/// **The one path bytes take from the socket to the screen.** A free
+/// function rather than three lines inside the reader thread so a test
+/// can run the same composition the reader runs — the failure this
+/// guards against is not a broken filter but a filter that is never
+/// called, and a test that assembled its own pipeline would pass
+/// either way.
+///
+/// Answers the size to send back as a `Resize` when the screen had to
+/// be replaced, and `None` otherwise.
+fn paint(
+    acs: &Mutex<crate::acs::Acs>,
+    parser: &Mutex<vt100::Parser>,
+    bytes: &[u8],
+) -> Option<(u16, u16)> {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    // DEC Special Graphics before the parser sees it: `vt100` does not
+    // implement SCS, so an ncurses border would otherwise land as
+    // literal `l q k` (`crate::acs`). Taken and released before the
+    // parser's lock — the two are never held together, so this thread
+    // joins no lock order.
+    let bytes = plock(acs).filter(bytes).into_owned();
+    // The catch is inside the lock scope on purpose: the guard then
+    // drops normally and the mutex is never poisoned. On a panic
+    // (vt100's corner cases — see `plock`) the screen is replaced at
+    // the same size and a same-size resize is sent, which is a
+    // SIGWINCH: the program repaints the whole frame into the fresh
+    // screen (mandala's self-heal trick).
+    let mut g = plock(parser);
+    if catch_unwind(AssertUnwindSafe(|| g.process(&bytes))).is_err() {
+        let (rows, cols) = g.screen().size();
+        *g = vt100::Parser::new(rows, cols, SCROLLBACK);
+        return Some((cols, rows));
+    }
+    None
 }
 
 fn term_of(id: &str) -> Result<Arc<Term>, String> {
@@ -586,6 +618,37 @@ mod tests {
         .join();
         assert!(m.lock().is_err(), "the control: the mutex really is poisoned");
         assert_eq!(*plock(&m), 7, "plock answers with the value regardless");
+    }
+
+    /// **The filter is wired into the path the socket's bytes take**,
+    /// which is a different claim from "the filter works" (`acs`'s own
+    /// tests make that one). This runs `paint`, the function the reader
+    /// thread runs, so a filter that stopped being called would show up
+    /// here as a row of `l q k`.
+    ///
+    /// Two chunks, because the charset is a mode: the reader gets
+    /// whatever the socket hands it, and the designator and the drawing
+    /// routinely arrive in different reads.
+    #[test]
+    fn the_reader_path_draws_an_ncurses_border_as_a_border() {
+        let acs = Mutex::new(crate::acs::Acs::default());
+        let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
+        assert_eq!(paint(&acs, &parser, b"\x1b(0"), None);
+        assert_eq!(paint(&acs, &parser, b"lqqqk"), None);
+        let s = snapshot(plock(&parser).screen());
+        assert!(
+            s.lines[0][0].text.starts_with("┌───┐"),
+            "the border must reach the screen drawn: {:?}",
+            s.lines[0][0].text
+        );
+
+        // The control: the same five letters with no charset invoked
+        // are five letters, so this is not a blanket rewrite of `q`.
+        let acs = Mutex::new(crate::acs::Acs::default());
+        let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
+        paint(&acs, &parser, b"lqqqk");
+        let s = snapshot(plock(&parser).screen());
+        assert!(s.lines[0][0].text.starts_with("lqqqk"), "got {:?}", s.lines[0][0].text);
     }
 
     fn feed(bytes: &[u8]) -> TermScreen {
