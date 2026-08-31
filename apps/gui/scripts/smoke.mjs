@@ -3690,31 +3690,32 @@ for line in sys.stdin:
       .catch(() => "");
     return t.includes(recorded);
   });
+  // **The pane shows the form the host is running, and there is
+  // nothing to switch.** This row is hosted in a terminal, so the
+  // terminal is what the pane paints — the 终端/对话 strip that used to
+  // stand here is gone, and with it the "default face" question it
+  // existed to answer.
   await page.locator(`[data-row="${agentId}"] [data-row-open]`).click();
-  await until("the view switch on an agent detail", 15_000, async () =>
-    (await page.locator("[data-view-chat]").count()) === 1,
-  );
-  if ((await page.locator("[data-terminal]").count()) !== 0) {
-    throw new Error("the default face of an agent is its conversation (会话身份批)");
-  }
-  await until("the recorded conversation on the default face", 15_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
-    return t.includes(recorded);
-  });
-  await page.locator("[data-view-term]").click();
-  await until("the terminal face on the switch", 15_000, async () =>
+  await until("the terminal, with no switch to press", 15_000, async () =>
     (await page.locator("[data-terminal]").count()) === 1,
   );
-  // The choice is remembered per row: visit *another* row's detail (so
-  // this one truly unmounts — a same-row re-click would keep the mounted
-  // state and pass without any memory), then come back and land on the
-  // terminal without another click.
+  // The negative assertion, and the live probe that earns it: the pane
+  // *is* on screen (the line above), so a missing switch is a missing
+  // switch and not a page that never rendered.
+  if ((await page.locator("[data-view-term]").count()) !== 0) {
+    throw new Error("a session has one form; the pane must not offer a face switch");
+  }
+  if ((await page.locator("[data-view-chat]").count()) !== 0) {
+    throw new Error("a session has one form; the pane must not offer a face switch");
+  }
+  // Leaving and coming back lands on the same thing, because the thing
+  // is the host and not a remembered click.
   await page.locator(`[data-row="chat/alpha"] [data-row-open]`).click();
   await until("another detail in between", 10_000, async () =>
     (await page.locator("[data-terminal]").count()) === 0,
   );
   await page.locator(`[data-row="${agentId}"] [data-row-open]`).click();
-  await until("the remembered face is the terminal", 15_000, async () =>
+  await until("the terminal again, unasked", 15_000, async () =>
     (await page.locator("[data-terminal]").count()) === 1,
   );
   cli(envB, "close", agentId);
@@ -3814,11 +3815,6 @@ for line in sys.stdin:
     return t.includes(inTmux);
   });
   await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();
-  await until("the conversation as the default face", 15_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
-    return t.includes(inTmux) && (await page.locator("[data-terminal]").count()) === 0;
-  });
-  await page.locator("[data-view-term]").click();
   await until("the pane's terminal painted", 20_000, async () =>
     (await page.locator("[data-terminal]").count()) === 1,
   );
@@ -4245,25 +4241,37 @@ for line in sys.stdin:
   // the detail to look at two other terminals.
   await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();
   await until("the held agent's pane again", 20_000, async () =>
-    (await page.locator("[data-view-chat]").count()) === 1,
+    (await page.locator("[data-terminal]").count()) === 1,
   );
 
-  // 24k) 接管 (批C): the read-only face offers it, the confirm warns,
-  //      and the go moves the conversation's body — the TUI process
-  //      dies (the pane WAS the process, so the tmux session goes with
-  //      it), the same row is reborn as a live conversation under the
-  //      same vendor uuid, and speaking works: the resumed fake claude
-  //      answers. This also ends the viewer host stood up above — the
-  //      takeover cleans the bridge before it re-seats the row.
-  await page.locator("[data-view-chat]").click();
-  await until("the readonly face offering a takeover", 15_000, async () =>
-    (await page.locator("[data-takeover]").count()) === 1,
+  // 24k) 转成对话 (接管, 批C): **the row's menu**, not a button inside
+  //      the pane. Changing what a session *is* belongs beside 置顶 and
+  //      关闭, which also change a row rather than look at one — the
+  //      pane now paints the form the host runs and offers nothing.
+  //
+  //      The confirm warns, and the go moves the conversation's body:
+  //      the TUI process dies (the pane WAS the process, so the tmux
+  //      session goes with it), the same row is reborn as a live
+  //      conversation under the same vendor uuid, and speaking works —
+  //      the resumed fake claude answers. This also ends the viewer host
+  //      stood up above: the takeover cleans the bridge before it
+  //      re-seats the row.
+  await openRowMenu(tmuxAgentRow);
+  await until("转成对话 on a hosted claude's menu", 10_000, async () =>
+    (await page.locator('[data-menu-item="to-a-chat"]').count()) === 1,
   );
-  await page.locator("[data-takeover]").click();
+  // Two presses, and the first one must not act: this ends a process on
+  // another machine's terms, so the sentence has to be read first
+  // (`RowMenu`'s confirm). The armed state is the proof the first press
+  // armed rather than ran.
+  await page.locator('[data-menu-item="to-a-chat"]').click();
   await until("the confirm with its warning", 10_000, async () =>
-    (await page.locator("[data-takeover-warn]").count()) === 1,
+    (await page.locator('[data-menu-confirm="to-a-chat"]').count()) === 1,
   );
-  await page.locator("[data-takeover-go]").click();
+  if ((await page.locator('[data-menu-item="to-a-chat"][data-armed="true"]').count()) !== 1) {
+    throw new Error("the first press must arm the item, not run it");
+  }
+  await page.locator('[data-menu-item="to-a-chat"]').click();
   await until("the tmux side ended by the takeover", 30_000, async () => {
     try {
       execFileSync("tmux", ["-L", TMUX_SOCK, "has-session", "-t", "agenthome"], {
@@ -4944,33 +4952,49 @@ for line in sys.stdin:
   }
   page.off("request", countReplays);
 
-  // 25d) 接管, the other way (唯一本体 read backwards): the terminal
-  //      face of a conversation khor holds is not a terminal — it is
-  //      where the conversation moves into one. The row keeps its id
-  //      and its past; what changes hands is the form.
-  await page.locator("[data-view-term]").click();
-  await until("the terminal face offering the move", 15_000, async () =>
-    (await page.locator("[data-term-is-a-chat]").count()) === 1 &&
-    (await page.locator("[data-takeover-term]").count()) === 1,
+  // 25d) 转成终端 (接管, 唯一本体 read backwards), from the row's menu
+  //      like its opposite in 24k. The row keeps its id and its past;
+  //      what changes hands is the form.
+  //
+  //      **The row must offer exactly one direction**, and that is the
+  //      claim this block opens with: a menu carrying both would mean
+  //      the app does not know which form the session is in. Right now
+  //      khor holds it as a conversation, so 转成终端 is there and
+  //      转成对话 is not — and the pane, which paints the host's form,
+  //      is showing the chat rather than a card about a terminal that
+  //      does not exist.
+  await openRowMenu(wizId);
+  await until("转成终端 on a conversation's menu", 10_000, async () =>
+    (await page.locator('[data-menu-item="to-a-terminal"]').count()) === 1,
   );
-  await page.locator("[data-takeover-term]").click();
+  if ((await page.locator('[data-menu-item="to-a-chat"]').count()) !== 0) {
+    throw new Error("a session is in one form; its menu offers the other one, not both");
+  }
+  await page.locator('[data-menu-item="to-a-terminal"]').click();
   await until("the confirm saying which form ends", 10_000, async () =>
-    (await page.locator("[data-takeover-term-warn]").count()) === 1,
+    (await page.locator('[data-menu-confirm="to-a-terminal"]').count()) === 1,
   );
-  await page.locator("[data-takeover-term-go]").click();
+  await page.locator('[data-menu-item="to-a-terminal"]').click();
   await until("the same row now holding a terminal", 40_000, async () => {
-    if (await page.locator("[data-takeover-term-error]").count()) {
-      throw new Error(await page.locator("[data-takeover-term-error]").innerText());
-    }
+    const why = await page.locator('[data-menu-note="to-a-terminal"]').innerText().catch(() => "");
+    if (why) throw new Error(why);
     return (await page.locator("[data-terminal]").count()) === 1;
   });
   if ((await page.locator(`[data-row="${wizId}"]`).count()) !== 1) {
     throw new Error("the moved conversation must stay one row, under its own id");
   }
-  // Its past came along: the conversation face now reads the vendor's
-  // own transcript, and the line the agent wrote on the way up is in it.
-  await page.locator("[data-view-chat]").click();
-  await until("the conversation surviving the move", 20_000, async () => {
+  // Its past came along, and the round trip proves it: moved back, the
+  // conversation khor reads from the vendor's own transcript still has
+  // the line the agent wrote on the way up. **Going back is also the
+  // only way to look**, now that a session shows the form it is in —
+  // which is the point rather than a cost: the past was never a second
+  // face of a terminal, it was the other form of the same session.
+  await openRowMenu(wizId);
+  await page.locator('[data-menu-item="to-a-chat"]').click();
+  await page.locator('[data-menu-item="to-a-chat"]').click();
+  await until("the conversation surviving the move", 40_000, async () => {
+    const why = await page.locator('[data-menu-note="to-a-chat"]').innerText().catch(() => "");
+    if (why) throw new Error(why);
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("the fake's own past");
   });

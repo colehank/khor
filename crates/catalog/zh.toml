@@ -1038,19 +1038,21 @@ new-session-seen-unasked = "还没问过它"
 new-session-seen-cannot = "它列不出自己的对话——协议里这一项是可选的"
 new-session-seen-none = "它说它一段对话都没有"
 chat-readonly = "只读——它正在自己的终端里跑"
-takeover = "接管"
+# The confirms for changing a session's form, both directions
+# (`SessionsList` 转成对话 / 转成终端). One body, two forms — what ends
+# is the form khor is holding, never the conversation, and each
+# sentence says **which one is ending**, so the direction is never
+# guessed from the label alone.
+#
+# **The verb 「接管」 is gone from the face.** It was the word on a
+# button whose two sentences already said the whole act, and it named
+# only one of the two directions — read on the reverse move it was
+# simply wrong. The labels now name the destination and these say the
+# cost, which is the same division of labour the close confirm uses.
 takeover-busy = "它正忙,接管会打断这一轮;那边的终端会结束,对话从这里继续"
 takeover-calm = "那边的终端会结束,对话从这里继续"
-# The same act the other way round: a conversation moves into a
-# terminal. One body, two forms — what ends is the form khor is holding,
-# never the conversation, and the two sentences say which one is ending
-# so the direction is never guessed from the button alone.
 takeover-term = "对话面会结束,它回到一个终端里,对话接着往下走"
 takeover-term-busy = "它正说着,接管会打断这一轮;对话面会结束,它回到一个终端里"
-# Where the terminal would be, on a session khor is holding as a
-# conversation. Not an error: nothing is broken, the form simply is
-# what it is until somebody moves it.
-term-is-a-chat = "它现在是对话形式——khor 在替它说话,没有终端可看"
 create = "建立"
 # 「机器」, not 「设备」 (2026-08-23 ruling): one concept had two words —
 # the landing said 设备 while the mark's aria and 「给机器留言」 said 机器 —
@@ -1514,11 +1516,31 @@ pick-exit = "去一台机器,借它的网上网"
 # The terminal ended — the host's child exited or the connection tore.
 # Both are one fact to a face (docs/handoff 终端画屏).
 term-over = "这个终端结束了"
-# The two faces of a hosted agent session (会话行改版批): its live
-# terminal, or the recorded conversation read from the vendor's own
-# transcript. Nouns, not verbs — they name what the pane shows.
+# The two forms a session can be held in. Nouns, not verbs — and now
+# only the new-session dialog says them, where they are a choice about
+# a session that does not exist yet.
+#
+# **They are no longer a switch on an open session.** A session is held
+# in exactly one form — a terminal or a conversation — and the pane
+# shows that form, full stop (`DetailPane`). What used to be a pair of
+# tabs was never a view switch: one of its two faces was a card saying
+# "there is no terminal here, press this to make one", which is a
+# conversion wearing a view's clothes. The conversion moved to the
+# row's own menu, where the other things that change a session live.
 view-terminal = "终端"
 view-chat = "对话"
+# The conversion, said as its destination, on the row's menu. It is the
+# same act both ways (`takeover` / `takeover_term`): what ends is the
+# form khor is holding, never the conversation — which is why these are
+# 「转成」 and not 「打开」.
+#
+# **The product's own two words, not GUI/TUI.** Those are what the CLI
+# flags are called and what a `kind` is spelled, and a face that
+# introduced a second vocabulary for a concept the rest of the app
+# already names would be the 机器/设备 mistake again (2026-08-23) —
+# one concept, one word, wherever it appears.
+to-a-chat = "转成对话"
+to-a-terminal = "转成终端"
 
 # ── Claude 订阅余量(批⑩) ─────────────────────────────
 # 窗口的名字。数字与「已用多少」由环画,这里只给名字——

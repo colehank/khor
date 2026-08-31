@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 
-import type { SessionRow } from "@/api";
+import { takeover, takeoverTerm, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionMark } from "@/components/BrandIcons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
@@ -186,6 +186,12 @@ export function SessionsList({
   /** What the node said when it would not close a row, by row id. */
   closeRefused: Map<string, string>;
 }) {
+  /** What the node said when it would not change a row's form, by row
+      id. Owned here rather than in `App` because nothing else needs
+      it: unlike a pin, the conversion has no optimistic state to keep
+      — the row comes back in its new form on the next poll, or it does
+      not come back at all and this sentence says why. */
+  const [turnRefused, setTurnRefused] = useState<Map<string, string>>(new Map());
   const shown = visibleSessions(rows, query, words);
   // The fold (退场批): old news — dead, looked at, past the threshold,
   // all judged by the node (`SessionRow::stale`) — sits behind one line
@@ -277,7 +283,75 @@ export function SessionsList({
    * the pin was a hover-only button, and close lived one screen away in
    * the detail header.
    */
+  /**
+   * Changing what a session **is**: the same act both ways round, and
+   * the row's menu is where it belongs.
+   *
+   * **It used to be a tab.** The detail pane carried a 终端/对话 strip
+   * whose second face, on a conversation, was a card reading "there is
+   * no terminal here, press this to make one" — a conversion wearing a
+   * view's clothes, on a strip that cost every session two controls.
+   * Now the pane shows the form the host is actually running
+   * (`DetailPane`) and this is the one way to change it, beside 置顶
+   * and 关闭 which also change a row rather than look at one.
+   *
+   * **Absent, not greyed, where it cannot happen.** A row on another
+   * machine, a shell with no conversation to have, a vendor khor has
+   * no shim for: none of them has a second form, so none of them gets
+   * a word about one.
+   *
+   * Both directions carry a confirm, because both end something that
+   * is running: which form is ending is the one thing a person must
+   * not have to guess from the label (`takeover_*` in the catalog).
+   */
+  const turnInto = (r: SessionRow): RowAction[] => {
+    const refused = turnRefused.get(r.id);
+    const said = (e: unknown) =>
+      setTurnRefused((m) => new Map(m).set(r.id, String(e instanceof Error ? e.message : e)));
+    // Somebody else's machine hosts it; the act happens where the
+    // process is.
+    if (r.source) return [];
+    if (r.kind === "gui") {
+      return [
+        {
+          key: "to-a-terminal",
+          label: gui.to_a_terminal,
+          confirm: r.word === "busy" ? gui.takeover_term_busy : gui.takeover_term,
+          note: refused,
+          run: async () => {
+            try {
+              await takeoverTerm(r.id);
+            } catch (e) {
+              said(e);
+              throw e;
+            }
+          },
+        },
+      ];
+    }
+    // Only a vendor khor can speak for has a conversation to move
+    // into — the same judgment the offer inside the read-only chat
+    // used to make.
+    if (r.category !== "claude") return [];
+    return [
+      {
+        key: "to-a-chat",
+        label: gui.to_a_chat,
+        confirm: r.word === "busy" ? gui.takeover_busy : gui.takeover_calm,
+        note: refused,
+        run: async () => {
+          try {
+            await takeover(r.id);
+          } catch (e) {
+            said(e);
+            throw e;
+          }
+        },
+      },
+    ];
+  };
   const actions = (r: SessionRow): RowAction[] => [
+    ...turnInto(r),
     {
       key: "pin",
       // The word is what pressing it *does*, so it is the opposite of

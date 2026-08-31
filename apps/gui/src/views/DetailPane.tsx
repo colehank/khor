@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   closeSession,
-  takeoverTerm as takeoverTermCall,
   type SessionRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -17,101 +16,26 @@ import { TerminalPane } from "@/views/TerminalPane";
 import { word } from "@/words";
 
 /**
- * An agent session has two honest faces: the conversation its vendor
- * recorded (the transcript, `Node::transcript_of`) and the live terminal
- * it runs in. The conversation is the default face (会话身份批 ruling —
- * it is the one that reads the same on every device); the choice is
- * remembered per row, which is the cheapest form of "user preference"
- * and adds no settings entry. The chat face is read-only — speaking into
- * a TUI from a chat box means injecting bytes into whatever state its
- * menus are in; speaking through ACP is its own batch on the ledger.
- */
-const faceKey = (id: string) => `khor.session.face.${id}`;
-
-/** Whether — and how — the read-only chat face offers 接管 (批C): only
-    local claude rows that are not already conversations; "busy" makes
-    the confirm warn that a turn will be cut. */
-function takeoverOffer(row: SessionRow): "busy" | "calm" | undefined {
-  if (row.category !== "claude" || row.kind === "gui" || row.source) return undefined;
-  return row.word === "busy" ? "busy" : "calm";
-}
-
-/**
- * The terminal face of a session khor is holding **as a conversation**:
- * there is no terminal to show, and the way to get one is the 接管
- * ruling read backwards — the conversation ends here and the same
- * session comes back up inside a terminal, under the same vendor uuid.
+ * **One session, one face.** A session is held in exactly one form —
+ * a terminal khor owns, or a conversation khor speaks through — and
+ * this pane shows that form. There is no switch, because there was
+ * never anything to switch between: the pair of tabs this replaces had
+ * a 终端 face that, on a conversation, was a card reading "there is no
+ * terminal here, press this to make one". **That is a conversion
+ * wearing a view's clothes**, and it cost the pane a control strip on
+ * every session to offer an act that changes what the session *is*.
  *
- * The confirm is the forward takeover's, with its own two sentences:
- * which form is ending is the one thing a person must not have to
- * guess from the button.
+ * The conversion itself did not go away — it moved to the row's own
+ * menu (`SessionsList`, 转成对话 / 转成终端), beside the other things
+ * that change a session rather than look at one. The form is also
+ * chosen when a session is made (`NewSessionDialog`), which is the
+ * other half of the same answer: **a face khor picked for you is the
+ * face its host is actually running.**
+ *
+ * A recorded conversation with no host here stays read-only — speaking
+ * into a TUI from a chat box means injecting bytes into whatever state
+ * its menus are in.
  */
-function ChatToTerm({ row }: { row: SessionRow }) {
-  const [confirming, setConfirming] = useState(false);
-  const [taking, setTaking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="grid flex-1 place-items-center p-4 text-center text-sm">
-      <div className="flex max-w-sm flex-col items-center gap-2">
-        <p data-term-is-a-chat className="text-muted-foreground">
-          {gui.term_is_a_chat}
-        </p>
-        {confirming ? (
-          <>
-            <p data-takeover-term-warn className="text-muted-foreground">
-              {row.word === "busy" ? gui.takeover_term_busy : gui.takeover_term}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                data-takeover-term-go
-                className="min-h-touch"
-                disabled={taking}
-                onClick={() => {
-                  setTaking(true);
-                  setError(null);
-                  takeoverTermCall(row.id).catch((e) => {
-                    setError(String(e instanceof Error ? e.message : e));
-                    setTaking(false);
-                    setConfirming(false);
-                  });
-                  // On success the row turns tui and the list's poll
-                  // swaps this pane for a terminal.
-                }}
-              >
-                {gui.takeover}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                data-takeover-term-back
-                className="min-h-touch"
-                onClick={() => setConfirming(false)}
-              >
-                {gui.back}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <Button
-            size="sm"
-            variant="secondary"
-            data-takeover-term
-            className="min-h-touch"
-            onClick={() => setConfirming(true)}
-          >
-            {gui.takeover}
-          </Button>
-        )}
-        {error && (
-          <span data-takeover-term-error className="text-destructive">
-            {error}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /**
  * The row's id, as a thing to hand to somebody: `khor` prints this
@@ -282,65 +206,6 @@ function useCloseSession(row: SessionRow | null) {
   return { button, strip };
 }
 
-/** The face switch, for a session with two faces to switch between.
-    Which two they are depends on the row: a hosted agent has a live
-    terminal and a recorded conversation; a conversation khor holds has
-    the conversation and the offer to move it into a terminal. */
-function Faces({
-  id,
-  term,
-  chat,
-}: {
-  id: string;
-  term: ReactNode;
-  chat: ReactNode;
-}) {
-  const [view, setViewState] = useState<"term" | "chat">(() =>
-    window.localStorage.getItem(faceKey(id)) === "term" ? "term" : "chat",
-  );
-  const setView = (v: "term" | "chat") => {
-    setViewState(v);
-    window.localStorage.setItem(faceKey(id), v);
-  };
-  return (
-    <>
-      <div className="flex flex-none gap-1 border-b p-1">
-        <Button
-          size="sm"
-          variant={view === "term" ? "secondary" : "ghost"}
-          data-view-term
-          data-on={view === "term"}
-          className="min-h-touch"
-          onClick={() => setView("term")}
-        >
-          {gui.view_terminal}
-        </Button>
-        <Button
-          size="sm"
-          variant={view === "chat" ? "secondary" : "ghost"}
-          data-view-chat
-          data-on={view === "chat"}
-          className="min-h-touch"
-          onClick={() => setView("chat")}
-        >
-          {gui.view_chat}
-        </Button>
-      </div>
-      {view === "term" ? term : chat}
-    </>
-  );
-}
-
-function HostedAgentDetail({ row }: { row: SessionRow }) {
-  return (
-    <Faces
-      id={row.id}
-      term={<TerminalPane id={row.id} />}
-      chat={<ChatView id={row.id} still takeover={takeoverOffer(row)} />}
-    />
-  );
-}
-
 // Per-kind faces: a GUI session gets the conversation (ChatView); a
 // session khor hosts here gets its live terminal (TerminalPane); the
 // rest (transfer card) land with their own batches, and until then the
@@ -467,21 +332,11 @@ export function DetailPane({
         // belonged to.
         <MachineChat key={row.id} id={row.id} />
       ) : row && row.kind === "gui" ? (
-        // Keyed so switching sessions remounts the chat: its cursor,
-        // frames and attachment all belong to one conversation. The
-        // terminal face is not a terminal — this session has none — it
-        // is where the conversation can be moved into one (接管 read
-        // backwards).
-        <Faces
-          key={row.id}
-          id={row.id}
-          term={<ChatToTerm row={row} />}
-          chat={<ChatView id={row.id} />}
-        />
-      ) : row && row.attachable && row.category === "claude" ? (
-        // A hosted claude gets both faces with a switch; keyed so the
-        // choice resets with the session it was made about.
-        <HostedAgentDetail key={row.id} row={row} />
+        // A conversation khor holds, and the only thing it has: there
+        // is no terminal under it to show. Keyed so switching sessions
+        // remounts the chat — its cursor, frames and attachment all
+        // belong to one conversation.
+        <ChatView key={row.id} id={row.id} />
       ) : row && row.attachable ? (
         // A session with a terminal to be had: hosted here already, or a
         // discovered tmux session the bridge stands a host up for on
@@ -495,7 +350,7 @@ export function DetailPane({
         // the vendor's own transcript. Claude only, this batch — the
         // other vendors' records are on the ledger, and their rows
         // keep the facts pane below rather than an empty chat.
-        <ChatView key={row.id} id={row.id} still takeover={takeoverOffer(row)} />
+        <ChatView key={row.id} id={row.id} still />
       ) : !row && empty ? (
         // The network's now: the biggest canvas in the app stops
         // reading "pick something" and starts showing what there is

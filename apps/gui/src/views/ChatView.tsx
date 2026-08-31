@@ -50,7 +50,6 @@
 //   cost more than the walls of source did, the way back is this one
 //   element — the fold and the frames are unchanged, which is why the
 //   change is reversible and this note can be short.
-import { takeover as takeoverCall } from "@/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -626,21 +625,14 @@ function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Paintin
 export function ChatView({
   id,
   still = false,
-  takeover,
 }: {
   id: string;
   still?: boolean;
-  /** Offered on a read-only face whose session could speak from here
-      (批C 接管): "busy" warns the confirm that a turn will be cut. */
-  takeover?: "busy" | "calm";
 }) {
   const [paint, setPaint] = useState<Painting>(BLANK);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
   const [gone, setGone] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [taking, setTaking] = useState(false);
-  const [takeErr, setTakeErr] = useState<string | null>(null);
   const [inTurn, setInTurn] = useState(false);
   /** This conversation's own context window, as the agent last reported
       it. `null` until an agent says — never a default: the whole reason
@@ -1450,55 +1442,19 @@ export function ChatView({
       {still ? (
         // The read-only face says so where the input would be — without
         // this line, "no input" reads as a bug, not as the 接管 ruling
-        // (a live TUI is the one mouth). Where a takeover is possible it
-        // is offered right here, with a second look before the cut: the
-        // click ends a process somewhere else, and mid-turn it cuts a
-        // turn — the confirm's words say which (词按行的状态分).
+        // (a live TUI is the one mouth).
+        //
+        // **The 接管 offer used to stand here and no longer does.** It
+        // changes what the session *is*, and the acts that do that now
+        // live together on the row's own menu (`SessionsList`, 转成对话)
+        // rather than one of them growing a button inside the pane that
+        // merely looks at it.
         <div className="flex-none border-t p-2">
-          {takeover && confirming ? (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
-              <span data-takeover-warn className="min-w-0 flex-1 text-muted-foreground">
-                {takeover === "busy" ? gui.takeover_busy : gui.takeover_calm}
-              </span>
-              <Button
-                size="sm"
-                data-takeover-go
-                disabled={taking}
-                onClick={() => {
-                  setTaking(true);
-                  setTakeErr(null);
-                  takeoverCall(id).catch((e) => {
-                    setTakeErr(String(e instanceof Error ? e.message : e));
-                    setTaking(false);
-                    setConfirming(false);
-                  });
-                  // On success the row turns gui and the poll swaps this
-                  // face for the live one — nothing to do here.
-                }}
-              >
-                {gui.takeover}
-              </Button>
-              <Button size="sm" variant="ghost" data-takeover-back onClick={() => setConfirming(false)}>
-                {gui.back}
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
-              <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
-                {gone ? gui.chat_no_record : gui.chat_readonly}
-              </span>
-              {takeErr && (
-                <span data-takeover-error className="text-destructive">
-                  {takeErr}
-                </span>
-              )}
-              {takeover && (
-                <Button size="sm" variant="secondary" data-takeover onClick={() => setConfirming(true)}>
-                  {gui.takeover}
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+            <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
+              {gone ? gui.chat_no_record : gui.chat_readonly}
+            </span>
+          </div>
         </div>
       ) : (
       <div className="flex-none border-t p-2">
