@@ -60,11 +60,48 @@ impl From<vt100::Color> for TermColor {
     }
 }
 
-/// A run of adjacent cells that share every attribute — coalesced so a
-/// row of one colour is one node to paint, not eighty.
+/// A run of adjacent cells that share every attribute **and every
+/// cell's width** — coalesced so a row of one colour is one node to
+/// paint, not eighty.
+///
+/// # Why a run carries its geometry
+///
+/// A terminal is a grid, and a face that paints runs as flowing text is
+/// not painting a grid — it is asking the browser to guess one from
+/// glyph advances. The guess is wrong the moment any glyph comes from a
+/// font other than the measured one, which on this screen is constant:
+/// CJK falls back to a face whose advance is not twice the latin one,
+/// and every symbol an agent draws (`▰▱ ↻ ⏵⏵ ✻ ⏺`) comes from
+/// somewhere else again.
+///
+/// Two things went wrong because of it, both reported from a real
+/// screen (2026-09-01):
+///
+///   - **The cursor sat far past the last character.** It was placed by
+///     arithmetic — `cursor_col * cell_width`, which is right — against
+///     text that had drifted, which is not.
+///   - **A spinner at the head of a line moved the rest of the line**
+///     every time it changed glyph. Flowed text has no cells to hold
+///     anything still.
+///
+/// So a run states where it starts and how many columns it covers, and
+/// the face gives it a box exactly that wide. Drift is then bounded
+/// inside one run and can never reach its neighbours.
+///
+/// **`wide` splits runs that `fg`/`bg` alone would have joined**, which
+/// is the point: a box is only exact if every cell in it is the same
+/// width, so a run may not straddle the boundary between narrow and
+/// double-width cells.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct TermRun {
     pub text: String,
+    /// The column this run starts at — its left edge in cells.
+    pub col: u16,
+    /// How many columns it covers. `text.chars().count()` for a narrow
+    /// run, twice that for a wide one.
+    pub cells: u16,
+    /// Whether every cell in this run is double-width.
+    pub wide: bool,
     pub fg: TermColor,
     pub bg: TermColor,
     pub bold: bool,
@@ -151,14 +188,18 @@ fn snapshot(screen: &vt100::Screen) -> TermScreen {
     let mut lines = Vec::with_capacity(rows as usize);
     for row in 0..rows {
         let mut runs: Vec<TermRun> = Vec::new();
-        let mut carry: Option<Style> = None;
+        let mut carry: Option<(Style, bool)> = None;
         for col in 0..cols {
             let cell = screen.cell(row, col);
             if let Some(c) = cell {
+                // The second half of a double-width character is not a
+                // cell of its own — its column is already spoken for by
+                // the run the first half opened.
                 if c.is_wide_continuation() {
                     continue;
                 }
             }
+            let wide = cell.is_some_and(vt100::Cell::is_wide);
             let (text, style) = match cell {
                 Some(c) if c.has_contents() => (c.contents().to_string(), style_of(c)),
                 Some(c) => (" ".to_string(), style_of(c)),
@@ -171,11 +212,19 @@ fn snapshot(screen: &vt100::Screen) -> TermScreen {
                     inverse: false,
                 }),
             };
-            if carry == Some(style) {
-                runs.last_mut().unwrap().text.push_str(&text);
+            let step = if wide { 2 } else { 1 };
+            // **The width joins the style in deciding what a run is.** A
+            // box is only exact if every cell in it is the same width.
+            if carry == Some((style, wide)) {
+                let last = runs.last_mut().unwrap();
+                last.text.push_str(&text);
+                last.cells += step;
             } else {
                 runs.push(TermRun {
                     text,
+                    col,
+                    cells: step,
+                    wide,
                     fg: style.fg,
                     bg: style.bg,
                     bold: style.bold,
@@ -183,7 +232,7 @@ fn snapshot(screen: &vt100::Screen) -> TermScreen {
                     underline: style.underline,
                     inverse: style.inverse,
                 });
-                carry = Some(style);
+                carry = Some((style, wide));
             }
         }
         lines.push(runs);
@@ -649,6 +698,64 @@ mod tests {
         paint(&acs, &parser, b"lqqqk");
         let s = snapshot(plock(&parser).screen());
         assert!(s.lines[0][0].text.starts_with("lqqqk"), "got {:?}", s.lines[0][0].text);
+    }
+
+    /// **Every run states where it starts and how wide it is, and the
+    /// two always agree with the grid.** This is the claim the painted
+    /// terminal rests on: the face gives each run a box exactly
+    /// `cells` wide, so a glyph from a fallback font can be loose or
+    /// tight inside its own run and still not move anything after it.
+    ///
+    /// Reported from a real screen 2026-09-01: a spinner at the head of
+    /// a line moved the rest of the line every time it changed glyph,
+    /// and the cursor sat far past the last character — both of them
+    /// flowed text pretending to be a grid.
+    #[test]
+    fn every_run_says_where_it_starts_and_the_columns_add_up() {
+        // Three styles, so three runs: default, red, default again.
+        let s = feed(b"ab\x1b[31mcd\x1b[0mef");
+        let runs = &s.lines[0];
+        assert!(runs.len() >= 3, "a colour change is a run boundary: {runs:?}");
+        assert_eq!((runs[0].col, runs[0].cells), (0, 2));
+        assert_eq!((runs[1].col, runs[1].cells), (2, 2));
+        assert_eq!((runs[2].col, runs[2].cells), (4, 6), "the tail runs to the edge");
+        // The invariant, on every row of every screen: runs tile the
+        // line with no gap and no overlap, and end exactly at `cols`.
+        for (i, line) in s.lines.iter().enumerate() {
+            let mut at = 0;
+            for r in line {
+                assert_eq!(r.col, at, "row {i} run {r:?} does not start where the last one ended");
+                at += r.cells;
+            }
+            assert_eq!(at, s.cols, "row {i} must be covered exactly once");
+        }
+    }
+
+    /// **A double-width character owns two columns and says so** — and
+    /// it may not share a run with narrow cells, because a box is only
+    /// exact when every cell in it is the same width.
+    ///
+    /// The control is in the same assertion: the latin half of the same
+    /// line, in the same style, is a *separate* run. Without the width
+    /// in the run-boundary test they would coalesce, `cells` would be
+    /// right and the box would still be a lie.
+    #[test]
+    fn a_wide_character_takes_two_columns_and_a_run_of_its_own() {
+        let s = feed("ab中".as_bytes());
+        let runs = &s.lines[0];
+        assert_eq!(runs[0].text, "ab");
+        assert!(!runs[0].wide);
+        assert_eq!((runs[0].col, runs[0].cells), (0, 2));
+        assert_eq!(runs[1].text, "中", "same style, different width — a run of its own");
+        assert!(runs[1].wide);
+        assert_eq!((runs[1].col, runs[1].cells), (2, 2), "one character, two columns");
+        assert_eq!(runs[2].col, 4, "and the next run starts past both of them");
+        let mut at = 0;
+        for r in runs {
+            assert_eq!(r.col, at);
+            at += r.cells;
+        }
+        assert_eq!(at, s.cols);
     }
 
     fn feed(bytes: &[u8]) -> TermScreen {

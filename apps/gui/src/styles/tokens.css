@@ -1166,6 +1166,31 @@
   --text-aux: 12.5px;
 
   --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* ── the terminal's own face ─────────────────────────
+   * A terminal is the one surface in this app whose type is not a
+   * reading choice: the emulator hands over a grid of cells, and the
+   * face's whole job is to put one glyph in each of them.
+   *
+   * **Named rather than borrowed from `font-mono`.** Tailwind's default
+   * mono stack leads with `ui-monospace`, which on macOS is the system
+   * UI mono — a fine face for a code span inside prose and not the one
+   * a terminal wants. `SF Mono` first is the face Terminal.app and
+   * iTerm use here; `Menlo` behind it is what every mac has had since
+   * 10.6, and the generic keeps a Linux build honest.
+   *
+   * **CJK is deliberately not in this stack.** No monospace face on
+   * this platform carries it, so it falls back whatever we write, and
+   * naming a face here would only hide that from the next reader —
+   * the geometry is held by the cell boxes instead (`TermRun`), which
+   * is the only thing that works regardless of which font answers.
+   *
+   * 14/20 rather than the 14/17.5 it was: the grid was drawn at
+   * `leading-tight`, which packs rows closer than any terminal sets
+   * them and is a large part of what "低分辨率" was describing. */
+  --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --text-term: 14px;
+  --text-term--line-height: 20px;
 }
 
 @layer base {

@@ -116,6 +116,9 @@ const READING_MS = 250;
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
+  /** A double-width glyph in whatever face actually answers for CJK —
+      measured, never assumed (`wideFit`). */
+  const wideRef = useRef<HTMLSpanElement>(null);
   const [screen, setScreen] = useState<TermScreen | null>(null);
   const [gone, setGone] = useState(false);
   // Why the terminal never opened, in khor's own words. **Not the same
@@ -139,6 +142,26 @@ export function TerminalPane({ id }: { id: string }) {
   const seqRef = useRef(0);
   // The character box, measured once from the terminal font.
   const cellRef = useRef<{ w: number; h: number }>({ w: 8, h: 16 });
+  /**
+   * How much to scale a double-width glyph so it **fills** its two
+   * cells, measured on this machine rather than written down.
+   *
+   * No monospace face on any of these platforms carries CJK, so it is
+   * always answered by a fallback — and a fallback's advance is not two
+   * latin cells. Measured here 2026-09-01: SF Mono's cell is 8.4289px,
+   * two of them 16.86, and PingFang's 中 is 14 — **the glyph fills 83%
+   * of the box it is given**, and a screen of Chinese reads as loose
+   * and thin, which is most of what "分辨率很低" was describing.
+   *
+   * The needed scale came out at 120.41% here. **It is measured rather
+   * than that number**, because it is a ratio between two faces and
+   * neither of them is khor's to pin: a different mac, a user font, a
+   * Linux build, and the constant would be silently wrong while
+   * nothing anywhere went red. What cannot go wrong either way is the
+   * grid — the box is exactly two cells regardless, so a bad ratio
+   * costs looseness and never alignment.
+   */
+  const wideFitRef = useRef<number>(1);
   // The size last sent, so a resize observer does not spam identical ones.
   const sentRef = useRef<{ cols: number; rows: number }>({ cols: 0, rows: 0 });
   // How often to ask for the screen. **A ref and a self-scheduling wait
@@ -180,6 +203,14 @@ export function TerminalPane({ id }: { id: string }) {
     if (measureRef.current) {
       const r = measureRef.current.getBoundingClientRect();
       cellRef.current = { w: r.width || 8, h: r.height || 16 };
+      const wide = wideRef.current?.getBoundingClientRect().width ?? 0;
+      // Clamped, because a measurement that came back nonsense (a font
+      // still loading, a hidden pane with no layout) must not be able
+      // to draw the screen at four times its size. Outside the clamp
+      // the glyph simply sits in its box unscaled, which is where this
+      // started.
+      const want = wide > 0 ? (r.width * 2) / wide : 1;
+      wideFitRef.current = want >= 0.75 && want <= 1.75 ? want : 1;
     }
     const { cols, rows } = fit();
     sentRef.current = { cols, rows };
@@ -480,6 +511,7 @@ export function TerminalPane({ id }: { id: string }) {
   };
 
   const { w: cw, h: ch } = cellRef.current;
+  const wideScale = wideFitRef.current;
 
   return (
     <div
@@ -497,13 +529,27 @@ export function TerminalPane({ id }: { id: string }) {
       // the page, and there is no page to scroll — the grid is repainted
       // from wherever the reader is standing, so the gesture has to
       // reach `onTouchMove` instead of being spent on the viewport.
-      className="relative min-h-0 flex-1 touch-none overflow-hidden bg-[var(--term-bg)] p-1 font-mono text-sm leading-tight text-[var(--term-fg)] outline-none"
+      className="relative min-h-0 flex-1 touch-none overflow-hidden bg-[var(--term-bg)] p-1 text-[var(--term-fg)] outline-none"
       style={
         {
           // The terminal owns its own two colours; they follow the theme
           // so a plain shell is the app's paper, not a black box.
           "--term-bg": "var(--background)",
           "--term-fg": "var(--foreground)",
+          fontFamily: "var(--font-term)",
+          fontSize: "var(--text-term)",
+          lineHeight: "var(--text-term--line-height)",
+          // **A terminal may not ligate.** `fi`, `->`, `==` drawn as one
+          // glyph is one glyph in two cells, and every cell after it on
+          // the line is then a lie. Off explicitly, because several of
+          // the faces above ship with ligatures on.
+          fontVariantLigatures: "none",
+          fontKerning: "none",
+          // The body sets `antialiased`, which thins strokes on macOS —
+          // right for a page of prose, and what a terminal reads as
+          // washed out. This surface takes the platform's full
+          // rendering back.
+          WebkitFontSmoothing: "subpixel-antialiased",
         } as React.CSSProperties
       }
     >
@@ -524,8 +570,34 @@ export function TerminalPane({ id }: { id: string }) {
       />
       {/* An off-screen glyph in the exact font, measured for the cell box
           before anything is painted. */}
-      <span ref={measureRef} className="invisible absolute font-mono text-sm leading-tight">
+      <span
+        ref={measureRef}
+        className="invisible absolute"
+        style={{
+          fontFamily: "var(--font-term)",
+          fontSize: "var(--text-term)",
+          lineHeight: "var(--text-term--line-height)",
+          fontVariantLigatures: "none",
+          fontKerning: "none",
+        }}
+      >
         M
+      </span>
+      {/* Its double-width counterpart, in the face that actually
+          answers for CJK on this machine — the second half of the cell
+          measurement, not a decoration. */}
+      <span
+        ref={wideRef}
+        className="invisible absolute"
+        style={{
+          fontFamily: "var(--font-term)",
+          fontSize: "var(--text-term)",
+          lineHeight: "var(--text-term--line-height)",
+          fontVariantLigatures: "none",
+          fontKerning: "none",
+        }}
+      >
+        中
       </span>
       {why ? (
         // Centred, not a corner label: there is no screen behind it to
@@ -571,23 +643,71 @@ export function TerminalPane({ id }: { id: string }) {
           {freshBelow ? gui.new_below : gui.to_bottom}
         </button>
       )}
+      {/* **A grid, not a line of text.**
+          Every run is given a box exactly as many cells wide as the
+          screen says it covers (`TermRun.cells`), so a glyph the
+          measured font does not have — CJK, and every symbol an agent
+          draws — can render loose or tight inside its own run without
+          moving a single thing after it.
+
+          Flowed text could not do that, and two things reported from a
+          real screen were the same bug wearing two faces: a spinner at
+          the head of a line pushed the rest of the line every time it
+          changed glyph, and the cursor — placed by `cursor_col * cw`,
+          which is right — sat far past text that had drifted, which is
+          not. Now the arithmetic and the paint use the same grid.
+
+          A run of double-width cells goes one glyph per box for the
+          same reason one step down: within a CJK run the fallback
+          advance is not exactly twice the latin one, and a per-cell box
+          is what keeps 20 columns of it 20 columns wide. Narrow runs
+          stay a single node — that is the common case and the reason
+          runs exist at all. */}
       {screen?.lines.map((runs, row) => (
         <div key={row} className="whitespace-pre" style={{ height: ch }}>
           {runs.map((run, i) => {
             const fg = run.inverse ? css(run.bg, "bg") ?? "var(--term-bg)" : css(run.fg, "fg");
             const bg = run.inverse ? css(run.fg, "fg") : css(run.bg, "bg");
+            const style: React.CSSProperties = {
+              color: fg,
+              background: bg,
+              fontWeight: run.bold ? 700 : undefined,
+              fontStyle: run.italic ? "italic" : undefined,
+              textDecoration: run.underline ? "underline" : undefined,
+              display: "inline-block",
+              width: run.cells * cw,
+              height: ch,
+              // Overflow is *visible* on purpose: a glyph too wide for
+              // its cell overlaps its neighbour, which is what a
+              // terminal does, rather than being clipped in half.
+              overflow: "visible",
+              verticalAlign: "top",
+            };
+            if (!run.wide) {
+              return (
+                <span key={i} style={style}>
+                  {run.text}
+                </span>
+              );
+            }
             return (
-              <span
-                key={i}
-                style={{
-                  color: fg,
-                  background: bg,
-                  fontWeight: run.bold ? 700 : undefined,
-                  fontStyle: run.italic ? "italic" : undefined,
-                  textDecoration: run.underline ? "underline" : undefined,
-                }}
-              >
-                {run.text}
+              <span key={i} style={style}>
+                {[...run.text].map((ch2, j) => (
+                  <span
+                    key={j}
+                    style={{
+                      display: "inline-block",
+                      width: cw * 2,
+                      textAlign: "center",
+                      overflow: "visible",
+                      // Sized to fill the two cells it was given, by the
+                      // ratio measured on this machine (`wideFitRef`).
+                      fontSize: `calc(var(--text-term) * ${wideScale})`,
+                    }}
+                  >
+                    {ch2}
+                  </span>
+                ))}
               </span>
             );
           })}
