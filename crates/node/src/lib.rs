@@ -51,6 +51,9 @@ use khor_sync::agents::{agents_dir, AgentDoc};
 /// Re-exported because `Node::agents` hands it out, and a type a public
 /// method returns that callers cannot name is a method they cannot use.
 pub use khor_sync::agents::Spec as AgentSpec;
+/// One conversation an agent said it has, as khor remembers it
+/// (`khor_sync::agents::Seen`).
+pub use khor_sync::agents::{Answer as AgentAnswer, Seen as AgentSeen};
 /// The shipped snapshot of the ACP registry (`khor_sync::agents::registry`).
 /// Re-exported here for the same reason `AgentSpec` is: the CLI talks to
 /// the node, and a second path into the sync crate would be a second
@@ -788,6 +791,57 @@ impl Node {
         loaded.doc.set(name, &spec)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Asks a registered agent what conversations it has and remembers
+    /// the answer (`session/list` → the agents doc).
+    ///
+    /// **Asked here rather than on every list poll, and that is the one
+    /// real constraint in all of this.** Reading claude's files costs a
+    /// millisecond; asking a registry agent costs *starting the agent*.
+    /// So the question is put at the moments a person is already
+    /// waiting on one — registering it, or asking to see — and the
+    /// answer syncs, so no other machine on the mesh has to start that
+    /// process to know the same thing.
+    ///
+    /// Answers what was recorded. An agent that cannot list records
+    /// nothing and answers `None`, which stays distinct from `Some([])`
+    /// all the way out to the screen.
+    pub fn refresh_agent_sessions(&self, name: &str) -> Result<AgentAnswer, String> {
+        // **The refusal is recorded, not discarded.** An agent that
+        // cannot list is something khor now knows about it; throwing it
+        // away leaves the store saying "nobody has asked", which sends
+        // the next person to start the agent again for the same
+        // nothing.
+        let answer = match self.agent_sessions(name, None)? {
+            khor_acp::Listing::Cannot => AgentAnswer::Cannot,
+            khor_acp::Listing::Sessions(rows) => AgentAnswer::Sessions {
+                rows: rows
+                    .into_iter()
+                    .map(|r| AgentSeen {
+                        id: r.id,
+                        cwd: r.cwd.display().to_string(),
+                        title: r.title,
+                        updated_at: r.updated_at,
+                    })
+                    .collect(),
+            },
+        };
+        let loaded = self.agents_loaded()?;
+        loaded.doc.set_seen(name, &answer)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(answer)
+    }
+
+    /// What khor remembers this agent said, without asking it again.
+    ///
+    /// **`None` means nobody has ever asked**, which is not the same as
+    /// an agent that answered with nothing — a caller that flattened
+    /// them would tell a person "no past conversations" about a
+    /// question never put.
+    pub fn agent_seen(&self, name: &str) -> Result<Option<AgentAnswer>, String> {
+        Ok(self.agents_loaded()?.doc.seen(name))
     }
 
     /// Adopts a satellite: a machine only ssh can reach, led into the

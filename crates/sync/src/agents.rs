@@ -66,6 +66,15 @@ pub fn agents_dir(home: &std::path::Path) -> std::path::PathBuf {
 }
 
 const AGENTS: &str = "agents";
+/// Where an agent's own list of its conversations is kept, keyed by the
+/// same name the registration is.
+///
+/// **A second map rather than a field on [`Spec`].** `Spec` is the
+/// protocol crate's launch JSON and nothing else — the comment above it
+/// says so, and it is serialized straight into what spawns the child.
+/// A list of conversations riding inside it would be khor's invention
+/// travelling in a field the protocol reads.
+const SEEN: &str = "seen";
 
 /// How one agent starts.
 ///
@@ -113,6 +122,53 @@ impl Spec {
     }
 }
 
+/// One conversation an agent said it has, as khor remembers it.
+///
+/// **Remembered because asking costs a process.** khor finds claude's
+/// and codex's sessions by reading files, which is a millisecond and
+/// can ride the list poll; asking a registry agent means starting the
+/// agent. So the answer is taken once — at registration — and kept
+/// here, where it syncs like everything else: **asked on one machine,
+/// known on all of them**, and nobody else has to start that process.
+///
+/// It therefore goes stale, and that is the trade. What it is used for
+/// is offering a conversation to continue, and an id that has since
+/// been deleted refuses at load — loudly, by the agent, which is a
+/// better failure than never offering anything.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Seen {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cwd: String,
+    /// The agent's own name for it. Absent stays absent: a conversation
+    /// nobody named must not come back as an empty string on screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// RFC 3339 as the agent wrote it, kept as text — khor sorts and
+    /// prints it and never does arithmetic on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// What an agent answered when it was asked for its conversations.
+///
+/// **The refusal is stored too, and that is the point of the enum.** An
+/// agent that cannot list is a fact worth keeping: without it, "we
+/// asked and it cannot tell us" comes back out of the store as "nobody
+/// has asked", the screen says so, and the person puts the same
+/// question again — starting the agent again — to get the same
+/// nothing. Found exactly that way, on this feature's first
+/// end-to-end run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Answer {
+    /// It listed. Possibly nothing — and here that really is nothing.
+    Sessions { rows: Vec<Seen> },
+    /// It does not implement `session/list`, which the protocol allows
+    /// (20 of 32 registry agents did on 2026-08-30).
+    Cannot,
+}
+
 pub struct AgentDoc {
     inner: LoroDoc,
 }
@@ -155,6 +211,40 @@ impl AgentDoc {
             return Ok(());
         }
         self.inner.get_map(AGENTS).delete(name).map_err(|e| e.to_string())?;
+        // And what it told us about itself. A registration that comes
+        // back under the same name is a different agent as far as
+        // anyone here knows, and inheriting the old one's conversations
+        // would offer ids that belong to something else.
+        if self.seen(name).is_some() {
+            self.inner.get_map(SEEN).delete(name).map_err(|e| e.to_string())?;
+        }
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// What this agent last said it has, or `None` if nobody has asked
+    /// it yet.
+    ///
+    /// **`None` and `Some(vec![])` are different answers** and the
+    /// difference is carried on purpose: never asked, versus asked and
+    /// it has none. A caller that saw an empty list for both would tell
+    /// a person "this agent has no past conversations" about an agent
+    /// nobody had ever put the question to.
+    pub fn seen(&self, name: &str) -> Option<Answer> {
+        let value = self.inner.get_map(SEEN).get(name)?.into_value().ok()?;
+        let LoroValue::String(json) = value else { return None };
+        serde_json::from_str(&json).ok()
+    }
+
+    /// Records what an agent answered. Replaces: the agent's answer is
+    /// the whole truth about itself at that moment, and merging an old
+    /// list into a new one would resurrect conversations it has deleted.
+    pub fn set_seen(&self, name: &str, answer: &Answer) -> Result<(), String> {
+        if self.seen(name).as_ref() == Some(answer) {
+            return Ok(());
+        }
+        let json = serde_json::to_string(answer).map_err(|e| e.to_string())?;
+        self.inner.get_map(SEEN).insert(name, json).map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
     }
@@ -291,5 +381,82 @@ mod tests {
         assert_eq!(Spec::from_argv(&[]), None);
         assert_eq!(Spec::from_argv(&["   ".to_owned()]), None);
         assert!(Spec::from_argv(&["x".to_owned()]).is_some(), "control: a real one is accepted");
+    }
+
+    /// **Four answers to「what has this agent done before」, and each is
+    /// a different sentence to a person.**
+    ///
+    /// Never asked / asked and it cannot / it has none / here they are.
+    /// The first two were **one** answer on this feature's first
+    /// end-to-end run: a refusal was not recorded, so the store said
+    /// "nobody has asked" about an agent that had just been asked — and
+    /// the screen told the person to go start that agent again for the
+    /// same nothing.
+    ///
+    /// Written as one test over the four so that the *differences* are
+    /// the claim; four separate tests each pass while two of them
+    /// return the same value.
+    #[test]
+    fn what_an_agent_has_done_before_has_four_answers() {
+        let doc = AgentDoc::new(7).unwrap();
+
+        // 1) Nobody has asked.
+        assert_eq!(doc.seen("gem"), None);
+
+        // 2) Asked, and it cannot list. **Not the same as (1)** — that
+        //    is the whole assertion.
+        doc.set_seen("gem", &Answer::Cannot).unwrap();
+        assert_eq!(doc.seen("gem"), Some(Answer::Cannot));
+        assert_ne!(doc.seen("gem"), None, "asked-and-cannot is not never-asked");
+
+        // 3) It listed, and has none. Not the same as (2) either.
+        doc.set_seen("empty", &Answer::Sessions { rows: vec![] }).unwrap();
+        assert_eq!(doc.seen("empty"), Some(Answer::Sessions { rows: vec![] }));
+        assert_ne!(doc.seen("empty"), doc.seen("gem"));
+
+        // 4) It listed, and has some — through the doc, so the
+        //    serialization is what is being asserted and not a struct
+        //    this test built and read back in memory.
+        let rows = vec![
+            Seen {
+                id: "sess-a".into(),
+                cwd: "/w/one".into(),
+                title: Some("先看看那个文件".into()),
+                updated_at: Some("2026-08-31T04:24:14.876Z".into()),
+            },
+            // No title, no time: an agent may give neither, and neither
+            // may come back as an empty string on screen.
+            Seen { id: "sess-b".into(), cwd: String::new(), title: None, updated_at: None },
+        ];
+        doc.set_seen("cacp", &Answer::Sessions { rows: rows.clone() }).unwrap();
+        let Some(Answer::Sessions { rows: back }) = doc.seen("cacp") else {
+            panic!("wanted sessions")
+        };
+        assert_eq!(back, rows);
+        assert_eq!(back[1].title, None);
+        assert_eq!(back[1].updated_at, None);
+    }
+
+    /// **Forgetting an agent forgets what it told us.** A registration
+    /// that comes back under the same name is, as far as anything here
+    /// knows, a different agent — and offering it the old one's
+    /// conversation ids would be offering ids that belong to something
+    /// else.
+    #[test]
+    fn forgetting_an_agent_forgets_its_conversations() {
+        let doc = AgentDoc::new(7).unwrap();
+        doc.set("gem", &Spec { command: "gemini".into(), args: vec!["--acp".into()] }).unwrap();
+        doc.set_seen("gem", &Answer::Sessions {
+            rows: vec![Seen {
+                id: "old".into(),
+                cwd: String::new(),
+                title: None,
+                updated_at: None,
+            }],
+        })
+        .unwrap();
+        doc.remove("gem").unwrap();
+        assert_eq!(doc.get("gem"), None);
+        assert_eq!(doc.seen("gem"), None, "the conversations went with it");
     }
 }

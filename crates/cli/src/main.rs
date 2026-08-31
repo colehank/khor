@@ -1328,33 +1328,59 @@ fn agents(rest: &[String]) -> Result<(), String> {
         // path for an agent khor did not write a disk reader for —
         // and one that starts a real process, so it is a verb a person
         // types rather than something a list poll does behind them.
+        // **Reads what was remembered; `--ask` is what starts a
+        // process.** Asking is the expensive half — a whole agent
+        // spawns — so it is a thing a person types, and the answer is
+        // kept and synced so no other machine has to spend it again.
         Some((word, tail)) if word == "sessions" => {
-            let [name] = tail else { return Err(USAGE.into()) };
-            match n.agent_sessions(name, None)? {
-                khor_node::Listing::Cannot => {
+            let (name, ask) = match tail {
+                [name] => (name, false),
+                [name, flag] if flag == "--ask" => (name, true),
+                _ => return Err(USAGE.into()),
+            };
+            let seen = if ask {
+                Some(n.refresh_agent_sessions(name)?)
+            } else {
+                n.agent_seen(name)?
+            };
+            // **Four answers, and each one is a different sentence.**
+            // Never asked / asked and it cannot / it has none / here
+            // they are. The first two were one answer on this feature's
+            // first run, and the person's next move differs for each:
+            // ask, stop asking, open a new one, pick one.
+            let rows = match seen {
+                None => {
+                    println!("{}", cli::agents_sessions_unasked(name));
+                    return Ok(());
+                }
+                Some(khor_node::AgentAnswer::Cannot) => {
                     println!("{}", cli::agents_sessions_cannot(name));
+                    return Ok(());
                 }
-                khor_node::Listing::Sessions(rows) if rows.is_empty() => {
-                    println!("{}", cli::agents_sessions_none(name));
+                Some(khor_node::AgentAnswer::Sessions { rows }) => rows,
+            };
+            if rows.is_empty() {
+                println!("{}", cli::agents_sessions_none(name));
+                return Ok(());
+            }
+            println!(
+                "{}",
+                if ask {
+                    cli::agents_sessions_asked(name, rows.len())
+                } else {
+                    // The date of the freshest thing it told us, which
+                    // is the closest honest answer to「how old is
+                    // this」without storing a clock reading of our own.
+                    let at = rows.iter().filter_map(|r| r.updated_at.as_deref()).max();
+                    cli::agents_sessions_head(name, rows.len(), at.unwrap_or_default())
                 }
-                khor_node::Listing::Sessions(rows) => {
-                    println!("{}", cli::agents_sessions_head(name, rows.len()));
-                    for r in rows {
-                        // Title where there is one, cwd where there is
-                        // not: an id alone is not something a person
-                        // recognises, and the cwd is the next best
-                        // thing they do.
-                        let said = r
-                            .title
-                            .unwrap_or_else(|| r.cwd.display().to_string());
-                        println!(
-                            "{}\t{}\t{}",
-                            r.id,
-                            said,
-                            r.updated_at.unwrap_or_default()
-                        );
-                    }
-                }
+            );
+            for r in rows {
+                // Title where there is one, cwd where there is not: an
+                // id alone is not something a person recognises, and
+                // the cwd is the next best thing they do.
+                let said = r.title.unwrap_or(r.cwd);
+                println!("{}\t{}\t{}", r.id, said, r.updated_at.unwrap_or_default());
             }
             Ok(())
         }
@@ -1390,6 +1416,15 @@ fn agents(rest: &[String]) -> Result<(), String> {
             };
             n.register_agent(name, &argv)?;
             println!("{}", cli::agents_added(name));
+            // **Asked once, here, because this is a moment the person
+            // is already waiting on this agent.** A failure to answer
+            // is not a failure to register: the registration stands,
+            // and the question can be put again later.
+            if let Ok(khor_node::AgentAnswer::Sessions { rows }) = n.refresh_agent_sessions(name) {
+                if !rows.is_empty() {
+                    println!("{}", cli::agents_sessions_asked(name, rows.len()));
+                }
+            }
             Ok(())
         }
         Some((word, tail)) if word == "rm" => {

@@ -135,12 +135,13 @@ usage = """
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
-  agents [known | sessions <名字> | add <名字> [-- <命令...> | @<id>] | rm <名字>]
+  agents [known | sessions <名字> [--ask] | add <名字> [...] | rm <名字>]
                         登记会说 ACP 的 agent:不带参数看登记过哪些。
                         登记一次全网都认得(命令在不在各机器上,起的时候才知道);
                         claude、codex、khor、shell 这四个名字 khor 自己在用。
                         known 看随包带的 ACP 注册表快照;@<id> 直接用快照里那条命令。
-                        sessions 起一个 agent 问它自己有哪些会话(不是每个都答得了)
+                        sessions 看它有哪些对话(读记下来的;--ask 才真去问,那会起一个进程);
+                        问过的答案全网同步,别的机器不用再起一遍
   state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   rename <session> [名字...]
@@ -401,7 +402,12 @@ agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动�
 agents-sessions-cannot = "{0} 不支持列出会话——协议里这一项是可选的,它没实现"
 agents-sessions-none = "{0} 说它一个会话都没有"
 # Head of the listing. 带上问的是谁,因为这条命令会起一个真的 agent 进程。
-agents-sessions-head = "{0} 说它有 {1} 个会话:"
+agents-sessions-head = "{0} 有 {1} 段对话(记于 {2}):"
+# Nobody has ever put the question to this agent. **和「它说它没有」是
+# 两回事**——一个没被问过的 agent 报成「没有过去」,人就再也不会去问了。
+agents-sessions-unasked = "还没问过 {0}:khor agents sessions {0} --ask"
+# The head when the answer was just taken, rather than remembered.
+agents-sessions-asked = "{0} 说它有 {1} 段对话:"
 # `--resume` given without `--agent`. **不猜**:一个光秃秃的 id 说不出
 # 该由谁去起,拿默认的去开会开出一段新对话然后管它叫那段旧的。
 resume-needs-agent = "--resume 要和 --agent 一起用:光有 id 说不出该由哪个 agent 去续"
