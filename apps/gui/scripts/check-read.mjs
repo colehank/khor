@@ -129,8 +129,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  *
  * **What this deliberately does not assert, and why it is not a hole.**
  * The same SC caps non-CJK at 80, and at the ceiling above a line holds
- * ~100 Latin characters (46 × the 2.17 measured below).
- * Both halves hold only at a cap of 36.9em or less. The standard's two
+ * ~100 Latin characters (46 × the 2.189 measured below on 2026-08-31).
+ * Both halves hold only at a cap of 36.5em or less. The standard's two
  * numbers were written for text in one script; these paragraphs run
  * 32–74% CJK, so one half has to give and it is the half for the script
  * this app is not mostly in. Asserting it would make this gate red on
@@ -150,9 +150,18 @@ const CJK_BAND = [30, 46];
  * The reason it kept needing to move is that it was never a second
  * claim. A CJK glyph's advance is exactly 1em and a Latin character's is
  * a fixed fraction of one, so **once the cap is fixed the Latin count is
- * the CJK count times a font constant** — measured 2.17 here. Asserting
- * both is asserting the same fact twice in different units, and the two
- * copies can only ever disagree.
+ * the CJK count times a font constant** — measured 2.189 on 2026-08-31
+ * (it read 2.17, undated, until then). Asserting both is asserting the
+ * same fact twice in different units, and the two copies can only ever
+ * disagree.
+ *
+ * **That 2.189 is the illustration; the band below is the assertion.**
+ * The constant belongs to the font stack, not to any decision made
+ * here, so it drifts whenever the stack does — which is why the band is
+ * wide and why the figure above carries a date. It is also never worth
+ * trusting from a comment: the printed line already carries both counts
+ * on every run, so the live ratio is one division away. **Changing the
+ * font stack is not a reason to come and edit that number.**
  *
  * What a Latin reading *can* say on its own is something about the
  * font, not about the column: if a future stack drew Latin much

@@ -642,8 +642,21 @@
    * 15, 16 and 17: the advance came back equal to the size every time),
    * so this number *is* the count of Chinese characters on a line, not
    * a length that happens to produce one. Latin follows from the same
-   * measurement at .465–.514em a character, which is the only reason
-   * one cap can answer for both scripts at once.
+   * measurement, and **the number that matters is the one at the tier
+   * this cap actually runs on**: at `--text-read`'s 16px a Latin
+   * character is **.4570em** (2026-08-31). That is the only reason one
+   * cap can answer for both scripts at once.
+   *
+   * The whole sweep, re-measured 2026-08-31 in system Chrome, is
+   * .4511–.4824em — 11px .4824, 12.5 .4736, 14 .4658, 15 .4609, 16
+   * .4570, 17 .4511, shrinking monotonically as the size grows. **The
+   * sweep is context, not the input.** An em resolves against one font
+   * size, so only the `--text-read` row ever enters this arithmetic;
+   * the other five are here to show the drift is real and directional
+   * rather than noise. This line read「.465–.514em」until 2026-08-31,
+   * a range wrong at both ends — and wrong in the way that mattered,
+   * since .4570 sits below its floor, so the one row the cap uses was
+   * outside the range quoted to justify the cap.
    *
    * **Whatever wears `max-w-measure` must also carry `text-read`.** An
    * em is resolved against the element's own font size, so this cap on
@@ -676,26 +689,41 @@
    *
    * **What is still not satisfied, said out loud.** The same SC also
    * caps non-CJK at 80, and with this font stack a Latin character is
-   * 1/2.17 of a CJK one — so 46 glyphs of CJK is **~100** of Latin.
-   * Both halves hold only at ≤36.9em. The standard's two numbers were
-   * written for text in one script; these paragraphs run 32–74% CJK.
+   * 1/2.189 of a CJK one (2026-08-31) — so 46 glyphs of CJK is **~100**
+   * of Latin. Both halves hold only at ≤36.5em. The standard's two
+   * numbers were written for text in one script; these paragraphs run
+   * 32–74% CJK.
    *
-   * **「Match it exactly」turns out to be possible in Latin too, and
-   * the paragraph that used to stand here was arithmetic on a bad
-   * number.** Re-measured 2026-08-31 against a live claude.ai
-   * conversation: the same 736 column at the same 16px prose holds
-   * **46** CJK and **99.3** Latin — 100 of them counted directly,
-   * character by character, on one line box — against 100.7 here. Its
-   * face (`anthropic-serif`) does run wider than this stack's
-   * `system-ui`, but by 1.3% a character, .463em against .457em. That
-   * is 1.4 characters on a line. The *column*, the *CJK count* and the
-   * *Latin count* all transcribe; no cap had to be bent to make them.
+   * **2.189 is an illustration, not an assertion, and it is expected to
+   * drift.** It is a property of the font stack rather than a decision
+   * anyone made: change the stack and it moves, and nothing here would
+   * stop it or notice. What is actually asserted is `LAT_PER_CJK` in
+   * `check-read.mjs`, a band wide on purpose for that reason. And the
+   * live figure is never more than one division away — the gate prints
+   * both counts on every run (`46 cjk / 100.7 latin`), so **swapping
+   * the font stack is not a reason to come and edit this number**;
+   * read it off the gate instead. It carries a date because a number
+   * like this going stale should be *visible* rather than something the
+   * next reader discovers by walking into it.
    *
-   * **Tombstone: this read 88.3 until 2026-08-31, and concluded from it
-   * that the Latin count could not be matched at all.** 88.3 was one
-   * measurement, never reproduced, and it was 12% off. Its likely
-   * origin, stated as inference and not as record: the same face and
-   * the same sample measured at **18px** gives 736 / 8.3268 = 88.4. The
+   * **「Match it exactly」turns out to be possible in Latin too: the
+   * limit this paragraph used to argue for is not there.** Re-measured
+   * 2026-08-31 against a live claude.ai conversation: the same 736
+   * column at the same 16px prose holds **46** CJK and **99.3** Latin
+   * — 100 of them counted directly, character by character, on one
+   * line box — against 100.7 here. All three numbers transcribe: the
+   * column to the pixel, the CJK count exactly, the Latin count to
+   * within 1.4 characters on a line. Its face (`anthropic-serif`) does
+   * run wider than this stack's `system-ui`, but by 1.3% a character,
+   * .463em against .457em. **Nothing here was capped, tuned or bent to
+   * get that agreement** — the two faces simply draw Latin at nearly
+   * the same advance, and the number that used to sit here hid it.
+   *
+   * **Tombstone: this read 88.3 until 2026-08-31, and drew from it a
+   * constraint that does not exist.** 88.3 was one measurement, never
+   * reproduced, and it was 12% off. Its likely origin, stated as
+   * inference and not as record: the same face and the same sample
+   * measured at **18px** gives 736 / 8.3268 = 88.4. The
    * column and the CJK count were read off the prose's real 16px and
    * the Latin count off 18 — one fact carried in two units. What is
    * measured is only that 18px reproduces the number; why it was 18 is
@@ -717,10 +745,12 @@
    * control** — and its answer reads exactly like a finding.
    *
    * **The real answer to「the screen is not full」is a different axis**
-   * and is not in this batch: the column is 40 glyphs *of the reading
+   * and is not in this batch: the column is 46 glyphs *of the reading
    * size*, so a larger size on a wider window fills more of it with the
-   * same 40 glyphs a line. That is a change to `--text-read`, not to
-   * this. */
+   * same 46 glyphs a line. That is a change to `--text-read`, not to
+   * this. (Both numbers read 40 until 2026-08-31 — left over from the
+   * `caec6d2` value. The argument never depended on which number it
+   * was, which is exactly why nobody noticed it stop being true.) */
   --measure: 46em;
   --avatar: 32px;
   /* A machine's face on its own card. Its own token rather than a class
