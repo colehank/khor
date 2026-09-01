@@ -559,6 +559,18 @@ export function TerminalPane({ id }: { id: string }) {
     // program in the middle of somebody's word. `isComposing` is the
     // browser's own answer to "is this key part of a composition".
     if (e.nativeEvent.isComposing || composing.current) return;
+    // **The first key of a composition is not composing yet.** Chrome
+    // fires its `keydown` *before* `compositionstart`, with
+    // `isComposing: false` and the letter in `key` — so the two guards
+    // above let it through, `keyBytes` saw a one-character key, and
+    // the program was handed the first letter of every syllable ahead
+    // of the character: 「j加y一个」 was the reported screen
+    // (2026-09-01). What that keydown does carry is `keyCode 229`, the
+    // browser's mark for "an input method took this one"; on other
+    // platforms the same event says `key: "Process"`. Either is the
+    // input method's, and neither is preventDefault'd — that would be
+    // taking the key away from it.
+    if (e.nativeEvent.keyCode === 229 || e.key === "Process") return;
     // **Shift+Page is this app's, plain Page is the program's.** Full
     // screen programs use PageUp for their own paging, and a terminal
     // that ate it would break `less` to add a feature. Shift is the

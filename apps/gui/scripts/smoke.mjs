@@ -3869,6 +3869,17 @@ for line in sys.stdin:
     await new Promise((r) => setTimeout(r, 50));
     const landed = document.activeElement === field;
     decoy.remove();
+    // **The first key arrives before the composition does.** Chrome
+    // fires the syllable's first `keydown` with `isComposing: false`
+    // and only then `compositionstart` — its mark is `keyCode 229`.
+    // Modelled in that order, because the first version of this check
+    // dispatched `compositionstart` first and stayed green while every
+    // syllable's first letter leaked into the shell (「j加y一个」,
+    // 2026-09-01): a test that starts the composition before the key
+    // never exercises the one event that was wrong.
+    const first = new KeyboardEvent("keydown", { key: "z", bubbles: true, cancelable: true });
+    Object.defineProperty(first, "keyCode", { get: () => 229 });
+    field.dispatchEvent(first);
     field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
     for (const partial of ["z", "zh", "zho", "zhong"]) {
       field.value = partial;
