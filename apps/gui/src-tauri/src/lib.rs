@@ -31,6 +31,34 @@ async fn places(machine: Option<String>) -> Result<Vec<khor_gui_core::PlaceRow>,
 }
 
 #[tauri::command]
+async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
+    khor_gui_core::quota_board(&Node::root_from_env()).await
+}
+
+#[tauri::command]
+fn register_account(
+    name: String,
+    provider: String,
+    base_url: Option<String>,
+    key: String,
+    budget: Option<f64>,
+) -> Result<String, String> {
+    khor_gui_core::register_account(
+        &Node::root_from_env(),
+        &name,
+        &provider,
+        base_url.as_deref(),
+        &key,
+        budget,
+    )
+}
+
+#[tauri::command]
+fn remove_account(id: String) -> Result<(), String> {
+    khor_gui_core::remove_account(&Node::root_from_env(), &id)
+}
+
+#[tauri::command]
 async fn devices() -> Result<Vec<DeviceRow>, String> {
     khor_gui_core::list_devices(&Node::root_from_env()).await
 }
@@ -537,6 +565,9 @@ pub fn run() {
             day_strips,
             places,
             devices,
+            quota_board,
+            register_account,
+            remove_account,
             usage,
             quota,
             seen,

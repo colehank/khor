@@ -7,6 +7,7 @@
 //! real implementations actually share: produce rows, claim an id,
 //! answer what "looked at now" means, and close.
 
+pub mod accounts;
 pub mod adaptor;
 pub mod cagent;
 pub mod codexagent;
@@ -47,11 +48,16 @@ use khor_catalog::msg;
 use khor_core::{DeviceId, Event};
 use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
 use khor_sync::devices::{devices_dir, DeviceDoc};
+use khor_sync::accounts::{accounts_dir, AccountDoc};
 use khor_sync::agents::{agents_dir, AgentDoc};
 /// How one registered ACP agent starts (`khor_sync::agents::Spec`).
 /// Re-exported because `Node::agents` hands it out, and a type a public
 /// method returns that callers cannot name is a method they cannot use.
 pub use khor_sync::agents::Spec as AgentSpec;
+/// Re-exported for the reason `AgentSpec` is: the faces and the CLI
+/// register accounts, and they should name the account's shape without
+/// depending on the sync crate for it.
+pub use khor_sync::accounts::{Account, Provider};
 /// One conversation an agent said it has, as khor remembers it
 /// (`khor_sync::agents::Seen`).
 pub use khor_sync::agents::{Answer as AgentAnswer, Seen as AgentSeen};
@@ -666,6 +672,13 @@ impl Node {
 
     pub(crate) fn agents_loaded(&self) -> Result<Loaded<AgentDoc>, String> {
         load(&agents_dir(&self.root), self.peer)
+    }
+
+    /// The registered API accounts (`khor_sync::accounts`) — the
+    /// descriptions, never the keys; those stay in `keys_dir` on the
+    /// machine that registered them.
+    pub(crate) fn accounts_loaded(&self) -> Result<Loaded<AccountDoc>, String> {
+        load(&accounts_dir(&self.root), self.peer)
     }
 
     pub(crate) fn titles_loaded(&self) -> Result<Loaded<TitleDoc>, String> {

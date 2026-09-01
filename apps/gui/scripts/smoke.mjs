@@ -5843,6 +5843,96 @@ for line in sys.stdin:
     (await page.locator("[data-statusbar]").count()) === 0,
   );
 
+  // 25e) 额度: a registered API account is a ring, wherever its key
+  //      lives. A fake new-api gateway is started here and registered
+  //      **on alpha**; beta's page draws it from what alpha carried over
+  //      (`Request::Quotas`), wearing alpha's name — so the key never
+  //      left alpha (the fake records the bearer it was shown, which is
+  //      the proof the number came from alpha's key and not from a
+  //      copy). Three arms on one road: the good token (45% of a $2
+  //      quota), a wrong key on the same gateway (钥匙被拒, carried as a
+  //      trouble, not as a zero), and a gateway nobody answers at,
+  //      registered on beta itself (连不上, read here and now).
+  const gwPort = 17321;
+  const gwDir = join(SCRATCH, "fake-newapi");
+  mkdirSync(gwDir, { recursive: true });
+  const gwScript = join(gwDir, "newapi.py");
+  writeFileSync(
+    gwScript,
+    `#!/usr/bin/env python3
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def send(self, code, body):
+        data = json.dumps(body).encode()
+        self.send_response(code); self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data))); self.end_headers(); self.wfile.write(data)
+    def do_GET(self):
+        if self.path == "/api/status":
+            return self.send(200, {"success": True, "data": {"quota_per_unit": 500000, "quota_display_type": "USD"}})
+        if self.path == "/api/usage/token/":
+            auth = self.headers.get("Authorization", "")
+            with open("bearers.log", "a") as f: f.write(auth + "\\n")
+            if auth != "Bearer sk-good-token":
+                return self.send(401, {"success": False, "message": "无效的令牌"})
+            return self.send(200, {"success": True, "data": {"object": "token_usage",
+                "total_granted": 1000000, "total_used": 450000, "total_available": 550000, "unlimited_quota": False}})
+        self.send(404, {"success": False})
+HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+`,
+  );
+  run("python3", [gwScript, String(gwPort)], process.env, "fake-newapi", gwDir);
+  await until("the fake gateway listening", 10_000, async () => {
+    try {
+      const r = await fetch(`http://127.0.0.1:${gwPort}/api/status`);
+      return r.ok;
+    } catch {
+      return false;
+    }
+  });
+  const goodId = cli(envA, "accounts", "add", "gw-good", "--provider", "newapi",
+    "--base-url", `http://127.0.0.1:${gwPort}`, "--key", "sk-good-token").trim();
+  cli(envA, "accounts", "add", "gw-bad", "--provider", "newapi",
+    "--base-url", `http://127.0.0.1:${gwPort}`, "--key", "sk-wrong");
+  cli(envB, "accounts", "add", "gw-dead", "--provider", "newapi", "--base-url", "http://127.0.0.1:1", "--key", "sk-x");
+  if (!/^[0-9a-f]{32}$/.test(goodId)) throw new Error(`accounts add did not answer an id: ${goodId}`);
+  await railItem("quota").click();
+  await until("the 额度 page", 10_000, async () => (await page.locator("[data-quota-landing]").count()) === 1);
+  // beta's own account first — read here, no beat to wait for.
+  await until("the dead gateway wearing 连不上", 30_000, async () =>
+    (await page.locator('[data-quota-row][data-trouble="unreachable"]').count()) === 1,
+  );
+  // alpha's two, carried over on the report beat.
+  await until("alpha's good token as a 45% ring wearing alpha's name", 90_000, async () => {
+    const row = page.locator(`[data-quota-row="${goodId}"]`);
+    if ((await row.count()) !== 1) return false;
+    const text = await row.innerText();
+    return text.includes("45%") && text.includes("alpha");
+  });
+  await until("alpha's wrong key carried as 钥匙被拒", 90_000, async () =>
+    (await page.locator('[data-quota-row][data-trouble="key-refused"]').count()) === 1,
+  );
+  // The bearer the gateway saw is alpha's registered key, verbatim —
+  // the reading came from alpha reading its own key, not from beta.
+  const bearers = readFileSync(join(gwDir, "bearers.log"), "utf8");
+  if (!bearers.includes("Bearer sk-good-token") || bearers.includes("sk-x")) {
+    throw new Error(`the gateway saw the wrong keys: ${JSON.stringify(bearers)}`);
+  }
+  // The detail: the good ring's figures, and the CLI's own board says
+  // the same number.
+  await page.locator(`[data-quota-row="${goodId}"]`).click();
+  await until("the good account's figures", 10_000, async () => {
+    const d = page.locator(`[data-quota-detail="${goodId}"]`);
+    return (await d.count()) === 1 && (await d.innerText()).includes("0.90 / 2.00 USD");
+  });
+  const board = cli(envB, "quota");
+  if (!board.includes("gw-good") || !board.includes("45%")) {
+    throw new Error(`khor quota on beta does not carry alpha's reading: ${board}`);
+  }
+  // Back to the sessions landing: what follows reads rows off it.
+  await openLanding("sessions");
+
   // 26) a pin that does not take says so, on the button that was
   //     pressed.
   //

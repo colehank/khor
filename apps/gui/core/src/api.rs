@@ -81,6 +81,31 @@ pub fn answer(
             to_json(&rt.block_on(crate::places(root, &opt_str("machine")?.unwrap_or_default()))?)
         }
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
+        // The 额度 page: one ring per registered account, wherever its
+        // key lives (`Node::quota_board`).
+        "quota_board" => to_json(&rt.block_on(crate::quota_board(root))?),
+        "register_account" => {
+            // `budget` absent is "no budget"; present and not a number
+            // is refused, the `restyle` rule (a malformed value quietly
+            // read as absent would register an account with no ceiling
+            // while the form said one).
+            let budget = match args.get("budget") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(v.as_f64().ok_or_else(|| "arg is not a number: budget".to_owned())?),
+            };
+            to_json(&crate::register_account(
+                root,
+                &arg("name")?,
+                &arg("provider")?,
+                opt_str("base_url")?.as_deref(),
+                &arg("key")?,
+                budget,
+            )?)
+        }
+        "remove_account" => {
+            crate::remove_account(root, &arg("id")?)?;
+            Ok("null".to_owned())
+        }
         "usage" => to_json(&crate::usage(root)?),
         // No `root`: a subscription is an account's, not an
         // installation's. And no `?` — every failure here is a reason

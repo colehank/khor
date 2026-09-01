@@ -7,6 +7,7 @@
 //! is bytes that can land as a file, so a dumb directory carries the same
 //! sync a live stream does.
 
+pub mod accounts;
 pub mod agents;
 pub mod chat;
 pub mod devices;

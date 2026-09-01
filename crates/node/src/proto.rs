@@ -213,6 +213,13 @@ pub enum Request {
     /// [`Response::Refused`], read as "no list" — the box still takes a
     /// typed path.
     Places,
+    /// The asked machine's readings of the API accounts **it holds the
+    /// keys for** (`khor_node::accounts`): every other machine reads
+    /// them from here rather than from the provider, so a key stays
+    /// on one disk. Answered as [`Response::Quotas`]; a khor that
+    /// predates it answers [`Response::Refused`], read as "no reading
+    /// from there" and painted as such with the last one's age.
+    Quotas,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +295,9 @@ pub enum Response {
     /// own user reads it (`~` for *its* home), because whose home a
     /// path is under is a fact about the answering machine.
     Places { places: Vec<(String, String, u32, i64)> },
+    /// [`Request::Quotas`]'s answer: one reading per account whose key
+    /// the answering machine holds, as it last read them.
+    Quotas { readings: Vec<khor_core::AccountReading> },
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -383,6 +393,7 @@ mod tests {
                 &b"OpenAgent"[..],
             ),
             (Request::Places, &b"Places"[..]),
+            (Request::Quotas, &b"Quotas"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

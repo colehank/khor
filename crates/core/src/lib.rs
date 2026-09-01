@@ -907,6 +907,58 @@ pub enum QuotaTrouble {
     Unreachable,
 }
 
+/// One registered API account's usage, as the machine holding its key
+/// last read it (`khor_node::accounts`). What crosses the mesh in
+/// [`Request::Quotas`]'s answer and what the 额度 page draws a ring from.
+///
+/// **The fraction is decided here, not on the screen.** A provider that
+/// has a hard limit (a new-api token's remaining quota) fills against
+/// it; one that bills per token (the two vendors) fills against the
+/// budget the person registered — and with no budget there is no
+/// fraction, only numbers, and the ring draws its track (`fill: None`).
+/// A face that computed the share itself would be a second opinion
+/// about what "full" means, and the two would drift.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct AccountReading {
+    /// `khor_sync::accounts::Account::id`.
+    pub account: String,
+    pub name: String,
+    /// `newapi` / `claude` / `openai`, the registered word.
+    pub provider: String,
+    /// The device (hex id) whose key was read.
+    pub home: String,
+    /// Used over full, `0..=1`; `None` when there is no denominator.
+    #[ts(type = "number | null")]
+    pub fill: Option<f32>,
+    /// Spent so far in the window, in `currency`; `None` when the
+    /// provider does not say.
+    #[ts(type = "number | null")]
+    pub spent: Option<f64>,
+    /// What full is, in `currency`: the provider's own limit, or the
+    /// registered budget. `None` with no denominator.
+    #[ts(type = "number | null")]
+    pub limit: Option<f64>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// The provider said this account has no ceiling at all.
+    #[serde(default)]
+    pub unlimited: bool,
+    /// When the window resets, unix seconds, where the provider says.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub resets_at: Option<i64>,
+    /// Why there is no number, as a **key** (`account-trouble-*` in the
+    /// catalog): the key was refused, the address unreachable, the
+    /// answer unreadable, cooling after a failure. `None` when the
+    /// numbers are real.
+    #[serde(default)]
+    pub trouble: Option<String>,
+    /// When this reading was taken, ms since the epoch, by the reading
+    /// machine's clock.
+    #[ts(type = "number")]
+    pub at_ms: i64,
+}
+
 /// What khor can say about the subscription right now.
 ///
 /// **Both halves can be empty and that is not a bug**: before the first

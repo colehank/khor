@@ -86,6 +86,25 @@ export function IconSessions({ className }: IconProps) {
   );
 }
 
+/** 额度 = a token: a coin's rim, and a solid centre the same family's
+    weight — the one filled piece, with the rim cut where it meets it so
+    the two never touch (`CUT`). */
+export function IconQuota({ className }: IconProps) {
+  return (
+    <RailGlyph
+      className={className}
+      cut={<circle cx="12" cy="12" r="3.3" fill="black" stroke="black" strokeWidth={CUT} />}
+    >
+      {(cutId) => (
+        <>
+          <circle mask={`url(#${cutId})`} cx="12" cy="12" r="8.6" />
+          <circle data-body cx="12" cy="12" r="3.3" />
+        </>
+      )}
+    </RailGlyph>
+  );
+}
+
 /** Devices = a rack: two drawers, each with a punched-through lamp. */
 export function IconDevices({ className }: IconProps) {
   return (

@@ -66,6 +66,8 @@ const VERBS: &[Verb] = &[
     Verb { word: "attach", run: attach },
     Verb { word: "takeover", run: takeover },
     Verb { word: "agents", run: agents },
+    Verb { word: "accounts", run: accounts },
+    Verb { word: "quota", run: quota },
     Verb { word: "state", run: state },
     Verb { word: "seen", run: seen },
     Verb { word: "rename", run: rename },
@@ -1307,6 +1309,114 @@ fn quit(rest: &[String]) -> Result<(), String> {
 /// after `--` as argv rather than as one string: a path with a space in
 /// it survives that and does not survive re-splitting, and argv is
 /// exactly what the child is spawned from.
+/// `khor accounts` — the registered API accounts, and 登记/rm
+/// (`Node::register_account`). The key comes in on stdin (`--key-stdin`)
+/// or on the line (`--key`); either way it lands in `.khor/keys/` on
+/// this machine and nowhere else (`accounts` module head).
+fn accounts(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    match rest.split_first() {
+        None => {
+            let names: std::collections::HashMap<String, String> =
+                n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
+            let listed = n.accounts()?;
+            if listed.is_empty() {
+                println!("{}", cli::ACCOUNTS_NONE);
+            }
+            for a in listed {
+                println!(
+                    "{}	{}	{}	{}	{}",
+                    a.id,
+                    a.name,
+                    a.provider.word(),
+                    names.get(&a.home).cloned().unwrap_or(a.home),
+                    a.base_url.unwrap_or_default()
+                );
+            }
+            Ok(())
+        }
+        Some((word, tail)) if word == "add" => {
+            let mut it = tail.iter();
+            let name = it.next().ok_or_else(|| USAGE.to_string())?.clone();
+            let mut provider: Option<String> = None;
+            let mut base_url: Option<String> = None;
+            let mut key: Option<String> = None;
+            let mut budget: Option<f64> = None;
+            while let Some(flag) = it.next() {
+                let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
+                match flag.as_str() {
+                    "--provider" => provider = Some(value()?),
+                    "--base-url" => base_url = Some(value()?),
+                    "--key" => key = Some(value()?),
+                    "--key-stdin" => {
+                        let mut text = String::new();
+                        std::io::stdin().read_line(&mut text).map_err(|e| e.to_string())?;
+                        key = Some(text.trim().to_owned());
+                    }
+                    "--budget" => {
+                        budget = Some(value()?.parse::<f64>().map_err(|_| cli::ACCOUNT_BUDGET_NUMBER.to_string())?);
+                    }
+                    _ => return Err(USAGE.into()),
+                }
+            }
+            let provider = provider.ok_or_else(|| USAGE.to_string())?;
+            let provider = khor_node::Provider::parse(&provider)
+                .ok_or_else(|| msg::no_such_provider(&provider))?;
+            let key = key.ok_or_else(|| USAGE.to_string())?;
+            let a = n.register_account(&name, provider, base_url.as_deref(), &key, budget)?;
+            println!("{}", a.id);
+            Ok(())
+        }
+        Some((word, tail)) if word == "rm" => {
+            let [which] = tail else { return Err(USAGE.into()) };
+            // By id or by name — a name is what a person remembers, and
+            // it is refused when two accounts share it rather than
+            // guessed between.
+            let all = n.accounts()?;
+            let id = if all.iter().any(|a| &a.id == which) {
+                which.clone()
+            } else {
+                let named: Vec<&khor_node::Account> = all.iter().filter(|a| &a.name == which).collect();
+                match named.as_slice() {
+                    [one] => one.id.clone(),
+                    [] => return Err(msg::no_such_account(which)),
+                    _ => return Err(cli::account_name_ambiguous(which)),
+                }
+            };
+            n.remove_account(&id)
+        }
+        Some(_) => Err(USAGE.into()),
+    }
+}
+
+/// `khor quota` — every registered account's reading, this machine's
+/// read now and the others' as last carried here (`Node::quota_board`).
+fn quota(rest: &[String]) -> Result<(), String> {
+    if !rest.is_empty() {
+        return Err(USAGE.into());
+    }
+    let n = node()?;
+    let names: std::collections::HashMap<String, String> =
+        n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
+    let board = rt()?.block_on(n.quota_board())?;
+    if board.is_empty() {
+        println!("{}", cli::ACCOUNTS_NONE);
+    }
+    for (r, age_ms) in board {
+        let home = names.get(&r.home).cloned().unwrap_or_else(|| r.home.clone());
+        let figure = match (&r.trouble, r.spent, r.limit) {
+            (Some(t), _, _) => cli::quota_trouble(t),
+            (None, Some(s), Some(l)) => format!("{s:.2}/{l:.2} {}", r.currency.clone().unwrap_or_default()),
+            (None, Some(s), None) if r.unlimited => format!("{s:.2} {} {}", r.currency.clone().unwrap_or_default(), cli::QUOTA_UNLIMITED),
+            (None, Some(s), None) => format!("{s:.2} {}", r.currency.clone().unwrap_or_default()),
+            (None, None, _) => cli::QUOTA_NO_NUMBER.to_owned(),
+        };
+        let share = r.fill.map(|f| format!("{:.0}%", f * 100.0)).unwrap_or_default();
+        println!("{}	{}	{}	{}	{}	{}s", r.name, r.provider, home, figure, share, age_ms / 1000);
+    }
+    Ok(())
+}
+
 fn agents(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     match rest.split_first() {

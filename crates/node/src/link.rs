@@ -761,6 +761,9 @@ impl Node {
                 } else if doc == "agents" {
                     let mut loaded = self.agents_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "accounts" {
+                    let mut loaded = self.accounts_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if doc == "titles" {
                     let mut loaded = self.titles_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
@@ -830,6 +833,25 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string())??;
                 Ok(Response::Places { places })
+            }
+            Request::Quotas => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Reads the providers when the cache has aged out —
+                // seconds of HTTP, off the reactor for the `Vitals`
+                // arm's reason (`accounts` module head).
+                let root = self.root().to_path_buf();
+                let readings = tokio::task::spawn_blocking(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| e.to_string())?;
+                    rt.block_on(crate::Node::open(root)?.quota_readings())
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Quotas { readings })
             }
             Request::Vitals => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -2347,6 +2369,16 @@ impl Node {
                 moved += n;
             }
         }
+        // Registered API accounts — descriptions only, the keys never
+        // leave the machine that holds them (`khor_sync::accounts`).
+        // Same best-effort footing: an older peer refuses the doc by
+        // name and the rounds behind it still run.
+        {
+            let mut loaded = self.accounts_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "accounts", &mut loaded).await {
+                moved += n;
+            }
+        }
         // Session names, on the same best-effort footing as the tables
         // above and for the same reason: a peer that predates the table
         // refuses the doc by name, and that refusal must not cost the
@@ -2385,6 +2417,12 @@ impl Node {
         // khor leaves the last cached day standing, aging like a report.
         if let Ok(Response::Days { day }) = request(&conn, &Request::Days).await {
             let _ = self.cache_peer_day(&d.id, &day);
+        }
+        // Its accounts' readings, on the same beat: the 额度 page draws
+        // every machine's rings from this, and an older khor's Refused
+        // leaves the last carried answer standing, aging like a report.
+        if let Ok(Response::Quotas { readings }) = request(&conn, &Request::Quotas).await {
+            let _ = self.cache_peer_quotas(&d.id, &readings);
         }
         // …and the readings of every satellite this device sponsors, on
         // the same visit (附属机器批): satellites cannot be dialed, so

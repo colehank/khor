@@ -133,6 +133,10 @@ usage = """
                         --on 在别的机器上开,不给命令就用那台自己的 shell;
                         --gui/--agent 配 --on 在那台机器上起它自己的 agent,
                         不接命令,也不接 --resume)
+  accounts              登记过的 API 账号;add <名字> --provider newapi|claude|openai
+                        [--base-url 地址] [--budget 数] --key 钥匙|--key-stdin 登记
+                        (钥匙只留在这台机器上);rm <id|名字> 撤掉
+  quota                 每个账号用了多少:本机的现读,别的机器的按上次带回来的
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
@@ -404,6 +408,15 @@ agents-sessions-head = "{0} 有 {1} 段对话(记于 {2}):"
 agents-sessions-unasked = "还没问过 {0}:khor agents sessions {0} --ask"
 # The head when the answer was just taken, rather than remembered.
 agents-sessions-asked = "{0} 说它有 {1} 段对话:"
+# `khor accounts` / `khor quota` with nothing registered.
+accounts-none = "还没登记过 API 账号(khor accounts add …)"
+account-budget-number = "--budget 后面要跟一个数"
+account-name-ambiguous = "有不止一个账号叫 {0},用 id 指"
+# `khor quota`'s figure column when the reading is a trouble key rather
+# than a number (`khor_node::accounts::trouble`).
+quota-trouble = "问不出来({0})"
+quota-unlimited = "不限量"
+quota-no-number = "没有数"
 # `--resume` given without `--agent`. **不猜**:一个光秃秃的 id 说不出
 # 该由谁去起,拿默认的去开会开出一段新对话然后管它叫那段旧的。
 resume-needs-agent = "--resume 要和 --agent 一起用:光有 id 说不出该由哪个 agent 去续"
@@ -919,6 +932,16 @@ agent-wants-a-login = "这个 agent 要先登录才能开会话(它说: {0})"
 # An agent has to run beside a khor, and a satellite has none: what
 # `open --on` reaches there over ssh is a shell.
 agent-not-on-a-satellite = "{0} 是附属机器,上面没有 khor,起不了 agent;开终端可以"
+# Registering an API account (`Node::register_account`). 拒的都拒在名字
+# 上:少了什么就说少了什么,不替人猜。
+account-name-blank = "得给这个账号起个名字"
+account-key-blank = "钥匙是空的"
+account-needs-address = "new-api 每个站地址不同,得给它的地址"
+account-address-bad = "地址要以 http:// 或 https:// 开头: {0}"
+account-budget-bad = "预算得是个正数"
+no-such-account = "没登记过这个账号: {0}"
+no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai"
+cant-make-keys-dir = "建不了钥匙目录: {0}"
 # Resuming a vendor session that another process is running right now
 # (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
 # refuses is a second agent on the same transcript, and a row whose
@@ -1016,6 +1039,44 @@ new-session-machine = "在哪台"
 # The strip of open sessions over the pane (aria name): the sessions
 # a person has open, iTerm's arrangement.
 session-tabs = "打开的会话"
+# ── 额度 ──────────────────────────────────────────────────────────
+# The rail's sixth landing: registered API accounts as rings. 「额度」
+# not 「用量」— `khor usage` (花了多少) already owns that word.
+accounts-tab = "额度"
+accounts-empty = "还没登记过 API 账号——登记一个,它用了多少就画在这儿"
+accounts-register = "登记"
+accounts-provider = "哪家"
+accounts-provider-newapi = "new-api 站"
+accounts-provider-claude = "Claude API"
+accounts-provider-openai = "OpenAI API"
+accounts-name = "叫什么"
+accounts-address = "地址"
+accounts-key = "钥匙"
+# Said under the key box before a secret is pasted: where it goes.
+accounts-key-stays = "钥匙只留在这台机器上,别的机器读这台读到的数。"
+# …and which key can read usage at all: both vendors' usage reports are
+# organisation-level admin calls; a plain API key cannot read them.
+accounts-needs-admin = "这家读用量要 admin 钥匙,普通 API 钥匙读不到。"
+accounts-budget = "每月预算"
+accounts-budget-hint = "不填就只记数,不画环"
+accounts-no-budget = "没定预算,只记数"
+accounts-state = "怎么了"
+accounts-spent = "已用"
+accounts-of = "{0} / {1}"
+accounts-unlimited = "不限量"
+accounts-resets = "重置"
+accounts-read-by = "读数"
+accounts-read-here = "这台机器刚读的"
+accounts-read-from = "{0} 读的,{1} 前"
+accounts-remove = "撤掉"
+# The trouble keys (`khor_node::accounts::trouble`), one sentence each.
+accounts-trouble-key-refused = "钥匙被拒了"
+accounts-trouble-unreachable = "连不上"
+accounts-trouble-unreadable = "读不懂它的回答"
+accounts-trouble-cooling = "刚失败过,歇一会再问"
+accounts-trouble-no-key = "那台机器上没有这个账号的钥匙"
+accounts-trouble-no-reading = "那台机器还没答过"
+accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
 new-session-dir = "目录"
 # **The wizard's first question, answered before it is asked.** A
 # person walks into a directory and then starts something there — so

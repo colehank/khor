@@ -33,10 +33,12 @@ import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
 import type { QuotaWindow } from "./gen/bindings/QuotaWindow";
 import type { QuotaTrouble } from "./gen/bindings/QuotaTrouble";
 import type { MachineLog } from "./gen/bindings/MachineLog";
+import type { AccountRing } from "./gen/bindings/AccountRing";
 import type { ChatMsgRow } from "./gen/bindings/ChatMsgRow";
 import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
 
 export type {
+  AccountRing,
   PlaceRow,
   SessionRow,
   DeviceRow,
@@ -196,6 +198,22 @@ export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by
 export const fetchDayStrips = (cells: number) =>
   call<Record<string, DayRun[]>>("day_strips", { cells });
 export const fetchDevices = () => call<DeviceRow[]>("devices");
+/** The 额度 page's rings: one per registered account, wherever its key
+    lives — this machine's read now, another's as last carried here
+    with its age (`Node::quota_board`). */
+export const fetchQuotaBoard = () => call<AccountRing[]>("quota_board");
+/** 登记 an API account **on this machine**: the key is written here and
+    never leaves; the description replicates. `provider` is the word the
+    form offers (newapi / claude / openai); the node refuses an unknown
+    one by name. Answers the new account's id. */
+export const registerAccount = (a: {
+  name: string;
+  provider: string;
+  base_url?: string;
+  key: string;
+  budget?: number;
+}) => call<string>("register_account", a);
+export const removeAccount = (id: string) => call<null>("remove_account", { id });
 /* **There is no `fetchUsage` any more**, and its absence is the point.
    It asked the node for every day there has ever been — an eighteen
    second first pass on the machine answering (`khor_node::usage`) — for

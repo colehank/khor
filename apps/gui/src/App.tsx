@@ -23,6 +23,7 @@ import {
   IconDevices,
   IconFiles,
   IconMore,
+  IconQuota,
   IconSessions,
 } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
@@ -57,6 +58,7 @@ import { MandalaMap } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { MarkPlace } from "@/views/MarkPlace";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
+import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
 import { TellDialog } from "@/views/TellDialog";
@@ -69,7 +71,7 @@ import { TellDialog } from "@/views/TellDialog";
  * card, its disk, or its network. Files opens a directory; browser
  * borrows the network and opens a page through it (docs/NET.md 借网).
  */
-type Landing = "sessions" | "devices" | "files" | "browser";
+type Landing = "sessions" | "devices" | "files" | "browser" | "quota";
 
 /**
  * The app's mark opens a place of its own: the whole mesh, and what the
@@ -180,6 +182,7 @@ function storedWordsAll(): Record<Landing, string[]> {
     devices: storedWords("devices"),
     files: storedWords("files"),
     browser: storedWords("browser"),
+    quota: storedWords("quota"),
   };
 }
 
@@ -188,11 +191,16 @@ const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
   { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
   { key: "files", name: gui.files_tab, glyph: <IconFiles /> },
   { key: "browser", name: gui.browser_tab, glyph: <IconBrowser /> },
+  // 额度: the registered API accounts as rings (`QuotaLanding`). Like
+  // the browsing landings it is one region rather than a list beside a
+  // detail — its list is its own, and the rail only opens it.
+  { key: "quota", name: gui.accounts_tab, glyph: <IconQuota /> },
 ];
 
 const NO_QUERIES: Record<Landing, string> = {
   sessions: "",
   devices: "",
+  quota: "",
   files: "",
   browser: "",
 };
@@ -816,7 +824,13 @@ export default function App() {
         // bar keeps `gap-in`: `justify-around` is already spending the
         // row's width, and a phone's rail has no room to give
         // (`scripts/check-rail.mjs` measures what overflow does there).
-        narrow ? "flex-row justify-around gap-in border-t py-1" : "w-rail flex-col gap-row border-r py-3",
+        // `gap-1` on the narrow bar, not `gap-in`: eight items at the
+        // finger floor are 352 wide before any gap, and the sixth
+        // landing (额度) put `gap-in`'s eight-per-gap over a 390 phone by
+        // twelve — the bar overflowed and the whole page scrolled
+        // sideways (check-tabs found it). `justify-around` still spreads
+        // whatever room is left, so the group reads as one.
+        narrow ? "flex-row justify-around gap-1 border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
       {LANDINGS.map((l) => (
@@ -914,6 +928,9 @@ export default function App() {
   /** Whether this landing browses (docs/UX.md 浏览型) — the two that do
       share one shell and have no list pane at all. */
   const browses = landing === "files" || landing === "browser";
+  // The 额度 page is one region like the browsing landings, for the
+  // reason its rail entry gives.
+  const quotas = landing === "quota";
   // Every row's last day, on one beat, for the band under the open
   // session's header (`DetailPane`). Sized to the pane the band is drawn
   // in — measured, never assumed (`useStripWidth`) — and asked for every
@@ -1202,11 +1219,13 @@ export default function App() {
                 says nothing about it and it is keyed on its own. */}
             {mark
               ? markPlace
-              : browses
-                ? browsingLanding
-                : screen === "detail" && detail
-                  ? detail
-                  : list}
+              : quotas
+                ? <QuotaLanding narrow />
+                : browses
+                  ? browsingLanding
+                  : screen === "detail" && detail
+                    ? detail
+                    : list}
           </div>
           {rail}
           {sheets}
@@ -1217,6 +1236,10 @@ export default function App() {
           {rail}
           {mark ? (
             <div className="min-w-0 flex-1">{markPlace}</div>
+          ) : quotas ? (
+            <div className="min-w-0 flex-1">
+              <QuotaLanding narrow={false} />
+            </div>
           ) : browses ? (
             // The whole width beside the rail, and that width is the
             // point: what the machine column used to spend is now the

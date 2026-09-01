@@ -483,6 +483,72 @@ pub struct PlaceRow {
 /// still right there.
 const PLACES_SHOWN: usize = 8;
 
+/// One ring on the 额度 page: an account's reading, whose it is and how
+/// old it is, with the strain decided by the node (`accounts::strain_of`)
+/// so the face only paints.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct AccountRing {
+    pub reading: khor_core::AccountReading,
+    /// How long ago the reading was carried here — 0 for this machine's
+    /// own, which is read now.
+    #[ts(type = "number")]
+    pub age_ms: u64,
+    /// The name of the machine holding the key (`reading.home` is its id).
+    pub home_name: String,
+    pub mine: bool,
+    pub strain: Option<khor_core::Strain>,
+    pub base_url: Option<String>,
+    #[ts(type = "number | null")]
+    pub budget: Option<f64>,
+}
+
+/// Every registered account's ring (`Node::quota_board`), home machines
+/// named.
+pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
+    let n = open(root)?;
+    let me = n.device_str().to_owned();
+    let names: std::collections::HashMap<String, String> =
+        n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
+    let accounts = n.accounts()?;
+    Ok(n.quota_board()
+        .await?
+        .into_iter()
+        .map(|(reading, age_ms)| {
+            let account = accounts.iter().find(|a| a.id == reading.account);
+            AccountRing {
+                home_name: names.get(&reading.home).cloned().unwrap_or_else(|| reading.home.clone()),
+                mine: reading.home == me,
+                strain: khor_node::accounts::strain_of(reading.fill),
+                base_url: account.and_then(|a| a.base_url.clone()),
+                budget: account.and_then(|a| a.budget),
+                age_ms,
+                reading,
+            }
+        })
+        .collect())
+}
+
+/// 登记 (`Node::register_account`): the provider word is parsed here so
+/// the face and the CLI refuse an unknown one with the same sentence.
+/// Answers the new account's id.
+pub fn register_account(
+    root: &Path,
+    name: &str,
+    provider: &str,
+    base_url: Option<&str>,
+    key: &str,
+    budget: Option<f64>,
+) -> Result<String, String> {
+    let provider = khor_node::Provider::parse(provider)
+        .ok_or_else(|| khor_catalog::msg::no_such_provider(provider))?;
+    Ok(open(root)?.register_account(name, provider, base_url, key, budget)?.id)
+}
+
+pub fn remove_account(root: &Path, id: &str) -> Result<(), String> {
+    open(root)?.remove_account(id)
+}
+
 /// 常去的地方, newest first, **on the machine the wizard names**
 /// (`khor_node::Node::places_on`; empty means this one). `shown` comes
 /// from the answering machine — whose home a path is under is its
