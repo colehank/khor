@@ -196,16 +196,83 @@ impl Codex {
     /// `response_item` call lines. Reasoning is encrypted in the file
     /// and stays unread.
     pub fn transcript(&self, uuid: &str) -> Result<Vec<super::claude::Utterance>, String> {
-        use super::claude::Utterance;
-        use std::io::BufRead;
         let path = self
             .rollout_path(uuid)
             .ok_or_else(|| khor_catalog::msg::takeover_no_record(uuid))?;
-        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-        let mut out = Vec::new();
-        for line in std::io::BufReader::new(file).lines() {
-            let Ok(line) = line else { break };
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        Ok(utterances_of(&text))
+    }
+
+    /// The same conversation, **followed**: what the rollout has said
+    /// since byte `from`, and where to continue.
+    ///
+    /// # Why this exists at all
+    ///
+    /// Without it a codex row read its whole record once and then never
+    /// again — `Node::transcript_follow` answered `following: false`
+    /// for it, and the pane stopped where the first read stopped. A
+    /// conversation that is still going, painted once and then frozen,
+    /// is worse than one that says it cannot be followed: nothing on
+    /// screen says which.
+    ///
+    /// **The reason recorded for not doing it was wrong**, and it is
+    /// worth saying so rather than quietly fixing it: the note said
+    /// codex's rollout "is a different shape" and cannot seek. It is
+    /// line-delimited JSON, exactly what claude's is for this purpose —
+    /// the *contents* of the lines differ, and that difference is
+    /// entirely inside [`utterances_of`], which both paths already
+    /// share. A claim about one layer was used to close a question at
+    /// another.
+    ///
+    /// The three cases and their answers are claude's, deliberately —
+    /// see [`super::claude::Claude::transcript_since`], which has the
+    /// argument in full. Grow: the new lines, `at` at the new end.
+    /// Stay: nothing, `at` unchanged. Shrink or be replaced: the file
+    /// whole with `rewound`, because byte 400 of a new file is not byte
+    /// 400 of the old one. A half-written last line is left for next
+    /// time — `at` stops at the last newline.
+    pub fn transcript_since(
+        &self,
+        uuid: &str,
+        from: u64,
+    ) -> Result<super::claude::Follow, String> {
+        use super::claude::Follow;
+        use std::io::{Read, Seek, SeekFrom};
+        let path = self
+            .rollout_path(uuid)
+            .ok_or_else(|| khor_catalog::msg::takeover_no_record(uuid))?;
+        let mut f = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        let len = f.metadata().map_err(|e| e.to_string())?.len();
+        let rewound = len < from;
+        let start = if rewound { 0 } else { from };
+        if len == start {
+            return Ok(Follow { said: Vec::new(), at: len, rewound, following: true });
+        }
+        f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+        let mut buf = Vec::new();
+        f.take(len - start).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        let end = match buf.iter().rposition(|b| *b == b'\n') {
+            Some(i) => i + 1,
+            None => return Ok(Follow { said: Vec::new(), at: start, rewound, following: true }),
+        };
+        let text = String::from_utf8_lossy(&buf[..end]);
+        Ok(Follow { said: utterances_of(&text), at: start + end as u64, rewound, following: true })
+    }
+}
+
+/// The rollout's lines as the shared replay shapes — **the one place
+/// codex's file format is read**, so the whole record and a followed
+/// tail cannot drift into two readings of the same bytes.
+///
+/// `event_msg` lines carry the words (`user_message` / `agent_message`);
+/// tool acts are the `response_item` call lines. Reasoning is encrypted
+/// in the file and stays unread.
+pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
+    use super::claude::Utterance;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
             match v["type"].as_str() {
                 Some("event_msg") => {
                     let p = &v["payload"];
@@ -245,8 +312,8 @@ impl Codex {
                 _ => {}
             }
         }
-        Ok(out)
     }
+    out
 }
 
 /// This vendor's name, which is also the category its rows carry — and,
@@ -587,5 +654,146 @@ mod tests {
         assert!(matches!(&past[2], Utterance::Agent(t) if t == "answered"), "{past:?}");
         assert_eq!(past.len(), 3, "codex's bookkeeping lines must not leak into the past");
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+#[cfg(test)]
+mod following {
+    use super::*;
+    use crate::adaptor::claude::Utterance;
+
+    /// A rollout this test owns, so it can grow and be replaced.
+    fn rollout(dir: &std::path::Path, uuid: &str, lines: &[&str]) -> PathBuf {
+        let day = dir.join("sessions").join("2026").join("09").join("01");
+        std::fs::create_dir_all(&day).unwrap();
+        let p = day.join(format!("rollout-2026-09-01T00-00-00-{uuid}.jsonl"));
+        std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+        p
+    }
+
+    fn said(m: &str) -> String {
+        format!(r#"{{"type":"event_msg","payload":{{"type":"agent_message","message":"{m}"}}}}"#)
+    }
+
+    fn words(said: &[Utterance]) -> Vec<String> {
+        said.iter()
+            .filter_map(|u| match u {
+                Utterance::Agent(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// **A codex conversation can be followed**, which until now it
+    /// could not: `transcript_follow` answered `following: false` for
+    /// one, so the pane read it once and then froze — a conversation
+    /// still going, painted static, with nothing on screen saying it
+    /// had stopped being read.
+    ///
+    /// The three things a file can do between two reads, each with the
+    /// answer claude's reader gives (`claude::transcript_since`).
+    #[test]
+    fn a_rollout_that_grows_is_read_from_where_the_last_read_stopped() {
+        let dir = std::env::temp_dir().join(format!("khor-codex-follow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let uuid = "019fd755-1111-7aaa-8aaa-aaaaaaaaaaaa";
+        let path = rollout(&dir, uuid, &[&said("one")]);
+        let codex = Codex::at(dir.clone());
+
+        let first = codex.transcript_since(uuid, 0).unwrap();
+        assert_eq!(words(&first.said), ["one"]);
+        assert!(first.following, "a rollout is followable");
+        assert!(!first.rewound);
+
+        // **Grow**: only what is new comes back, and the whole point is
+        // that it is only what is new — the control is that "one" is
+        // *not* in the second answer.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        use std::io::Write;
+        writeln!(f, "{}", said("two")).unwrap();
+        drop(f);
+        let second = codex.transcript_since(uuid, first.at).unwrap();
+        assert_eq!(words(&second.said), ["two"], "the tail, not the file");
+        assert!(second.at > first.at);
+
+        // **Stay put**: nothing to say, and `at` does not move.
+        let third = codex.transcript_since(uuid, second.at).unwrap();
+        assert!(third.said.is_empty());
+        assert_eq!(third.at, second.at);
+
+        // **Shrink or be replaced**: byte 400 of a new file is not byte
+        // 400 of the old one, so continuing would splice two
+        // conversations. The whole file comes back, marked `rewound`.
+        std::fs::write(&path, said("fresh") + "\n").unwrap();
+        let fourth = codex.transcript_since(uuid, second.at).unwrap();
+        assert!(fourth.rewound, "a shorter file must not be continued into");
+        assert_eq!(words(&fourth.said), ["fresh"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A half-written last line is left for next time.** The writer
+    /// appends a whole JSON object per line but not atomically, so a
+    /// read can land mid-object; parsing what is there and skipping the
+    /// rest would drop that utterance for good.
+    #[test]
+    fn a_line_the_writer_has_not_finished_is_waited_for() {
+        let dir = std::env::temp_dir().join(format!("khor-codex-partial-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let uuid = "019fd755-2222-7aaa-8aaa-aaaaaaaaaaaa";
+        let path = rollout(&dir, uuid, &[&said("whole")]);
+        let codex = Codex::at(dir.clone());
+        let first = codex.transcript_since(uuid, 0).unwrap();
+        assert_eq!(words(&first.said), ["whole"]);
+
+        // Half an object, no newline yet.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        use std::io::Write;
+        write!(f, "{}", &said("torn")[..20]).unwrap();
+        drop(f);
+        let mid = codex.transcript_since(uuid, first.at).unwrap();
+        assert!(mid.said.is_empty(), "a fragment is not an utterance");
+        assert_eq!(mid.at, first.at, "and the fragment is read again next time");
+
+        // Finished: it arrives whole, exactly once.
+        std::fs::write(&path, said("whole") + "\n" + &said("torn") + "\n").unwrap();
+        let done = codex.transcript_since(uuid, mid.at).unwrap();
+        assert_eq!(words(&done.said), ["torn"], "once the line is whole, once");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **The whole read and the followed read are one reading of the
+    /// file.** Two parsers over one format drift, and the drift shows
+    /// up as a conversation that says different things depending on
+    /// whether the pane happened to be open while it was written.
+    ///
+    /// That is why `transcript` and `transcript_since` both go through
+    /// `utterances_of` and neither has a loop of its own — this asserts
+    /// the property that arrangement exists for.
+    #[test]
+    fn reading_it_whole_and_reading_it_in_two_halves_say_the_same_thing() {
+        let dir = std::env::temp_dir().join(format!("khor-codex-same-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let uuid = "019fd755-3333-7aaa-8aaa-aaaaaaaaaaaa";
+        let path = rollout(&dir, uuid, &[&said("a"), &said("b"), &said("c")]);
+        let codex = Codex::at(dir.clone());
+
+        let whole = words(&codex.transcript(uuid).unwrap());
+        assert_eq!(whole, ["a", "b", "c"], "the control: the record really has three lines");
+
+        // Split at the first line's end, so this is genuinely two reads
+        // of one record rather than one read and an empty one.
+        let cut = std::fs::read_to_string(&path).unwrap().find('\n').unwrap() as u64 + 1;
+        let head = codex.transcript_since(uuid, 0).unwrap();
+        let tail = codex.transcript_since(uuid, cut).unwrap();
+        assert_eq!(words(&head.said), whole, "from zero, the follow reads it all");
+        assert_eq!(words(&tail.said), ["b", "c"], "and from a cut, only what is past it");
+
+        let mut halves = vec!["a".to_owned()];
+        halves.extend(words(&tail.said));
+        assert_eq!(halves, whole, "one format, one reading");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -471,15 +471,28 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     // - `config_option_update` — a session's own settings changing.
     //   Nothing offers those settings yet, so a notice that one moved
     //   would be about a control this face does not have.
-    // - `ToolCallContent::Terminal` — a tool whose output is a live
-    //   terminal rather than text. khor's own 垫片 never sends one;
-    //   `Content` and `Diff` are read (`contentIn`, `diffIn`).
     // - the unstable plan operations (`plan_update`, `plan_removed`),
     //   which are behind a feature flag in the protocol crate and may
     //   change or go.
     //
-    // A list like this rots, and this one already did: it used to name
-    // three things that are painted now.
+    // **`ToolCallContent::Terminal` left this list, and not by being
+    // painted.** It sat here reading like a missing view — a tool whose
+    // output is a live terminal, and khor draws no terminal for it —
+    // and read that way the next step is obviously to go paint one.
+    //
+    // It cannot arrive. `terminal/*` are agent→client requests: the
+    // agent asks *khor* to start a process on this machine and is
+    // handed a `TerminalId` back, and the v1 schema grants them only to
+    // a client that set `terminal: true`. khor sets it false, so no
+    // conforming agent has an id to put in a tool call. **What the line
+    // described as a gap in this face is a door khor is holding shut**,
+    // and the thing worth guarding is the door — which is now a test
+    // beside the handshake rather than a sentence here
+    // (`khor_acp::what_khor_grants`).
+    //
+    // A list like this rots, and this one already has twice: it used to
+    // name three things that are painted now, and one thing that was
+    // never going to happen.
     default:
       return false;
   }

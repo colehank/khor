@@ -2553,14 +2553,27 @@ impl Node {
     /// A discovered conversation, followed: what its transcript has said
     /// since byte `from`.
     ///
-    /// **Following is the fast path, never the only one.** Only claude's
-    /// reader can seek — codex's rollout is a different shape, and a
-    /// khor-minted leaf may resolve through neither — so anything the
-    /// seek cannot serve falls back to reading the record whole, marked
-    /// `rewound` so the face repaints instead of appending.
+    /// **Following is the fast path, never the only one.** A leaf that
+    /// resolves through neither vendor's store falls back to reading
+    /// the record whole, marked `rewound` so the face repaints instead
+    /// of appending.
     ///
-    /// **Written this way because the first version was not**, and the
-    /// smoke caught it: it failed where [`Node::transcript_of`]
+    /// **Both vendors seek now.** The note here used to say only
+    /// claude's reader could, "codex's rollout is a different shape" —
+    /// and that was wrong in a way worth leaving a stone for: the
+    /// rollout is line-delimited JSON, which is all this path needs.
+    /// What differs between the two vendors is what a *line* means, and
+    /// that difference was already sealed inside each store's own
+    /// `utterances_of`. **A true statement about one layer was used to
+    /// answer a question at another**, and the cost was a codex
+    /// conversation that painted once and then froze — still going, and
+    /// nothing on screen saying it had stopped being read.
+    ///
+    /// The fork is `transcript_of`'s: whoever resolves the leaf owns
+    /// the session, claude asked first.
+    ///
+    /// **Written with a fallback because the first version was not**,
+    /// and the smoke caught it: it failed where [`Node::transcript_of`]
     /// succeeds, and a first read that fails is a conversation the
     /// screen reports as having no record at all. A faster path that
     /// can *lose* a conversation is not a faster path.
@@ -2578,6 +2591,11 @@ impl Node {
                 adaptor::claude::Claude::at(vhome.join(".claude"))
                     .transcript_since(&leaf, from)
                     .ok()
+                    .or_else(|| {
+                        let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+                        let full = codex.full_session_id(&leaf)?;
+                        codex.transcript_since(&full, from).ok()
+                    })
             });
         if let Some(follow) = seek {
             return Ok(follow);

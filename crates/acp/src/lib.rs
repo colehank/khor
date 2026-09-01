@@ -637,3 +637,77 @@ fn refusal(e: agent_client_protocol::Error) -> Refusal {
         _ => Refusal::Wont(e.message),
     }
 }
+
+#[cfg(test)]
+mod what_khor_grants {
+    use super::*;
+
+    /// **khor does not let an agent run commands on this machine**, and
+    /// this is the assertion that says so out loud.
+    ///
+    /// # What the capability actually grants
+    ///
+    /// `terminal/create`, `terminal/output`, `terminal/kill` and their
+    /// siblings are **agent→client** requests: the agent asks *khor* to
+    /// start a process here and hands back a `TerminalId`. The v1
+    /// schema is explicit that they exist only when the client set
+    /// `terminal: true`. So the flag is not a rendering option — it is
+    /// the difference between an agent that talks and an agent that
+    /// runs things on the user's computer through khor.
+    ///
+    /// # Why it is a test and not a comment
+    ///
+    /// This started life as a line on a ledger reading "`ToolCallContent
+    /// ::Terminal` — a tool whose output is a live terminal rather than
+    /// text, unpainted". Read that way it sounds like a missing view,
+    /// and the obvious next step is to go paint it.
+    ///
+    /// **It is not reachable at all**: a conforming agent cannot put a
+    /// terminal id in a tool call without having been given one, and
+    /// khor gives none. What the ledger line described as a gap in the
+    /// face is a door that is shut, and the thing worth guarding is the
+    /// door — a `true` written here one day, for a reason that sounded
+    /// small, would open it with nothing to notice.
+    ///
+    /// Asserted on the **serialized request**, because that is what an
+    /// agent reads. A default that changed meaning in a future schema
+    /// would pass a test that only read the Rust field.
+    #[test]
+    fn the_handshake_does_not_offer_an_agent_a_terminal_on_this_machine() {
+        let hello = InitializeRequest::new(ProtocolVersion::V1);
+        let wire = serde_json::to_value(&hello).expect("the handshake must serialize");
+        let caps = &wire["clientCapabilities"];
+
+        // The live probe that earns the negative below: the object khor
+        // sends really does carry capabilities, so "terminal is not
+        // true" is a reading of something rather than of nothing.
+        assert!(
+            caps.is_object(),
+            "probe dead — the handshake carries no capabilities at all: {wire}"
+        );
+        assert!(
+            caps.get("terminal").is_some(),
+            "probe dead — the key being asserted on is not in the object at all: {wire}"
+        );
+
+        // Measured 2026-09-01, the whole of what khor grants:
+        //   {"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}
+        assert_eq!(
+            caps["terminal"],
+            serde_json::json!(false),
+            "khor must not offer an agent a terminal on this machine: {caps}",
+        );
+
+        // **The same door, one hinge over.** `fs/read_text_file` and
+        // `fs/write_text_file` are agent→client too: they let the agent
+        // read and write this machine's files through khor. Nothing
+        // here needs them either — an ACP agent khor starts is already
+        // running on this machine with its own hands — and a capability
+        // granted "so it works" is granted for as long as nobody looks.
+        assert_eq!(
+            caps["fs"],
+            serde_json::json!({ "readTextFile": false, "writeTextFile": false }),
+            "khor must not offer an agent this machine's files: {caps}",
+        );
+    }
+}

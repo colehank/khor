@@ -1535,3 +1535,68 @@ mod finding_the_program {
         );
     }
 }
+
+/// **A codex conversation is followed, not read once and frozen.**
+///
+/// The claim is about the *dispatch*, which is a different claim from
+/// "codex's reader can seek" — that one has its own tests beside the
+/// reader (`adaptor::codex::following`). This is the one those cannot
+/// make: that `transcript_follow` actually asks codex.
+///
+/// The hole it guards is the one this repo keeps finding: a reader that
+/// works perfectly and is never called. Taking the `or_else` out of
+/// `transcript_follow` leaves every test beside the reader green and
+/// reds only this one — the pane goes back to `following: false`, which
+/// on screen is a live conversation painted once and then still, with
+/// nothing saying it stopped being read.
+#[test]
+fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
+    let r = root("codex-follow");
+    let n = Node::open(r.clone()).unwrap();
+    let tui = n.open_ephemeral(khor_core::kind::TUI, "a codex").unwrap();
+
+    let uuid = "019fd755-4444-7aaa-8aaa-aaaaaaaaaaaa";
+    let day = crate::adaptor::vendor_home(&r)
+        .join(".codex")
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("01");
+    fs::create_dir_all(&day).unwrap();
+    let roll = day.join(format!("rollout-2026-09-01T00-00-00-{uuid}.jsonl"));
+    let line = |m: &str| {
+        format!(r#"{{"type":"event_msg","payload":{{"type":"agent_message","message":"{m}"}}}}"#)
+    };
+    fs::write(&roll, line("first") + "\n").unwrap();
+
+    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid)).unwrap();
+
+    let one = n.transcript_follow(&tui, 0).unwrap();
+    assert!(
+        one.following,
+        "a codex rollout is seekable, so the pane must be told to keep asking"
+    );
+    assert!(one.at > 0, "and told where to continue from");
+    assert_eq!(
+        one.said,
+        vec![crate::adaptor::claude::Utterance::Agent("first".into())],
+    );
+
+    // What "followed" means, and the half a `following: true` alone
+    // would not prove: the second ask brings back what was said after
+    // the first, and **only** that.
+    let mut f = fs::OpenOptions::new().append(true).open(&roll).unwrap();
+    use std::io::Write;
+    writeln!(f, "{}", line("second")).unwrap();
+    drop(f);
+    let two = n.transcript_follow(&tui, one.at).unwrap();
+    assert_eq!(
+        two.said,
+        vec![crate::adaptor::claude::Utterance::Agent("second".into())],
+        "the tail, not the whole record again"
+    );
+    assert!(!two.rewound, "a growing file is appended to, not repainted");
+
+    let _ = fs::remove_dir_all(&r);
+}
