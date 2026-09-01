@@ -3826,6 +3826,80 @@ for line in sys.stdin:
     await new Promise((r) => setTimeout(r, 300));
     return (await page.locator("[data-terminal]").innerText()).includes(paneMarker);
   });
+
+  // **An input method's half-built word is not input.** Typing 中文 was
+  // impossible here until 2026-09-01: an IME composes in whatever is
+  // focused, the grid is a `div`, and there was nowhere for it to
+  // compose — so the composition went to nobody.
+  //
+  // Two claims, and the negative one is the whole bug: the spelling
+  // must *not* reach the program (otherwise a person typing 中 sends
+  // `z h o n g` into their shell), and the finished word must.
+  //
+  // Driven as composition events rather than through a real IME,
+  // because there is no IME on a CI box — what is under test is khor's
+  // half of the contract, and these are the events a browser delivers.
+  const imeSaid = await page.evaluate(async () => {
+    const field = document.querySelector("[data-term-keys]");
+    if (!field) return { error: "no field for an input method to compose in" };
+    const sent = [];
+    const orig = window.fetch;
+    window.fetch = function (u, o) {
+      try {
+        if (String(u).includes("term_key")) sent.push(JSON.parse(o.body).keys);
+      } catch { /* not the call under test */ }
+      return orig.apply(this, arguments);
+    };
+    // **Focus is taken the way a person takes it — on the grid** — so
+    // that this reads the wiring and not itself: `field.focus()`
+    // followed by "is the field focused" is a question with one
+    // possible answer. A decoy holds it first, so there is a real move
+    // to observe.
+    const decoy = document.createElement("input");
+    document.body.append(decoy);
+    decoy.focus();
+    const grid = document.querySelector("[data-terminal]");
+    if (!grid) return { error: "no terminal grid to aim the focus at" };
+    grid.focus();
+    await new Promise((r) => setTimeout(r, 50));
+    const landed = document.activeElement === field;
+    decoy.remove();
+    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    for (const partial of ["z", "zh", "zho", "zhong"]) {
+      field.value = partial;
+      field.dispatchEvent(
+        new InputEvent("input", { bubbles: true, data: partial, isComposing: true }),
+      );
+    }
+    await new Promise((r) => setTimeout(r, 150));
+    const spelling = [...sent];
+    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }));
+    await new Promise((r) => setTimeout(r, 300));
+    window.fetch = orig;
+    return { spelling, all: sent, left: field.value, focused: landed };
+  });
+  if (imeSaid.error) throw new Error(imeSaid.error);
+  if (!imeSaid.focused) {
+    throw new Error(
+      "aiming the focus at the grid must land it on the field — an input " +
+        "method composes in whatever is focused, and a `div` is nowhere",
+    );
+  }
+  if (imeSaid.spelling.length !== 0) {
+    throw new Error(
+      `the spelling reached the program: ${JSON.stringify(imeSaid.spelling)} — ` +
+        `a person typing 中 would be sending its pinyin into their shell`,
+    );
+  }
+  // The positive half, which is what makes the negative one mean
+  // something: a check that only asserted silence would pass on a
+  // terminal that had stopped taking input at all.
+  if (!imeSaid.all.includes("中文")) {
+    throw new Error(`the finished word never went out: ${JSON.stringify(imeSaid.all)}`);
+  }
+  if (imeSaid.left !== "") {
+    throw new Error(`the field kept the word and would send it again: ${imeSaid.left}`);
+  }
   // 24m) bracketed paste (批④ 前置): a paste is sent as a paste, and the
   //      wrapping is the running program's choice rather than this app's.
   //

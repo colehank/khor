@@ -13,6 +13,7 @@ import {
   termOpen,
   termPaste,
   termPoll,
+  termWheel,
   termResize,
   type TermColor,
   type TermScreen,
@@ -372,8 +373,38 @@ export function TerminalPane({ id }: { id: string }) {
   // A wheel moves through history, in lines rather than pixels — the
   // grid has no pixels to scroll, it is repainted from wherever the
   // reader is standing.
+  /**
+   * **Where a notch goes is the screen's answer, not this pane's.**
+   * Three facts decide it — the mouse mode the program set, its
+   * encoding, and whether a full-screen program is up — and all three
+   * belong to the emulator (`khor_gui_core::term::Wheel`).
+   *
+   * Before this, every notch walked khor's scrollback, and on a
+   * full-screen program that meant walking fragments of its repaints:
+   * one notch inside tmux filled the pane with copies of its status bar
+   * (reported 2026-09-01). **A full-screen program has no scrollback**
+   * — it draws in place on the alternate screen — so there was never
+   * anything there to walk.
+   */
   const onWheel = (e: React.WheelEvent) => {
-    const lines = Math.round(e.deltaY / (cellRef.current.h || 16));
+    const { w, h } = cellRef.current;
+    const where = screen?.wheel ?? "to_the_history";
+    if (where === "nowhere") return;
+    if (where === "to_the_program") {
+      // Notch by notch, and the cell under the pointer with it: a
+      // program that scrolls a pane needs to know which pane.
+      const box = boxRef.current?.getBoundingClientRect();
+      const col = box && w > 0 ? Math.max(0, Math.floor((e.clientX - box.left - 4) / w)) : 0;
+      const row = box && h > 0 ? Math.max(0, Math.floor((e.clientY - box.top - 4) / h)) : 0;
+      const notches = Math.min(5, Math.max(1, Math.round(Math.abs(e.deltaY) / (h || 16))));
+      for (let i = 0; i < notches; i += 1) {
+        termWheel(id, e.deltaY < 0 ? "up" : "down", col, row).catch(() => {});
+      }
+      // The program repaints in answer; ask sooner than the idle beat.
+      pollNow.current();
+      return;
+    }
+    const lines = Math.round(e.deltaY / (h || 16));
     if (lines === 0) return;
     setBack(backRef.current - lines);
   };
@@ -396,6 +427,25 @@ export function TerminalPane({ id }: { id: string }) {
     // Carried forward rather than reset, so a slow drag accumulates
     // instead of rounding to nothing on every frame.
     dragFrom.current = y;
+    // **The same three-way answer the wheel gets**, and not by
+    // coincidence: this *is* the wheel, on a screen that has none, so a
+    // drag inside a full-screen program must reach the program or
+    // nothing — never khor's history, which on that screen is fragments
+    // of repaints.
+    const where = screen?.wheel ?? "to_the_history";
+    if (where === "nowhere") return;
+    if (where === "to_the_program") {
+      const box = boxRef.current?.getBoundingClientRect();
+      const { w, h } = cellRef.current;
+      const t = e.touches[0];
+      const col = box && w > 0 ? Math.max(0, Math.floor((t.clientX - box.left - 4) / w)) : 0;
+      const row = box && h > 0 ? Math.max(0, Math.floor((t.clientY - box.top - 4) / h)) : 0;
+      for (let i = 0; i < Math.min(5, Math.abs(lines)); i += 1) {
+        termWheel(id, lines > 0 ? "up" : "down", col, row).catch(() => {});
+      }
+      pollNow.current();
+      return;
+    }
     setBack(backRef.current + lines);
   };
 
@@ -408,13 +458,43 @@ export function TerminalPane({ id }: { id: string }) {
    * `div`, was *read-only on every phone* while looking completely
    * normal in every desktop screenshot. A field is the only way in.
    *
-   * It stays out of the way: no pointer events, one pixel, invisible.
-   * Focused only on a touch, so a mouse still selects text on the grid
-   * the way it always has and the desktop path is unchanged.
+   * It stays out of the way: no pointer events, invisible, and no
+   * bigger than a cell.
+   *
+   * **And it holds the focus on every screen, not only a phone.** It
+   * used to take focus on a touch alone, on the reasoning that the
+   * desktop path was fine as it was — and the desktop path could not
+   * type Chinese. An input method needs somewhere editable to compose
+   * in; the grid is a `div`, so there was nowhere, and the composition
+   * went to no one (reported 2026-09-01). Every browser terminal does
+   * it this way for exactly this reason.
+   *
+   * Nothing is lost by it: key events bubble from the field to the grid,
+   * so `onKeyDown` still sees every key it did, and a selection is DOM
+   * text either way — what focus decides is where a composition lands,
+   * not what a mouse can drag over.
    */
   const keys = useRef<HTMLTextAreaElement>(null);
+  /** True between `compositionstart` and `compositionend`: the field is
+      holding half a word and nothing in it is for the program yet. */
+  const composing = useRef(false);
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.pointerType !== "touch") return;
+    if (e.pointerType !== "touch") {
+      // **A mouse press hands the keys to the field too**, and this is
+      // the path that matters on a desktop: an input method composes in
+      // whatever is focused, so with the grid holding focus there was
+      // nowhere for 中文 to be typed at all.
+      //
+      // No `preventDefault` on this branch — the press must still start
+      // a selection on the grid, which is the reason the touch branch
+      // below needs one and this one must not have it. Deferred past
+      // the browser's own focus handling for the same reason the touch
+      // branch preventDefaults: the `div` carries `tabIndex`, so it
+      // takes focus a moment after this handler runs.
+      const field = keys.current;
+      if (field) window.setTimeout(() => field.focus({ preventScroll: true }), 0);
+      return;
+    }
     // **The default action is what takes it back.** Focusing the field
     // here is not enough: this `div` carries `tabIndex={0}`, so the
     // browser's own handling of the press moves focus onto it a moment
@@ -440,6 +520,14 @@ export function TerminalPane({ id }: { id: string }) {
    * than one character.
    */
   const onInput = () => {
+    // **Not while a word is being built.** An input method fires
+    // `input` on every keystroke of the spelling, so without this the
+    // program is handed the pinyin one letter at a time and then the
+    // characters as well — which is what "can't type Chinese" looked
+    // like from the outside. The finished word arrives at
+    // `compositionend`, which is the one event that means "this is what
+    // I meant".
+    if (composing.current) return;
     const field = keys.current;
     if (!field?.value) return;
     const typed = field.value;
@@ -448,7 +536,29 @@ export function TerminalPane({ id }: { id: string }) {
     termKey(id, typed).catch(() => {});
   };
 
+  const onCompositionStart = () => {
+    composing.current = true;
+  };
+  const onCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    composing.current = false;
+    // The field is cleared here rather than left for `onInput`: Safari
+    // does not always fire one after a composition, and a word left in
+    // the box would be sent again with the next keystroke.
+    const field = keys.current;
+    if (field) field.value = "";
+    const said = e.data;
+    if (!said) return;
+    setBack(0);
+    termKey(id, said).catch(() => {});
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // **An input method's keys belong to the input method.** While a
+    // word is being spelled, Enter and the arrows pick candidates;
+    // reading them as terminal keys would send a newline into the
+    // program in the middle of somebody's word. `isComposing` is the
+    // browser's own answer to "is this key part of a composition".
+    if (e.nativeEvent.isComposing || composing.current) return;
     // **Shift+Page is this app's, plain Page is the program's.** Full
     // screen programs use PageUp for their own paging, and a terminal
     // that ate it would break `less` to add a feature. Shift is the
@@ -522,6 +632,17 @@ export function TerminalPane({ id }: { id: string }) {
       onCopy={onCopy}
       onPaste={onPaste}
       onPointerDown={onPointerDown}
+      // **Focus lands on the field, wherever it was aimed.** The grid
+      // keeps `tabIndex` so a click and a Tab both reach this pane, and
+      // then hands the keys to the one element an input method can
+      // compose in. This is the keyboard's way in (Tab); the pointer's
+      // is `onPointerDown`. Guarded on the target so the field focusing
+      // itself does not bounce.
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) {
+          keys.current?.focus({ preventScroll: true });
+        }
+      }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       ref={boxRef}
@@ -562,11 +683,26 @@ export function TerminalPane({ id }: { id: string }) {
         aria-hidden
         tabIndex={-1}
         onInput={onInput}
+        onCompositionStart={onCompositionStart}
+        onCompositionEnd={onCompositionEnd}
         autoCapitalize="off"
         autoCorrect="off"
         autoComplete="off"
         spellCheck={false}
-        className="pointer-events-none absolute h-px w-px resize-none border-0 p-0 opacity-0"
+        // **Parked on the cursor cell**, because that is where the
+        // input method draws its candidate list — at the caret of the
+        // field it is composing in. Left in the corner it was, a person
+        // typing at the bottom of the screen picked characters from a
+        // list floating over the top of it. One cell, invisible, and
+        // out of the way of the pointer.
+        style={{
+          left: 4 + (screen?.cursor_col ?? 0) * cw,
+          top: 4 + (screen?.cursor_row ?? 0) * ch,
+          width: cw,
+          height: ch,
+          font: "inherit",
+        }}
+        className="pointer-events-none absolute resize-none overflow-hidden border-0 bg-transparent p-0 text-transparent caret-transparent outline-none"
       />
       {/* An off-screen glyph in the exact font, measured for the cell box
           before anything is painted. */}

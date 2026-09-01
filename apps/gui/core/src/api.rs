@@ -193,6 +193,15 @@ pub fn answer(
             crate::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())
         }
+        "term_wheel" => {
+            crate::term::term_wheel(
+                &arg("id")?,
+                arg("dir")? == "up",
+                num("col")? as u16,
+                num("row")? as u16,
+            )?;
+            Ok("null".to_owned())
+        }
         "term_paste" => {
             crate::term::term_paste(&arg("id")?, &arg("text")?)?;
             Ok("null".to_owned())

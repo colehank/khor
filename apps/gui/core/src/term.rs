@@ -119,7 +119,50 @@ pub struct TermScreen {
     pub cursor_row: u16,
     pub cursor_col: u16,
     pub cursor_hidden: bool,
+    /// **What a wheel notch should do here**, decided once and by the
+    /// emulator that knows — see [`Wheel`].
+    pub wheel: Wheel,
     pub lines: Vec<Vec<TermRun>>,
+}
+
+/// Where a wheel notch goes on this screen.
+///
+/// # The bug this exists for
+///
+/// The wheel walked khor's scrollback unconditionally, and on a
+/// full-screen program that produced garbage: reported 2026-09-01
+/// against a tmux client, where one notch filled the pane with copies
+/// of tmux's status bar and a block of its status colour.
+///
+/// **A full-screen program has no scrollback to walk.** It draws by
+/// addressing the cursor and repainting in place, on the *alternate*
+/// screen — so what falls into khor's history ring is not what scrolled
+/// past, it is fragments of repaints. A real terminal knows this and
+/// turns its own scrolling off while the alternate screen is up; khor
+/// did not, and offered the fragments as history.
+///
+/// # And where the notch goes instead
+///
+/// **To the program, when the program asked for it.** tmux, claude's
+/// TUI and every pager set a mouse mode precisely so that a wheel means
+/// something to them — that is why the wheel works in iTerm inside
+/// tmux and does nothing in a terminal with mouse reporting off. So the
+/// order is: the program if it asked, khor's history if there is real
+/// history, and otherwise nothing.
+///
+/// **Decided here rather than in the face.** Three facts go into it
+/// (the mouse mode, its encoding, and which screen is up), all of them
+/// the emulator's, and a face that re-derived them would be a second
+/// copy of a judgment (docs/UX.md 状态呈现).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum Wheel {
+    /// Send it to the program as a mouse event (`term_wheel`).
+    ToTheProgram,
+    /// Walk khor's own scrollback.
+    ToTheHistory,
+    /// Nowhere: a full-screen program that did not ask for the mouse.
+    Nowhere,
 }
 
 /// How many lines above the screen this app keeps to look back at.
@@ -177,6 +220,26 @@ fn style_of(cell: &vt100::Cell) -> Style {
         underline: cell.underline(),
         inverse: cell.inverse(),
     }
+}
+
+/// [`Wheel`]'s judgment, from the emulator's three facts.
+///
+/// **The encoding is part of it, not an afterthought.** khor writes SGR
+/// (`\e[<b;x;yM`), which is what every program that matters negotiates;
+/// a program asking for the 1978 encoding is answered `Nowhere` rather
+/// than with bytes in a shape it did not ask for — silence is a state
+/// it copes with, a malformed report is not.
+fn wheel_of(screen: &vt100::Screen) -> Wheel {
+    use vt100::{MouseProtocolEncoding, MouseProtocolMode};
+    let asked = screen.mouse_protocol_mode() != MouseProtocolMode::None
+        && screen.mouse_protocol_encoding() == MouseProtocolEncoding::Sgr;
+    if asked {
+        return Wheel::ToTheProgram;
+    }
+    if screen.alternate_screen() {
+        return Wheel::Nowhere;
+    }
+    Wheel::ToTheHistory
 }
 
 /// Reads a `vt100` screen into the shape a face paints, coalescing runs.
@@ -244,6 +307,7 @@ fn snapshot(screen: &vt100::Screen) -> TermScreen {
         cursor_row,
         cursor_col,
         cursor_hidden: screen.hide_cursor(),
+        wheel: wheel_of(screen),
         lines,
     }
 }
@@ -474,6 +538,40 @@ pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
     let term = term_of(id)?;
     let mut conn = plock(&term.conn);
     write_frame(&mut *conn, &ClientOp::Input(bytes))
+}
+
+/// One wheel notch, as the mouse report the program asked for.
+///
+/// **SGR, and only SGR** (`\e[<b;x;yM`): 64 is wheel-up, 65 wheel-down,
+/// and the coordinates are 1-based. It is what tmux, claude's TUI and
+/// every pager negotiate; the older encodings cannot express a column
+/// past 223 and khor would be sending a lie on any real window.
+///
+/// **Clamped to the screen** rather than trusted from the face: a
+/// report naming a cell that is not there is a report about nothing,
+/// and the face's arithmetic runs on a cell size it measured.
+///
+/// Refuses when the program did not ask ([`Wheel`] is the same
+/// judgment, answered on the snapshot the face already has) — so a
+/// notch cannot become bytes that arrive as a stray escape in
+/// somebody's shell prompt.
+pub fn term_wheel(id: &str, up: bool, col: u16, row: u16) -> Result<(), String> {
+    let term = term_of(id)?;
+    let (wheel, cols, rows) = {
+        let g = plock(&term.parser);
+        let screen = g.screen();
+        let (r, c) = screen.size();
+        (wheel_of(screen), c, r)
+    };
+    if wheel != Wheel::ToTheProgram {
+        return Ok(());
+    }
+    let x = col.min(cols.saturating_sub(1)) + 1;
+    let y = row.min(rows.saturating_sub(1)) + 1;
+    let button = if up { 64 } else { 65 };
+    let report = format!("\x1b[<{button};{x};{y}M");
+    let mut conn = plock(&term.conn);
+    write_frame(&mut *conn, &ClientOp::Input(report.into_bytes()))
 }
 
 /// A paste, wrapped the way the program in there asked for it to be.
@@ -756,6 +854,51 @@ mod tests {
             at += r.cells;
         }
         assert_eq!(at, s.cols);
+    }
+
+    /// **Where a wheel notch goes, on the three screens there are.**
+    ///
+    /// The bug: every notch walked khor's scrollback, and inside a
+    /// full-screen program that meant walking fragments of its own
+    /// repaints — one notch in a tmux client filled the pane with
+    /// copies of its status bar (2026-09-01).
+    ///
+    /// The control arm is the ordinary shell, which must keep its
+    /// history: a fix that answered "nowhere" everywhere would stop the
+    /// garbage and take the scrollback with it.
+    #[test]
+    fn a_wheel_notch_goes_to_the_program_the_history_or_nowhere() {
+        let mut p = vt100::Parser::new(4, 10, 100);
+        // A plain shell: no alternate screen, no mouse asked for.
+        p.process(b"hello\r\n");
+        assert_eq!(wheel_of(p.screen()), Wheel::ToTheHistory, "the control: a shell keeps its history");
+
+        // A full-screen program that never asked for the mouse: there is
+        // no history to walk, so a notch has nowhere to go.
+        let mut p = vt100::Parser::new(4, 10, 100);
+        p.process(b"\x1b[?1049h");
+        assert_eq!(wheel_of(p.screen()), Wheel::Nowhere);
+
+        // …and one that did ask, in the encoding khor writes: the notch
+        // is the program's.
+        let mut p = vt100::Parser::new(4, 10, 100);
+        p.process(b"\x1b[?1049h\x1b[?1000h\x1b[?1006h");
+        assert_eq!(wheel_of(p.screen()), Wheel::ToTheProgram);
+
+        // **Mouse tracking without the alternate screen still wins.** A
+        // pager can ask for the mouse on the main screen, and the notch
+        // it asked for is not khor's to spend on scrollback.
+        let mut p = vt100::Parser::new(4, 10, 100);
+        p.process(b"\x1b[?1000h\x1b[?1006h");
+        assert_eq!(wheel_of(p.screen()), Wheel::ToTheProgram);
+
+        // **An encoding khor does not write is answered with silence,
+        // not with bytes in a shape nobody asked for.** The 1978
+        // encoding cannot express a column past 223, so a report in it
+        // would be a lie on any real window.
+        let mut p = vt100::Parser::new(4, 10, 100);
+        p.process(b"\x1b[?1049h\x1b[?1000h");
+        assert_eq!(wheel_of(p.screen()), Wheel::Nowhere);
     }
 
     fn feed(bytes: &[u8]) -> TermScreen {

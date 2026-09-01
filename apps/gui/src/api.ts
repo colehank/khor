@@ -460,6 +460,11 @@ export const openWeb = (machine: string, url: string) => {
 };
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match, so the screen repaints whole. */
+/** One wheel notch, as the mouse report the program asked for — refused
+    by the core when it asked for none, so the face never has to know
+    which programs those are (`khor_gui_core::term::Wheel`). */
+export const termWheel = (id: string, dir: "up" | "down", col: number, row: number) =>
+  call<null>("term_wheel", { id, dir, col, row });
 export const termOpen = (id: string, cols: number, rows: number) =>
   call<null>("term_open", { id, cols, rows });
 /** The current screen if it changed since `since`, else none — a
