@@ -272,6 +272,40 @@ const homeEnv = (dir, name) => {
   delete e.KHOR_SESSION;
   return e;
 };
+// **The resident runs where the user's does: under launchd's
+// environment.** `khor serve` on a real machine is a launchd agent, and
+// what launchd hands it was read off the live process on 2026-09-01
+// (`ps eww`): `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `HOME`, `USER`,
+// `LOGNAME`, `TMPDIR`, `SHELL=/bin/zsh` — and **no `LANG`, no `LC_*`,
+// no `TERM`**. Five times that day something verified green from a
+// terminal (npx, tmux, the locale, the unit separator, tmux again) was
+// red on that road and nowhere else, because a smoke that starts serve
+// from the developer's shell inherits the developer's PATH and locale
+// and tests a binary the user never runs. So the resident and the
+// bridge (which embeds one) get what launchd gives them, no more and no
+// less: `SHELL` stays, because launchd keeps it and the resident's
+// PATH repair asks that shell. The CLI calls keep the shell's
+// environment, because that is what a person's terminal has.
+//
+// **A whitelist, not a blacklist.** The first version deleted `LANG`,
+// `LC_*` and `TERM` and kept the rest — and the rest included `TMUX`,
+// because the smoke was being run from inside a tmux pane; with it in
+// the environment tmux printed the unit separator raw and the sweep
+// parsed, while the launchd serve on the same machine, with no `TMUX`,
+// got `_` and read nothing. A tear-down that should have reddened
+// stayed green for exactly as long as that variable was inherited.
+// What launchd gives is a short list; anything not on it is the
+// developer's, and the developer's is what this must not test.
+const launchdEnv = (e) => {
+  const out = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+  for (const k of ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "SSH_AUTH_SOCK"]) {
+    if (e[k] !== undefined) out[k] = e[k];
+  }
+  for (const k of Object.keys(e)) {
+    if (k.startsWith("KHOR_") || k === "BRIDGE_PORT") out[k] = e[k];
+  }
+  return out;
+};
 const envA = homeEnv(A, "alpha");
 // beta watches a private tmux server (KHOR_TMUX_SOCKET is the test
 // door): the bridge item stands sessions up on it, and the user's real
@@ -765,7 +799,7 @@ for line in sys.stdin:
       }),
     );
   }
-  run(KHOR, ["serve"], envA, "serve-a");
+  run(KHOR, ["serve"], launchdEnv(envA), "serve-a");
   await until("alpha endpoint.json", 15_000, () => existsSync(join(A, ".khor/endpoint.json")));
   const ticketA = cli(envA, "invite").trim().split("\n").pop().trim();
   feedHook(envA, "SessionStart");
@@ -784,7 +818,7 @@ for line in sys.stdin:
   const bridge = run(
     BRIDGE,
     [],
-    { ...envB, BRIDGE_PORT: String(BRIDGE_PORT), KHOR_CHAT_FRAME_CAP: "200" },
+    launchdEnv({ ...envB, BRIDGE_PORT: String(BRIDGE_PORT), KHOR_CHAT_FRAME_CAP: "200" }),
     "bridge",
   );
   let bridgeGone = null;
