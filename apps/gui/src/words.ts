@@ -151,6 +151,18 @@ export function until(ms: number): string {
   return span(ms - Date.now());
 }
 
+/**
+ * How long something has been going on — the same ladder `ago` and
+ * `until` use, with no direction attached.
+ *
+ * **Shared rather than written a fourth time.** 「分钟」 lives in one
+ * place; what differs between these callers is which two moments they
+ * subtract, and that is the argument.
+ */
+export function lasting(ms: number): string {
+  return span(ms);
+}
+
 /** A duration in the coarsest unit that still says something. */
 function span(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

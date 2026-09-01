@@ -4426,6 +4426,26 @@ for line in sys.stdin:
     const v = await page.locator("[data-chat-input]").inputValue();
     return v === "/compact " && (await page.locator("[data-slash-menu]").count()) === 0;
   });
+  // **The same wait `say` does, and for the same reason.** This block
+  // presses Enter itself rather than going through the helper — it has
+  // to, because the first press must *complete* rather than send — and
+  // in doing so it stepped outside the one thing the helper is for: a
+  // send during a running turn is refused, silently and by design (批①).
+  //
+  // The turn still open here is the link's, from a few lines up: `say`
+  // waits for the turn *before* its own send, not after, and the
+  // assertion in between is satisfied by the agent's text, which lands
+  // well before its `Turn` frame does. So the second press below could
+  // land inside that turn, go nowhere, and time out here — which is
+  // what happened, and what read as "the command never reached the
+  // agent" when the truth was "the line was never sent".
+  //
+  // **Not the send rule being softened**: that rule has its own
+  // assertions further down, where a line is pressed into a turn on
+  // purpose and must stay in the box.
+  await page.waitForFunction(() => !document.querySelector("[data-chat-stop]"), null, {
+    timeout: 60_000,
+  });
   await page.locator("[data-chat-input]").press("Enter");
   await until("the command reaching the agent as a line", 20_000, async () => {
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
@@ -4581,20 +4601,31 @@ for line in sys.stdin:
     throw new Error("a refused line must stay in the box, not be swallowed");
   }
 
-  // c) The waiting mark, in 忙碌's own clothes. The colour is compared
-  //    against a probe wearing the token — neither the hue nor the word
-  //    is written in this file.
-  await until("the waiting mark while the turn has said nothing", 15_000, async () =>
+  // c) The running mark, in 忙碌's own clothes, **with how long it has
+  //    been running**. The colour is compared against a probe wearing
+  //    the token — neither the hue nor the word is written in this file.
+  //
+  //    The breath moved off the words and onto the mark beside them
+  //    (`ToolDot`): a title people are reading should not pulse, and a
+  //    dot that says nothing but "still going" costs nothing to animate.
+  await until("the running mark while the turn is open", 15_000, async () =>
     (await page.locator("[data-chat-thinking]").count()) === 1,
   );
-  const breathing = await page.locator("[data-chat-thinking] [data-word-text]").evaluate((el) => {
+  const breathing = await page.locator("[data-chat-thinking]").evaluate((box) => {
+    const el = box.querySelector("[data-chat-busy-for]");
+    const dot = box.querySelector("[data-tool-dot]");
     const probe = document.createElement("span");
     probe.style.color = "var(--state-busy)";
     document.body.appendChild(probe);
     const want = getComputedStyle(probe).color;
     probe.remove();
     const s = getComputedStyle(el);
-    return { color: s.color, want, animation: s.animationName, text: el.textContent };
+    return {
+      color: s.color,
+      want,
+      animation: getComputedStyle(dot).animationName,
+      text: el.textContent,
+    };
   });
   if (breathing.color !== breathing.want) {
     throw new Error(`the waiting mark must take busy's paint: ${breathing.color} vs ${breathing.want}`);
@@ -4639,13 +4670,42 @@ for line in sys.stdin:
     },
   );
   const busyWord = busyPair.row;
-  if ((breathing.text ?? "").trim() !== busyWord) {
-    throw new Error(`the waiting mark must say what a busy row says: ${breathing.text} vs ${busyWord}`);
+  if (!(breathing.text ?? "").trim().startsWith(busyWord)) {
+    throw new Error(`the running mark must say what a busy row says: ${breathing.text} vs ${busyWord}`);
+  }
+  // **The duration is the whole reason this mark stands for the whole
+  // turn**, so it has to be a clock and not a decoration. Read twice,
+  // far enough apart that the seconds rung must have moved; the fixture
+  // is hanging on purpose, so nothing else can end the turn in between.
+  //
+  // The wording is not asserted — it is `cli.age_seconds`, and this
+  // file spells no words. What is asserted is that it *changed*, which
+  // is the claim a frozen `Date.now()` would fail and a static string
+  // would fail too.
+  const firstRead = (breathing.text ?? "").trim();
+  await new Promise((r) => setTimeout(r, 2_500));
+  const secondRead = (
+    await page.locator("[data-chat-thinking] [data-chat-busy-for]").innerText()
+  ).trim();
+  if (secondRead === firstRead) {
+    throw new Error(
+      `the running mark's duration never moved: still ${JSON.stringify(firstRead)} after 2.5s — ` +
+        `a clock that does not tick is a label`,
+    );
+  }
+  if (!secondRead.startsWith(busyWord)) {
+    throw new Error(`and it must still be 忙碌 while it counts: ${secondRead}`);
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const stilled = await page.locator("[data-chat-thinking] [data-word-text]").evaluate((el) => {
-    const s = getComputedStyle(el);
-    return { animation: s.animationName, opacity: s.opacity, w: el.getBoundingClientRect().width };
+  const stilled = await page.locator("[data-chat-thinking]").evaluate((box) => {
+    const dot = box.querySelector("[data-tool-dot]");
+    const el = box.querySelector("[data-chat-busy-for]");
+    const s = getComputedStyle(dot);
+    return {
+      animation: s.animationName,
+      opacity: getComputedStyle(el).opacity,
+      w: el.getBoundingClientRect().width,
+    };
   });
   await page.emulateMedia({ reducedMotion: "no-preference" });
   if (stilled.animation !== "none") {

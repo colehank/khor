@@ -1038,6 +1038,20 @@ new-session-seen-unasked = "还没问过它"
 new-session-seen-cannot = "它列不出自己的对话——协议里这一项是可选的"
 new-session-seen-none = "它说它一段对话都没有"
 chat-readonly = "只读——它正在自己的终端里跑"
+# The running turn, in the conversation, with how long it has been
+# running. **The duration is the whole reason this sentence exists.**
+#
+# Before it, the indicator appeared only until the first chunk landed,
+# on the reasoning that the stream itself then says the turn is alive.
+# That is true of a turn that is *printing* and false of the case a
+# person actually wonders about: a tool call two minutes deep prints
+# nothing, and a stream that has stopped moving looks exactly like a
+# stream that has finished. So it stands for the whole turn now, and it
+# carries the one fact the stream cannot carry.
+#
+# 忙碌 rather than a seventh word invented here: this is the same state
+# the row wears, in the conversation (docs/UX.md 状态呈现).
+chat-busy-for = "忙碌 {0}"
 # The confirms for changing a session's form, both directions
 # (`SessionsList` 转成对话 / 转成终端). One body, two forms — what ends
 # is the form khor is holding, never the conversation, and each

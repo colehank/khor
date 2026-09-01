@@ -217,6 +217,31 @@ const probe = () => {
       openable: el.getAttribute("data-tool-open"),
       title: (el.querySelector("[data-word-text]")?.textContent ?? "").trim(),
       body: !!el.querySelector("[data-tool-body]"),
+      // The mark, as a **still image**: what a reader sees with the
+      // breath switched off — its composited colour, and whether it is
+      // filled at all. Both, because a mark can be told from another by
+      // being a different weight of grey *or* by being a ring instead
+      // of a disc, and the design uses each of them somewhere.
+      dot: (() => {
+        const d = el.querySelector("[data-tool-dot]");
+        if (!d) return null;
+        const cs = getComputedStyle(d);
+        const fill = rgba(cs.backgroundColor);
+        const filled = !!fill && fill.a > 0.05;
+        // The ring is a `box-shadow`; its colour is the first `rgb(...)`
+        // in the resolved value.
+        const ringHit = /rgba?\([^)]*\)/.exec(cs.boxShadow || "");
+        const ring = ringHit ? rgba(ringHit[0]) : null;
+        const ground = groundOf(el);
+        const showing = filled ? fill : ring;
+        return {
+          state: d.getAttribute("data-dot-state"),
+          filled,
+          ink: showing ? flatten(showing, ground) : null,
+          size: `${cs.width}x${cs.height}`,
+          animated: cs.animationName !== "none" && cs.animationName !== "",
+        };
+      })(),
       diff: !!el.querySelector("[data-tool-diff]"),
       out: (el.querySelector("[data-tool-out]")?.textContent ?? "").trim(),
       raw: getComputedStyle(text).color,
@@ -1082,6 +1107,71 @@ try {
             `${say}: ${L[a].status} and ${L[b].status} are ΔL* ${d.toFixed(2)} apart, under ${DELTA_L} — ` +
               `two states drawn the same way is the state not being drawn`,
           );
+        }
+      }
+
+      // 2b) the running mark is legible **as a still image**.
+      //
+      // The obvious design is one filled dot in three hues, and it has
+      // a hole this repo has already paid for: 忙碌's indigo sits at
+      // grey's exact loudness on purpose (ΔL* 1.03), so with the breath
+      // off, running and completed would be the same dot. And the
+      // breath is off for anyone who asked for less motion — the reader
+      // least able to spare a distinction.
+      //
+      // **So this claim is made with motion out of the picture, in both
+      // passes.** A gate that only checked the animated pass would be
+      // testing the half that is not at risk.
+      const dots = m.lines.map((l) => l.dot);
+      if (dots.some((d) => d === null)) {
+        fail(`${say}: a tool line has no status mark — ${dots.filter((d) => !d).length} of ${dots.length}`);
+      } else {
+        // The live probe that earns the comparison below: the marks are
+        // really on screen and really have a box, so "they differ" is
+        // about two drawn things rather than two absences.
+        for (const d of dots) {
+          if (d.size === "0px x 0px" || d.size === "auto x auto") {
+            fail(`${say}: a status mark measured ${d.size} — nothing is being drawn`);
+          }
+        }
+        // **Two marks are told apart by weight or by shape**, and the
+        // check must say which — a plain "these two strings differ"
+        // passes for three hues at one lightness, which is precisely
+        // the design this shape exists to avoid. Measured: with a
+        // filled dot in 忙碌's indigo against a filled dot in grey, the
+        // string check was green and the two dots were ΔL* 1.0 apart.
+        const dl = dots.map((d) => lstar(d.ink));
+        if (dl.some((x) => x === null)) {
+          fail(`${say}: probe dead — a mark's colour did not parse: ${dots.map((d) => d.ink).join(" / ")}`);
+        } else {
+          for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) {
+            const shape = dots[a].filled !== dots[b].filled;
+            const weight = Math.abs(dl[a] - dl[b]);
+            if (!shape && weight < DELTA_L) {
+              fail(
+                `${say}: ${dots[a].state} and ${dots[b].state} are both ` +
+                  `${dots[a].filled ? "filled" : "hollow"} and ΔL* ${weight.toFixed(2)} apart ` +
+                  `(under ${DELTA_L}) — with the breath off they are one state`,
+              );
+            }
+          }
+          console.log(
+            `${say}: marks ` +
+              dots
+                .map((d, i) => `${d.state}${d.filled ? "●" : "○"}L*${dl[i].toFixed(0)}${d.animated ? "~" : ""}`)
+                .join(" "),
+          );
+        }
+        // And the motion, where it is allowed: the running mark is the
+        // one that moves, and it is the *only* one — a settled mark
+        // that breathed would say a finished call is still going.
+        for (const d of dots) {
+          const shouldMove = motion !== "reduce" && d.state === "running";
+          if (d.animated !== shouldMove) {
+            fail(
+              `${say}: the ${d.state} mark ${d.animated ? "breathes" : "is still"} under motion:${motion}`,
+            );
+          }
         }
       }
 

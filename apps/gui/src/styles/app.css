@@ -339,6 +339,16 @@ input[type="search"]::-webkit-search-decoration {
   animation: breath calc(var(--dur-420) * 6) var(--ease-move) infinite;
 }
 
+/* **A tool line breathes on its mark, not on its words.**
+   The line carries `data-word="busy"` because that is the fact, and
+   the rule above would then pulse the title — a title people are
+   reading, and a moving one is harder to read than a still one. The
+   mark beside it (`ToolDot`) is what the motion is for: it says
+   nothing but "still going", so it costs nothing to animate. */
+[data-chat-tool][data-word="busy"] [data-word-text] {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Busy stops breathing and stays exactly as legible: it still has no
      hue, the ring is still there, and the word at the row's end still

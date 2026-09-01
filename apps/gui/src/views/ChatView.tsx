@@ -70,7 +70,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
-import { word } from "@/words";
+import { lasting, word } from "@/words";
 
 /**
  * How often to ask for frames, while a turn runs and while none does.
@@ -508,6 +508,81 @@ function contentIn(u: Update): string | null {
   return null;
 }
 
+/**
+ * The mark that says whether something is **running or settled**, on a
+ * tool line and on the turn itself.
+ *
+ * **Three shapes, not three colours.** Running breathes and is filled;
+ * settled is a hollow ring; failed is filled in the failure colour. The
+ * obvious design — one filled dot in three hues — has a hole this repo
+ * has already paid for once: 忙碌's indigo was placed at grey's exact
+ * loudness on purpose (`toolInk` has the measurement, ΔL* 1.03), so
+ * with the breath off it and a completed mark would be **the same dot**.
+ * And the breath is off for anyone who asked for less motion, which is
+ * exactly the reader least able to spare a distinction.
+ *
+ * So the shape carries it and the motion is the second signal, never
+ * the only one.
+ *
+ * **A fixed box, always.** A mark that changes size when the status
+ * changes moves the title beside it — the same bug the terminal grid
+ * was just rebuilt to kill, one surface over.
+ */
+function ToolDot({ status }: { status: string }) {
+  const live = running(status);
+  const failed = status === "failed";
+  return (
+    <span
+      data-tool-dot
+      data-dot-state={live ? "running" : failed ? "failed" : "done"}
+      // `data-halo` rather than a selector of its own: that is already
+      // the breath's name for a *mark* (as opposed to a word), and it
+      // already carries the reduced-motion guard (app.css).
+      data-halo={live ? "busy" : undefined}
+      aria-hidden
+      className="inline-block size-1.5 shrink-0 rounded-full"
+      style={{
+        background: live
+          ? "var(--state-busy)"
+          : failed
+            ? "var(--state-failed)"
+            : "transparent",
+        boxShadow: live
+          ? undefined
+          : failed
+            ? undefined
+            : "inset 0 0 0 1px var(--muted-foreground)",
+      }}
+    />
+  );
+}
+
+/**
+ * How long the running turn has been running, ticking once a second.
+ *
+ * **Its own component because a clock must not repaint a
+ * conversation.** The first version held `now` in `ChatView` and
+ * re-rendered the whole item list every second — on top of the live
+ * poll, and for a number four characters wide. Here the tick is local:
+ * one text node changes, and the stream above it is not touched.
+ *
+ * The interval exists only while this is mounted, which is only while a
+ * turn runs — an idle conversation has no timer at all.
+ */
+function BusyFor({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [since]);
+  return (
+    <span data-chat-busy-for style={{ color: "var(--state-busy)" }}>
+      {gui.chat_busy_for(lasting(Math.max(0, now - since)))}
+    </span>
+  );
+}
+
 /** Whether a tool call is still open.
     `pending` counts: this agent never sends it (`cagent` opens at
     `in_progress`), but a third-party agent may, and of the two possible
@@ -634,6 +709,11 @@ export function ChatView({
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
   const [gone, setGone] = useState(false);
   const [inTurn, setInTurn] = useState(false);
+  /** When the running turn started. Cleared with the turn, so a
+      finished conversation counts nothing — and see `waiting` below for
+      why a duration is the one thing worth adding to a screen that
+      already shows the stream. */
+  const [turnSince, setTurnSince] = useState<number | null>(null);
   /** This conversation's own context window, as the agent last reported
       it. `null` until an agent says — never a default: the whole reason
       the 垫片 learns the size instead of tabulating it is that a made-up
@@ -911,6 +991,24 @@ export function ChatView({
     if (shorter) pollNow.current();
   }, [inTurn, hidden]);
 
+  /**
+   * The running turn's clock: started when a turn starts, stopped when
+   * it stops, ticking once a second in between.
+   *
+   * **Derived from `inTurn` rather than set beside it.** A turn begins
+   * and ends in four places (a `turning` frame, a `Turn` frame, a send
+   * that threw, and the send itself), and a clock started at three of
+   * them is a clock that is sometimes null while a turn runs — the kind
+   * of drift nothing goes red for. One effect, one source.
+   *
+   * The ticking lives in `BusyFor`, which is mounted only while a turn
+   * runs — so an idle conversation carries no timer, and a running one
+   * repaints one text node rather than its whole stream.
+   */
+  useEffect(() => {
+    setTurnSince(inTurn ? Date.now() : null);
+  }, [inTurn]);
+
   // Follow the stream only while the reader is at the tail — new frames
   // must not yank someone who scrolled up into the past. What they get
   // instead is the control below saying something landed.
@@ -1094,19 +1192,26 @@ export function ChatView({
       ),
     [paint],
   );
-  // A turn is running and nothing has come back from it yet. Painted as
-  // 忙碌 in the state's own markup — the same `data-word`/`data-word-text`
-  // pair the session row wears, so it inherits the doctrine rather than
-  // restating it: no hue, the breath keyframe, and the reduced-motion
-  // guard that leaves the word standing still and legible (app.css).
-  // Reusing the word is also why no seventh one gets invented here: this
-  // is 忙碌 in the conversation, not a new thing called "thinking".
+  // **A turn is running — for the whole of it, and for how long.**
   //
-  // The condition is "the last thing painted is the user's own line",
-  // not a timer: the moment any chunk, thought or tool line lands, the
-  // stream itself is the indicator and a second one would be noise.
-  const waiting =
-    inTurn && (items.length === 0 || items[items.length - 1].who === "user");
+  // 忙碌 in the conversation, wearing the state's own clothes rather
+  // than restating them: no hue of its own, the mark beside it carries
+  // the breath keyframe and the reduced-motion guard (`ToolDot`,
+  // app.css). Reusing the word is also why no seventh one gets invented
+  // here — this is not a new thing called "thinking".
+  //
+  // **The rule this replaces**: it used to appear only until the first
+  // chunk landed, on the reasoning that "the stream itself is then the
+  // indicator and a second one would be noise". True of a turn that is
+  // *printing*; false of the case a person actually asks about. A tool
+  // call two minutes deep prints nothing, and **a stream that has
+  // stopped moving looks exactly like a stream that has finished** —
+  // the reader is left with a static screen and no way to tell which.
+  //
+  // So it stands for the whole turn, and it carries the one fact the
+  // stream cannot: how long. That is also what keeps it from being
+  // noise — it is not restating what is already on screen.
+  const waiting = inTurn;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1283,7 +1388,7 @@ export function ChatView({
                   {more ? (
                     <button
                       data-tool-toggle
-                      className="block w-full min-h-touch text-left pointer-fine:min-h-0"
+                      className="flex w-full min-h-touch items-center gap-1.5 text-left pointer-fine:min-h-0"
                       onClick={() =>
                         setOpen((now) => {
                           const next = new Set(now);
@@ -1292,13 +1397,17 @@ export function ChatView({
                         })
                       }
                     >
+                      <ToolDot status={item.status} />
                       <span data-word-text style={{ color: toolInk(item.status) }}>
                         {item.title}
                       </span>
                     </button>
                   ) : (
-                    <span data-word-text style={{ color: toolInk(item.status) }}>
-                      {item.title}
+                    <span className="flex items-center gap-1.5">
+                      <ToolDot status={item.status} />
+                      <span data-word-text style={{ color: toolInk(item.status) }}>
+                        {item.title}
+                      </span>
                     </span>
                   )}
                   {shown && (
@@ -1403,10 +1512,15 @@ export function ChatView({
           ),
         )}
         {waiting && (
-          <div data-chat-thinking data-word="busy" className="text-xs">
-            <span data-word-text style={{ color: "var(--state-busy)" }}>
-              {word("busy")}
-            </span>
+          <div data-chat-thinking className="flex items-center gap-1.5 text-xs">
+            <ToolDot status="in_progress" />
+            {turnSince === null ? (
+              <span data-chat-busy-for style={{ color: "var(--state-busy)" }}>
+                {word("busy")}
+              </span>
+            ) : (
+              <BusyFor since={turnSince} />
+            )}
           </div>
         )}
         </div>
