@@ -142,13 +142,38 @@ fn ms_of(at: std::time::SystemTime) -> i64 {
 /// 接管 of such a conversation quietly resumed the agent *somewhere
 /// else*. Lossy decoding costs one possibly-mangled character at the
 /// tail of a bounded read, on a line nothing parses.
+///
+/// # Cached forever, misses included
+///
+/// The list's post-pass asks this for every claude row that has no
+/// place of its own, every poll. A transcript's `cwd` is on its first
+/// entries and never changes, so the answer is a fact about the file
+/// and is kept for the life of the process — the same reasoning
+/// `ai_title` gives for its permanent cache. A **miss is cached too**:
+/// a transcript with no `cwd` in its first 64 KiB is not going to grow
+/// one, and without this the placeless rows — the very ones this is
+/// for — would be the ones read again on every poll.
 fn cwd_in(path: &Path) -> Option<PathBuf> {
+    use std::collections::HashMap;
     use std::io::Read;
-    let mut head = Vec::new();
-    std::fs::File::open(path).ok()?.take(64 * 1024).read_to_end(&mut head).ok()?;
-    String::from_utf8_lossy(&head).lines().find_map(|l| {
-        serde_json::from_str::<serde_json::Value>(l).ok()?.get("cwd")?.as_str().map(PathBuf::from)
-    })
+    use std::sync::{Mutex, OnceLock};
+    static KNOWN: OnceLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> = OnceLock::new();
+    let known = KNOWN.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(hit) = known.lock().ok().and_then(|k| k.get(path).cloned()) {
+        return hit;
+    }
+    let read = || -> Option<PathBuf> {
+        let mut head = Vec::new();
+        std::fs::File::open(path).ok()?.take(64 * 1024).read_to_end(&mut head).ok()?;
+        String::from_utf8_lossy(&head).lines().find_map(|l| {
+            serde_json::from_str::<serde_json::Value>(l).ok()?.get("cwd")?.as_str().map(PathBuf::from)
+        })
+    };
+    let found = read();
+    if let Ok(mut k) = known.lock() {
+        k.insert(path.to_path_buf(), found.clone());
+    }
+    found
 }
 
 pub struct Claude {

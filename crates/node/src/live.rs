@@ -961,6 +961,21 @@ impl LiveKind {
                 if let Some(title) = claude.ai_title(&l) {
                     r.title = title;
                 }
+                // **A row from before places were recorded still has
+                // one — in its transcript.** Every hook-registered
+                // session older than 2026-09-01 has no place in its
+                // note and, once its process is gone, no status file to
+                // read one from; measured on the machine this was
+                // written on, that was ten of seventeen rows, tokens
+                // sessions among them, filed as 不在任何地方 while their
+                // transcripts said `cwd` on line 1. Read here, folded
+                // like every other source, and only as a fallback: a
+                // place already on the row is the birth fact and stands.
+                if r.place.is_none() {
+                    if let Some(cwd) = claude.recorded_cwd(&l) {
+                        r.place = place_of(Some(&cwd.display().to_string()));
+                    }
+                }
             }
         }
         out
@@ -1393,6 +1408,48 @@ mod tests {
         k.learn_place(&placed, &root.join("elsewhere")).unwrap();
         assert_eq!(k.rows(|_| 0).iter().find(|r| r.id == placed).unwrap().place,
             Some(repo.display().to_string()), "a birth fact is not corrected later");
+    }
+
+    /// **A row from before places were recorded reads its place off its
+    /// transcript.** The registry note is empty (that is what "before"
+    /// means), nothing is running, so no status file — and the
+    /// transcript under `projects/` says `cwd` on its first line.
+    ///
+    /// The control arm is a transcript with no `cwd` at all: that row
+    /// stays `None`, rather than taking the other row's answer or the
+    /// process's own directory.
+    #[test]
+    fn an_old_claude_row_is_placed_from_its_transcript() {
+        let root = tmp("backfill");
+        let k = kind_at(&root);
+        let repo = root.join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        let projects = root.join(".claude/projects/p");
+        fs::create_dir_all(&projects).unwrap();
+        let line = |cwd: Option<&Path>| {
+            let mut v = serde_json::json!({"type":"user","message":{"role":"user","content":"x"}});
+            if let Some(c) = cwd {
+                v["cwd"] = serde_json::Value::String(c.display().to_string());
+            }
+            format!("{v}\n")
+        };
+        let placed_uuid = "aaaaaaaa-1111-4222-8333-444444444444";
+        let bare_uuid = "bbbbbbbb-1111-4222-8333-444444444444";
+        fs::write(projects.join(format!("{placed_uuid}.jsonl")), line(Some(&repo.join("src")))).unwrap();
+        fs::write(projects.join(format!("{bare_uuid}.jsonl")), line(None)).unwrap();
+
+        // Registered the way a hook of that era registered them: claude's,
+        // under the vendor's own leaf, and with nothing said about where.
+        let placed = crate::adaptor::id_for(placed_uuid);
+        let bare = crate::adaptor::id_for(bare_uuid);
+        k.register(&placed, khor_core::kind::TUI, "old one", None, Some("claude")).unwrap();
+        k.register(&bare, khor_core::kind::TUI, "older one", None, Some("claude")).unwrap();
+
+        let rows = k.rows(|_| 0);
+        let of = |id: &SessionId| rows.iter().find(|r| &r.id == id).expect("lists").place.clone();
+        assert_eq!(of(&placed), Some(repo.display().to_string()), "read off the transcript, folded");
+        assert_eq!(of(&bare), None, "a transcript that never said where places nothing");
     }
 
     /// A row whose kind is not its id's first segment must still list.
