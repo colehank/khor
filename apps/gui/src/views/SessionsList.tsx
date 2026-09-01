@@ -7,9 +7,7 @@ import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionTitle } from "@/components/SessionTitle";
 import { IconBack } from "@/components/icons";
 import { gui } from "@/gen/catalog";
-import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { cn } from "@/lib/utils";
-import { DayStrip } from "@/views/DayStrip";
 import { closeWarning } from "@/views/DetailPane";
 import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf, word } from "@/words";
 
@@ -250,21 +248,6 @@ export function SessionsList({
       .map((r) => r.id)
       .join("\n"),
   );
-  // The day strips, on their own call and their own beat — measured off
-  // the same box the rows are laid out in, because that is exactly how
-  // wide a full-bleed band on a row is (`use-day-strips` has why the
-  // cell count is a measurement while the merge behind it is not).
-  //
-  // **Above the early return below, like every other hook here**: the
-  // empty list is a render this component still does, and hooks that
-  // ran only on the non-empty path would change in number between two
-  // renders.
-  //
-  // The second argument is not decoration: the box below is not rendered
-  // on the empty path, so on the first render there is nothing to
-  // measure and a ref alone would never tell the observer that changed
-  // (`useStripWidth` has what that cost, measured).
-  const days = useDayStrips(useStripWidth(box, shown.length > 0));
   // Place headings, told apart where two checkouts share a name
   // (`placeLabels`). Over the rows on screen, because those are the
   // groups that can collide with each other.
@@ -490,25 +473,14 @@ export function SessionsList({
             // reader, the pin's `group-hover/row:opacity-100`, and a
             // named group nobody names back is a handle left tied to
             // something that is gone.
-            // `relative` for the day strip below, which is laid on the
-            // row's bottom edge rather than in the flex flow: the band
-            // spans the whole row while the row's contents keep their
-            // own padding, and a strip that inherited that padding would
-            // start at a different x on rows with different indents —
-            // which would quietly break the one thing a timeline is for
-            // (`DayStrip` has that argument in full).
-            "relative flex w-full items-center hover:bg-secondary",
+            // No day strip on the row any more: the band moved under
+            // the open session's header (2026-09-02), where it is one
+            // fact about one session rather than a timeline per row.
+            "flex w-full items-center hover:bg-secondary",
             r.id === selected && "bg-accent hover:bg-accent",
             r.quiet && "opacity-55",
           )}
         >
-          {/* This row's last day. It rides the row rather than the
-              button so that it is not part of the click target: the
-              band is a reading, not a control, and it says so with
-              `aria-hidden` too — the row's word is already on screen in
-              letters, and a screen reader hearing 24 hours of colour
-              blocks would be hearing the same fact a hundred times. */}
-          <DayStrip runs={days[r.id]} />
           {/* **The menu's trigger is this button, not the strip around
               it**, and the `pr-2` moved in here so that the button is
               the whole row and the two are the same target either way.

@@ -1013,6 +1013,9 @@ new-session = "新会话"
 # paired machine. The directory, the places and the agent all become
 # that machine's the moment one is picked.
 new-session-machine = "在哪台"
+# The strip of open sessions over the pane (aria name): the sessions
+# a person has open, iTerm's arrangement.
+session-tabs = "打开的会话"
 new-session-dir = "目录"
 # **The wizard's first question, answered before it is asked.** A
 # person walks into a directory and then starts something there — so

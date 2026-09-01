@@ -57,6 +57,11 @@ export type TabFace = {
   /** The whole address, for the switcher's second line and the wide
       tab's hover title. Empty on a fresh tab. */
   path: string;
+  /** A session tab's state word (`SessionRow::word`), painted as a
+      dot in the word's own ink — the six words are one doctrine, and a
+      tab that is a session wears the same fact its row does. Absent on
+      a browsing tab, which has no state. */
+  word?: string;
 };
 
 export function TabStrip({
@@ -71,7 +76,9 @@ export function TabStrip({
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
-  onNew: () => void;
+  /** Add a tab. Absent on a strip whose tabs are not made here — the
+      session strip's tabs come from the list, so it draws no "+". */
+  onNew?: () => void;
   /** Open the switcher. Drawn **only once the strip has stopped showing
       every tab** — see the file head; a landing that has no switcher to
       open leaves this out and gets the strip alone. */
@@ -180,6 +187,13 @@ export function TabStrip({
                 className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
               >
                 <MachineAvatar face={f.face} className="size-kind-mark flex-none" />
+                {f.word && (
+                  <span
+                    data-tab-word={f.word}
+                    className="size-1.5 flex-none rounded-full"
+                    style={{ background: `var(--state-${f.word})` }}
+                  />
+                )}
                 <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
                   {f.label}
                 </span>
@@ -246,21 +260,23 @@ export function TabStrip({
           holding the button drawn on `switching` would be drawing "go
           see your tabs" over the screen that is showing them. */}
       {onSwitch && crowded && <TabCount n={faces.length} onPress={onSwitch} />}
-      <Button
-        size="icon"
-        variant="ghost"
-        data-tab-new
-        aria-label={gui.new_tab}
-        // The `mb-1` it used to wear lifted a 30 button off the band's
-        // floor so it read as level with the 30 tabs. Both are the
-        // finger's floor now, and `items-end` already levels them —
-        // keeping the margin would have made the band four taller than
-        // anything in it.
-        className="min-h-touch min-w-touch flex-none"
-        onClick={onNew}
-      >
-        <IconPlus />
-      </Button>
+      {onNew && (
+        <Button
+          size="icon"
+          variant="ghost"
+          data-tab-new
+          aria-label={gui.new_tab}
+          // The `mb-1` it used to wear lifted a 30 button off the band's
+          // floor so it read as level with the 30 tabs. Both are the
+          // finger's floor now, and `items-end` already levels them —
+          // keeping the margin would have made the band four taller than
+          // anything in it.
+          className="min-h-touch min-w-touch flex-none"
+          onClick={onNew}
+        >
+          <IconPlus />
+        </Button>
+      )}
     </div>
   );
 }

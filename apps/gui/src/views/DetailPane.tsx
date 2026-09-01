@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   closeSession,
+  type DayRun,
   type SessionRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { YIELD_MS } from "@/lib/tempo";
 import { ChatView } from "@/views/ChatView";
+import { DayStrip } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
 import { word } from "@/words";
@@ -218,12 +220,19 @@ export function DetailPane({
   row,
   narrow,
   onBack,
+  days,
   onNew,
   empty,
 }: {
   row: SessionRow | null;
   narrow: boolean;
   onBack: () => void;
+  /** This session's last day (`DayStrip`), drawn as a band under the
+      header — the one place it is now shown (2026-09-02:「session的状态
+      bar不要在session列表里显示…在session打开后的上方显示」). Fetched by
+      the shell for every row on one beat and handed in, so the band
+      costs the pane nothing of its own. */
+  days?: DayRun[];
   /** Opens the new-session dialog — the same act the pane bar's "+"
       offers. Handed in rather than owned: the dialog is `App`'s, and
       this pane only points at it from its empty state. */
@@ -324,6 +333,17 @@ export function DetailPane({
           </>
         )}
       </header>
+      {/* The session's day, as a band the width of the pane, directly
+          under the header: it is a fact about *this* session and reads
+          beside its name and word. Full-bleed and in its own box, so
+          the runs' reach-up hit boxes (`DayStrip`) land on the header's
+          bottom edge rather than on nothing. Absent with no row — the
+          empty state has no day. */}
+      {row && (
+        <div data-detail-day className="relative h-1 flex-none">
+          <DayStrip runs={days} />
+        </div>
+      )}
       {close.strip}
       {row && row.kind === "chat" ? (
         // A machine's conversation — the stream `khor log` prints,

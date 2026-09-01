@@ -36,10 +36,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
+import { TabStrip, type TabFace } from "@/browse/TabStrip";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
+import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
+import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import { cn } from "@/lib/utils";
@@ -331,10 +334,16 @@ export default function App() {
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  /** The selected id, once it has actually been seen on the list — see
-      the effect below for why "selected" alone is not enough. */
-  const wasListed = useRef<string | null>(null);
+  // The sessions a person has open, as tabs, and which is in front:
+  // `selected` is the front tab (`useSessionTabs` — iTerm's arrangement,
+  // asked for 2026-09-02). Opening a row opens or focuses its tab;
+  // closing a tab is a view leaving, never a session ending.
+  const sessionTabs = useSessionTabs();
+  const { tabs: openTabs, drop: dropTabs } = sessionTabs;
+  const selected = sessionTabs.active;
+  /** The open ids that have actually been seen on the list — see the
+      effect below for why "open" alone is not enough. */
+  const wasListed = useRef<Set<string>>(new Set());
   // The open machine, kept apart from the open session for the same
   // reason each pane keeps its own query: they are two selections in two
   // places, and one variable would have opening a machine close the
@@ -456,14 +465,16 @@ export default function App() {
   }, [mark, landing]);
 
   const onSelect = useCallback((row: SessionRow) => {
-    setSelected(row.id);
+    sessionTabs.open(row.id);
     if (row.unread > 0) {
       // Looking at it is the seen semantics; the watermark replicates,
       // so this clears the badge on every device.
       markSeen(row.id).catch(() => {});
     }
     setScreen("detail");
-  }, []);
+    // `open` is a stable callback; the object around it is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionTabs.open]);
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
     setSelectedDevice(row.id);
@@ -640,17 +651,20 @@ export default function App() {
   //
   // An empty list is likewise not evidence: a poll that answered with
   // nothing is a backend blink, not everything closing at once.
+  //
+  // The same rule for every open tab now, not only the front one: a tab
+  // whose row was listed and is listed no more closes; one never yet
+  // listed (a session the wizard just opened) stays until it appears.
   useEffect(() => {
-    if (!selected || rows.length === 0) return;
-    if (rows.some((r) => r.id === selected)) {
-      wasListed.current = selected;
-      return;
-    }
-    if (wasListed.current !== selected) return;
-    wasListed.current = null;
-    setSelected(null);
-    setScreen("list");
-  }, [rows, selected]);
+    if (rows.length === 0 || openTabs.length === 0) return;
+    const listed = new Set(rows.map((r) => r.id));
+    for (const id of openTabs) if (listed.has(id)) wasListed.current.add(id);
+    const gone = openTabs.filter((id) => !listed.has(id) && wasListed.current.has(id));
+    if (gone.length === 0) return;
+    for (const id of gone) wasListed.current.delete(id);
+    dropTabs(gone);
+    if (selected !== null && gone.includes(selected)) setScreen("list");
+  }, [rows, openTabs, dropTabs, selected]);
   // **Rows, not events.** This added the two conditions, so a session
   // that was both waiting on an answer and unread counted twice and the
   // badge could read 4 over two rows — a number that matches nothing the
@@ -900,6 +914,25 @@ export default function App() {
   /** Whether this landing browses (docs/UX.md 浏览型) — the two that do
       share one shell and have no list pane at all. */
   const browses = landing === "files" || landing === "browser";
+  // Every row's last day, on one beat, for the band under the open
+  // session's header (`DetailPane`). Sized to the pane the band is drawn
+  // in — measured, never assumed (`useStripWidth`) — and asked for every
+  // row rather than the front one, so switching tabs costs no fetch.
+  const detailBox = useRef<HTMLDivElement>(null);
+  const days = useDayStrips(useStripWidth(detailBox, sessions));
+  // The open sessions as the strip paints them: each tab wears its row's
+  // title, machine face and state word — the same facts, one doctrine. A
+  // tab whose row has not been listed yet (just opened) wears its id.
+  const tabFaces: TabFace[] = useMemo(
+    () =>
+      openTabs.map((id) => {
+        const r = rows.find((row) => row.id === id);
+        return r
+          ? { id, label: r.title, face: r.face, path: r.place ?? "", word: r.word }
+          : { id, label: id, face: null, path: "" };
+      }),
+    [openTabs, rows],
+  );
   const paneName = LANDINGS.find((l) => l.key === landing)!.name;
 
   // No pane wears its name where you can see it (docs/UX.md). The name
@@ -997,6 +1030,7 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
+      days={selectedRow ? days[selectedRow.id] : undefined}
       onBack={() => setScreen("list")}
       onNew={() => setSheet("new")}
       // The network's now, painted from the shell's own polled state —
@@ -1038,7 +1072,7 @@ export default function App() {
         const id = await openTermOn(row.name);
         setMark(false);
         setLanding("sessions");
-        setSelected(id);
+        sessionTabs.open(id);
         setScreen("detail");
       }}
       // This machine's disk, in a **new** tab. Not the open one: the
@@ -1061,7 +1095,7 @@ export default function App() {
         open={sheet === "new"}
         onOpenChange={(o) => setSheet(o ? "new" : null)}
         // The freshly-opened session is what the person came to see.
-        onOpened={(id) => setSelected(id)}
+        onOpened={(id) => sessionTabs.open(id)}
       />
       <TellDialog
         open={sheet === "tell"}
@@ -1160,6 +1194,7 @@ export default function App() {
           <div
             key={mark ? "mark" : browses ? landing : screen}
             data-screen={mark ? "mark" : browses ? landing : screen}
+            ref={detailBox}
             className="min-h-0 flex-1 overflow-hidden"
           >
             {/* A browsing landing is one screen either way — it has no
@@ -1218,7 +1253,28 @@ export default function App() {
                 )}
                 {...listPane.handleProps}
               />
-              <div className="min-w-0 flex-1">{detail}</div>
+              {/* The open sessions as tabs over the pane (iTerm's
+                  arrangement), only on the sessions landing and only
+                  when something is open — an empty strip is a band
+                  saying nothing. The strip closes a *view*; the header's
+                  关闭 ends the session, and the gone-row rule then
+                  closes the tab. `ref` is the band's width source. */}
+              <div ref={detailBox} className="flex min-w-0 flex-1 flex-col">
+                {sessions && openTabs.length > 0 && (
+                  <div data-session-tabs aria-label={gui.session_tabs}>
+                    <TabStrip
+                      faces={tabFaces}
+                      active={selected ?? ""}
+                      onFocus={(id) => {
+                        sessionTabs.focus(id);
+                        setScreen("detail");
+                      }}
+                      onClose={sessionTabs.close}
+                    />
+                  </div>
+                )}
+                <div className="min-h-0 flex-1">{detail}</div>
+              </div>
             </>
           )}
           {sheets}

@@ -175,57 +175,89 @@ try {
     return false;
   };
   await until("rows on the session list", 20_000, async () => (await page.locator("[data-row]").count()) > 0);
-  await until("a day strip painted", 25_000, async () => (await page.locator("[data-day-strip]").count()) > 0);
-
-  const seen = await page.evaluate(() => {
-    const WORDS = ["busy", "blocked", "done", "errored", "failed", "idle"];
-    // What each word's token *resolves to*, asked of the browser rather
-    // than read as text: `getComputedStyle` substitutes `var()`, so a
-    // literal comparison would be comparing "var(--state-idle)" against
-    // a colour and never match.
-    const swatch = document.createElement("span");
-    document.body.appendChild(swatch);
-    const resolve = (v) => {
-      swatch.style.backgroundColor = v;
-      return getComputedStyle(swatch).backgroundColor;
-    };
-    const wants = Object.fromEntries(WORDS.map((w) => [w, resolve(`var(--state-${w})`)]));
-    swatch.remove();
-
-    const marks = [...document.querySelectorAll("[data-day-mark]")].map((el) => {
-      const kid = el.firstElementChild;
-      return {
-        mark: el.dataset.dayMark,
-        kidBg: kid ? getComputedStyle(kid).backgroundColor : null,
-        kidH: kid ? Math.round(kid.getBoundingClientRect().height * 100) / 100 : null,
-        kids: el.childElementCount,
-      };
+  // **The band lives under the open session's header now, one at a
+  // time** (2026-09-02:「状态bar…在session打开后的上方显示」), so the
+  // rows are opened in turn and each one's band read while it is up.
+  // Nothing is asserted on the list: a strip found on a row would be
+  // the old arrangement coming back.
+  if ((await page.locator("[data-row] [data-day-strip]").count()) !== 0) {
+    fail("a day strip is back on a list row — the band belongs under the open session's header");
+  }
+  const rowIds = await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  const openRow = async (id) => {
+    await page.locator(`[data-row="${id}"] [data-row-open]`).click();
+    return until(`the band for ${id}`, 25_000, async () => {
+      const on = await page.locator("[data-detail-header]").count();
+      return on > 0 && (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1;
     });
+  };
+  const readBand = () =>
+    page.evaluate(() => {
+      const WORDS = ["busy", "blocked", "done", "errored", "failed", "idle"];
+      // What each word's token *resolves to*, asked of the browser rather
+      // than read as text: `getComputedStyle` substitutes `var()`, so a
+      // literal comparison would be comparing "var(--state-idle)" against
+      // a colour and never match.
+      const swatch = document.createElement("span");
+      document.body.appendChild(swatch);
+      const resolve = (v) => {
+        swatch.style.backgroundColor = v;
+        return getComputedStyle(swatch).backgroundColor;
+      };
+      const wants = Object.fromEntries(WORDS.map((w) => [w, resolve(`var(--state-${w})`)]));
+      swatch.remove();
 
-    const px = (n) => Math.round(n * 100) / 100;
-    const boxes = [...document.querySelectorAll("[data-row]")].map((row) => {
-      const strip = row.querySelector("[data-day-strip]");
-      const button = row.querySelector("[data-row-open]");
-      const r = row.getBoundingClientRect();
-      const s = strip && strip.getBoundingClientRect();
-      const b = button && button.getBoundingClientRect();
-      // Where the row's **content** begins. Not the button's box: its
-      // inset is padding, so `button.left === row.left` by construction
-      // and comparing those two would be a comparison that cannot fail.
-      const inset = b ? parseFloat(getComputedStyle(button).paddingLeft) : 0;
-      return {
-        id: row.dataset.row,
-        rowL: px(r.left),
-        rowR: px(r.right),
-        stripL: s ? px(s.left) : null,
-        stripR: s ? px(s.right) : null,
-        stripH: s ? px(s.height) : null,
-        contentL: b ? px(b.left + inset) : null,
+      const marks = [...document.querySelectorAll("[data-detail-day] [data-day-mark]")].map((el) => {
+        const kid = el.firstElementChild;
+        return {
+          mark: el.dataset.dayMark,
+          kidBg: kid ? getComputedStyle(kid).backgroundColor : null,
+          kidH: kid ? Math.round(kid.getBoundingClientRect().height * 100) / 100 : null,
+          kids: el.childElementCount,
+        };
+      });
+
+      const px = (n) => Math.round(n * 100) / 100;
+      const header = document.querySelector("[data-detail-header]");
+      const strip = document.querySelector("[data-detail-day] [data-day-strip]");
+      const h = header && header.getBoundingClientRect();
+      const st = strip && strip.getBoundingClientRect();
+      // Where the header's **content** begins: its padding is the inset,
+      // and the band must start left of it — a band inside the padded
+      // flow would say the day begins where the title does.
+      const inset = header ? parseFloat(getComputedStyle(header).paddingLeft) : 0;
+      const box = {
+        paneL: h ? px(h.left) : null,
+        paneR: h ? px(h.right) : null,
+        stripL: st ? px(st.left) : null,
+        stripR: st ? px(st.right) : null,
+        stripH: st ? px(st.height) : null,
+        contentL: h ? px(h.left + inset) : null,
         runs: strip ? strip.childElementCount : 0,
       };
+      return { wants, marks, box };
     });
-    return { wants, marks, boxes };
-  });
+  // `wants` starts empty rather than null so that a run where no band
+  // could be read falls through to the probes below as a clean red
+  // ("no word cells on screen") instead of a TypeError — measured on
+  // the tear-down that removed the band: a crash is red too, but it is
+  // not the sentence that says what is missing.
+  const seen = { wants: {}, marks: [], boxes: [] };
+  let bandsRead = 0;
+  let rowWithUnwatched = null;
+  for (const id of rowIds) {
+    if (!(await openRow(id))) continue;
+    const got = await readBand();
+    seen.wants = got.wants;
+    seen.marks.push(...got.marks);
+    seen.boxes.push({ id, ...got.box });
+    bandsRead += 1;
+    if (rowWithUnwatched === null && got.marks.some((m) => m.mark === "unwatched")) rowWithUnwatched = id;
+  }
+  if (bandsRead === 0) fail("probe dead: no row's band could be read — every claim below would pass on nothing");
+  // The ink claim (② b) reads the band on screen; leave up the row that
+  // has a 不知道 stretch to read.
+  if (rowWithUnwatched !== null) await openRow(rowWithUnwatched);
 
   if (thrown.length) fail(`the page threw: ${thrown.join(" | ")}`);
 
@@ -415,17 +447,24 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
 
   // ── 3) one axis ───────────────────────────────────────────────────
+  //
+  // One band at a time now, so "the strips share an axis" is the pane's
+  // own edges: each session's band spans the header it sits under, and
+  // starts left of where that header's content begins — full-bleed, so
+  // the day and the title do not claim the same left edge for different
+  // reasons. And the same edges for every session, which is what makes
+  // two sessions' days comparable when read one after the other.
   for (const b of seen.boxes) {
     if (b.stripL === null) {
-      fail(`③ ${b.id} has no strip`);
+      fail(`③ ${b.id} has no band under its header`);
       continue;
     }
-    if (b.stripL !== b.rowL || b.stripR !== b.rowR) {
-      fail(`③ ${b.id} strip spans ${b.stripL}..${b.stripR}, its row spans ${b.rowL}..${b.rowR}`);
+    if (b.stripL !== b.paneL || b.stripR !== b.paneR) {
+      fail(`③ ${b.id} band spans ${b.stripL}..${b.stripR}, its header spans ${b.paneL}..${b.paneR}`);
     }
     if (!(b.stripL < b.contentL)) {
       fail(
-        `③ ${b.id} strip starts at ${b.stripL}, at or past where content begins (${b.contentL}) — ` +
+        `③ ${b.id} band starts at ${b.stripL}, at or past where the header's content begins (${b.contentL}) — ` +
           "it is inside the padded flow rather than full-bleed",
       );
     }
@@ -433,7 +472,7 @@ try {
   const lefts = new Set(seen.boxes.map((b) => b.stripL));
   const rights = new Set(seen.boxes.map((b) => b.stripR));
   if (lefts.size > 1 || rights.size > 1) {
-    fail(`③ the strips do not share an axis: lefts ${[...lefts]}, rights ${[...rights]}`);
+    fail(`③ the bands do not share an axis: lefts ${[...lefts]}, rights ${[...rights]}`);
   }
 
   console.log(`palette: ${JSON.stringify(seen.wants)}`);
@@ -463,13 +502,17 @@ try {
   // and it is the one that matters: **stored state must not be able to
   // switch the feature off.**
   const returning = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await returning.addInitScript(() => {
+  // …and a session open in a tab from last time (`useSessionTabs`), so
+  // the band has somewhere to be with the list put away.
+  const remembered = rowIds[0];
+  await returning.addInitScript((id) => {
     try {
       localStorage.setItem("khor.list-width", '{"w":462,"collapsed":true}');
+      localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
     } catch {
       /* a profile that refuses storage is simply the blank case again */
     }
-  });
+  }, remembered);
   const back = await returning.newPage();
   const backThrew = [];
   back.on("pageerror", (e) => backThrew.push(String(e)));
@@ -480,13 +523,15 @@ try {
     while (Date.now() < end) {
       last = await back.evaluate(() => {
         const box = document.querySelector("[data-row]")?.parentElement;
+        const band = document.querySelector("[data-detail-day] [data-day-strip]");
         return {
           rows: document.querySelectorAll("[data-row]").length,
           strips: document.querySelectorAll("[data-day-strip]").length,
+          bandW: band ? Math.round(band.getBoundingClientRect().width) : 0,
           boxW: box ? Math.round(box.getBoundingClientRect().width) : null,
         };
       });
-      if (last.rows > 0 && last.strips > 0) return last;
+      if (last.rows > 0 && last.strips > 0 && last.bandW > 0) return last;
       await new Promise((r) => setTimeout(r, 300));
     }
     return last;
@@ -494,13 +539,13 @@ try {
   if (backThrew.length) fail(`④ the returning page threw: ${backThrew.join(" | ")}`);
   if (backSeen.rows === 0) {
     fail("probe dead: the returning page listed no rows — ④ would pass with nothing to switch off");
-  } else if (backSeen.strips !== backSeen.rows) {
+  } else if (backSeen.strips !== 1 || !(backSeen.bandW > 0)) {
     fail(
-      `④ a returning browser lost the strip: ${backSeen.rows} rows, ${backSeen.strips} strips, ` +
-        `pane ${backSeen.boxW}px. Stored state must not be able to switch the feature off.`,
+      `④ a returning browser lost the band: ${backSeen.strips} strips, band ${backSeen.bandW}px wide, ` +
+        `list ${backSeen.boxW}px. Stored state must not be able to switch the feature off.`,
     );
   }
-  console.log(`returning: rows=${backSeen.rows} strips=${backSeen.strips} pane=${backSeen.boxW}px (collapsed)`);
+  console.log(`returning: rows=${backSeen.rows} band=${backSeen.bandW}px list=${backSeen.boxW}px (collapsed)`);
   await returning.close();
 
   // ── 5) an observer whose callback never arrives ───────────────────
@@ -539,14 +584,19 @@ try {
   // all in saying which guard was removed. Whoever sees it red should
   // read `use-day-strips` rather than trust the message to point.
   const deaf = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await deaf.addInitScript(() => {
+  await deaf.addInitScript((id) => {
     // Accepts everything, delivers nothing.
     window.ResizeObserver = class {
       observe() {}
       unobserve() {}
       disconnect() {}
     };
-  });
+    try {
+      localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
+    } catch {
+      /* then nothing is open, and the probe below says so */
+    }
+  }, remembered);
   const quiet = await deaf.newPage();
   const quietThrew = [];
   quiet.on("pageerror", (e) => quietThrew.push(String(e)));
@@ -557,7 +607,7 @@ try {
     while (Date.now() < end) {
       last = await quiet.evaluate(() => ({
         rows: document.querySelectorAll("[data-row]").length,
-        strips: document.querySelectorAll("[data-day-strip]").length,
+        strips: document.querySelectorAll("[data-detail-day] [data-day-strip]").length,
       }));
       if (last.rows > 0 && last.strips > 0) return last;
       await new Promise((r) => setTimeout(r, 300));
@@ -567,13 +617,13 @@ try {
   if (quietThrew.length) fail(`⑤ the page threw with a silent observer: ${quietThrew.join(" | ")}`);
   if (quietSeen.rows === 0) {
     fail("probe dead: no rows with a silent observer — ⑤ would pass with nothing to lose");
-  } else if (quietSeen.strips !== quietSeen.rows) {
+  } else if (quietSeen.strips !== 1) {
     fail(
-      `⑤ a ResizeObserver that never calls back lost the strip: ${quietSeen.rows} rows, ` +
-        `${quietSeen.strips} strips. The width must not depend on a delivery ever arriving.`,
+      `⑤ a ResizeObserver that never calls back lost the band: ${quietSeen.strips} bands under the ` +
+        "open session. The width must not depend on a delivery ever arriving.",
     );
   }
-  console.log(`silent observer: rows=${quietSeen.rows} strips=${quietSeen.strips}`);
+  console.log(`silent observer: rows=${quietSeen.rows} band=${quietSeen.strips}`);
   await deaf.close();
 } finally {
   if (browser) await browser.close();

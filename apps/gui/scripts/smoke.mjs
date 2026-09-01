@@ -2028,8 +2028,33 @@ for line in sys.stdin:
   // a strip that was alpha's all along — its busy minutes merged
   // under a 完成. Waited on rather than asserted: beta asks for a
   // peer's day on its report beat.
-  await until("a word from alpha's own day on beta's strip for tui/cafe1", 60_000, async () =>
-    (await page.locator('[data-row="tui/cafe1"] [data-day-mark]:not([data-day-mark="unwatched"])').count()) >= 1,
+  // The band sits under the open session's header now, so the row is
+  // opened first and the band read there.
+  await page.locator('[data-row="tui/cafe1"] [data-row-open]').click();
+  await until("a word from alpha's own day on beta's band for tui/cafe1", 60_000, async () =>
+    (await page.locator('[data-detail-day] [data-day-mark]:not([data-day-mark="unwatched"])').count()) >= 1,
+  );
+  // 16-0) open sessions are tabs. Opening a second row adds a tab and
+  //       brings it to the front; closing that tab leaves its row on
+  //       the list and its session alive (a view left, nothing ended),
+  //       and the first tab is in front again.
+  await until("the first tab", 10_000, async () =>
+    (await page.locator('[data-session-tabs] [data-tab="tui/cafe1"][data-on="true"]').count()) === 1,
+  );
+  const secondRow = await page
+    .locator('[data-row]:not([data-row="tui/cafe1"])')
+    .first()
+    .getAttribute("data-row");
+  await page.locator(`[data-row="${secondRow}"] [data-row-open]`).click();
+  await until("a second tab, in front", 10_000, async () =>
+    (await page.locator(`[data-session-tabs] [data-tab="${secondRow}"][data-on="true"]`).count()) === 1 &&
+    (await page.locator('[data-session-tabs] [data-tab]').count()) === 2,
+  );
+  await page.locator(`[data-session-tabs] [data-tab-close="${secondRow}"]`).click();
+  await until("the second tab gone, the first in front, the row still listed", 10_000, async () =>
+    (await page.locator('[data-session-tabs] [data-tab]').count()) === 1 &&
+    (await page.locator('[data-session-tabs] [data-tab="tui/cafe1"][data-on="true"]').count()) === 1 &&
+    (await page.locator(`[data-row="${secondRow}"]`).count()) === 1,
   );
   const wordsHere = [
     ...new Set(await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.word))),
