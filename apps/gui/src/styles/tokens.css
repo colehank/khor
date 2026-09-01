@@ -399,6 +399,24 @@
    * `--icon-body` moves both at once, which is the only form in which
    * "one colour, two depths" stays a checkable claim. */
   --rail-ink: rgba(26, 26, 20, 0.72);
+  /* The open rail glyph, **in the brand's own hue** (2026-09-01: 「选中
+   * 是 icon 以品牌色上色,而非现在的白色」).
+   *
+   * **Two values because the ground decides how deep the brand can be,
+   * not taste.** The open glyph has to clear a resting one by
+   * `GLYPH_MARGIN` (check-rail) — it is the only thing saying which
+   * item is open — and a resting glyph is already 6.59 on paper and
+   * 8.76 at night. On paper that leaves a mark no lighter than ~8.6
+   * against the page, and no green *that* light exists: `--lq3` itself
+   * measures 2.22 there, which is why the previous ruling said "green
+   * works as a plate and not as a mark" and reached for full ink.
+   *
+   * The ruling was right about `--lq3` and wrong about the family. The
+   * hue goes as deep as the paper needs it to (77.6°, the same hue and
+   * saturation as `--lq3`, taken down in lightness) and the mark is
+   * green on both grounds — deep green on paper, the brand's own green
+   * at night, where the ground is dark enough to carry it. */
+  --rail-on-ink: #35401c;
   --icon-body: 0.7;
 
   /* **Tombstone: `--rail-on` was the block behind whichever rail item
@@ -934,6 +952,9 @@
     /* Only the ink flips; `--icon-body` is a ratio and stays one number
        for both themes — see the light block for why that is the point. */
     --rail-ink: rgba(238, 238, 231, 0.72);
+    /* Night has room for the brand green itself: this is `--lq3`'s dark
+     * value, the same green the faces are drawn from. */
+    --rail-on-ink: #dce9a6;
     /* (`--rail-on`'s dark half went with the light one on 2026-08-31 —
        the rail has no block any more. The tombstone, with both
        percentages and why they differed, is on the light theme's side.) */

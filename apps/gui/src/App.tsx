@@ -272,15 +272,31 @@ function RailItem({
         // Measured before this: every rail item was 44×30, under every
         // guideline's floor (`check-face.mjs` now holds the line).
         "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
-        // **Open takes the full ink, and since 2026-08-31 that is the
-        // whole of what says open** — the block behind the glyph is
-        // gone (`app.css` carries the tombstone and the numbers). Not
-        // the brand green: measured, `--lq3` on the light ground is
-        // 2.22, under the 3.0 SC 1.4.11 asks of a graphic, so green
-        // works as a plate and not as a mark. The other half of the
-        // signal is the body filling solid, one rule away in the same
-        // file.
-        on && "text-foreground",
+        // **Pointing at an item paints the ground, never the glyph.**
+        // The `ghost` variant carries `hover:text-foreground`, which on
+        // this rail made a hovered *resting* item heavier than the open
+        // one — 12.20 against 10.01 (`check-rail` caught it the hour
+        // the open glyph stopped being full ink). A person dragging the
+        // pointer down the rail would have been shown a different
+        // answer to 我在哪一页 under every item they passed.
+        //
+        // Said as a `hover:` of its own because it has to be: a
+        // pseudo-class outranks a plain utility however the order runs
+        // — the same rule that made `focus:` need saying twice in
+        // `RowMenu`.
+        "hover:text-rail-ink",
+        // **Open takes the brand's hue, and since 2026-08-31 the glyph
+        // is the whole of what says open** — the block behind it is
+        // gone (`app.css` carries the tombstone and the numbers).
+        //
+        // It was full ink until 2026-09-01, on a measurement that was
+        // right about one colour and wrong about the family: `--lq3` on
+        // paper is 2.22, under the 3.0 SC 1.4.11 asks of a graphic — so
+        // *that* green is a plate and not a mark. **A green deep enough
+        // is a mark**, and the token carries one per ground for exactly
+        // that reason (`--rail-on-ink`). The other half of the signal
+        // is the body filling solid, one rule away in the same file.
+        on && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
         className,
       )}
     >
