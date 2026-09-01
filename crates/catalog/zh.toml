@@ -131,7 +131,8 @@ usage = """
                         --agent 用登记过的那个 agent(见 agents),自带 --gui;
                         --resume 续上它自己列出来的某段对话(见 agents sessions);
                         --on 在别的机器上开,不给命令就用那台自己的 shell;
-                        --gui 目前只在本机起得来,配 --on 会被拒)
+                        --gui/--agent 配 --on 在那台机器上起它自己的 agent,
+                        不接命令,也不接 --resume)
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
@@ -410,7 +411,10 @@ resume-needs-agent = "--resume 要和 --agent 一起用:光有 id 说不出该�
 # machine. Refused out loud rather than ignored: a flag that is accepted
 # and does nothing is a session quietly opened on the wrong machine, and
 # nothing on the screen says so.
-gui-not-on-another-machine = "--gui 还不能配 --on:对话宿主只在本机起得来"
+gui-not-on-another-machine = "--gui 配 --on 只认 agent 的名字(claude、codex、登记过的),不接命令:那台机器自己去起它"
+# `--resume` names a conversation this machine's registry remembers;
+# another machine's is not on this side's list, so the pair is refused.
+resume-not-on-another-machine = "--resume 不能配 --on:要续的对话得在开它的那台机器上续"
 # Said on stderr when a ticket is minted: the ticket itself goes to
 # stdout so it can be piped, and the window is something the person has
 # to know without it landing in whatever they paste.
@@ -912,6 +916,14 @@ ghost-never-ready = "对话宿主没在 30 秒内就位"
 # carries the agent's own words, which is evidence and not the sentence
 # — an agent may say nothing at all, and 「起不来: 」 is not a message.
 agent-wants-a-login = "这个 agent 要先登录才能开会话(它说: {0})"
+# An agent has to run beside a khor, and a satellite has none: what
+# `open --on` reaches there over ssh is a shell.
+agent-not-on-a-satellite = "{0} 是附属机器,上面没有 khor,起不了 agent;开终端可以"
+# Resuming a vendor session that another process is running right now
+# (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
+# refuses is a second agent on the same transcript, and a row whose
+# word is whichever of the two spoke last.
+resume-running-elsewhere = "这段对话正在别的进程里跑着(pid {0}),不能再起一份;去那边接着说,或者先退出它"
 agent-speaks-another-acp = "这个 agent 说的 ACP 是第 {0} 版,khor 说的是第 1 版"
 agent-wont-talk = "这个 agent 没起来,或者它不说 ACP: {0}"
 host-gone = "宿主没了——session 可能已收场,看 khor sessions"
@@ -919,11 +931,6 @@ cant-open-pty = "开不了 PTY: {0}"
 child-has-no-pid = "孩子没有 pid"
 cant-read-pty = "读不了 PTY: {0}"
 cant-write-pty = "写不了 PTY: {0}"
-# Resuming a vendor session that another process is running right now
-# (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
-# refuses is a second agent on the same transcript, and a row whose
-# word is whichever of the two spoke last.
-resume-running-elsewhere = "这段对话正在别的进程里跑着(pid {0}),不能再起一份;去那边接着说,或者先退出它"
 cant-listen-loopback = "听不了本机口: {0}"
 wrong-cookie = "暗号不对"
 host-child-wait = "等不到孩子结束: {0}"
@@ -1002,6 +1009,10 @@ web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条�
 [gui]
 sessions-tab = "会话"
 new-session = "新会话"
+# Which machine the session is born on — this one first, then every
+# paired machine. The directory, the places and the agent all become
+# that machine's the moment one is picked.
+new-session-machine = "在哪台"
 new-session-dir = "目录"
 # **The wizard's first question, answered before it is asked.** A
 # person walks into a directory and then starts something there — so

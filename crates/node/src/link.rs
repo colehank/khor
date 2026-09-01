@@ -438,6 +438,16 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::OpenAgentOn { machine, dir, title, form, agent } => {
+                match self.open_agent_on_with(ep, &machine, &dir, &title, &form, &agent).await {
+                    Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::PlacesOn { machine } => match self.places_on_with(ep, &machine).await {
+                Ok(places) => ipc::Reply::Places { places },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -791,6 +801,35 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Days { day })
+            }
+            Request::OpenAgent { dir, title, form, agent } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // The wizard's own call, on the machine that will run
+                // it — off the reactor for the `Open` arm's reason, and
+                // one more: it waits for the agent to answer
+                // `session/new`, which is seconds on a cold start.
+                let root = self.root().to_path_buf();
+                let id = tokio::task::spawn_blocking(move || {
+                    crate::Node::open(root)?.start_session(&dir, &title, &form, &agent)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Opened { session: id.0 })
+            }
+            Request::Places => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Reads every vendor's records (the `Ls` arm's note).
+                let root = self.root().to_path_buf();
+                let places = tokio::task::spawn_blocking(move || {
+                    Ok::<_, String>(crate::Node::open(root)?.places_shown())
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Places { places })
             }
             Request::Vitals => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1296,6 +1335,123 @@ impl Node {
         let outcome = self.open_on_with(&ep, machine, kind, title, cwd, cmd, size).await;
         ep.close().await;
         outcome
+    }
+
+    /// An agent session by name, on any machine — the wizard's four
+    /// answers carried to where the session is born ([`Request::OpenAgent`]).
+    /// Through the resident when there is one, like [`Node::open_on`].
+    pub async fn open_agent_on(
+        &self,
+        machine: &str,
+        dir: &str,
+        title: &str,
+        form: &str,
+        agent: &str,
+    ) -> Result<crate::SessionId, String> {
+        let op = ipc::Op::OpenAgentOn {
+            machine: machine.to_owned(),
+            dir: dir.to_owned(),
+            title: title.to_owned(),
+            form: form.to_owned(),
+            agent: agent.to_owned(),
+        };
+        if let Some(reply) = self.via_serve(op).await {
+            return match reply? {
+                ipc::Reply::OpenedOn { session } => Ok(crate::SessionId(session)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.open_agent_on_with(&ep, machine, dir, title, form, agent).await;
+        ep.close().await;
+        outcome
+    }
+
+    async fn open_agent_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        dir: &str,
+        title: &str,
+        form: &str,
+        agent: &str,
+    ) -> Result<crate::SessionId, String> {
+        let (channel, home) = self.resolve(machine)?;
+        // A satellite has no khor of its own to host a conversation:
+        // what `open_on` reaches over ssh is a shell, and an agent
+        // process khor speaks a protocol to has to run beside a khor.
+        if self.devices_loaded()?.doc.by_name(&channel).is_some_and(|d| d.sponsor.is_some()) {
+            return Err(msg::agent_not_on_a_satellite(&channel));
+        }
+        if home == self.device() {
+            // Off the reactor: this waits for the agent's `session/new`.
+            let root = self.root().to_path_buf();
+            let (dir, title, form, agent) =
+                (dir.to_owned(), title.to_owned(), form.to_owned(), agent.to_owned());
+            return tokio::task::spawn_blocking(move || {
+                crate::Node::open(root)?.start_session(&dir, &title, &form, &agent)
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+        let conn = self.dial_named(ep, &channel).await?;
+        let req = Request::OpenAgent {
+            dir: dir.to_owned(),
+            title: title.to_owned(),
+            form: form.to_owned(),
+            agent: agent.to_owned(),
+        };
+        match request(&conn, &req).await? {
+            Response::Opened { session } => Ok(crate::SessionId(session)),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// 常去的地方 on any machine (`(path, shown, sessions, last_ms)`,
+    /// newest first). This machine's answers without a resident; another
+    /// machine's goes through one when there is one. An older khor over
+    /// there answers with no list at all, which the caller treats as
+    /// silence and not as an error — the wizard's box still takes a path.
+    pub async fn places_on(&self, machine: &str) -> Result<Vec<(String, String, u32, i64)>, String> {
+        if machine.is_empty() || machine == self.name() {
+            return Ok(self.places_shown());
+        }
+        if let Some(reply) = self.via_serve(ipc::Op::PlacesOn { machine: machine.to_owned() }).await {
+            return match reply? {
+                ipc::Reply::Places { places } => Ok(places),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.places_on_with(&ep, machine).await;
+        ep.close().await;
+        outcome
+    }
+
+    async fn places_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<Vec<(String, String, u32, i64)>, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Ok(self.places_shown());
+        }
+        let conn = self.dial_named(ep, &channel).await?;
+        match request(&conn, &Request::Places).await? {
+            Response::Places { places } => Ok(places),
+            // A khor over there that predates the op: no list, not a
+            // fault — the wizard says nothing where it has nothing.
+            Response::Refused { .. } => Ok(Vec::new()),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     /// Where to speak to a session's terminal, wherever it lives: a

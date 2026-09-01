@@ -765,6 +765,10 @@ fn open(rest: &[String]) -> Result<(), String> {
         }
     }
     let n = node()?;
+    // Whether the person named a command at all, read before the agent
+    // resolution below fills `cmd` in: the far-agent road takes a name
+    // and never a command.
+    let named_cmd = !cmd.is_empty();
     // The registration decides the command and the row's 类; a name
     // nobody registered is refused **by name**, with the registry's own
     // sentence, rather than falling back to the shell — a typo that
@@ -808,13 +812,27 @@ fn open(rest: &[String]) -> Result<(), String> {
             .unwrap_or_else(|| first.clone()),
     });
     if gui {
-        // **Refused out loud, not ignored.** `--on` used to fall
-        // through this branch untouched, so `--gui --on turing` opened
-        // a conversation on *this* machine and said nothing — a flag
-        // that is accepted and does nothing is worse than one that is
-        // rejected, because the screen agrees with the person.
-        if on.is_some() {
-            return Err(cli::GUI_NOT_ON_ANOTHER_MACHINE.into());
+        // **On another machine, by name only.** `--gui --on turing`
+        // used to fall through untouched and open a conversation on
+        // *this* machine while saying nothing; then it was refused
+        // outright. Now it goes over as the agent's *name*
+        // (`Node::open_agent_on`, the wizard's own road), and that
+        // machine resolves the name against its own registrations and
+        // paths. A command spelled here would be this machine's paths
+        // on somebody else's disk, so that pairing stays refused — out
+        // loud, because a flag accepted and ignored is the worse of the
+        // two.
+        if let Some(machine) = on {
+            if named_cmd {
+                return Err(cli::GUI_NOT_ON_ANOTHER_MACHINE.into());
+            }
+            if resume.is_some() {
+                return Err(cli::RESUME_NOT_ON_ANOTHER_MACHINE.into());
+            }
+            let name = agent.as_deref().unwrap_or(khor_node::adaptor::claude::VENDOR);
+            let id = rt()?.block_on(n.open_agent_on(&machine, "", &title, "chat", name))?;
+            println!("{}", id.0);
+            return Ok(());
         }
         // **A resume needs to know whose conversation it is**, and the
         // only thing that knows is the registration — an id with no

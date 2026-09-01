@@ -483,18 +483,18 @@ pub struct PlaceRow {
 /// still right there.
 const PLACES_SHOWN: usize = 8;
 
-/// 常去的地方, newest first (`khor_node::Node::places`).
-pub fn places(root: &Path) -> Result<Vec<PlaceRow>, String> {
+/// 常去的地方, newest first, **on the machine the wizard names**
+/// (`khor_node::Node::places_on`; empty means this one). `shown` comes
+/// from the answering machine — whose home a path is under is its
+/// fact, not this screen's. An older khor over there answers with no
+/// list, and the wizard says nothing where it has nothing.
+pub async fn places(root: &Path, machine: &str) -> Result<Vec<PlaceRow>, String> {
     let n = open(root)?;
-    Ok(n.places()
+    Ok(n.places_on(machine)
+        .await?
         .into_iter()
         .take(PLACES_SHOWN)
-        .map(|p| PlaceRow {
-            shown: khor_node::place::shorten(std::path::Path::new(&p.path)),
-            path: p.path,
-            sessions: p.sessions,
-            last_ms: p.last_ms,
-        })
+        .map(|(path, shown, sessions, last_ms)| PlaceRow { path, shown, sessions, last_ms })
         .collect())
 }
 
@@ -799,164 +799,28 @@ pub fn agents(root: &Path) -> Result<Vec<AgentRow>, String> {
         .collect())
 }
 
-/// Which agent the wizard's 智能体 answer names.
-///
-/// The two khor ships are variants rather than strings because they
-/// each have a shim of their own and a form the other cannot take; a
-/// registered one carries the name the person gave it, which becomes
-/// the row's [`khor_core::Session::category`] — **the user saying whose
-/// session this is**, which is not the guess khor refuses to make from
-/// a command line.
-enum Picked {
-    Claude,
-    Codex,
-    Registered(String, khor_node::AgentSpec),
-}
-
-impl Picked {
-    /// What to run, and what the row will say it is.
-    ///
-    /// khor's own two run khor's own shims (零依赖, the skin ruling); a
-    /// registered agent runs the command it was registered with, as the
-    /// launch JSON the protocol crate reads — one spelling from the
-    /// registry to the child, so there is no translation step to drift.
-    /// **All three go out as a launch JSON carrying the user's `PATH`**
-    /// (`Node::agent_launch`), khor's own two included — and the two
-    /// need it as much as a registry agent does, for a reason one step
-    /// removed: what `_cagent` spawns is `claude`, by bare name, and on
-    /// this machine `claude` lives in `~/.local/bin`, which launchd's
-    /// `PATH` does not contain. So a conversation started from the app
-    /// could not start khor's own agent either, and said so in the
-    /// agent's voice rather than khor's.
-    fn launch(&self) -> Result<(Vec<String>, String), String> {
-        let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
-            let exe = std::env::current_exe().map_err(khor_catalog::msg::cant_find_self)?;
-            let spec = khor_node::AgentSpec {
-                command: exe.display().to_string(),
-                args: vec![shim.to_owned()],
-            };
-            Ok((vec![khor_node::Node::agent_launch(&spec)?], vendor.to_owned()))
-        };
-        match self {
-            Picked::Claude => mine("_cagent", khor_node::adaptor::claude::VENDOR),
-            Picked::Codex => mine("_codexagent", khor_node::adaptor::codex::VENDOR),
-            Picked::Registered(name, spec) => {
-                Ok((vec![khor_node::Node::agent_launch(spec)?], name.clone()))
-            }
-        }
-    }
-}
-
-/// Opens a fresh agent session where the wizard pointed (会话身份批B:
-/// 建 session 四字段 — 目录、智能体、形式、名字). The two forms are the
-/// user ruling's two channels: `chat` hosts khor's own vendor shim
-/// behind the GUI host (`_cagent` / `_codexagent` — zero dependencies,
-/// the skin ruling), `term` hosts the vendor's TUI. Either way the
-/// session is born standing in the chosen directory, and its row id is
-/// the vendor's own uuid (chat) or a khor mint (term).
-///
-/// `agent` is the wizard's 智能体 answer: claude (or blank — every
-/// caller older than 批8) or codex. Codex is chat-only this batch: its
-/// TUI has no probed way to be named before it exists (`--session-id`
-/// has no codex twin), and a row khor cannot pre-name is the one kind
-/// it cannot take over.
-pub fn open_session(
+/// The wizard's door: a fresh agent session where it pointed, **on the
+/// machine it named** (`machine` empty or this machine's own name is
+/// here). The judgment — which agent, which form, which directory,
+/// which title — lives in [`khor_node::Node::start_session`] and runs on
+/// the machine that will host the session: here directly, or over
+/// there through [`khor_node::Node::open_agent_on`], which carries the
+/// four answers and lets that machine resolve them against its own
+/// registrations and paths. Answers the new row's id, which every face
+/// will call it by wherever it was born.
+pub async fn open_session(
     root: &Path,
     dir: &str,
     title: &str,
     form: &str,
     agent: &str,
+    machine: &str,
 ) -> Result<String, String> {
     let n = open(root)?;
-    // **The 智能体 answer is an open position now** (批⑥): the two khor
-    // ships, plus anything the person registered. A name khor does not
-    // know is not a programmer's error any more — it is a lookup, and
-    // it refuses through `Node::agent_or_refuse`, which is the very
-    // call the CLI makes, so both faces refuse in one voice.
-    let picked = match agent {
-        "" | khor_node::adaptor::claude::VENDOR => Picked::Claude,
-        khor_node::adaptor::codex::VENDOR => Picked::Codex,
-        name => Picked::Registered(name.to_owned(), n.agent_or_refuse(name)?),
-    };
-    // Which forms this agent can take, each refusal naming the wall it
-    // hit. A registered agent has two it cannot pass, and they are
-    // different walls: khor has no spelling for starting it in a
-    // terminal, and no way to hand it khor's verbs — a person who
-    // wanted the second is not helped by being told about the first.
-    match (&picked, form) {
-        // The TUI form needs a pre-nameable session, and a bare
-        // thread/start writes no rollout to resume (probed).
-        (Picked::Codex, "term") => {
-            return Err(khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY.into())
-        }
-        (Picked::Registered(..), "term") => {
-            return Err(khor_catalog::msg::WIZARD_REGISTERED_NO_TERMINAL.into())
-        }
-        (Picked::Registered(..), "agent") => {
-            return Err(khor_catalog::msg::WIZARD_REGISTERED_NO_SCHEDULER.into())
-        }
-        _ => {}
+    if machine.is_empty() || machine == n.name() {
+        return n.start_session(dir, title, form, agent).map(|id| id.0);
     }
-    let home = std::env::home_dir();
-    let path = match dir.trim() {
-        "" | "~" => home.clone().ok_or_else(|| khor_catalog::msg::no_such_dir("~"))?,
-        d if d.starts_with("~/") => {
-            home.clone().ok_or_else(|| khor_catalog::msg::no_such_dir(d))?.join(&d[2..])
-        }
-        d => std::path::PathBuf::from(d),
-    };
-    if !path.is_dir() {
-        return Err(khor_catalog::msg::no_such_dir(&path.display().to_string()));
-    }
-    let title = if title.trim().is_empty() {
-        path.file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| if agent.is_empty() { "claude".to_owned() } else { agent.to_owned() })
-    } else {
-        title.trim().to_owned()
-    };
-    match form {
-        "chat" => {
-            let (cmd, vendor) = picked.launch()?;
-            let id = n.open_gui_at(&path, &title, &cmd, Some(&vendor), false)?;
-            Ok(id.0)
-        }
-        // 调度员 (docs/AGENT.md): the same conversation session, with
-        // khor's own verbs in its hands. Not a new shape — the ruling
-        // says so in its first line — so it differs from `chat` by one
-        // flag and nothing else.
-        "agent" => {
-            let (cmd, vendor) = picked.launch()?;
-            let id = n.open_gui_at(&path, &title, &cmd, Some(&vendor), true)?;
-            Ok(id.0)
-        }
-        "term" => {
-            // The TUI child resolves claude the same way the shim does,
-            // env door included, so both forms honour one override.
-            let claude = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
-            // **The session is named before it exists**, and the row
-            // wears that name — the same trick the shim plays on the
-            // protocol side. Without it this form produced the one row
-            // khor could not take over: a khor-minted id names no
-            // vendor file, so 接管 answered 「没有它的对话记录」 unless
-            // a hook happened to be installed to fill the leaf in.
-            let vendor_session = khor_node::adaptor::uuid_v4()?;
-            let id = khor_node::adaptor::id_for(&vendor_session);
-            let id = n.open_persistent_as(
-                &id,
-                &path,
-                khor_node::kind::TUI,
-                &title,
-                &[claude, "--session-id".into(), vendor_session],
-                (80, 24),
-                Some(khor_node::adaptor::claude::VENDOR),
-            )?;
-            Ok(id.0)
-        }
-        // The wizard sends exactly the two above; anything else is a
-        // programmer's error, not a person's.
-        other => Err(format!("no such form: {other}")),
-    }
+    n.open_agent_on(machine, dir, title, form, agent).await.map(|id| id.0)
 }
 
 /// One message in a machine's conversation, shaped for painting. The

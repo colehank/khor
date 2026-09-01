@@ -259,12 +259,24 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         registry.remove(id);
     }
     let n = Node::open(root.to_path_buf())?;
-    let dir = n
-        .session_dir(&SessionId(id.to_owned()))
-        .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-    // The GUI host ignores the terminal size; 0×0 is what its own test
-    // clients send.
-    let conn = connect(&dir, 0, 0)?;
+    let sid = SessionId(id.to_owned());
+    // **The fork is on the row, not on a flag** (`Node::far_machine`),
+    // the terminal's own rule one door over: a conversation born on
+    // another machine (the wizard's 在哪台) is reached through the pipe
+    // the resident binds onto its host, and what arrives is the same
+    // socket speaking the same frames — nothing below this line knows
+    // there is a network under it. The GUI host ignores the terminal
+    // size; 0×0 is what its own test clients send.
+    let conn = match n.far_machine(&sid)? {
+        Some(machine) => {
+            let (addr, cookie) = crate::term::reach_blocking(root, &machine, &sid)?;
+            khor_node::host::connect_at(&addr, &cookie, 0, 0)?
+        }
+        None => {
+            let dir = n.session_dir(&sid).ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
+            connect(&dir, 0, 0)?
+        }
+    };
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let chat = Arc::new(Chat {
         conn: Mutex::new(conn),

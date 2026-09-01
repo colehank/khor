@@ -75,7 +75,11 @@ pub fn answer(
         // pixel width, and a default would be this layer inventing a
         // resolution for a screen it cannot see.
         "day_strips" => to_json(&crate::day_strips(root, num("cells")? as u32)?),
-        "places" => to_json(&crate::places(root)?),
+        // `machine` absent means this one — the wizard's default; a
+        // name is the machine the session is about to be born on.
+        "places" => {
+            to_json(&rt.block_on(crate::places(root, &opt_str("machine")?.unwrap_or_default()))?)
+        }
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         "usage" => to_json(&crate::usage(root)?),
         // No `root`: a subscription is an account's, not an
@@ -264,13 +268,14 @@ pub fn answer(
             crate::takeover_term(root, &arg("id")?)?;
             Ok("null".to_owned())
         }
-        "open_session" => to_json(&crate::open_session(
+        "open_session" => to_json(&rt.block_on(crate::open_session(
             root,
             &arg("dir")?,
             &opt_str("title")?.unwrap_or_default(),
             &arg("form")?,
             &opt_str("agent")?.unwrap_or_default(),
-        )?),
+            &opt_str("machine")?.unwrap_or_default(),
+        ))?),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(root, &arg("machine")?))?),
         // The path names a file on the machine answering this call —
         // meaningful from the app and the loopback bridge, where that

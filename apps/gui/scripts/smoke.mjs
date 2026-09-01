@@ -306,7 +306,10 @@ const launchdEnv = (e) => {
   }
   return out;
 };
-const envA = homeEnv(A, "alpha");
+// alpha gets the fake claude too: 25c-3 starts a conversation *on alpha*
+// from beta's face, and what alpha's shim spawns must be the fake, not
+// whatever `claude` is on this machine's disk.
+const envA = { ...homeEnv(A, "alpha"), KHOR_CLAUDE: join(SCRATCH, "claude-fake.py") };
 // beta watches a private tmux server (KHOR_TMUX_SOCKET is the test
 // door): the bridge item stands sessions up on it, and the user's real
 // server is never looked at, let alone attached to.
@@ -4734,6 +4737,82 @@ for line in sys.stdin:
   if ((await page.locator("[data-chat-mode]").count()) !== 0) {
     throw new Error("the marker drew beside a menu wearing the same word");
   }
+
+  // 25c-3) 在哪台: the same wizard, a session born on **alpha**, spoken
+  //        to from beta's face. Four claims on one road:
+  //        1. the machine row offers every paired machine, this one
+  //           marked by default;
+  //        2. picking alpha lists *alpha's* places — planted on alpha,
+  //           and beta's own place must not be on that list (the
+  //           control arm: a wizard that kept reading this machine's
+  //           records would pass claim 2 with the wrong list);
+  //        3. 建立 answers a row alpha owns (alpha's own `sessions`
+  //           lists it) — the four answers crossed as a name and were
+  //           resolved over there (`Request::OpenAgent`);
+  //        4. opening that row from here attaches through the resident's
+  //           pipe onto alpha's ghost, and a line goes round: beta's
+  //           face → the pipe → alpha's shim → alpha's fake claude →
+  //           back. The echo is the proof; a chat that opened but could
+  //           not speak would paint an empty conversation, which is
+  //           what an unreachable one looks like too.
+  const farDir = join(SCRATCH, "far-cwd");
+  mkdirSync(farDir, { recursive: true });
+  const farPlace = join(SCRATCH, "far-place-repo");
+  mkdirSync(join(farPlace, ".git"), { recursive: true });
+  {
+    const dir = join(A, ".claude", "projects", "far-pl");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "bbbbbbb1-0000-4000-8000-000000000001.jsonl"),
+      JSON.stringify({ type: "user", cwd: farPlace, message: { role: "user", content: "x" } }) + "\n",
+    );
+  }
+  await openLanding("sessions");
+  await page.locator("[data-pane-new]").click();
+  await page.locator('[data-new-item="new"]').click();
+  await until("the machine row offering alpha", 10_000, async () =>
+    (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
+  );
+  if ((await page.locator('[data-new-session-machine="beta"]').getAttribute("data-on")) !== "true") {
+    throw new Error("this machine must be the wizard's default");
+  }
+  await page.locator('[data-new-session-machine="alpha"]').click();
+  await until("alpha's own places listed for alpha", 20_000, async () =>
+    (await page.locator(`[data-place="${farPlace}"]`).count()) === 1,
+  );
+  if ((await page.locator(`[data-place="${placeRepo}"]`).count()) !== 0) {
+    throw new Error("beta's own place listed under alpha — the wizard is still reading this machine's records");
+  }
+  await page.locator("[data-new-session-dir]").fill(farDir);
+  await page.locator("[data-new-session-name]").fill("far-one");
+  await page.locator("[data-new-session-create]").click();
+  await until("the far wizard dialog closed on success", 60_000, async () =>
+    (await page.locator("[data-new-session-dialog]").count()) === 0,
+  );
+  await until("the far row on beta's list", 30_000, async () =>
+    (await page.locator('[data-title="far-one"]').count()) === 1,
+  );
+  const farRowId = await page.locator('[data-title="far-one"]').getAttribute("data-row");
+  if (!cli(envA, "sessions").includes("far-one")) {
+    throw new Error("alpha's own sessions do not list far-one — the row was not born there");
+  }
+  await page.locator(`[data-row="${farRowId}"] [data-row-open]`).click();
+  await until("the far conversation's box", 30_000, async () =>
+    (await page.locator("[data-chat-input]").count()) === 1,
+  );
+  await say(page, "hello far");
+  await until("the far reply, round through alpha's shim and the pipe", 40_000, async () => {
+    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    return t.includes("echo: hello far");
+  });
+  // Back to the wizard's own conversation: what follows replays it
+  // through the bridge, which only knows the chat the pane holds.
+  const wizardRow = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  await page.locator(`[data-row="${wizardRow}"] [data-row-open]`).click();
+  await until("the wizard's conversation back on the pane", 20_000, async () =>
+    (await page.locator("[data-chat-input]").count()) === 1 &&
+    (await page.locator("[data-detail-header]").innerText().catch(() => "")).includes("wizard-one"),
+  );
   // Markdown is the agent's medium, and the fake echoes what it was
   // told — so one line of it makes the round trip and must arrive
   // *rendered*. Two assertions, because one cannot tell the two ways

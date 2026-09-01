@@ -26,8 +26,8 @@ fn day_strips(
 /// 常去的地方 for the wizard's first question
 /// (`khor_gui_core::places`).
 #[tauri::command]
-fn places() -> Result<Vec<khor_gui_core::PlaceRow>, String> {
-    khor_gui_core::places(&Node::root_from_env())
+async fn places(machine: Option<String>) -> Result<Vec<khor_gui_core::PlaceRow>, String> {
+    khor_gui_core::places(&Node::root_from_env(), machine.as_deref().unwrap_or("")).await
 }
 
 #[tauri::command]
@@ -360,11 +360,12 @@ fn takeover_term(id: String) -> Result<(), String> {
 /// chosen directory, as a conversation (`chat`) or a terminal (`term`);
 /// `agent` is the wizard's 智能体 answer (claude when absent).
 #[tauri::command]
-fn open_session(
+async fn open_session(
     dir: String,
     title: Option<String>,
     form: String,
     agent: Option<String>,
+    machine: Option<String>,
 ) -> Result<String, String> {
     khor_gui_core::open_session(
         &Node::root_from_env(),
@@ -372,7 +373,9 @@ fn open_session(
         title.as_deref().unwrap_or(""),
         &form,
         agent.as_deref().unwrap_or(""),
+        machine.as_deref().unwrap_or(""),
     )
+    .await
 }
 
 /// The machine card's 在这台开终端 — `open --on`, through the same

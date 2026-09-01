@@ -374,7 +374,7 @@ fn terms() -> &'static Mutex<HashMap<String, Arc<Term>>> {
 /// async — and a tauri command is — at which point it panics rather than
 /// returning an error anybody can read. A thread costs one click's worth
 /// of nothing and cannot be wrong about where it is.
-fn reach_blocking(root: &Path, machine: &str, id: &SessionId) -> Result<(String, String), String> {
+pub(crate) fn reach_blocking(root: &Path, machine: &str, id: &SessionId) -> Result<(String, String), String> {
     let (root, machine, id) = (root.to_path_buf(), machine.to_owned(), id.clone());
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()

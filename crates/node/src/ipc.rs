@@ -54,6 +54,13 @@ pub enum Op {
     /// nobody and report "nothing flowing" for the whole fleet.
     /// Tail-appended.
     Hops,
+    /// Tail-appended: [`crate::proto::Request::OpenAgent`] through the
+    /// resident — an agent session, by name, on that machine. Resolved
+    /// over there; this side only carries the wizard's answers.
+    OpenAgentOn { machine: String, dir: String, title: String, form: String, agent: String },
+    /// Tail-appended: [`crate::proto::Request::Places`] through the
+    /// resident — 常去的地方 on that machine.
+    PlacesOn { machine: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -98,6 +105,9 @@ pub enum Reply {
     /// way to tell that from *no reading*, which is precisely the
     /// distinction `Hop` exists to keep (`Hop::Unknown`).
     Hops { by_device: Vec<(String, khor_core::Hop)> },
+    /// Tail-appended with [`Op::PlacesOn`]: `(path, shown, sessions,
+    /// last_ms)` per place, as that machine answered.
+    Places { places: Vec<(String, String, u32, i64)> },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

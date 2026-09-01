@@ -55,12 +55,14 @@ import {
   agents as fetchAgents,
   agentsKnown,
   agentsKnownTaken,
+  fetchDevices,
   fetchPlaces,
   openSession,
   registerKnownAgent,
   resumeSession,
   type AgentRow,
   type AgentSaid,
+  type DeviceRow,
   type KnownAgent,
   type PlaceRow,
 } from "@/api";
@@ -73,7 +75,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { gui } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 export function NewSessionDialog({
@@ -86,6 +88,12 @@ export function NewSessionDialog({
   /** The freshly-minted session id — the caller may select its row. */
   onOpened: (id: string) => void;
 }) {
+  /** 在哪台 — which machine the session is born on. Every paired
+      machine is offered; the row is drawn only when there is a choice
+      (one machine is a fact, not a question). `""` until the table
+      answers, which `openSession` reads as this machine. */
+  const [machines, setMachines] = useState<DeviceRow[]>([]);
+  const [machine, setMachine] = useState("");
   const [dir, setDir] = useState("~");
   /** 常去的地方. Empty until the read lands, and empty is also the
       honest answer on a machine with no recorded conversations — there
@@ -125,6 +133,8 @@ export function NewSessionDialog({
   // question this dialog cannot guess.
   useEffect(() => {
     if (!open) return;
+    setMachines([]);
+    setMachine("");
     setDir("~");
     setPlaces([]);
     setTitle("");
@@ -149,8 +159,11 @@ export function NewSessionDialog({
     // shortcut that could not be built is not a fact worth a red line
     // (the registry's failure *is*, because「你没接过 agent」and「我读
     // 不到」are different next steps).
-    fetchPlaces()
-      .then((rows) => live && setPlaces(rows))
+    // The machine table, read once per opening like the registry: it
+    // syncs from other machines, and a paired machine that arrived
+    // since the last opening is exactly the one a person came to pick.
+    fetchDevices()
+      .then((rows) => live && setMachines(rows))
       .catch(() => {});
     fetchAgents()
       .then((rows) => {
@@ -167,6 +180,26 @@ export function NewSessionDialog({
       live = false;
     };
   }, [open]);
+
+  // **The places follow the machine.** 常去的地方 are read from where
+  // the session is about to be born, and a machine change resets the
+  // box to that machine's home — a path typed for this disk means
+  // nothing on that one. A failure is left silent on purpose: the 目录
+  // box is still right there and still takes anything, so a shortcut
+  // that could not be built is not a fact worth a red line (the
+  // registry's failure *is*, because「你没接过 agent」and「我读不到」
+  // are different next steps).
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setPlaces([]);
+    fetchPlaces(machine)
+      .then((rows) => live && setPlaces(rows))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, machine]);
 
   const registered = (name: string) => known.some((a) => a.name === name);
 
@@ -268,7 +301,7 @@ export function NewSessionDialog({
     if (opening) return;
     setOpening(true);
     setError(null);
-    openSession(dir, title, form, agent)
+    openSession(dir, title, form, agent, machine)
       .then((id) => {
         onOpenChange(false);
         onOpened(id);
@@ -321,6 +354,38 @@ export function NewSessionDialog({
             `max-w-lg` — inputs, buttons and all — and `truncate`
             never fires because nothing above it agreed to shrink. */}
         <div className="flex min-w-0 flex-col gap-3">
+          {/* **在哪台, first — before the directory, because the
+              directory is a fact about the machine.** The whole net's
+              machines, this one marked; picking one makes the places
+              below, the box and the agent all that machine's. Drawn
+              only when there is a choice to make. A satellite is
+              offered greyed: it has no khor of its own to host an
+              agent (`open --on` reaches it over ssh for a shell), and
+              a button that cannot be pressed says so more plainly
+              than a refusal after the fact. */}
+          {machines.length > 1 && (
+            <div data-new-session-machines className="flex min-w-0 flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">{gui.new_session_machine}</span>
+              <div className="flex flex-wrap gap-1">
+                {machines.map((d) => (
+                  <Button
+                    key={d.id}
+                    size="sm"
+                    variant={(machine === "" ? d.me : machine === d.name) ? "secondary" : "ghost"}
+                    data-new-session-machine={d.name}
+                    data-on={machine === "" ? d.me : machine === d.name}
+                    disabled={d.sponsor !== null}
+                    onClick={() => {
+                      setMachine(d.name);
+                      setDir("~");
+                    }}
+                  >
+                    {d.me ? `${d.name} ${cli.this_machine}` : d.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* The box and its shortcuts, in one column. **Not one
               `label`**: a `button` inside a `label` is a control inside
               a control, and every click on a place would also be a

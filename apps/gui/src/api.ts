@@ -175,11 +175,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   );
 }
 
-/** 常去的地方 — the directories this machine's own records say work
+/** 常去的地方 — the directories a machine's own records say work
     happened in, folded to project roots and newest first
-    (`khor_node::place`). This machine's only: a directory on another
-    one is not somewhere a session can be started from here. */
-export const fetchPlaces = () => call<PlaceRow[]>("places", {});
+    (`khor_node::place`). `machine` empty is this one; a name asks that
+    machine, because it is where the wizard is about to start something
+    (`Node::places_on`). */
+export const fetchPlaces = (machine = "") => call<PlaceRow[]>("places", { machine });
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });
@@ -295,14 +296,17 @@ export const resumeSession = (agent: string, session: string) =>
     conversation ("chat") or a terminal ("term"), for the chosen agent.
     `agent` is an **open position** since 批⑥: "claude", "codex", or the
     name of anything registered — the node resolves it and refuses by
-    name, so this layer neither narrows nor validates it. Answers the
-    new row's id. */
+    name, so this layer neither narrows nor validates it. `machine` is
+    where the session is born (在哪台): empty or this machine's name is
+    here, any other paired name carries the four answers over there
+    (`Node::open_agent_on`). Answers the new row's id. */
 export const openSession = (
   dir: string,
   title: string,
   form: "chat" | "term",
   agent: string,
-) => call<string>("open_session", { dir, title, form, agent });
+  machine = "",
+) => call<string>("open_session", { dir, title, form, agent, machine });
 /** The machine card's 在这台开终端 — `open --on` with the far machine's
     own shell, through the same core call both skins answer with
     (docs/KHOR.md equivalence). Answers the new row's id. */

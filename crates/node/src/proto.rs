@@ -191,6 +191,28 @@ pub enum Request {
     /// there" and keeps painting 没在看. **Tail-appended**, like every
     /// op since the first.
     Days,
+    /// Open an **agent** session on the asked machine — the wizard's four
+    /// answers, resolved over there (docs/KHOR.md 发起: 在任意设备开
+    /// session, now for conversations too). Where [`Request::Open`]
+    /// carries a command and a terminal size and hosts a PTY, this
+    /// carries a *name* and hosts whatever that name means on the
+    /// answering machine: khor's own `claude` / `codex`, or an agent
+    /// registered there — resolved by [`crate::Node::start_session`],
+    /// the same call the wizard makes locally, so both machines refuse
+    /// in one voice. A name resolved on the asking side would carry the
+    /// asker's paths to a machine that has different ones.
+    ///
+    /// `dir` empty (or `~`) means that machine's home. `form` is
+    /// `chat` / `term` / `agent`. Answered as [`Response::Opened`]; a
+    /// khor that predates it answers [`Response::Refused`].
+    OpenAgent { dir: String, title: String, form: String, agent: String },
+    /// 常去的地方 on the asked machine (`crate::Node::places`): the
+    /// wizard's first question, answered for wherever the session is
+    /// about to be born rather than for the machine the screen is on.
+    /// Answered as [`Response::Places`]; a khor that predates it answers
+    /// [`Response::Refused`], read as "no list" — the box still takes a
+    /// typed path.
+    Places,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,6 +283,11 @@ pub enum Response {
     /// (`Day::from_wire`), so every minute since this answer reads as
     /// nobody's.
     Days { day: String },
+    /// [`Request::Places`]'s answer: `(path, shown, sessions, last_ms)`
+    /// per place, newest first — `shown` is the path as that machine's
+    /// own user reads it (`~` for *its* home), because whose home a
+    /// path is under is a fact about the answering machine.
+    Places { places: Vec<(String, String, u32, i64)> },
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -346,6 +373,16 @@ mod tests {
             (Request::Ls { path: String::new() }, &b"Ls"[..]),
             (Request::FetchPath { path: String::new(), offset: 0 }, &b"FetchPath"[..]),
             (Request::Days, &b"Days"[..]),
+            (
+                Request::OpenAgent {
+                    dir: String::new(),
+                    title: String::new(),
+                    form: String::new(),
+                    agent: String::new(),
+                },
+                &b"OpenAgent"[..],
+            ),
+            (Request::Places, &b"Places"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

@@ -2291,6 +2291,115 @@ impl Node {
         place::fold(seen)
     }
 
+    /// [`Node::places`] with each path also spelled as this machine's
+    /// user reads it — the wire shape of [`crate::proto::Response::Places`],
+    /// because `~` means this machine's home and only this machine knows
+    /// which prefix that is.
+    pub fn places_shown(&self) -> Vec<(String, String, u32, i64)> {
+        self.places()
+            .into_iter()
+            .map(|p| (p.path.clone(), place::shorten(Path::new(&p.path)), p.sessions, p.last_ms))
+            .collect()
+    }
+
+    /// Opens a fresh agent session where the wizard pointed (会话身份批B:
+    /// 建 session 四字段 — 目录、智能体、形式、名字). The two forms are
+    /// the user ruling's two channels: `chat` hosts khor's own vendor
+    /// shim behind the GUI host (`_cagent` / `_codexagent` — zero
+    /// dependencies, the skin ruling), `term` hosts the vendor's TUI.
+    /// Either way the session is born standing in the chosen directory.
+    ///
+    /// **On `Node` rather than in the GUI core, because it now runs on
+    /// two machines**: locally when the wizard names this one, and on
+    /// the far side of [`crate::proto::Request::OpenAgent`] when it
+    /// names another. A name resolves to a command *here*, with this
+    /// machine's paths and this machine's registrations — which is why
+    /// the wire carries the name and not the command.
+    ///
+    /// `agent` is an open position (批⑥): khor's own two, or anything
+    /// this machine registered — refused by name through
+    /// [`Node::agent_or_refuse`], the CLI's own refusal.
+    pub fn start_session(
+        &self,
+        dir: &str,
+        title: &str,
+        form: &str,
+        agent: &str,
+    ) -> Result<SessionId, String> {
+        let picked = match agent {
+            "" | adaptor::claude::VENDOR => Picked::Claude,
+            adaptor::codex::VENDOR => Picked::Codex,
+            name => Picked::Registered(name.to_owned(), self.agent_or_refuse(name)?),
+        };
+        // Which forms this agent can take, each refusal naming the wall
+        // it hit. A registered agent has two it cannot pass, and they
+        // are different walls: khor has no spelling for starting it in
+        // a terminal, and no way to hand it khor's verbs.
+        match (&picked, form) {
+            // The TUI form needs a pre-nameable session, and a bare
+            // thread/start writes no rollout to resume (probed).
+            (Picked::Codex, "term") => return Err(msg::WIZARD_CODEX_CHAT_ONLY.into()),
+            (Picked::Registered(..), "term") => {
+                return Err(msg::WIZARD_REGISTERED_NO_TERMINAL.into())
+            }
+            (Picked::Registered(..), "agent") => {
+                return Err(msg::WIZARD_REGISTERED_NO_SCHEDULER.into())
+            }
+            _ => {}
+        }
+        let home = std::env::home_dir();
+        let path = match dir.trim() {
+            "" | "~" => home.clone().ok_or_else(|| msg::no_such_dir("~"))?,
+            d if d.starts_with("~/") => {
+                home.clone().ok_or_else(|| msg::no_such_dir(d))?.join(&d[2..])
+            }
+            d => PathBuf::from(d),
+        };
+        if !path.is_dir() {
+            return Err(msg::no_such_dir(&path.display().to_string()));
+        }
+        let title = if title.trim().is_empty() {
+            path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| if agent.is_empty() { "claude".to_owned() } else { agent.to_owned() })
+        } else {
+            title.trim().to_owned()
+        };
+        match form {
+            "chat" => {
+                let (cmd, vendor) = picked.launch()?;
+                self.open_gui_at(&path, &title, &cmd, Some(&vendor), false)
+            }
+            // 调度员 (docs/AGENT.md): the same conversation session, with
+            // khor's own verbs in its hands — one flag's difference.
+            "agent" => {
+                let (cmd, vendor) = picked.launch()?;
+                self.open_gui_at(&path, &title, &cmd, Some(&vendor), true)
+            }
+            "term" => {
+                // The TUI child resolves claude the same way the shim
+                // does, env door included, so both forms honour one
+                // override.
+                let claude = std::env::var("KHOR_CLAUDE").unwrap_or_else(|_| "claude".into());
+                // **The session is named before it exists**, and the row
+                // wears that name — the same trick the shim plays on the
+                // protocol side, so 接管 has a vendor file to find.
+                let vendor_session = adaptor::uuid_v4()?;
+                let id = adaptor::id_for(&vendor_session);
+                self.open_persistent_as(
+                    &id,
+                    &path,
+                    khor_core::kind::TUI,
+                    &title,
+                    &[claude, "--session-id".into(), vendor_session],
+                    (80, 24),
+                    Some(adaptor::claude::VENDOR),
+                )
+            }
+            other => Err(format!("no such form: {other}")),
+        }
+    }
+
     /// 接管 (批C): the conversation stays; the process presenting it
     /// changes hands. Ends whatever shows this session now — a viewer
     /// host's bridge, the TUI process itself — and resurrects the same
@@ -3152,3 +3261,35 @@ pub(crate) fn find_program(command: &str, path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+/// The wizard's 智能体 answer, resolved to something this machine can
+/// start ([`Node::start_session`]).
+enum Picked {
+    Claude,
+    Codex,
+    Registered(String, AgentSpec),
+}
+
+impl Picked {
+    /// What to run, and what the row will say it is.
+    ///
+    /// khor's own two run khor's own shims (零依赖, the skin ruling); a
+    /// registered agent runs the command it was registered with, as the
+    /// launch JSON the protocol crate reads. **All three go out as a
+    /// launch JSON carrying the user's `PATH`** (`Node::agent_launch`),
+    /// khor's own two included: what `_cagent` spawns is `claude`, by
+    /// bare name, and on a launchd-started serve that name is not on
+    /// the PATH the process has.
+    fn launch(&self) -> Result<(Vec<String>, String), String> {
+        let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
+            let exe = self_exe()?;
+            let spec = AgentSpec { command: exe.display().to_string(), args: vec![shim.to_owned()] };
+            Ok((vec![Node::agent_launch(&spec)?], vendor.to_owned()))
+        };
+        match self {
+            Picked::Claude => mine("_cagent", adaptor::claude::VENDOR),
+            Picked::Codex => mine("_codexagent", adaptor::codex::VENDOR),
+            Picked::Registered(name, spec) => Ok((vec![Node::agent_launch(spec)?], name.clone())),
+        }
+    }
+}
