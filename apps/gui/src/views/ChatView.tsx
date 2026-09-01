@@ -69,6 +69,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { useKeysTo } from "@/hooks/use-keys-to";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 
@@ -795,6 +796,11 @@ export function ChatView({
   const scroller = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const box = useRef<HTMLTextAreaElement>(null);
+  // The box takes the keys the moment this pane opens, and any key
+  // typed at a button afterwards (`useKeysTo`). Off while there is no
+  // box to take them: a recorded conversation has nowhere to speak
+  // into, and an ended one has nobody listening.
+  useKeysTo(box, !still && !gone);
   /** How long to wait before asking again, and the way to stop waiting. */
   const hidden = useHidden();
   const pace = useRef(IDLE_MS);

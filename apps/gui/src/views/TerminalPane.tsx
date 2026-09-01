@@ -20,6 +20,7 @@ import {
 } from "@/api";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { useKeysTo } from "@/hooks/use-keys-to";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of the
     app's theme. 0–7 normal, 8–15 bright. */
@@ -475,6 +476,12 @@ export function TerminalPane({ id }: { id: string }) {
    * not what a mouse can drag over.
    */
   const keys = useRef<HTMLTextAreaElement>(null);
+  // The field takes the keys the moment this pane opens, and any key
+  // typed at a button afterwards (`useKeysTo`) — the first stray
+  // character lands in the field and goes out through `onInput`, the
+  // same road a soft keyboard uses; everything after it is focused
+  // and goes through `onKeyDown` like any other key.
+  useKeysTo(keys, true);
   /** True between `compositionstart` and `compositionend`: the field is
       holding half a word and nothing in it is for the program yet. */
   const composing = useRef(false);

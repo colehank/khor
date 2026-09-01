@@ -3706,6 +3706,25 @@ for line in sys.stdin:
   await until("the terminal attached", 10_000, async () =>
     (await page.locator("[data-terminal]").count()) === 1,
   );
+  // The terminal's half of 25f: arriving focuses the field, and a word
+  // typed at a rail button afterwards reaches the program — its first
+  // character through the field's `onInput` road and the rest through
+  // the grid's keys, which is why it is a word and not a letter. `cat`
+  // echoes it, so the screen is the proof. Waited for, not asserted at
+  // once: the dev double-mount tears the pane down and back up, and the
+  // second mount is the one that keeps the focus.
+  await until("the field focused on arrival", 5_000, () =>
+    page.evaluate(() => document.activeElement?.hasAttribute("data-term-keys") === true),
+  );
+  await railItem("sessions").focus();
+  if (await page.evaluate(() => document.activeElement?.hasAttribute("data-term-keys"))) {
+    throw new Error("probe dead: focus never left the field, so the stray key has nothing to prove");
+  }
+  await page.keyboard.type("stray7");
+  await page.keyboard.press("Enter");
+  await until("the word typed at the rail echoed by the terminal", 10_000, async () =>
+    (await page.locator("[data-terminal]").innerText()).includes("stray7"),
+  );
   // Type inside the wait, re-focusing each round: React's dev double-mount
   // briefly tears the attachment down and back up (chat's hold-count, and
   // the same window), and a keystroke that lands in that gap is dropped.
@@ -4002,6 +4021,30 @@ for line in sys.stdin:
   }
   if (imeSaid.left !== "") {
     throw new Error(`the field kept the word and would send it again: ${imeSaid.left}`);
+  }
+  // The input method's side of 25f. The first `keydown` of a syllable
+  // (`keyCode 229`, before any `compositionstart`) pressed while a
+  // button holds focus must move the focus to the field *during that
+  // key*, because it is the one event before the composition picks
+  // its target. Synthetic, like the block above, and for the same
+  // reason: this proves khor moves the focus on that key; whether
+  // Chrome then composes in the newly focused field is Chrome's
+  // contract, and it is the same contract the pointer road already
+  // leans on.
+  const imeAimed = await page.evaluate(() => {
+    const field = document.querySelector("[data-term-keys]");
+    const button = document.querySelector('[data-rail-item][data-landing="sessions"]');
+    if (!field || !button) return { error: "no field or no rail button to press the key at" };
+    button.focus();
+    if (document.activeElement !== button) return { error: "probe dead: the button did not take focus" };
+    const first = new KeyboardEvent("keydown", { key: "Process", bubbles: true, cancelable: true });
+    Object.defineProperty(first, "keyCode", { get: () => 229 });
+    button.dispatchEvent(first);
+    return { landed: document.activeElement === field };
+  });
+  if (imeAimed.error) throw new Error(imeAimed.error);
+  if (!imeAimed.landed) {
+    throw new Error("an input method's opening key pressed at a button must aim the composition at the field");
   }
   // 24m) bracketed paste (批④ 前置): a paste is sent as a paste, and the
   //      wrapping is the running program's choice rather than this app's.
@@ -4463,6 +4506,34 @@ for line in sys.stdin:
   await until("the same row reborn as a live conversation", 30_000, async () =>
     (await page.locator("[data-chat-input]").count()) === 1,
   );
+  // 25f) the keys go where the attention is (`useKeysTo`, 2026-09-01:
+  //      「每次打字，都在选中 session 列表或侧边栏」). Two roads, both
+  //      asserted on *where the character landed* rather than on
+  //      `activeElement` alone: arriving focuses the box, and a key
+  //      pressed at a rail button afterwards lands in the box — the
+  //      real key path, playwright's keyboard through Chrome's own
+  //      default action, not a synthetic event aimed at the handler.
+  //      Parked on a rail button because that is where the complaint
+  //      said focus sat, and because a button is not somewhere text
+  //      could have gone by itself.
+  await until("the box focused on arrival", 5_000, () =>
+    page.evaluate(() => document.activeElement?.hasAttribute("data-chat-input") === true),
+  );
+  await railItem("sessions").focus();
+  if (await page.evaluate(() => document.activeElement?.hasAttribute("data-chat-input"))) {
+    throw new Error("probe dead: focus never left the box, so the stray key has nothing to prove");
+  }
+  await page.keyboard.type("q");
+  {
+    const landed = await page.evaluate(() => ({
+      focused: document.activeElement?.hasAttribute("data-chat-input") === true,
+      value: document.querySelector("[data-chat-input]")?.value ?? null,
+    }));
+    if (!landed.focused || landed.value !== "q") {
+      throw new Error(`a key typed at the rail did not land in the box: ${JSON.stringify(landed)}`);
+    }
+  }
+  await page.locator("[data-chat-input]").fill("");
   await say(page, "hello taken");
   // The pane's own text rides the timeout: "last: false" says only that
   // the assertion never came true, and what the pane *did* hold is the
