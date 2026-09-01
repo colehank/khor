@@ -1,4 +1,6 @@
 import type { DayRun } from "@/api";
+import { gui } from "@/gen/catalog";
+import { word } from "@/words";
 
 /**
  * One session's last 24 hours, as a band across the bottom of its row.
@@ -74,31 +76,79 @@ import type { DayRun } from "@/api";
  * second copy of that judgment here is how a strip and the row above it
  * would come to disagree about the same session.
  */
+/** The strip's whole span, in minutes: the node's `Day` is a rolling
+    day (`khor_node::day`), and every run is a share of it. */
+const DAY_MINUTES = 24 * 60;
+
+/** A clock reading, `HH:MM`, for the hover. */
+function clock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * What a run says when the pointer rests on it: its word, then the
+ * span of the day it held (2026-09-01: 「鼠标悬浮在 session 的状态 bar
+ * 上的时候,可以显示状态、时间」).
+ *
+ * **The clock is read at paint, not at fetch.** The strip's right edge
+ * is "now" as of the last poll, and the poll is a few seconds — a
+ * reading that lands inside one poll is inside one minute, and the
+ * hover prints minutes. Carrying the fetch time out of the hook would
+ * be a second clock for a difference the format cannot show.
+ *
+ * An absent run has nothing to say and paints nothing; the word for a
+ * stretch khor was not watching is its own (`day_unwatched`), never a
+ * seventh state.
+ */
+function saying(run: DayRun, before: number, total: number): string | undefined {
+  if (run.mark === "absent") return undefined;
+  const label = run.mark === "unwatched" ? gui.day_unwatched : word(run.mark.word);
+  const perCell = (DAY_MINUTES * 60_000) / total;
+  const now = Date.now();
+  const from = now - (total - before) * perCell;
+  const to = from + run.cells * perCell;
+  return gui.day_span(label, clock(from), clock(to));
+}
+
 export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
   if (!runs || runs.length === 0) return null;
   const total = runs.reduce((n, r) => n + r.cells, 0);
   if (total === 0) return null;
+  let before = 0;
   return (
     <span
       data-day-strip
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1 overflow-hidden"
+      // **Only the runs take the pointer**, and each says what it is.
+      // The strip is four pixels tall, so every run also reaches up
+      // behind the row with an invisible hit box (`before:`): a person
+      // aiming at the bar should not need a steady hand to hit it.
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1 overflow-visible"
     >
-      {runs.map((run, i) => (
+      {runs.map((run, i) => {
+        const title = saying(run, before, total);
+        before += run.cells;
+        return (
         <span
           // Runs have no identity of their own — they are a slice of a
           // timeline, and the slice at position i is the same thing
           // frame to frame even when its width changes.
           key={i}
+          title={title}
           data-day-mark={typeof run.mark === "string" ? run.mark : run.mark.word}
           // Every tier that has ink fills this box; the one that has
           // none renders nothing into it.
-          className="grid h-full place-items-center"
+          className={
+            title === undefined
+              ? "grid h-full place-items-center"
+              : "pointer-events-auto relative grid h-full place-items-center before:absolute before:inset-x-0 before:-top-3 before:bottom-0 before:content-['']"
+          }
           style={{ width: `${(run.cells / total) * 100}%` }}
         >
           <Mark mark={run.mark} />
         </span>
-      ))}
+        );
+      })}
     </span>
   );
 }
