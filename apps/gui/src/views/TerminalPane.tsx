@@ -817,7 +817,15 @@ export function TerminalPane({ id }: { id: string }) {
             const fg = run.inverse ? css(run.bg, "bg") ?? "var(--term-bg)" : css(run.fg, "fg");
             const bg = run.inverse ? css(run.fg, "fg") : css(run.bg, "bg");
             const style: React.CSSProperties = {
-              color: fg,
+              // **Faint is the ink blended toward the ground**, which
+              // is what every terminal does with SGR 2 and what makes
+              // a dim hint read as quieter than the text around it
+              // without changing its weight. Blended toward *this
+              // run's* ground so a faint word on a coloured band stays
+              // on the band; the share is the token's (`--term-dim`).
+              color: run.dim
+                ? `color-mix(in srgb, ${fg} var(--term-dim), ${bg ?? "var(--term-bg)"})`
+                : fg,
               background: bg,
               fontWeight: run.bold ? 700 : undefined,
               fontStyle: run.italic ? "italic" : undefined,

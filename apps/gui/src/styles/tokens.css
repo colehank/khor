@@ -1212,6 +1212,11 @@
   --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --text-term: 14px;
   --text-term--line-height: 20px;
+  /* How much of its own ink a faint (SGR 2) run keeps, the rest being
+   * its ground. iTerm's "dimming amount" sits near the middle; a share
+   * this side of it keeps a dim hint legible on both grounds while
+   * still reading as quieter than the plain text beside it. */
+  --term-dim: 55%;
 }
 
 @layer base {

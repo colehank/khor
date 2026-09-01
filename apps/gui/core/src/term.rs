@@ -105,6 +105,12 @@ pub struct TermRun {
     pub fg: TermColor,
     pub bg: TermColor,
     pub bold: bool,
+    /// SGR 2, faint. **Not the absence of bold**: claude's TUI writes
+    /// its hints and chrome dim and its headings bold, and a screen
+    /// that painted dim as ordinary weight lost half of that contrast
+    /// — measured on a live tmux capture 2026-09-01: 28 bold, 3 dim,
+    /// 0 italic, and khor had no slot for the 3.
+    pub dim: bool,
     pub italic: bool,
     pub underline: bool,
     pub inverse: bool,
@@ -206,6 +212,7 @@ struct Style {
     fg: TermColor,
     bg: TermColor,
     bold: bool,
+    dim: bool,
     italic: bool,
     underline: bool,
     inverse: bool,
@@ -216,6 +223,7 @@ fn style_of(cell: &vt100::Cell) -> Style {
         fg: cell.fgcolor().into(),
         bg: cell.bgcolor().into(),
         bold: cell.bold(),
+        dim: cell.dim(),
         italic: cell.italic(),
         underline: cell.underline(),
         inverse: cell.inverse(),
@@ -270,6 +278,7 @@ fn snapshot(screen: &vt100::Screen) -> TermScreen {
                     fg: TermColor::Default,
                     bg: TermColor::Default,
                     bold: false,
+                    dim: false,
                     italic: false,
                     underline: false,
                     inverse: false,
@@ -291,6 +300,7 @@ fn snapshot(screen: &vt100::Screen) -> TermScreen {
                     fg: style.fg,
                     bg: style.bg,
                     bold: style.bold,
+                    dim: style.dim,
                     italic: style.italic,
                     underline: style.underline,
                     inverse: style.inverse,
@@ -911,6 +921,23 @@ mod tests {
         let mut p = vt100::Parser::new(4, 10, 100);
         p.process(b"\x1b[?1049h\x1b[?1000h");
         assert_eq!(wheel_of(p.screen()), Wheel::Nowhere);
+    }
+
+    /// SGR 2 reaches the run as `dim`, distinct from bold, and SGR 22
+    /// clears both — which is how claude's TUI ends a heading and a
+    /// hint alike.
+    #[test]
+    fn faint_text_is_its_own_attribute_and_22_clears_it_with_bold() {
+        // Ten columns wide (`feed`), so the words are short: a line
+        // that wrapped would put the heading on row two.
+        let s = feed(b"\x1b[2mhi\x1b[22m ok \x1b[1mhd\x1b[22m");
+        let runs = &s.lines[0];
+        let hint = runs.iter().find(|r| r.text == "hi").expect("the hint run");
+        assert!(hint.dim && !hint.bold, "faint is faint, not bold");
+        let ok = runs.iter().find(|r| r.text.contains("ok")).expect("the plain run");
+        assert!(!ok.dim && !ok.bold, "22 turns faint off");
+        let head = runs.iter().find(|r| r.text == "hd").expect("the heading run");
+        assert!(head.bold && !head.dim, "bold is bold, not faint");
     }
 
     fn feed(bytes: &[u8]) -> TermScreen {
