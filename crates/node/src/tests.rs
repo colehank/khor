@@ -593,6 +593,116 @@ fn plant_discovered_claude(r: &PathBuf, vendor_session: &str, vendor_name: &str)
     .unwrap();
 }
 
+/// A claude status file whose pid is **this** process — a sighting with
+/// a live pid, which is the shape the rule under test is about.
+fn plant_live_claude(r: &PathBuf, vendor_session: &str, status: &str, pid: u32) {
+    let dir = crate::adaptor::vendor_home(r).join(".claude").join("sessions");
+    fs::create_dir_all(&dir).unwrap();
+    let now = crate::live::now_ms();
+    // The sweep vouches for a pid only when the file's `startedAt`
+    // matches the process table's start (`Procs::alive_since` — a
+    // recycled number is not the process that wrote the file), so the
+    // fixture carries the real start of the process it names.
+    let started = crate::adaptor::Procs::snapshot()
+        .get(pid)
+        .map(|p| p.started_ms)
+        .expect("the process the fixture names must be in the table");
+    fs::write(
+        dir.join(format!("{pid}.json")),
+        format!(
+            r#"{{"pid":{pid},"sessionId":"{vendor_session}","name":"live-one","startedAt":{started},"status":"{status}","statusUpdatedAt":{now}}}"#
+        ),
+    )
+    .unwrap();
+}
+
+/// **A word reported by a process that is not the one running the
+/// session loses to the vendor's own live file.** Two arms, because
+/// one alone is satisfied by a rule that always lets the disk win —
+/// and that rule would demote every hook.
+///
+/// Found live 2026-09-01: a ghost resumed a session the person was
+/// typing into in their own terminal; the reopen wrote 空闲 as
+/// `Reported`, and `Reported` outranked the disk for as long as the
+/// ghost lived, while claude's own file said busy the whole time.
+#[test]
+fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
+    let r = root("other-reporter");
+    let n = Node::open(r.clone()).unwrap();
+    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let me = std::process::id();
+    // The parent (the test harness) is another live process — a
+    // reporter that is not the claude the file describes.
+    let other = unsafe { libc::getppid() } as u32;
+    assert!(crate::link::pid_alive(other), "probe dead: the other reporter must be alive");
+
+    let vendor_session = "aaaaaaa2-0000-4000-8000-00000000000a";
+    plant_live_claude(&r, vendor_session, "busy", me);
+    let id = crate::adaptor::id_for(vendor_session);
+    let word_of = |n: &Node| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == id)
+            .map(|v| v.session.state.state)
+            .expect("the planted file surfaces as a row")
+    };
+    assert_eq!(word_of(&n), State::Busy, "control: the file alone reads busy");
+
+    // A reopen by another process writes 空闲 first-hand — about itself.
+    live.reopen(&id, khor_core::kind::GUI, "live-one", other).unwrap();
+    assert_eq!(
+        word_of(&n),
+        State::Busy,
+        "the reporter is not the process the file describes, so the file wins"
+    );
+
+    // The other arm: the same report from the very process the file
+    // describes keeps its rank — this is a hook's shape, and a hook
+    // must not be demoted.
+    live.reopen(&id, khor_core::kind::GUI, "live-one", me).unwrap();
+    assert_eq!(
+        word_of(&n),
+        State::Idle,
+        "a first-hand word from the process itself outranks its own file"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A conversation that is running somewhere is not resumed.** The
+/// refusal names the process, and no ghost is spawned — asserted on
+/// the sentence, and on the row still wearing the live file's word.
+#[test]
+fn resuming_a_session_that_is_live_elsewhere_is_refused_by_name() {
+    let r = root("resume-live");
+    let n = Node::open(r.clone()).unwrap();
+    let me = std::process::id();
+    let vendor_session = "aaaaaaa2-0000-4000-8000-00000000000b";
+    plant_live_claude(&r, vendor_session, "busy", me);
+    let cwd = r.join("cwd");
+    fs::create_dir_all(&cwd).unwrap();
+    let refused = n.reopen_gui_as(&cwd, "t", &["true".into()], "claude", vendor_session);
+    assert_eq!(
+        refused,
+        Err(msg::resume_running_elsewhere(me)),
+        "a live session is refused, naming the process"
+    );
+    // The control, on the predicate and **not on the door**: a session
+    // nobody is running has no live sighting, so the refusal cannot
+    // fire for it. Not driven through `reopen_gui_as` — past the
+    // refusal that door spawns `self_exe() _ghost …`, and in a test
+    // `self_exe()` is this harness, which reads `_ghost … t -- true`
+    // as a test filter and runs the suite again, ghosts and all
+    // (found the hard way: four of them, ten minutes each).
+    let dead = "aaaaaaa2-0000-4000-8000-00000000000c";
+    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    assert!(
+        live.sighting_of(&crate::adaptor::id_for(dead)).is_none(),
+        "a session nobody runs has no sighting to refuse on"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
 /// **The user's name outlives the vendor's sweep.** The sweep rebuilds a
 /// discovered row's title from the vendor's status file on every list,
 /// so a rename stored where the sweep writes would last one round. Two

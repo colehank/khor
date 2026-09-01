@@ -826,13 +826,30 @@ impl LiveKind {
                 if out[seat].place.is_none() {
                     out[seat].place = place_of(sighting.cwd.as_deref());
                 }
-                if guessed.contains(&&id) {
+                // **A report from a process that is not the one the
+                // vendor's file describes does not outrank that file.**
+                // `Reported` means "first-hand", and it is — for the
+                // process that wrote it. When the registry's pid is a
+                // different process from every live one the sighting
+                // accounts for, the report is about somebody else: a
+                // ghost that *resumed* this session while the person's
+                // own claude kept running (found live, 2026-09-01: the
+                // reopen wrote 空闲 for a session that was busy in its
+                // terminal the whole time, and 空闲 stood for as long as
+                // the ghost lived — a reporter that has since died is
+                // the same case). A pid-less report (a hook's) keeps
+                // its rank: the hook and the file are one process, and
+                // the hook is the fresher of the two by design.
+                let other_reporter = !pids.is_empty()
+                    && registered[seat].pid.is_some_and(|p| !pids.contains(&p));
+                if guessed.contains(&&id) || other_reporter {
                     // **The registry does not always win — the stronger
                     // source does.** This row's word was read off the
-                    // screen, and the vendor just told us in its own
-                    // files. Letting the guess stand here would put the
-                    // bottom of the four-family order on top of the
-                    // family it is a fallback *for*.
+                    // screen (or reported by a process that is not the
+                    // one running it), and the vendor just told us in
+                    // its own files. Letting the guess stand here would
+                    // put the bottom of the four-family order on top of
+                    // the family it is a fallback *for*.
                     let (state, unread) =
                         settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
                     out[seat].state =
@@ -1852,7 +1869,10 @@ mod tests {
         // Now the hook registers the same claude session and reports a
         // different word.
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
-        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
+        // The hook's own shape: it names no pid (`claude.rs`'s `ensure`
+        // passes `None`) — a hook is the session's process speaking, not
+        // a host beside it, and `rows` ranks a report by that.
+        k.register(&id, "tui", "one", None, None).unwrap();
         k.report(&id, State::Done, Source::Reported).unwrap();
 
         let rows = k.rows(|_| 0);
@@ -1897,7 +1917,10 @@ mod tests {
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
 
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
-        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
+        // The hook's own shape: it names no pid (`claude.rs`'s `ensure`
+        // passes `None`) — a hook is the session's process speaking, not
+        // a host beside it, and `rows` ranks a report by that.
+        k.register(&id, "tui", "one", None, None).unwrap();
 
         // The screen reader says the session is idle. The vendor's own
         // file says it is sitting on a permission prompt.
@@ -1973,7 +1996,10 @@ mod tests {
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
 
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
-        k.register(&id, "tui", "one", Some(std::process::id()), None).unwrap();
+        // The hook's own shape: it names no pid (`claude.rs`'s `ensure`
+        // passes `None`) — a hook is the session's process speaking, not
+        // a host beside it, and `rows` ranks a report by that.
+        k.register(&id, "tui", "one", None, None).unwrap();
         k.report(&id, State::Idle, Source::Reported).unwrap();
 
         // Rewrite the entry the way an older khor would have left it.

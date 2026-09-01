@@ -2100,8 +2100,17 @@ for line in sys.stdin:
   //     by reading the same order out of the CLI's own listing. The CLI
   //     order is taken from its *rows* (second column), so this does not
   //     depend on how a heading is punctuated there.
+  // Waited for the headings to *change*, the loop's own rule: the
+  // list keeps the place headings until the rows come back under the
+  // state mode, so "two or more headings" is true at once and reads the
+  // mode before — seen live under a cargo build's load, where the
+  // regroup took longer than the read.
+  const beforeState = (await groupKeys()).join();
   await chooseArrange("state");
-  await until("the state grouping to settle", 15_000, async () => (await groupKeys()).length >= 2);
+  await until("the state grouping to settle", 15_000, async () => {
+    const now = await groupKeys();
+    return now.length >= 2 && now.join() !== beforeState;
+  });
   const guiStateOrder = await groupTexts();
   const cliStateOrder = [
     ...new Set(
@@ -3729,11 +3738,17 @@ for line in sys.stdin:
   if (await page.evaluate(() => document.activeElement?.hasAttribute("data-term-keys"))) {
     throw new Error("probe dead: focus never left the field, so the stray key has nothing to prove");
   }
-  await page.keyboard.type("stray7");
-  await page.keyboard.press("Enter");
-  await until("the word typed at the rail echoed by the terminal", 10_000, async () =>
-    (await page.locator("[data-terminal]").innerText()).includes("stray7"),
-  );
+  // Typed inside the wait, re-parking the focus each round, for the
+  // marker loop's reason below: the dev double-mount tears the pane
+  // down and back up, and a word whose first letter lands in that gap
+  // is a word that never paints whole.
+  await until("the word typed at the rail echoed by the terminal", 15_000, async () => {
+    await railItem("sessions").focus();
+    await page.keyboard.type("stray7");
+    await page.keyboard.press("Enter");
+    await new Promise((r) => setTimeout(r, 300));
+    return (await page.locator("[data-terminal]").innerText()).includes("stray7");
+  });
   // Type inside the wait, re-focusing each round: React's dev double-mount
   // briefly tears the attachment down and back up (chat's hold-count, and
   // the same window), and a keystroke that lands in that gap is dropped.

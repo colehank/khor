@@ -2227,6 +2227,20 @@ impl Node {
         if !cwd.is_dir() {
             return Err(msg::no_such_dir(&cwd.display().to_string()));
         }
+        // **A conversation that is running somewhere is not resumed, it
+        // is joined — and this door cannot join.** `session/load` on a
+        // vendor session another process holds starts a second agent on
+        // the same transcript: two claudes writing one record, and a row
+        // whose word is whichever of them spoke last (found live,
+        // 2026-09-01: the person's own terminal claude read 空闲 for an
+        // hour because a reopen of its session said so). The takeover
+        // is the door that ends the other process first; this one
+        // refuses while it lives, naming it.
+        if let Some((_, pids)) = self.live.sighting_of(&adaptor::id_for(session)) {
+            if let Some(pid) = pids.first() {
+                return Err(msg::resume_running_elsewhere(pid));
+            }
+        }
         gui_host::spawn_gui_host_reopen(Some(cwd), title, cmd, Some(agent), session)
     }
 

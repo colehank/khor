@@ -919,6 +919,11 @@ cant-open-pty = "开不了 PTY: {0}"
 child-has-no-pid = "孩子没有 pid"
 cant-read-pty = "读不了 PTY: {0}"
 cant-write-pty = "写不了 PTY: {0}"
+# Resuming a vendor session that another process is running right now
+# (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
+# refuses is a second agent on the same transcript, and a row whose
+# word is whichever of the two spoke last.
+resume-running-elsewhere = "这段对话正在别的进程里跑着(pid {0}),不能再起一份;去那边接着说,或者先退出它"
 cant-listen-loopback = "听不了本机口: {0}"
 wrong-cookie = "暗号不对"
 host-child-wait = "等不到孩子结束: {0}"

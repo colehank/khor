@@ -658,6 +658,16 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         // faces' answered ops alike. Held here so a face that attaches
         // later is told where things stand, the way a pending ask is.
         let mut settings = handle.settings().clone();
+        // The agent's own command list, as it last published it — kept
+        // for the same reason a pending ask and the settings are: a
+        // face that attaches later has to be told. The list rides one
+        // `available_commands_update` that claude's shim sends off the
+        // init frame, once, on the first turn; a conversation opened
+        // again an hour later replays its transcript and the transcript
+        // has no such frame, so the "/" menu came up empty on every
+        // re-attach (found by the smoke, 2026-09-02, the moment a block
+        // left a conversation and came back to it).
+        let mut commands: Option<String> = None;
         let (set_tx, mut set_rx) =
             tokio::sync::mpsc::unbounded_channel::<(u64, Result<Setting, String>)>();
         let handle = Arc::new(handle);
@@ -672,6 +682,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                 event = events.recv() => match event {
                     Some(khor_acp::Event::Note(n)) => {
                         let json = serde_json::to_string(&n).unwrap_or_default();
+                        if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
+                            commands = Some(json.clone());
+                        }
                         fanout.send(&GuiNote::Note(json));
                         // The agent moving its own settings: the note
                         // went through whole above, and this is the
@@ -728,6 +741,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         fanout.send_to(who, &agent_note);
                         if has_settings(&settings) {
                             fanout.send_to(who, &GuiNote::Settings(settings_json(&settings)));
+                        }
+                        if let Some(json) = &commands {
+                            fanout.send_to(who, &GuiNote::Note(json.clone()));
                         }
                         if in_turn.is_some() {
                             fanout.send_to(who, &GuiNote::Turning);
