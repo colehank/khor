@@ -692,6 +692,9 @@ impl Adaptor for Claude {
                     // nobody now, and claiming it would let a dead
                     // claude hide the tmux session it used to sit in.
                     pids: if word == State::Failed { vec![] } else { vec![pid] },
+                    // The status file already carries it; nothing is
+                    // read to answer this.
+                    cwd: file.cwd,
                 },
             ));
         }
@@ -783,6 +786,15 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
             id
         }
     };
+    // **The payload says where the session is, on every event.** Until
+    // 2026-09-01 this was read for the title alone, so a session khor
+    // learned of through its hooks — the common case on a machine with
+    // them installed — had no place at all while carrying one in every
+    // line claude sent. Write-once, so the first event's answer stands
+    // and a later `cd` does not move the row (`khor_core::Session::place`).
+    if let Some(cwd) = v["cwd"].as_str().filter(|c| !c.is_empty()) {
+        live.learn_place(&id, Path::new(cwd))?;
+    }
 
     let word = match event {
         "SessionStart" => Some(State::Idle),
@@ -1687,6 +1699,47 @@ mod tests {
 
         hook(&k, &payload("SessionEnd", "")).unwrap();
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Idle, "a clean end is idle");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **A hook-observed session has a place, and it is the payload's.**
+    /// Every event claude sends carries `cwd`; until 2026-09-01 it was
+    /// read for the title and thrown away, so the commonest kind of row
+    /// on a machine with hooks installed grouped as 不在任何地方 while
+    /// saying where it was on every line.
+    ///
+    /// Folded up to the checkout, like every other source — a hook
+    /// firing from `repo/apps/gui` is in `repo` — and write-once: a
+    /// later event from somewhere else does not move the row.
+    #[test]
+    fn a_hook_observed_session_is_placed_where_its_payload_says() {
+        let root = std::env::temp_dir().join(format!("khor-hookplace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let repo = root.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(repo.join("apps/gui")).unwrap();
+        let k = crate::live::LiveKind::new(root.clone(), khor_core::DeviceId([9; 32]));
+        let payload = |event: &str, cwd: &std::path::Path| {
+            format!(
+                r#"{{"session_id":"77E-fake.uuid","cwd":"{}","hook_event_name":"{event}"}}"#,
+                cwd.display()
+            )
+        };
+
+        hook(&k, &payload("SessionStart", &repo.join("apps/gui"))).unwrap();
+        let row = &k.rows(|_| 0)[0];
+        assert_eq!(row.place, Some(repo.display().to_string()), "the checkout, not the subdirectory");
+
+        // A later event from elsewhere: the birthplace stands.
+        hook(&k, &payload("UserPromptSubmit", &root.join("elsewhere"))).unwrap();
+        assert_eq!(k.rows(|_| 0)[0].place, Some(repo.display().to_string()));
+
+        // **The control arm**: a payload with no cwd places nothing,
+        // rather than the process's own directory or the last one seen.
+        let bare = r#"{"session_id":"88E-other.uuid","hook_event_name":"SessionStart"}"#;
+        hook(&k, bare).unwrap();
+        let other = k.rows(|_| 0).into_iter().find(|r| r.id.0 == "tui/88e-otheruuid").unwrap();
+        assert_eq!(other.place, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

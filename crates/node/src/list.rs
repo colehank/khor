@@ -41,11 +41,16 @@ pub enum Arrange {
     /// By state word, groups ordered by `State::rank` — who is waiting
     /// for you. The faces never enumerate the six words themselves.
     State,
+    /// By the place it lives in (`khor_core::Session::place`) — the
+    /// 工作区 axis: people walk into a directory and start things
+    /// there, and "which of these are in tokens" is the question this
+    /// answers.
+    Place,
 }
 
 impl Arrange {
-    pub const ALL: [Arrange; 4] =
-        [Arrange::Recent, Arrange::Category, Arrange::Device, Arrange::State];
+    pub const ALL: [Arrange; 5] =
+        [Arrange::Recent, Arrange::Category, Arrange::Device, Arrange::State, Arrange::Place];
 
     /// The stable key, which is also the CLI's flag value.
     pub const fn key(self) -> &'static str {
@@ -54,6 +59,7 @@ impl Arrange {
             Arrange::Category => "category",
             Arrange::Device => "device",
             Arrange::State => "state",
+            Arrange::Place => "place",
         }
     }
 
@@ -72,6 +78,13 @@ pub const GROUP_CATEGORY: &str = "cat:";
 pub const GROUP_DEVICE: &str = "dev:";
 /// Prefix for a state group; the rest is one of the six word keys.
 pub const GROUP_STATE: &str = "state:";
+/// Prefix for a place group; the rest is the project root's path.
+///
+/// **The whole path, not its last component.** Two checkouts called
+/// `gui` in different trees are two workspaces, and a key built from
+/// the name alone would merge them into one group with no way for
+/// anyone downstream to notice.
+pub const GROUP_PLACE: &str = "at:";
 
 /// One row and the group it belongs to.
 #[derive(Debug, Clone)]
@@ -158,6 +171,19 @@ fn place_of(
             let word = view.session.state.state;
             (format!("{GROUP_STATE}{}", word.key()), (1 + word.rank(), String::new()))
         }
+        Arrange::Place => match view.session.place.as_deref() {
+            Some(path) if !path.is_empty() => {
+                (format!("{GROUP_PLACE}{path}"), (1, path.to_owned()))
+            }
+            // **Last, with the other admissions of ignorance**, and for
+            // the same reason they are: a path sorts by its leading
+            // slash, so the placeless group would otherwise open the
+            // list. Two different things land here and the face says so
+            // in one word, because the next move is the same for both —
+            // a machine conversation that never had a directory, and a
+            // session whose directory nobody recorded.
+            _ => (GROUP_PLACE.to_owned(), (2, String::new())),
+        },
     }
 }
 
@@ -175,6 +201,7 @@ mod tests {
                 home: DeviceId([home; 32]),
                 state: StateStamp { state: word, at: Millis(at) },
                 unread: 0,
+                place: None,
                 category: category.map(str::to_owned),
                 last: None,
                 via: None,
@@ -208,6 +235,51 @@ mod tests {
 
     fn ids(rows: &[Arranged]) -> Vec<String> {
         rows.iter().map(|r| r.view.session.id.0.clone()).collect()
+    }
+
+    /// **By place**, the 工作区 axis. Enumerated rather than asserted as
+    /// a property, for the reason the state test gives: "grouped
+    /// somehow" is true of an implementation that puts everything in
+    /// one group.
+    ///
+    /// The rows with no place go **last**, and that is the whole point
+    /// of the second band: a path sorts by its leading slash, so a
+    /// placeless group keyed on the empty string would otherwise open
+    /// the list — the same failure the unnamed-machine and unknown-
+    /// category groups have their bands for.
+    #[test]
+    fn place_groups_by_project_and_puts_the_placeless_last() {
+        let at = |id: &str, at_ms: u64, place: Option<&str>| {
+            let mut v = view(id, at_ms, State::Idle, None, 1);
+            v.session.place = place.map(str::to_owned);
+            v
+        };
+        let rows = arrange(
+            vec![
+                at("no-place", 40, None),
+                at("in-khor", 30, Some("/w/khor")),
+                at("in-tokens", 20, Some("/w/tokens")),
+                at("also-khor", 10, Some("/w/khor")),
+            ],
+            Arrange::Place,
+            &names,
+        );
+
+        assert_eq!(
+            rows.iter().map(|r| r.group.as_str()).collect::<Vec<_>>(),
+            vec!["at:/w/khor", "at:/w/khor", "at:/w/tokens", "at:"],
+            "one group per project, alphabetical, and the placeless last",
+        );
+        assert_eq!(
+            ids(&rows),
+            vec!["in-khor", "also-khor", "in-tokens", "no-place"],
+            "freshest first inside a group, as in every other mode",
+        );
+        // **The control arm**: the placeless row is the *freshest*, so
+        // an implementation that simply sorted by time would put it
+        // first — and one that grouped on the raw string with no band
+        // would too, since "" leads the alphabet.
+        assert_eq!(rows.last().map(|r| r.view.session.id.0.as_str()), Some("no-place"));
     }
 
     #[test]

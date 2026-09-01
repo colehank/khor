@@ -1161,6 +1161,20 @@ by-recent = "按最近"
 by-category = "按类别"
 by-device = "按机器"
 by-state = "按状态"
+# The 工作区 axis (`khor_node::list::Arrange::Place`). 「地方」 rather
+# than 「目录」: the row is grouped by the *project* its directory
+# belongs to, and two depths of one checkout are one group — calling
+# that a directory would promise a precision it does not have.
+by-place = "按地方"
+# The 工作区 axis's heading in the filter box, beside 状态 and 类别.
+axis-place = "地方"
+# The heading over rows with no place at all. **Two different things
+# land here and are said as one**, because the next move is the same
+# for both: a conversation with another machine never had a directory,
+# and a session khor could not place has one nobody wrote down. Not
+# 「认不出的」 — that word belongs to the category axis and says "we
+# could not tell", which is only half of what this group holds.
+group-placeless = "不在任何地方"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.

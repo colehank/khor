@@ -812,6 +812,7 @@ fn only_dead_seen_and_old_rows_are_stale() {
         home: DeviceId([1; 32]),
         state: khor_core::StateStamp { state: State::Failed, at: khor_core::Millis(died_at) },
         unread,
+        place: None,
         dead,
         unbacked: false,
         category: None,

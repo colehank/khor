@@ -108,6 +108,7 @@ const ARRANGE = [
   { key: "category", label: gui.by_category },
   { key: "device", label: gui.by_device },
   { key: "state", label: gui.by_state },
+  { key: "place", label: gui.by_place },
 ] as const;
 
 /** WeChat's opening: the thing you touched last is the thing you want. */
@@ -701,6 +702,13 @@ export default function App() {
       ...seen((r) => r.category ?? "", "cat:", (v) => groupLabel(`cat:${v}`)).map((o) => ({
         ...o,
         axis: gui.axis_category,
+      })),
+      // The 工作区 axis, gathered the same way as the other three — the
+      // values are whatever places the rows on screen actually carry,
+      // so the list is never longer than the work in front of you.
+      ...seen((r) => r.place ?? "", "at:", (v) => groupLabel(`at:${v}`)).map((o) => ({
+        ...o,
+        axis: gui.axis_place,
       })),
     ];
   }, [rows, words]);

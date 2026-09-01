@@ -390,7 +390,7 @@ impl Adaptor for Codex {
                 // evidence.
                 .unwrap_or((State::Idle, rollout.started_ms));
             sweep.rows.push(Sighting {
-                vendor_session_id: meta.session_id,
+                vendor_session_id: meta.session_id.clone(),
                 title: title_of(meta.cwd.as_deref()),
                 word,
                 at_ms,
@@ -400,6 +400,9 @@ impl Adaptor for Codex {
                 // codex has no resume that leaves two processes on one
                 // session the way claude's does.
                 pids: vec![pid],
+                // The rollout's own first line, already read for the
+                // title one field up.
+                cwd: meta.cwd,
             });
         }
         sweep

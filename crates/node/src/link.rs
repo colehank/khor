@@ -895,6 +895,7 @@ impl Node {
                     let leaf = crate::link::fresh_leaf()?;
                     let id = crate::SessionId(format!("{kind}/{leaf}"));
                     live.register(&id, &kind, &title, None, category)?;
+                    live.learn_place(&id, &cwd)?;
                     let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
                     crate::host::spawn_host_at(&cwd, &dir, &id, &cmd, (cols, rows))?;
                     Ok::<_, String>(id)

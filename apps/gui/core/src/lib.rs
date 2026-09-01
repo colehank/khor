@@ -121,6 +121,20 @@ pub struct SessionRow {
     /// is: the id→name table is the node's, and a screen that resolved
     /// it itself would be a second copy that can disagree.
     pub home: String,
+    /// Where this session lives (`khor_core::Session::place`) — the
+    /// project root, absolute, exactly as the group key spells it.
+    ///
+    /// **Absolute and unshortened**, though every screen prints it
+    /// shortened: this is the value the `at:` filter compares against
+    /// the group key, and a display string in that slot would be a
+    /// second spelling of one fact. It is also what makes a row findable
+    /// by the tree it is in.
+    ///
+    /// `None` for a row with no place — a conversation with another
+    /// machine, or a session nobody recorded a directory for. The two
+    /// are not distinguished here for the same reason the node does not
+    /// distinguish them: the next move is the same.
+    pub place: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -431,6 +445,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             stale: v.stale,
             quiet: v.quiet,
             category: v.session.category,
+            place: v.session.place,
             group,
         }
         })

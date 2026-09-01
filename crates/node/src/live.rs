@@ -61,6 +61,33 @@ pub struct Meta {
     /// `category`, and for the same reason.
     #[serde(default)]
     pub vendor_leaf: Option<String>,
+    /// The working directory khor started this session in, raw
+    /// (`khor_core::Session::place` is the folded answer). Written at
+    /// birth by whichever opener chose the directory, because that is
+    /// the only moment anybody knows: a shell that has `cd`ed away
+    /// cannot be asked where it began, and its project has not changed
+    /// anyway.
+    ///
+    /// `None` for an entry from before this field, and for a session
+    /// nobody could place — the same thing it means for a fresh one.
+    #[serde(default)]
+    pub place: Option<String>,
+}
+
+/// A recorded working directory as the row carries it: folded up to
+/// the project it belongs to (`crate::place`), and `None` when there
+/// was nothing recorded.
+///
+/// **The fold happens here, once.** Adaptors report the directory they
+/// read; whether two of them are the same workspace is a judgment, and
+/// a judgment made in three adaptors is three judgments that can
+/// disagree.
+fn place_of(cwd: Option<&str>) -> Option<String> {
+    let cwd = cwd?;
+    if cwd.is_empty() {
+        return None;
+    }
+    Some(crate::place::project_root(std::path::Path::new(cwd)).display().to_string())
 }
 
 /// How a word got onto a registry row.
@@ -244,6 +271,7 @@ impl LiveKind {
             category: category.map(str::to_owned),
             id: id.0.clone(),
             vendor_leaf: None,
+            place: None,
         };
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)?;
         // Whoever registers a session is starting it, so this opening
@@ -310,6 +338,7 @@ impl LiveKind {
             category: None,
             id: id.0.clone(),
             vendor_leaf: None,
+            place: None,
         });
         meta.kind = kind.to_owned();
         meta.title = title.to_owned();
@@ -336,6 +365,25 @@ impl LiveKind {
             return Ok(());
         }
         meta.vendor_leaf = Some(leaf.to_owned());
+        write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)
+    }
+
+    /// Writes down where khor started this session. Write-once, like
+    /// `learn_vendor_leaf`: it is a fact about the session's birth, and
+    /// nothing later is a correction of it.
+    ///
+    /// **Said by the opener rather than taken from `register`**, which
+    /// is the same shape `learn_category` has: most registrations know
+    /// no directory (a hook's parent shell is not where anything runs),
+    /// and a required argument would have every one of them passing a
+    /// guess.
+    pub fn learn_place(&self, id: &SessionId, cwd: &std::path::Path) -> Result<(), String> {
+        let dir = self.existing_dir(id)?;
+        let mut meta = read_meta(&dir)?;
+        if meta.place.is_some() {
+            return Ok(());
+        }
+        meta.place = Some(cwd.display().to_string());
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)
     }
 
@@ -719,6 +767,15 @@ impl LiveKind {
                 if out[seat].category.is_none() {
                     out[seat].category = Some(found.category.to_owned());
                 }
+                // Same shape, same reason: khor notes where it started
+                // a session, but a session it did not start (or one
+                // registered by a hook, whose parent shell is nowhere in
+                // particular) has no note — and the vendor's own file
+                // does. A place already on record is never overwritten;
+                // it is the birth fact, and this is a reading of now.
+                if out[seat].place.is_none() {
+                    out[seat].place = place_of(sighting.cwd.as_deref());
+                }
                 if guessed.contains(&&id) {
                     // **The registry does not always win — the stronger
                     // source does.** This row's word was read off the
@@ -761,6 +818,7 @@ impl LiveKind {
                 last: None,
                 via: None,
                 term: false,
+                place: place_of(sighting.cwd.as_deref()),
             });
             let seat = out.len() - 1;
             for &p in &pids {
@@ -847,6 +905,7 @@ impl LiveKind {
                 // A discovered multiplexer session is exactly what the
                 // bridge can attach to.
                 term: true,
+                place: place_of(sighting.cwd.as_deref()),
             });
         }
         out.retain(|r| !folded.contains(&r.id));
@@ -963,6 +1022,7 @@ impl LiveKind {
                     // which is where that route is resolved anyway.
                     term: crate::host::read_host_file(&e.path())
                         .is_ok_and(|hf| crate::link::pid_running(hf.host_pid)),
+                    place: place_of(meta.place.as_deref()),
                 },
                 pid: meta.pid,
             });
@@ -1290,6 +1350,49 @@ mod tests {
         let pid = c.id();
         c.wait().unwrap();
         pid
+    }
+
+    /// **Where khor started a session reaches its row, folded up to the
+    /// project** (工作区批). Three claims in one walk, because they are
+    /// one path: the note is written at birth, the fold happens once at
+    /// the row, and a session nobody placed carries `None` rather than
+    /// a neighbour's answer.
+    #[test]
+    fn a_session_carries_the_project_it_was_started_in() {
+        let root = tmp("place");
+        let k = kind_at(&root);
+        let repo = root.join("repo");
+        let deep = repo.join("apps/gui");
+        fs::create_dir_all(&deep).unwrap();
+        fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let placed = sid("shell/placed");
+        k.register(&placed, "shell", "in the repo", None, None).unwrap();
+        k.learn_place(&placed, &deep).unwrap();
+
+        // The control arm, and the reason this is not one assertion: a
+        // row nobody placed must come back `None`. An implementation
+        // that answered with the process's own directory — or with the
+        // last place it saw — would pass the first claim alone.
+        let bare = sid("shell/bare");
+        k.register(&bare, "shell", "nowhere in particular", None, None).unwrap();
+
+        let rows = k.rows(|_| 0);
+        let of = |id: &SessionId| {
+            rows.iter().find(|r| &r.id == id).unwrap_or_else(|| panic!("{id:?} lists")).place.clone()
+        };
+        assert_eq!(
+            of(&placed),
+            Some(repo.display().to_string()),
+            "the row says the project, not the subdirectory it started in",
+        );
+        assert_eq!(of(&bare), None, "and a session nobody placed is not filed under a neighbour");
+
+        // Write-once: a later opener standing somewhere else does not
+        // move a session that already has a birthplace.
+        k.learn_place(&placed, &root.join("elsewhere")).unwrap();
+        assert_eq!(k.rows(|_| 0).iter().find(|r| r.id == placed).unwrap().place,
+            Some(repo.display().to_string()), "a birth fact is not corrected later");
     }
 
     /// A row whose kind is not its id's first segment must still list.
@@ -1810,7 +1913,7 @@ mod tests {
         ]);
         let holding = crate::adaptor::tmux::fake_tmux(
             "holding",
-            "$7|1786245338|1786245400|3001|0|zsh|with-claude\n",
+            "$7|1786245338|1786245400|3001|0|zsh|/tmp|with-claude\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -1829,7 +1932,7 @@ mod tests {
         // The control: the same session, holding nothing anyone listed.
         let empty = crate::adaptor::tmux::fake_tmux(
             "empty-pane",
-            "$7|1786245338|1786245400|3002|0|zsh|just-a-shell\n",
+            "$7|1786245338|1786245400|3002|0|zsh|/tmp|just-a-shell\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -1880,7 +1983,7 @@ mod tests {
         ]);
         let holding = crate::adaptor::tmux::fake_tmux(
             "bridge-fold",
-            "$7|1786245338|1786245400|3001|0|zsh|with-claude\n",
+            "$7|1786245338|1786245400|3001|0|zsh|/tmp|with-claude\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -1918,8 +2021,8 @@ mod tests {
         // once by a grouped twin created later.
         let fake = crate::adaptor::tmux::fake_tmux(
             "twin",
-            "$7|1786245338|1786245400|3001|0|zsh|base\n\
-             $9|1786245400|1786245400|3001|0|zsh|base-1\n",
+            "$7|1786245338|1786245400|3001|0|zsh|/tmp|base\n\
+             $9|1786245400|1786245400|3001|0|zsh|/tmp|base-1\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&fake)),
@@ -2018,7 +2121,7 @@ mod tests {
         ]);
         let fake = crate::adaptor::tmux::fake_tmux(
             "registry",
-            "$7|1786245338|1786245400|3001|0|zsh|running-khor\n",
+            "$7|1786245338|1786245400|3001|0|zsh|/tmp|running-khor\n",
         );
         let k = LiveKind::new(k_root, DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&fake)),

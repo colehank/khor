@@ -62,12 +62,19 @@ export function visibleSessions(rows: SessionRow[], query: string, ticked: strin
     "state:": r.word,
     "dev:": r.home,
     "cat:": r.category ?? "",
+    // The empty string for a row with no place, which is exactly the
+    // key the node groups those under (`at:` with nothing after it) —
+    // so ticking that group filters to it, like every other axis.
+    "at:": r.place ?? "",
   });
   return rows.filter((r) => {
     const on = answers(r);
     for (const [axis, set] of wanted) if (!set.has(on[axis] ?? "")) return false;
     return (
-      q === "" || `${r.title} ${r.id} ${r.source?.device ?? ""}`.toLowerCase().includes(q)
+      q === "" ||
+      `${r.title} ${r.id} ${r.source?.device ?? ""} ${r.place ?? ""}`
+        .toLowerCase()
+        .includes(q)
     );
   });
 }

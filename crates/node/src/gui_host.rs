@@ -481,6 +481,13 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
             Some(std::process::id()),
             vendor.as_deref(),
         )?;
+        // **This process was started standing in it** — the opener
+        // spawned the ghost with `current_dir`, so the answer is right
+        // here and needs no argument passed down
+        // (`khor_core::Session::place`).
+        if let Ok(cwd) = std::env::current_dir() {
+            live.learn_place(&id, &cwd)?;
+        }
         // Register wrote the spawn's 忙碌; a fresh GUI session is a
         // prompt nobody has typed into yet.
         live.report(&id, State::Idle, Source::Reported)?;

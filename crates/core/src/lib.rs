@@ -1223,6 +1223,34 @@ pub struct Session {
     /// damage.
     #[serde(default)]
     pub unbacked: bool,
+    /// **Where this session lives** — its working directory taken up to
+    /// the project it belongs to (`khor_node::place`). The list's
+    /// 工作区 grouping is the whole of what it is for: people walk into
+    /// a directory and start something there, and "which of these are
+    /// in tokens" is a question no other field on this row can answer.
+    ///
+    /// **Only the home device can say**, like [`Session::category`] and
+    /// for the same reason: the fact is on that disk — a vendor's own
+    /// record of where its conversation ran, or khor's note of where it
+    /// started a host. A reader that tried to derive it would be
+    /// deriving it from nothing.
+    ///
+    /// `None` is an honest gap and stays one (docs/SESSION.md
+    /// 认不出就不落词): a row whose place nobody recorded is not filed
+    /// under a neighbour's project. Rows that legitimately have no
+    /// place at all — a conversation with another machine, a transfer —
+    /// carry `None` for the same reason and are grouped as such.
+    ///
+    /// **A project root and not a working directory**, decided at the
+    /// source: a shell that `cd`s inside its checkout has not changed
+    /// workspace, and the raw directory would say it had. Two depths of
+    /// one tree are one place.
+    ///
+    /// Wire: appended at the tail with a serde default, so an older
+    /// peer's twelve-field frame still decodes — and its rows read as
+    /// placeless, which is exactly what that peer knows.
+    #[serde(default)]
+    pub place: Option<String>,
 }
 
 #[cfg(test)]
@@ -1237,6 +1265,7 @@ mod tests {
             home: DeviceId([7; 32]),
             state: StateStamp { state: State::Busy, at: Millis(1) },
             unread: 3,
+            place: None,
             category: Some("claude".to_owned()),
             last: Some("last said".to_owned()),
             via: None,
@@ -1292,19 +1321,19 @@ mod tests {
     }
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_twelve() {
+    fn the_session_frame_is_a_fixed_order_array_of_thirteen() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x9c = msgpack fixarray of 12. Adding, removing, or reordering a
+        // 0x9d = msgpack fixarray of 13. Adding, removing, or reordering a
         // field must land here first, consciously. Six → seven appended
         // `category`; seven → nine appended `last` and `via` together
         // (会话行改版批); nine → ten appended `term` (会话身份批);
         // ten → eleven appended `dead` (退场批); eleven → twelve appended
-        // `unbacked` (词的保鲜期批) — always at the tail, never in the
-        // middle: a mid-frame optional desyncs the array on every older
-        // end.
-        assert_eq!(bytes[0], 0x9c);
-        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked): (
+        // `unbacked` (词的保鲜期批); twelve → thirteen appended `place`
+        // (工作区批) — always at the tail, never in the middle: a
+        // mid-frame optional desyncs the array on every older end.
+        assert_eq!(bytes[0], 0x9d);
+        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked, place): (
             SessionId,
             Kind,
             String,
@@ -1317,24 +1346,26 @@ mod tests {
             bool,
             bool,
             bool,
+            Option<String>,
         ) = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(
-            (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked),
-            (
-                session.id,
-                session.kind,
-                session.title,
-                session.home,
-                session.state,
-                session.unread,
-                session.category,
-                session.last,
-                session.via,
-                session.term,
-                session.dead,
-                session.unbacked
-            )
-        );
+        // Field by field rather than as one tuple comparison: std stops
+        // deriving `PartialEq` at twelve, and this frame is thirteen.
+        // Deserializing into the tuple above is what pins the *order* —
+        // a reordered field lands as the wrong type and never reaches
+        // these lines.
+        assert_eq!(id, session.id);
+        assert_eq!(kind, session.kind);
+        assert_eq!(title, session.title);
+        assert_eq!(home, session.home);
+        assert_eq!(state, session.state);
+        assert_eq!(unread, session.unread);
+        assert_eq!(category, session.category);
+        assert_eq!(last, session.last);
+        assert_eq!(via, session.via);
+        assert_eq!(term, session.term);
+        assert_eq!(dead, session.dead);
+        assert_eq!(unbacked, session.unbacked);
+        assert_eq!(place, session.place);
     }
 
     /// **Over the wire from an older peer**: a machine that predates
@@ -1363,6 +1394,39 @@ mod tests {
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
         assert!(!row.unbacked, "an older peer said nothing about backing; nothing may fade");
+        assert_eq!(row.title, "build khor", "…and the rest of the row survived");
+    }
+
+    /// **Over the wire from an older peer**: a machine that predates
+    /// `place` sends twelve fields, and its rows must read as placeless
+    /// — which is the truth about that peer, not a loss: it has no
+    /// answer to give, and inventing one from the title or the id is
+    /// exactly what an honest gap exists to prevent.
+    ///
+    /// Built by hand as a twelve-tuple, and the first assertion is that
+    /// the bytes really are a twelve-array — without it this could be
+    /// encoding today's struct and proving nothing.
+    #[test]
+    fn a_frame_from_an_older_peer_decodes_as_placeless() {
+        let old = (
+            SessionId("dev0/demo/1".to_owned()),
+            Kind("tui".to_owned()),
+            "build khor".to_owned(),
+            DeviceId([7; 32]),
+            StateStamp { state: State::Busy, at: Millis(1) },
+            0u64,
+            Some("claude".to_owned()),
+            None::<String>,
+            None::<String>,
+            false,
+            false,
+            false,
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x9c, "the sample must be a twelve-field frame, or it proves nothing");
+
+        let row: Session = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(row.place, None, "an older peer knows of no places, and khor invents none");
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
     }
 

@@ -126,6 +126,12 @@ impl ChatKind {
             }),
             via: None,
             term: false,
+            // **No place, and that is not a gap.** A conversation with
+            // another machine does not happen in a directory — nothing
+            // was recorded because there was nothing to record, and the
+            // list groups these together as such rather than pretending
+            // somebody forgot.
+            place: None,
         }
     }
 

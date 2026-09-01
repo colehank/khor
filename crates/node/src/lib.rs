@@ -2050,6 +2050,13 @@ impl Node {
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
+        // **`khor run` happens where the person is standing**, and the
+        // host inherits this process's directory — so the answer is
+        // here, and asking for it as an argument would only give every
+        // caller a chance to pass a different one.
+        if let Ok(cwd) = std::env::current_dir() {
+            self.live.learn_place(&id, &cwd)?;
+        }
         let dir = self
             .live
             .dir_of(&id)
@@ -2071,6 +2078,10 @@ impl Node {
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
+        // Where it was born, said now because now is the only moment
+        // anyone knows: a shell that has `cd`ed away cannot be asked
+        // (`khor_core::Session::place`).
+        self.live.learn_place(&id, cwd)?;
         let dir = self
             .live
             .dir_of(&id)
@@ -2100,6 +2111,7 @@ impl Node {
         category: Option<&str>,
     ) -> Result<SessionId, String> {
         self.live.register(id, kind, title, None, category)?;
+        self.live.learn_place(id, cwd)?;
         let dir = self
             .live
             .dir_of(id)

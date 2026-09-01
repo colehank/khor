@@ -1992,6 +1992,11 @@ for line in sys.stdin:
     ["category", "cat:"],
     ["device", "dev:"],
     ["state", "state:"],
+    // 工作区 (工作区批): the sessions khor opened here place themselves
+    // in this checkout, and a conversation with another machine places
+    // nowhere — so this mode has two groups at this point for two
+    // different reasons, which is exactly what it is for.
+    ["place", "at:"],
   ]) {
     // **Wait for the headings to *change*, not merely to exist.** The
     // list keeps the previous mode's headings until the rows come back

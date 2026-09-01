@@ -161,8 +161,17 @@ const CALL_DEADLINE: Duration = Duration::from_millis(1000);
 /// command is asked for as a `1`/`0` rather than as text for the same
 /// reason — it is a whole command line, quotes and pipes and all, and
 /// only its emptiness is being asked about.
+///
+/// `pane_current_path` sits second-to-last, and that placement is the
+/// one trade in this line: a directory whose name contains a `|` would
+/// spill a piece of itself into the session name. It is behind the name
+/// rather than in front of it because the alternative is worse — a name
+/// with a `|` in it is something a person types, a directory with one
+/// is something almost nobody has, and the existing rule already chose
+/// to protect the name.
 const FORMAT: &str = "#{session_id}|#{session_created}|#{session_activity}\
-|#{pane_pid}|#{?pane_start_command,1,0}|#{pane_current_command}|#{session_name}";
+|#{pane_pid}|#{?pane_start_command,1,0}|#{pane_current_command}\
+|#{pane_current_path}|#{session_name}";
 
 /// What one look at a multiplexer found.
 #[derive(Debug, Default, Clone)]
@@ -391,17 +400,20 @@ struct Pane {
     /// user's shell.
     started_with_command: bool,
     current_command: String,
+    /// Where this pane is standing right now (`pane_current_path`).
+    current_path: String,
 }
 
 impl Pane {
     fn parse(line: &str) -> Option<Pane> {
-        let f: Vec<&str> = line.splitn(7, '|').collect();
-        let [id, created, activity, pid, started, current, name] = f[..] else {
+        let f: Vec<&str> = line.splitn(8, '|').collect();
+        let [id, created, activity, pid, started, current, path, name] = f[..] else {
             return None;
         };
         Some(Pane {
             session_id: id.to_owned(),
             session_name: name.to_owned(),
+            current_path: path.to_owned(),
             created_secs: created.parse().ok()?,
             activity_secs: activity.parse().ok()?,
             pid: pid.parse().ok()?,
@@ -421,6 +433,7 @@ struct Gathering {
     /// The busiest word any pane has given so far. `None` while no pane
     /// has given one.
     word: Option<State>,
+    cwd: String,
 }
 
 impl Gathering {
@@ -432,6 +445,12 @@ impl Gathering {
             activity_secs: first.activity_secs,
             pane_pids: Vec::new(),
             word: None,
+            // **The first pane's**, which is where the session was
+            // made. Later panes may have wandered, and it does not
+            // matter: the row's place is folded up to a project root,
+            // so a `cd` inside the checkout lands in the same workspace
+            // (`khor_node::place`).
+            cwd: first.current_path.clone(),
         }
     }
 
@@ -468,6 +487,9 @@ impl Gathering {
                     // to the question these pids would have been asked,
                     // and that is carried below.
                     pids: Vec::new(),
+                    // Empty is not a directory; tmux answers with one
+                    // for a session whose panes are all gone.
+                    cwd: (!self.cwd.is_empty()).then_some(self.cwd),
                 },
             },
             holds: procs.subtree(&self.pane_pids),
@@ -938,6 +960,7 @@ mod tests {
             pid,
             started_with_command: started,
             current_command: current.into(),
+            current_path: "/somewhere".into(),
         };
         let procs = Procs::of([
             // Both spellings of the same shell. `zsh` is what sysinfo
@@ -998,10 +1021,10 @@ mod tests {
     /// it is the last field.
     #[test]
     fn the_name_takes_the_rest_of_the_line() {
-        assert!(Pane::parse("$1|100|100|10|0|zsh").is_none(), "a field short");
-        assert!(Pane::parse("$1|100|100|notapid|0|zsh|alpha").is_none());
+        assert!(Pane::parse("$1|100|100|10|0|zsh|/tmp").is_none(), "a field short");
+        assert!(Pane::parse("$1|100|100|notapid|0|zsh|/tmp|alpha").is_none());
         assert_eq!(
-            Pane::parse("$1|100|100|10|0|zsh|has|pipes|in|it").unwrap().session_name,
+            Pane::parse("$1|100|100|10|0|zsh|/tmp|has|pipes|in|it").unwrap().session_name,
             "has|pipes|in|it"
         );
     }
@@ -1019,9 +1042,9 @@ mod tests {
     fn output_this_version_cannot_read_is_counted_and_stops_nothing() {
         let fake = fake_tmux(
             "fmt",
-            "$1|100|100|10|0|zsh|readable\n\
+            "$1|100|100|10|0|zsh|/tmp|readable\n\
              $2|from-a-later-tmux\n\
-             $3|200|200|11|0|zsh|also-readable\n",
+             $3|200|200|11|0|zsh|/tmp|also-readable\n",
         );
         let procs = Procs::of([
             (10, proc_named("-zsh", Some(1))),
@@ -1044,7 +1067,7 @@ mod tests {
     /// rather than shown with a guessed one.
     #[test]
     fn a_session_with_nothing_running_in_it_is_counted_not_guessed_at() {
-        let fake = fake_tmux("gone", "$1|100|100|424242|0|zsh|ghost\n");
+        let fake = fake_tmux("gone", "$1|100|100|424242|0|zsh|/tmp|ghost\n");
         let listing = Tmux::at_binary(&fake).sweep(&Procs::default());
         assert_eq!(listing.rows.len(), 0);
         assert_eq!(listing.unmapped, 1);

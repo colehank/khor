@@ -105,6 +105,16 @@ pub struct Sighting {
     /// Empty for a crashed row: the pid its file names is gone, so
     /// nothing running can be inside it.
     pub pids: Vec<u32>,
+    /// **The working directory this session is in**, when the vendor
+    /// records one. Raw, exactly as it was read — the fold up to a
+    /// project root is a judgment, and it is made once at the row
+    /// (`khor_node::place`), not once per adaptor.
+    ///
+    /// `None` where the vendor keeps no such note. Never guessed from a
+    /// title: a title is a name somebody chose and a directory is a
+    /// fact, and the whole point of the field is that it is the second
+    /// kind of thing.
+    pub cwd: Option<String>,
 }
 
 /// What one sweep of one vendor found.

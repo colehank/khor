@@ -1,7 +1,7 @@
 // Wording helpers on top of the generated catalog. The display word is
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
-import { avatar, category, cli, hop, state } from "./gen/catalog";
+import { avatar, category, cli, gui, hop, state } from "./gen/catalog";
 
 export function word(key: string): string {
   return (state as Record<string, string>)[key] ?? key;
@@ -60,13 +60,24 @@ export function groupLabel(group: string): string {
     const table = category as Record<string, string>;
     return name === "" ? table.unknown : (table[name] ?? name);
   }
+  if (group.startsWith("at:")) {
+    const path = group.slice("at:".length);
+    // **The last component, which is the name people use.** The key
+    // keeps the whole path — two checkouts called `gui` in different
+    // trees are two groups, and they stay two — but a sidebar heading
+    // is three inches wide, and the head of a path is the part nobody
+    // reads.
+    if (path === "") return gui.group_placeless;
+    const cut = path.lastIndexOf("/");
+    return cut < 0 || cut === path.length - 1 ? path : path.slice(cut + 1);
+  }
   return group.startsWith("dev:") ? group.slice("dev:".length) : group;
 }
 
 /**
- * The three axes a session list can be filtered on, in the node's own
+ * The four axes a session list can be filtered on, in the node's own
  * spelling (`khor_node::list` — `GROUP_STATE` / `GROUP_DEVICE` /
- * `GROUP_CATEGORY`).
+ * `GROUP_CATEGORY` / `GROUP_PLACE`).
  *
  * **Nothing here is a vocabulary this app invented.** The node already
  * mints these keys to group by, `groupLabel` above already reads them,
@@ -74,7 +85,7 @@ export function groupLabel(group: string): string {
  * filter and a group heading are the same string, and there is no second
  * spelling that can drift from the first.
  */
-export const AXES = ["state:", "dev:", "cat:"] as const;
+export const AXES = ["state:", "dev:", "cat:", "at:"] as const;
 export type Axis = (typeof AXES)[number];
 
 /**
