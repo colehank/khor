@@ -408,7 +408,14 @@ fn spawn_host_with(
     for (name, value) in crate::Node::user_locale() {
         c.env(name, value);
     }
-    let marker = host_file_path(dir);
+    // **Wait for the file this host will actually write.** A viewer
+    // leaves its address in `view.json` (`view_file_path` has why), and
+    // an opener watching `host.json` for it waited the full five
+    // seconds beside a viewer that had been up for four of them, then
+    // told the person the host never came — measured live 2026-09-01
+    // on a conversation the person had resumed in tmux: `view.json`
+    // written, viewer alive, screen saying 宿主没在 5 秒内就位.
+    let marker = if viewer.is_some() { view_file_path(dir) } else { host_file_path(dir) };
     let complaint = host_error_path(dir);
     // A leftover from a previous failed spawn must never answer for
     // this one; nothing else writes this file.
