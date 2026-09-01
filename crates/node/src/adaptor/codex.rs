@@ -137,7 +137,7 @@ impl Codex {
         proc: &Proc,
         rollouts: &'a [Rollout],
         taken: &[&'a Path],
-    ) -> Option<(&'a Rollout, Meta)> {
+    ) -> Join<'a> {
         let mut candidates: Vec<&Rollout> = rollouts
             .iter()
             .filter(|r| !taken.contains(&r.path.as_path()))
@@ -146,20 +146,54 @@ impl Codex {
                 (JOIN_EARLIEST_MS..=JOIN_LATEST_MS).contains(&d)
             })
             .collect();
+        if candidates.is_empty() {
+            return Join::NoSession;
+        }
         candidates.sort_by_key(|r| (r.started_ms - proc.started_ms).abs());
+        let mut unreadable = false;
         for r in candidates {
-            let Some(meta) = read_meta(&r.path) else { continue };
+            let Some(meta) = read_meta(&r.path) else {
+                unreadable = true;
+                continue;
+            };
             // The clock put them together; the directory confirms it.
             // Only when both sides know their cwd — sysinfo cannot
             // always read another process's, and an unknown must not
             // veto a match the clock already made.
             match (&proc.cwd, &meta.cwd) {
                 (Some(a), Some(b)) if Path::new(b) != a.as_path() => continue,
-                _ => return Some((r, meta)),
+                _ => return Join::Session(r, meta),
             }
         }
-        None
+        // A candidate that would not open is the vendor's file moving;
+        // one that opened and named another directory is simply not
+        // this process's, and a process left with only those is a
+        // process that started no session of its own.
+        if unreadable { Join::Unreadable } else { Join::NoSession }
     }
+}
+
+/// What joining a live codex process to its rollout came to.
+///
+/// **Three answers, because two of them used to share a count.** A
+/// process that wrote no rollout in its first minute is not a session
+/// khor failed to read — it is a process that started no session: a
+/// `codex app-server` hosting threads for somebody else (khor's own
+/// conversation ghosts run one; so does VS Code's ChatGPT extension,
+/// which is where the two "sessions khor cannot read" on the author's
+/// machine came from, 2026-09-01). The sessions such a host holds show
+/// up when khor can name them — its own, through the registry — and a
+/// stranger's are not khor's to list. A rollout that *was* written in
+/// the window and could not be read is the other thing entirely: the
+/// vendor changed its file, and that is what the count is for.
+enum Join<'a> {
+    Session(&'a Rollout, Meta),
+    /// No rollout started anywhere near this process: a host, not a
+    /// session. Not a row and not a count.
+    NoSession,
+    /// A rollout in the window, and khor could not read it — the
+    /// 适配器过时 signal, counted.
+    Unreadable,
 }
 
 impl Codex {
@@ -374,12 +408,17 @@ impl Adaptor for Codex {
         let rollouts = self.rollouts();
         let mut taken: Vec<&Path> = Vec::new();
         for (pid, proc) in live {
-            let Some((rollout, meta)) = self.rollout_of(proc, &rollouts, &taken) else {
-                // A codex is running and khor cannot say which session
-                // it is: an old-format transcript, a layout change, or a
-                // rollout outside the window. Counted, never guessed at.
-                sweep.unmapped += 1;
-                continue;
+            let (rollout, meta) = match self.rollout_of(proc, &rollouts, &taken) {
+                Join::Session(r, m) => (r, m),
+                // A host, not a session (`Join::NoSession`).
+                Join::NoSession => continue,
+                // A codex is running and khor cannot read the session it
+                // started: an old-format transcript, a layout change.
+                // Counted, never guessed at.
+                Join::Unreadable => {
+                    sweep.unmapped += 1;
+                    continue;
+                }
             };
             taken.push(&rollout.path);
             let (word, at_ms) = last_word(&rollout.path)
@@ -579,16 +618,28 @@ mod tests {
     /// A running codex whose transcript khor cannot read is counted, not
     /// guessed at — and the readable one beside it still appears, which
     /// is what proves the sweep was working when it declined.
+    /// Three live processes, three answers (`Join`), and only one of
+    /// them is a count. This test used to call the middle one
+    /// "unreadable" — a process with no rollout anywhere near it — and
+    /// that conflation is what put VS Code's codex host on the author's
+    /// screen as "a session khor cannot read" for a day (2026-09-01).
     #[test]
-    fn an_unreadable_transcript_is_counted_and_does_not_stop_the_others() {
+    fn an_unreadable_transcript_is_counted_and_a_host_is_not() {
         let procs = Procs::of([
+            // Joins the alpha rollout: a row.
             (700, codex_proc(1_786_024_158_000, Some("/w/alpha"))),
-            // Started long before any rollout in the tree: nothing joins.
+            // Started long before any rollout in the tree: a process that
+            // began no session. Not a row, not a count.
             (701, codex_proc(1_000_000_000_000, None)),
+            // Started a second before the 2024-01-01 fixture rollout,
+            // whose first line is not a `session_meta` envelope — the
+            // old format. A rollout in the window that will not open is
+            // the count's whole meaning.
+            (702, codex_proc(1_704_067_200_000 - 1_000, None)),
         ]);
         let sweep = Codex::at(fixture_root()).sweep(&procs);
-        assert_eq!(sweep.rows.len(), 1);
-        assert_eq!(sweep.unmapped, 1);
+        assert_eq!(sweep.rows.len(), 1, "{:?}", sweep.rows);
+        assert_eq!(sweep.unmapped, 1, "the old-format one, and only it");
     }
 
     /// A node not pointed at any codex home says nothing about the

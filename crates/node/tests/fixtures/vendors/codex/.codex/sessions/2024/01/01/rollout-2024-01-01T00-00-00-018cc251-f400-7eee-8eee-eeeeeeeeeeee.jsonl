@@ -1,0 +1,2 @@
+{"this":"is not a session_meta envelope","and":"the old format khor cannot read"}
+{"type":"event_msg","payload":{"type":"task_started"}}
