@@ -43,7 +43,7 @@ import { useListWidth } from "@/hooks/use-list-width";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import { cn } from "@/lib/utils";
-import { axisOf, groupLabel, valueOf, word } from "@/words";
+import { axisOf, groupLabel, placeLabels, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { FILES } from "@/views/FilesKind";
 import { PAGES } from "@/views/PagesKind";
@@ -681,6 +681,10 @@ export default function App() {
   // on it would be missing this machine — the one people reach for
   // first (`SessionRow::home` says the rest).
   const wordOptions = useMemo(() => {
+    // The place chips, told apart where two checkouts share a name —
+    // the same reader the list's headings use, so a chip and the
+    // heading it filters to always print the same words.
+    const placeNames = placeLabels(rows.map((r) => `at:${r.place ?? ""}`));
     const seen = (pick: (r: SessionRow) => string, axis: string, label: (v: string) => string) => {
       const values: string[] = [];
       for (const r of rows) {
@@ -706,7 +710,7 @@ export default function App() {
       // The 工作区 axis, gathered the same way as the other three — the
       // values are whatever places the rows on screen actually carry,
       // so the list is never longer than the work in front of you.
-      ...seen((r) => r.place ?? "", "at:", (v) => groupLabel(`at:${v}`)).map((o) => ({
+      ...seen((r) => r.place ?? "", "at:", (v) => placeNames.get(`at:${v}`) ?? groupLabel(`at:${v}`)).map((o) => ({
         ...o,
         axis: gui.axis_place,
       })),

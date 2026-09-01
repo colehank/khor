@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { takeover, takeoverTerm, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -11,7 +11,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { cn } from "@/lib/utils";
 import { DayStrip } from "@/views/DayStrip";
 import { closeWarning } from "@/views/DetailPane";
-import { ago, axisOf, groupLabel, quietFor, valueOf, word } from "@/words";
+import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf, word } from "@/words";
 
 /** The corner mark on a row's face: the shape is `sessionMark`'s one
     judgment; this only sizes it. */
@@ -265,6 +265,10 @@ export function SessionsList({
   // measure and a ref alone would never tell the observer that changed
   // (`useStripWidth` has what that cost, measured).
   const days = useDayStrips(useStripWidth(box, shown.length > 0));
+  // Place headings, told apart where two checkouts share a name
+  // (`placeLabels`). Over the rows on screen, because those are the
+  // groups that can collide with each other.
+  const placeNames = useMemo(() => placeLabels(shown.map((r) => r.group)), [shown]);
   if (shown.length === 0) {
     // "Nothing here" and "nothing matched" are different facts, and the
     // wrong one is a lie the user has no way to catch: someone who
@@ -435,7 +439,7 @@ export function SessionsList({
                   way it means is what `IconPin` already does): pointing
                   down is open, pointing right is shut. */}
               <IconBack className={cn("flex-none", open ? "-rotate-90" : "rotate-180")} />
-              <span className="min-w-0 truncate">{groupLabel(r.group)}</span>
+              <span className="min-w-0 truncate">{placeNames.get(r.group) ?? groupLabel(r.group)}</span>
               {!open && (
                 <span data-group-size className="tabular-nums">
                   {size}

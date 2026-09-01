@@ -66,12 +66,50 @@ export function groupLabel(group: string): string {
     // keeps the whole path — two checkouts called `gui` in different
     // trees are two groups, and they stay two — but a sidebar heading
     // is three inches wide, and the head of a path is the part nobody
-    // reads.
+    // reads. When two groups on one screen share that name,
+    // `placeLabels` is the reader to use: it sees them both.
     if (path === "") return gui.group_placeless;
-    const cut = path.lastIndexOf("/");
-    return cut < 0 || cut === path.length - 1 ? path : path.slice(cut + 1);
+    return tail(path, 1);
   }
   return group.startsWith("dev:") ? group.slice("dev:".length) : group;
+}
+
+/** The last `n` components of a path, joined as they were. */
+function tail(path: string, n: number): string {
+  const parts = path.split("/").filter((p) => p !== "");
+  return parts.length === 0 ? path : parts.slice(-n).join("/");
+}
+
+/**
+ * Labels for a set of place groups, **told apart where their names
+ * collide**. `groupLabel` reads one key and prints its last component;
+ * two checkouts called `gui` in different trees then print two
+ * identical headings over two different groups — never merged (the
+ * keys differ), but indistinguishable on the screen. This reads them
+ * all, and for any name shared by two keys it prints as many trailing
+ * components as it takes to tell them apart (`apps/gui` and
+ * `web/gui`), leaving every uncontested name as short as it was.
+ *
+ * Keyed by the full group key, so a caller with a heading to draw asks
+ * with the key it has and never re-derives the name.
+ */
+export function placeLabels(groups: Iterable<string>): Map<string, string> {
+  const keys = [...new Set(groups)].filter((g) => g.startsWith("at:") && g !== "at:");
+  const out = new Map<string, string>();
+  const paths = keys.map((k) => k.slice("at:".length));
+  for (let i = 0; i < keys.length; i += 1) {
+    let n = 1;
+    let label = tail(paths[i], n);
+    // Widen until no other path prints the same, or there is nothing
+    // left to widen with — two identical paths cannot be told apart
+    // and would not be two keys.
+    while (paths.some((p, j) => j !== i && tail(p, n) === label) && n < paths[i].split("/").length) {
+      n += 1;
+      label = tail(paths[i], n);
+    }
+    out.set(keys[i], label);
+  }
+  return out;
 }
 
 /**
