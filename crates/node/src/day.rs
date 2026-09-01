@@ -366,6 +366,33 @@ impl Day {
         }
     }
 
+    /// This record as it travels to another machine (`Request::Days`):
+    /// the same shape the disk holds, because both are the same claim —
+    /// *at 10:04 this machine's list said 忙碌* — and a claim about the
+    /// past does not go stale in transit the way a word does
+    /// (module head). Text rather than bytes so the wire and the file
+    /// cannot drift into two encodings of one thing.
+    pub fn to_wire(&self) -> String {
+        serde_json::to_string(&self.to_stored()).unwrap_or_default()
+    }
+
+    /// A record another machine sent, **rolled to this machine's now**.
+    ///
+    /// The peer's day ends at the peer's clock when it answered; every
+    /// minute between then and now is one this machine has no word for,
+    /// and rolling fills exactly those with 没在看. That is the honest
+    /// tail: a peer unreachable since noon shows a strip that stops at
+    /// noon, not one that says 空闲 all afternoon (`unwatched` has the
+    /// full argument). Two clocks are involved and the minute grid is
+    /// the peer's; a skew between them shifts the strip by that skew,
+    /// which the same-minute format cannot show and the record cannot
+    /// know.
+    pub fn from_wire(text: &str, now_ms: i64) -> Option<Day> {
+        let mut day = Day::from_stored(serde_json::from_str::<Stored>(text).ok()?)?;
+        day.roll(minute(now_ms));
+        Some(day)
+    }
+
     pub fn save(&self, root: &Path) -> Result<(), String> {
         let bytes = serde_json::to_vec(&self.to_stored()).map_err(|e| e.to_string())?;
         let file = path(root);
@@ -417,6 +444,30 @@ fn minute(now_ms: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Over the wire and rolled forward.** A record a peer sent
+    /// thirty minutes ago must read as that peer's day up to then and
+    /// 没在看 since — not 空闲, not the last word stretched. The control
+    /// is the round trip at the same instant, which must change
+    /// nothing: the roll is the only thing the crossing adds.
+    #[test]
+    fn a_peers_day_reads_as_theirs_until_they_answered_and_unwatched_since() {
+        let t0 = 1_700_000_000_000i64;
+        let mut theirs = Day::empty(t0);
+        theirs.observe(t0, [("s".to_owned(), State::Busy)]);
+        let text = theirs.to_wire();
+
+        let same = Day::from_wire(&text, t0).expect("the wire round-trips");
+        assert_eq!(same.strip_of("s", MINUTES), theirs.strip_of("s", MINUTES), "same instant, same strip");
+
+        let later = Day::from_wire(&text, t0 + 30 * 60_000).expect("rolls");
+        let runs = later.strip_of("s", MINUTES);
+        let tail = runs.last().expect("a strip has a tail");
+        assert_eq!(tail.cell, DayCell::Unwatched, "the minutes since they answered are nobody's");
+        assert_eq!(tail.cells, 30, "exactly the thirty minutes in transit");
+        let busy = runs.iter().find(|r| r.cell == DayCell::Word(State::Busy)).expect("their word survives");
+        assert_eq!(busy.cells, 1);
+    }
 
     const M: i64 = CELL_MS;
 

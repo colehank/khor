@@ -798,6 +798,55 @@ fn a_minted_session_id_carries_its_full_width() {
     let _ = fs::remove_dir_all(&r);
 }
 
+/// **A reported row's strip is its home machine's own record** (远端
+/// 日条批). Before this, every reported row painted 没在看 for its
+/// whole day — a peer's row is one report with an age, not a history —
+/// and the history lives on the home machine, fetched with its rows
+/// (`Request::Days`) and cached beside them.
+///
+/// Two peers, and the control is the one that never answered: it keeps
+/// painting 没在看, because that is what this machine knows about it.
+#[test]
+fn a_reported_rows_strip_comes_from_its_home_machines_day() {
+    let r = root("peer-day");
+    let n = Node::open(r.clone()).unwrap();
+    let told_id = "a".repeat(64);
+    let mute_id = "b".repeat(64);
+    {
+        let loaded = n.devices_loaded().unwrap();
+        loaded.doc.upsert(&told_id, "told", &[]).unwrap();
+        loaded.doc.upsert(&mute_id, "mute", &[]).unwrap();
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    }
+    let mut template = n.sessions().unwrap()[0].session.clone();
+    template.id = SessionId("shell/on-told".into());
+    template.home = crate::device_id_from_hex(&told_id).unwrap();
+    n.cache_peer_rows(&told_id, "told", &[template.clone()]).unwrap();
+    template.id = SessionId("shell/on-mute".into());
+    template.home = crate::device_id_from_hex(&mute_id).unwrap();
+    n.cache_peer_rows(&mute_id, "mute", &[template]).unwrap();
+
+    // What `told` would have answered: its own record, with one 忙碌
+    // minute on the row it reported.
+    let now = crate::live::now_ms();
+    let mut theirs = crate::day::Day::empty(now);
+    theirs.observe(now, [("shell/on-told".to_owned(), State::Busy)]);
+    n.cache_peer_day(&told_id, &theirs.to_wire()).unwrap();
+
+    let strips = n.day_strips(crate::day::MINUTES).unwrap();
+    let told = &strips["shell/on-told"];
+    assert!(
+        told.iter().any(|run| run.cell == khor_core::DayCell::Word(State::Busy)),
+        "the home machine's word reaches the strip: {told:?}"
+    );
+    let mute = &strips["shell/on-mute"];
+    assert!(
+        mute.iter().all(|run| run.cell == khor_core::DayCell::Unwatched),
+        "a machine that never answered is still 没在看, not borrowed: {mute:?}"
+    );
+}
+
 /// The four classes of the fold ruling (退场批), enumerated — a "fold
 /// everything" implementation passes the first alone, which is why the
 /// other three exist.

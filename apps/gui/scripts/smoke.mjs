@@ -742,6 +742,29 @@ for line in sys.stdin:
   // ticket from its CLI — the one thing the GUI is not being asked to
   // do in this scenario, so that what it *is* asked to do (joining) is
   // the only untested step in the pairing.
+  // **alpha's day, planted before alpha wakes** (远端日条批), in the
+  // record's own on-disk shape (`khor_node::day`): the minute the
+  // window starts, 1440 watched flags, 1440 cells per row. Two things
+  // are under test here. That alpha *loads* a record in this shape —
+  // a hand-written file `Day::load` accepts is the file format holding
+  // — and that whatever alpha's record holds reaches beta's screen
+  // through `Request::Days`. The planted cell itself does not have to
+  // survive: alpha samples the same row in the same minute and keeps
+  // whichever word outranks (`Day::observe`), so by the time beta
+  // reads it the cell may well be alpha's own.
+  {
+    const minute = Math.floor(Date.now() / 60_000);
+    const from = minute - 1439;
+    mkdirSync(join(A, ".khor"), { recursive: true });
+    writeFileSync(
+      join(A, ".khor", "day.json"),
+      JSON.stringify({
+        from,
+        watched: "-".repeat(1439) + "+",
+        rows: { "tui/cafe1": ".".repeat(1439) + "b" },
+      }),
+    );
+  }
   run(KHOR, ["serve"], envA, "serve-a");
   await until("alpha endpoint.json", 15_000, () => existsSync(join(A, ".khor/endpoint.json")));
   const ticketA = cli(envA, "invite").trim().split("\n").pop().trim();
@@ -1947,6 +1970,20 @@ for line in sys.stdin:
     40_000,
     async () => (await page.locator('[data-row="tui/cafe1"]').getAttribute("data-word")) === "busy",
     1_000,
+  );
+  // **The strip under alpha's row is alpha's own day, not 没在看.**
+  // Alpha's record has words on this row (its sampler has been running
+  // for minutes, and a cell was planted before it woke); they reach
+  // beta's screen through `Request::Days`, and a beta that still
+  // painted every reported row as unwatched shows one grey run here.
+  // **Any word, not a particular one**: which word a screen cell wears
+  // when several minutes merge into it is the node's ranking, and the
+  // first version of this check asked for 忙碌 by name and reddened on
+  // a strip that was alpha's all along — its busy minutes merged
+  // under a 完成. Waited on rather than asserted: beta asks for a
+  // peer's day on its report beat.
+  await until("a word from alpha's own day on beta's strip for tui/cafe1", 60_000, async () =>
+    (await page.locator('[data-row="tui/cafe1"] [data-day-mark]:not([data-day-mark="unwatched"])').count()) >= 1,
   );
   const wordsHere = [
     ...new Set(await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.word))),

@@ -179,6 +179,18 @@ pub enum Request {
     /// the ordinary [`Response::PathSlice`], whose change contract
     /// (total/at_ms moving = start over) rides the staged copy.
     SatFetchPath { sat: String, path: String, offset: u64 },
+    /// The asked machine's own day record (`khor_node::day`): what
+    /// *its* list said about each of *its* sessions over the last 24
+    /// hours. A reported row used to paint 没在看 for its whole strip
+    /// (远端日条批, 2026-09-01), because a peer's row is one report
+    /// with an age and not a history — the history lives on the home
+    /// machine, and this is the road it travels.
+    ///
+    /// Answered as [`Response::Days`]; a khor that predates it answers
+    /// [`Response::Refused`], which the asker reads as "no record from
+    /// there" and keeps painting 没在看. **Tail-appended**, like every
+    /// op since the first.
+    Days,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +255,12 @@ pub enum Response {
     /// ([`Request::SatVitals`]; 离线轴 — a stale number must look
     /// stale).
     SatVitals { vitals: khor_core::Vitals, age_ms: u64 },
+    /// [`Request::Days`]'s answer: the record exactly as the answering
+    /// machine keeps it on disk (`Day::to_wire`), one encoding for the
+    /// file and the wire. The receiver rolls it to its own now
+    /// (`Day::from_wire`), so every minute since this answer reads as
+    /// nobody's.
+    Days { day: String },
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -327,6 +345,7 @@ mod tests {
             (Request::Usage, &b"Usage"[..]),
             (Request::Ls { path: String::new() }, &b"Ls"[..]),
             (Request::FetchPath { path: String::new(), offset: 0 }, &b"FetchPath"[..]),
+            (Request::Days, &b"Days"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

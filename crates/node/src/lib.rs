@@ -1296,11 +1296,25 @@ impl Node {
     ) -> Result<std::collections::BTreeMap<String, Vec<day::Run>>, String> {
         let views = self.sessions()?;
         let record = day::read(&self.root);
+        // Each peer's day once, however many of its rows are showing.
+        let mut theirs: std::collections::BTreeMap<String, Option<day::Day>> =
+            std::collections::BTreeMap::new();
         Ok(views
             .into_iter()
             .map(|v| {
                 let runs = if v.source.is_some() {
-                    day::unwatched(cells)
+                    // **Its home machine's own record**, fetched with its
+                    // rows (`Request::Days`) and rolled to now — so a
+                    // peer unreachable since noon shows a strip that
+                    // stops at noon. A machine that never answered
+                    // (an older khor) keeps painting 没在看, which is
+                    // the truth about what this one knows.
+                    let home = v.session.home.hex();
+                    let day = theirs.entry(home.clone()).or_insert_with(|| self.peer_day(&home));
+                    match day {
+                        Some(d) => d.strip_of(&v.session.id.0, cells),
+                        None => day::unwatched(cells),
+                    }
                 } else {
                     record.strip_of(&v.session.id.0, cells)
                 };
@@ -1633,6 +1647,33 @@ impl Node {
     /// sponsor relays about its satellite arrives already aged, and
     /// stamping it "now" would dress the sponsor's minute-old sample in
     /// the arrival's freshness (离线轴: a stale number must look stale).
+    /// A peer's day record as it answered it (`Request::Days`), kept
+    /// beside its vitals and rows: one file per machine, the text the
+    /// peer sent, stamped with when it arrived.
+    pub(crate) fn cache_peer_day(&self, device_id: &str, day: &str) -> Result<(), String> {
+        if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
+        }
+        fs::create_dir_all(self.days_dir()).map_err(msg::cant_make_vitals_dir)?;
+        let report = DayReport { at_ms: now_ms(), day: day.to_owned() };
+        link::write_private(
+            &self.days_dir().join(device_id),
+            &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
+        )
+    }
+
+    /// The cached day of one machine, rolled to now — `None` when that
+    /// machine never answered (an older khor, or one never reached).
+    fn peer_day(&self, device_id: &str) -> Option<day::Day> {
+        let text = fs::read_to_string(self.days_dir().join(device_id)).ok()?;
+        let report: DayReport = serde_json::from_str(&text).ok()?;
+        day::Day::from_wire(&report.day, now_ms() as i64)
+    }
+
+    fn days_dir(&self) -> PathBuf {
+        self.root.join("days")
+    }
+
     pub(crate) fn cache_peer_vitals_aged(
         &self,
         device_id: &str,
@@ -2881,6 +2922,13 @@ struct PeerReport {
 struct VitalsReport {
     at_ms: u64,
     vitals: khor_core::Vitals,
+}
+
+/// One device's last day record, as cached on disk (`cache_peer_day`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DayReport {
+    at_ms: u64,
+    day: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

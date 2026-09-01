@@ -780,6 +780,18 @@ impl Node {
                 }
                 Ok(Response::SessionRows { rows: self.reportable_rows()? })
             }
+            Request::Days => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // A file read, off the reactor for the reason every
+                // registry read is (the `Ls` arm's note).
+                let root = self.root().to_path_buf();
+                let day = tokio::task::spawn_blocking(move || crate::day::read(&root).to_wire())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Days { day })
+            }
             Request::Vitals => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -2211,6 +2223,12 @@ impl Node {
         // that has no such op simply has no reading here.
         if let Ok(Response::Vitals { vitals }) = request(&conn, &Request::Vitals).await {
             let _ = self.cache_peer_vitals(&d.id, &vitals);
+        }
+        // Its day, on the same beat as its rows: the strips under a
+        // peer's rows are read from this, and a `Refused` from an older
+        // khor leaves the last cached day standing, aging like a report.
+        if let Ok(Response::Days { day }) = request(&conn, &Request::Days).await {
+            let _ = self.cache_peer_day(&d.id, &day);
         }
         // …and the readings of every satellite this device sponsors, on
         // the same visit (附属机器批): satellites cannot be dialed, so
