@@ -2434,7 +2434,15 @@ for line in sys.stdin:
       .split("\n")
       .filter((l) => l.includes("\t"))
       .map((l) => l.split("\t")[0]);
-    if (nowAt >= 0 && nowAt < wasAt && now.join(" ") === backend.join(" ")) return true;
+    // **The target's seat, not the whole order.** This used to demand
+    // the screen's full order equal the node's — two reads of a list
+    // that moves on a 2s poll, taken one after the other — and it
+    // reddened on 2026-09-01 with both sides right and merely a beat
+    // apart (its own history above holds three earlier false reds of
+    // the same family). The claim §15 allows is about *this row*: the
+    // node put it somewhere, and the screen shows it there. Rows
+    // shuffling around it are the list being alive, not a disagreement.
+    if (nowAt >= 0 && nowAt < wasAt && nowAt === backend.indexOf(flipTarget)) return true;
     const pinnedAttr = await page.locator(`[data-row="${flipTarget}"]`).getAttribute("data-pinned");
     throw new Error(
       `target=${flipTarget} data-pinned=${pinnedAttr} was #${wasAt} now #${nowAt}; ` +
