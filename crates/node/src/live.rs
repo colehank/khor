@@ -90,6 +90,16 @@ fn place_of(cwd: Option<&str>) -> Option<String> {
     Some(crate::place::project_root(std::path::Path::new(cwd)).display().to_string())
 }
 
+/// Which address a terminal should connect to after
+/// [`LiveKind::attach_multiplexed`] — the session's own host, or a
+/// viewer bridged onto a tmux seat (`crate::host::view_file_path` has
+/// why those are two files).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Seat {
+    Host,
+    View,
+}
+
 /// How a word got onto a registry row.
 ///
 /// Only exists to answer one question, and the question is asked in
@@ -491,6 +501,21 @@ impl LiveKind {
         read_meta(&dir).ok().map(|m| (m.kind, m.title))
     }
 
+    /// Whether this row's process sits in a tmux session right now —
+    /// the fact [`khor_core::Session::mux`] carries, asked afresh at
+    /// the moment a terminal is being opened (one sweep, ~13 ms).
+    fn held_in_mux(&self, id: &SessionId) -> bool {
+        let sweep = self.discovery.sweep();
+        let pids: Vec<u32> = if let Some(found) = sweep.rows.iter().find(|f| f.id() == *id) {
+            found.sighting.pids.clone()
+        } else if let Ok(dir) = self.existing_dir(id) {
+            read_meta(&dir).ok().and_then(|m| m.pid).into_iter().collect()
+        } else {
+            Vec::new()
+        };
+        pids.iter().any(|p| sweep.multiplexed.iter().any(|h| h.holds.contains(p)))
+    }
+
     /// Stands a host up for a discovered multiplexer session, so the
     /// terminal can attach to it like any hosted row (docs/handoff tmux
     /// 接桥). The host runs a **grouped** tmux client
@@ -503,11 +528,23 @@ impl LiveKind {
     ///
     /// Idempotent: a second open finds the host and does nothing — two
     /// clicks must not stand up two clients.
-    pub fn attach_multiplexed(&self, id: &SessionId) -> Result<(), String> {
+    pub fn attach_multiplexed(&self, id: &SessionId) -> Result<Seat, String> {
         if let Some(dir) = self.dir_of(id) {
+            // A viewer already up is the answer for an agent in tmux; a
+            // host already up is the answer for a tmux session khor
+            // bridged as a shell. Checked in that order, because a row
+            // can have *both* a host and a tmux seat (a conversation
+            // khor started and the person resumed in a terminal), and
+            // then the terminal is the viewer's, not the ghost's.
+            if let Ok(vf) = crate::host::read_view_file(&dir) {
+                if crate::link::pid_alive(vf.host_pid) {
+                    return Ok(Seat::View);
+                }
+                let _ = fs::remove_file(crate::host::view_file_path(&dir));
+            }
             if let Ok(hf) = crate::host::read_host_file(&dir) {
-                if crate::link::pid_alive(hf.host_pid) {
-                    return Ok(());
+                if crate::link::pid_alive(hf.host_pid) && !self.held_in_mux(id) {
+                    return Ok(Seat::Host);
                 }
                 // A host that died without cleaning up (killed hard):
                 // the marker points at nothing, so clear it and stand a
@@ -540,7 +577,7 @@ impl LiveKind {
             self.ensure(id, khor_core::kind::SHELL, &title, None, Some(khor_core::category::SHELL))?;
             let dir = self.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
             crate::host::spawn_host(&dir, id, &tmux.grouped_attach_argv(&target, None), (80, 24))?;
-            return Ok(());
+            return Ok(Seat::Host);
         }
         // Any other row reaches its terminal by redoing the fold's
         // intersection (`rows`): which multiplexer session holds this
@@ -611,7 +648,7 @@ impl LiveKind {
             (80, 24),
             fresh,
         )?;
-        Ok(())
+        Ok(Seat::View)
     }
 
     /// Closes bridge hosts whose tmux session holds a row that lists on
@@ -832,6 +869,7 @@ impl LiveKind {
                 via: None,
                 term: false,
                 place: place_of(sighting.cwd.as_deref()),
+                mux: false,
             });
             let seat = out.len() - 1;
             for &p in &pids {
@@ -872,6 +910,12 @@ impl LiveKind {
                 // the route by redoing this very intersection).
                 for s in seats {
                     out[s].term = true;
+                    // **Where the person is.** `term` says a terminal can
+                    // be had; this says the process sits in their tmux —
+                    // which for a row that is also khor's own conversation
+                    // (a `gui` ghost) is the fact that sends it to the
+                    // terminal face by default (`khor_core::Session::mux`).
+                    out[s].mux = true;
                 }
                 // A bridge row somebody stood up for this same session
                 // (before the fold rule, by clicking the tmux row) is
@@ -892,6 +936,7 @@ impl LiveKind {
                 // above (which answers about a process) takes the face
                 // away from a session sitting right there.
                 out[seat].term = true;
+                out[seat].mux = true;
                 continue;
             }
             let sighting = held.found.sighting;
@@ -919,6 +964,7 @@ impl LiveKind {
                 // bridge can attach to.
                 term: true,
                 place: place_of(sighting.cwd.as_deref()),
+                mux: true,
             });
         }
         out.retain(|r| !folded.contains(&r.id));
@@ -1064,8 +1110,11 @@ impl LiveKind {
                     // multiplexer earns `term` back in the loop below,
                     // which is where that route is resolved anyway.
                     term: crate::host::read_host_file(&e.path())
-                        .is_ok_and(|hf| crate::link::pid_running(hf.host_pid)),
+                        .is_ok_and(|hf| crate::link::pid_running(hf.host_pid))
+                        || crate::host::read_view_file(&e.path())
+                            .is_ok_and(|vf| crate::link::pid_running(vf.host_pid)),
                     place: place_of(meta.place.as_deref()),
+                    mux: false,
                 },
                 pid: meta.pid,
             });
@@ -1499,6 +1548,44 @@ mod tests {
         assert_eq!(places.len(), 1, "{places:?}");
         assert_eq!(places[0].0, here);
         assert_eq!(places[0].1, 1, "one visit");
+    }
+
+    /// **`mux` says where the person is.** A registered agent whose
+    /// process a tmux session holds carries it; an agent under a plain
+    /// shell in no tmux does not — and that second half is the control,
+    /// because `term` is true of the first and a `mux` that merely
+    /// copied `term` would send every khor conversation to the terminal.
+    #[test]
+    fn a_row_held_by_tmux_is_multiplexed_and_one_that_is_not_is_not() {
+        use crate::adaptor::{tmux::Tmux, Discovery, Proc, Procs};
+
+        let root = tmp("mux");
+        let vendors =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude");
+        let shell = |pid: u32| {
+            (pid, Proc { name: "-zsh".into(), started_ms: 1_700_000_000_000, cwd: None, ppid: Some(1) })
+        };
+        let claude = |pid: u32, started_ms: i64, parent: u32| {
+            (pid, Proc { name: "claude".into(), started_ms, cwd: None, ppid: Some(parent) })
+        };
+        let procs = Procs::of([
+            shell(3001),
+            shell(3002),
+            claude(4001, 1_700_000_000_000, 3001),
+            claude(4002, 1_700_000_100_000, 3002),
+        ]);
+        // tmux holds 3001's pane and nothing else.
+        let holding = crate::adaptor::tmux::fake_tmux(
+            "mux-held",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
+        );
+        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors).with_procs(procs).with_tmux(Tmux::at_binary(&holding)),
+        ));
+        let rows = k.rows(|_| 0);
+        let of = |id: &str| rows.iter().find(|r| r.id.0 == id).unwrap_or_else(|| panic!("{id} lists: {rows:?}"));
+        assert!(of("tui/11111111-1111-4111-8111").mux, "its process sits in tmux");
+        assert!(!of("tui/22222222-2222-4222-8222").mux, "control: in no tmux, not multiplexed");
     }
 
     /// A row whose kind is not its id's first segment must still list.

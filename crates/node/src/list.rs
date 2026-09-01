@@ -202,6 +202,7 @@ mod tests {
                 state: StateStamp { state: word, at: Millis(at) },
                 unread: 0,
                 place: None,
+                mux: false,
                 category: category.map(str::to_owned),
                 last: None,
                 via: None,

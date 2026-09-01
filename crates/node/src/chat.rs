@@ -132,6 +132,7 @@ impl ChatKind {
             // list groups these together as such rather than pretending
             // somebody forgot.
             place: None,
+            mux: false,
         }
     }
 

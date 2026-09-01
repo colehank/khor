@@ -72,6 +72,32 @@ pub fn host_file_path(dir: &Path) -> PathBuf {
     dir.join("host.json")
 }
 
+/// Where a **viewer** host leaves its address — a different file from
+/// the session's own host, on purpose. A viewer is a lens onto a
+/// process that belongs to somebody else (an agent sitting in the
+/// person's tmux), and that session may already have a host of its
+/// own: a conversation khor started and the person then resumed in a
+/// terminal (`claude -r`) is one row with a ghost *and* a tmux seat.
+/// Two hosts writing one `host.json` took turns owning the row's
+/// address, and whichever face read it second talked to the wrong one.
+/// The terminal reads this file; the conversation reads the other.
+pub fn view_file_path(dir: &Path) -> PathBuf {
+    dir.join("view.json")
+}
+
+/// The viewer's address, when a viewer is up on this session.
+pub fn read_view_file(dir: &Path) -> Result<HostFile, String> {
+    let text = std::fs::read_to_string(view_file_path(dir))
+        .map_err(|_| msg::NO_HOST.to_string())?;
+    serde_json::from_str(&text).map_err(msg::host_file_garbled)
+}
+
+/// [`connect`], to the viewer's address rather than the host's.
+pub fn connect_view(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
+    let hf = read_view_file(dir)?;
+    connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
+}
+
 /// Where a host that died on the way up leaves the reason, for the
 /// opener that is watching for [`host_file_path`] to appear.
 ///
@@ -634,7 +660,8 @@ fn host_serving(
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let cookie = crate::link::fresh_hex()?;
     crate::link::write_private(
-        &host_file_path(&dir),
+        // A viewer's address goes in its own file (`view_file_path`).
+        &if viewer.is_some() { view_file_path(&dir) } else { host_file_path(&dir) },
         &serde_json::to_vec(&HostFile {
             port,
             cookie: cookie.clone(),
@@ -885,7 +912,7 @@ fn host_serving(
             if v == "made" {
                 let _ = std::fs::remove_dir_all(&dir);
             } else {
-                let _ = std::fs::remove_file(host_file_path(&dir));
+                let _ = std::fs::remove_file(view_file_path(&dir));
             }
         }
     }

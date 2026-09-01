@@ -415,13 +415,26 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
             // client — `LiveKind::attach_multiplexed` has the judgment,
             // including refusing rows with no route), and from here on
             // it is any hosted session.
-            if !n.is_hosted(&sid) {
-                n.attach_tmux(&sid)?;
-            }
+            // **The seat decides the address.** A row can have a host
+            // of its own *and* sit in the person's tmux (a conversation
+            // khor started, resumed in a terminal), and then the
+            // terminal belongs to the viewer bridged onto tmux, never
+            // to the ghost. `attach_tmux` is the one judgment of which
+            // it is; a row in no tmux with a live host answers `Host`
+            // from its file and one sweep, which is what the ordinary
+            // open costs now.
+            let seat = match n.attach_tmux(&sid) {
+                Ok(seat) => seat,
+                Err(_) if n.is_hosted(&sid) => khor_node::live::Seat::Host,
+                Err(e) => return Err(e),
+            };
             let dir = n
                 .session_dir(&sid)
                 .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-            connect(&dir, cols, rows)?
+            match seat {
+                khor_node::live::Seat::View => khor_node::host::connect_view(&dir, cols, rows)?,
+                khor_node::live::Seat::Host => connect(&dir, cols, rows)?,
+            }
         }
     };
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;

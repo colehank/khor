@@ -3864,6 +3864,14 @@ for line in sys.stdin:
       .catch(() => "");
     return t.includes(inTmux);
   });
+  // **The row says its process sits in tmux** (`Session::mux`, 面跟
+  // 宿主批): the fact the detail routes its default face on, ahead of
+  // the row's kind. Read off the row before opening it, so a face that
+  // opened the terminal for some other reason could not stand in for
+  // the wire carrying the fact.
+  await until("the tmux-held agent row carrying mux", 20_000, async () =>
+    (await page.locator(`[data-row="${tmuxAgentRow}"]`).getAttribute("data-mux")) === "true",
+  );
   await page.locator(`[data-row="${tmuxAgentRow}"] [data-row-open]`).click();
   await until("the pane's terminal painted", 20_000, async () =>
     (await page.locator("[data-terminal]").count()) === 1,

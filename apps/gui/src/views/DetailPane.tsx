@@ -331,6 +331,15 @@ export function DetailPane({
         // drops the draft and the scroll with the conversation they
         // belonged to.
         <MachineChat key={row.id} id={row.id} />
+      ) : row && row.mux ? (
+        // **The face follows the host** (2026-09-01: 「什么宿主跑的就用
+        // 什么显示」). The process sits in the person's own tmux, so
+        // the terminal is where they are — even for a `gui` row, which
+        // is what a conversation khor started becomes once the person
+        // resumes it in a terminal (`claude -r`): one session, two
+        // hosts, and the one they are typing into wins. The row menu's
+        // 转为 GUI 显示 is the other way round, on purpose.
+        <TerminalPane key={row.id} id={row.id} />
       ) : row && row.kind === "gui" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions

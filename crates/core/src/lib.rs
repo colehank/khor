@@ -1251,6 +1251,21 @@ pub struct Session {
     /// placeless, which is exactly what that peer knows.
     #[serde(default)]
     pub place: Option<String>,
+    /// **The session's process sits inside a terminal multiplexer on
+    /// its home machine** (a tmux session holds it). The face rule
+    /// (2026-09-01: 「什么宿主跑的就用什么显示」) needs this told apart
+    /// from [`Session::term`]: `term` says a terminal *can* be had —
+    /// which is also true of a conversation khor hosts itself, whose
+    /// ghost is a host — while this says where the person actually is.
+    /// A session that is both khor's conversation and resumed in the
+    /// person's tmux (`claude -r`) is one row of kind `gui`, and this
+    /// is what sends it to the terminal by default.
+    ///
+    /// Only the home device can say (the multiplexer is there). Wire:
+    /// appended at the tail with a serde default; an older peer's rows
+    /// read as not multiplexed, which is exactly what that peer knew.
+    #[serde(default)]
+    pub mux: bool,
 }
 
 #[cfg(test)]
@@ -1266,6 +1281,7 @@ mod tests {
             state: StateStamp { state: State::Busy, at: Millis(1) },
             unread: 3,
             place: None,
+            mux: false,
             category: Some("claude".to_owned()),
             last: Some("last said".to_owned()),
             via: None,
@@ -1321,19 +1337,20 @@ mod tests {
     }
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_thirteen() {
+    fn the_session_frame_is_a_fixed_order_array_of_fourteen() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x9d = msgpack fixarray of 13. Adding, removing, or reordering a
+        // 0x9e = msgpack fixarray of 14. Adding, removing, or reordering a
         // field must land here first, consciously. Six → seven appended
         // `category`; seven → nine appended `last` and `via` together
         // (会话行改版批); nine → ten appended `term` (会话身份批);
         // ten → eleven appended `dead` (退场批); eleven → twelve appended
         // `unbacked` (词的保鲜期批); twelve → thirteen appended `place`
-        // (工作区批) — always at the tail, never in the middle: a
-        // mid-frame optional desyncs the array on every older end.
-        assert_eq!(bytes[0], 0x9d);
-        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked, place): (
+        // (工作区批); thirteen → fourteen appended `mux` (面跟宿主批) —
+        // always at the tail, never in the middle: a mid-frame optional
+        // desyncs the array on every older end.
+        assert_eq!(bytes[0], 0x9e);
+        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked, place, mux): (
             SessionId,
             Kind,
             String,
@@ -1347,6 +1364,7 @@ mod tests {
             bool,
             bool,
             Option<String>,
+            bool,
         ) = rmp_serde::from_slice(&bytes).unwrap();
         // Field by field rather than as one tuple comparison: std stops
         // deriving `PartialEq` at twelve, and this frame is thirteen.
@@ -1366,6 +1384,7 @@ mod tests {
         assert_eq!(dead, session.dead);
         assert_eq!(unbacked, session.unbacked);
         assert_eq!(place, session.place);
+        assert_eq!(mux, session.mux);
     }
 
     /// **Over the wire from an older peer**: a machine that predates
@@ -1394,6 +1413,35 @@ mod tests {
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
         assert!(!row.unbacked, "an older peer said nothing about backing; nothing may fade");
+        assert_eq!(row.title, "build khor", "…and the rest of the row survived");
+    }
+
+    /// **Over the wire from an older peer**: a machine that predates
+    /// `mux` sends thirteen fields, and its rows must read as not
+    /// multiplexed — the face then routes them as it always did, which
+    /// is the truth about what that peer could say.
+    #[test]
+    fn a_frame_from_an_older_peer_decodes_as_not_multiplexed() {
+        let old = (
+            SessionId("dev0/demo/1".to_owned()),
+            Kind("tui".to_owned()),
+            "build khor".to_owned(),
+            DeviceId([7; 32]),
+            StateStamp { state: State::Busy, at: Millis(1) },
+            0u64,
+            Some("claude".to_owned()),
+            None::<String>,
+            None::<String>,
+            false,
+            false,
+            false,
+            None::<String>,
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x9d, "the sample must be a thirteen-field frame, or it proves nothing");
+
+        let row: Session = rmp_serde::from_slice(&bytes).unwrap();
+        assert!(!row.mux, "an older peer said nothing about a multiplexer");
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
     }
 

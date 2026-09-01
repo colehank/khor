@@ -135,6 +135,12 @@ pub struct SessionRow {
     /// are not distinguished here for the same reason the node does not
     /// distinguish them: the next move is the same.
     pub place: Option<String>,
+    /// The session's process sits in a tmux session on its home
+    /// machine (`khor_core::Session::mux`). **What the detail routes its
+    /// default face on**, ahead of the kind: a conversation khor hosts
+    /// that the person has also resumed in their own tmux is one `gui`
+    /// row, and the terminal is where they are.
+    pub mux: bool,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -446,6 +452,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             quiet: v.quiet,
             category: v.session.category,
             place: v.session.place,
+            mux: v.session.mux,
             group,
         }
         })

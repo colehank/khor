@@ -478,6 +478,7 @@ export function SessionsList({
           {open && (
           <div
           data-row={r.id}
+          data-mux={r.mux}
           data-word={r.word}
           data-pinned={r.pinned}
           data-quiet={r.quiet}

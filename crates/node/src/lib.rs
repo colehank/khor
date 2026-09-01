@@ -2337,7 +2337,10 @@ impl Node {
         // their process): end its bridge first, and let it clean up
         // after itself before the ghost writes its own host marker.
         if let Some(dir) = self.live.dir_of(id) {
-            if let Ok(hf) = host::read_host_file(&dir) {
+            // A viewer bridged onto the person's tmux has its own file
+            // (`host::view_file_path`); it is "whatever shows this
+            // session now" as much as a host is, and goes first.
+            for hf in [host::read_view_file(&dir), host::read_host_file(&dir)].into_iter().flatten() {
                 #[cfg(unix)]
                 unsafe {
                     libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
@@ -2448,7 +2451,7 @@ impl Node {
         // End the conversation's body. The ghost writes itself as both
         // host and child (`gui_host`), so its group is the shim and the
         // agent too.
-        if let Ok(hf) = host::read_host_file(&dir) {
+        for hf in [host::read_view_file(&dir), host::read_host_file(&dir)].into_iter().flatten() {
             #[cfg(unix)]
             unsafe {
                 libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
@@ -2471,7 +2474,7 @@ impl Node {
 
     /// Stands a host up for a discovered tmux session so a terminal can
     /// attach (`LiveKind::attach_multiplexed` has the whole judgment).
-    pub fn attach_tmux(&self, id: &SessionId) -> Result<(), String> {
+    pub fn attach_tmux(&self, id: &SessionId) -> Result<live::Seat, String> {
         self.live.attach_multiplexed(id)
     }
 
