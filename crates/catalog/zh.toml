@@ -113,7 +113,7 @@ usage = """
   borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
                         它那儿出去(要 serve 在跑;close 那条 session 收口)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
-  sessions [--by recent|category|device|state] [--all]
+  sessions [--by recent|category|device|state|place] [--all]
                         session 列表(默认最近);换一种排布,置顶永远在最上;
                         看过的旧会话默认只报条数,--all 全列出来
   tell <机器> <话...>    给机器的窗口留言(永远当字面的话)

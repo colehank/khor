@@ -372,6 +372,41 @@ impl Tmux {
     fn spawn(&self, args: &[&str]) -> Option<std::process::Child> {
         for binary in &self.binaries {
             let mut c = Command::new(binary);
+            // **`-u`: tmux, assume UTF-8.** The unit separator between
+            // this adaptor's fields is a control byte, and a tmux that
+            // decided it was not in a UTF-8 locale printed it as `_`
+            // (measured 2026-09-01 under launchd's environment: `$4_`
+            // `_mandala`, every line unreadable, ten sessions counted
+            // as a vendor khor could not read). The locale below is the
+            // ordinary cure and is kept; this flag is the one tmux
+            // itself offers, and it holds when the locale probe has
+            // nothing to say — in a bare environment it said nothing,
+            // and the parse only came back once the flag went in.
+            c.arg("-u");
+
+            // **The user's locale, or tmux answers in a dialect.** Under
+
+            // launchd this process has no `LANG` at all, and a tmux started
+
+            // without one renders every byte outside ASCII printables as `_`
+
+            // — measured 2026-09-01: the unit separator this adaptor puts
+
+            // between fields came back as `_`, every line failed to parse, and
+
+            // the sweep that had just been deployed counted ten sessions it
+
+            // could not read while the same binary from a terminal read all
+
+            // ten. The same disease `host.rs` and `gui_host.rs` already treat
+
+            // the same way (`Node::user_locale`).
+
+            for (name, value) in crate::Node::user_locale() {
+
+                c.env(name, value);
+
+            }
             if let Some(sock) = &self.socket {
                 c.arg("-L").arg(sock);
             }
