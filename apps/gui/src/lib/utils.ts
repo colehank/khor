@@ -39,7 +39,7 @@ import { extendTailwindMerge } from "tailwind-merge";
  * the gate holds that half too — this file changes the merge rules for
  * the whole app, so「the new ones work」is only half a claim.
  */
-const OWN_SIZES = ["title", "fact", "aux", "hero", "code", "read"];
+const OWN_SIZES = ["title", "fact", "aux", "hero", "code", "read", "term"];
 
 const merge = extendTailwindMerge({
   extend: { classGroups: { "font-size": [{ text: OWN_SIZES }] } },

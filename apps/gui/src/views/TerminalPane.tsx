@@ -149,7 +149,7 @@ export function TerminalPane({ id }: { id: string }) {
    *
    * No monospace face on any of these platforms carries CJK, so it is
    * always answered by a fallback — and a fallback's advance is not two
-   * latin cells. Measured here 2026-09-01: SF Mono's cell is 8.4289px,
+   * latin cells. Measured here 2026-09-01: SF Mono's cell is 8.4289 wide,
    * two of them 16.86, and PingFang's 中 is 14 — **the glyph fills 83%
    * of the box it is given**, and a screen of Chinese reads as loose
    * and thin, which is most of what "分辨率很低" was describing.

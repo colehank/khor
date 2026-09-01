@@ -553,18 +553,21 @@ function ToolDot({ status }: { status: string }) {
       // already carries the reduced-motion guard (app.css).
       data-halo={live ? "busy" : undefined}
       aria-hidden
-      className="inline-block size-1.5 shrink-0 rounded-full"
+      // The ring is the third shape — a hollow dot — and it is a
+      // utility rather than an inline `box-shadow` because the width
+      // is a pixel, and a pixel written here is a number this app's
+      // tokens do not own (`check-px`). `ring-1 ring-inset` compiles to
+      // exactly the inset shadow it replaced.
+      className={cn(
+        "inline-block size-1.5 shrink-0 rounded-full",
+        !live && !failed && "ring-1 ring-inset ring-muted-foreground",
+      )}
       style={{
         background: live
           ? "var(--state-busy)"
           : failed
             ? "var(--state-failed)"
             : "transparent",
-        boxShadow: live
-          ? undefined
-          : failed
-            ? undefined
-            : "inset 0 0 0 1px var(--muted-foreground)",
       }}
     />
   );

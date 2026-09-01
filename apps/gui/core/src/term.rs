@@ -437,7 +437,6 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     let reader = term.clone();
     std::thread::spawn(move || {
         use std::io::Read;
-        use std::panic::{catch_unwind, AssertUnwindSafe};
         let mut buf = [0u8; 8192];
         loop {
             match reading.read(&mut buf) {
