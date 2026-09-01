@@ -4,6 +4,7 @@
 // was served from. Never a hand-written mock — the backend is the same
 // Rust in all three.
 import { msg } from "./gen/catalog";
+import type { PlaceRow } from "./gen/bindings/PlaceRow";
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { DayRun } from "./gen/bindings/DayRun";
@@ -36,6 +37,7 @@ import type { ChatMsgRow } from "./gen/bindings/ChatMsgRow";
 import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
 
 export type {
+  PlaceRow,
   SessionRow,
   DeviceRow,
   DayRun,
@@ -173,6 +175,11 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   );
 }
 
+/** 常去的地方 — the directories this machine's own records say work
+    happened in, folded to project roots and newest first
+    (`khor_node::place`). This machine's only: a directory on another
+    one is not somewhere a session can be started from here. */
+export const fetchPlaces = () => call<PlaceRow[]>("places", {});
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });

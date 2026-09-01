@@ -64,6 +64,12 @@ pub(super) const PROCESS_NAME: &str = "codex";
 const JOIN_EARLIEST_MS: i64 = -5_000;
 const JOIN_LATEST_MS: i64 = 60_000;
 
+/// How many rollouts back [`Codex::places`] reads. One head read each
+/// (93 on the machine this was written on); the bound is what keeps
+/// that a constant rather than a function of how long codex has been
+/// installed.
+const PLACES_SCAN: usize = 300;
+
 /// A rollout, identified without opening it.
 struct Rollout {
     path: PathBuf,
@@ -180,6 +186,26 @@ impl Codex {
                 .and_then(uuid_in_name)
                 .is_some_and(|u| u == uuid)
         })
+    }
+
+    /// **Every directory this vendor remembers working in**, for the
+    /// wizard's 「常去的地方」 (`khor_node::place`). One entry per
+    /// rollout: `(cwd, 1, when the session started)`.
+    ///
+    /// **One per rollout, not one per directory** — unlike claude, this
+    /// vendor files everything under a date, so there is no grouping on
+    /// disk to borrow and each file has to say where it ran. Newest
+    /// first and capped at [`PLACES_SCAN`]: the list this feeds is
+    /// 「最近去过哪儿」, and the tail of a long history cannot change
+    /// its head.
+    pub fn places(&self) -> Vec<(PathBuf, u32, i64)> {
+        let mut rollouts = self.rollouts();
+        rollouts.sort_by_key(|r| std::cmp::Reverse(r.started_ms));
+        rollouts.truncate(PLACES_SCAN);
+        rollouts
+            .iter()
+            .filter_map(|r| Some((PathBuf::from(read_meta(&r.path)?.cwd?), 1, r.started_ms)))
+            .collect()
     }
 
     /// The working directory the rollout's own first line records —

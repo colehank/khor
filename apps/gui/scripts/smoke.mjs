@@ -4401,6 +4401,78 @@ for line in sys.stdin:
   );
 
 
+  // 25b-2) 常去的地方 (工作区批, 2026-09-01): the wizard's first
+  //        question, answered before it is asked. The list is
+  //        **derived** from the vendors' own records — nobody creates
+  //        or names a place — so this plants records and reads the
+  //        dialog, which is the only way to tell a derivation from a
+  //        list somebody typed.
+  //
+  //        Three claims, and the middle one is the design:
+  //
+  //         1. a recorded working directory shows up as a place;
+  //         2. **two depths of one checkout are ONE place**, with the
+  //            counts summed — the reason the key is the project root
+  //            and not the cwd (measured on the author's machine: the
+  //            same tree was open at two depths at once);
+  //         3. a place whose directory is gone is not offered, because
+  //            starting a session there cannot work.
+  //
+  //        Claim 3 is also the control arm for claims 1 and 2: without
+  //        it, a section that simply printed every recorded cwd would
+  //        pass them both.
+  const placeRepo = join(SCRATCH, "place-repo");
+  mkdirSync(join(placeRepo, ".git"), { recursive: true });
+  mkdirSync(join(placeRepo, "apps/deep"), { recursive: true });
+  const placeGone = join(SCRATCH, "place-that-was-deleted");
+  const plantPlace = (slug, uuid, cwd) => {
+    const dir = join(B, ".claude", "projects", slug);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${uuid}.jsonl`),
+      JSON.stringify({ type: "user", cwd, message: { role: "user", content: "x" } }) + "\n",
+    );
+  };
+  plantPlace("pl-root", "aaaaaaa1-0000-4000-8000-000000000001", placeRepo);
+  plantPlace("pl-deep", "aaaaaaa1-0000-4000-8000-000000000002", join(placeRepo, "apps/deep"));
+  plantPlace("pl-gone", "aaaaaaa1-0000-4000-8000-000000000003", placeGone);
+
+  await openLanding("sessions");
+  await page.locator("[data-pane-new]").click();
+  await page.locator('[data-new-item="new"]').click();
+  await until("常去的地方 offering the planted checkout", 20_000, async () =>
+    (await page.locator(`[data-place="${placeRepo}"]`).count()) === 1,
+  );
+  const placesSaid = await page.evaluate(() => ({
+    rows: [...document.querySelectorAll("[data-place]")].map((e) => ({
+      path: e.getAttribute("data-place"),
+      text: e.innerText.replace(/\s*\n\s*/g, " | "),
+    })),
+  }));
+  const deep = placesSaid.rows.filter((r) => r.path.startsWith(placeRepo));
+  if (deep.length !== 1) {
+    throw new Error(
+      `two depths of one checkout must be one place, got ${JSON.stringify(deep)}`,
+    );
+  }
+  if (!deep[0].text.includes("2 ")) {
+    throw new Error(`both depths must be counted into it: ${deep[0].text}`);
+  }
+  if (placesSaid.rows.some((r) => r.path === placeGone)) {
+    throw new Error("a place whose directory is gone must not be offered to start in");
+  }
+  // Picking one is the whole point: it fills the box the create button
+  // reads, absolute, so nothing downstream has to expand a `~`.
+  await page.locator(`[data-place="${placeRepo}"]`).click();
+  const picked = await page.locator("[data-new-session-dir]").inputValue();
+  if (picked !== placeRepo) {
+    throw new Error(`picking a place must fill 目录 with it: ${picked}`);
+  }
+  await page.keyboard.press("Escape");
+  await until("the places dialog closed", 10_000, async () =>
+    (await page.locator("[data-new-session-dialog]").count()) === 0,
+  );
+
   // 25c) the wizard (会话身份批B): a claude session born as a
   //      conversation in a chosen directory, spoken to through khor's
   //      own shim — the fake claude underneath, so the whole chain

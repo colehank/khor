@@ -437,6 +437,45 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .collect())
 }
 
+/// One directory the person works in, for the wizard's first question
+/// (`khor_node::place`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct PlaceRow {
+    /// Absolute, and what gets sent back when it is picked.
+    pub path: String,
+    /// The same path as a person reads it, home written `~`. Shortened
+    /// here rather than in the face: it depends on whose home this is,
+    /// which is a fact about the machine and not about the screen.
+    pub shown: String,
+    /// How many recorded conversations place themselves here. Shown as
+    /// a count and never as a total — `Node::places` says what it does
+    /// and does not see.
+    pub sessions: u32,
+    #[ts(type = "number")]
+    pub last_ms: i64,
+}
+
+/// How many places the wizard is offered. **A shortlist, not a
+/// history**: it exists to save typing a path that is one click away,
+/// and a person whose place is not in it types it in the box that is
+/// still right there.
+const PLACES_SHOWN: usize = 8;
+
+/// 常去的地方, newest first (`khor_node::Node::places`).
+pub fn places(root: &Path) -> Result<Vec<PlaceRow>, String> {
+    let n = open(root)?;
+    Ok(n.places()
+        .into_iter()
+        .take(PLACES_SHOWN)
+        .map(|p| PlaceRow {
+            shown: khor_node::place::shorten(std::path::Path::new(&p.path)),
+            path: p.path,
+            sessions: p.sessions,
+            last_ms: p.last_ms,
+        })
+        .collect())
+}
+
 /// One cell of a day strip, in the shape the frontend can paint.
 ///
 /// **Three cases and three TS shapes, on purpose.** The words are one

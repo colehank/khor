@@ -55,12 +55,14 @@ import {
   agents as fetchAgents,
   agentsKnown,
   agentsKnownTaken,
+  fetchPlaces,
   openSession,
   registerKnownAgent,
   resumeSession,
   type AgentRow,
   type AgentSaid,
   type KnownAgent,
+  type PlaceRow,
 } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,6 +74,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 
 export function NewSessionDialog({
   open,
@@ -84,6 +87,10 @@ export function NewSessionDialog({
   onOpened: (id: string) => void;
 }) {
   const [dir, setDir] = useState("~");
+  /** 常去的地方. Empty until the read lands, and empty is also the
+      honest answer on a machine with no recorded conversations — there
+      is nothing to say about it either way, so nothing is said. */
+  const [places, setPlaces] = useState<PlaceRow[]>([]);
   const [title, setTitle] = useState("");
   const [form, setForm] = useState<"chat" | "term">("chat");
   const [agent, setAgent] = useState("claude");
@@ -119,6 +126,7 @@ export function NewSessionDialog({
   useEffect(() => {
     if (!open) return;
     setDir("~");
+    setPlaces([]);
     setTitle("");
     setForm("chat");
     setAgent("claude");
@@ -132,6 +140,18 @@ export function NewSessionDialog({
     setSaid(null);
     setAsking(null);
     let live = true;
+    // **Read on opening, like the registry above it.** A place list
+    // cached across openings would be answering with where this person
+    // worked before the conversation they just finished — and this
+    // whole surface exists because the freshest place is usually the
+    // one they want. A failure here is left silent on purpose: the
+    // 目录 box is still right there and still takes anything, so a
+    // shortcut that could not be built is not a fact worth a red line
+    // (the registry's failure *is*, because「你没接过 agent」and「我读
+    // 不到」are different next steps).
+    fetchPlaces()
+      .then((rows) => live && setPlaces(rows))
+      .catch(() => {});
     fetchAgents()
       .then((rows) => {
         if (!live) return;
@@ -301,15 +321,90 @@ export function NewSessionDialog({
             `max-w-lg` — inputs, buttons and all — and `truncate`
             never fires because nothing above it agreed to shrink. */}
         <div className="flex min-w-0 flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">{gui.new_session_dir}</span>
-            <Input
-              data-new-session-dir
-              value={dir}
-              onChange={(e) => setDir(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && create()}
-            />
-          </label>
+          {/* The box and its shortcuts, in one column. **Not one
+              `label`**: a `button` inside a `label` is a control inside
+              a control, and every click on a place would also be a
+              click on the field. */}
+          <div className="flex min-w-0 flex-col gap-1">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">{gui.new_session_dir}</span>
+              <Input
+                data-new-session-dir
+                value={dir}
+                onChange={(e) => setDir(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+            </label>
+            {/* **常去的地方: the first question, answered before it is
+                asked.** A person walks into a directory and then starts
+                something there, so the directories they already work in
+                sit right under the box — picking one is a click instead
+                of a typed path.
+
+                Under the box rather than above it, and the box keeps
+                taking anything: this is a shortcut, not a menu. A place
+                that is not on the list (a directory nobody has opened a
+                conversation in yet) has to stay typeable, and a list
+                that replaced the box would have made those unreachable.
+
+                Nothing is drawn when there is nothing — an empty list
+                is the honest state of a fresh machine, and a heading
+                over no rows is a promise of something missing. */}
+            {places.length > 0 && (
+              <div data-new-session-places className="flex min-w-0 flex-col gap-1">
+                <span className="text-xs text-muted-foreground">
+                  {gui.new_session_places}
+                </span>
+                <div className="flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto">
+                  {places.map((p) => {
+                    // **The last component is the name, the rest is
+                    // where it lives** — the same split the 已有的对话
+                    // rows use, and the reason the path is not printed
+                    // whole: the end of a path is what a person
+                    // recognises, and it is the end a narrow dialog
+                    // cuts off.
+                    //
+                    // Cutting from the *left* instead was tried and is
+                    // wrong: `direction: rtl` reorders the neutral
+                    // characters a path is made of, and printed
+                    // `~/Desktop/working/tokens` as
+                    // `Desktop/working/tokens/~`. Splitting says the
+                    // same thing without asking the bidi algorithm
+                    // anything.
+                    const cut = p.shown.lastIndexOf("/");
+                    const name = cut < 0 ? p.shown : p.shown.slice(cut + 1);
+                    const parent = cut <= 0 ? "" : p.shown.slice(0, cut);
+                    return (
+                      <button
+                        key={p.path}
+                        type="button"
+                        data-place={p.path}
+                        data-on={dir === p.path}
+                        // The whole path goes into the box, not the
+                        // shortened one: `~` is how a person reads it
+                        // and `openSession` does expand it, but a place
+                        // is picked by identity and the identity is
+                        // absolute.
+                        onClick={() => setDir(p.path)}
+                        className={cn(
+                          "flex w-full min-w-0 items-baseline gap-2 rounded px-1 text-left text-xs hover:bg-accent",
+                          dir === p.path && "bg-accent",
+                        )}
+                      >
+                        <span className="shrink-0 truncate">{name}</span>
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                          {parent}
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {gui.new_session_places_count(p.sessions)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.new_session_name}</span>
             <Input

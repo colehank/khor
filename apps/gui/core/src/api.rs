@@ -75,6 +75,7 @@ pub fn answer(
         // pixel width, and a default would be this layer inventing a
         // resolution for a screen it cannot see.
         "day_strips" => to_json(&crate::day_strips(root, num("cells")? as u32)?),
+        "places" => to_json(&crate::places(root)?),
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         "usage" => to_json(&crate::usage(root)?),
         // No `root`: a subscription is an account's, not an

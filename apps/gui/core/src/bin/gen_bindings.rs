@@ -18,6 +18,9 @@ fn main() {
     // Not reachable through any row above: the wizard asks for the
     // agent list on its own, so nothing embeds it.
     khor_gui_core::AgentRow::export_all_to(&dir).expect("export AgentRow");
+    // The wizard's first question, asked on its own beat; no row embeds
+    // it.
+    khor_gui_core::PlaceRow::export_all_to(&dir).expect("export PlaceRow");
     // Same: the registry snapshot and one agent's recorded
     // conversations are each asked for on their own beat, so no row
     // embeds either. `AgentSaid` walks into `SeenSession` from here.

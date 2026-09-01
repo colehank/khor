@@ -21,6 +21,7 @@ pub mod link;
 pub mod list;
 pub mod mcp;
 pub mod live;
+pub mod place;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
@@ -2195,6 +2196,32 @@ impl Node {
         agent: bool,
     ) -> Result<SessionId, String> {
         gui_host::spawn_gui_host(Some(cwd), title, cmd, vendor, agent)
+    }
+
+    /// **常去的地方**: the directories this machine's own records say
+    /// work happened in, folded to project roots and newest first
+    /// (`crate::place`).
+    ///
+    /// # What it is not
+    ///
+    /// Not an inventory of every session. It reads what the *vendors*
+    /// wrote — a conversation's own record of where it ran — which is
+    /// every chat and TUI row and **no plain shell**: khor starts those
+    /// in a directory but keeps no note of which, so they place
+    /// nothing. That gap is why this answers 「你常去哪儿」 and not
+    /// 「每个会话在哪儿」; the second question needs the fact on the
+    /// row, which is a wire change and its own batch.
+    ///
+    /// # This machine's, and only this machine's
+    ///
+    /// The records are on this disk. A directory on another machine is
+    /// not somewhere this one can start a session anyway, so there is
+    /// nothing here to ask the mesh for.
+    pub fn places(&self) -> Vec<place::Place> {
+        let vendors = adaptor::vendor_home(&self.root);
+        let mut seen = adaptor::claude::Claude::at(vendors.join(".claude")).places();
+        seen.extend(adaptor::codex::Codex::at(vendors.join(".codex")).places());
+        place::fold(seen)
     }
 
     /// 接管 (批C): the conversation stays; the process presenting it

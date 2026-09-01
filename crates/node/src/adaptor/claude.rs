@@ -115,6 +115,42 @@ fn word_of(status: Option<&str>, waiting_for: Option<&str>) -> Option<State> {
     }
 }
 
+/// A file time as the epoch milliseconds every khor stamp is in.
+fn ms_of(at: std::time::SystemTime) -> i64 {
+    at.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+}
+
+/// The working directory a transcript records, from its head.
+///
+/// Every entry carries one, so the first is the answer; the bound is
+/// there because these files reach hundreds of megabytes and this is
+/// read once per directory when the wizard opens.
+///
+/// # Why the bytes are decoded lossily, and what it cost not to
+///
+/// A byte bound cuts wherever it lands, and a character does not have
+/// to end there. `read_to_string` **fails the whole read** when it
+/// does — not the last line, the whole thing — so a transcript with any
+/// multi-byte text near the bound answered "no working directory
+/// recorded" while holding one in plain sight on line 6.
+///
+/// Measured on this machine 2026-09-01: the newest transcript of the
+/// project khor itself is worked on cut mid-character at exactly 65534,
+/// so **that** conversation was one of the ones this could not place.
+/// And the answer did not come back empty where it was used — the
+/// resume path reads this and falls back to the home directory, so a
+/// 接管 of such a conversation quietly resumed the agent *somewhere
+/// else*. Lossy decoding costs one possibly-mangled character at the
+/// tail of a bounded read, on a line nothing parses.
+fn cwd_in(path: &Path) -> Option<PathBuf> {
+    use std::io::Read;
+    let mut head = Vec::new();
+    std::fs::File::open(path).ok()?.take(64 * 1024).read_to_end(&mut head).ok()?;
+    String::from_utf8_lossy(&head).lines().find_map(|l| {
+        serde_json::from_str::<serde_json::Value>(l).ok()?.get("cwd")?.as_str().map(PathBuf::from)
+    })
+}
+
 pub struct Claude {
     root: PathBuf,
 }
@@ -216,17 +252,60 @@ impl Claude {
     /// the agent's world must not move with the resumer (`cagent`'s
     /// load-before-new branch reads this).
     pub(crate) fn recorded_cwd(&self, leaf: &str) -> Option<PathBuf> {
-        use std::io::Read;
-        let (path, _) = self.transcript_path(leaf)?;
-        let mut head = String::new();
-        std::fs::File::open(path).ok()?.take(64 * 1024).read_to_string(&mut head).ok()?;
-        head.lines().find_map(|l| {
-            serde_json::from_str::<serde_json::Value>(l)
-                .ok()?
-                .get("cwd")?
-                .as_str()
-                .map(PathBuf::from)
-        })
+        cwd_in(&self.transcript_path(leaf)?.0)
+    }
+
+    /// **Every directory this vendor remembers working in**, for the
+    /// wizard's 「常去的地方」 (`khor_node::place`). One entry per
+    /// project directory: `(cwd, how many transcripts it holds, when
+    /// the newest was written)`.
+    ///
+    /// # One file read per directory, not per transcript
+    ///
+    /// claude files transcripts under a directory named after the cwd,
+    /// so the grouping is already done on disk — measured here on
+    /// 2026-09-01, **929 transcripts in 51 directories**. Reading the
+    /// newest transcript of each is 51 reads instead of 929, and the
+    /// count comes from `read_dir` without opening anything.
+    ///
+    /// **The directory name is not read**, though it looks like the
+    /// cheapest answer of all: claude's encoding replaces every slash
+    /// with a dash *and leaves real dashes alone*, so
+    /// `-Users-zgh-my-repo` has several possible originals and no way
+    /// to tell which. The record inside says it outright.
+    pub fn places(&self) -> Vec<(PathBuf, u32, i64)> {
+        let mut out = Vec::new();
+        let Ok(projects) = std::fs::read_dir(self.projects_dir()) else { return out };
+        for project in projects.flatten() {
+            let Ok(entries) = std::fs::read_dir(project.path()) else { continue };
+            let mut held = 0u32;
+            let mut newest: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                held += 1;
+                let at = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                newest.push((at, path));
+            }
+            newest.sort_by(|a, b| b.0.cmp(&a.0));
+            let Some(&(at, _)) = newest.first() else { continue };
+            // **The newest transcript answers, and if it cannot, the
+            // one behind it does.** They are all in one directory
+            // because claude filed them under one working directory, so
+            // any of them answers for all of them — and a transcript
+            // that records no `cwd` at all (a session that died in its
+            // first breath) would otherwise take its whole project down
+            // with it. Three tries, because the fourth would be paying
+            // for a directory that is telling us it has nothing.
+            let Some(cwd) = newest.iter().take(3).find_map(|(_, p)| cwd_in(p)) else { continue };
+            out.push((cwd, held, ms_of(at)));
+        }
+        out
     }
 
     /// The name claude gave this conversation itself, if it has given
@@ -1086,6 +1165,47 @@ mod tests {
 
     fn claude_at_fixture() -> Claude {
         Claude::at(fixture_home().join("claude/.claude"))
+    }
+
+    /// **A bounded read must not lose the whole file to its own
+    /// bound.** `cwd_in` stops at 64 KiB, and a character does not have
+    /// to end there — decoding strictly made the *entire* head
+    /// unreadable, so a transcript that records its working directory
+    /// on line 6 answered "none".
+    ///
+    /// That answer is not a gap where it is used: the resume path falls
+    /// back to the home directory, so a 接管 of one of these conversations
+    /// silently moved the agent somewhere else. Found on this machine's
+    /// own newest transcript, which cuts mid-character at byte 65534.
+    ///
+    /// The fixture reproduces the cut rather than asserting about the
+    /// real file: 64 KiB of a 3-byte character does not divide evenly,
+    /// so the bound lands inside one by construction.
+    #[test]
+    fn a_working_directory_survives_a_cut_that_lands_mid_character() {
+        let dir = std::env::temp_dir().join(format!("khor-cwdcut-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.jsonl");
+
+        let mut text = String::new();
+        text.push_str(r#"{"type":"user","cwd":"/somewhere/deep","message":{}}"#);
+        text.push('\n');
+        // Past the bound, in a character that cannot straddle it evenly.
+        while text.len() < 70 * 1024 {
+            text.push('字');
+        }
+        std::fs::write(&path, &text).unwrap();
+        // The control: the fixture really does cut mid-character. A
+        // padding that happened to align would make this test pass
+        // against the strict read it exists to catch.
+        assert!(
+            std::str::from_utf8(&text.as_bytes()[..64 * 1024]).is_err(),
+            "the fixture must cut mid-character or it proves nothing",
+        );
+
+        assert_eq!(cwd_in(&path), Some(PathBuf::from("/somewhere/deep")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Every line shape a real transcript holds (sampled on this

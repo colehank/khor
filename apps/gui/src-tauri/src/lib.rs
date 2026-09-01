@@ -23,6 +23,13 @@ fn day_strips(
     khor_gui_core::day_strips(&Node::root_from_env(), cells)
 }
 
+/// 常去的地方 for the wizard's first question
+/// (`khor_gui_core::places`).
+#[tauri::command]
+fn places() -> Result<Vec<khor_gui_core::PlaceRow>, String> {
+    khor_gui_core::places(&Node::root_from_env())
+}
+
 #[tauri::command]
 async fn devices() -> Result<Vec<DeviceRow>, String> {
     khor_gui_core::list_devices(&Node::root_from_env()).await
@@ -515,6 +522,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sessions,
             day_strips,
+            places,
             devices,
             usage,
             quota,

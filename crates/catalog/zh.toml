@@ -989,6 +989,19 @@ web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条�
 sessions-tab = "会话"
 new-session = "新会话"
 new-session-dir = "目录"
+# **The wizard's first question, answered before it is asked.** A
+# person walks into a directory and then starts something there — so
+# the places they already work in sit under the 目录 box, newest first,
+# and picking one is a click instead of a typed path.
+#
+# Derived, never declared (`khor_node::place`): nobody creates or names
+# a place, so there is nothing here that can go stale.
+new-session-places = "常去的地方"
+# The count beside a place. **段对话 and not 个会话**, because that is
+# what is actually counted: the vendors' own records of conversations
+# that ran there. A plain shell khor opened in that directory is not in
+# this number, and calling it 会话 would promise it was.
+new-session-places-count = "{0} 段对话"
 new-session-name = "名字"
 new-session-agent = "智能体"
 # Said under the 智能体 buttons **only when nothing is registered and
