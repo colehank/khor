@@ -61,8 +61,10 @@ use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, EmbeddedResource, EmbeddedResourceResource, ImageContent,
     InitializeRequest, ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
     PermissionOptionId, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    StopReason, TextContent, TextResourceContents,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigOption,
+    SessionConfigOptionValue, SessionId, SessionModeId, SessionModeState, SessionNotification,
+    SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason, TextContent,
+    TextResourceContents,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectionTo, ErrorCode};
@@ -162,6 +164,30 @@ impl Refusal {
     }
 }
 
+/// What this session can be set to, as the agent described it when
+/// the session opened.
+///
+/// Two lists because the protocol has two: **modes** are the one axis
+/// every agent that has any axis has (claude's permission modes, a
+/// registry agent's "ask / auto"), named separately so a face can put
+/// the one that changes what the agent *will do* where a person looks
+/// before typing; **options** are everything else — a model, a
+/// thinking level, a switch — and arrive already shaped as selects and
+/// booleans, categorised by the agent.
+///
+/// Protocol types on purpose, like [`Event::Note`]: this crate hands
+/// the caller protocol-shaped facts and maps none of them. Both are
+/// "as of opening"; changes arrive as `current_mode_update` and
+/// `config_option_update` notes, and as the answer to
+/// [`Handle::set_option`]. Empty for an agent that offers nothing to
+/// set, which is most of them — and that emptiness has a shape a face
+/// can read (no modes listed), unlike a capability nobody carried.
+#[derive(Debug, Clone, Default)]
+pub struct Settings {
+    pub modes: Option<SessionModeState>,
+    pub options: Vec<SessionConfigOption>,
+}
+
 /// What the connection tells the caller, in protocol shape.
 #[derive(Debug)]
 pub enum Event {
@@ -212,6 +238,7 @@ pub struct Handle {
     /// refuses a mismatch).
     cwd: PathBuf,
     facts: Facts,
+    settings: Settings,
     /// Dropping this ends the connection's main task, which drops the
     /// transport, which kills the agent's process group.
     _close: oneshot::Sender<()>,
@@ -306,6 +333,42 @@ impl Handle {
     /// nothing ([`Facts`]).
     pub fn facts(&self) -> &Facts {
         &self.facts
+    }
+
+    /// What the agent said this session can be set to, when it opened
+    /// ([`Settings`]). A snapshot: the live value is whatever the last
+    /// `current_mode_update` / `config_option_update` note said.
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// Puts the session in one of its listed modes (`session/set_mode`).
+    /// The id is the agent's own, off [`Settings::modes`]; an agent
+    /// answers a mode it did not list with an error, which comes back
+    /// here as its words.
+    pub async fn set_mode(&self, id: &str) -> Result<(), String> {
+        let request = SetSessionModeRequest::new(self.session.clone(), SessionModeId::new(id.to_owned()));
+        self.conn.send_request(request).block_task().await.map(|_| ()).map_err(|e| e.to_string())
+    }
+
+    /// Sets one option (`session/set_config_option`) and answers with
+    /// **the whole list as the agent now has it** — the protocol has
+    /// the agent send every option back, because one change can move
+    /// another (a model that has no "fast" switch), and a client that
+    /// updated only the one it touched would be drawing the rest from
+    /// memory.
+    pub async fn set_option(
+        &self,
+        id: &str,
+        value: SessionConfigOptionValue,
+    ) -> Result<Vec<SessionConfigOption>, String> {
+        let request = SetSessionConfigOptionRequest::new(self.session.clone(), id.to_owned(), value);
+        self.conn
+            .send_request(request)
+            .block_task()
+            .await
+            .map(|r| r.config_options)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -475,7 +538,7 @@ async fn start_with(
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Event>), Refusal> {
     let agent = AcpAgent::from_str(command).map_err(|e| Refusal::Wont(e.to_string()))?;
     let (events_tx, events_rx) = mpsc::unbounded_channel::<Event>();
-    type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts), Refusal>;
+    type Opened = Result<(ConnectionTo<Agent>, SessionId, Facts, Settings), Refusal>;
     let (ready_tx, ready_rx) = oneshot::channel::<Opened>();
     let (close_tx, close_rx) = oneshot::channel::<()>();
 
@@ -523,9 +586,9 @@ async fn start_with(
                 // timeout became the only thing a person ever saw.
                 let refused = opened.as_ref().err().map(|r| r.said().to_owned());
                 if let Some(tx) = ready_tx.take() {
-                    let _ = tx.send(
-                        opened.map(|(session, facts)| (connection.clone(), session, facts)),
-                    );
+                    let _ = tx.send(opened.map(|(session, facts, settings)| {
+                        (connection.clone(), session, facts, settings)
+                    }));
                 }
                 if let Some(said) = refused {
                     return Err(agent_client_protocol::util::internal_error(said));
@@ -553,11 +616,11 @@ async fn start_with(
         let _ = closed.send(Event::Closed(outcome.err().map(|e| e.to_string())));
     });
 
-    let (conn, session, facts) = ready_rx
+    let (conn, session, facts, settings) = ready_rx
         .await
         .map_err(|_| Refusal::Wont("the agent ended before a session existed".to_owned()))??;
     let _ = events_tx.send(Event::Ready { session: session.clone() });
-    Ok((Handle { conn, session, cwd: home, facts, _close: close_tx }, events_rx))
+    Ok((Handle { conn, session, cwd: home, facts, settings, _close: close_tx }, events_rx))
 }
 
 /// The handshake and the one session, or the reason there is neither.
@@ -570,7 +633,7 @@ async fn open_one(
     connection: &ConnectionTo<Agent>,
     resume: Option<String>,
     cwd: PathBuf,
-) -> Result<(SessionId, Facts), Refusal> {
+) -> Result<(SessionId, Facts, Settings), Refusal> {
     let hello = connection
         .send_request(InitializeRequest::new(ProtocolVersion::V1))
         .block_task()
@@ -606,26 +669,39 @@ async fn open_one(
         // with this is say why nothing opened, which needs one bit.
         needs_login,
     };
-    let session = match resume {
+    // **The settings ride on the same answer the session id does**, and
+    // they used to be dropped with it — `session_id` was read and the
+    // rest of the response discarded. Nothing broke, because an agent
+    // that lists modes and is never asked about them behaves exactly
+    // like one that lists none; what was missing was the whole surface
+    // (a face could see the mode a session was in, and had no way to
+    // put it in another).
+    let (session, settings) = match resume {
         Some(sid) => {
             let sid = SessionId::new(sid);
-            connection
+            let loaded = connection
                 .send_request(LoadSessionRequest::new(sid.clone(), cwd))
                 .block_task()
                 .await
                 .map_err(refusal)?;
-            sid
+            (
+                sid,
+                Settings { modes: loaded.modes, options: loaded.config_options.unwrap_or_default() },
+            )
         }
         None => {
-            connection
+            let opened = connection
                 .send_request(NewSessionRequest::new(cwd))
                 .block_task()
                 .await
-                .map_err(refusal)?
-                .session_id
+                .map_err(refusal)?;
+            (
+                opened.session_id,
+                Settings { modes: opened.modes, options: opened.config_options.unwrap_or_default() },
+            )
         }
     };
-    Ok((session, facts))
+    Ok((session, facts, settings))
 }
 
 /// One JSON-RPC error, sorted. Only `auth_required` gets its own kind:

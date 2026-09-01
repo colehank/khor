@@ -59,6 +59,8 @@ import {
   chatPoll,
   chatReplay,
   chatSay,
+  chatSetMode,
+  chatSetOption,
   chatStop,
   followHistory,
   type ChatFrame,
@@ -66,6 +68,15 @@ import {
 import { IconBack } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -284,6 +295,83 @@ function planIn(frame: ChatFrame): PlanEntry[] | null {
 
 type PlanEntry = { content: string; status: string };
 
+/** One of the agent's own modes (`SessionMode`). */
+type ModeListed = { id: string; name: string; description?: string | null };
+/** One value a select offers (`SessionConfigSelectOption`). */
+type ValueListed = { value: string; name: string; description?: string | null };
+/** Values under a heading (`SessionConfigSelectGroup`). */
+type GroupListed = { group: string; name: string; options: ValueListed[] };
+/** One option (`SessionConfigOption`): the protocol tags the kind on
+    `type` and flattens the kind's fields beside it, so a select has
+    `currentValue: string` and `options`, a switch `currentValue: boolean`. */
+type OptionListed = {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  type?: string;
+  currentValue?: string | boolean;
+  options?: (ValueListed | GroupListed)[];
+};
+/** What the session can be set to and is set to — `ChatFrame::Settings`,
+    which the host sends whole on attach and on every change. */
+type Settings = {
+  modes: { currentModeId: string; availableModes: ModeListed[] } | null;
+  options: OptionListed[];
+};
+
+/** The settings this frame carries, if it is one. Read loosely — the
+    body is the protocol's JSON, and a field this face does not know is
+    left where it is rather than refused. */
+function settingsIn(frame: ChatFrame): Settings | null {
+  if (frame.kind !== "settings") return null;
+  const carried = frame.settings;
+  if (typeof carried !== "object" || carried === null) return null;
+  const s = carried as { modes?: unknown; options?: unknown };
+  const modes =
+    typeof s.modes === "object" && s.modes !== null
+      ? (s.modes as { currentModeId?: unknown; availableModes?: unknown })
+      : null;
+  return {
+    modes:
+      modes && typeof modes.currentModeId === "string"
+        ? {
+            currentModeId: modes.currentModeId,
+            availableModes: Array.isArray(modes.availableModes)
+              ? (modes.availableModes as ModeListed[])
+              : [],
+          }
+        : null,
+    options: Array.isArray(s.options) ? (s.options as OptionListed[]) : [],
+  };
+}
+
+/** A select's values, groups opened out, each with the heading it sat
+    under (`null` for the ungrouped). */
+function valuesOf(o: OptionListed): { heading: string | null; value: ValueListed }[] {
+  const out: { heading: string | null; value: ValueListed }[] = [];
+  for (const item of o.options ?? []) {
+    if ("options" in item && Array.isArray(item.options)) {
+      for (const value of item.options) out.push({ heading: item.name, value });
+    } else if ("value" in item) {
+      out.push({ heading: null, value: item });
+    }
+  }
+  return out;
+}
+
+/**
+ * A mode's name **inside the menu**, where every listed mode needs one
+ * to be picked by — so unlike `modeSaid` the ordinary mode has a word
+ * here. Known ids get this face's words (the four claude modes, whose
+ * meaning a person has met elsewhere); anything else is the agent's
+ * own name for it, and its id when it gave none.
+ */
+function modeWord(id: string, listed: ModeListed[]): string {
+  if (id === "default") return gui.chat_mode_default;
+  return modeSaid(id) ?? listed.find((m) => m.id === id)?.name ?? id;
+}
+
 /**
  * What to say about the mode the agent is in — **and `null` for the
  * ordinary one**, which is the whole design.
@@ -395,7 +483,9 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     const said =
       frame.why === "turn-in-flight"
         ? gui.chat_refused_turn_in_flight
-        : gui.chat_refused_no_turn;
+        : frame.why === "setting-refused"
+          ? gui.chat_refused_setting
+          : gui.chat_refused_no_turn;
     out.push({ who: "sys", text: said });
     return true;
   }
@@ -748,6 +838,9 @@ export function ChatView({
   const [plan, setPlan] = useState<PlanEntry[]>([]);
   /** The mode the agent is in, when it has said. */
   const [mode, setMode] = useState<string | null>(null);
+  /** What the session can be set to, as the host last told it —
+      `null` until a `settings` frame, which most agents never send. */
+  const [settings, setSettings] = useState<Settings | null>(null);
   /** Images attached to the line being written, as `[mime, base64]`.
       Cleared by sending, like the text beside them. */
   const [shots, setShots] = useState<[string, string][]>([]);
@@ -958,6 +1051,8 @@ export function ChatView({
               if (u2?.sessionUpdate === "current_mode_update" && u2.currentModeId) {
                 setMode(u2.currentModeId);
               }
+              const st = settingsIn(f);
+              if (st) setSettings(st);
             }
             setPaint((prev) => absorb(prev, batch.frames));
           }
@@ -1625,7 +1720,128 @@ export function ChatView({
             Beside the context reading and for the same reason: both are
             things a person checks before typing, and neither is worth a
             row of its own. */}
-        {mode !== null && modeSaid(mode) !== null && (
+        {/* **What can be set, as controls, above the box.** The mode
+            menu first because it is the one that changes what the agent
+            will *do*; then whatever else the agent listed, a select
+            each or a switch, in the agent's own words — khor names the
+            four modes it knows and nothing else. Nothing is drawn for
+            an agent that listed nothing, which is most of them. The
+            change is asked of the host and the control follows the
+            answer (`settings` frame), never its own press. */}
+        {settings && (settings.modes || settings.options.length > 0) && (
+          <div
+            data-chat-settings
+            className="flex flex-wrap items-center justify-end gap-1 px-2 pb-1 text-xs"
+          >
+            {settings.modes && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    data-chat-mode-menu
+                    data-mode-id={settings.modes.currentModeId}
+                    className="rounded-md border border-border px-1.5 py-0.5 hover:bg-accent"
+                    style={{
+                      color:
+                        settings.modes.currentModeId === "default"
+                          ? undefined
+                          : "var(--state-blocked)",
+                    }}
+                  >
+                    {modeWord(settings.modes.currentModeId, settings.modes.availableModes)}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>{gui.chat_mode}</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={settings.modes.currentModeId}
+                    onValueChange={(v) => chatSetMode(id, v).catch(() => {})}
+                  >
+                    {settings.modes.availableModes.map((m) => (
+                      <DropdownMenuRadioItem key={m.id} value={m.id} data-mode-option={m.id}>
+                        <span className="flex flex-col">
+                          <span>{modeWord(m.id, settings.modes?.availableModes ?? [])}</span>
+                          {m.description && (
+                            <span className="text-xs text-muted-foreground">{m.description}</span>
+                          )}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {settings.options.map((o) =>
+              o.type === "boolean" ? (
+                <button
+                  key={o.id}
+                  type="button"
+                  role="switch"
+                  aria-checked={o.currentValue === true}
+                  data-chat-option={o.id}
+                  data-on={o.currentValue === true}
+                  title={o.description ?? undefined}
+                  className="rounded-md border border-border px-1.5 py-0.5 hover:bg-accent data-[on=true]:border-primary data-[on=true]:text-primary"
+                  onClick={() => chatSetOption(id, o.id, o.currentValue !== true).catch(() => {})}
+                >
+                  {o.name}
+                </button>
+              ) : (
+                <DropdownMenu key={o.id}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      data-chat-option={o.id}
+                      data-value={String(o.currentValue ?? "")}
+                      title={o.description ?? undefined}
+                      className="rounded-md border border-border px-1.5 py-0.5 hover:bg-accent"
+                    >
+                      {o.name}
+                      {": "}
+                      {valuesOf(o).find((v) => v.value.value === o.currentValue)?.value.name ??
+                        String(o.currentValue ?? "")}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>{o.name}</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={String(o.currentValue ?? "")}
+                      onValueChange={(v) => chatSetOption(id, o.id, v).catch(() => {})}
+                    >
+                      {valuesOf(o).map((v, i, all) => (
+                        <div key={v.value.value}>
+                          {v.heading !== null && v.heading !== all[i - 1]?.heading && (
+                            <>
+                              {i > 0 && <DropdownMenuSeparator />}
+                              <DropdownMenuLabel>{v.heading}</DropdownMenuLabel>
+                            </>
+                          )}
+                          <DropdownMenuRadioItem
+                            value={v.value.value}
+                            data-option-value={v.value.value}
+                          >
+                            <span className="flex flex-col">
+                              <span>{v.value.name}</span>
+                              {v.value.description && (
+                                <span className="text-xs text-muted-foreground">
+                                  {v.value.description}
+                                </span>
+                              )}
+                            </span>
+                          </DropdownMenuRadioItem>
+                        </div>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ),
+            )}
+          </div>
+        )}
+        {/* The marker, only without the menu: with a menu above it the
+            same word would be drawn twice, and the menu already wears
+            the mode's ink. */}
+        {!settings?.modes && mode !== null && modeSaid(mode) !== null && (
           <div
             data-chat-mode
             data-mode-id={mode}

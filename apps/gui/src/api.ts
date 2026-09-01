@@ -354,6 +354,15 @@ export const openLink = (url: string) => call<null>("open_link", { url });
 export const takeoverTerm = (id: string) => call<null>("takeover_term", { id });
 /** Ends the running turn — not the session (`GuiOp::Stop`). */
 export const chatStop = (id: string) => call<null>("chat_stop", { id });
+/** Puts the session in one of the modes its agent listed
+    (`ChatFrame::Settings`'s `modes.availableModes`), by the agent's own
+    id. The answer comes back on the poll — a fresh `settings` frame when
+    it took, a `refused` one when the agent said no — never here. */
+export const chatSetMode = (id: string, mode: string) => call<null>("chat_set_mode", { id, mode });
+/** Sets one of the agent's options: a string is a listed value's id, a
+    boolean is a switch. Same answer channel as {@link chatSetMode}. */
+export const chatSetOption = (id: string, option: string, value: string | boolean) =>
+  call<null>("chat_set_option", { id, option, value });
 export const chatPoll = (id: string, since: number) =>
   call<ChatBatch>("chat_poll", { id, since });
 /** One user turn. `images` are `[mime, base64]` pairs and are only ever

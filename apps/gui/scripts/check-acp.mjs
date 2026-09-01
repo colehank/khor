@@ -296,6 +296,18 @@ const probe = () => {
     mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
+    // The settings row: the mode menu's face and every option control,
+    // each with what it says it is set to.
+    modeMenu: (() => {
+      const el = document.querySelector("[data-chat-mode-menu]");
+      return el ? { text: (el.textContent ?? "").trim(), id: el.getAttribute("data-mode-id") } : null;
+    })(),
+    options: [...document.querySelectorAll("[data-chat-option]")].map((el) => ({
+      id: el.getAttribute("data-chat-option"),
+      text: (el.textContent ?? "").trim(),
+      on: el.getAttribute("aria-checked"),
+      value: el.getAttribute("data-value"),
+    })),
   };
 };
 
@@ -490,6 +502,86 @@ try {
       fail(`mode/${id}: drew ${JSON.stringify(m.mode)}, wanted ${JSON.stringify(want)}`);
     } else {
       console.log(`mode · ${id}: ${m.mode}`);
+    }
+  }
+
+  // ── batch 3a: what can be set ────────────────────────────────────
+  //
+  // 11. a `settings` frame reaches the screen as controls: the mode
+  //     menu wearing the current mode's word, a select wearing its
+  //     current value's name, a switch wearing its position. The frame
+  //     is the host's (`GuiNote::Settings`), sent whole, so what is
+  //     asserted is that the face paints from it and not from the
+  //     `current_mode_update` note beside it — the fixture carries no
+  //     such note, which is the control: with the menu drawn from the
+  //     settings frame alone, the marker (claim above) must stay off,
+  //     because the same word drawn twice is the thing the menu
+  //     replaced.
+  {
+    const m = await look({
+      scheme: "dark",
+      motion: "no-preference",
+      frames: [
+        {
+          kind: "settings",
+          settings: {
+            modes: {
+              currentModeId: "plan",
+              availableModes: [
+                { id: "default", name: "default" },
+                { id: "plan", name: "plan" },
+                { id: "someFutureMode", name: "Future" },
+              ],
+            },
+            options: [
+              {
+                id: "model", name: "Model", type: "select", currentValue: "b",
+                options: [{ value: "a", name: "Small" }, { value: "b", name: "Large" }],
+              },
+              { id: "fast", name: "Fast", type: "boolean", currentValue: true },
+            ],
+          },
+        },
+        { kind: "history_end" },
+      ],
+    });
+    if (m.errs.length) fail(`settings: the page threw — ${m.errs[0]}`);
+    if (!m.column) {
+      fail("settings: probe dead — the conversation face never painted");
+    } else {
+      if (!m.modeMenu) {
+        fail("settings: no mode menu for an agent that listed modes");
+      } else if (m.modeMenu.text !== "只看不改" || m.modeMenu.id !== "plan") {
+        fail(`settings: the mode menu wears ${JSON.stringify(m.modeMenu)}, wanted 只看不改/plan`);
+      } else {
+        console.log(`settings · mode menu: ${m.modeMenu.text}`);
+      }
+      if (m.mode !== null) {
+        fail(`settings: the marker drew ${JSON.stringify(m.mode)} beside a menu wearing the same word`);
+      }
+      const model = m.options.find((o) => o.id === "model");
+      const fast = m.options.find((o) => o.id === "fast");
+      if (!model || !model.text.includes("Large") || model.value !== "b") {
+        fail(`settings: the select wears ${JSON.stringify(model)}, wanted its current value's name (Large)`);
+      } else {
+        console.log(`settings · select: ${model.text}`);
+      }
+      if (!fast || fast.on !== "true") {
+        fail(`settings: the switch wears ${JSON.stringify(fast)}, wanted aria-checked true`);
+      } else {
+        console.log(`settings · switch: ${fast.text} on`);
+      }
+    }
+    // The control arm: a frame that lists nothing draws no row at all.
+    const none = await look({
+      scheme: "dark",
+      motion: "no-preference",
+      frames: [{ kind: "settings", settings: { modes: null, options: [] } }, { kind: "history_end" }],
+    });
+    if (none.modeMenu || none.options.length) {
+      fail("settings: an agent with nothing to set must draw no controls");
+    } else {
+      console.log("settings · nothing listed: nothing drawn");
     }
   }
 

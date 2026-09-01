@@ -165,6 +165,18 @@ pub fn answer(
             crate::chat::chat_stop(&arg("id")?)?;
             Ok("null".to_owned())
         }
+        "chat_set_mode" => {
+            crate::chat::chat_set_mode(&arg("id")?, &arg("mode")?)?;
+            Ok("null".to_owned())
+        }
+        // `value` is handed over as it came — a string or a bool — and
+        // sorted by shape one layer down, where the two shapes are
+        // named (`chat::chat_set_option`).
+        "chat_set_option" => {
+            let value = args.get("value").ok_or_else(|| "missing arg: value".to_owned())?;
+            crate::chat::chat_set_option(&arg("id")?, &arg("option")?, value)?;
+            Ok("null".to_owned())
+        }
         "chat_replay" => {
             crate::chat::chat_replay(&arg("id")?)?;
             Ok("null".to_owned())

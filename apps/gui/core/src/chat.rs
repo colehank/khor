@@ -19,7 +19,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use khor_node::gui_host::{GuiNote, GuiOp};
+use khor_node::gui_host::{Choice, GuiNote, GuiOp};
 use khor_node::host::{connect, read_frame, write_frame};
 use khor_node::{Node, SessionId};
 use serde::Serialize;
@@ -87,6 +87,15 @@ pub enum ChatFrame {
     /// **key**, looked up at the last moment like every other word.
     /// Sent to the face that sent the op and to nobody else.
     Refused { why: String },
+    /// What this session can be set to and what it is set to
+    /// (`khor_node::gui_host::GuiNote::Settings`): `{ modes, options }`
+    /// in the protocol's own JSON, `unknown` here for the reason
+    /// `update` is. Told once on attach and again whenever it moves —
+    /// a face repaints its controls from the latest and never merges.
+    Settings {
+        #[ts(type = "unknown")]
+        settings: serde_json::Value,
+    },
 }
 
 /// What a poll answers: the frames since the cursor, the next cursor,
@@ -230,6 +239,7 @@ fn frame_of(note: GuiNote) -> ChatFrame {
             ChatFrame::Agent { name, replays, images, embeds, lists, needs_login }
         }
         GuiNote::Refused { why } => ChatFrame::Refused { why },
+        GuiNote::Settings(s) => ChatFrame::Settings { settings: parse(s) },
     }
 }
 
@@ -338,6 +348,32 @@ pub fn chat_answer(id: &str, ask: u64, option: Option<String>) -> Result<(), Str
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
     write_frame(&mut *conn, &GuiOp::Answer { ask, option })
+}
+
+/// Puts the session in one of the modes its agent listed
+/// (`GuiOp::SetMode`). The answer is a `Settings` frame on the poll,
+/// or a `Refused` one — never this call's result, which only says the
+/// op left.
+pub fn chat_set_mode(id: &str, mode: &str) -> Result<(), String> {
+    let chat = chat_of(id)?;
+    let mut conn = chat.conn.lock().unwrap();
+    write_frame(&mut *conn, &GuiOp::SetMode(mode.to_owned()))
+}
+
+/// Sets one of the agent's options (`GuiOp::SetOption`): a string is
+/// a listed value's id, a bool is a switch. Anything else is refused
+/// here by shape — the two are the protocol's only two, and a number
+/// quietly stringified would reach the agent as a value it never
+/// listed.
+pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Result<(), String> {
+    let value = match value {
+        serde_json::Value::String(v) => Choice::Value(v.clone()),
+        serde_json::Value::Bool(on) => Choice::Switch(*on),
+        other => return Err(format!("an option is set to a word or a switch, not {other}")),
+    };
+    let chat = chat_of(id)?;
+    let mut conn = chat.conn.lock().unwrap();
+    write_frame(&mut *conn, &GuiOp::SetOption { id: option.to_owned(), value })
 }
 
 /// Ends the running turn — not the session (`GuiOp::Stop`).

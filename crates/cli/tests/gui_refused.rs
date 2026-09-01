@@ -74,6 +74,7 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Answered { .. } => "Answered",
         GuiNote::Agent { .. } => "Agent",
         GuiNote::Refused { .. } => "Refused",
+        GuiNote::Settings(_) => "Settings",
     }
 }
 
@@ -128,6 +129,11 @@ fn a_dropped_op_is_said_back_to_the_face_that_sent_it() {
         assert!(w.ok, "{}", w.why);
         let GuiNote::Agent { .. } = read_frame::<GuiNote>(&mut c).unwrap() else {
             panic!("the facts come first")
+        };
+        // Then what can be set: the claude shim lists its four modes,
+        // so every attach is greeted with them before anything else.
+        let GuiNote::Settings(_) = read_frame::<GuiNote>(&mut c).unwrap() else {
+            panic!("then the settings — the shim lists claude's modes")
         };
         c
     };

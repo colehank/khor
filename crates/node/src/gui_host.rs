@@ -62,6 +62,9 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use agent_client_protocol::schema::v1::{
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionValue, SessionModeId, SessionUpdate,
+};
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
 use serde::{Deserialize, Serialize};
@@ -118,6 +121,24 @@ pub enum GuiOp {
         images: Vec<(String, String)>,
         files: Vec<(String, String)>,
     },
+    /// Put the session in one of the modes the agent listed
+    /// ([`GuiNote::Settings`]), by the agent's own id. Tail-appended.
+    /// Answered by a fresh `Settings` to every face when it took, and by
+    /// [`GuiNote::Refused`] (`refused::SETTING_REFUSED`) to the asker
+    /// when the agent said no.
+    SetMode(String),
+    /// Set one of the agent's options to a listed value or a switch
+    /// position. Tail-appended, and answered the same two ways.
+    SetOption { id: String, value: Choice },
+}
+
+/// What an option is set to: a listed value's id, or a switch's
+/// position — the protocol's two shapes, spelled as a khor enum so the
+/// frame stays positional msgpack rather than carrying JSON.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Choice {
+    Value(String),
+    Switch(bool),
 }
 
 /// What the host tells every connected face.
@@ -215,6 +236,16 @@ pub enum GuiNote {
     /// A sentence here would freeze today's wording into the protocol
     /// and reach a face that cannot translate it.
     Refused { why: String },
+    /// What this session can be set to and what it is set to, as the
+    /// protocol's own JSON: `{"modes": SessionModeState | null,
+    /// "options": [SessionConfigOption]}` (`khor_acp::Settings`). Told
+    /// to a face when it attaches, and to every face whenever it
+    /// changes — by a face's own [`GuiOp::SetMode`] / [`GuiOp::SetOption`]
+    /// or by the agent's `current_mode_update` / `config_option_update`.
+    /// Only sent when there is something in it; an agent that offers
+    /// nothing to set is most agents, and silence is their honest
+    /// shape. Tail-appended.
+    Settings(String),
 }
 
 /// The two keys [`GuiNote::Refused`] travels under. Constants rather
@@ -225,6 +256,39 @@ pub mod refused {
     pub const TURN_IN_FLIGHT: &str = "turn-in-flight";
     /// There is no turn to stop.
     pub const NO_TURN: &str = "no-turn";
+    /// The agent would not take the mode or the value it was handed.
+    pub const SETTING_REFUSED: &str = "setting-refused";
+}
+
+/// [`GuiNote::Settings`]'s body: the two lists as the protocol spells
+/// them (camelCase, the shapes `crates/acp` carries through).
+fn settings_json(s: &khor_acp::Settings) -> String {
+    serde_json::json!({ "modes": s.modes, "options": s.options }).to_string()
+}
+
+fn has_settings(s: &khor_acp::Settings) -> bool {
+    s.modes.is_some() || !s.options.is_empty()
+}
+
+/// An option change the agent took but answered with no list — the
+/// protocol has it send the whole list back, and most do; for one
+/// that does not, the one option this face changed is moved here so
+/// the screen does not read the old value over a change that took.
+fn apply_choice(options: &mut [SessionConfigOption], id: &str, value: &Choice) {
+    let Some(option) = options.iter_mut().find(|o| o.id.to_string() == id) else { return };
+    match (&mut option.kind, value) {
+        (SessionConfigKind::Select(s), Choice::Value(v)) => {
+            s.current_value = v.clone().into();
+        }
+        (SessionConfigKind::Boolean(b), Choice::Switch(on)) => b.current_value = *on,
+        _ => {}
+    }
+}
+
+/// What a change a face asked for came back as.
+enum Setting {
+    Mode(String),
+    Options { list: Vec<SessionConfigOption>, id: String, value: Choice },
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -589,6 +653,13 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
             needs_login: handle.facts().needs_login,
         };
         let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
+        // What the session can be set to, as of opening, then moved
+        // by every change that took — the agent's own updates and the
+        // faces' answered ops alike. Held here so a face that attaches
+        // later is told where things stand, the way a pending ask is.
+        let mut settings = handle.settings().clone();
+        let (set_tx, mut set_rx) =
+            tokio::sync::mpsc::unbounded_channel::<(u64, Result<Setting, String>)>();
         let handle = Arc::new(handle);
         loop {
             tokio::select! {
@@ -602,6 +673,26 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     Some(khor_acp::Event::Note(n)) => {
                         let json = serde_json::to_string(&n).unwrap_or_default();
                         fanout.send(&GuiNote::Note(json));
+                        // The agent moving its own settings: the note
+                        // went through whole above, and this is the
+                        // copy the next face to attach will be told.
+                        let moved = match &n.update {
+                            SessionUpdate::CurrentModeUpdate(u) => match settings.modes.as_mut() {
+                                Some(m) => {
+                                    m.current_mode_id = u.current_mode_id.clone();
+                                    true
+                                }
+                                None => false,
+                            },
+                            SessionUpdate::ConfigOptionUpdate(u) => {
+                                settings.options = u.config_options.clone();
+                                true
+                            }
+                            _ => false,
+                        };
+                        if moved {
+                            fanout.send(&GuiNote::Settings(settings_json(&settings)));
+                        }
                     }
                     Some(khor_acp::Event::Ask(ask)) => {
                         let n = next_ask;
@@ -635,6 +726,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                         // of all whether asking for the past means
                         // anything.
                         fanout.send_to(who, &agent_note);
+                        if has_settings(&settings) {
+                            fanout.send_to(who, &GuiNote::Settings(settings_json(&settings)));
+                        }
                         if in_turn.is_some() {
                             fanout.send_to(who, &GuiNote::Turning);
                         }
@@ -718,6 +812,35 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                             );
                         }
                     }
+                    // Both asked of the agent in a task of their own,
+                    // like a turn: the loop owns every state change
+                    // and must keep moving updates while the agent
+                    // thinks — a `set_mode` on the claude shim is a
+                    // control request answered by a process that may
+                    // be busy.
+                    Some((who, GuiOp::SetMode(mode))) => {
+                        let handle = handle.clone();
+                        let set_tx = set_tx.clone();
+                        tokio::spawn(async move {
+                            let out = handle.set_mode(&mode).await.map(|()| Setting::Mode(mode));
+                            let _ = set_tx.send((who, out));
+                        });
+                    }
+                    Some((who, GuiOp::SetOption { id: option, value })) => {
+                        let handle = handle.clone();
+                        let set_tx = set_tx.clone();
+                        tokio::spawn(async move {
+                            let wire = match &value {
+                                Choice::Value(v) => SessionConfigOptionValue::value_id(v.clone()),
+                                Choice::Switch(on) => SessionConfigOptionValue::boolean(*on),
+                            };
+                            let out = handle
+                                .set_option(&option, wire)
+                                .await
+                                .map(|list| Setting::Options { list, id: option, value });
+                            let _ = set_tx.send((who, out));
+                        });
+                    }
                     Some((_, GuiOp::Close)) => break None,
                     Some((who, GuiOp::Replay)) => {
                         // **The capability decides what a face is
@@ -768,6 +891,36 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
                     }
                     if fell {
                         break fall;
+                    }
+                }
+                set = set_rx.recv() => {
+                    let Some((who, out)) = set else { continue };
+                    match out {
+                        Ok(Setting::Mode(mode)) => {
+                            // The agent took it. Its own
+                            // `current_mode_update`, if it sends one,
+                            // lands on the same field and changes
+                            // nothing.
+                            if let Some(m) = settings.modes.as_mut() {
+                                m.current_mode_id = SessionModeId::new(mode);
+                            }
+                            fanout.send(&GuiNote::Settings(settings_json(&settings)));
+                        }
+                        Ok(Setting::Options { list, id, value }) => {
+                            if list.is_empty() {
+                                apply_choice(&mut settings.options, &id, &value);
+                            } else {
+                                settings.options = list;
+                            }
+                            fanout.send(&GuiNote::Settings(settings_json(&settings)));
+                        }
+                        // The agent said no; the screen keeps what it
+                        // had, and the asker is told rather than left
+                        // looking at a control that flipped for nobody.
+                        Err(_) => fanout.send_to(
+                            who,
+                            &GuiNote::Refused { why: refused::SETTING_REFUSED.to_owned() },
+                        ),
                     }
                 }
             }

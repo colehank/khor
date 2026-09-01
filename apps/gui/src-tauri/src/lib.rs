@@ -152,6 +152,16 @@ fn open_link(url: String) -> Result<(), String> {
 fn chat_stop(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_stop(&id)
 }
+#[tauri::command]
+fn chat_set_mode(id: String, mode: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_set_mode(&id, &mode)
+}
+
+#[tauri::command]
+fn chat_set_option(id: String, option: String, value: serde_json::Value) -> Result<(), String> {
+    khor_gui_core::chat::chat_set_option(&id, &option, &value)
+}
+
 
 #[tauri::command]
 fn chat_replay(id: String) -> Result<(), String> {
@@ -542,6 +552,8 @@ pub fn run() {
             chat_say,
             chat_answer,
             chat_stop,
+            chat_set_mode,
+            chat_set_option,
             open_link,
             chat_replay,
             chat_leave,

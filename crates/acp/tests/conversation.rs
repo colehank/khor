@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+use agent_client_protocol::schema::v1::{SessionConfigKind, SessionConfigOptionValue};
 use khor_acp::{start, Event, Refusal};
 use tokio::time::timeout;
 
@@ -380,4 +381,72 @@ async fn a_session_the_agent_listed_can_be_opened_with_its_past() {
         }
     }
     assert!(notes > 0, "session/load MUST replay, and nothing came back");
+}
+
+/// **The settings ride on `session/new`'s answer, and a change crosses
+/// the wire in both directions.** They used to be dropped with the
+/// rest of that answer — `session_id` read, everything else discarded
+/// — and nothing noticed, because an agent whose modes nobody asks
+/// about behaves exactly like one with none.
+///
+/// Read off the agent's own account: the stub echoes the mode it was
+/// put in as a chunk, and answers an option change with the whole
+/// list as it now stands, which is what the protocol has every agent
+/// do (one change can move another option).
+#[tokio::test]
+async fn a_session_comes_with_its_settings_and_a_change_reaches_the_agent() {
+    // The control first: a plain stub lists nothing, so what the
+    // assertions below read is the switch and not a default.
+    let (plain, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let Event::Ready { .. } = next(&mut rx).await else { panic!("first event must be Ready") };
+    assert!(plain.settings().modes.is_none(), "a plain stub lists no modes");
+    assert!(plain.settings().options.is_empty(), "and no options");
+    drop(plain);
+
+    let (handle, mut rx) =
+        start(&stub_with("KHOR_STUB_SETTINGS", "1"), std::env::temp_dir()).await.expect("stub starts");
+    let Event::Ready { .. } = next(&mut rx).await else { panic!("first event must be Ready") };
+    let modes = handle.settings().modes.as_ref().expect("the settable stub lists modes");
+    assert_eq!(modes.current_mode_id.to_string(), "careful");
+    assert_eq!(
+        modes.available_modes.iter().map(|m| m.id.to_string()).collect::<Vec<_>>(),
+        ["careful", "bold"]
+    );
+    assert_eq!(
+        handle.settings().options.iter().map(|o| o.id.to_string()).collect::<Vec<_>>(),
+        ["model", "fast"]
+    );
+
+    handle.set_mode("bold").await.expect("a listed mode is taken");
+    assert!(text_of(next(&mut rx).await).contains("mode:bold"), "the agent's own account of it");
+    assert!(
+        handle.set_mode("reckless").await.is_err(),
+        "a mode the agent never listed is refused in the agent's words, not taken on this side's say-so"
+    );
+
+    let after = handle
+        .set_option("model", SessionConfigOptionValue::value_id("large"))
+        .await
+        .expect("a listed value is taken");
+    let model = after.iter().find(|o| o.id.to_string() == "model").expect("the list comes back whole");
+    match &model.kind {
+        SessionConfigKind::Select(s) => assert_eq!(s.current_value.to_string(), "large"),
+        other => panic!("model is a select, not {other:?}"),
+    }
+    let after = handle
+        .set_option("fast", SessionConfigOptionValue::boolean(true))
+        .await
+        .expect("a switch is taken");
+    let fast = after.iter().find(|o| o.id.to_string() == "fast").expect("the list comes back whole");
+    match &fast.kind {
+        SessionConfigKind::Boolean(b) => assert!(b.current_value, "the switch is on"),
+        other => panic!("fast is a switch, not {other:?}"),
+    }
+    // And the first change is still there: the list is the agent's
+    // state, not a picture of the one request.
+    let model = after.iter().find(|o| o.id.to_string() == "model").unwrap();
+    match &model.kind {
+        SessionConfigKind::Select(s) => assert_eq!(s.current_value.to_string(), "large"),
+        other => panic!("{other:?}"),
+    }
 }

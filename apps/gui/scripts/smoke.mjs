@@ -684,6 +684,15 @@ if home:
 first = True
 for line in sys.stdin:
     m = json.loads(line)
+    if m.get("type") == "control_request" and m.get("request", {}).get("subtype") == "set_permission_mode":
+        # A mode change, the way the real claude takes one: answered by
+        # a control_response naming the request. The mark is what the
+        # smoke reads — this process's own account of the mode it was
+        # put in, which no assertion on the screen can tell.
+        with open("fake.mode", "w") as f:
+            f.write(m["request"]["mode"])
+        emit({"type": "control_response", "response": {"subtype": "success", "request_id": m["request_id"]}})
+        continue
     if m.get("type") != "user":
         continue
     text = m["message"]["content"][0]["text"]
@@ -4682,6 +4691,34 @@ for line in sys.stdin:
     const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
     return t.includes("echo: hello wizard");
   });
+  // 25c-2) what can be set, through the shim: the menu lists claude's
+  //        four modes, picking one crosses the wire as the control
+  //        request the fake answers (`set_permission_mode`), and the
+  //        menu follows claude's answer. Asserted on the fake's own
+  //        mark — what it was put in — and on the menu's face after
+  //        the round trip, never on the press: a menu that flipped for
+  //        its own click would pass a test that only read the menu.
+  await until("the mode menu on the wizard's conversation", 10_000, async () =>
+    (await page.locator("[data-chat-mode-menu]").count()) === 1,
+  );
+  if ((await page.locator("[data-chat-mode-menu]").getAttribute("data-mode-id")) !== "default") {
+    throw new Error("probe dead: the session did not open in claude's default mode, so a change proves nothing");
+  }
+  await page.locator("[data-chat-mode-menu]").click();
+  await until("claude's four modes listed", 5_000, async () =>
+    (await page.locator("[data-mode-option]").count()) === 4,
+  );
+  await page.locator('[data-mode-option="plan"]').click();
+  await until("the fake put in plan mode, by its own mark", 10_000, async () =>
+    existsSync(join(wizDir, "fake.mode")) && readFileSync(join(wizDir, "fake.mode"), "utf8") === "plan",
+  );
+  await until("the menu wearing 只看不改 after the round trip", 10_000, async () => {
+    const el = page.locator("[data-chat-mode-menu]");
+    return (await el.getAttribute("data-mode-id")) === "plan" && (await el.innerText()).trim() === "只看不改";
+  });
+  if ((await page.locator("[data-chat-mode]").count()) !== 0) {
+    throw new Error("the marker drew beside a menu wearing the same word");
+  }
   // Markdown is the agent's medium, and the fake echoes what it was
   // told — so one line of it makes the round trip and must arrive
   // *rendered*. Two assertions, because one cannot tell the two ways

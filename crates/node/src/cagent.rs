@@ -34,9 +34,10 @@
 //! else in the stream is claude's own bookkeeping; relaying it would be
 //! curating a protocol nobody reads.
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
@@ -44,7 +45,8 @@ use agent_client_protocol::schema::v1::{
     InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
     PromptCapabilities, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    SessionNotification,
+    SessionMode, SessionModeState, SessionNotification, SetSessionModeRequest,
+    SetSessionModeResponse,
     Content, Cost, CurrentModeUpdate, Diff, EmbeddedResourceResource, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
     ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
@@ -97,6 +99,45 @@ struct Shim {
     /// A cancel was sent for the current turn: its `result`, whatever
     /// its subtype, is the cancellation the client asked for.
     interrupted: AtomicBool,
+    /// Control requests this shim sent and is waiting on, by request
+    /// id: claude answers each with a `control_response` naming the id,
+    /// and `drain` hands the answer here. The interrupt is not in this
+    /// map — nothing waits on it, the turn's own `result` is its answer.
+    pending: Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>,
+    /// The next control request's number, so two faces changing the
+    /// mode at once get two ids rather than one answer for both.
+    asked: AtomicU64,
+}
+
+/// The permission modes this shim offers, in claude's own spelling
+/// (`--permission-mode`'s values, and what its init frame reports as
+/// `permissionMode`). Four of claude's six: `dontAsk` and `auto` are
+/// real but khor's face has no words for what they will do, and a mode
+/// a person cannot read is not one to offer them.
+const MODES: [&str; 4] = ["default", "plan", "acceptEdits", "bypassPermissions"];
+
+/// The list a session opens with. `current` is what this shim
+/// launched claude in — no flag, so claude's own default — and the
+/// init frame's `permissionMode` corrects it the moment claude speaks
+/// (`drain`, `current_mode_update`), which matters for a resumed
+/// session that was left in another mode.
+fn modes_listed(current: &str) -> SessionModeState {
+    SessionModeState::new(
+        current.to_owned(),
+        MODES.iter().map(|m| SessionMode::new(*m, *m)).collect(),
+    )
+}
+
+/// The control request that moves claude to another mode. The spelling
+/// is claude's (measured off the 2.1.252 bundle: `subtype:
+/// "set_permission_mode", mode: <id>`), and the test below pins it —
+/// a misspelt subtype is not an error, it is a request claude ignores.
+fn mode_request(request_id: &str, mode: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": { "subtype": "set_permission_mode", "mode": mode },
+    })
 }
 
 /// The body of `khor _cagent` (and of `_cagent` in every host-capable
@@ -120,7 +161,10 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         turn: Mutex::new(None),
         interrupted: AtomicBool::new(false),
         window: Mutex::new(None),
+        pending: Mutex::new(HashMap::new()),
+        asked: AtomicU64::new(0),
     });
+    let s_mode = shim.clone();
     let s_new = shim.clone();
     let s_prompt = shim.clone();
     let s_load = shim.clone();
@@ -159,7 +203,11 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         .on_receive_request(
             async move |new: NewSessionRequest, responder, _connection| {
                 match s_new.start_claude(&new.cwd) {
-                    Ok(sid) => responder.respond(NewSessionResponse::new(sid)),
+                    Ok(sid) => {
+                        let mut opened = NewSessionResponse::new(sid);
+                        opened.modes = Some(modes_listed("default"));
+                        responder.respond(opened)
+                    }
                     Err(e) => responder.respond_with_internal_error(e),
                 }
             },
@@ -282,7 +330,54 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     let _ = connection
                         .send_notification(SessionNotification::new(sid.clone(), update));
                 }
-                responder.respond(LoadSessionResponse::new())
+                let mut loaded = LoadSessionResponse::new();
+                loaded.modes = Some(modes_listed("default"));
+                responder.respond(loaded)
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |set: SetSessionModeRequest, responder, connection| {
+                let mode = set.mode_id.to_string();
+                if !MODES.contains(&mode.as_str()) {
+                    return responder.respond_with_internal_error(msg::cagent_unknown_mode(&mode));
+                }
+                let request_id = format!("khor-mode-{}", s_mode.asked.fetch_add(1, Ordering::SeqCst));
+                let (tx, rx) = oneshot::channel::<serde_json::Value>();
+                s_mode.pending.lock().unwrap().insert(request_id.clone(), tx);
+                if let Err(e) = s_mode.control(&mode_request(&request_id, &mode)) {
+                    s_mode.pending.lock().unwrap().remove(&request_id);
+                    return responder.respond_with_internal_error(e);
+                }
+                // Answered when claude answers — in a task, so the
+                // pump keeps moving frames meanwhile (the prompt
+                // handler's judgment). **Success is claude's word, not
+                // this shim's**: the `current_mode_update` below goes
+                // out only on its `success`, because a mode drawn as
+                // changed on the strength of having asked is the
+                // marker lying.
+                let shim = s_mode.clone();
+                let sid = set.session_id.clone();
+                let inner = connection.clone();
+                connection.spawn(async move {
+                    let answer = tokio::time::timeout(std::time::Duration::from_secs(10), rx).await;
+                    match answer {
+                        Ok(Ok(r)) if r["subtype"].as_str() == Some("success") => {
+                            let _ = inner.send_notification(SessionNotification::new(
+                                sid,
+                                SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(mode)),
+                            ));
+                            responder.respond(SetSessionModeResponse::new())
+                        }
+                        Ok(Ok(r)) => responder.respond_with_internal_error(
+                            r["error"].as_str().unwrap_or(msg::CAGENT_MODE_REFUSED).to_owned(),
+                        ),
+                        _ => {
+                            shim.pending.lock().unwrap().remove(&request_id);
+                            responder.respond_with_internal_error(msg::CAGENT_MODE_UNANSWERED)
+                        }
+                    }
+                })
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -576,10 +671,27 @@ async fn drain(
                     let _ = tx.send(reason);
                 }
             }
+            // claude's answer to a control request this shim sent —
+            // handed to whoever is waiting on that id (the mode
+            // change). One never asked for, or one whose asker gave up,
+            // is dropped here rather than logged: there is nobody to
+            // tell.
+            Some("control_response") => {
+                let answer = &f["response"];
+                if let Some(id) = answer["request_id"].as_str() {
+                    if let Some(tx) = shim.pending.lock().unwrap().remove(id) {
+                        let _ = tx.send(answer.clone());
+                    }
+                }
+            }
             Some("khor_child_gone") => {
                 if let Some(tx) = shim.turn.lock().unwrap().take() {
                     let _ = tx.send(StopReason::Refusal);
                 }
+                // Every waiting control request learns the same way the
+                // turn does: the sender goes, the waiter reads an
+                // ending rather than waiting out its clock.
+                shim.pending.lock().unwrap().clear();
                 break;
             }
             _ => {}
@@ -921,6 +1033,35 @@ mod wire_tests {
         let text = json["content"][0]["content"]["text"].as_str().unwrap();
         assert!(text.len() < 17 * 1024, "cut, {} bytes", text.len());
         assert!(text.ends_with(khor_catalog::msg::TOOL_OUTPUT_CUT), "and marked as cut");
+    }
+
+    /// **The request that moves claude's mode is spelled the way claude
+    /// reads it.** Measured off the 2.1.252 bundle, where the SDK's own
+    /// `setPermissionMode` sends `{subtype: "set_permission_mode",
+    /// mode}` — a subtype claude does not know is not refused, it is
+    /// ignored, and the face would then draw a mode that never moved.
+    #[test]
+    fn the_mode_change_is_spelled_the_way_claude_reads_it() {
+        let f = super::mode_request("khor-mode-7", "plan");
+        assert_eq!(f["type"], "control_request");
+        assert_eq!(f["request_id"], "khor-mode-7");
+        assert_eq!(f["request"]["subtype"], "set_permission_mode");
+        assert_eq!(f["request"]["mode"], "plan");
+    }
+
+    /// A session opens with claude's modes listed, current first as
+    /// claude's own default, so a face has something to offer before
+    /// claude has said a word. The four are the ones the face has words
+    /// for (`MODES`).
+    #[test]
+    fn a_session_opens_with_claudes_modes_listed() {
+        let mut opened = super::NewSessionResponse::new("s");
+        opened.modes = Some(super::modes_listed("default"));
+        let json = serde_json::to_value(&opened).unwrap();
+        assert_eq!(json["modes"]["currentModeId"], "default");
+        let ids: Vec<&str> =
+            json["modes"]["availableModes"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, super::MODES);
     }
 
     /// **The mode crosses the wire under the name the face reads**, and

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use khor_core::{DeviceId, SessionId, State};
-use khor_node::gui_host::{gui_host_main, GuiNote, GuiOp};
+use khor_node::gui_host::{gui_host_main, refused, Choice, GuiNote, GuiOp};
 use khor_node::host::{read_frame, read_host_file, write_frame, Hello, Welcome};
 use khor_node::live::{LiveKind, Source};
 
@@ -319,6 +319,7 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Answered { .. } => "Answered",
         GuiNote::Agent { .. } => "Agent",
         GuiNote::Refused { .. } => "Refused",
+        GuiNote::Settings(_) => "Settings",
     }
 }
 
@@ -484,6 +485,80 @@ fn a_generic_agents_conversation_says_it_has_no_terminal_form() {
     write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
+    write_frame(&mut conn, &GuiOp::Close).unwrap();
+    host.join().expect("the host thread ends").expect("cleanly");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// **What can be set reaches a face when it attaches, and a change goes
+/// the whole way round: face → host → agent → every face.**
+///
+/// Read off the agent's account where there is one (the stub names the
+/// mode it was put in) and off the host's fresh `Settings` for the
+/// rest — and a face that attaches *after* the changes is told where
+/// things stand, not where they started, the way a pending ask is
+/// re-sent. The refusal is the control: a mode the agent never listed
+/// comes back as `Refused` to the asker and moves nothing.
+#[test]
+fn settings_reach_a_face_and_a_change_goes_round() {
+    let root = std::env::temp_dir().join(format!("khor-guihost-settings-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let ready = root.join("ready");
+    let host = {
+        let (root, ready) = (root.clone(), ready.clone());
+        let cmd = stub_with("KHOR_STUB_SETTINGS", "1");
+        std::thread::spawn(move || gui_host_main(root, ready, "stub".into(), cmd))
+    };
+    let id = wait_for_ready(&ready);
+    let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
+    let hf = read_host_file(&k.dir_of(&id).unwrap()).expect("a host file");
+    let attach = || {
+        let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
+        write_frame(&mut conn, &Hello { cookie: hf.cookie.clone(), cols: 0, rows: 0 }).unwrap();
+        let w: Welcome = read_frame(&mut conn).unwrap();
+        assert!(w.ok, "{}", w.why);
+        let GuiNote::Agent { .. } = next_note(&mut conn) else { panic!("the facts come first") };
+        let GuiNote::Settings(json) = next_note(&mut conn) else {
+            panic!("then what can be set, before anything else")
+        };
+        (conn, serde_json::from_str::<serde_json::Value>(&json).expect("the protocol's own JSON"))
+    };
+    let (mut conn, s) = attach();
+    assert_eq!(s["modes"]["currentModeId"], "careful");
+    assert_eq!(s["modes"]["availableModes"][1]["id"], "bold");
+    assert_eq!(s["options"][0]["id"], "model");
+    assert_eq!(s["options"][1]["currentValue"], false);
+
+    write_frame(&mut conn, &GuiOp::SetMode("bold".into())).unwrap();
+    // The agent's own word first (events before answers in the loop),
+    // then the host telling every face.
+    let GuiNote::Note(chunk) = next_note(&mut conn) else { panic!("the agent names the mode") };
+    assert!(chunk.contains("mode:bold"), "{chunk}");
+    let GuiNote::Settings(json) = next_note(&mut conn) else { panic!("every face learns it") };
+    let s: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(s["modes"]["currentModeId"], "bold");
+
+    write_frame(&mut conn, &GuiOp::SetMode("reckless".into())).unwrap();
+    let GuiNote::Refused { why } = next_note(&mut conn) else {
+        panic!("a mode the agent never listed comes back refused, to the asker")
+    };
+    assert_eq!(why, refused::SETTING_REFUSED);
+
+    write_frame(&mut conn, &GuiOp::SetOption { id: "fast".into(), value: Choice::Switch(true) })
+        .unwrap();
+    let GuiNote::Settings(json) = next_note(&mut conn) else { panic!("the list as the agent has it") };
+    let s: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let fast = s["options"].as_array().unwrap().iter().find(|o| o["id"] == "fast").unwrap();
+    assert_eq!(fast["currentValue"], true);
+    assert_eq!(s["modes"]["currentModeId"], "bold", "the earlier change is still there");
+
+    // A face arriving now.
+    let (_late, s) = attach();
+    assert_eq!(s["modes"]["currentModeId"], "bold", "told where things stand, not where they started");
+    let fast = s["options"].as_array().unwrap().iter().find(|o| o["id"] == "fast").unwrap();
+    assert_eq!(fast["currentValue"], true);
+
     write_frame(&mut conn, &GuiOp::Close).unwrap();
     host.join().expect("the host thread ends").expect("cleanly");
     let _ = std::fs::remove_dir_all(&root);

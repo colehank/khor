@@ -720,6 +720,15 @@ cagent-one-turn = "上一轮还没说完"
 cagent-one-session = "这个垫片只装一个会话"
 cagent-not-started = "会话还没开始"
 cagent-no-pipe = "接不到 claude 的输出"
+# A mode change the shim will not even ask claude for: the id is not
+# one of the four it listed (`cagent::MODES`).
+cagent-unknown-mode = "claude 没有「{0}」这一档"
+# claude answered the mode change with an error and no words of its own.
+cagent-mode-refused = "claude 不肯换到这一档"
+# No control_response inside the wait: the change may or may not have
+# taken, and the face is told it did not — the marker follows claude's
+# word, never the asking.
+cagent-mode-unanswered = "claude 没有答复换档"
 codexagent-no-pipe = "接不到 codex 的输出"
 codexagent-bad-answer = "codex 对 {0} 的回答不是垫片认得的形状"
 # Registering an ACP agent (批⑥, `khor_sync::agents`). The name becomes
@@ -1342,6 +1351,13 @@ chat-plan = "在做的事"
 chat-mode-plan = "只看不改"
 chat-mode-accept-edits = "改文件不问"
 chat-mode-bypass = "全部不问"
+# The ordinary mode's word — **only inside the mode menu**, where every
+# listed mode needs a name to be picked by; the marker above the box
+# still stays silent for it. 说的是它和别的档差在哪(改之前会问一句),
+# 不是「默认」——「默认」告诉不了人它会做什么。
+chat-mode-default = "改前会问"
+# The mode menu's heading, over the list of modes the agent offers.
+chat-mode = "模式"
 # The diff panel's two halves inside an opened tool line. 一个字的标签,
 # 因为旁边就是内容本身,而「修改前的内容」这种话是在解释一个人已经看见的东西。
 chat-diff-before = "改前"
@@ -1400,6 +1416,10 @@ new-below = "下面有新的"
 # error of this person's.
 chat-refused-turn-in-flight = "另一扇窗正在说话,刚才那句没发出去,还给你了"
 chat-refused-no-turn = "现在没有在跑的轮"
+# A mode or an option the agent would not take (`refused::SETTING_REFUSED`).
+# 「没收」: the control on screen stays where it was, so the sentence is
+# about the agent's answer, not about anything having broken here.
+chat-refused-setting = "这一项 agent 没收,还是原来那样"
 # Ending a session, from the pane that is showing it. **One sentence per
 # kind, because 关闭 does genuinely different things** — read off the
 # three `KindSurface::close` implementations rather than guessed:

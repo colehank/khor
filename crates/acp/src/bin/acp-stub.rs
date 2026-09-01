@@ -32,6 +32,13 @@
 //! flattening is the bug the client's `Listing` enum exists to prevent
 //! — so the stub has to be able to be each of them separately.
 //!
+//! | `KHOR_STUB_SETTINGS=1` | lists two modes (`careful`, `bold`), a select (`model`) and a switch (`fast`), and answers `session/set_mode` / `session/set_config_option` |
+//!
+//! `KHOR_STUB_SETTINGS` echoes every mode change as a chunk naming the
+//! mode it received, for the same reason the permission answer is
+//! echoed: the assertion has to be on the agent's account of what
+//! crossed the wire, not on the client's own bookkeeping.
+//!
 //! `KHOR_STUB_REPLAYS` does **both** halves on purpose: an agent that
 //! advertises a capability it does not have, or hides one it does, is a
 //! third thing to test and not what these switches are for. What they
@@ -42,11 +49,15 @@ use agent_client_protocol::schema::v1::{
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse,
     PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
-    SessionCapabilities, SessionInfo, SessionListCapabilities, StopReason, TextContent,
-    ToolCallUpdate, ToolCallUpdateFields,
+    RequestPermissionOutcome, RequestPermissionRequest, SessionConfigBoolean, SessionConfigKind,
+    SessionConfigOption, SessionConfigOptionValue, SessionConfigSelect, SessionConfigSelectOption,
+    SessionMode, SessionModeState, SessionNotification, SessionUpdate,
+    SessionCapabilities, SessionInfo, SessionListCapabilities, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
+    TextContent, ToolCallUpdate, ToolCallUpdateFields,
 };
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Stdio};
 
@@ -73,8 +84,49 @@ fn lists() -> Option<bool> {
     }
 }
 
+/// Whether this stub has anything to set. Off unless asked: most
+/// agents offer nothing, and the plain stub must stay one of them so
+/// the tests that read「no settings」are reading an agent and not a
+/// default.
+fn settable() -> bool {
+    std::env::var("KHOR_STUB_SETTINGS").as_deref() == Ok("1")
+}
+
+fn modes_of(current: &str) -> SessionModeState {
+    SessionModeState::new(
+        current.to_owned(),
+        vec![SessionMode::new("careful", "Careful"), SessionMode::new("bold", "Bold")],
+    )
+}
+
+/// The whole list, as the protocol has an agent answer every change
+/// with — one select and one switch, so both value shapes cross.
+fn options_of(model: &str, fast: bool) -> Vec<SessionConfigOption> {
+    vec![
+        SessionConfigOption::new(
+            "model",
+            "Model",
+            SessionConfigKind::Select(SessionConfigSelect::new(
+                model.to_owned(),
+                vec![
+                    SessionConfigSelectOption::new("small", "Small"),
+                    SessionConfigSelectOption::new("large", "Large"),
+                ],
+            )),
+        ),
+        SessionConfigOption::new(
+            "fast",
+            "Fast",
+            SessionConfigKind::Boolean(SessionConfigBoolean::new(fast)),
+        ),
+    ]
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> agent_client_protocol::Result<()> {
+    // What the settable stub currently has set: (model, fast).
+    let set = Arc::new(Mutex::new(("small".to_owned(), false)));
+    let set_option = set.clone();
     Agent
         .builder()
         .name("acp-stub")
@@ -131,7 +183,56 @@ async fn main() -> agent_client_protocol::Result<()> {
                         agent_client_protocol::Error::auth_required(),
                     );
                 }
-                responder.respond(NewSessionResponse::new("stub-session-1"))
+                let mut opened = NewSessionResponse::new("stub-session-1");
+                if settable() {
+                    let (model, fast) = set.lock().unwrap().clone();
+                    opened.modes = Some(modes_of("careful"));
+                    opened.config_options = Some(options_of(&model, fast));
+                }
+                responder.respond(opened)
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: SetSessionModeRequest, responder, connection| {
+                if !settable() {
+                    return responder
+                        .respond_with_error(agent_client_protocol::Error::method_not_found());
+                }
+                let id = request.mode_id.to_string();
+                // A mode never listed is refused, the way a real agent
+                // refuses one — a client that set anything and read
+                // back success would be trusting its own request.
+                if id != "careful" && id != "bold" {
+                    return responder
+                        .respond_with_error(agent_client_protocol::Error::invalid_params());
+                }
+                connection.send_notification(SessionNotification::new(
+                    request.session_id.clone(),
+                    chunk(&format!("mode:{id}")),
+                ))?;
+                responder.respond(SetSessionModeResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: SetSessionConfigOptionRequest, responder, _connection| {
+                if !settable() {
+                    return responder
+                        .respond_with_error(agent_client_protocol::Error::method_not_found());
+                }
+                let mut now = set_option.lock().unwrap();
+                match (request.config_id.to_string().as_str(), &request.value) {
+                    ("model", SessionConfigOptionValue::ValueId { value }) => {
+                        now.0 = value.to_string();
+                    }
+                    ("fast", SessionConfigOptionValue::Boolean { value }) => now.1 = *value,
+                    _ => {
+                        return responder
+                            .respond_with_error(agent_client_protocol::Error::invalid_params())
+                    }
+                }
+                responder.respond(SetSessionConfigOptionResponse::new(options_of(&now.0, now.1)))
             },
             agent_client_protocol::on_receive_request!(),
         )

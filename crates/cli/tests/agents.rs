@@ -473,5 +473,6 @@ fn kind_of(n: &khor_node::gui_host::GuiNote) -> &'static str {
         // who still points at it) missed again. A refusal in these
         // tests is unexpected traffic, so naming it is enough.
         GuiNote::Refused { .. } => "Refused",
+        GuiNote::Settings(_) => "Settings",
     }
 }
