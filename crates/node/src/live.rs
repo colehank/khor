@@ -387,6 +387,19 @@ impl LiveKind {
         write_whole(&dir.join("meta.json"), &serde_json::to_vec(&meta).map_err(|e| e.to_string())?)
     }
 
+    /// **Every place khor itself started a session in**, for the
+    /// wizard's 常去的地方 (`crate::place`): one entry per registry
+    /// row that has a birthplace on record, `(cwd, 1, when it started)`.
+    /// The vendors answer for conversations; this is the half only khor
+    /// knows — a directory somebody only ever opened a terminal in.
+    pub fn places(&self) -> Vec<(PathBuf, u32, i64)> {
+        let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else { return Vec::new() };
+        rd.flatten()
+            .filter_map(|e| read_meta(&e.path()).ok())
+            .filter_map(|m| Some((PathBuf::from(m.place?), 1, m.started_ms)))
+            .collect()
+    }
+
     /// The vendor leaf on record for a session, if a hook ever spoke.
     pub fn vendor_leaf_of(&self, id: &SessionId) -> Option<String> {
         let dir = self.dir(id)?;
@@ -929,7 +942,19 @@ impl LiveKind {
         let claude =
             crate::adaptor::claude::Claude::at(crate::adaptor::vendor_home(&self.root).join(".claude"));
         for r in out.iter_mut() {
-            if r.category.as_deref() != Some("claude") {
+            // **Claude's rows, and rows nobody filed.** The preview and
+            // the title below are claude's answers and go only on rows
+            // known to be claude's; but a `gui` row started without a
+            // vendor declared (`category: None`) can still name a
+            // transcript in claude's own directory, and whichever
+            // store resolves a leaf owns the session — `Node::takeover`
+            // has followed that rule since before this loop existed.
+            // Measured 2026-09-01: exactly one such row on the author's
+            // machine, and it was the last claude row left as
+            // 不在任何地方. So an unfiled row gets as far as the place
+            // read, and no further.
+            let filed = r.category.as_deref();
+            if filed.is_some() && filed != Some("claude") {
                 continue;
             }
             let leaf = vendor_leaves.get(&r.id.0).cloned().or_else(|| {
@@ -943,6 +968,24 @@ impl LiveKind {
             // — and both cache, so a poll over an unchanged transcript
             // costs stats rather than reads.
             if let Some(l) = leaf {
+                // **A row from before places were recorded still has
+                // one — in its transcript.** Every hook-registered
+                // session older than 2026-09-01 has no place in its
+                // note and, once its process is gone, no status file to
+                // read one from; measured on the machine this was
+                // written on, that was ten of seventeen rows, tokens
+                // sessions among them, filed as 不在任何地方 while their
+                // transcripts said `cwd` on line 1. Read here, folded
+                // like every other source, and only as a fallback: a
+                // place already on the row is the birth fact and stands.
+                if r.place.is_none() {
+                    if let Some(cwd) = claude.recorded_cwd(&l) {
+                        r.place = place_of(Some(&cwd.display().to_string()));
+                    }
+                }
+                if filed.is_none() {
+                    continue;
+                }
                 if let Some(said) = claude.last_said(&l) {
                     r.last = Some(said);
                 }
@@ -960,21 +1003,6 @@ impl LiveKind {
                 // before.
                 if let Some(title) = claude.ai_title(&l) {
                     r.title = title;
-                }
-                // **A row from before places were recorded still has
-                // one — in its transcript.** Every hook-registered
-                // session older than 2026-09-01 has no place in its
-                // note and, once its process is gone, no status file to
-                // read one from; measured on the machine this was
-                // written on, that was ten of seventeen rows, tokens
-                // sessions among them, filed as 不在任何地方 while their
-                // transcripts said `cwd` on line 1. Read here, folded
-                // like every other source, and only as a fallback: a
-                // place already on the row is the birth fact and stands.
-                if r.place.is_none() {
-                    if let Some(cwd) = claude.recorded_cwd(&l) {
-                        r.place = place_of(Some(&cwd.display().to_string()));
-                    }
                 }
             }
         }
@@ -1450,6 +1478,27 @@ mod tests {
         let of = |id: &SessionId| rows.iter().find(|r| &r.id == id).expect("lists").place.clone();
         assert_eq!(of(&placed), Some(repo.display().to_string()), "read off the transcript, folded");
         assert_eq!(of(&bare), None, "a transcript that never said where places nothing");
+    }
+
+    /// The registry's half of 常去的地方: a session khor started in a
+    /// directory is a visit to that directory, and one it started
+    /// nowhere in particular is not a visit anywhere.
+    #[test]
+    fn the_registry_remembers_where_it_started_things() {
+        let root = tmp("registry-places");
+        let k = kind_at(&root);
+        let here = root.join("here");
+        fs::create_dir_all(&here).unwrap();
+        let placed = sid("shell/placed");
+        k.register(&placed, "shell", "x", None, None).unwrap();
+        k.learn_place(&placed, &here).unwrap();
+        let bare = sid("shell/bare");
+        k.register(&bare, "shell", "y", None, None).unwrap();
+
+        let places = k.places();
+        assert_eq!(places.len(), 1, "{places:?}");
+        assert_eq!(places[0].0, here);
+        assert_eq!(places[0].1, 1, "one visit");
     }
 
     /// A row whose kind is not its id's first segment must still list.
@@ -1970,7 +2019,7 @@ mod tests {
         ]);
         let holding = crate::adaptor::tmux::fake_tmux(
             "holding",
-            "$7|1786245338|1786245400|3001|0|zsh|/tmp|with-claude\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -1989,7 +2038,7 @@ mod tests {
         // The control: the same session, holding nothing anyone listed.
         let empty = crate::adaptor::tmux::fake_tmux(
             "empty-pane",
-            "$7|1786245338|1786245400|3002|0|zsh|/tmp|just-a-shell\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f/tmp\x1fjust-a-shell\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -2040,7 +2089,7 @@ mod tests {
         ]);
         let holding = crate::adaptor::tmux::fake_tmux(
             "bridge-fold",
-            "$7|1786245338|1786245400|3001|0|zsh|/tmp|with-claude\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -2078,8 +2127,8 @@ mod tests {
         // once by a grouped twin created later.
         let fake = crate::adaptor::tmux::fake_tmux(
             "twin",
-            "$7|1786245338|1786245400|3001|0|zsh|/tmp|base\n\
-             $9|1786245400|1786245400|3001|0|zsh|/tmp|base-1\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fbase\n\
+             $9\x1f1786245400\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fbase-1\n",
         );
         let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&fake)),
@@ -2178,7 +2227,7 @@ mod tests {
         ]);
         let fake = crate::adaptor::tmux::fake_tmux(
             "registry",
-            "$7|1786245338|1786245400|3001|0|zsh|/tmp|running-khor\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1frunning-khor\n",
         );
         let k = LiveKind::new(k_root, DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&fake)),

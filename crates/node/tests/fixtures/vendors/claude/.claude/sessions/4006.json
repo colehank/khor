@@ -1,0 +1,12 @@
+{
+  "pid": 4006,
+  "sessionId": "66666666-6666-4666-8666-666666666666",
+  "cwd": "/w/six",
+  "startedAt": 1700000500000,
+  "kind": "interactive",
+  "entrypoint": "cli",
+  "name": "six-cc",
+  "status": "shell",
+  "updatedAt": 1700000560000,
+  "statusUpdatedAt": 1700000560000
+}

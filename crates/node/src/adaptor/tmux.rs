@@ -156,22 +156,23 @@ const CALL_DEADLINE: Duration = Duration::from_millis(1000);
 /// One line of the format below. Session fields repeat per pane; that is
 /// tmux's shape, and it is cheaper than a second call to join against.
 ///
-/// `session_name` is **last** on purpose: a session name may contain the
-/// separator, and the last field takes the rest of the line. The start
-/// command is asked for as a `1`/`0` rather than as text for the same
-/// reason — it is a whole command line, quotes and pipes and all, and
-/// only its emptiness is being asked about.
+/// **Separated by the unit separator (`\x1f`), not `|`.** The line
+/// carries two fields a person chooses freely — a session name and a
+/// directory — and with `|` between them each one's `|` was the
+/// other's problem: the name went last so its pipes could take the
+/// rest of the line, and the path in front of it could then spill a
+/// piece of itself into the name. A byte neither of them can hold
+/// makes the order a matter of taste rather than a trade, and the
+/// parser a plain split. (`SEP` is what tmux prints for it: format
+/// strings pass ordinary bytes through untouched.)
 ///
-/// `pane_current_path` sits second-to-last, and that placement is the
-/// one trade in this line: a directory whose name contains a `|` would
-/// spill a piece of itself into the session name. It is behind the name
-/// rather than in front of it because the alternative is worse — a name
-/// with a `|` in it is something a person types, a directory with one
-/// is something almost nobody has, and the existing rule already chose
-/// to protect the name.
-const FORMAT: &str = "#{session_id}|#{session_created}|#{session_activity}\
-|#{pane_pid}|#{?pane_start_command,1,0}|#{pane_current_command}\
-|#{pane_current_path}|#{session_name}";
+/// The start command is still asked for as a `1`/`0` rather than as
+/// text: it is a whole command line, and only its emptiness is being
+/// asked about.
+const SEP: char = '\x1f';
+const FORMAT: &str = "#{session_id}\x1f#{session_created}\x1f#{session_activity}\
+\x1f#{pane_pid}\x1f#{?pane_start_command,1,0}\x1f#{pane_current_command}\
+\x1f#{pane_current_path}\x1f#{session_name}";
 
 /// What one look at a multiplexer found.
 #[derive(Debug, Default, Clone)]
@@ -406,7 +407,7 @@ struct Pane {
 
 impl Pane {
     fn parse(line: &str) -> Option<Pane> {
-        let f: Vec<&str> = line.splitn(8, '|').collect();
+        let f: Vec<&str> = line.split(SEP).collect();
         let [id, created, activity, pid, started, current, path, name] = f[..] else {
             return None;
         };
@@ -1021,10 +1022,10 @@ mod tests {
     /// it is the last field.
     #[test]
     fn the_name_takes_the_rest_of_the_line() {
-        assert!(Pane::parse("$1|100|100|10|0|zsh|/tmp").is_none(), "a field short");
-        assert!(Pane::parse("$1|100|100|notapid|0|zsh|/tmp|alpha").is_none());
+        assert!(Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp").is_none(), "a field short");
+        assert!(Pane::parse("$1\x1f100\x1f100\x1fnotapid\x1f0\x1fzsh\x1f/tmp\x1falpha").is_none());
         assert_eq!(
-            Pane::parse("$1|100|100|10|0|zsh|/tmp|has|pipes|in|it").unwrap().session_name,
+            Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1fhas|pipes|in|it").unwrap().session_name,
             "has|pipes|in|it"
         );
     }
@@ -1042,9 +1043,9 @@ mod tests {
     fn output_this_version_cannot_read_is_counted_and_stops_nothing() {
         let fake = fake_tmux(
             "fmt",
-            "$1|100|100|10|0|zsh|/tmp|readable\n\
+            "$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1freadable\n\
              $2|from-a-later-tmux\n\
-             $3|200|200|11|0|zsh|/tmp|also-readable\n",
+             $3\x1f200\x1f200\x1f11\x1f0\x1fzsh\x1f/tmp\x1falso-readable\n",
         );
         let procs = Procs::of([
             (10, proc_named("-zsh", Some(1))),
@@ -1067,7 +1068,7 @@ mod tests {
     /// rather than shown with a guessed one.
     #[test]
     fn a_session_with_nothing_running_in_it_is_counted_not_guessed_at() {
-        let fake = fake_tmux("gone", "$1|100|100|424242|0|zsh|/tmp|ghost\n");
+        let fake = fake_tmux("gone", "$1\x1f100\x1f100\x1f424242\x1f0\x1fzsh\x1f/tmp\x1fghost\n");
         let listing = Tmux::at_binary(&fake).sweep(&Procs::default());
         assert_eq!(listing.rows.len(), 0);
         assert_eq!(listing.unmapped, 1);

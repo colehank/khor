@@ -1,0 +1,9 @@
+{
+  "pid": 4007,
+  "sessionId": "77777777-7777-4777-8777-777777777777",
+  "cwd": "/w/seven",
+  "startedAt": 1700000600000,
+  "kind": "interactive",
+  "entrypoint": "sdk-cli",
+  "name": "seven-sdk"
+}

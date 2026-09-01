@@ -997,11 +997,12 @@ new-session-dir = "目录"
 # Derived, never declared (`khor_node::place`): nobody creates or names
 # a place, so there is nothing here that can go stale.
 new-session-places = "常去的地方"
-# The count beside a place. **段对话 and not 个会话**, because that is
-# what is actually counted: the vendors' own records of conversations
-# that ran there. A plain shell khor opened in that directory is not in
-# this number, and calling it 会话 would promise it was.
-new-session-places-count = "{0} 段对话"
+# The count beside a place: every khor session that ran there —
+# conversations from the vendors' records, terminals from khor's own
+# registry. It was 「段对话」 while only the first half was counted;
+# 会话 is the word now that a shell counts too, and it is the word the
+# list calls each of these rows.
+new-session-places-count = "{0} 个会话"
 new-session-name = "名字"
 new-session-agent = "智能体"
 # Said under the 智能体 buttons **only when nothing is registered and

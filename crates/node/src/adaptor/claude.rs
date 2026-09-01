@@ -104,6 +104,13 @@ fn word_of(status: Option<&str>, waiting_for: Option<&str>) -> Option<State> {
     match status? {
         "busy" => Some(State::Busy),
         "idle" => Some(State::Idle),
+        // The person is running a shell command of their own (`!`) in
+        // the foreground. **The agent is idle**: nothing of claude's is
+        // running and nothing is waiting on the person — the six words
+        // describe the agent, and 忙碌 here would pulse for somebody's
+        // own `ls`. Seen 2026-09-01 as one of the "6 sessions khor
+        // cannot read" on the author's machine.
+        "shell" => Some(State::Idle),
         "waiting" => match waiting_for {
             Some(WAITING_FOR_PERMISSION) => Some(State::Blocked),
             // Waiting for something this adaptor has not been taught.
@@ -686,6 +693,17 @@ impl Adaptor for Claude {
             let word = match procs.alive_since(file.pid, file.started_at) {
                 Some(_) => match word_of(file.status.as_deref(), file.waiting_for.as_deref()) {
                     Some(w) => w,
+                    // **No status at all is not a word khor cannot
+                    // read — it is no word.** A claude driven over
+                    // stream-json (`--print`; khor's own conversation
+                    // shim is one) never writes `status`, because its
+                    // driver already knows every turn. Three of the "6
+                    // sessions khor cannot read" on the author's machine
+                    // were khor's own ghosts, listed a few lines up from
+                    // the complaint about them. Skipped without a count:
+                    // the count is the 适配器过时 signal, and this is not
+                    // the vendor changing its vocabulary.
+                    None if file.status.is_none() => continue,
                     None => {
                         sweep.unmapped += 1;
                         continue;
@@ -1356,6 +1374,37 @@ mod tests {
         );
         assert_eq!(word_at(&sweep, "tui/22222222-2222-4222-8222"), Some(State::Busy));
         assert_eq!(word_at(&sweep, "tui/33333333-3333-4333-8333"), Some(State::Idle));
+    }
+
+    /// Two files from the day the "6 sessions khor cannot read" were
+    /// counted (2026-09-01), and what each of them is:
+    ///
+    /// - `4006`: `status: "shell"` — the person is running a `!`
+    ///   command. The agent is idle, and the row says so.
+    /// - `4007`: no `status` at all, `entrypoint: "sdk-cli"` — a
+    ///   claude driven over stream-json, which never writes one. Not
+    ///   a row (there is no word to paint) and **not counted**: the
+    ///   count means the vendor's vocabulary moved, and no word is not
+    ///   a new word.
+    ///
+    /// The one count left is the control: `4005` does not parse at
+    /// all, and that stays counted whoever is alive — the finder is
+    /// still finding.
+    #[test]
+    fn a_shell_status_is_idle_and_no_status_is_no_word_and_no_count() {
+        let procs = Procs::of([
+            (4006, proc_of(1_700_000_500_000)),
+            (4007, proc_of(1_700_000_600_000)),
+        ]);
+        let sweep = claude_at_fixture().sweep(&procs);
+        assert_eq!(
+            word_at(&sweep, "tui/66666666-6666-4666-8666"),
+            Some(State::Idle),
+            "a person's own shell command is not the agent working"
+        );
+        assert_eq!(word_at(&sweep, "tui/77777777-7777-4777-8777"), None, "no word, no row");
+        assert_eq!(sweep.rows.len(), 1, "{:?}", sweep.rows);
+        assert_eq!(sweep.unmapped, 1, "only the file that does not parse is counted");
     }
 
     /// The graveyard control group, claude side: the same tree that just

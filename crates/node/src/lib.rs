@@ -2216,13 +2216,12 @@ impl Node {
     ///
     /// # What it is not
     ///
-    /// Not an inventory of every session. It reads what the *vendors*
-    /// wrote — a conversation's own record of where it ran — which is
-    /// every chat and TUI row and **no plain shell**: khor starts those
-    /// in a directory but keeps no note of which, so they place
-    /// nothing. That gap is why this answers 「你常去哪儿」 and not
-    /// 「每个会话在哪儿」; the second question needs the fact on the
-    /// row, which is a wire change and its own batch.
+    /// Not an inventory of every session. Two sources, because the
+    /// fact lives in two places: the *vendors'* records answer for
+    /// every conversation, and khor's own registry answers for what
+    /// only khor knows — a directory somebody only ever opened a
+    /// terminal in (`Meta::place`, written at birth since 2026-09-01;
+    /// a shell from before that has no note and counts nowhere).
     ///
     /// # This machine's, and only this machine's
     ///
@@ -2233,6 +2232,7 @@ impl Node {
         let vendors = adaptor::vendor_home(&self.root);
         let mut seen = adaptor::claude::Claude::at(vendors.join(".claude")).places();
         seen.extend(adaptor::codex::Codex::at(vendors.join(".codex")).places());
+        seen.extend(self.live.places());
         place::fold(seen)
     }
 
