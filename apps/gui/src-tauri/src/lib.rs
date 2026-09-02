@@ -239,34 +239,28 @@ fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
     khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
 }
 
-/// The six terminal commands are one attachment registry in gui-core,
-/// mirroring chat: the window polls for a screen because that is the
-/// shape both skins can serve (`khor_gui_core::term` module head).
+/// The seven terminal commands are one attachment registry in gui-core,
+/// mirroring chat: the window replays the feed and tails it, because
+/// a byte stream is the shape both skins can serve
+/// (`khor_gui_core::term` module head — xterm.js is the renderer).
 #[tauri::command]
 fn term_open(id: String, cols: u16, rows: u16) -> Result<(), String> {
     khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows)
 }
 
 #[tauri::command]
-fn term_poll(id: String, since: u64, back: usize) -> Result<khor_gui_core::term::TermBatch, String> {
-    khor_gui_core::term::term_poll(&id, since, back)
+fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
+    khor_gui_core::term::term_attach(&id)
+}
+
+#[tauri::command]
+fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk, String> {
+    khor_gui_core::term::term_stream(&id, since)
 }
 
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
-}
-
-#[tauri::command]
-fn term_wheel(id: String, dir: String, col: u16, row: u16) -> Result<(), String> {
-    khor_gui_core::term::term_wheel(&id, dir == "up", col, row)
-}
-
-/// Pasted text, wrapped by the terminal registry according to what the
-/// program running in there asked for (`term::term_paste`).
-#[tauri::command]
-fn term_paste(id: String, text: String) -> Result<(), String> {
-    khor_gui_core::term::term_paste(&id, &text)
 }
 
 /// Files dropped on a terminal: their paths, shell-quoted, pasted in
@@ -598,10 +592,9 @@ pub fn run() {
             dir_pins,
             pin_dir,
             term_open,
-            term_poll,
+            term_attach,
+            term_stream,
             term_key,
-            term_wheel,
-            term_paste,
             term_drop,
             term_resize,
             term_leave,

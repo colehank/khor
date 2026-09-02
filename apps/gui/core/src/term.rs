@@ -1,325 +1,90 @@
-//! The terminal registry: live attachments to a session's host, painted
-//! as a screen the frontend polls (docs/handoff 终端画屏).
+//! The terminal registry: live attachments to a session's host, kept
+//! as the raw byte stream the frontend's own emulator eats (完整终端批
+//! 2026-09-03 — xterm.js renders; this side stopped painting).
 //!
-//! It mirrors [`crate::chat`] exactly — a webview cannot hold a socket
+//! It mirrors [`crate::chat`] in shape — a webview cannot hold a socket
 //! and the dev bridge serves one call at a time, so the socket lives
-//! here: one reader thread per attachment feeds the host's raw PTY bytes
-//! into a `vt100` screen, and [`term_poll`] answers instantly with a cell
-//! grid. The difference from chat is what the reader keeps: not a growing
-//! list of frames but one screen that the bytes overwrite in place — a
-//! terminal is a *state*, not a stream, so a poll wants the latest screen
-//! whole, and a sequence number is all it needs to skip an unchanged one.
+//! here: one reader thread per attachment. What the reader keeps
+//! changed with that batch: not a painted cell grid but the bytes
+//! themselves, in a bounded feed ([`FEED_CAP`]) a face replays once on
+//! arrival ([`term_attach`]) and then tails ([`term_stream`]). The
+//! screen model lives in the webview now, which is a full terminal;
+//! keeping a second one here to re-paint what xterm already understands
+//! was the drift the cell pipeline kept paying for — cursor arithmetic,
+//! run boxes, the wheel judgment — and the whole surface went with it
+//! (`TermScreen`/`TermRun`/`TermColor`/`TermBatch`/`Wheel`,
+//! `term_poll`/`term_wheel`, `snapshot`).
 //!
-//! The emulation is `vt100`, the same engine the detector reads
-//! (`crates/detect`): one terminal model for both "what does it say" and
-//! "what does it look like", so they can never disagree.
+//! **The vt100 parser stays, demoted from painter to mode oracle.** Two
+//! callers are left: bracketed paste ([`term_paste`] asks the screen
+//! whether DECSET 2004 is on, and [`term_drop`] rides it) and the panic
+//! self-heal in [`paint`] (replace the parser, send a same-size resize,
+//! let SIGWINCH repaint). It keeps no scrollback any more — history is
+//! the feed.
 //!
-//! **Scrollback lives here, in the emulator, and dies with the
-//! attachment.** Closing the pane and opening it again builds a new
-//! parser with an empty history — measured against the alternative and
-//! chosen: what a person reaches back for is almost always the thing
-//! that just scrolled past, and that is inside this attachment.
-//!
-//! **The alternative is written down because it is on the shelf, not
-//! missing**: the host could keep the raw bytes and answer a request for
-//! history, which would survive re-attaching and follow you to another
-//! machine. It needs a new op, a wire format, and an answer to "how much
-//! does the host keep" — a different size of job, and deliberately not
-//! this one.
+//! **Where history comes from**: the feed starts collecting the moment
+//! the attachment opens, and the host pours its ring to every fresh
+//! client first (its own design for every attacher) — so an attach
+//! replays the past the host kept, and the feed carries everything
+//! since. The old head kept a shelf note ("the host could keep the raw
+//! bytes and answer a request for history"); this is that note half
+//! cashed — the near half. Cross-attachment history is still the
+//! host's ring and dies with the host, exactly as before.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use base64::Engine;
 use khor_node::host::{connect, write_frame, ClientOp};
 use khor_node::{Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
 
-/// A cell's colour, kept semantic rather than resolved: an indexed colour
-/// means different pixels in light and dark, and that mapping is the
-/// face's to make against its own palette (docs/UX.md 状态呈现). Default
-/// is "whatever this terminal's foreground/background is".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
-#[serde(tag = "kind", content = "n", rename_all = "snake_case")]
-pub enum TermColor {
-    Default,
-    Idx(u8),
-    Rgb([u8; 3]),
-}
+/// The base64 the two answers speak — standard alphabet, the same
+/// engine the node's wire uses.
+const B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::STANDARD;
 
-impl From<vt100::Color> for TermColor {
-    fn from(c: vt100::Color) -> Self {
-        match c {
-            vt100::Color::Default => TermColor::Default,
-            vt100::Color::Idx(i) => TermColor::Idx(i),
-            vt100::Color::Rgb(r, g, b) => TermColor::Rgb([r, g, b]),
-        }
-    }
-}
+/// How many raw bytes the feed keeps, per attachment.
+///
+/// Enough for a full-screen repaint many times over and for the ring
+/// the host pours on attach; past it the head is trimmed, and a client
+/// that fell that far behind is told to start over
+/// ([`TermChunk::reset`]) rather than handed a stream with a hole —
+/// these bytes are a grammar, and a splice mid-escape is garbage on
+/// screen.
+pub const FEED_CAP: usize = 512 * 1024;
 
-/// A run of adjacent cells that share every attribute **and every
-/// cell's width** — coalesced so a row of one colour is one node to
-/// paint, not eighty.
-///
-/// # Why a run carries its geometry
-///
-/// A terminal is a grid, and a face that paints runs as flowing text is
-/// not painting a grid — it is asking the browser to guess one from
-/// glyph advances. The guess is wrong the moment any glyph comes from a
-/// font other than the measured one, which on this screen is constant:
-/// CJK falls back to a face whose advance is not twice the latin one,
-/// and every symbol an agent draws (`▰▱ ↻ ⏵⏵ ✻ ⏺`) comes from
-/// somewhere else again.
-///
-/// Two things went wrong because of it, both reported from a real
-/// screen (2026-09-01):
-///
-///   - **The cursor sat far past the last character.** It was placed by
-///     arithmetic — `cursor_col * cell_width`, which is right — against
-///     text that had drifted, which is not.
-///   - **A spinner at the head of a line moved the rest of the line**
-///     every time it changed glyph. Flowed text has no cells to hold
-///     anything still.
-///
-/// So a run states where it starts and how many columns it covers, and
-/// the face gives it a box exactly that wide. Drift is then bounded
-/// inside one run and can never reach its neighbours.
-///
-/// **`wide` splits runs that `fg`/`bg` alone would have joined**, which
-/// is the point: a box is only exact if every cell in it is the same
-/// width, so a run may not straddle the boundary between narrow and
-/// double-width cells.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
-pub struct TermRun {
-    pub text: String,
-    /// The column this run starts at — its left edge in cells.
-    pub col: u16,
-    /// How many columns it covers. `text.chars().count()` for a narrow
-    /// run, twice that for a wide one.
-    pub cells: u16,
-    /// Whether every cell in this run is double-width.
-    pub wide: bool,
-    pub fg: TermColor,
-    pub bg: TermColor,
-    pub bold: bool,
-    /// SGR 2, faint. **Not the absence of bold**: claude's TUI writes
-    /// its hints and chrome dim and its headings bold, and a screen
-    /// that painted dim as ordinary weight lost half of that contrast
-    /// — measured on a live tmux capture 2026-09-01: 28 bold, 3 dim,
-    /// 0 italic, and khor had no slot for the 3.
-    pub dim: bool,
-    pub italic: bool,
-    pub underline: bool,
-    pub inverse: bool,
-}
-
-/// One painted screen: its size, cursor, and rows of runs. Rows are as
-/// tall as the screen even when blank, so the grid never jumps.
+/// What an attach answers: everything the feed holds, and the cursor
+/// to tail from ([`term_stream`]'s `since`).
 #[derive(Debug, Clone, Serialize, TS)]
-pub struct TermScreen {
-    pub cols: u16,
-    pub rows: u16,
-    pub cursor_row: u16,
-    pub cursor_col: u16,
-    pub cursor_hidden: bool,
-    /// **What a wheel notch should do here**, decided once and by the
-    /// emulator that knows — see [`Wheel`].
-    pub wheel: Wheel,
-    pub lines: Vec<Vec<TermRun>>,
-}
-
-/// Where a wheel notch goes on this screen.
-///
-/// # The bug this exists for
-///
-/// The wheel walked khor's scrollback unconditionally, and on a
-/// full-screen program that produced garbage: reported 2026-09-01
-/// against a tmux client, where one notch filled the pane with copies
-/// of tmux's status bar and a block of its status colour.
-///
-/// **A full-screen program has no scrollback to walk.** It draws by
-/// addressing the cursor and repainting in place, on the *alternate*
-/// screen — so what falls into khor's history ring is not what scrolled
-/// past, it is fragments of repaints. A real terminal knows this and
-/// turns its own scrolling off while the alternate screen is up; khor
-/// did not, and offered the fragments as history.
-///
-/// # And where the notch goes instead
-///
-/// **To the program, when the program asked for it.** tmux, claude's
-/// TUI and every pager set a mouse mode precisely so that a wheel means
-/// something to them — that is why the wheel works in iTerm inside
-/// tmux and does nothing in a terminal with mouse reporting off. So the
-/// order is: the program if it asked, khor's history if there is real
-/// history, and otherwise nothing.
-///
-/// **Decided here rather than in the face.** Three facts go into it
-/// (the mouse mode, its encoding, and which screen is up), all of them
-/// the emulator's, and a face that re-derived them would be a second
-/// copy of a judgment (docs/UX.md 状态呈现).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum Wheel {
-    /// Send it to the program as a mouse event (`term_wheel`).
-    ToTheProgram,
-    /// Walk khor's own scrollback.
-    ToTheHistory,
-    /// Nowhere: a full-screen program that did not ask for the mouse.
-    Nowhere,
-}
-
-/// How many lines above the screen this app keeps to look back at.
-///
-/// Two thousand at eighty columns is a couple of megabytes per open
-/// terminal, which a desktop does not notice; the half saved by keeping
-/// a thousand only ever shows up as "why is it gone" the one time
-/// somebody reaches for it (领队裁定 2026-08-21). A machine holding
-/// twenty terminals open at once would be the reason to revisit it.
-pub const SCROLLBACK: usize = 2000;
-
-/// What a poll answers: the current screen if it changed since the
-/// cursor (`None` if not — an unchanged terminal costs nothing to skip),
-/// the next cursor, and whether the attachment ended (a goodbye and a
-/// torn socket are one fact to a face, as in chat).
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct TermBatch {
-    pub screen: Option<TermScreen>,
+pub struct TermStart {
+    /// base64 of the feed — raw PTY bytes, not text: they carry
+    /// escapes, split UTF-8, whatever the program wrote.
+    pub bytes: String,
     #[ts(type = "number")]
     pub seq: u64,
+}
+
+/// One pull on the tail. Empty `bytes` when nothing new — the face
+/// polls on its own beat, the old poll's rhythm, and an idle pull
+/// costs a lock and nothing else.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct TermChunk {
+    pub bytes: String,
+    #[ts(type = "number")]
+    pub seq: u64,
+    /// The attachment ended — a goodbye and a torn socket are one fact
+    /// to a face.
     pub gone: bool,
-    /// Where the answer was actually taken from, in lines above the
-    /// live screen. **Not simply what was asked for**: a request to go
-    /// back further than there is history is clamped, and a face that
-    /// painted its own number instead of this one would show somebody
-    /// standing five hundred lines up in a terminal that has twenty.
-    #[ts(type = "number")]
-    pub back: usize,
-    /// How many lines of history exist right now. It grows as output
-    /// scrolls off, which is what lets a face hold its place: the view
-    /// is an offset from the *bottom*, so a line arriving moves the
-    /// content under a fixed offset by one.
-    #[ts(type = "number")]
-    pub depth: usize,
-}
-
-/// The attributes that make two cells one run. Not sent — it is the key
-/// the coalescing compares on.
-#[derive(PartialEq, Eq, Clone, Copy)]
-struct Style {
-    fg: TermColor,
-    bg: TermColor,
-    bold: bool,
-    dim: bool,
-    italic: bool,
-    underline: bool,
-    inverse: bool,
-}
-
-fn style_of(cell: &vt100::Cell) -> Style {
-    Style {
-        fg: cell.fgcolor().into(),
-        bg: cell.bgcolor().into(),
-        bold: cell.bold(),
-        dim: cell.dim(),
-        italic: cell.italic(),
-        underline: cell.underline(),
-        inverse: cell.inverse(),
-    }
-}
-
-/// [`Wheel`]'s judgment, from the emulator's three facts.
-///
-/// **The encoding is part of it, not an afterthought.** khor writes SGR
-/// (`\e[<b;x;yM`), which is what every program that matters negotiates;
-/// a program asking for the 1978 encoding is answered `Nowhere` rather
-/// than with bytes in a shape it did not ask for — silence is a state
-/// it copes with, a malformed report is not.
-fn wheel_of(screen: &vt100::Screen) -> Wheel {
-    use vt100::{MouseProtocolEncoding, MouseProtocolMode};
-    let asked = screen.mouse_protocol_mode() != MouseProtocolMode::None
-        && screen.mouse_protocol_encoding() == MouseProtocolEncoding::Sgr;
-    if asked {
-        return Wheel::ToTheProgram;
-    }
-    if screen.alternate_screen() {
-        return Wheel::Nowhere;
-    }
-    Wheel::ToTheHistory
-}
-
-/// Reads a `vt100` screen into the shape a face paints, coalescing runs.
-/// A wide character keeps its one glyph and its continuation cell is
-/// skipped: a CJK glyph is two columns wide in a monospace grid on its
-/// own, so painting the continuation as a space would double it.
-fn snapshot(screen: &vt100::Screen) -> TermScreen {
-    let (rows, cols) = screen.size();
-    let mut lines = Vec::with_capacity(rows as usize);
-    for row in 0..rows {
-        let mut runs: Vec<TermRun> = Vec::new();
-        let mut carry: Option<(Style, bool)> = None;
-        for col in 0..cols {
-            let cell = screen.cell(row, col);
-            if let Some(c) = cell {
-                // The second half of a double-width character is not a
-                // cell of its own — its column is already spoken for by
-                // the run the first half opened.
-                if c.is_wide_continuation() {
-                    continue;
-                }
-            }
-            let wide = cell.is_some_and(vt100::Cell::is_wide);
-            let (text, style) = match cell {
-                Some(c) if c.has_contents() => (c.contents().to_string(), style_of(c)),
-                Some(c) => (" ".to_string(), style_of(c)),
-                None => (" ".to_string(), Style {
-                    fg: TermColor::Default,
-                    bg: TermColor::Default,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                    inverse: false,
-                }),
-            };
-            let step = if wide { 2 } else { 1 };
-            // **The width joins the style in deciding what a run is.** A
-            // box is only exact if every cell in it is the same width.
-            if carry == Some((style, wide)) {
-                let last = runs.last_mut().unwrap();
-                last.text.push_str(&text);
-                last.cells += step;
-            } else {
-                runs.push(TermRun {
-                    text,
-                    col,
-                    cells: step,
-                    wide,
-                    fg: style.fg,
-                    bg: style.bg,
-                    bold: style.bold,
-                    dim: style.dim,
-                    italic: style.italic,
-                    underline: style.underline,
-                    inverse: style.inverse,
-                });
-                carry = Some((style, wide));
-            }
-        }
-        lines.push(runs);
-    }
-    let (cursor_row, cursor_col) = screen.cursor_position();
-    TermScreen {
-        cols,
-        rows,
-        cursor_row,
-        cursor_col,
-        cursor_hidden: screen.hide_cursor(),
-        wheel: wheel_of(screen),
-        lines,
-    }
+    /// `since` fell off the feed's trimmed head, or names a life this
+    /// `Term` never lived (a re-made attachment counts from zero
+    /// again): `bytes` is the whole feed — reset the emulator and
+    /// replay, never splice.
+    pub reset: bool,
 }
 
 struct Term {
@@ -333,20 +98,18 @@ struct Term {
     /// the first chunk and hand the rest to the parser as `q`s
     /// (`crate::acs`).
     acs: Mutex<crate::acs::Acs>,
-    /// Bumped on every byte batch — the poll skips an unchanged screen.
-    seq: AtomicU64,
     gone: AtomicBool,
     /// Open count, for React's double-mount, exactly as chat explains.
     holds: AtomicUsize,
-    /// Where the last answer was taken from. **A screen is worth
-    /// sending when the view moved, and the sequence number cannot say
-    /// that** — coming back down to the live screen changes no bytes,
-    /// so a poll judged on `seq` alone answers "nothing new" and the
-    /// face goes on painting the history it was looking at. Kept per
-    /// attachment rather than per reader: with two panes at different
-    /// offsets it only means an extra screen now and then, which is
-    /// cheap and never wrong.
-    last_back: AtomicUsize,
+    /// The bytes themselves, exactly as the parser ate them (post-ACS
+    /// filter — the two consumers must see one stream), head-trimmed at
+    /// [`FEED_CAP`].
+    feed: Mutex<VecDeque<u8>>,
+    /// Total bytes ever pushed into `feed` since this `Term` was made —
+    /// the stream cursor. `fed - feed.len()` is the oldest byte still
+    /// held. Written only inside [`push_feed`], under the `feed` lock,
+    /// so a reader holding that lock sees the pair consistent.
+    fed: AtomicU64,
 }
 
 /// A lock that outlives a panic on the other side. A reader thread that
@@ -450,12 +213,14 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
         conn: Mutex::new(conn),
-        parser: Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK)),
+        // No scrollback: the parser answers modes now, not history —
+        // history is the feed, and xterm keeps the scroll.
+        parser: Mutex::new(vt100::Parser::new(rows, cols, 0)),
         acs: Mutex::new(crate::acs::Acs::default()),
-        seq: AtomicU64::new(0),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
-        last_back: AtomicUsize::new(0),
+        feed: Mutex::new(VecDeque::new()),
+        fed: AtomicU64::new(0),
     });
     let reader = term.clone();
     std::thread::spawn(move || {
@@ -465,11 +230,12 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
             match reading.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if let Some((cols, rows)) = paint(&reader.acs, &reader.parser, &buf[..n]) {
+                    if let Some((cols, rows)) =
+                        paint(&reader.acs, &reader.parser, &reader.feed, &reader.fed, &buf[..n])
+                    {
                         let mut conn = plock(&reader.conn);
                         let _ = write_frame(&mut *conn, &ClientOp::Resize { cols, rows });
                     }
-                    reader.seq.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
@@ -479,40 +245,84 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     Ok(())
 }
 
-/// **The one path bytes take from the socket to the screen.** A free
-/// function rather than three lines inside the reader thread so a test
-/// can run the same composition the reader runs — the failure this
-/// guards against is not a broken filter but a filter that is never
-/// called, and a test that assembled its own pipeline would pass
+/// **The one path bytes take from the socket onward** — through the
+/// ACS filter once, then into both consumers of the same filtered
+/// bytes: the feed a face replays, and the parser that answers modes.
+/// A free function rather than lines inside the reader thread so a
+/// test can run the reader's own composition — the failure this guards
+/// against is not a broken filter or a broken feed but one that is
+/// never called, and a test that assembled its own pipeline would pass
 /// either way.
 ///
-/// Answers the size to send back as a `Resize` when the screen had to
+/// Answers the size to send back as a `Resize` when the parser had to
 /// be replaced, and `None` otherwise.
 fn paint(
     acs: &Mutex<crate::acs::Acs>,
     parser: &Mutex<vt100::Parser>,
+    feed: &Mutex<VecDeque<u8>>,
+    fed: &AtomicU64,
     bytes: &[u8],
 ) -> Option<(u16, u16)> {
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    // DEC Special Graphics before the parser sees it: `vt100` does not
-    // implement SCS, so an ncurses border would otherwise land as
-    // literal `l q k` (`crate::acs`). Taken and released before the
-    // parser's lock — the two are never held together, so this thread
-    // joins no lock order.
+    // DEC Special Graphics before either consumer sees it: `vt100` does
+    // not implement SCS (`crate::acs`), and xterm.js gets the same
+    // translation so the mode oracle and the picture can never disagree
+    // about one stream. Taken and released before any other lock.
     let bytes = plock(acs).filter(bytes).into_owned();
+    // The feed first: a parser corner-case panic must not cost the face
+    // its bytes — the heal below repaints the parser, and the stream
+    // has to stay whole either way.
+    push_feed(feed, fed, &bytes);
     // The catch is inside the lock scope on purpose: the guard then
     // drops normally and the mutex is never poisoned. On a panic
-    // (vt100's corner cases — see `plock`) the screen is replaced at
+    // (vt100's corner cases — see `plock`) the parser is replaced at
     // the same size and a same-size resize is sent, which is a
     // SIGWINCH: the program repaints the whole frame into the fresh
     // screen (mandala's self-heal trick).
     let mut g = plock(parser);
     if catch_unwind(AssertUnwindSafe(|| g.process(&bytes))).is_err() {
         let (rows, cols) = g.screen().size();
-        *g = vt100::Parser::new(rows, cols, SCROLLBACK);
+        *g = vt100::Parser::new(rows, cols, 0);
         return Some((cols, rows));
     }
     None
+}
+
+/// Appends to the feed and advances the cursor, trimming the head past
+/// [`FEED_CAP`]. `fed` moves only here, under the feed lock.
+fn push_feed(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64, bytes: &[u8]) {
+    let mut g = plock(feed);
+    g.extend(bytes.iter().copied());
+    let over = g.len().saturating_sub(FEED_CAP);
+    if over > 0 {
+        g.drain(..over);
+    }
+    fed.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+}
+
+/// The whole feed and its end cursor, consistent under one lock.
+fn take_all(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64) -> (Vec<u8>, u64) {
+    let g = plock(feed);
+    (g.iter().copied().collect(), fed.load(Ordering::Relaxed))
+}
+
+/// The bytes from `since` to the end — or, when `since` is off the
+/// trimmed head or from another life (a re-made `Term` counts from
+/// zero again, so a stale cursor can be *bigger* than anything this
+/// feed ever counted), the whole feed with `reset` raised.
+fn take_since(
+    feed: &Mutex<VecDeque<u8>>,
+    fed: &AtomicU64,
+    since: u64,
+) -> (Vec<u8>, u64, bool) {
+    let g = plock(feed);
+    let end = fed.load(Ordering::Relaxed);
+    let start = end - g.len() as u64;
+    if since < start || since > end {
+        return (g.iter().copied().collect(), end, true);
+    }
+    let from = (since - start) as usize;
+    (g.iter().skip(from).copied().collect(), end, false)
 }
 
 fn term_of(id: &str) -> Result<Arc<Term>, String> {
@@ -524,34 +334,26 @@ fn term_of(id: &str) -> Result<Arc<Term>, String> {
         .ok_or_else(|| khor_catalog::msg::no_such_session(id))
 }
 
-/// The screen since `since` — the whole current screen if the sequence
-/// moved, nothing if it did not. Instant either way.
-pub fn term_poll(id: &str, since: u64, back: usize) -> Result<TermBatch, String> {
+/// The feed so far, for a face that just attached: reset the emulator,
+/// write these bytes, then tail from `seq` with [`term_stream`]. The
+/// host pours its ring to every fresh client, so this carries the
+/// history the host kept plus everything since this attachment opened.
+pub fn term_attach(id: &str) -> Result<TermStart, String> {
     let term = term_of(id)?;
-    let seq = term.seq.load(Ordering::Relaxed);
-    // **One lock for the whole look, and the parser is left where it was
-    // found.** Reading history is done by moving the emulator's own view
-    // and reading the cells through it, so the move, the read and the
-    // move back happen without letting go — two panes on one session
-    // share this parser (the registry is keyed by session id), and a
-    // window left shifted is the other pane's screen scrolled away by
-    // somebody it never heard of.
-    let mut g = plock(&term.parser);
-    let screen = g.screen_mut();
-    // The clamp is the emulator's, so the depth is read by asking for
-    // more than can exist and seeing where it lands.
-    screen.set_scrollback(usize::MAX);
-    let depth = screen.scrollback();
-    screen.set_scrollback(back);
-    let at = screen.scrollback();
-    // A screen is worth sending when the terminal moved, whenever the
-    // reader is looking at history at all (the view then depends on
-    // where they stand, not only on what arrived), and on the one move
-    // that changes neither: coming back down to the live screen.
-    let moved = at != term.last_back.swap(at, Ordering::Relaxed);
-    let shot = (seq != since || at > 0 || moved).then(|| snapshot(g.screen()));
-    g.screen_mut().set_scrollback(0);
-    Ok(TermBatch { screen: shot, seq, gone: term.gone.load(Ordering::Relaxed), back: at, depth })
+    let (bytes, seq) = take_all(&term.feed, &term.fed);
+    Ok(TermStart { bytes: B64.encode(bytes), seq })
+}
+
+/// The bytes since `since` — see [`TermChunk`] for the two flags.
+pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
+    let term = term_of(id)?;
+    let (bytes, seq, reset) = take_since(&term.feed, &term.fed, since);
+    Ok(TermChunk {
+        bytes: B64.encode(bytes),
+        seq,
+        gone: term.gone.load(Ordering::Relaxed),
+        reset,
+    })
 }
 
 /// Keystrokes, as the bytes a terminal would send — the face translates
@@ -560,40 +362,6 @@ pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
     let term = term_of(id)?;
     let mut conn = plock(&term.conn);
     write_frame(&mut *conn, &ClientOp::Input(bytes))
-}
-
-/// One wheel notch, as the mouse report the program asked for.
-///
-/// **SGR, and only SGR** (`\e[<b;x;yM`): 64 is wheel-up, 65 wheel-down,
-/// and the coordinates are 1-based. It is what tmux, claude's TUI and
-/// every pager negotiate; the older encodings cannot express a column
-/// past 223 and khor would be sending a lie on any real window.
-///
-/// **Clamped to the screen** rather than trusted from the face: a
-/// report naming a cell that is not there is a report about nothing,
-/// and the face's arithmetic runs on a cell size it measured.
-///
-/// Refuses when the program did not ask ([`Wheel`] is the same
-/// judgment, answered on the snapshot the face already has) — so a
-/// notch cannot become bytes that arrive as a stray escape in
-/// somebody's shell prompt.
-pub fn term_wheel(id: &str, up: bool, col: u16, row: u16) -> Result<(), String> {
-    let term = term_of(id)?;
-    let (wheel, cols, rows) = {
-        let g = plock(&term.parser);
-        let screen = g.screen();
-        let (r, c) = screen.size();
-        (wheel_of(screen), c, r)
-    };
-    if wheel != Wheel::ToTheProgram {
-        return Ok(());
-    }
-    let x = col.min(cols.saturating_sub(1)) + 1;
-    let y = row.min(rows.saturating_sub(1)) + 1;
-    let button = if up { 64 } else { 65 };
-    let report = format!("\x1b[<{button};{x};{y}M");
-    let mut conn = plock(&term.conn);
-    write_frame(&mut *conn, &ClientOp::Input(report.into_bytes()))
 }
 
 /// A paste, wrapped the way the program in there asked for it to be.
@@ -616,7 +384,13 @@ pub fn term_wheel(id: &str, up: bool, col: u16, row: u16) -> Result<(), String> 
 /// A program that has *not* asked keeps the old behaviour exactly: the
 /// bytes go through bare, because wrapping them for a reader that does
 /// not know the escape would paste the escape.
-pub fn term_paste(id: &str, text: &str) -> Result<(), String> {
+///
+/// **Private since the xterm.js move** (完整终端批, and the user waived
+/// old-version compatibility): xterm wraps the person's own clipboard
+/// gesture itself, so no face calls this over the wire any more. The
+/// one caller left is [`term_drop`] — a dropped file is a paste, and
+/// the wrapping decision still lives where the DECSET 2004 fact is.
+fn term_paste(id: &str, text: &str) -> Result<(), String> {
     let term = term_of(id)?;
     let bracketed = plock(&term.parser).screen().bracketed_paste();
     let mut bytes = Vec::new();
@@ -751,7 +525,6 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String]) -> Result<(), String> 
 pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
     let term = term_of(id)?;
     plock(&term.parser).screen_mut().set_size(rows, cols);
-    term.seq.fetch_add(1, Ordering::Relaxed);
     let mut conn = plock(&term.conn);
     write_frame(&mut *conn, &ClientOp::Resize { cols, rows })
 }
@@ -789,192 +562,129 @@ mod tests {
         assert_eq!(*plock(&m), 7, "plock answers with the value regardless");
     }
 
-    /// **The filter is wired into the path the socket's bytes take**,
-    /// which is a different claim from "the filter works" (`acs`'s own
-    /// tests make that one). This runs `paint`, the function the reader
-    /// thread runs, so a filter that stopped being called would show up
-    /// here as a row of `l q k`.
+    /// **The filter and the feed are wired into the path the socket's
+    /// bytes take** — `paint`, the composition the reader thread runs.
+    /// Three claims in one run: the feed holds the *filtered* bytes
+    /// (xterm must see exactly what the mode oracle saw, or the two
+    /// disagree about one stream), the cursor counts exactly what went
+    /// in, and the parser still ate the same thing (its grid drew the
+    /// border). The control arm proves the filter is a mode, not a
+    /// blanket rewrite of `q` — and, for the feed, that an unfiltered
+    /// stream arrives verbatim.
     ///
-    /// Two chunks, because the charset is a mode: the reader gets
-    /// whatever the socket hands it, and the designator and the drawing
-    /// routinely arrive in different reads.
+    /// Two chunks, because the charset is a mode: the designator and
+    /// the drawing routinely arrive in different reads.
     #[test]
-    fn the_reader_path_draws_an_ncurses_border_as_a_border() {
+    fn the_reader_path_feeds_the_same_filtered_bytes_it_parses() {
         let acs = Mutex::new(crate::acs::Acs::default());
         let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
-        assert_eq!(paint(&acs, &parser, b"\x1b(0"), None);
-        assert_eq!(paint(&acs, &parser, b"lqqqk"), None);
-        let s = snapshot(plock(&parser).screen());
+        let feed = Mutex::new(VecDeque::new());
+        let fed = AtomicU64::new(0);
+        assert_eq!(paint(&acs, &parser, &feed, &fed, b"\x1b(0"), None);
+        assert_eq!(paint(&acs, &parser, &feed, &fed, b"lqqqk"), None);
+        let (bytes, seq) = take_all(&feed, &fed);
+        assert!(!bytes.is_empty(), "an empty feed is the un-called feed this test exists for");
+        assert_eq!(seq, bytes.len() as u64, "the cursor counts what the feed holds");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("┌───┐"), "the feed carries the filtered border: {text:?}");
         assert!(
-            s.lines[0][0].text.starts_with("┌───┐"),
-            "the border must reach the screen drawn: {:?}",
-            s.lines[0][0].text
+            plock(&parser).screen().contents().contains('┌'),
+            "…and the parser ate the same bytes"
         );
 
-        // The control: the same five letters with no charset invoked
-        // are five letters, so this is not a blanket rewrite of `q`.
+        // The control: no designator, five letters stay five letters —
+        // in the feed and on the oracle's grid alike.
         let acs = Mutex::new(crate::acs::Acs::default());
         let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
-        paint(&acs, &parser, b"lqqqk");
-        let s = snapshot(plock(&parser).screen());
-        assert!(s.lines[0][0].text.starts_with("lqqqk"), "got {:?}", s.lines[0][0].text);
+        let feed = Mutex::new(VecDeque::new());
+        let fed = AtomicU64::new(0);
+        paint(&acs, &parser, &feed, &fed, b"lqqqk");
+        let (bytes, _) = take_all(&feed, &fed);
+        assert_eq!(bytes, b"lqqqk", "no mode, no rewrite");
     }
 
-    /// **Every run states where it starts and how wide it is, and the
-    /// two always agree with the grid.** This is the claim the painted
-    /// terminal rests on: the face gives each run a box exactly
-    /// `cells` wide, so a glyph from a fallback font can be loose or
-    /// tight inside its own run and still not move anything after it.
-    ///
-    /// Reported from a real screen 2026-09-01: a spinner at the head of
-    /// a line moved the rest of the line every time it changed glyph,
-    /// and the cursor sat far past the last character — both of them
-    /// flowed text pretending to be a grid.
+    /// attach → stream is seamless: what attach ends at, stream picks
+    /// up from, and the two halves concatenate to exactly what was
+    /// fed. Then an idle pull answers empty at the same cursor — the
+    /// face's 50ms beat costs a lock and nothing else.
     #[test]
-    fn every_run_says_where_it_starts_and_the_columns_add_up() {
-        // Three styles, so three runs: default, red, default again.
-        let s = feed(b"ab\x1b[31mcd\x1b[0mef");
-        let runs = &s.lines[0];
-        assert!(runs.len() >= 3, "a colour change is a run boundary: {runs:?}");
-        assert_eq!((runs[0].col, runs[0].cells), (0, 2));
-        assert_eq!((runs[1].col, runs[1].cells), (2, 2));
-        assert_eq!((runs[2].col, runs[2].cells), (4, 6), "the tail runs to the edge");
-        // The invariant, on every row of every screen: runs tile the
-        // line with no gap and no overlap, and end exactly at `cols`.
-        for (i, line) in s.lines.iter().enumerate() {
-            let mut at = 0;
-            for r in line {
-                assert_eq!(r.col, at, "row {i} run {r:?} does not start where the last one ended");
-                at += r.cells;
-            }
-            assert_eq!(at, s.cols, "row {i} must be covered exactly once");
-        }
+    fn attach_then_stream_is_seamless_and_idle_is_empty() {
+        let feed = Mutex::new(VecDeque::new());
+        let fed = AtomicU64::new(0);
+        push_feed(&feed, &fed, b"hello ");
+        let (first, at) = take_all(&feed, &fed);
+        push_feed(&feed, &fed, b"world");
+        let (rest, end, reset) = take_since(&feed, &fed, at);
+        assert!(!reset, "a cursor still on the feed never resets");
+        assert_eq!([first, rest].concat(), b"hello world");
+        assert_eq!(end, 11);
+        let (idle, still, reset) = take_since(&feed, &fed, end);
+        assert!(idle.is_empty() && still == end && !reset, "idle is empty at the same cursor");
     }
 
-    /// **A double-width character owns two columns and says so** — and
-    /// it may not share a run with narrow cells, because a box is only
-    /// exact when every cell in it is the same width.
-    ///
-    /// The control is in the same assertion: the latin half of the same
-    /// line, in the same style, is a *separate* run. Without the width
-    /// in the run-boundary test they would coalesce, `cells` would be
-    /// right and the box would still be a lie.
+    /// Past the cap the head is trimmed, and a cursor that fell off it
+    /// — or one from a previous life, bigger than anything this feed
+    /// ever counted — answers reset-with-everything, never a splice
+    /// with a hole mid-escape.
     #[test]
-    fn a_wide_character_takes_two_columns_and_a_run_of_its_own() {
-        let s = feed("ab中".as_bytes());
-        let runs = &s.lines[0];
-        assert_eq!(runs[0].text, "ab");
-        assert!(!runs[0].wide);
-        assert_eq!((runs[0].col, runs[0].cells), (0, 2));
-        assert_eq!(runs[1].text, "中", "same style, different width — a run of its own");
-        assert!(runs[1].wide);
-        assert_eq!((runs[1].col, runs[1].cells), (2, 2), "one character, two columns");
-        assert_eq!(runs[2].col, 4, "and the next run starts past both of them");
-        let mut at = 0;
-        for r in runs {
-            assert_eq!(r.col, at);
-            at += r.cells;
-        }
-        assert_eq!(at, s.cols);
+    fn a_cursor_off_the_trimmed_head_gets_a_reset_not_a_splice() {
+        let feed = Mutex::new(VecDeque::new());
+        let fed = AtomicU64::new(0);
+        let chunk = vec![7u8; 200 * 1024];
+        push_feed(&feed, &fed, &chunk);
+        let (_, held) = take_all(&feed, &fed);
+        push_feed(&feed, &fed, &chunk);
+        push_feed(&feed, &fed, &chunk);
+        assert_eq!(plock(&feed).len(), FEED_CAP, "the feed is capped");
+        let (bytes, end, reset) = take_since(&feed, &fed, 0);
+        assert!(reset, "cursor 0 fell off the trimmed head");
+        assert_eq!(bytes.len(), FEED_CAP, "…and the answer is everything still held");
+        assert_eq!(end, 600 * 1024);
+        let (tail, _, reset) = take_since(&feed, &fed, held);
+        assert!(!reset, "a cursor still on the feed streams on");
+        assert_eq!(tail.len(), 400 * 1024);
+        let (_, _, reset) = take_since(&feed, &fed, end + 1);
+        assert!(reset, "another life's cursor is a restart, not a backwards stream");
     }
 
-    /// **Where a wheel notch goes, on the three screens there are.**
-    ///
-    /// The bug: every notch walked khor's scrollback, and inside a
-    /// full-screen program that meant walking fragments of its own
-    /// repaints — one notch in a tmux client filled the pane with
-    /// copies of its status bar (2026-09-01).
-    ///
-    /// The control arm is the ordinary shell, which must keep its
-    /// history: a fix that answered "nowhere" everywhere would stop the
-    /// garbage and take the scrollback with it.
+    /// The public doors over a real registry entry: attach hands back
+    /// base64 of the feed with its cursor, stream tails it, and a
+    /// `gone` flip reaches the answer. Built on a real local socket
+    /// pair — no host, because what is under test ends at the
+    /// registry.
     #[test]
-    fn a_wheel_notch_goes_to_the_program_the_history_or_nowhere() {
-        let mut p = vt100::Parser::new(4, 10, 100);
-        // A plain shell: no alternate screen, no mouse asked for.
-        p.process(b"hello\r\n");
-        assert_eq!(wheel_of(p.screen()), Wheel::ToTheHistory, "the control: a shell keeps its history");
+    fn the_doors_answer_base64_and_carry_gone() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let term = Arc::new(Term {
+            conn: Mutex::new(conn),
+            parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
+            acs: Mutex::new(crate::acs::Acs::default()),
+            gone: AtomicBool::new(false),
+            holds: AtomicUsize::new(1),
+            feed: Mutex::new(VecDeque::new()),
+            fed: AtomicU64::new(0),
+        });
+        push_feed(&term.feed, &term.fed, b"\x1b[31mhi");
+        let id = format!("tui/feed-doors-{}", std::process::id());
+        plock(terms()).insert(id.clone(), term.clone());
 
-        // A full-screen program that never asked for the mouse: there is
-        // no history to walk, so a notch has nowhere to go.
-        let mut p = vt100::Parser::new(4, 10, 100);
-        p.process(b"\x1b[?1049h");
-        assert_eq!(wheel_of(p.screen()), Wheel::Nowhere);
+        let start = term_attach(&id).unwrap();
+        assert_eq!(
+            B64.decode(start.bytes.as_bytes()).unwrap(),
+            b"\x1b[31mhi",
+            "attach replays the raw bytes, escapes intact"
+        );
+        assert_eq!(start.seq, 7);
 
-        // …and one that did ask, in the encoding khor writes: the notch
-        // is the program's.
-        let mut p = vt100::Parser::new(4, 10, 100);
-        p.process(b"\x1b[?1049h\x1b[?1000h\x1b[?1006h");
-        assert_eq!(wheel_of(p.screen()), Wheel::ToTheProgram);
+        push_feed(&term.feed, &term.fed, b"!");
+        term.gone.store(true, Ordering::Relaxed);
+        let chunk = term_stream(&id, start.seq).unwrap();
+        assert_eq!(B64.decode(chunk.bytes.as_bytes()).unwrap(), b"!");
+        assert!(chunk.gone, "a torn socket reaches the face");
+        assert!(!chunk.reset);
 
-        // **Mouse tracking without the alternate screen still wins.** A
-        // pager can ask for the mouse on the main screen, and the notch
-        // it asked for is not khor's to spend on scrollback.
-        let mut p = vt100::Parser::new(4, 10, 100);
-        p.process(b"\x1b[?1000h\x1b[?1006h");
-        assert_eq!(wheel_of(p.screen()), Wheel::ToTheProgram);
-
-        // **An encoding khor does not write is answered with silence,
-        // not with bytes in a shape nobody asked for.** The 1978
-        // encoding cannot express a column past 223, so a report in it
-        // would be a lie on any real window.
-        let mut p = vt100::Parser::new(4, 10, 100);
-        p.process(b"\x1b[?1049h\x1b[?1000h");
-        assert_eq!(wheel_of(p.screen()), Wheel::Nowhere);
-    }
-
-    /// SGR 2 reaches the run as `dim`, distinct from bold, and SGR 22
-    /// clears both — which is how claude's TUI ends a heading and a
-    /// hint alike.
-    #[test]
-    fn faint_text_is_its_own_attribute_and_22_clears_it_with_bold() {
-        // Ten columns wide (`feed`), so the words are short: a line
-        // that wrapped would put the heading on row two.
-        let s = feed(b"\x1b[2mhi\x1b[22m ok \x1b[1mhd\x1b[22m");
-        let runs = &s.lines[0];
-        let hint = runs.iter().find(|r| r.text == "hi").expect("the hint run");
-        assert!(hint.dim && !hint.bold, "faint is faint, not bold");
-        let ok = runs.iter().find(|r| r.text.contains("ok")).expect("the plain run");
-        assert!(!ok.dim && !ok.bold, "22 turns faint off");
-        let head = runs.iter().find(|r| r.text == "hd").expect("the heading run");
-        assert!(head.bold && !head.dim, "bold is bold, not faint");
-    }
-
-    fn feed(bytes: &[u8]) -> TermScreen {
-        let mut parser = vt100::Parser::new(3, 10, 0);
-        parser.process(bytes);
-        snapshot(parser.screen())
-    }
-
-    #[test]
-    fn plain_text_lands_in_one_run_on_the_first_row() {
-        let s = feed(b"hello");
-        assert_eq!(s.rows, 3);
-        assert_eq!(s.cols, 10);
-        // "hello" then five trailing spaces, all default style → one run.
-        assert_eq!(s.lines[0].len(), 1);
-        assert_eq!(s.lines[0][0].text, "hello     ");
-        assert_eq!(s.cursor_col, 5, "the cursor sits after the text");
-    }
-
-    #[test]
-    fn a_colour_change_splits_the_row_into_runs() {
-        // "ab" default, then red "cd".
-        let s = feed(b"ab\x1b[31mcd");
-        let runs = &s.lines[0];
-        assert!(runs.len() >= 2, "the colour change is a new run: {runs:?}");
-        assert_eq!(runs[0].text, "ab");
-        assert_eq!(runs[0].fg, TermColor::Default);
-        assert_eq!(runs[1].text, "cd");
-        assert_eq!(runs[1].fg, TermColor::Idx(1), "SGR 31 is indexed red");
-    }
-
-    #[test]
-    fn a_cursor_move_paints_where_it_was_addressed() {
-        // Move to row 2 col 3 (1-based in the escape), write "X".
-        let s = feed(b"\x1b[2;3HX");
-        assert_eq!(s.lines[1][0].text.chars().nth(2), Some('X'));
-        assert_eq!((s.cursor_row, s.cursor_col), (1, 3));
+        plock(terms()).remove(&id);
     }
 }
 

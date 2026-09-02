@@ -226,26 +226,10 @@ pub fn answer(
             crate::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
             Ok("null".to_owned())
         }
-        "term_poll" => to_json(&crate::term::term_poll(
-            &arg("id")?,
-            num("since")?,
-            num("back")? as usize,
-        )?),
+        "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
+        "term_stream" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
         "term_key" => {
             crate::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
-            Ok("null".to_owned())
-        }
-        "term_wheel" => {
-            crate::term::term_wheel(
-                &arg("id")?,
-                arg("dir")? == "up",
-                num("col")? as u16,
-                num("row")? as u16,
-            )?;
-            Ok("null".to_owned())
-        }
-        "term_paste" => {
-            crate::term::term_paste(&arg("id")?, &arg("text")?)?;
             Ok("null".to_owned())
         }
         "term_drop" => {
