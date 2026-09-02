@@ -37,7 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
-import { TabStrip, type TabFace } from "@/browse/TabStrip";
+import { TabCount, TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
@@ -349,6 +349,17 @@ export default function App() {
   const sessionTabs = useSessionTabs();
   const { tabs: openTabs, drop: dropTabs } = sessionTabs;
   const selected = sessionTabs.active;
+  // Whether the open tabs are up as a list to pick from (`TabSwitcher`)
+  // instead of the front tab's content. The narrow face's only way to
+  // another tab — a phone has no strip — and the wide face's answer
+  // once the strip has stopped showing every tab (`TabStrip.onSwitch`,
+  // which is the side that can measure that). Reset wherever the tabs
+  // stop being the thing on screen: another landing, the mark's place,
+  // or the last tab closing.
+  const [switchingTabs, setSwitchingTabs] = useState(false);
+  useEffect(() => {
+    if (openTabs.length === 0) setSwitchingTabs(false);
+  }, [openTabs.length]);
   /** The open ids that have actually been seen on the list — see the
       effect below for why "open" alone is not enough. */
   const wasListed = useRef<Set<string>>(new Set());
@@ -454,7 +465,9 @@ export default function App() {
   // and a gate that only counted the first would leave the second
   // showing whatever was last fetched.
   useEffect(() => {
-    if (!mark && landing !== "devices") return;
+    // …and the 额度 page now, which draws the same answer as a band of
+    // its own (`QuotaLanding`'s foot).
+    if (!mark && landing !== "devices" && landing !== "quota") return;
     let live = true;
     const tick = () => {
       fetchQuota()
@@ -853,6 +866,7 @@ export default function App() {
             setMark(false);
             setLanding(l.key);
             setScreen("list");
+            setSwitchingTabs(false);
             // Choosing a landing reopens a collapsed list: the rail is
             // the anchor a hidden pane comes back from (the seam's own
             // handle is the other way), and it comes back at the width
@@ -902,6 +916,7 @@ export default function App() {
         onClick={() => {
           setMark(true);
           setScreen("list");
+          setSwitchingTabs(false);
         }}
         // Whitespace is the whole separator, and it is deliberately not
         // a line. A rule would have to be drawn twice to say one thing —
@@ -949,6 +964,22 @@ export default function App() {
           : { id, label: id, face: null, path: "" };
       }),
     [openTabs, rows],
+  );
+  // The open tabs as rows to pick from — one switcher, written once,
+  // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
+  // a session tab *is* its session, so there is no blank tab to mint —
+  // sessions are made by the wizard, and the switcher's foot stays off.
+  const tabSwitcher = (
+    <TabSwitcher
+      faces={tabFaces}
+      active={selected ?? ""}
+      onFocus={(id) => {
+        sessionTabs.focus(id);
+        setSwitchingTabs(false);
+        setScreen("detail");
+      }}
+      onClose={sessionTabs.close}
+    />
   );
   const paneName = LANDINGS.find((l) => l.key === landing)!.name;
 
@@ -1050,6 +1081,15 @@ export default function App() {
       days={selectedRow ? days[selectedRow.id] : undefined}
       onBack={() => setScreen("list")}
       onNew={() => setSheet("new")}
+      // The way to the other open tabs on the face that has no strip:
+      // the count is the button (`TabCount`), and pressing it swaps
+      // this pane for the switcher. Wide has the strip above the pane,
+      // so it hands nothing in.
+      tabs={
+        narrow && openTabs.length > 0 ? (
+          <TabCount n={openTabs.length} onPress={() => setSwitchingTabs(true)} />
+        ) : undefined
+      }
       // The network's now, painted from the shell's own polled state —
       // rows and devices, both already on their beats. It asked for a
       // third thing until 2026-08-29 (the spending tally, for the 今天
@@ -1220,12 +1260,14 @@ export default function App() {
             {mark
               ? markPlace
               : quotas
-                ? <QuotaLanding narrow />
+                ? <QuotaLanding narrow quota={quota} />
                 : browses
                   ? browsingLanding
-                  : screen === "detail" && detail
-                    ? detail
-                    : list}
+                  : switchingTabs && openTabs.length > 0
+                    ? tabSwitcher
+                    : screen === "detail" && detail
+                      ? detail
+                      : list}
           </div>
           {rail}
           {sheets}
@@ -1238,7 +1280,7 @@ export default function App() {
             <div className="min-w-0 flex-1">{markPlace}</div>
           ) : quotas ? (
             <div className="min-w-0 flex-1">
-              <QuotaLanding narrow={false} />
+              <QuotaLanding narrow={false} quota={quota} />
             </div>
           ) : browses ? (
             // The whole width beside the rail, and that width is the
@@ -1290,13 +1332,21 @@ export default function App() {
                       active={selected ?? ""}
                       onFocus={(id) => {
                         sessionTabs.focus(id);
+                        setSwitchingTabs(false);
                         setScreen("detail");
                       }}
                       onClose={sessionTabs.close}
+                      // The strip decides *whether* to offer the way to
+                      // the switcher — only it can measure whether it
+                      // has stopped showing every tab. This side only
+                      // says what pressing it does.
+                      onSwitch={() => setSwitchingTabs(true)}
                     />
                   </div>
                 )}
-                <div className="min-h-0 flex-1">{detail}</div>
+                <div className="min-h-0 flex-1">
+                  {sessions && switchingTabs && openTabs.length > 0 ? tabSwitcher : detail}
+                </div>
               </div>
             </>
           )}

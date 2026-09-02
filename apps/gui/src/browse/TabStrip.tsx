@@ -346,7 +346,11 @@ export function TabSwitcher({
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
-  onNew: () => void;
+  /** Mint a tab. Absent on a switcher whose tabs are not made here —
+      the session tabs' rule, same as the strip's own `onNew`: a session
+      tab *is* its session, so there is nothing a "new tab" here could
+      open, and the foot stays off. */
+  onNew?: () => void;
 }) {
   return (
     <div data-tab-switcher className="flex h-full min-h-0 flex-col">
@@ -406,21 +410,23 @@ export function TabSwitcher({
           </div>
         ))}
       </div>
-      <div className="flex-none border-t p-2">
-        {/* `size="sm"` is the look — a filled word, not a bar across the
-            foot — and the floor is the hit area under it. The two are
-            allowed to disagree: `--ctl-*` is what a control *is* beside
-            text, `--touch` is what a finger needs (tokens.css). */}
-        <Button
-          variant="secondary"
-          size="sm"
-          data-tab-new
-          className="min-h-touch min-w-touch"
-          onClick={onNew}
-        >
-          {gui.new_tab}
-        </Button>
-      </div>
+      {onNew && (
+        <div className="flex-none border-t p-2">
+          {/* `size="sm"` is the look — a filled word, not a bar across the
+              foot — and the floor is the hit area under it. The two are
+              allowed to disagree: `--ctl-*` is what a control *is* beside
+              text, `--touch` is what a finger needs (tokens.css). */}
+          <Button
+            variant="secondary"
+            size="sm"
+            data-tab-new
+            className="min-h-touch min-w-touch"
+            onClick={onNew}
+          >
+            {gui.new_tab}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -194,6 +194,56 @@ try {
   await page.route("**/hooks_state", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify({ installed: false }) }),
   );
+  // 额度: the registered accounts' rings (`QuotaLanding`), three rows
+  // that are the three shapes a reading takes — a fraction (an arc and
+  // a percent), numbers with no denominator (a spend, a track, no
+  // percent), and a trouble key (no numbers, a sentence). Hand-shaped
+  // from `AccountRing`/`AccountReading`; drift draws nothing and the
+  // 额度 stop goes probe-dead saying so.
+  const ring = (account, name, provider, patch) => ({
+    reading: {
+      account,
+      name,
+      provider,
+      home: "e".repeat(64),
+      fill: null,
+      spent: null,
+      limit: null,
+      currency: null,
+      unlimited: false,
+      resets_at: null,
+      trouble: null,
+      at_ms: Date.now(),
+      ...patch,
+    },
+    age_ms: 0,
+    home_name: "gate",
+    mine: true,
+    strain: null,
+    base_url: null,
+    budget: null,
+  });
+  const board = [
+    ring("acc-fill", "gateway", "newapi", {
+      fill: 0.45,
+      spent: 45,
+      limit: 100,
+      currency: "USD",
+      resets_at: Math.floor(Date.now() / 1000) + 86_400,
+    }),
+    ring("acc-number", "vendor", "claude", { spent: 12.34, currency: "USD" }),
+    // …and the refused one is carried from a peer, so the read-from
+    // line (who read it, how long ago) is on the glass to be measured.
+    {
+      ...ring("acc-trouble", "refused", "openai", { trouble: "key-refused" }),
+      age_ms: 42_000,
+      home_name: "peer",
+      mine: false,
+    },
+  ];
+  await page.route("**/quota_board", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(board) }),
+  );
   // **No `**/usage` route any more, and its absence is not an
   // oversight.** This used to answer a fortnight of spending because
   // the wall section 4 was written about only exists at that length.
@@ -724,6 +774,16 @@ try {
       go: async () => (await press(rail("files"))) && press("[data-place]"),
     },
     { name: "browser", anchor: '[data-browse-landing="page"]', go: () => press(rail("browser")) },
+    {
+      // 额度: one region, no list-beside-detail, and the anchor is a
+      // row so a drifted `AccountRing` shape says probe dead instead of
+      // measuring an empty page. The register dialog is deliberately
+      // not a stop — none of the "+" dialogs are walked yet (New /
+      // Tell / Invite / Join), and that hole is one hole, not five.
+      name: "\u989d\u5ea6",
+      anchor: "[data-quota-row]",
+      go: () => press(rail("quota")),
+    },
     { name: "the mark's place", anchor: "[data-mark-place]", go: () => press("[data-rail-mark]") },
     {
       // The body, not the frame. **This stop used to be named
@@ -1421,9 +1481,103 @@ try {
   }
   await page.keyboard.press("Escape");
 
+  // ── 8) 额度: the three shapes of a reading, and the band ──────────
+  // The fixture routes three accounts (`board` above): a fraction, a
+  // spend with no denominator, a refusal carried from a peer. Every
+  // claim is tied to that fixture — an implementation that draws
+  // nothing goes red on each, and a changed fixture must change them
+  // (the repo's falsifiability rule).
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await press(rail("quota"));
+  await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+  const quotaRows = await page.locator("[data-quota-row]").count();
+  if (quotaRows !== board.length) {
+    fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts`);
+  }
+  const fillRow = await page.locator('[data-quota-row="acc-fill"]').textContent();
+  if (!fillRow?.includes("45%")) {
+    fail(`the fraction row does not say its share — got ${JSON.stringify(fillRow)}`);
+  }
+  // The refused account: the trouble on the glass is a sentence, not
+  // the wire key. Clicking the row is also the finder proving itself —
+  // the detail draws the trouble only for the picked account.
+  await press('[data-quota-row="acc-trouble"]');
+  const troubleSaid = await page
+    .locator('[data-quota-detail="acc-trouble"] [data-quota-trouble="key-refused"]')
+    .textContent()
+    .catch(() => null);
+  if (!troubleSaid || !troubleSaid.trim() || troubleSaid.includes("key-refused")) {
+    fail(`the refused account's trouble is not a person's sentence — got ${JSON.stringify(troubleSaid)}`);
+  }
+  // …and a peer's reading names its reader with an age.
+  const readBy = await page
+    .locator('[data-quota-detail="acc-trouble"] [data-quota-age]')
+    .textContent();
+  if (!readBy?.includes("peer")) {
+    fail(`a peer's reading does not name its reader — got ${JSON.stringify(readBy)}`);
+  }
+  // The subscription band at the landing's foot: the same two windows
+  // section 7 proved on this machine's card. Section 7's negative half
+  // is not contradicted — this is this machine's own login on a page,
+  // not another machine's card.
+  const bandWindows = await page.locator("[data-quota-sub] [data-quota-window]").count();
+  if (bandWindows !== 2) {
+    fail(`the \u989d\u5ea6 foot draws ${bandWindows} subscription windows for a routed two-window quota`);
+  }
+
+  // ── 8b) narrow: the open sessions are a count and a switcher ──────
+  // The wide strip's other half (`TabStrip`'s head): a phone shows one
+  // screen, so the strip cannot be there, and the count is the way to
+  // every other tab. Mechanics only — tabs are pure front-end (state
+  // and localStorage) — so the mock is not asked anything it can lie
+  // about.
+  await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  await press(rail("sessions"));
+  await press("[data-list] [data-row-open]");
+  if ((await page.locator("[data-back]").count()) === 0) {
+    fail("probe dead: the narrow session detail never drew, so the tab count was never on a screen");
+  } else {
+    await press("[data-back]");
+    await pressNth("[data-list] [data-row-open]", 1);
+    const narrowCount = page.locator("[data-detail-header] [data-tab-count]");
+    if ((await narrowCount.count()) !== 1) {
+      fail("no tab count on the narrow session detail — the only way to the other open tab is missing");
+    } else {
+      const said = Number((await narrowCount.innerText()).trim());
+      if (said !== 2) fail(`two rows were opened and the count says ${said}`);
+      await narrowCount.click();
+      await wait(400);
+      const listed = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
+      if (listed !== 2) fail(`the switcher lists ${listed} of 2 open tabs`);
+      // Switching really switches: pick the tab that is not in front
+      // and a session detail comes back.
+      const other = await page
+        .locator('[data-tab-switcher] [data-switch-tab][data-on="false"] [data-switch-open]')
+        .first()
+        .getAttribute("data-switch-open");
+      await press(`[data-switch-open="${other}"]`);
+      if ((await page.locator("[data-tab-switcher]").count()) !== 0) {
+        fail("picking a tab did not put the switcher away");
+      }
+      if ((await page.locator("[data-detail-header] [data-word]").count()) !== 1) {
+        fail("the switcher's pick did not land on a session detail");
+      }
+      // Closing from inside: the switcher stays up (it is the screen
+      // you are on — `TabStrip`'s own judgment) and the survivor stays.
+      await narrowCount.click();
+      await wait(400);
+      await press(`[data-switch-close="${other}"]`);
+      const left = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
+      if (left !== 1) fail(`closing one of two tabs left ${left} rows in the switcher`);
+    }
+  }
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
-      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, and the subscription's arcs on this machine's card and nobody else's",
+      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, and the subscription's arcs on this machine's card and nobody else's, the \u989d\u5ea6 rows in all three shapes with the arcs at their foot, and narrow's session tabs switching for real",
     );
 } finally {
   await browser?.close();

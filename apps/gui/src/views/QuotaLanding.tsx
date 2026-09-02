@@ -24,6 +24,7 @@ import {
   registerAccount,
   removeAccount,
   type AccountRing,
+  type QuotaAnswer,
 } from "@/api";
 import { Ring, RING_SIZE, RING_SIZE_ROW } from "@/components/Ring";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
 import { gaugeColor } from "@/lib/vitals";
+import { QuotaRings } from "@/views/QuotaRings";
 import { lasting, until } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
@@ -102,7 +104,17 @@ function centre(r: AccountRing): string {
   return "";
 }
 
-export function QuotaLanding({ narrow }: { narrow: boolean }) {
+export function QuotaLanding({
+  narrow,
+  quota,
+}: {
+  narrow: boolean;
+  /** This machine's Claude Code subscription, polled by the shell on
+      its own beat (`App`'s quota effect) — drawn as a band at the foot
+      when there is a reading. A shell that has not asked yet passes
+      null, and the band simply is not there. */
+  quota?: QuotaAnswer | null;
+}) {
   const [board, setBoard] = useState<AccountRing[] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
@@ -242,6 +254,7 @@ export function QuotaLanding({ narrow }: { narrow: boolean }) {
           size="sm"
           variant="outline"
           data-quota-remove={current.reading.account}
+          className="min-h-touch"
           onClick={() => remove(current.reading.account)}
         >
           {gui.accounts_remove}
@@ -253,7 +266,7 @@ export function QuotaLanding({ narrow }: { narrow: boolean }) {
   const empty = (
     <div className="flex flex-col items-start gap-3 p-4 text-sm text-muted-foreground">
       <span data-quota-empty>{board === null ? "" : gui.accounts_empty}</span>
-      <Button size="sm" data-quota-register onClick={() => setRegistering(true)}>
+      <Button size="sm" data-quota-register className="min-h-touch" onClick={() => setRegistering(true)}>
         {gui.accounts_register}
       </Button>
     </div>
@@ -265,7 +278,15 @@ export function QuotaLanding({ narrow }: { narrow: boolean }) {
         <span className="text-title">{gui.accounts_tab}</span>
         <span className="min-w-0 flex-1" />
         {rows.length > 0 && (
-          <Button size="sm" variant="ghost" data-quota-register onClick={() => setRegistering(true)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-quota-register
+            // The finger floor (tokens.css `--touch`): the `sm` look
+            // stays, the box grows, the ghost wash paints the box.
+            className="min-h-touch"
+            onClick={() => setRegistering(true)}
+          >
             {gui.accounts_register}
           </Button>
         )}
@@ -287,6 +308,23 @@ export function QuotaLanding({ narrow }: { narrow: boolean }) {
           <div className="w-72 flex-none overflow-y-auto border-r">{list}</div>
           <div className="min-w-0 flex-1 overflow-y-auto">{detail}</div>
         </div>
+      )}
+      {/* This machine's Claude Code login, the two windows as arcs —
+          the same fact the machine card draws. 2026-08-28's「额度都是
+          机器卡里的」judged that the cards must paint it, not that no
+          other surface may: the cards keep theirs, and the page whose
+          name is 额度 shows the one subscription this machine can
+          honestly answer for. **Only with a reading**: the no-login /
+          stale sentences stay on the card, where they are facts about
+          the machine — here they would be a warning about a product
+          nobody registered. And only this machine's: no frame carries
+          another machine's subscription (`QuotaRings`' head), so there
+          is nothing else this band could draw without inventing it. */}
+      {quota?.quota && quota.quota.windows.length > 0 && (
+        <footer data-quota-sub className="flex flex-none flex-col gap-2 border-t px-3 py-2">
+          <span className="text-aux text-muted-foreground">{gui.accounts_subscription}</span>
+          <QuotaRings quota={quota} />
+        </footer>
       )}
       <RegisterDialog
         open={registering}

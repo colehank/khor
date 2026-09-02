@@ -1077,6 +1077,9 @@ accounts-trouble-cooling = "刚失败过,歇一会再问"
 accounts-trouble-no-key = "那台机器上没有这个账号的钥匙"
 accounts-trouble-no-reading = "那台机器还没答过"
 accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
+# 额度页脚下那条带的题头:本机 Claude Code 登录的两窗(机器卡上的那两个环,
+# 在额度页也给一份——2026-08-28「额度都是机器卡里的」判的是卡要画,不是别处不许画)。
+accounts-subscription = "Claude Code 订阅"
 new-session-dir = "目录"
 # **The wizard's first question, answered before it is asked.** A
 # person walks into a directory and then starts something there — so

@@ -223,6 +223,7 @@ export function DetailPane({
   days,
   onNew,
   empty,
+  tabs,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -242,6 +243,12 @@ export function DetailPane({
       and this pane must not grow a second copy of those polls. Absent,
       the plain sentence-and-button empty state stands. */
   empty?: ReactNode;
+  /** The way to the other open tabs, on the face that has no strip —
+      the narrow shell hands in a `TabCount` here (Chrome's own answer:
+      the number of tabs is the button). At the end of the header, where
+      a browser keeps it; absent on wide, where the strip above this
+      pane already shows every tab. */
+  tabs?: ReactNode;
 }) {
   const close = useCloseSession(row);
   return (
@@ -332,6 +339,7 @@ export function DetailPane({
             {close.button}
           </>
         )}
+        {tabs}
       </header>
       {/* The session's day, as a band the width of the pane, directly
           under the header: it is a fact about *this* session and reads
