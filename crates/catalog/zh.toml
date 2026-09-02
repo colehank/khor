@@ -107,6 +107,7 @@ usage = """
   face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
                         本机的脸;不带参数看现在是什么、有哪些可选
   devices               网里的机器
+  top [机器]            这台机器在忙什么:进程 top 与最近 24 小时 CPU
   ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
   pull <机器> <文件> [目录]
                         把那台机器上的文件拉过来(默认落当前目录)
@@ -278,6 +279,13 @@ vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"
 vitals-name-vram = "显存"
+# The machine card's process top (2026-09-02:「环下面显示进程top」):
+# the two column heads that are not a vitals name. CPU and 内存 reuse
+# `vitals-name-cpu` / `vitals-name-mem` — same fact, same word.
+top-name = "进程"
+top-user = "用户"
+# The band under the CPU ring: a day of five-minute buckets.
+top-day = "最近 24 小时 CPU"
 # How old the reading is. **Printed on every reading that is not this
 # machine's own**, because a number with no age is read as the present:
 # a machine that has been off since yesterday would otherwise show
@@ -1036,6 +1044,11 @@ web-face-not-serving = "serve 没在跑,所以现在没人在听这个地址。�
 # serve 活着但脸没起来——和上一条分开,因为该做的事不一样:上一条是「去起 serve」,
 # 这一条是「去看 serve 的输出,那个口八成被占了」。合成一句会把人支去做错的事。
 web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条链接发出去也是打不开的。\n  两种常见原因:那个口被别的东西占着(看一眼 serve 的输出,或设 KHOR_WEB_PORT 换口),\n  或者系统防火墙没放行 khor——macOS 第一次会弹框问「是否允许接受传入连接」,\n  点过「拒绝」或者没人在跟前点,它就会像这样:握手连得上,数据一个字节也不给"
+# A machine running an older khor answers the process-top / CPU-day
+# op with Refused. Said as a fact about its version, never as "no
+# processes": the empty face is the other reading, and it points at a
+# machine that is not idle.
+load-predates = "那边的 khor 版本旧,还报不了进程和 CPU 走势"
 
 [gui]
 sessions-tab = "会话"
@@ -1777,3 +1790,13 @@ sessions-all = "全部"
 # 那个词在补全菜单和状态条上说的是「拿掉这一条」,而这一行旁边就写着一个
 # 真实的目录路径,单说「去掉」的读法里有一个是「把那个目录去掉」。
 forget-place = "从{0}里去掉"
+# The terminal's own search (⌘F while it has the keys): where in the
+# scrollback a word is. 终端 names the surface the way `search-sessions`
+# and `search-devices` name theirs; the count beside the field is two
+# numbers and needs no words, and an empty answer is the lists' own
+# `no-matches`.
+search-terminal = "搜索终端"
+# The two steps through what was found, named for the direction. ⏎
+# and ⇧⏎ do the same from inside the field.
+match-prev = "上一个"
+match-next = "下一个"
