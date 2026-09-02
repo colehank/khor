@@ -3789,6 +3789,39 @@ for line in sys.stdin:
     throw new Error(`the CLI does not agree the hooks came out: ${hookWords()}`);
   }
 
+  // Reading the terminal through its own buffer (`__xterm`, the pane's
+  // gate hook): the webgl renderer paints no DOM text, so the buffer is
+  // the one honest place the screen's characters live. `termText` is
+  // the whole buffer, history included; `termView` is the viewport rows
+  // alone — the difference is the whole subject of 24s. Lines arrive
+  // right-trimmed (`translateToString(true)`), which is also what a
+  // copy hands over.
+  const termText = () =>
+    page.evaluate(() => {
+      const t = document.querySelector("[data-terminal]")?.__xterm;
+      if (!t) return "";
+      const b = t.buffer.active;
+      const out = [];
+      for (let i = 0; i < b.length; i += 1) out.push(b.getLine(i)?.translateToString(true) ?? "");
+      return out.join("\n");
+    });
+  const termView = () =>
+    page.evaluate(() => {
+      const t = document.querySelector("[data-terminal]")?.__xterm;
+      if (!t) return "";
+      const b = t.buffer.active;
+      const out = [];
+      for (let i = b.viewportY; i < b.viewportY + t.rows; i += 1)
+        out.push(b.getLine(i)?.translateToString(true) ?? "");
+      return out.join("\n");
+    });
+  // Focus lives on xterm's own textarea now — the element an input
+  // method composes in, and the one `useKeysTo` aims at.
+  const termFocused = () =>
+    page.evaluate(
+      () => document.activeElement?.classList?.contains("xterm-helper-textarea") === true,
+    );
+
   // 24t) a session khor hosts here paints a live terminal.
   //
   //      Open a `cat` on beta (detached), attach in the app, type, and
@@ -3813,11 +3846,9 @@ for line in sys.stdin:
   // echoes it, so the screen is the proof. Waited for, not asserted at
   // once: the dev double-mount tears the pane down and back up, and the
   // second mount is the one that keeps the focus.
-  await until("the field focused on arrival", 5_000, () =>
-    page.evaluate(() => document.activeElement?.hasAttribute("data-term-keys") === true),
-  );
+  await until("the field focused on arrival", 5_000, termFocused);
   await railItem("sessions").focus();
-  if (await page.evaluate(() => document.activeElement?.hasAttribute("data-term-keys"))) {
+  if (await termFocused()) {
     throw new Error("probe dead: focus never left the field, so the stray key has nothing to prove");
   }
   // Typed inside the wait, re-parking the focus each round, for the
@@ -3829,7 +3860,7 @@ for line in sys.stdin:
     await page.keyboard.type("stray7");
     await page.keyboard.press("Enter");
     await new Promise((r) => setTimeout(r, 300));
-    return (await page.locator("[data-terminal]").innerText()).includes("stray7");
+    return (await termText()).includes("stray7");
   });
   // Type inside the wait, re-focusing each round: React's dev double-mount
   // briefly tears the attachment down and back up (chat's hold-count, and
@@ -3838,11 +3869,14 @@ for line in sys.stdin:
   // keystroke sticks. `cat` echoes each attempt, so one landing paints it.
   const marker = "marker9";
   await until("the typed line painted by the terminal", 15_000, async () => {
-    await page.locator("[data-terminal]").focus();
+    // A click, not `.focus()`: the container is not focusable any more
+    // — xterm focuses its own textarea on a press, the way a person
+    // lands in a terminal.
+    await page.locator("[data-terminal]").click();
     await page.keyboard.type(marker);
     await page.keyboard.press("Enter");
     await new Promise((r) => setTimeout(r, 300));
-    return (await page.locator("[data-terminal]").innerText()).includes(marker);
+    return (await termText()).includes(marker);
   });
   // The typed line also becomes the row's preview — the host derives its
   // last non-empty terminal line (last.txt, throttled) and the list
@@ -3950,10 +3984,9 @@ for line in sys.stdin:
   );
   const tmuxRowId = await page.locator('[data-title="bridgeme"]').getAttribute("data-row");
   await page.locator(`[data-row="${tmuxRowId}"] [data-row-open]`).click();
-  await until("the tmux screen painted in the app", 20_000, async () => {
-    const t = await page.locator("[data-terminal]").innerText().catch(() => "");
-    return t.includes("tmux-bridge-marker");
-  });
+  await until("the tmux screen painted in the app", 20_000, async () =>
+    (await termText()).includes("tmux-bridge-marker"),
+  );
   cli(envB, "close", tmuxRowId);
   // The user's session survives khor's close — only the grouped client
   // died. `has-session` exits non-zero if it were gone.
@@ -4037,97 +4070,30 @@ for line in sys.stdin:
   );
   const paneMarker = "pane-marker4";
   await until("a keystroke reaching the real pane", 20_000, async () => {
-    await page.locator("[data-terminal]").focus();
+    await page.locator("[data-terminal]").click();
     await page.keyboard.type(paneMarker);
     await page.keyboard.press("Enter");
     await new Promise((r) => setTimeout(r, 300));
-    return (await page.locator("[data-terminal]").innerText()).includes(paneMarker);
+    return (await termText()).includes(paneMarker);
   });
 
-  // **An input method's half-built word is not input.** Typing 中文 was
-  // impossible here until 2026-09-01: an IME composes in whatever is
-  // focused, the grid is a `div`, and there was nowhere for it to
-  // compose — so the composition went to nobody.
-  //
-  // Two claims, and the negative one is the whole bug: the spelling
-  // must *not* reach the program (otherwise a person typing 中 sends
-  // `z h o n g` into their shell), and the finished word must.
-  //
-  // Driven as composition events rather than through a real IME,
-  // because there is no IME on a CI box — what is under test is khor's
-  // half of the contract, and these are the events a browser delivers.
-  const imeSaid = await page.evaluate(async () => {
-    const field = document.querySelector("[data-term-keys]");
-    if (!field) return { error: "no field for an input method to compose in" };
-    const sent = [];
-    const orig = window.fetch;
-    window.fetch = function (u, o) {
-      try {
-        if (String(u).includes("term_key")) sent.push(JSON.parse(o.body).keys);
-      } catch { /* not the call under test */ }
-      return orig.apply(this, arguments);
-    };
-    // **Focus is taken the way a person takes it — on the grid** — so
-    // that this reads the wiring and not itself: `field.focus()`
-    // followed by "is the field focused" is a question with one
-    // possible answer. A decoy holds it first, so there is a real move
-    // to observe.
-    const decoy = document.createElement("input");
-    document.body.append(decoy);
-    decoy.focus();
-    const grid = document.querySelector("[data-terminal]");
-    if (!grid) return { error: "no terminal grid to aim the focus at" };
-    grid.focus();
-    await new Promise((r) => setTimeout(r, 50));
-    const landed = document.activeElement === field;
-    decoy.remove();
-    // **The first key arrives before the composition does.** Chrome
-    // fires the syllable's first `keydown` with `isComposing: false`
-    // and only then `compositionstart` — its mark is `keyCode 229`.
-    // Modelled in that order, because the first version of this check
-    // dispatched `compositionstart` first and stayed green while every
-    // syllable's first letter leaked into the shell (「j加y一个」,
-    // 2026-09-01): a test that starts the composition before the key
-    // never exercises the one event that was wrong.
-    const first = new KeyboardEvent("keydown", { key: "z", bubbles: true, cancelable: true });
-    Object.defineProperty(first, "keyCode", { get: () => 229 });
-    field.dispatchEvent(first);
-    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-    for (const partial of ["z", "zh", "zho", "zhong"]) {
-      field.value = partial;
-      field.dispatchEvent(
-        new InputEvent("input", { bubbles: true, data: partial, isComposing: true }),
-      );
-    }
-    await new Promise((r) => setTimeout(r, 150));
-    const spelling = [...sent];
-    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }));
+  // **Committed text reaches the program whole.** The composition
+  // machinery is xterm's own now — the 229 guards, the half-built-word
+  // suppression, the candidate placement all live upstream, where every
+  // VS Code user exercises them daily; re-driving its internals with
+  // synthetic composition events would be testing the library through
+  // the keyhole. What khor still owes a test is its half of the wire:
+  // the text an input method finally commits goes out the `term_key`
+  // road intact and the echo comes back. `insertText` is CDP's real
+  // committed-text input event — the same shape dictation and emoji
+  // input arrive as.
+  await page.locator("[data-terminal]").click();
+  await until("the committed word out and echoed back", 15_000, async () => {
+    if (!(await termFocused())) await page.locator("[data-terminal]").click();
+    await page.keyboard.insertText("中文");
     await new Promise((r) => setTimeout(r, 300));
-    window.fetch = orig;
-    return { spelling, all: sent, left: field.value, focused: landed };
+    return (await termText()).includes("中文");
   });
-  if (imeSaid.error) throw new Error(imeSaid.error);
-  if (!imeSaid.focused) {
-    throw new Error(
-      "aiming the focus at the grid must land it on the field — an input " +
-        "method composes in whatever is focused, and a `div` is nowhere",
-    );
-  }
-  if (imeSaid.spelling.length !== 0) {
-    throw new Error(
-      `the spelling reached the program: ${JSON.stringify(imeSaid.spelling)} — ` +
-        `a person typing 中 would be sending its pinyin into their shell`,
-    );
-  }
-  // The positive half, which is what makes the negative one mean
-  // something: a check that only asserted silence would pass on a
-  // terminal that had stopped taking input at all.
-  if (!imeSaid.all.includes("中文")) {
-    throw new Error(`the finished word never went out: ${JSON.stringify(imeSaid.all)}`);
-  }
-  if (imeSaid.left !== "") {
-    throw new Error(`the field kept the word and would send it again: ${imeSaid.left}`);
-  }
   // The input method's side of 25f. The first `keydown` of a syllable
   // (`keyCode 229`, before any `compositionstart`) pressed while a
   // button holds focus must move the focus to the field *during that
@@ -4138,7 +4104,7 @@ for line in sys.stdin:
   // contract, and it is the same contract the pointer road already
   // leans on.
   const imeAimed = await page.evaluate(() => {
-    const field = document.querySelector("[data-term-keys]");
+    const field = document.querySelector("[data-terminal] .xterm-helper-textarea");
     const button = document.querySelector('[data-rail-item][data-landing="sessions"]');
     if (!field || !button) return { error: "no field or no rail button to press the key at" };
     button.focus();
@@ -4152,36 +4118,33 @@ for line in sys.stdin:
   if (!imeAimed.landed) {
     throw new Error("an input method's opening key pressed at a button must aim the composition at the field");
   }
-  // 24m) bracketed paste (批④ 前置): a paste is sent as a paste, and the
-  //      wrapping is the running program's choice rather than this app's.
+  // 24m) bracketed paste (批④ 前置, 重写 2026-09-03): a paste is wrapped
+  //      when — and only when — the running program asked for it, and
+  //      since the xterm pivot the wrapping is xterm's own (DECSET 2004
+  //      flows up the byte stream and xterm brackets on `onData`). What
+  //      this proves is that khor's pipe carries the mode up and the
+  //      paste back down whole.
   //
-  //      **Both halves, on two real terminals.** One runs `cat -v` bare;
-  //      the other turns DECSET 2004 on first. `cat -v` is what makes
-  //      the answer readable — it prints the escape rather than acting
-  //      on it, so the marks are visible as `^[[200~` instead of being
-  //      swallowed by khor's own parser on the way back.
+  //      **Both halves, on two khor-hosted terminals — not tmux.** The
+  //      old rig ran these under tmux, and tmux owns the outer screen:
+  //      it does not forward a pane's DECSET 2004 to *this* terminal, so
+  //      xterm never entered bracketed mode and the positive half could
+  //      not be seen (it was marked 「NOT red-proven」for exactly that).
+  //      Hosted directly, `printf '\\033[?2004h'` reaches xterm with
+  //      nothing in between.
   //
-  //      Without the negative half this would pass on an app that
-  //      wrapped everything, which is the failure that matters: a
-  //      program that never asked would be handed an escape it does not
-  //      know and would paste it as text.
-  //      `cat` is the reader on purpose: it does nothing to its input,
-  //      and the tty's own echo prints ESC as `^[`, so the marks show up
-  //      as text. A shell would be the wrong witness — readline
-  //      *understands* bracketed paste and strips the marks, so the
-  //      screen would look identical either way.
-  //
-  //      **Which program is running is checked, not assumed.** The whole
-  //      command goes to tmux as one string (it runs it through a
-  //      shell); passing it as separate arguments left a plain shell
-  //      running instead, and then the negative half could not fail
-  //      because the shell was swallowing the very marks it was there
-  //      to notice. Measured — a planted "always wrap" break went green.
+  //      `cat -v` is the reader: it renders every control byte as caret
+  //      notation (`ESC`→`^[`) in its *output*, so the marks are visible
+  //      deterministically rather than depending on the tty's echo
+  //      flags; `stty -echo` silences that echo so only `cat -v`'s
+  //      conversion is on screen. The negative half is the one that
+  //      matters — a program that never asked must not be handed the
+  //      escape — and it is red-provable here: a break that wrapped
+  //      unconditionally would put the marks on the plain pane.
   const pasteText = "paste-marker-24m";
-  for (const [name, cmd] of [
-    ["pasteplain", "cat"],
-    ["pastebrack", "printf '\\033[?2004h'; cat"],
-  ]) {
+  const plainCatId = cli(envB, "open", "-d", "--title", "plaincat", "--", "sh", "-c", "stty echoctl; exec cat").trim();
+  const brackCatId = cli(envB, "open", "-d", "--title", "brackcat", "--", "sh", "-c", "printf '\\033[?2004h'; stty echoctl; exec cat").trim();
+  for (const [name, cmd] of [["pasteplain", "cat"]]) {
     execFileSync(
       "tmux",
       ["-L", TMUX_SOCK, "new-session", "-d", "-s", name, "-x", "80", "-y", "24", cmd],
@@ -4198,7 +4161,7 @@ for line in sys.stdin:
     });
   }
   await openLanding("sessions");
-  const pasteInto = async (title) => {
+  const pasteInto = async (title, wantBracket) => {
     await until(`the ${title} row`, 25_000, async () =>
       (await page.locator(`[data-title="${title}"] [data-row-open]`).count()) === 1,
     );
@@ -4206,36 +4169,53 @@ for line in sys.stdin:
     await until(`${title}'s terminal`, 20_000, async () =>
       (await page.locator("[data-terminal]").count()) === 1,
     );
-    // Dispatched as a real paste event: the pane's own handler is what
-    // decides this is a paste rather than typing, and that is the thing
-    // under test.
-    await page.locator("[data-terminal]").evaluate((el, text) => {
-      const data = new DataTransfer();
-      data.setData("text", text);
-      el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+    // **Wait for the mode to actually arrive before pasting.** In the
+    // byte-stream world the program's DECSET 2004 is one byte in the
+    // feed, and the pane writes the attach + the stream a beat after the
+    // element mounts — a paste fired the instant `[data-terminal]`
+    // exists can beat it (the old cell-poll carried the mode in every
+    // whole-screen answer, so this race did not exist). Waiting on
+    // xterm's own `modes.bracketedPasteMode` is the honest gate: it is
+    // exactly the fact that had to travel up the pipe, so a dropped
+    // 2004h times out here instead of failing the mark check below with
+    // a confusing message. `wantBracket === false` proves the other
+    // way — a program that never asked must never leave the mode set.
+    if (wantBracket !== undefined) {
+      await until(`${title} reaching bracketed=${wantBracket}`, 20_000, async () =>
+        (await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.modes.bracketedPasteMode)) ===
+        wantBracket,
+      );
+    }
+    // Driven through xterm's own `paste()` — the public method a real
+    // paste event lands in, which applies bracketing per the mode the
+    // program set through the byte stream. That the mode was carried up
+    // (feed→write) and the wrapped bytes go back down (onData→term_key)
+    // is khor's half of the contract and the thing under test.
+    await page.evaluate((text) => {
+      document.querySelector("[data-terminal]").__xterm.paste(text);
     }, pasteText);
     await until(`${title} echoing the paste`, 20_000, async () =>
-      (await page.locator("[data-terminal]").innerText()).includes(pasteText),
+      (await termText()).includes(pasteText),
     );
-    return page.locator("[data-terminal]").innerText();
+    return termText();
   };
-  //      **This half is NOT red-proven, and that is worth knowing before
-  //      trusting it.** A planted "always wrap" break left it green: the
-  //      marks do not become visible on this pane in this rig even when
-  //      they are sent, so the check cannot see the difference it is
-  //      written to see. It is kept because the property is real and the
-  //      line costs nothing — but it is not coverage, and whoever makes
-  //      it observable should red-prove it then.
-  const plainEcho = await pasteInto("pasteplain");
+  //      The tty's own echo (immediate, per-character — no stdout
+  //      buffer to flush) renders the bytes, and `echoctl` makes ESC
+  //      show as `^[`. So a wrapped paste reads as `^[[200~…^[[201~`
+  //      and an unwrapped one does not — observable now, unlike the
+  //      tmux rig this replaced, and red-provable in both directions.
+  const plainEcho = await pasteInto("plaincat", false);
   if (plainEcho.includes("[200~")) {
     throw new Error(`a program that never asked for bracketed paste was sent the marks: ${plainEcho.slice(-120)}`);
   }
-  const brackEcho = await pasteInto("pastebrack");
+  const brackEcho = await pasteInto("brackcat", true);
   if (!brackEcho.includes("[200~") || !brackEcho.includes("[201~")) {
     throw new Error(
       `a program that asked for bracketed paste did not get the marks: ${brackEcho.slice(-120)}`,
     );
   }
+  cli(envB, "close", plainCatId);
+  cli(envB, "close", brackCatId);
   // 24n) 拖文件进终端 (批④ 二笔): the path arrives quoted.
   //
   //      **The OS drag itself is not driven here and cannot be.** tauri
@@ -4265,7 +4245,7 @@ for line in sys.stdin:
   //      apostrophe must not end the quoting early — the two ways a
   //      dropped filename turns into something else.
   await until("the dropped paths arriving quoted", 20_000, async () => {
-    const seen = await page.locator("[data-terminal]").innerText();
+    const seen = await termText();
     return seen.includes("'/tmp/a b.txt'") && seen.includes("'/tmp/it'\\''s.txt'");
   });
 
@@ -4279,51 +4259,44 @@ for line in sys.stdin:
   await page.locator("[data-terminal]").click();
   await page.keyboard.press("F5");
   await until("F5 arriving as its own escape sequence", 10_000, async () =>
-    (await page.locator("[data-terminal]").innerText()).includes("^[[15~"),
+    (await termText()).includes("^[[15~"),
   );
 
-  // 24r) 选择复制 (批⑤): what lands on the clipboard is the text, not
-  //      the padding.
-  //
-  //      **The control is the first half of this.** Every cell is
-  //      painted, empty ones included, so a row in the DOM ends in a
-  //      run of spaces — asserted here before the copy, because
-  //      "the clipboard has no trailing spaces" is otherwise true of a
-  //      clipboard that got nothing at all.
-  //      `textContent`, not `innerText`: the second one is what the
-  //      layout would show a reader, and it folds away the very padding
-  //      being measured — the first attempt at this probe read `""` off
-  //      a row that is eighty spaces wide.
-  const { row: paddedRow, text: padded } = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll("[data-terminal] div")];
-    const at = rows.findIndex((d) => (d.textContent ?? "").trim().length > 0);
-    return { row: at, text: at < 0 ? "" : rows[at].textContent };
+  // 24r) 选择复制 (批⑤): what lands on a copy is the text, not the
+  //      padding. The selection machinery is xterm's now — webgl paints
+  //      no DOM text to range over — so the claim is read through its
+  //      own selection: select a whole buffer row, the full grid width,
+  //      and what `getSelection()` answers must be the line without the
+  //      eighty columns a cell grid keeps to its right. The control is
+  //      the row having text at all: "no trailing spaces" is otherwise
+  //      true of a selection that got nothing.
+  const sel = await page.evaluate(() => {
+    const t = document.querySelector("[data-terminal]")?.__xterm;
+    if (!t) return null;
+    const b = t.buffer.active;
+    let at = -1;
+    for (let i = 0; i < b.length; i += 1) {
+      if ((b.getLine(i)?.translateToString(true) ?? "").trim().length > 0) {
+        at = i;
+        break;
+      }
+    }
+    if (at < 0) return null;
+    t.select(0, at, t.cols);
+    const picked = t.getSelection();
+    t.clearSelection();
+    return { picked, want: b.getLine(at).translateToString(true) };
   });
-  if (paddedRow < 0 || !/ {3}$/.test(padded)) {
-    throw new Error(`probe dead: a painted row should end in padding, got ${JSON.stringify(padded)}`);
+  if (!sel || !sel.picked.trim()) {
+    throw new Error("probe dead: nothing selectable reached the terminal at all");
   }
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: `http://localhost:${VITE_PORT}`,
-  });
-  const copied = await page.evaluate(async (at) => {
-    const row = document.querySelectorAll("[data-terminal] div")[at];
-    const range = document.createRange();
-    range.selectNodeContents(row);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    document.execCommand("copy");
-    sel.removeAllRanges();
-    return navigator.clipboard.readText();
-  }, paddedRow);
-  if (!copied.trim()) {
-    throw new Error("probe dead: nothing reached the clipboard at all");
+  if (/[ \t]$/.test(sel.picked)) {
+    throw new Error(`the copy kept the terminal's padding: ${JSON.stringify(sel.picked)}`);
   }
-  if (/[ \t]$/.test(copied)) {
-    throw new Error(`the clipboard kept the terminal's padding: ${JSON.stringify(copied)}`);
-  }
-  if (copied.trimEnd() !== padded.trimEnd()) {
-    throw new Error(`the copy changed more than the padding: ${JSON.stringify(copied)} vs ${JSON.stringify(padded)}`);
+  if (sel.picked.trimEnd() !== sel.want.trimEnd()) {
+    throw new Error(
+      `the copy changed more than the padding: ${JSON.stringify(sel.picked)} vs ${JSON.stringify(sel.want)}`,
+    );
   }
 
   // 24s) 回看 (批⑤): what scrolled past is still there, the reader
@@ -4351,27 +4324,32 @@ for line in sys.stdin:
   //      it echoes them, so the terminal has more history than screen —
   //      the only state in which any of this means anything.
   const sbLines = Array.from({ length: 200 }, (_, i) => `sb-line-${i + 1}`).join("\n") + "\n";
+  // Fed as raw input (`term_key`) — `term_paste` left with the pivot;
+  // the reader is a bare `cat`, which never asked for bracketing, so
+  // bytes are bytes.
   const pasteVia = async (id, text) =>
     page.evaluate(
       async ([port, sid, body]) => {
-        const r = await fetch(`http://127.0.0.1:${port}/term_paste`, {
+        const r = await fetch(`http://127.0.0.1:${port}/term_key`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: sid, text: body }),
+          body: JSON.stringify({ id: sid, keys: body }),
         });
         if (!r.ok) throw new Error(await r.text());
       },
       [BRIDGE_PORT, id, text],
     );
   await pasteVia(sbRow, sbLines);
-  const termText = () => page.locator("[data-terminal]").innerText();
   //      Which of the block's lines are on screen, as numbers — asking
   //      "does it contain sb-line-1" is how the first draft of this
   //      fooled itself a second time: after four pages back the visible
   //      lines were in the fifties, and a pattern written for one- and
-  //      two-digit numbers called that "no history".
+  //      two-digit numbers called that "no history". `termView`, not
+  //      `termText`: the whole buffer holds every line by design, and
+  //      reading it here would call "scrolled" and "not scrolled" one
+  //      thing — the viewport is the thing that moves.
   const onScreen = async () =>
-    [...(await termText()).matchAll(/sb-line-(\d+)/g)].map((m) => Number(m[1]));
+    [...(await termView()).matchAll(/sb-line-(\d+)/g)].map((m) => Number(m[1]));
   await until("the tail of the pasted block on screen", 20_000, async () =>
     (await onScreen()).includes(200),
   );
@@ -4552,7 +4530,7 @@ for line in sys.stdin:
   //      present, so an empty screen fails the pair.
   const flat = (t) => t.replace(/\s+/g, "");
   await until("alpha's own path pasted into alpha's terminal", 30_000, async () => {
-    const seen = flat(await page.locator("[data-terminal]").innerText());
+    const seen = flat(await termText());
     if (seen.includes(flat(dropSrc))) {
       throw new Error("the terminal was handed beta's path — that file does not exist on alpha");
     }

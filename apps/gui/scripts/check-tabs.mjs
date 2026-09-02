@@ -600,19 +600,32 @@ try {
   await page.waitForTimeout(300);
   const blocks = await page
     .locator("[data-rail-item][data-landing]")
-    .evaluateAll((els) =>
-      els.map((e) => {
+    .evaluateAll((els) => {
+      // What "lit" looks like, resolved once: the on-ink as an actual
+      // colour, read off a probe span rather than compared as var text.
+      const probe = document.createElement("span");
+      probe.style.color = "var(--rail-on-ink)";
+      document.body.append(probe);
+      const litColor = getComputedStyle(probe).color;
+      probe.remove();
+      return els.map((e) => {
         const body = e.querySelector("svg [data-body]");
-        return [e.dataset.landing, body ? getComputedStyle(body).fillOpacity : "no-glyph"];
-      }),
-    );
+        if (body) return [e.dataset.landing, getComputedStyle(body).fillOpacity];
+        // A pictorial glyph — 额度's token art (the user's own file,
+        // 2026-09-03), the mark's rule: no two-density body, so being
+        // open is the ink itself taking `--rail-on-ink`.
+        const svg = e.querySelector("svg");
+        if (!svg) return [e.dataset.landing, "no-glyph"];
+        return [e.dataset.landing, getComputedStyle(svg).color === litColor ? "lit" : "resting"];
+      });
+    });
   console.log(`     rail glyph fills: ${JSON.stringify(blocks)}`);
   // The probe before the claim: every item has a glyph to read, or
   // "only one is solid" would be satisfied by the others being absent.
   if (blocks.some(([, fill]) => fill === "no-glyph")) {
     fail(`a rail item has no glyph to read: ${JSON.stringify(blocks)}`);
   }
-  const painted = blocks.filter(([, fill]) => Number(fill) === 1);
+  const painted = blocks.filter(([, fill]) => fill === "lit" || Number(fill) === 1);
   if (painted.length !== 1 || painted[0][0] !== "files") {
     fail(`the rail fills the glyph on ${JSON.stringify(painted)}, with files the open landing`);
   } else {

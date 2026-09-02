@@ -144,12 +144,25 @@ async function main() {
     (await page.locator("[data-terminal]").count()) > 0 ? true : null,
   );
 
+  // The terminal's characters live in xterm's buffer now (the webgl
+  // renderer paints no DOM text) — same reader smoke uses.
+  const termText = () =>
+    page.evaluate(() => {
+      const t = document.querySelector("[data-terminal]")?.__xterm;
+      if (!t) return "";
+      const b = t.buffer.active;
+      const out = [];
+      for (let i = 0; i < b.length; i += 1) out.push(b.getLine(i)?.translateToString(true) ?? "");
+      return out.join("\n");
+    });
+
   // 5. **A phone can type into it at all.** A `div` raises no soft
-  //    keyboard; only a field does, so a tap has to land focus on one.
+  //    keyboard; only a field does, so a tap has to land focus on one —
+  //    xterm's own textarea, since the pivot.
   await page.locator("[data-terminal]").tap();
   const focused = await page.evaluate(() => ({
     tag: document.activeElement?.tagName ?? "(none)",
-    isField: document.activeElement?.hasAttribute("data-term-keys") ?? false,
+    isField: document.activeElement?.classList?.contains("xterm-helper-textarea") ?? false,
   }));
   if (!focused.isField) {
     throw new Error(`tapping the terminal focused ${focused.tag}, not the field`);
@@ -157,16 +170,20 @@ async function main() {
   ok("a tap puts focus where a soft keyboard can appear");
 
   // 6. …and what that field receives reaches the shell. This is the
-  //    event a soft keyboard actually produces: text arriving in the
-  //    field, not a `keydown` anyone can name.
+  //    event a soft keyboard actually produces — committed text on an
+  //    `input` event; xterm reads its `data`, so the event has to be a
+  //    real InputEvent, not a bare Event over a value.
   const typed = `hello-from-a-phone-${process.pid}`;
-  await page.evaluate((text) => {
-    const field = document.querySelector("[data-term-keys]");
-    field.value = text;
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  }, typed + "\r");
+  const say = (text) =>
+    page.evaluate((body) => {
+      const field = document.querySelector("[data-terminal] .xterm-helper-textarea");
+      field.dispatchEvent(
+        new InputEvent("input", { bubbles: true, data: body, inputType: "insertText" }),
+      );
+    }, text);
+  await say(typed + "\r");
   await until("the shell to echo it back", 30_000, async () =>
-    (await page.locator("[data-terminal]").innerText()).includes(typed) ? true : null,
+    (await termText()).includes(typed) ? true : null,
   );
   ok("what the field receives reaches the pty — the shell echoed it back");
 
@@ -174,37 +191,22 @@ async function main() {
   //    other way back through history and a touch screen never sends
   //    one, so without this the 2000 lines 批⑤ added exist and cannot
   //    be looked at from a phone.
-  for (let i = 0; i < 60; i++) {
-    await page.evaluate((text) => {
-      const field = document.querySelector("[data-term-keys]");
-      field.value = text;
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-    }, `line-${i}\r`);
-  }
+  for (let i = 0; i < 60; i++) await say(`line-${i}\r`);
   await until("the screen to fill", 30_000, async () =>
-    (await page.locator("[data-terminal]").innerText()).includes("line-59") ? true : null,
+    (await termText()).includes("line-59") ? true : null,
   );
-  const box = await page.locator("[data-terminal]").boundingBox();
-  const midX = box.x + box.width / 2;
-  await page.touchscreen.tap(midX, box.y + box.height / 2);
-  // A drag downwards walks backwards, which is where the older lines are.
-  await page.evaluate(({ x, y1, y2 }) => {
-    const pane = document.querySelector("[data-terminal]");
-    const touch = (type, y) =>
-      pane.dispatchEvent(
-        new TouchEvent(type, {
-          bubbles: true,
-          touches: type === "touchend" ? [] : [new Touch({ identifier: 1, target: pane, clientX: x, clientY: y })],
-        }),
-      );
-    touch("touchstart", y1);
-    touch("touchmove", y2);
-    touch("touchend", y2);
-  }, { x: midX, y1: box.y + 20, y2: box.y + box.height - 20 });
+  // A drag downwards walks backwards, which is where the older lines
+  // are. xterm's viewport is a real overflow scroller and native touch
+  // scrolling drives its `scrollTop` — which synthetic TouchEvents do
+  // not, so the drag's *product* is what is driven here, and the claim
+  // held is khor's own: moving up in history summons the way back down.
+  await page.evaluate(() => {
+    document.querySelector("[data-terminal] .xterm-viewport").scrollTop = 0;
+  });
   await until("the pane to say it is no longer at the bottom", 10_000, async () =>
     (await page.locator("[data-term-bottom]").count()) > 0 ? true : null,
   );
-  ok("dragging walks back through the scrollback");
+  ok("scrolling back through history summons the way back down");
 
   console.log(`\nweb face: all green (${done.length} checks)`);
 }

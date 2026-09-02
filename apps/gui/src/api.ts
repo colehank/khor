@@ -21,10 +21,8 @@ import type { DirPinRow } from "./gen/bindings/DirPinRow";
 import type { RecentRow } from "./gen/bindings/RecentRow";
 import type { WebPinRow } from "./gen/bindings/WebPinRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
-import type { TermBatch } from "./gen/bindings/TermBatch";
-import type { TermScreen } from "./gen/bindings/TermScreen";
-import type { TermRun } from "./gen/bindings/TermRun";
-import type { TermColor } from "./gen/bindings/TermColor";
+import type { TermStart } from "./gen/bindings/TermStart";
+import type { TermChunk } from "./gen/bindings/TermChunk";
 import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { KnownAgent } from "./gen/bindings/KnownAgent";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
@@ -56,10 +54,6 @@ export type {
   RecentRow,
   WebPinRow,
   WebBorrow,
-  TermBatch,
-  TermScreen,
-  TermRun,
-  TermColor,
   AgentRow,
   KnownAgent,
   AgentSaid,
@@ -497,33 +491,24 @@ export const openWeb = (machine: string, url: string) => {
   return call<WebBorrow | null>("open_web", { machine, url });
 };
 /** Attaches a terminal to a hosted session at cols×rows; the host
-    resizes its PTY to match, so the screen repaints whole. */
-/** One wheel notch, as the mouse report the program asked for — refused
-    by the core when it asked for none, so the face never has to know
-    which programs those are (`khor_gui_core::term::Wheel`). */
-export const termWheel = (id: string, dir: "up" | "down", col: number, row: number) =>
-  call<null>("term_wheel", { id, dir, col, row });
+    resizes its PTY to match. */
 export const termOpen = (id: string, cols: number, rows: number) =>
   call<null>("term_open", { id, cols, rows });
-/** The current screen if it changed since `since`, else none — a
-    terminal is a state, so a poll wants the latest whole screen.
+/** Everything the feed holds so far (it began with the host's ring, so
+    history rides along) and the cursor to stream from. The pane writes
+    it into xterm and then follows with `termStream`.
 
-    `back` is how many lines above the live screen to look, and the
-    answer carries where it actually landed: asking to go further than
-    there is history is clamped, and the clamped number is the one to
-    believe. */
-export const termPoll = (id: string, since: number, back: number) =>
-  call<TermBatch>("term_poll", { id, since, back });
-/** Keystrokes as the bytes a terminal sends; the face maps keys to
-    bytes, the backend stays a pipe. */
+    (The cell-snapshot road — `term_poll` and the `TermScreen` family,
+    with `term_wheel`'s mouse judgment and `term_paste`'s bracketing —
+    left with the 2026-09-03 pivot: xterm.js consumes bytes and speaks
+    its own mouse and paste. 「不必考虑旧版兼容」 is why there is no
+    bridge.) */
+export const termAttach = (id: string) => call<TermStart>("term_attach", { id });
+export const termStream = (id: string, since: number) =>
+  call<TermChunk>("term_stream", { id, since });
+/** Keystrokes as the bytes a terminal sends — xterm encodes every key,
+    modifier, mouse report and paste; the backend stays a pipe. */
 export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });
-/** Pasted text, as a paste rather than as keystrokes. The wrapping is
-    the registry's to decide — it holds the screen that knows whether the
-    program asked for bracketed paste (`khor_gui_core::term::term_paste`),
-    and a face that wrapped it here would be guessing at somebody else's
-    mode. */
-export const termPaste = (id: string, text: string) =>
-  call<null>("term_paste", { id, text });
 /** Files dropped on a terminal. The paths go over as they are and the
     quoting happens in the registry — shell syntax is not something a
     face should be assembling, and one wrong escape turns a filename
