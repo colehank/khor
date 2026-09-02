@@ -255,6 +255,14 @@ impl Node {
             let n = node.clone();
             tokio::spawn(async move { n.day_sampler().await });
         }
+        // The CPU day's recorder (`crates/node/src/history.rs`): the
+        // same footing again — one reading a minute into a file, so the
+        // band under the CPU ring has a day behind it that survives
+        // this process (its own test restarts to prove it).
+        {
+            let n = node.clone();
+            tokio::spawn(async move { n.cpu_recorder().await });
+        }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         loop {
@@ -446,6 +454,10 @@ impl Node {
             }
             ipc::Op::PlacesOn { machine } => match self.places_on_with(ep, &machine).await {
                 Ok(places) => ipc::Reply::Places { places },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::LoadOn { machine, top } => match self.load_on_with(ep, &machine, top).await {
+                Ok(load) => ipc::Reply::Load { load },
                 Err(why) => ipc::Reply::Refused { why },
             },
         }
@@ -852,6 +864,19 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string())??;
                 Ok(Response::Quotas { readings })
+            }
+            Request::Load { top } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // A process table and a file read, off the reactor for
+                // the `Vitals` arm's reason (the first process-table
+                // read in a process pays a CPU window).
+                let root = self.root().to_path_buf();
+                let load = tokio::task::spawn_blocking(move || crate::Node::load(&root, top as usize))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Load { load })
             }
             Request::Vitals => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1455,6 +1480,62 @@ impl Node {
         let outcome = self.places_on_with(&ep, machine).await;
         ep.close().await;
         outcome
+    }
+
+    /// What a machine is busy with (`khor_core::Load`), `top` rows deep.
+    /// This machine's answers by sampling, without a resident; another
+    /// machine's goes through one when there is one. **An older khor
+    /// over there is said out loud**, not painted as an empty table:
+    /// `Places` may fall silent because a wizard with no list still
+    /// takes a path, but a card with no rows reads as an idle machine,
+    /// which is the one thing this screen must never say by accident.
+    pub async fn load_on(&self, machine: &str, top: u32) -> Result<khor_core::Load, String> {
+        if machine.is_empty() || machine == self.name() {
+            let root = self.root.clone();
+            return tokio::task::spawn_blocking(move || Self::load(&root, top as usize))
+                .await
+                .map_err(|e| e.to_string());
+        }
+        let op = ipc::Op::LoadOn { machine: machine.to_owned(), top };
+        if let Some(reply) = self.via_serve(op).await {
+            return match reply? {
+                ipc::Reply::Load { load } => Ok(load),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let outcome = self.load_on_with(&ep, machine, top).await;
+        ep.close().await;
+        outcome
+    }
+
+    async fn load_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        top: u32,
+    ) -> Result<khor_core::Load, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            let root = self.root.clone();
+            return tokio::task::spawn_blocking(move || Self::load(&root, top as usize))
+                .await
+                .map_err(|e| e.to_string());
+        }
+        let conn = self.dial_named(ep, &channel).await?;
+        match request(&conn, &Request::Load { top }).await? {
+            Response::Load { load } => Ok(load),
+            // A khor over there that predates the op refuses the frame
+            // it cannot read — and any refusal of a paired machine's
+            // ask is that one, since the only other reason to refuse
+            // (not paired) cannot hold for a machine this side just
+            // resolved from its own table.
+            Response::Refused { .. } => Err(msg::LOAD_PREDATES.into()),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     async fn places_on_with(

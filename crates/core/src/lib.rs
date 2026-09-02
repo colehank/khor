@@ -776,6 +776,69 @@ pub struct Volume {
     pub fill: Fill,
 }
 
+/// One row of a machine's process top: what is eating it right now
+/// (`khor_node::top` takes the reading; the machine card and `khor top`
+/// print it).
+///
+/// **A per-core rate**, the way `top` prints it: a process holding four
+/// cores reads 400, not 40 — capped at 100 the busiest kind of process
+/// would read like an ordinary one. Read-only by design: khor answers
+/// 这台机器在忙什么, and the verbs that change a machine belong to a
+/// terminal a person opened on purpose.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct TopRow {
+    pub pid: u32,
+    /// The process's own short name, as the platform reports it.
+    pub name: String,
+    /// Whose it is — the account name when the machine can spell it,
+    /// the numeric id when it cannot, empty when the platform will not
+    /// say. Never invented: a row wearing the asker's name would be a
+    /// guess dressed as a fact.
+    pub user: String,
+    /// CPU over the sampling window, percent of one core.
+    pub cpu_pct: f32,
+    /// Resident memory, bytes. A `number` on the TS side, the `Fill`
+    /// rule: bytes fit a double and a `bigint` cannot be divided.
+    #[ts(type = "number")]
+    pub mem: u64,
+}
+
+/// The last day of a machine's CPU, five minutes at a stride — what the
+/// band under the machine card's CPU ring draws (`khor_node::history`
+/// keeps it).
+///
+/// **A gap is a gap.** A bucket nobody sampled — the machine slept, the
+/// serve was down — is `None` and is drawn as absence, never bridged: a
+/// line across it would claim the machine was doing something nobody
+/// measured (docs/UX.md 不知道就说不知道).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct CpuDay {
+    /// The stride, so a face never has to know the recorder's constant
+    /// by heart. Milliseconds fit a double (the `Fill` rule).
+    #[ts(type = "number")]
+    pub bucket_ms: u64,
+    /// When the newest slot closes (ms since the epoch, the recording
+    /// machine's clock) — the axis's right edge.
+    #[ts(type = "number")]
+    pub now_ms: u64,
+    /// Oldest first, one slot per bucket, `None` where nobody measured.
+    pub buckets: Vec<Option<f32>>,
+}
+
+/// What a machine is busy with: the top now and the day behind it. One
+/// answer for one screen (the machine card asks both together, and two
+/// round trips would describe two moments).
+///
+/// **On the wire as one new op** (`khor_node::proto::Request::Load`),
+/// so a khor that predates it refuses the whole ask rather than reading
+/// a neighbour — and any field added here later rides the tail with a
+/// serde default, the rule every wire struct follows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Load {
+    pub top: Vec<TopRow>,
+    pub cpu_day: CpuDay,
+}
+
 /// Tokens spent, in the four kinds a vendor bills separately.
 ///
 /// **There is no total here, and that is a judgment rather than an

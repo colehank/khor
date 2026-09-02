@@ -28,32 +28,13 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
-
-/// One row of the top: what to call it, who it is, how hard it is
-/// eating, and how much it holds.
-///
-/// Plain serde for now: the TS export lives with every other binding
-/// type in `khor_core`, and this struct moves there when the wire op
-/// lands (kept here first so the sampler and its tests do not wait on
-/// a file another batch has open).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TopRow {
-    pub pid: u32,
-    /// The process's own short name, as the platform reports it.
-    pub name: String,
-    /// CPU over the sampling window, percent **of one core** — see the
-    /// module head for why it may exceed 100.
-    pub cpu_pct: f32,
-    /// Resident memory, bytes.
-    pub mem: u64,
-}
+pub use khor_core::TopRow;
 
 /// The process table's own `System`, apart from the vitals sampler's on
 /// purpose: the two answer on different beats, and sharing one would
 /// let either ask reset the other's CPU window (the shared-window trap
 /// `vitals::gpu::mac` documents from the machine's other end).
-static SAMPLER: OnceLock<Mutex<sysinfo::System>> = OnceLock::new();
+static SAMPLER: OnceLock<Mutex<(sysinfo::System, sysinfo::Users)>> = OnceLock::new();
 
 fn refresh(sys: &mut sysinfo::System) {
     sys.refresh_processes_specifics(
@@ -61,32 +42,50 @@ fn refresh(sys: &mut sysinfo::System) {
         // Dead processes leave the table — a row for a pid that is gone
         // would be a reading of nothing.
         true,
-        sysinfo::ProcessRefreshKind::nothing().with_cpu().with_memory(),
+        sysinfo::ProcessRefreshKind::nothing().with_cpu().with_memory().with_user(sysinfo::UpdateKind::OnlyIfNotSet),
     );
+}
+
+/// The account behind a process, by name when the machine can spell it.
+/// The user list is read once and re-read only on a miss — an account
+/// created since start is the one case a stale list answers wrongly,
+/// and a miss is exactly when it shows.
+fn user_of(users: &mut sysinfo::Users, p: &sysinfo::Process) -> String {
+    let Some(uid) = p.user_id() else { return String::new() };
+    if let Some(u) = users.get_user_by_id(uid) {
+        return u.name().to_owned();
+    }
+    users.refresh();
+    match users.get_user_by_id(uid) {
+        Some(u) => u.name().to_owned(),
+        None => uid.to_string(),
+    }
 }
 
 /// The `n` hungriest processes right now, by CPU then by memory.
 /// **Blocking** — the one caller inside async code goes through
 /// `spawn_blocking`, the vitals rule.
 pub fn sample_top(n: usize) -> Vec<TopRow> {
-    let mut sys = SAMPLER
+    let mut held = SAMPLER
         .get_or_init(|| {
             let mut sys = sysinfo::System::new();
             // The first look, so the reading below has something to
             // subtract — `vitals::Sampler`'s arrangement.
             refresh(&mut sys);
             std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-            Mutex::new(sys)
+            Mutex::new((sys, sysinfo::Users::new_with_refreshed_list()))
         })
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    refresh(&mut sys);
+    let (sys, users) = &mut *held;
+    refresh(sys);
     let mut rows: Vec<TopRow> = sys
         .processes()
         .values()
         .map(|p| TopRow {
             pid: p.pid().as_u32(),
             name: p.name().to_string_lossy().into_owned(),
+            user: user_of(users, p),
             cpu_pct: p.cpu_usage(),
             mem: p.memory(),
         })
@@ -143,6 +142,15 @@ mod tests {
         );
         assert!(mine.mem > 0, "a running process holds memory");
         assert!(!mine.name.is_empty(), "a process has a name");
+        // The account is this test's own, which the platform can always
+        // spell — so an empty word here is the column not being asked
+        // for, not a machine that would not say.
+        assert!(!mine.user.is_empty(), "this process's own account is spellable");
+        assert!(
+            !mine.user.chars().all(|c| c.is_ascii_digit()),
+            "the account has a name, not just an id: {}",
+            mine.user
+        );
         for r in &rows {
             assert!(r.cpu_pct >= 0.0, "a rate is not negative: {} on {}", r.cpu_pct, r.name);
         }

@@ -20,24 +20,18 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+/// How often the resident takes a reading into the day
+/// (`Node::cpu_recorder`). A minute: five readings to a bucket is a
+/// mean with something in it, and a sample is a few milliseconds of
+/// `sysinfo` — the beat could be faster, and nothing would be truer.
+pub const RECORD_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Five minutes to a bucket…
 pub const BUCKET_MS: u64 = 5 * 60 * 1000;
 /// …and a day of them on the board.
 pub const BUCKETS: usize = 288;
 
-/// The band as a face draws it: oldest first, one slot per bucket,
-/// `None` where nobody measured.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CpuDay {
-    /// The stride, so a face never has to know [`BUCKET_MS`] by heart.
-    pub bucket_ms: u64,
-    /// When the newest slot closes (ms since the epoch, the recording
-    /// machine's clock) — the axis's right edge.
-    pub now_ms: u64,
-    pub buckets: Vec<Option<f32>>,
-}
+pub use khor_core::CpuDay;
 
 /// One machine's CPU history: what it has recorded and where it keeps
 /// it. The recorder is the serve's minute beat (`link`); everybody else

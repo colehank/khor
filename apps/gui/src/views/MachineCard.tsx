@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-import type { DeviceRow, HooksState, Strain } from "@/api";
+import type { DeviceRow, HooksState, Load, Strain } from "@/api";
+import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring, RING_SIZE } from "@/components/Ring";
 import { IconBack, IconPin } from "@/components/icons";
@@ -170,6 +171,7 @@ export function MachineCard({
           </div>
           <Verbs row={row} onOpenTerm={onOpenTerm} onBrowseFiles={onBrowseFiles} />
           <Readings row={row} />
+          <Busy row={row} />
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
@@ -511,6 +513,147 @@ function Readings({ row }: { row: DeviceRow }) {
           {cli.vitals_taken(ago(Date.now() - age_ms))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** How many rows the card's top shows. Eight: `top`'s own fold on a
+    short terminal, and the number past which the table is a list of
+    idle helpers rather than an answer to 在忙什么. */
+const TOP_SHOWN = 8;
+/** How often an open card re-asks. Five seconds is the vitals beat the
+    rings above already move on; the table and the band moving on
+    another would make the card describe two moments. */
+const LOAD_MS = 5_000;
+/** …and how long to wait after a refusal before asking again: a far
+    machine that is away costs a dial each time, and the sentence on
+    the card does not get truer by being re-fetched every five seconds. */
+const LOAD_RETRY_MS = 30_000;
+
+/**
+ * What the machine is busy with, under its rings (2026-09-02:「环下面
+ * 显示进程top,最近24小时cpu」): the process top as a table and the CPU
+ * day as a band.
+ *
+ * **Asked by this card, not carried on the row** — the rings read a
+ * reading that rides the device beat, but a process table is asked for
+ * only while somebody is looking at it, and the band is a day of
+ * buckets that has no business on a two-second heartbeat.
+ *
+ * **Three faces, and the empty one is never drawn.** Nothing until the
+ * first answer (the ask is out); the table and the band once it lands;
+ * and the refusal's own sentence in their place when it does not — an
+ * older khor over there, or a machine that is away. A blank table would
+ * read as an idle machine, which is the one thing this surface must not
+ * say by accident (docs/SESSION.md 认不出就不落词).
+ *
+ * The band paints absence as absence: a bucket the recorder never saw
+ * (`null`) is a cell with no bar, never a bar of height zero and never
+ * a line bridged from its neighbours (`khor_core::CpuDay`).
+ */
+function Busy({ row }: { row: DeviceRow }) {
+  const [load, setLoad] = useState<Load | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    let timer = 0;
+    setLoad(null);
+    setWhy(null);
+    const ask = async () => {
+      let wait = LOAD_MS;
+      try {
+        // A name, not an id: the node resolves machines by the name
+        // its table knows them by, and its own by being asked for
+        // itself (`Node::load_on`).
+        const l = await fetchLoad(row.me ? "" : row.name, TOP_SHOWN);
+        if (stopped) return;
+        setLoad(l);
+        setWhy(null);
+      } catch (e: unknown) {
+        if (stopped) return;
+        setWhy(String((e as { message?: string })?.message ?? e));
+        wait = LOAD_RETRY_MS;
+      }
+      if (!stopped) timer = window.setTimeout(() => void ask(), wait);
+    };
+    void ask();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [row.id, row.me, row.name]);
+
+  if (why) {
+    return (
+      <div data-load-why className="pt-pane text-sm text-muted-foreground">
+        {why}
+      </div>
+    );
+  }
+  if (!load) return null;
+  return (
+    <div data-load className="flex flex-col gap-row pt-pane">
+      <div data-load-day>
+        <div className="text-aux text-muted-foreground">{cli.top_day}</div>
+        <DayBand day={load.cpu_day} />
+      </div>
+      <table data-load-top className="w-full text-sm tabular-nums">
+        <thead className="text-aux text-muted-foreground">
+          <tr>
+            <th className="text-left font-body">{cli.top_name}</th>
+            <th className="text-left font-body">{cli.top_user}</th>
+            <th className="text-right font-body">{cli.vitals_name_cpu}</th>
+            <th className="text-right font-body">{cli.vitals_name_mem}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {load.top.map((r) => (
+            <tr key={r.pid} data-top-row={r.pid}>
+              {/* The name, then the pid in the muted colour: the pid
+                  is what a person would type after the name, not a
+                  fact they read, and a column of its own would push
+                  the name off a narrow card. */}
+              <td className="max-w-0 truncate pr-2">
+                {r.name} <span className="text-muted-foreground">{r.pid}</span>
+              </td>
+              <td className="truncate pr-2 text-muted-foreground">{r.user}</td>
+              <td className="text-right">{Math.round(r.cpu_pct)}%</td>
+              <td className="text-right">{bytes(r.mem)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * The CPU day as a band: one cell per bucket, oldest at the left, the
+ * bar's height the bucket's mean. A `null` bucket is a cell with no bar
+ * — the recorder was not running, and the band says so by drawing
+ * nothing there rather than a zero or a bridge. Every cell is drawn
+ * (the gate counts 288) so a gap holds its width and the axis stays
+ * a day long whatever was measured.
+ */
+function DayBand({ day }: { day: Load["cpu_day"] }) {
+  return (
+    <div data-day-band className="flex h-10 w-full items-end gap-px">
+      {day.buckets.map((b, i) => (
+        <div
+          key={i}
+          data-day-cell
+          data-gap={b === null ? "" : undefined}
+          className="min-w-0 flex-1 self-stretch"
+          title={b === null ? undefined : `${Math.round(b)}%`}
+        >
+          {b !== null && (
+            <div
+              className="h-full w-full bg-foreground/50"
+              style={{ height: `${Math.max(2, Math.min(100, b))}%`, marginTop: "auto" }}
+            />
+          )}
+        </div>
+      ))}
     </div>
   );
 }

@@ -37,7 +37,7 @@ pub mod vitals;
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
 };
-pub use khor_core::{kind, Fill, Hop, Session, SessionId, State, Tokens, Usage, UsageDay, Vitals};
+pub use khor_core::{kind, CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopRow, Usage, UsageDay, Vitals};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
@@ -1358,6 +1358,50 @@ impl Node {
             tick.tick().await;
             let me = self.clone();
             let _ = tokio::task::spawn_blocking(move || me.record_day()).await;
+        }
+    }
+
+    /// Where this machine's CPU day is kept (`history`), beside the
+    /// other things the resident records about itself.
+    fn history_dir(root: &Path) -> PathBuf {
+        root.join(".khor").join("history")
+    }
+
+    /// Records one CPU reading into this machine's day
+    /// (`history::CpuHistory`). Load-modify-save each beat, the
+    /// `record_day` arrangement: the file is never behind by more than
+    /// one sample, and a resident that dies takes at most one with it.
+    /// **Blocking** — the sampler's rule.
+    pub fn record_cpu(root: &Path) {
+        let v = vitals::sample(root);
+        history::CpuHistory::open(&Self::history_dir(root)).record(now_ms(), v.cpu_pct);
+    }
+
+    /// Takes a CPU reading every [`history::RECORD_EVERY`], for as long
+    /// as the resident lives — its own task on its own beat, the
+    /// `day_sampler` judgment one door up. **The record only exists
+    /// while a resident does**, and a minute with none is the gap the
+    /// band paints as absence rather than a number nobody measured.
+    pub(crate) async fn cpu_recorder(self: std::sync::Arc<Self>) {
+        let mut tick = tokio::time::interval(history::RECORD_EVERY);
+        loop {
+            tick.tick().await;
+            let root = self.root.clone();
+            let _ = tokio::task::spawn_blocking(move || Self::record_cpu(&root)).await;
+        }
+    }
+
+    /// What this machine is busy with: the `top` hungriest processes
+    /// right now and the CPU day its resident has recorded
+    /// (`khor_core::Load`). The day is read from disk rather than from
+    /// memory because the reader is usually a different process from
+    /// the recorder — the GUI opens its own `Node` — and the file is the
+    /// one copy both see. **Blocking** — the sampler's rule; the one
+    /// async caller (`link`) goes through `spawn_blocking`.
+    pub fn load(root: &Path, top: usize) -> khor_core::Load {
+        khor_core::Load {
+            top: top::sample_top(top),
+            cpu_day: history::CpuHistory::open(&Self::history_dir(root)).day(now_ms()),
         }
     }
 

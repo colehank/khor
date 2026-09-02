@@ -237,6 +237,27 @@ try {
   await page.route("**/devices", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(devs) }),
   );
+  // What a machine is busy with (`MachineCard`'s `Busy`): the peer
+  // answers a top of three and a day with holes in it; elder refuses,
+  // the way a khor that predates the op does, and the refusal is a
+  // sentence. The holes are placed by a rule (every seventh bucket
+  // from the fourth) so their count is derived here, not typed twice.
+  const dayBuckets = Array.from({ length: 288 }, (_, i) => (i % 7 === 3 ? null : 5 + (i % 60)));
+  const dayGaps = dayBuckets.filter((b) => b === null).length;
+  const load = {
+    top: [
+      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000 },
+      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000 },
+      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000 },
+    ],
+    cpu_day: { bucket_ms: 300_000, now_ms: Date.now(), buckets: dayBuckets },
+  };
+  const ELDER_REFUSAL = "elder-refuses-load";
+  await page.route("**/load", (r) =>
+    r.request().postDataJSON().machine === "elder"
+      ? r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(ELDER_REFUSAL) })
+      : r.fulfill({ contentType: "application/json", body: JSON.stringify(load) }),
+  );
   // The shell polls sessions, devices and hooks in one Promise.all —
   // one rejection drops the whole batch, so the third leg answers too.
   await page.route("**/hooks_state", (r) =>
@@ -1658,6 +1679,44 @@ try {
       `the un-surveyed card lost its old rings: disk ${elder.disk}, gpu ${elder.gpus}, ` +
         `vram ${elder.vram}, vols ${elder.vols} — the fallback is the un-upgraded mesh's face`,
     );
+  }
+
+  // ── 10) the top and the CPU day under the rings, and the refusal ──
+  // Tied to the fixture the other way round from 9: the peer answers
+  // (three rows, a day of 288 with holes where nobody measured), elder
+  // refuses with a sentence. An implementation that draws nothing reds
+  // the first half; one that bridges or zeroes the holes reds the gap
+  // count; one that swallows the refusal into an empty table — the
+  // idle-machine lie — reds the second half, where the table must be
+  // absent and the sentence present.
+  await open("devices");
+  await pressNth("[data-list] [data-row-open]", 1);
+  await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-top]").count()) === 1);
+  const busy = await page.evaluate(() => ({
+    rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
+    cells: document.querySelectorAll("[data-machine-card] [data-day-cell]").length,
+    gaps: document.querySelectorAll("[data-machine-card] [data-day-cell][data-gap]").length,
+    barsInGaps: document.querySelectorAll("[data-machine-card] [data-day-cell][data-gap] > *").length,
+    bars: document.querySelectorAll("[data-machine-card] [data-day-cell]:not([data-gap]) > *").length,
+    why: document.querySelectorAll("[data-machine-card] [data-load-why]").length,
+  }));
+  if (busy.rows !== load.top.length) fail(`the peer's top draws ${busy.rows} rows for ${load.top.length} routed`);
+  if (busy.cells !== 288) fail(`the CPU day draws ${busy.cells} cells for a day of 288 buckets`);
+  if (busy.gaps !== dayGaps) fail(`${busy.gaps} cells are gaps where the fixture left ${dayGaps} unmeasured`);
+  if (busy.barsInGaps !== 0) fail(`${busy.barsInGaps} gap cells draw a bar — an unmeasured bucket painted as a reading`);
+  if (busy.bars !== 288 - dayGaps) fail(`${busy.bars} measured cells draw a bar for ${288 - dayGaps} readings`);
+  if (busy.why !== 0) fail("the peer answered and the card still prints a refusal");
+  await open("devices");
+  await pressNth("[data-list] [data-row-open]", 2);
+  await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-why]").count()) === 1);
+  const refused = await page.evaluate(() => ({
+    why: document.querySelector("[data-machine-card] [data-load-why]")?.textContent ?? "",
+    table: document.querySelectorAll("[data-machine-card] [data-load-top]").length,
+    band: document.querySelectorAll("[data-machine-card] [data-day-cell]").length,
+  }));
+  if (!refused.why.includes(ELDER_REFUSAL)) fail(`elder's refusal is not the sentence it sent: "${refused.why}"`);
+  if (refused.table !== 0 || refused.band !== 0) {
+    fail(`elder refused and the card still draws a table (${refused.table}) or a band (${refused.band}) — an idle machine invented`);
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);

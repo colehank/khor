@@ -220,6 +220,16 @@ pub enum Request {
     /// predates it answers [`Response::Refused`], read as "no reading
     /// from there" and painted as such with the last one's age.
     Quotas,
+    /// What the asked machine is busy with, now and over the last day
+    /// (`khor_core::Load`): its `top` hungriest processes and the CPU
+    /// day its serve has been recording (机器页批3, 2026-09-03). Asked
+    /// while a person has that machine's card open, never on the beat —
+    /// a process table nobody is looking at is a table nobody is
+    /// paying for. Answered as [`Response::Load`]; a khor that predates
+    /// it answers [`Response::Refused`], which the asker says out loud
+    /// (`msg::LOAD_PREDATES`) rather than painting an empty table: an
+    /// empty table reads as an idle machine.
+    Load { top: u32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -298,6 +308,8 @@ pub enum Response {
     /// [`Request::Quotas`]'s answer: one reading per account whose key
     /// the answering machine holds, as it last read them.
     Quotas { readings: Vec<khor_core::AccountReading> },
+    /// [`Request::Load`]'s answer, taken when this frame was built.
+    Load { load: khor_core::Load },
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -394,6 +406,7 @@ mod tests {
             ),
             (Request::Places, &b"Places"[..]),
             (Request::Quotas, &b"Quotas"[..]),
+            (Request::Load { top: 8 }, &b"Load"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(
@@ -410,6 +423,42 @@ mod tests {
         let theirs = encode(&Request::Sessions).unwrap();
         assert!(matches!(decode::<Request>(&theirs), Ok(Request::Sessions)));
         assert!(matches!(decode::<OlderRequest>(&theirs), Ok(OlderRequest::Sessions)));
+    }
+
+    /// The load answer crosses the wire with its gaps intact: a bucket
+    /// nobody measured is `None` at both ends, never a zero — a zero
+    /// would be the one reading the band must not invent
+    /// (`khor_core::CpuDay`). The filled neighbours prove the decoder
+    /// reads what is there before the hole is trusted to be a hole.
+    #[test]
+    fn a_load_frame_keeps_its_holes_as_holes() {
+        let sent = khor_core::Load {
+            top: vec![khor_core::TopRow {
+                pid: 41,
+                name: "khor".into(),
+                user: "zgh".into(),
+                cpu_pct: 250.5,
+                mem: 12_345_678,
+            }],
+            cpu_day: khor_core::CpuDay {
+                bucket_ms: 300_000,
+                now_ms: 1_700_000_000_000,
+                buckets: vec![Some(12.5), None, Some(80.0)],
+            },
+        };
+        let bytes = encode(&Response::Load { load: sent.clone() }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::Load { load } => {
+                assert_eq!(load, sent);
+                assert_eq!(load.cpu_day.buckets[1], None, "the hole came back as a hole");
+                assert_eq!(load.cpu_day.buckets[0], Some(12.5), "…between readings that came back whole");
+            }
+            other => panic!("decoded wrong: {other:?}"),
+        }
+        // The asker's own words decode too, `top` and all — a request
+        // whose count was lost would size the table from nothing.
+        let ask = encode(&Request::Load { top: 8 }).unwrap();
+        assert!(matches!(decode::<Request>(&ask), Ok(Request::Load { top: 8 })));
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and

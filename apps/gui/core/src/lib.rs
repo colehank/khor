@@ -590,6 +590,14 @@ pub async fn places(root: &Path, machine: &str) -> Result<Vec<PlaceRow>, String>
         .collect())
 }
 
+/// What a machine is busy with — its process top and CPU day
+/// (`khor_node::Node::load_on`; a name, or empty for this one). An
+/// older khor over there is a refusal with its own sentence, which the
+/// card prints where the table would be.
+pub async fn load(root: &Path, machine: &str, top: u32) -> Result<khor_core::Load, String> {
+    open(root)?.load_on(machine, top).await
+}
+
 /// One cell of a day strip, in the shape the frontend can paint.
 ///
 /// **Three cases and three TS shapes, on purpose.** The words are one

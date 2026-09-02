@@ -81,6 +81,12 @@ pub fn answer(
             to_json(&rt.block_on(crate::places(root, &opt_str("machine")?.unwrap_or_default()))?)
         }
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
+        // `top` is required, the `cells` rule: how many rows fit is the
+        // screen's fact, and a default here would be this layer sizing
+        // a table it cannot see.
+        "load" => {
+            to_json(&rt.block_on(crate::load(root, &arg("machine")?, num("top")? as u32))?)
+        }
         // The 额度 page: one ring per registered account, wherever its
         // key lives (`Node::quota_board`).
         "quota_board" => to_json(&rt.block_on(crate::quota_board(root))?),

@@ -34,6 +34,9 @@ import type { MachineLog } from "./gen/bindings/MachineLog";
 import type { AccountRing } from "./gen/bindings/AccountRing";
 import type { ChatMsgRow } from "./gen/bindings/ChatMsgRow";
 import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
+import type { Load } from "./gen/bindings/Load";
+import type { TopRow } from "./gen/bindings/TopRow";
+import type { CpuDay } from "./gen/bindings/CpuDay";
 
 export type {
   AccountRing,
@@ -64,6 +67,9 @@ export type {
   MachineLog,
   ChatMsgRow,
   ChatFileRow,
+  Load,
+  TopRow,
+  CpuDay,
 };
 
 const params = new URLSearchParams(window.location.search);
@@ -192,6 +198,14 @@ export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by
 export const fetchDayStrips = (cells: number) =>
   call<Record<string, DayRun[]>>("day_strips", { cells });
 export const fetchDevices = () => call<DeviceRow[]>("devices");
+/** What a machine is busy with — its `top` hungriest processes now and
+    the CPU day its serve recorded (`Node::load_on`; `machine` is a
+    name, empty for this one). **Asked only while its card is open**,
+    never on the row beat: a process table nobody is looking at is a
+    table nobody is paying for. An older khor over there rejects with
+    its own sentence, which the card prints where the table would be
+    — an empty table would read as an idle machine. */
+export const fetchLoad = (machine: string, top: number) => call<Load>("load", { machine, top });
 /** The 额度 page's rings: one per registered account, wherever its key
     lives — this machine's read now, another's as last carried here
     with its age (`Node::quota_board`). */

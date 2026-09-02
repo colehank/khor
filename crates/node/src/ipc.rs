@@ -61,6 +61,9 @@ pub enum Op {
     /// Tail-appended: [`crate::proto::Request::Places`] through the
     /// resident — 常去的地方 on that machine.
     PlacesOn { machine: String },
+    /// Tail-appended: [`crate::proto::Request::Load`] through the
+    /// resident — what that machine is busy with, `top` rows deep.
+    LoadOn { machine: String, top: u32 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,6 +111,9 @@ pub enum Reply {
     /// Tail-appended with [`Op::PlacesOn`]: `(path, shown, sessions,
     /// last_ms)` per place, as that machine answered.
     Places { places: Vec<(String, String, u32, i64)> },
+    /// Tail-appended with [`Op::LoadOn`]: the machine's top and CPU
+    /// day, as it answered.
+    Load { load: khor_core::Load },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

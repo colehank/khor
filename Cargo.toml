@@ -86,7 +86,7 @@ portable-pty = "0.9"
 # (crates/node/src/vitals.rs). Still not `default`: `network`, `user` and
 # `component` are three more platform surfaces khor never asks about, and
 # `component` alone drags in the whole objc2 IOKit stack on macOS.
-sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk", "user"] }
 # GPU use on macOS, read out of IOKit's registry in-process.
 # `ioreg -r -d 1 -c IOAccelerator` is these two calls with a printer on
 # the end, and khor makes the calls instead: a gauge refreshed every few

@@ -33,6 +33,9 @@ fn main() {
     // for on its own, so nothing embeds it and `export_all_to` would
     // never walk into it.
     khor_node::Usage::export_all_to(&dir).expect("export Usage");
+    // The machine card's process top and CPU day: the `load` op's
+    // answer, a `khor_core` type no row embeds.
+    khor_core::Load::export_all_to(&dir).expect("export Load");
     // Same reason as the spending answer above: the subscription is
     // asked for on its own and no row embeds it, so nothing would walk
     // into it.

@@ -52,6 +52,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "id", run: id },
     Verb { word: "face", run: face },
     Verb { word: "devices", run: devices },
+    Verb { word: "top", run: top },
     Verb { word: "ls", run: ls },
     Verb { word: "pull", run: pull },
     Verb { word: "borrow", run: borrow },
@@ -301,6 +302,54 @@ fn devices(_rest: &[String]) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+/// How many rows `khor top` prints. The card asks for its own count;
+/// a terminal has no pixel width to size from, and ten is what `top`
+/// itself shows above the fold.
+const TOP_ROWS: u32 = 10;
+
+/// What a machine is busy with — the CLI half of the machine card's
+/// lower half (docs/KHOR.md: CLI equals GUI). The top as a table, then
+/// the CPU day as one line of blocks, six buckets to a block so a day
+/// fits a terminal; a block nobody measured is a dot, the band's gap.
+fn top(rest: &[String]) -> Result<(), String> {
+    let machine = match rest {
+        [] => "",
+        [machine] => machine.as_str(),
+        _ => return Err(USAGE.into()),
+    };
+    let load = rt()?.block_on(node()?.load_on(machine, TOP_ROWS))?;
+    println!(
+        "pid\t{}\t{}\t{}\t{}",
+        cli::TOP_USER,
+        cli::VITALS_NAME_CPU,
+        cli::VITALS_NAME_MEM,
+        cli::TOP_NAME
+    );
+    for r in &load.top {
+        println!("{}\t{}\t{:.0}%\t{}\t{}", r.pid, r.user, r.cpu_pct, bytes(r.mem), r.name);
+    }
+    println!("{}\t{}", cli::TOP_DAY, day_line(&load.cpu_day));
+    Ok(())
+}
+
+/// A day of CPU as blocks — the mean of each run of six buckets (half an
+/// hour), one glyph per run, a dot where none of the six was measured.
+fn day_line(day: &khor_node::CpuDay) -> String {
+    const BLOCKS: [char; 8] = ['\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+    day.buckets
+        .chunks(6)
+        .map(|run| {
+            let seen: Vec<f32> = run.iter().flatten().copied().collect();
+            if seen.is_empty() {
+                return '\u{00b7}';
+            }
+            let mean = seen.iter().sum::<f32>() / seen.len() as f32;
+            let step = ((mean / 100.0) * (BLOCKS.len() - 1) as f32).round() as usize;
+            BLOCKS[step.min(BLOCKS.len() - 1)]
+        })
+        .collect()
 }
 
 /// The road word for one row — and **nothing at all for this machine**.
