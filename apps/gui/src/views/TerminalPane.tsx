@@ -69,6 +69,15 @@ function keyBytes(e: React.KeyboardEvent): string | null {
   if (e.ctrlKey && k.length === 1 && /[a-z]/i.test(k)) {
     return String.fromCharCode(k.toLowerCase().charCodeAt(0) - 96);
   }
+  // Shift+Tab is back-tab, and it is its own sequence — `CSI Z`, what a
+  // real terminal (and iTerm) sends. Without this the shift was dropped
+  // and the app got a plain Tab, so reverse-cycling a menu or a
+  // completion went forward instead (2026-09-02: 「按 shift+tab 没反应,
+  // 但 iterm2 就有」). Checked before the table because plain Tab lives
+  // there as "\t"; this is the one modifier the table's keys carry so
+  // far. (Full modifier encoding — shift/ctrl/alt on the arrows and the
+  // rest — is the terminal-completeness backlog, not this one line.)
+  if (k === "Tab" && e.shiftKey) return "\x1b[Z";
   const named: Record<string, string> = {
     Enter: "\r",
     Backspace: "\x7f",

@@ -86,26 +86,24 @@ export function IconSessions({ className }: IconProps) {
   );
 }
 
-/** 额度 = a stack of coins (2026-09-02: 「额度的icon,得是……这样的硬币」,
-    with a picture): the front coin lies at an angle — an ellipse rim
-    whose face is the family's one solid piece — over the edge of a
-    second coin behind it, cut where the two meet (`CUT`). One coin was
-    the old glyph and it read as an abstract ring; the second is what
-    makes it money. */
+/** 额度 = the token stack the user handed over (2026-09-02: 「token icon
+    用这个……把文字去掉」— noun-project 957015, Alina Oleynik). Their art
+    verbatim, the two credit `<text>` lines removed, filled in
+    `currentColor` so it themes and lights up selected like every rail
+    glyph. **Not redrawn in the stroke family**: it is a filled pictorial
+    mark, the way the mesh door's machine face is — using the file they
+    chose beats matching a house style they did not ask me to keep. */
 export function IconQuota({ className }: IconProps) {
   return (
-    <RailGlyph
-      className={className}
-      cut={<ellipse cx="9.8" cy="8.8" rx="7.2" ry="5.6" fill="black" stroke="black" strokeWidth={CUT} />}
+    <svg
+      className={cn("size-icon-rail", className)}
+      viewBox="0 0 100 100"
+      fill="currentColor"
+      aria-hidden="true"
     >
-      {(cutId) => (
-        <>
-          <circle mask={`url(#${cutId})`} cx="13.6" cy="14.6" r="6.6" />
-          <ellipse cx="9.8" cy="8.8" rx="7.2" ry="5.6" />
-          <ellipse data-body cx="9.8" cy="8.8" rx="3.6" ry="2.6" />
-        </>
-      )}
-    </RailGlyph>
+      <path d="M62.356,39.278c0.007-0.184,0.018-0.368,0.018-0.553c0-0.053-0.007-0.104-0.008-0.157v-5.475c0.001-0.053,0.008-0.104,0.008-0.157c0-10.127-10.449-18.336-23.338-18.336s-23.338,8.209-23.338,18.336c0,0.071,0.01,0.14,0.011,0.211v5.368c-0.001,0.071-0.011,0.14-0.011,0.211c0,5.26,2.823,9.999,7.339,13.343c-1.438,3.03-2.246,6.418-2.246,9.995c0,12.889,10.449,23.338,23.338,23.338c1.119,0,2.218-0.084,3.295-0.236c1.077,0.152,2.176,0.236,3.295,0.236s2.218-0.084,3.295-0.236c1.077,0.152,2.176,0.236,3.295,0.236c12.889,0,23.338-10.449,23.338-23.338C80.647,50.907,72.818,41.585,62.356,39.278z M19.122,32.936c0-8.641,8.916-15.646,19.914-15.646S58.95,24.295,58.95,32.936s-8.916,15.646-19.914,15.646S19.122,41.577,19.122,32.936z M44.129,81.977c-10.998,0-19.914-8.916-19.914-19.914c0-2.904,0.636-5.656,1.754-8.144c0.916,0.487,1.88,0.923,2.882,1.306c-0.937,2.089-1.47,4.399-1.47,6.837c0,9.249,7.498,16.747,16.747,16.747s16.747-7.498,16.747-16.747c0-4.324-1.653-8.253-4.343-11.224c0.803-0.716,1.544-1.475,2.199-2.283c3.286,3.551,5.311,8.287,5.311,13.507C64.043,73.061,55.127,81.977,44.129,81.977z M58.651,80.325c5.37-4.276,8.816-10.865,8.816-18.262c0-6.423-2.6-12.235-6.8-16.454c0.104-0.201,0.207-0.401,0.302-0.605c5.787,3.483,9.665,9.813,9.665,17.059C70.633,70.24,65.7,77.259,58.651,80.325z M65.241,80.325c5.37-4.276,8.816-10.865,8.816-18.262S70.611,48.076,65.241,43.8c7.049,3.066,11.982,10.085,11.982,18.262C77.223,70.24,72.29,77.259,65.241,80.325z" />
+      <ellipse cx="39.036" cy="32.936" rx="16.747" ry="13.158" />
+    </svg>
   );
 }
 
