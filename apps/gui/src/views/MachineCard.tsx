@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { DeviceRow, HooksState, QuotaAnswer, Strain } from "@/api";
+import type { DeviceRow, HooksState, Strain } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring, RING_SIZE } from "@/components/Ring";
 import { IconBack, IconPin } from "@/components/icons";
@@ -9,7 +9,6 @@ import { cli, gui } from "@/gen/catalog";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
-import { QuotaRings } from "@/views/QuotaRings";
 import { ago, hopWord } from "@/words";
 
 /**
@@ -34,7 +33,6 @@ export function MachineCard({
   pinFailed,
   hooks,
   hooksFailed,
-  quota,
   onInstallHooks,
   onUninstallHooks,
   onOpenTerm,
@@ -49,11 +47,6 @@ export function MachineCard({
   /** This machine's hooks, or `null` until the first answer is in. */
   hooks: HooksState | null;
   hooksFailed: boolean;
-  /** What the Claude subscription has left. Painted on **this**
-      machine's card only, the same rule the hooks toggle below follows
-      and for a stricter reason: khor reads it from a login stored here
-      and no frame carries another machine's (`QuotaRings`). */
-  quota: QuotaAnswer | null;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
   /** 在这台开终端 — rejects with the refusal, which lands on the button. */
@@ -102,43 +95,49 @@ export function MachineCard({
                 about itself. Bigger here, not different. */}
             <MachineAvatar face={row.face} className="size-avatar-lg" />
             <div className="min-w-0 flex-1">
-              {/* The three tiers by name rather than by size: this is
-                  the title, the readings under it are the facts, and
-                  the id below is what qualifies one. Same numbers as
-                  before — `text-lg` and `text-sm` are what these two
-                  tiers resolve to — so nothing moves; what changes is
-                  that the next person edits a role instead of a size. */}
-              <div className="truncate text-title font-title">
-                {row.name}
-                {row.me ? ` ${cli.this_machine}` : ""}
+              {/* The row's arrangement, larger: the name over the two
+                  facts that qualify one machine (2026-09-02:「机器页面
+                  打开,标题那也是左边头像,右上名称,右下序列号与连接
+                  方式」). The suffix the name used to carry is gone —
+                  「本机不用写一个括号在机器名旁边」— the connection
+                  slot says the same thing as a reading instead of a
+                  bracket. */}
+              <div className="truncate text-title font-title">{row.name}</div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {/* The first twelve characters — a prefix to recognise,
+                    not to paste. The whole id stays behind 复制 id in
+                    the verb row, and smoke ties the two together (the
+                    prefix must open a card that hands over the full
+                    id). */}
+                <span data-card-id className="truncate">{row.id.slice(0, 12)}</span>
+                {/* Which road this machine is being reached over
+                    (`khor_core::Hop`), the same reading `khor devices`
+                    prints, from the same call. Not a liveness signal —
+                    it lags the far end going away by minutes; the age
+                    beside the readings below is what says whether this
+                    machine has been heard from.
+
+                    Three shapes for one slot. This machine reaches
+                    itself over nothing, so its word is 本机 and it is
+                    deliberately **not** `data-hop` — smoke asserts the
+                    own card carries no road. A satellite has no road of
+                    its own; its sponsor speaks for it (附属机器批). */}
+                {row.me ? (
+                  <span data-machine-here className="flex-none">
+                    {gui.machine_here}
+                  </span>
+                ) : row.sponsor ? (
+                  <span data-via-sponsor={row.sponsor} className="flex-none">
+                    {cli.via_sponsor(row.sponsor)}
+                  </span>
+                ) : (
+                  row.hop && (
+                    <span data-hop={row.hop} className="flex-none">
+                      {hopWord(row.hop)}
+                    </span>
+                  )
+                )}
               </div>
-              {/* Which road this machine is using to reach that one
-                  (`khor_core::Hop`), the same reading `khor devices`
-                  prints, from the same call.
-
-                  **Nothing for this machine itself** — the row carries
-                  no reading at all there, so this renders nothing
-                  without having to know why.
-
-                  Not a liveness signal, and deliberately not dressed as
-                  one — it lags the far end going away by minutes, and
-                  the age beside the readings below is what says whether
-                  this machine has been heard from. Two facts, two
-                  places. */}
-              {/* A satellite has no road of its own — its sponsor
-                  speaks for it (附属机器批), so the road line names who
-                  through instead of a reading nothing could take. */}
-              {row.sponsor ? (
-                <div data-via-sponsor={row.sponsor} className="text-sm text-muted-foreground">
-                  {cli.via_sponsor(row.sponsor)}
-                </div>
-              ) : (
-                row.hop && (
-                  <div data-hop={row.hop} className="text-sm text-muted-foreground">
-                    {hopWord(row.hop)}
-                  </div>
-                )
-              )}
             </div>
             {/* The same control as on the row, with the same two names
                 and the same failure face — it is one fact about this
@@ -171,13 +170,10 @@ export function MachineCard({
           </div>
           <Verbs row={row} onOpenTerm={onOpenTerm} onBrowseFiles={onBrowseFiles} />
           <Readings row={row} />
-          {/* Under the machine's own readings, because it is the same
-              kind of answer — something read here, now — and above the
-              hooks toggle, which is a control rather than a reading.
-              `row.me` for the reason the toggle carries: on any other
-              card this would be one machine's number under another
-              machine's name. */}
-          {row.me && <QuotaRings quota={quota} className="pt-pane" />}
+          {/* The subscription's arcs left this card on 2026-09-02
+              (「机器页面不需要有token usage的环」) — the 额度 landing's
+              foot is their one home now, where 额度 is read.
+              `QuotaRings`' head carries the whole road. */}
           {/* **Only on this machine's card**, because the file it edits
               is on this machine. Putting it on every card would be a
               control that silently applies to one machine out of a list.

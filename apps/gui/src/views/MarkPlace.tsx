@@ -1,4 +1,4 @@
-import type { DeviceRow, SessionRow, QuotaAnswer } from "@/api";
+import type { DeviceRow, SessionRow } from "@/api";
 import type { Track } from "@/components/Ring";
 import { useEffect, useState } from "react";
 import { MachineAvatar } from "@/components/Avatar";
@@ -6,14 +6,13 @@ import { Ring } from "@/components/Ring";
 import { IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { MandalaMap } from "@/views/MandalaMap";
-import { QuotaRings } from "@/views/QuotaRings";
 import { cli, gui, state } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { vitalsTracks } from "@/lib/vitals";
 import { ageIfOld } from "@/words";
 
 /**
- * The mark's place: the mesh, and what is left of the subscription.
+ * The mark's place: the mesh.
  *
  * # One thing: the picture. Everything else is a press away
  *
@@ -29,10 +28,12 @@ import { ageIfOld } from "@/words";
  * it.
  *
  * **The arcs then left the footing too**: 「额度都是机器卡里的」 (the
- * same person, later the same day). So this screen is the picture and
- * nothing else, and the arcs are on this machine's card with the rest
- * of what khor reads locally — `QuotaRings` carries why that is the
- * honest place for them rather than a compromise.
+ * same person, later the same day) moved them onto this machine's
+ * cards — and on 2026-09-02 they left the machine surfaces altogether
+ * (「机器页面不需要有token usage的环」): the 额度 landing's foot is
+ * their one home now, where 额度 is read. So this screen is the
+ * picture and nothing else, twice over; `QuotaRings` carries the whole
+ * road.
  *
  * # Everything here is a machine, and pressing one opens its card
  *
@@ -71,12 +72,10 @@ import { ageIfOld } from "@/words";
 export function MarkPlace({
   rows,
   devices,
-  quota,
   onPickWaiting,
 }: {
   rows: SessionRow[];
   devices: DeviceRow[];
-  quota: QuotaAnswer | null;
   /** Where the waiting call leads, when anything is waiting. */
   onPickWaiting: (row: SessionRow) => void;
 }) {
@@ -139,13 +138,6 @@ export function MarkPlace({
             <MachineNodeCard
               row={machine}
               rows={rows.filter((r) => r.home === machine.name)}
-              // Only this machine's card gets it, and the reason is not
-              // tidiness — khor reads the quota from a login stored on
-              // this machine and no frame carries another machine's
-              // (`QuotaRings`). Passed as `null` rather than guarded
-              // inside the card, so the card never holds an answer it
-              // is not allowed to paint.
-              quota={machine.me ? quota : null}
               onClose={() => setOpen(null)}
               onPickWaiting={onPickWaiting}
             />
@@ -260,7 +252,6 @@ function NodeCard({
 function MachineNodeCard({
   row,
   rows,
-  quota,
   onClose,
   onPickWaiting,
 }: {
@@ -268,9 +259,6 @@ function MachineNodeCard({
   /** Only this machine's sessions — filtered by the caller, which is
       the one holding the whole table. */
   rows: SessionRow[];
-  /** The subscription's arcs, and **`null` on every card but this
-      machine's** — the caller decides, see its note. */
-  quota: QuotaAnswer | null;
   onClose: () => void;
   onPickWaiting: (row: SessionRow) => void;
 }) {
@@ -353,11 +341,9 @@ function MachineNodeCard({
           </div>
         )}
       </div>
-      {/* The subscription, under the same kind of rule as the counts —
-          it is a third group of numbers and reads as one more row of
-          them without a line. Draws nothing at all on a machine that is
-          not this one, and nothing before the first answer is in. */}
-      <QuotaRings quota={quota} className="mt-in justify-center border-t pt-in" />
+      {/* The subscription's arcs left this card with the machine card's
+          on 2026-09-02 (「机器页面不需要有token usage的环」) — the 额度
+          landing's foot holds them now. */}
       {/* Only once it is worth saying, the seat's own rule (`ageIfOld`):
           a reading taken a moment ago saying 「0 秒前」 reads as a fault. */}
       {aged !== null && (

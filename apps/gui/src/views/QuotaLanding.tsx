@@ -310,16 +310,15 @@ export function QuotaLanding({
         </div>
       )}
       {/* This machine's Claude Code login, the two windows as arcs —
-          the same fact the machine card draws. 2026-08-28's「额度都是
-          机器卡里的」judged that the cards must paint it, not that no
-          other surface may: the cards keep theirs, and the page whose
-          name is 额度 shows the one subscription this machine can
-          honestly answer for. **Only with a reading**: the no-login /
-          stale sentences stay on the card, where they are facts about
-          the machine — here they would be a warning about a product
-          nobody registered. And only this machine's: no frame carries
-          another machine's subscription (`QuotaRings`' head), so there
-          is nothing else this band could draw without inventing it. */}
+          and since 2026-09-02 the only place they are drawn:「机器页面
+          不需要有token usage的环」took them off both machine surfaces,
+          and the page whose name is 额度 is the home (`QuotaRings`'
+          head carries the three moves). **Only with a reading**: a
+          no-login / stale sentence here would be a warning about a
+          product nobody registered — absent says it better. And only
+          this machine's: no frame carries another machine's
+          subscription, so there is nothing else this band could draw
+          without inventing it. */}
       {quota?.quota && quota.quota.windows.length > 0 && (
         <footer data-quota-sub className="flex flex-none flex-col gap-2 border-t px-3 py-2">
           <span className="text-aux text-muted-foreground">{gui.accounts_subscription}</span>

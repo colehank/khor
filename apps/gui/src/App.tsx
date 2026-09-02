@@ -451,23 +451,14 @@ export default function App() {
 
   // The subscription's arcs, on a beat of their own.
   //
-  // **This effect used to carry two answers and now carries one**: the
-  // spending tally went with the 今天 line that read it, and what is
-  // left costs nothing per beat — the endpoint behind the quota is not
-  // touched per poll, since one fetch answers for five minutes and the
-  // whole machine shares it (`khor_node::quota`), so this reaches a
-  // cache and stops. Polling slower would only make the arcs staler
-  // than the number they are allowed to show.
-  //
-  // **The gate is still both places**, and it is wider than the arcs'
-  // own surface on purpose: they are drawn on this machine's card,
-  // which opens from the mark's place *and* from the devices landing,
-  // and a gate that only counted the first would leave the second
-  // showing whatever was last fetched.
+  // **One reader now**: the 额度 landing's foot (`QuotaLanding`). They
+  // were on both machine surfaces until 2026-09-02 —「机器页面不需要有
+  // token usage的环」pulled them off — so the gate narrowed with the
+  // readers. The beat still costs the endpoint nothing: one fetch
+  // answers for five minutes and the whole machine shares it
+  // (`khor_node::quota`), so this reaches a cache and stops.
   useEffect(() => {
-    // …and the 额度 page now, which draws the same answer as a band of
-    // its own (`QuotaLanding`'s foot).
-    if (!mark && landing !== "devices" && landing !== "quota") return;
+    if (landing !== "quota") return;
     let live = true;
     const tick = () => {
       fetchQuota()
@@ -1118,7 +1109,6 @@ export default function App() {
       pinFailed={pinFailed}
       hooks={hooks}
       hooksFailed={hooksFailed}
-      quota={quota}
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
       // The fresh terminal is what the person came for: land on its row
@@ -1183,7 +1173,6 @@ export default function App() {
     <MarkPlace
       rows={rows}
       devices={devices}
-      quota={quota}
       onPickWaiting={(row) => {
         setMark(false);
         setLanding("sessions");

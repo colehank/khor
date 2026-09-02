@@ -59,33 +59,20 @@ export const TRACK_OPACITY = 0.35;
 export const RING_SIZE = 64;
 
 /**
- * The diameter a ring takes **inside a list row**, where it sits beside
- * this machine's face.
+ * The diameter a ring takes **inside a list row**.
  *
  * **Equal to `--avatar` on purpose, and that is the single-diameter rule
- * being kept rather than broken.** Two circles on one row are two facts
- * about one machine; the moment one is bigger, size starts claiming one
- * of them matters more, which is exactly what the rule guards against.
- * What tells them apart is *form*, not scale — the face is a solid piece
- * of artwork, the ring is hollow and has several tracks, and "hollow and
- * many = a stack" is the vocabulary this file already speaks.
- *
- * It is written here as a number and there as a length, so `check-rail`
- * measures the two boxes on a real row and fails if they ever drift.
+ * being kept rather than broken.** Two circles on one row are two facts;
+ * the moment one is bigger, size starts claiming one of them matters
+ * more, which is exactly what the rule guards against. Today's caller
+ * is the 额度 page's account rows — the machine rows' reading stack,
+ * this constant's first customer, left on 2026-09-02 (「这个环很抽象,
+ * 看不明白。取消」).
  */
 export const RING_SIZE_ROW = 32;
 
 /** Stroke for a single-track ring. Fixed, because the diameter is. */
 const STROKE = 5.5;
-
-/**
- * The smallest hole a nested ring may close to.
- *
- * A stack that fills in stops reading as a stack — the hole is what says
- * "these are several, drawn around one another" rather than "this is a
- * thick ring".
- */
-const HOLE = 6;
 
 /** A ring's arc, and nothing else. `fraction` of `null` draws track only. */
 function Arc({
@@ -145,9 +132,10 @@ function Arc({
  * One measure, drawn as one ring, with whatever the caller puts in the
  * middle.
  *
- * **A number in the middle means one track.** That is half of this
- * file's vocabulary; `NestedRing` is the other half, and the two are
- * meant to be told apart without reading either.
+ * **A number in the middle means one track.** The stacked half of the
+ * vocabulary (`NestedRing`, concentric tracks) left with the machine
+ * rows' reading stack on 2026-09-02 (「这个环很抽象,看不明白。取消」)
+ * — every ring this app draws now is one measure with its own centre.
  */
 export function Ring({
   fraction,
@@ -203,56 +191,10 @@ export function Ring({
   );
 }
 
-/** One ring of a stack: its own share, its own colour. */
+/** One measure of a set: its own share, its own colour — the shape
+    `vitalsTracks` hands the mark's node card, which draws each as its
+    own `Ring`. (It fed a concentric `NestedRing` stack on the machine
+    rows until 2026-09-02 —「这个环很抽象,看不明白」— and the stack
+    went with that judgment; a set is several rings now, never one
+    ring of several tracks.) */
 export type Track = { id: string; fraction: number | null; color: string };
-
-/**
- * **A stack of measures, drawn as one hollow set of concentric rings**,
- * outermost first.
- *
- * The other half of the vocabulary: *a number in the middle is one
- * measure; a hollow set of rings is several*. They are distinguishable
- * at a glance, which is the whole point — a reader should not have to
- * work out which kind of thing they are looking at before reading it.
- *
- * **The middle stays empty.** mandala tried a name in there and got an
- * ellipsis: after three strokes the hole is only a few dozen points
- * across, and anything a user named themselves does not fit. Empty, it
- * goes back to being a mark rather than a squeezed piece of typography.
- *
- * **The diameter does not move; the stroke does.** Rings on one screen
- * have to be one size — a few pixels of difference says nothing and only
- * reads as misalignment — so more tracks means thinner ones, down to
- * whatever still leaves the hole open.
- */
-export function NestedRing({
-  tracks,
-  size = RING_SIZE,
-}: {
-  tracks: Track[];
-  size?: number;
-}) {
-  const n = Math.max(1, tracks.length);
-  // Gaps are a fixed share of the stroke, so there is only one unknown:
-  //   size/2 - stroke * (1 + 1.57(n-1)) ≥ HOLE
-  const stroke = Math.min(3.5, (size / 2 - HOLE) / (1 + 1.57 * (n - 1)));
-  const gap = stroke * 0.57;
-  const outer = (size - stroke) / 2;
-
-  return (
-    <span data-ring data-ring-tracks={n} className="inline-block" style={{ width: size, height: size }}>
-      <svg width={size} height={size} aria-hidden="true">
-        {tracks.map((t, i) => (
-          <Arc
-            key={t.id}
-            cx={size / 2}
-            r={outer - i * (stroke + gap)}
-            stroke={stroke}
-            color={t.color}
-            fraction={t.fraction}
-          />
-        ))}
-      </svg>
-    </span>
-  );
-}

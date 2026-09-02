@@ -1077,9 +1077,14 @@ accounts-trouble-cooling = "刚失败过,歇一会再问"
 accounts-trouble-no-key = "那台机器上没有这个账号的钥匙"
 accounts-trouble-no-reading = "那台机器还没答过"
 accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
-# 额度页脚下那条带的题头:本机 Claude Code 登录的两窗(机器卡上的那两个环,
-# 在额度页也给一份——2026-08-28「额度都是机器卡里的」判的是卡要画,不是别处不许画)。
+# 额度页脚下那条带的题头:本机 Claude Code 登录的两窗。2026-08-28「额度都是
+# 机器卡里的」曾把它们钉在两张机器卡上;2026-09-02「机器页面不需要有 token
+# usage 的环」撤了卡上那份——这条带从此是它们唯一的家。
 accounts-subscription = "Claude Code 订阅"
+# 机器行/机器卡的连接方式位,轮到本机时的词:本机到自己没有路,这个词就是
+# 那条读数(2026-09-02:「本机不用写一个括号在机器名旁边。连接方式就是本机」)。
+# [cli] 的 this-machine 是括号后缀,还给终端列表和向导用;别混。
+machine-here = "本机"
 new-session-dir = "目录"
 # **The wizard's first question, answered before it is asked.** A
 # person walks into a directory and then starts something there — so

@@ -8,20 +8,22 @@ import { until } from "@/words";
 /**
  * What the Claude subscription has left — the two windows, as arcs.
  *
- * # It lives on a machine's card, and that is a fact about where khor reads it
+ * # It lives at the 额度 page's foot, and the road here had three stops
  *
- * 「额度都是机器卡里的。这里包括 khor 页面和设备页面里点击设备后显示的
- * 机器都要画」 — the user, 2026-08-28. So both machine cards draw it and
- * the strip that used to sit under the mandala is gone.
+ * Under the mandala first; then 「额度都是机器卡里的。这里包括 khor
+ * 页面和设备页面里点击设备后显示的机器都要画」 (the user, 2026-08-28)
+ * put it on both machine cards; then 「机器页面不需要有token usage的环」
+ * (the same person, 2026-09-02) took it off them — by then the 额度
+ * landing existed, and a page whose name is what these arcs answer is
+ * the home the cards never quite were. `QuotaLanding`'s foot is the one
+ * caller left.
  *
- * **On this machine's card only** (`row.me`), the rule the hooks toggle
- * on the same card already follows: khor reads this from the Claude
- * Code login stored **here** — `khor_node::quota` has two sources and
- * both are local files — and no protocol frame carries a quota, so what
- * another machine has left is something khor does not know. Painting
- * this number on a remote machine's card would be putting one machine's
- * answer under another machine's name, which is the one thing a card
- * may not do.
+ * **This machine's login only**, wherever it is drawn: khor reads this
+ * from the Claude Code login stored **here** — `khor_node::quota` has
+ * two sources and both are local files — and no protocol frame carries
+ * a quota, so what another machine has left is something khor does not
+ * know. Painting it under another machine's name was the one thing a
+ * card was never allowed to do, and the rule survives the move.
  *
  * That is also why it is not a per-machine reading in the way CPU is.
  * `gui_core::quota` says it outright: it takes no `root`, because it is

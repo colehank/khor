@@ -1483,21 +1483,20 @@ for line in sys.stdin:
     (await locator.innerHTML()).replace(/av-blur-[^"')\s]+/g, "BLUR");
   await openLanding("devices");
   await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) >= 2);
-  //    **Two circles on a machine's row are the same size** (批⑨). They
-  //    are two facts about one machine — the face is which machine, the
-  //    stack is what it is doing — and the moment one is bigger, size
-  //    starts claiming one of them matters more. Read as boxes, because
-  //    the two are written in different files and in different units (a
-  //    number in `Ring.tsx`, a length in `tokens.css`) and nothing but a
-  //    measurement notices them drifting apart.
-  const stackBox = await page.locator("[data-device] [data-vitals-stack] [data-ring]").first().boundingBox();
-  const faceBox = await page.locator("[data-device] [data-face]").first().boundingBox();
-  if (!stackBox || !faceBox) throw new Error("probe dead: a machine row is missing its face or its stack");
-  if (Math.abs(stackBox.width - faceBox.width) > 1 || Math.abs(stackBox.height - faceBox.height) > 1) {
-    throw new Error(
-      `a machine row draws a ${stackBox.width}×${stackBox.height} stack beside a ` +
-        `${faceBox.width}×${faceBox.height} face`,
-    );
+  //    **The reading stack left the rows on 2026-09-02** (「这个环很
+  //    抽象,看不明白。取消」) — a machine row is the face, the name, and
+  //    how the machine is reached. Both halves asserted: the stack has
+  //    not come back, and the connection line really took its slot —
+  //    the self row always has one, because a machine reaches itself
+  //    over nothing and that fact has a word of its own
+  //    (`machine-here`). The road word's agreement with the terminal
+  //    is asserted in the card block below, where the CLI reader lives.
+  if ((await page.locator("[data-device] [data-vitals-stack]").count()) !== 0) {
+    throw new Error("the reading stack is back on a machine row");
+  }
+  const selfConnection = page.locator('[data-device="beta"] [data-row-connection]');
+  if ((await selfConnection.count()) !== 1 || !(await selfConnection.innerText()).trim()) {
+    throw new Error("the self row draws no connection word");
   }
 
   //    **`[data-rail-mark]`, not `nav > [data-face]`.** The face at the
@@ -3103,6 +3102,15 @@ for line in sys.stdin:
     }
   };
 
+  //     The row's connection line is the same road word the card and
+  //     the terminal print — one fact, three faces (2026-09-02: the
+  //     row's reading stack left and the road took its slot).
+  const rowRoad = page.locator('[data-device="alpha"] [data-row-connection]');
+  if ((await rowRoad.count()) !== 1) throw new Error("alpha's row draws no connection line");
+  const rowRoadWord = (await rowRoad.innerText()).trim();
+  if (rowRoadWord !== cliRow("alpha", envB).road.trim()) {
+    throw new Error(`alpha's row road is "${rowRoadWord}", the terminal prints something else`);
+  }
   //     Clicked the way a person clicks it: the row's own button.
   const shortId = await page
     .locator('[data-device="alpha"]')
@@ -3118,6 +3126,13 @@ for line in sys.stdin:
   const openCard = await cardId();
   if (!openCard.startsWith(shortId) || openCard.length <= shortId.length) {
     throw new Error(`the card hands over ${openCard}, which is not the full id behind ${shortId}`);
+  }
+
+  //     The prefix on the card's own face is the same twelve characters
+  //     (2026-09-02:「序列号写在机器页面内」) — tied to the full id the
+  //     card hands over, the way the row used to be.
+  if ((await page.locator("[data-machine-card] [data-card-id]").innerText()).trim() !== shortId) {
+    throw new Error("the card's id prefix is not the id it hands over");
   }
 
   //     One machine, one picture — the same rule the rail and the row
@@ -3191,6 +3206,12 @@ for line in sys.stdin:
   //     field were a word every face had to remember to hide.
   if ((await page.locator("[data-machine-card] [data-hop]").count()) !== 0) {
     throw new Error("beta's own card claims a road to itself");
+  }
+  //     What the slot holds instead (2026-09-02): the machine's own
+  //     word — it reaches itself over nothing — with the id prefix
+  //     beside it.
+  if ((await page.locator("[data-machine-card] [data-machine-here]").count()) !== 1) {
+    throw new Error("beta's own card does not carry the here-word in the connection slot");
   }
   if ((await page.locator("[data-vitals-unit]").count()) === 0) {
     throw new Error("this machine's own card is missing readings");

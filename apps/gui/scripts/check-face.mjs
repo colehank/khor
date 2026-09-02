@@ -27,9 +27,10 @@
 //      target — the claim section 3's scope rests on, since a control
 //      the DOM does not admit to is one section 3 cannot find either;
 //   5. a dense pane has a reading order;
-//   5b. the subscription's arcs are on this machine's card on both
-//      surfaces that draw a machine, side by side, and on no other
-//      machine's — the one panel nothing watched;
+//   5b. no machine surface draws the subscription's arcs any more
+//      (2026-09-02:「机器页面不需要有token usage的环」) — their one
+//      home is the 额度 landing's foot, where section 8 proves the
+//      finder the absences lean on;
 //   6. zero page errors while measuring — a half-drawn page answers
 //      probes too (the browser-check false-green family).
 //
@@ -1384,100 +1385,63 @@ try {
     }
   }
 
-  // 7) the subscription's arcs live on **this machine's** card, on both
-  //    surfaces that draw a machine — and on no other machine's.
-  //
-  //    **Nothing watched this panel at all until now**, which is how it
-  //    shipped stacked into a pane a metre wide (「水平空间完全没用」)
-  //    and then had to move again (「额度都是机器卡里的。这里包括 khor
-  //    页面和设备页面里点击设备后显示的机器都要画」 — the user,
-  //    2026-08-28). This gate already routes a two-window quota answer
-  //    for section 4, so the arcs are on the glass here and nowhere
-  //    else: the smoke's homes have no Claude login, and faking one
-  //    there would be the hand-written mock `api.ts` refuses.
-  //
-  //    **The half that matters most is the negative one.** khor reads
-  //    the quota from a login stored on *this* machine and no frame
-  //    carries another machine's, so a peer's card showing arcs would
-  //    be one machine's number printed under another machine's name —
-  //    green against any check that only asked "are the arcs drawn".
-  //    And the negative half is only worth anything because the same
-  //    walk proves the positive one two presses earlier: the finder is
-  //    known to work before it is asked to report an absence.
-  const quotaOn = async (what) => {
-    // Wait for the card, then a beat for the arcs inside it — bounded,
-    // for the reason `until` is written down at the top of this file.
+  // 7) no machine surface draws the subscription's arcs — either card,
+  //    this machine's or a peer's, on the devices landing or in the
+  //    mark's place. They were on this machine's cards from 2026-08-28
+  //    (「额度都是机器卡里的」) until 2026-09-02, when 「机器页面不需要
+  //    有token usage的环」 took them off; the 额度 landing's foot is
+  //    their one home. **Section 8 below proves the finder**: the same
+  //    `[data-quota-window]` selector counts two windows there in this
+  //    very run, so a zero here is an absence and not a renamed marker
+  //    (the `.nav-badge` family's antidote). The `**/quota` route at
+  //    the head of this file stays — it feeds the band section 8
+  //    measures.
+  const arcsOn = async (what) => {
     await until(5_000, async () => (await page.locator(what).count()) > 0);
     await wait(300);
-    const seen = await page.evaluate((sel) => {
+    return await page.evaluate((sel) => {
       const card = document.querySelector(sel);
       if (!card) return null;
       return {
-        windows: [...card.querySelectorAll("[data-quota-window]")].map((e) => {
-          const r = e.getBoundingClientRect();
-          return { top: Math.round(r.top), left: Math.round(r.left) };
-        }),
+        windows: card.querySelectorAll("[data-quota-window]").length,
         via: card.querySelectorAll("[data-quota-via]").length,
       };
     }, what);
-    return seen;
   };
   await page.setViewportSize({ width: 1120, height: 1000 });
-  // The devices landing: row 0 is this machine (the stops above lean on
-  // the same order, and `[data-hooks]` is what says so out loud).
   await press(rail("devices"));
   await press("[data-list] [data-row-open]");
-  const mineCard = await quotaOn("[data-machine-card]");
+  const mineCard = await arcsOn("[data-machine-card]");
   if (!mineCard) fail("probe dead: this machine's card never drew, so nothing below measured it");
   else if ((await page.locator("[data-machine-card] [data-hooks]").count()) !== 1) {
-    fail("probe void: the card measured for the arcs is not this machine's — the row order moved");
-  } else {
-    console.log(`quota on this machine's card: ${JSON.stringify(mineCard)}`);
-    if (mineCard.windows.length < 2) {
-      fail(`this machine's card draws ${mineCard.windows.length} quota windows — the arcs did not move here`);
-    } else {
-      // Side by side, and the check is the arrangement rather than a
-      // width: inside a card there is no pane left over to waste.
-      if (new Set(mineCard.windows.map((w) => w.top)).size !== 1) {
-        fail("the quota windows are stacked on this machine's card");
-      }
-      if (new Set(mineCard.windows.map((w) => w.left)).size !== mineCard.windows.length) {
-        fail("two quota windows share a column on this machine's card");
-      }
-    }
-    // The retired line (catalog tombstone, 2026-08-28). Asserted here
-    // and not on its own, because this is the one place the finder has
-    // just been shown to work.
-    if (mineCard.via !== 0) fail("the grey credit line is back on the card");
+    fail("probe void: the card measured is not this machine's — the row order moved");
+  } else if (mineCard.windows !== 0 || mineCard.via !== 0) {
+    fail(`this machine's card draws ${mineCard.windows} quota windows — they left this surface on 2026-09-02`);
   }
-  // …and a machine that answered — the card is provably drawn (its
-  // readings are there) and carries no arcs.
   await press(rail("devices"));
   await pressNth("[data-list] [data-row-open]", 1);
-  const peerCard = await quotaOn("[data-machine-card]");
+  const peerCard = await arcsOn("[data-machine-card]");
   if (!peerCard) fail("probe dead: the peer's card never drew");
   else if ((await page.locator("[data-machine-card] [data-vitals]").count()) !== 1) {
     fail("probe void: the peer's card drew no readings, so its empty quota proves nothing");
-  } else if (peerCard.windows.length !== 0) {
-    fail(`a peer's card draws ${peerCard.windows.length} quota windows — that is this machine's number under another machine's name`);
+  } else if (peerCard.windows !== 0) {
+    fail(`a peer's card draws ${peerCard.windows} quota windows`);
   }
-  // The mark's place, same claim on the node cards. The middle seat is
-  // this machine (`map::CENTRE`), the other is the peer.
   await page.locator("[data-rail-mark]").click();
   await wait(400);
   await page.locator('[data-seat][data-seat-me="true"]').click();
-  const mineNode = await quotaOn("[data-node-card]");
+  const mineNode = await arcsOn("[data-node-card]");
   if (!mineNode) fail("probe dead: this machine's node card never opened");
-  else if (mineNode.windows.length < 2) {
-    fail(`the home card draws ${mineNode.windows.length} quota windows — the arcs did not follow onto this surface`);
+  else if (mineNode.windows !== 0) {
+    fail(`the home node card draws ${mineNode.windows} quota windows`);
   }
   await page.keyboard.press("Escape");
   await wait(300);
   await page.locator('[data-seat][data-seat-me="false"]').first().click();
-  const peerNode = await quotaOn("[data-node-card]");
+  const peerNode = await arcsOn("[data-node-card]");
   if (!peerNode) fail("probe dead: the peer's node card never opened");
-  else if (peerNode.windows.length !== 0) {
-    fail(`a peer's node card draws ${peerNode.windows.length} quota windows`);
+  else if (peerNode.windows !== 0) {
+    fail(`a peer's node card draws ${peerNode.windows} quota windows`);
   }
   await page.keyboard.press("Escape");
 
@@ -1516,10 +1480,9 @@ try {
   if (!readBy?.includes("peer")) {
     fail(`a peer's reading does not name its reader — got ${JSON.stringify(readBy)}`);
   }
-  // The subscription band at the landing's foot: the same two windows
-  // section 7 proved on this machine's card. Section 7's negative half
-  // is not contradicted — this is this machine's own login on a page,
-  // not another machine's card.
+  // The subscription band at the landing's foot — the one surface that
+  // draws these two windows since 2026-09-02, and the positive half
+  // section 7's absences lean on: same selector, same run.
   const bandWindows = await page.locator("[data-quota-sub] [data-quota-window]").count();
   if (bandWindows !== 2) {
     fail(`the \u989d\u5ea6 foot draws ${bandWindows} subscription windows for a routed two-window quota`);
@@ -1577,7 +1540,7 @@ try {
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
-      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, and the subscription's arcs on this machine's card and nobody else's, the \u989d\u5ea6 rows in all three shapes with the arcs at their foot, and narrow's session tabs switching for real",
+      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, the machine surfaces bare of subscription arcs, the \u989d\u5ea6 rows in all three shapes with the arcs at their foot, and narrow's session tabs switching for real",
     );
 } finally {
   await browser?.close();
