@@ -893,7 +893,34 @@ for line in sys.stdin:
   // pane that cannot exist.
   const BROWSE_KIND = { files: "dir", browser: "page" };
   const openLanding = async (tab) => {
-    await railItem(tab).click();
+    // Re-clicking the open landing now collapses its list (App.tsx 再点
+    // 收起, 2026-09-02) — and only sessions/devices carry a list that
+    // toggles. This helper is「go here」, so when tab is already open,
+    // hop through the sibling first: the return is then a fresh switch,
+    // which always leaves the list expanded, and nothing here ever
+    // lands on a collapsed pane.
+    if (
+      (tab === "sessions" || tab === "devices") &&
+      (await railItem(tab).getAttribute("data-on").catch(() => null)) === "true"
+    ) {
+      await railItem(tab === "sessions" ? "devices" : "sessions").click();
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    // On the narrow bar only the first four landings have a glyph; the
+    // rest live behind「…」(App.tsx `NARROW_SHOWN`), so opening one of
+    // those is two presses there. Wait for the rail to settle first —
+    // `.count()` does not auto-wait, and reading it a tick before a
+    // width change re-rendered the rail would send a wide open down the
+    // narrow (fold) path or the reverse.
+    await until("the rail to settle", 10_000, async () =>
+      (await railItem(tab).count()) + (await page.locator("[data-rail-more]").count()) > 0,
+    );
+    if ((await railItem(tab).count()) === 0) {
+      await page.locator("[data-rail-more]").click();
+      await page.locator(`[data-more-landing="${tab}"]`).click();
+    } else {
+      await railItem(tab).click();
+    }
     if (BROWSE_KIND[tab]) {
       await until(`the ${tab} landing`, 10_000, async () =>
         (await page.locator(`[data-browse-landing="${BROWSE_KIND[tab]}"]`).count()) === 1,
@@ -1641,7 +1668,7 @@ for line in sys.stdin:
   //     a step on the way to a place rather than a thing to watch
   //     (docs/UX.md 浏览型), and asserting the absence is the point
   //     rather than a gap left by the deletion.
-  const LANDING_TABS = ["sessions", "devices", "files", "browser"];
+  const LANDING_TABS = ["sessions", "devices", "files", "quota"];
   const machinesOn = async (tab) => {
     await openLanding(tab);
     await until(`machines on the ${tab} pane`, 10_000, async () =>
@@ -2212,6 +2239,12 @@ for line in sys.stdin:
   // place on a phone from which the mesh cannot be reached at all.
   for (const tab of LANDING_TABS) {
     if ((await railItem(tab).count()) !== 1) throw new Error(`no ${tab} glyph on the narrow rail`);
+  }
+  // …and the landings past the fourth are one fold away (2026-09-02:
+  // 「窄屏的时候…最多只显示四个icon,多余的折叠为...」):「…」is there,
+  // and `openLanding` goes through it below.
+  if ((await page.locator("[data-rail-more]").count()) !== 1) {
+    throw new Error("no fold on the narrow rail — the landings past the fourth are unreachable");
   }
   if ((await page.locator("[data-rail-mark]").count()) !== 1) {
     throw new Error("the mark is missing from the narrow rail, so the mesh is unreachable here");
@@ -5135,13 +5168,15 @@ for line in sys.stdin:
   // row rather than off anything in this pane — the mark wears the same
   // `data-word` attribute, so a selector that could match itself would
   // compare the thing to itself and pass on any word at all.
-  // …and the detail header says the same thing (批②). **Both read in
-  // one call, and that is not tidiness.** These were two reads a moment
-  // apart, and the moment was inside a window that closes on its own:
-  // when the hanging turn ended between them the header had already
-  // moved to 完成 while the row word in hand still said 忙碌, and the
-  // run failed reporting a disagreement that never existed at any
-  // single instant (账本: 要比较的数字必须一次调用取完).
+  // …and the front tab's halo says the same thing (批②; the header
+  // stopped carrying the word with 2026-09-02's 标题瘦身 — the tab is
+  // the second place now, key against key). **Both read in one call,
+  // and that is not tidiness.** These were two reads a moment apart,
+  // and the moment was inside a window that closes on its own: when
+  // the hanging turn ended between them one side had already moved to
+  // 完成 while the other in hand still said 忙碌, and the run failed
+  // reporting a disagreement that never existed at any single instant
+  // (账本: 要比较的数字必须一次调用取完).
   //
   // **Retried rather than snapshot, and still not vacuous.** The loop
   // insists the pair agree *and* that the row is the busy one, so a
@@ -5152,18 +5187,21 @@ for line in sys.stdin:
   // break planted to make it fail. A word that only ever matches the
   // default is not a word being read off the row.
   const busyPair = await until(
-    "the row and the header saying the same busy word inside one hanging turn",
+    "the row and its tab wearing the same busy word inside one hanging turn",
     20_000,
     async () => {
       const got = await page.evaluate(() => {
-        const row = document.querySelector('[data-row][data-word="busy"] [data-word-text]');
-        const head = document.querySelector("[data-detail-header] [data-word-text]");
+        const row = document.querySelector('[data-row][data-word="busy"]');
+        const halo = row
+          ? document.querySelector(`[data-session-tabs] [data-tab="${row.dataset.row}"] [data-halo]`)
+          : null;
         return {
-          row: row?.textContent?.trim() ?? "",
-          head: head?.textContent?.trim() ?? "",
+          row: row?.querySelector("[data-word-text]")?.textContent?.trim() ?? "",
+          key: row?.dataset.word ?? "",
+          tab: halo?.dataset.halo ?? "",
         };
       });
-      return got.row && got.row === got.head ? got : null;
+      return got.row && got.key === got.tab ? got : null;
     },
   );
   const busyWord = busyPair.row;
@@ -5556,57 +5594,68 @@ for line in sys.stdin:
     return t.includes("the fake's own past");
   });
 
-  // 25h) 详情头的事实 + 关会话入口 (批②). The header says what the row
-  //      is, and offers the two things a person does with a session
-  //      they are looking at: take its name, or end it.
+  // 25h) 行的事实与动作,标题瘦身之后 (批② + 2026-09-02「都和标签内容
+  //      重复了」). The header keeps the name and its two quiet facts
+  //      (workspace · kind); the state rides the tab's halo, the origin
+  //      rides the row, and taking the id or ending the session are the
+  //      row menu's — so that is where each is asserted now.
   //
-  //      The state word is asserted up in 25e instead, in the window
-  //      where a turn is hanging and the word is provably 忙碌 — here
-  //      every row is resting, and a header that always said 空闲 would
-  //      pass. That is not a hypothetical: it was this block's first
-  //      draft, and planting exactly that break left the run green.
+  //      The state is asserted up in 25e instead, in the window where a
+  //      turn is hanging and the word is provably 忙碌 — here every row
+  //      is resting, and a face that always said 空闲 would pass. That
+  //      is not a hypothetical: it was this block's first draft, and
+  //      planting exactly that break left the run green.
   //
-  //      The machine is there only when the row carries one. Both
-  //      halves, because "absent" is also what a broken selector says:
-  //      this row lives here and names no machine, and a reported row
-  //      elsewhere in this same list does.
-  if ((await page.locator("[data-detail-device]").count()) !== 0) {
+  //      The machine's name is on the row only when the row carries
+  //      one. Both halves, because "absent" is also what a broken
+  //      selector says: this row lives here and names no machine, and a
+  //      reported row in this same list does — the half that proves the
+  //      finder.
+  if ((await page.locator(`[data-row="${wizId}"] [data-row-source]`).count()) !== 0) {
     throw new Error("a session living on this machine must not name one");
   }
   const fromElsewhere = (
     await page.locator("[data-row][data-source]").evaluateAll((els) => els.map((e) => e.dataset.row))
   )[0];
   if (!fromElsewhere) throw new Error("probe dead: no reported row to check the other half with");
+  if ((await page.locator(`[data-row="${fromElsewhere}"] [data-row-source]`).count()) !== 1) {
+    throw new Error("a reported row must name the machine it came from");
+  }
+  //      …and its tab wears that machine's face with the row's own
+  //      state as the halo — the same assembly the row wears
+  //      (`SessionFace`, both places), compared rather than merely
+  //      counted: one machine, one face; one word, one halo.
   await page.locator(`[data-row="${fromElsewhere}"] [data-row-open]`).click();
-  await until("the reported row naming its machine", 15_000, async () =>
-    (await page.locator("[data-detail-device]").count()) === 1,
+  const tabFace = page.locator(`[data-session-tabs] [data-tab="${fromElsewhere}"] [data-face]`);
+  await until("the reported row's tab wearing a face", 15_000, async () =>
+    (await tabFace.count()) === 1,
   );
-  //      …and wearing that machine's face — **the same picture the row
-  //      wears**, compared rather than merely counted: one machine, one
-  //      face, wherever it appears.
-  const headerFace = page.locator("[data-detail-machine] [data-face]");
-  if ((await headerFace.count()) !== 1) throw new Error("probe dead: no face on the detail header");
   if (
-    (await faceOf(headerFace)) !==
+    (await faceOf(tabFace)) !==
     (await faceOf(page.locator(`[data-row="${fromElsewhere}"] [data-face]`).first()))
   ) {
-    throw new Error("the header and the row paint one session's machine two different ways");
+    throw new Error("the tab and the row paint one session's machine two different ways");
+  }
+  const wornPair = await page.evaluate((id) => {
+    const row = document.querySelector(`[data-row="${id}"]`);
+    const halo = document.querySelector(`[data-session-tabs] [data-tab="${id}"] [data-halo]`);
+    return { row: row?.dataset.word ?? "", tab: halo?.dataset.halo ?? "" };
+  }, fromElsewhere);
+  if (!wornPair.row || wornPair.row !== wornPair.tab) {
+    throw new Error(`the tab's halo must be the row's word: ${JSON.stringify(wornPair)}`);
   }
   //      The confirm says what *this kind* of close does. Read off two
   //      rows of different kinds and compared to each other — neither
   //      sentence is spelled here, and a single generic warning would
   //      make these two equal.
   const warningFor = async (rowId) => {
-    await page.locator(`[data-row="${rowId}"] [data-row-open]`).click();
-    await until("a detail with a close", 15_000, async () =>
-      (await page.locator("[data-close-session]").count()) === 1,
-    );
-    await page.locator("[data-close-session]").click();
+    await openRowMenu(rowId);
+    await page.locator('[data-menu-item="close"]').click();
     await until("its confirm", 10_000, async () =>
-      (await page.locator("[data-close-warn]").count()) === 1,
+      (await page.locator('[data-menu-confirm="close"]').count()) === 1,
     );
-    const said = (await page.locator("[data-close-warn]").innerText()).trim();
-    await page.locator("[data-close-back]").click();
+    const said = (await page.locator('[data-menu-confirm="close"]').innerText()).trim();
+    await closeRowMenu();
     return said;
   };
   const kindOf = (rowId) =>
@@ -5641,33 +5690,32 @@ for line in sys.stdin:
   // on, so closing a reported row is an ordinary close that works, and
   // the assertion sat waiting for a refusal that was never coming.
 
-  //      Back on the wizard's own row: the id is takeable, and the
-  //      close asks first.
-  await page.locator(`[data-row="${wizId}"] [data-row-open]`).click();
-  await until("the wizard row again", 15_000, async () =>
-    (await page.locator("[data-copy-id]").count()) === 1,
-  );
+  //      Back on the wizard's own row: the id is takeable from the
+  //      row's menu (2026-09-02, with the header diet:「id用户知道也没
+  //      用」— its one reader wires a session up from another machine,
+  //      and finds it beside the row's other acts), and the close asks
+  //      first.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  const beforeCopy = await page.locator("[data-copy-id]").innerText();
-  await page.locator("[data-copy-id]").click();
-  await until("the copy saying it happened", 10_000, async () => {
-    const now = await page.locator("[data-copy-id]").innerText();
-    return now !== beforeCopy;
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await openRowMenu(wizId);
+  await page.locator('[data-menu-item="copy-id"]').click();
+  // What actually landed on the clipboard, not what anything claims —
+  // and the menu closing is the success face (`RowMenu`: rejecting is
+  // how an action says it did not happen).
+  await until("the row's id on the clipboard", 10_000, async () => {
+    const got = await page.evaluate(() => navigator.clipboard.readText());
+    return got === wizId;
   });
-  // What actually landed on the clipboard, not what the button claims.
-  const pasted = await page.evaluate(() => navigator.clipboard.readText());
-  if (pasted !== wizId) {
-    throw new Error(`the copy must put the row's own id there: ${JSON.stringify(pasted)}`);
-  }
+  await until("the menu closing on a copy that took", 10_000, async () =>
+    (await page.locator("[data-row-menu]").count()) === 0,
+  );
   // The confirm is a real gate: backing out leaves the session running.
-  await page.locator("[data-close-session]").click();
+  await openRowMenu(wizId);
+  await page.locator('[data-menu-item="close"]').click();
   await until("the confirm on the wizard row", 10_000, async () =>
-    (await page.locator("[data-close-confirm]").count()) === 1,
+    (await page.locator('[data-menu-confirm="close"]').count()) === 1,
   );
-  await page.locator("[data-close-back]").click();
-  await until("the confirm dismissed", 10_000, async () =>
-    (await page.locator("[data-close-confirm]").count()) === 0,
-  );
+  await closeRowMenu();
   await settle();
   if ((await page.locator(`[data-row="${wizId}"]`).count()) !== 1) {
     throw new Error("backing out of the confirm must not close the session");
@@ -5675,25 +5723,28 @@ for line in sys.stdin:
   // …and going through with it ends the session for real — the same
   // ending `khor close` produces, which is what this used to call.
   //
-  // **Done on the narrow face on purpose.** Wide, the detail empties by
-  // itself the moment the row leaves the list, so nothing here would
-  // notice a shell that kept pointing at the dead session. Narrow is
-  // one screen at a time: staying on a detail screen with nothing in it
-  // and no list behind it is a dead end a person reaches by pressing
-  // 关闭, and it is the only face on which that can be seen.
+  // **Done on the narrow face on purpose.** The close lives in the
+  // row's menu now, so the act happens on the list — what narrow must
+  // still prove is that the shell lets go: the dead row's tab drops
+  // (the gone-row rule) instead of a detail screen standing over a
+  // session that no longer exists.
   await page.setViewportSize({ width: 390, height: 720 });
   await until("the narrow detail of the row about to be closed", 10_000, async () =>
     (await page.locator("[data-back]").count()) === 1,
   );
-  await page.locator("[data-close-session]").click();
-  await until("the confirm again", 10_000, async () =>
-    (await page.locator("[data-close-confirm]").count()) === 1,
+  await page.locator("[data-back]").click();
+  await until("the narrow list", 10_000, async () =>
+    (await page.locator("[data-list]").count()) === 1,
   );
-  await page.locator("[data-close-go]").click();
+  await openRowMenu(wizId);
+  await page.locator('[data-menu-item="close"]').click();
+  await until("the confirm again", 10_000, async () =>
+    (await page.locator('[data-menu-confirm="close"]').count()) === 1,
+  );
+  await page.locator('[data-menu-item="close"]').click();
   await until("the wizard row gone", 20_000, async () => {
-    if (await page.locator("[data-close-error]").count()) {
-      throw new Error(await page.locator("[data-close-error]").innerText());
-    }
+    const why = await page.locator('[data-menu-note="close"]').innerText().catch(() => "");
+    if (why) throw new Error(why);
     return (await page.locator(`[data-row="${wizId}"]`).count()) === 0;
   });
   //      …and the shell lets go of it: back on the list, with no detail
@@ -5702,19 +5753,15 @@ for line in sys.stdin:
     (await page.locator("[data-list]").count()) === 1 &&
     (await page.locator("[data-back]").count()) === 0,
   );
-  //      The pane's controls went with the row, too — a detail still
-  //      offering 关闭 and 复制 id for a dead session is a face pointing
-  //      at nothing.
-  if (
-    (await page.locator("[data-close-session]").count()) !== 0 ||
-    (await page.locator("[data-copy-id]").count()) !== 0
-  ) {
-    throw new Error("the detail still offers actions for a session that is gone");
-  }
   await page.setViewportSize({ width: 1080, height: 720 });
   await until("back on the wide face", 10_000, async () =>
     (await page.locator("[data-row]").count()) > 0,
   );
+  //      The tab went with the row (the gone-row rule): a strip keeping
+  //      a dead session's tab would be a face pointing at nothing.
+  if ((await page.locator(`[data-session-tabs] [data-tab="${wizId}"]`).count()) !== 0) {
+    throw new Error("the strip still holds a tab for a session that is gone");
+  }
 
   // **A terminal-form session is named before it exists.** The row
   // wears the vendor's own uuid — 26 characters of it, the lossy
@@ -6071,38 +6118,41 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   }
   await closeRowMenu();
 
-  // 26b) 关会话失败也就地说 (批②). The same backend-away window, because
-  //      this is the only place a close is *certain* to fail: whether a
-  //      given row can be closed is `Node::close`'s judgment and the
-  //      pane deliberately does not pre-empt it, so with the backend up
-  //      there is no row this script can be sure will refuse.
+  // 26b) 关会话失败也就地说 (批② + 2026-09-02 关会话移入行菜单). The same
+  //      backend-away window, because this is the only place a close is
+  //      *certain* to fail: whether a given row can be closed is
+  //      `Node::close`'s judgment and the pane deliberately does not
+  //      pre-empt it, so with the backend up there is no row this script
+  //      can be sure will refuse.
   //
-  //      The control is the strip's own absence beforehand: a report
-  //      that was already on screen would prove nothing about the
-  //      press.
-  await page.locator(`[data-row="${failTarget}"] [data-row-open]`).click();
-  await until("a detail to close from", 10_000, async () =>
-    (await page.locator("[data-close-session]").count()) === 1,
-  );
-  if ((await page.locator("[data-close-error]").count()) !== 0) {
+  //      The close lives in the row's menu now, beside 置顶 (标题瘦身:
+  //      「标签本来就自带关闭」took it off the header). A rejection leaves
+  //      the menu open with the refusal on the item — RowMenu's rule,
+  //      the same one the pin failure above rides — which is the
+  //      in-place report. The control is the note's own absence
+  //      beforehand: a report already on screen would prove nothing
+  //      about the press.
+  await openRowMenu(failTarget);
+  if ((await page.locator('[data-menu-note="close"]').count()) !== 0) {
     throw new Error("a close was reported failed before one was asked for");
   }
-  await page.locator("[data-close-session]").click();
+  await page.locator('[data-menu-item="close"]').click();
   await until("the confirm", 10_000, async () =>
-    (await page.locator("[data-close-confirm]").count()) === 1,
+    (await page.locator('[data-menu-confirm="close"]').count()) === 1,
   );
-  await page.locator("[data-close-go]").click();
-  await until("the failure said on the pane that asked", 15_000, async () =>
-    (await page.locator("[data-close-error]").count()) === 1,
+  await page.locator('[data-menu-item="close"]').click();
+  await until("the failure said on the item that asked", 15_000, async () =>
+    (await page.locator('[data-menu-note="close"]').count()) === 1,
   );
-  if (!(await page.locator("[data-close-error]").innerText()).trim()) {
-    throw new Error("the failure must be a sentence, not an empty strip");
+  if (!(await page.locator('[data-menu-note="close"]').innerText()).trim()) {
+    throw new Error("the failure must be a sentence, not an empty note");
   }
-  // The confirm goes when it fails — leaving it up would read as the
+  // The confirm goes when it fails — leaving it armed would read as the
   // close still being on offer, on a backend that cannot take it.
-  if ((await page.locator("[data-close-confirm]").count()) !== 0) {
+  if ((await page.locator('[data-menu-confirm="close"]').count()) !== 0) {
     throw new Error("a failed close must not leave its confirm standing");
   }
+  await closeRowMenu();
 
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);

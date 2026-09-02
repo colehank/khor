@@ -42,6 +42,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
+import { SessionFace } from "@/components/SessionFace";
 import { IconClose, IconPlus } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -57,12 +58,24 @@ export type TabFace = {
   /** The whole address, for the switcher's second line and the wide
       tab's hover title. Empty on a fresh tab. */
   path: string;
-  /** A session tab's state word (`SessionRow::word`), painted as a
-      dot in the word's own ink — the six words are one doctrine, and a
-      tab that is a session wears the same fact its row does. Absent on
-      a browsing tab, which has no state. */
-  word?: string;
+  /** Present on a session tab: the row's identity facts, drawn exactly
+      as the list row draws them (`SessionFace` — the halo is the state,
+      the corner is the kind; 2026-09-02:「标签页的标签头像应该和
+      session列表一致」). A browsing tab has none and keeps the bare
+      machine face. */
+  session?: { word: string; kind: string; category: string | null };
 };
+
+/** The face a tab wears: the session assembly when it is a session,
+    the bare machine face when it is a place. One decision, both the
+    strip and the switcher read it. */
+function TabAvatar({ f, bare }: { f: TabFace; bare: string }) {
+  return f.session ? (
+    <SessionFace face={f.face} {...f.session} />
+  ) : (
+    <MachineAvatar face={f.face} className={bare} />
+  );
+}
 
 export function TabStrip({
   faces,
@@ -186,14 +199,7 @@ export function TabStrip({
                 // around the label looked pressable and was not.
                 className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
               >
-                <MachineAvatar face={f.face} className="size-kind-mark flex-none" />
-                {f.word && (
-                  <span
-                    data-tab-word={f.word}
-                    className="size-1.5 flex-none rounded-full"
-                    style={{ background: `var(--state-${f.word})` }}
-                  />
-                )}
+                <TabAvatar f={f} bare="size-kind-mark flex-none" />
                 <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
                   {f.label}
                 </span>
@@ -379,7 +385,7 @@ export function TabSwitcher({
               // the target and was the parent's.
               className="flex min-h-touch min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
             >
-              <MachineAvatar face={f.face} className="size-avatar flex-none" />
+              <TabAvatar f={f} bare="size-avatar flex-none" />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm font-label">{f.label}</span>
                 {/* The whole path under the name: on a phone the strip

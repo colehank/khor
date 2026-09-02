@@ -269,6 +269,14 @@ vitals-name-gpu = "GPU"
 # where those bytes are already counted in 「内存」 above and a second line
 # would put the same memory on screen twice under another name.
 vitals-vram = "显存 {0} / {1}"
+# 一张卡自己的一句(khor_core::GpuCard):几张卡就几句,不再平均。名字是驱动
+# 报的原话,报不出名字的卡由两端各自退回「GPU」那个词。显存跟在同一句里,
+# 不拆第二段——smoke 按两空格数段落,GUI 一卡一环,两边段数要对得上。
+vitals-gpu-card = "{0} {1}%"
+vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
+# 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
+# (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
+vitals-vol = "{0} {1} / {2}"
 vitals-name-vram = "显存"
 # How old the reading is. **Printed on every reading that is not this
 # machine's own**, because a number with no age is read as the present:
@@ -1039,6 +1047,8 @@ new-session-machine = "在哪台"
 # The strip of open sessions over the pane (aria name): the sessions
 # a person has open, iTerm's arrangement.
 session-tabs = "打开的会话"
+# 窄屏栏放不下的落点折进的那个口(2026-09-02:「最多只显示四个icon,多余的折叠为...」)。
+rail-more = "更多"
 # ── 额度 ──────────────────────────────────────────────────────────
 # The rail's sixth landing: registered API accounts as rings. 「额度」
 # not 「用量」— `khor usage` (花了多少) already owns that word.

@@ -2,21 +2,14 @@ import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { takeover, takeoverTerm, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { sessionMark } from "@/components/BrandIcons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { SessionFace } from "@/components/SessionFace";
 import { SessionTitle } from "@/components/SessionTitle";
 import { IconBack } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { closeWarning } from "@/views/DetailPane";
 import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf, word } from "@/words";
-
-/** The corner mark on a row's face: the shape is `sessionMark`'s one
-    judgment; this only sizes it. */
-function KindMark({ kind, category }: { kind: string; category: string | null }) {
-  const M = sessionMark(kind, category);
-  return <M className="size-kind-mark-glyph" />;
-}
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -275,7 +268,10 @@ export function SessionsList({
    * path to one action is the thing this repo keeps taking back out.
    * The two that are here had no way in that a finger could reach:
    * the pin was a hover-only button, and close lived one screen away in
-   * the detail header.
+   * the detail header. 复制 id came the same road on 2026-09-02 — the
+   * detail header sheds it (「id用户知道也没用」), and its one real
+   * reader, a person wiring this session up from another machine,
+   * finds it here beside the other things done *to* a row.
    */
   /**
    * Changing what a session **is**: the same act both ways round, and
@@ -364,6 +360,15 @@ export function SessionsList({
           : gui.pin,
       failed: pinFailed.has(r.id),
       run: () => onPin(r),
+    },
+    {
+      // The id is paste material, not reading material. The menu
+      // closing is the success face; a clipboard refusal rejects, so
+      // the menu stays open where the press was made (RowMenu's rule:
+      // rejecting is how an action says it did not happen).
+      key: "copy-id",
+      label: gui.copy_id,
+      run: () => navigator.clipboard.writeText(r.id),
     },
     {
       key: "close",
@@ -501,47 +506,15 @@ export function SessionsList({
             className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4 text-left"
           >
             {/* The machine's face carries the row (one per machine, what
-                the eye scans by). Around it, a halo in the state's own
-                colour; on its corner, the kind mark; at the row's end,
-                the word.
-
-                **Three channels, three questions, one each.** The halo
-                says how it is, the mark says what it is, the word says it
-                in letters. The mark used to say both — its comment here
-                read "shape says what this session is, colour says how it
-                is — one mark answering two things" — and that is exactly
-                the shape of the mistake the palette ruling took apart on
-                the brand green: **one signal answering two questions
-                cannot be changed for one of them without lying about the
-                other.** So the mark went neutral the day the halo landed.
-
-                The word stays regardless: state may never be colour
-                alone, which is also what lets the halo *be* a colour.
-
-                The mark sits on a solid punch-out, or the transparent
-                brand strokes dissolve into the face. */}
-            {/* `flex`, not inline: an inline wrap grows the baseline's few
-                pixels under the face and the mark's corner offset bites
-                into that gap instead of the face (mandala's .badged-face
-                fix, the flex spelling of display:block+line-height:0). */}
-            <span className="relative flex flex-none">
-              <MachineAvatar face={r.face} className="size-avatar" />
-              {/* Behind nothing and in front of nothing — it paints
-                  outside the face's box entirely (`app.css`), so it can
-                  neither cover the artwork nor be covered by it. */}
-              <span
-                data-halo={r.word}
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-full"
-                style={{ "--halo-color": `var(--state-${r.word})` } as React.CSSProperties}
-              />
-              <span
-                data-kind-mark={r.category ?? r.kind}
-                className="absolute -bottom-0.5 -right-0.5 grid size-kind-mark place-items-center rounded-sm bg-card text-muted-foreground"
-              >
-                <KindMark kind={r.kind} category={r.category} />
-              </span>
-            </span>
+                the eye scans by); around it the state's halo, on its
+                corner the kind mark, at the row's end the word. The
+                assembly and its three-channels judgment live in
+                `SessionFace` now — the tabs and the narrow detail
+                header draw the same one, which is the whole point of it
+                being one component. The word stays on the row
+                regardless: state may never be colour alone, which is
+                also what lets the halo *be* a colour. */}
+            <SessionFace face={r.face} word={r.word} kind={r.kind} category={r.category} />
             <span className="min-w-0 flex-1">
               {/* Double-click the title text to rename it in place —
                   the same component the detail header wears, so the two
@@ -570,7 +543,14 @@ export function SessionsList({
                       {r.last}
                     </span>
                   )}
-                  {r.source && <span className="flex-none">{gui.from_device(r.source.device)}</span>}
+                  {/* `data-row-source` names the fact for the smoke:
+                      the detail header used to carry the origin and no
+                      longer does (2026-09-02 标题瘦身), so the row's
+                      own line is where「a local row names no machine,
+                      a reported one does」is asserted. */}
+                  {r.source && (
+                    <span data-row-source className="flex-none">{gui.from_device(r.source.device)}</span>
+                  )}
                 </span>
               )}
             </span>

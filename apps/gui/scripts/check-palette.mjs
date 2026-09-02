@@ -237,6 +237,13 @@ try {
   // is never submitted — nothing here presses it.
   const join = page.locator("[data-join]");
   const openJoin = async () => {
+    // Reach devices as a *switch*, never a re-click: pressing the open
+    // landing's own glyph now collapses its list (2026-09-02「再点收起」,
+    // App.tsx), and this helper runs once per scheme — the second time
+    // devices is already open. A hop through sessions makes devices a
+    // fresh switch every time, which always leaves the list expanded.
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await wait(200);
     await page.locator('[data-rail-item][data-landing="devices"]').click();
     await wait(400);
     await page.locator("[data-pane-new]").click();

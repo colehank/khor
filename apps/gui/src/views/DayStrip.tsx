@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+
 import type { DayRun } from "@/api";
 import { gui } from "@/gen/catalog";
 import { word } from "@/words";
@@ -87,37 +89,50 @@ function clock(ms: number): string {
 }
 
 /**
- * What a run says when the pointer rests on it: its word, then the
- * span of the day it held (2026-09-01: 「鼠标悬浮在 session 的状态 bar
- * 上的时候,可以显示状态、时间」).
+ * What the pointer is over: the **moment** under the cursor, and the
+ * word there (2026-09-02: 「鼠标悬浮在状态bar上面,应该显示当时的时间
+ * 和状态」). The first spelling (2026-09-01) printed the run's whole
+ * span through the browser's own `title` — and its 1.5s delay read as
+ * no hover at all, which is how the same request arrived twice. This
+ * one is immediate and follows the cursor: the axis is linear, so the
+ * x under the pointer *is* a time of day.
  *
- * **The clock is read at paint, not at fetch.** The strip's right edge
+ * **The clock is read at hover, not at fetch.** The strip's right edge
  * is "now" as of the last poll, and the poll is a few seconds — a
  * reading that lands inside one poll is inside one minute, and the
- * hover prints minutes. Carrying the fetch time out of the hook would
+ * readout prints minutes. Carrying the fetch time out of the hook would
  * be a second clock for a difference the format cannot show.
  *
- * An absent run has nothing to say and paints nothing; the word for a
+ * An absent run has nothing to say and takes no pointer; the word for a
  * stretch khor was not watching is its own (`day_unwatched`), never a
- * seventh state.
+ * seventh state. The ` · ` join is punctuation, not copy — the words on
+ * either side of it are the catalog's.
  */
-function saying(run: DayRun, before: number, total: number): string | undefined {
-  if (run.mark === "absent") return undefined;
-  const label = run.mark === "unwatched" ? gui.day_unwatched : word(run.mark.word);
-  const perCell = (DAY_MINUTES * 60_000) / total;
-  const now = Date.now();
-  const from = now - (total - before) * perCell;
-  const to = from + run.cells * perCell;
-  return gui.day_span(label, clock(from), clock(to));
+type Peek = { x: number; text: string };
+
+function labelOf(mark: DayRun["mark"]): string | null {
+  if (mark === "absent") return null;
+  return mark === "unwatched" ? gui.day_unwatched : word(mark.word);
 }
 
 export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const [peek, setPeek] = useState<Peek | null>(null);
   if (!runs || runs.length === 0) return null;
   const total = runs.reduce((n, r) => n + r.cells, 0);
   if (total === 0) return null;
-  let before = 0;
+  const read = (e: React.MouseEvent, label: string) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const at = Date.now() - (1 - frac) * DAY_MINUTES * 60_000;
+    // Clamped so the readout never hangs past the pane at either end.
+    const x = Math.min(Math.max(e.clientX - rect.left, 28), rect.width - 28);
+    setPeek({ x, text: `${clock(at)} · ${label}` });
+  };
   return (
     <span
+      ref={box}
       data-day-strip
       // **Only the runs take the pointer**, and each says what it is.
       // The strip is four pixels tall, so every run also reaches up
@@ -126,29 +141,42 @@ export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
       className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1 overflow-visible"
     >
       {runs.map((run, i) => {
-        const title = saying(run, before, total);
-        before += run.cells;
+        const label = labelOf(run.mark);
         return (
         <span
           // Runs have no identity of their own — they are a slice of a
           // timeline, and the slice at position i is the same thing
           // frame to frame even when its width changes.
           key={i}
-          title={title}
           data-day-mark={typeof run.mark === "string" ? run.mark : run.mark.word}
           // Every tier that has ink fills this box; the one that has
           // none renders nothing into it.
           className={
-            title === undefined
+            label === null
               ? "grid h-full place-items-center"
               : "pointer-events-auto relative grid h-full place-items-center before:absolute before:inset-x-0 before:-top-3 before:bottom-0 before:content-['']"
           }
           style={{ width: `${(run.cells / total) * 100}%` }}
+          onMouseMove={label === null ? undefined : (e) => read(e, label)}
+          onMouseLeave={label === null ? undefined : () => setPeek(null)}
         >
           <Mark mark={run.mark} />
         </span>
         );
       })}
+      {/* The readout, above the band where the cursor is not covering
+          it. Its own element rather than the OS title: immediate, and
+          it moves with the pointer. `pointer-events` stays off it so it
+          never steals the hover that summoned it. */}
+      {peek && (
+        <span
+          data-day-peek
+          className="absolute bottom-full z-10 mb-1 -translate-x-1/2 rounded-md border bg-popover px-1.5 py-0.5 text-xs whitespace-nowrap text-popover-foreground shadow-sm"
+          style={{ left: peek.x }}
+        >
+          {peek.text}
+        </span>
+      )}
     </span>
   );
 }

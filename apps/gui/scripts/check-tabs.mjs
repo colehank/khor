@@ -251,6 +251,22 @@ try {
   await page.goto(url);
 
   const rail = (tab) => page.locator(`[data-rail-item][data-landing="${tab}"]`);
+  // Reach a landing as a *switch*, never a re-click: pressing the open
+  // sessions/devices glyph now collapses its list (App.tsx 再点收起,
+  // 2026-09-02), and this gate re-opens the same landing across
+  // sections. Hop through the sibling when already there so the return
+  // leaves the list expanded (the width reads below depend on it).
+  // Browsing landings do not toggle and pass through unchanged.
+  const go = async (tab) => {
+    if (
+      (tab === "sessions" || tab === "devices") &&
+      (await rail(tab).getAttribute("data-on").catch(() => null)) === "true"
+    ) {
+      await rail(tab === "sessions" ? "devices" : "sessions").click();
+      await page.waitForTimeout(200);
+    }
+    await rail(tab).click();
+  };
   const openFiles = async () => {
     await rail("files").click();
     await until("the files landing", 10_000, async () =>
@@ -303,7 +319,7 @@ try {
   // landing with no column against another with no column and reported
   // a gain of zero, which reads as the whole batch not having worked.
   // 收件箱型 landings are what still have a column, by rule.
-  await rail("devices").click();
+  await go("devices");
   await until("the devices pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   const listWide = await page.locator("[data-list]").evaluate((el) => el.getBoundingClientRect().width);
   const detailWide = await page
@@ -544,7 +560,7 @@ try {
   //   is a statement about a request rather than about this person.
   //   The pin made in 3 is still real, so the sentence would be false.
   await page.setViewportSize({ width: 1200, height: 800 });
-  await rail("sessions").click();
+  await go("sessions");
   await until("the sessions pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
   await rail("files").click();
   await until("the files landing", 10_000, async () =>
@@ -605,7 +621,7 @@ try {
 
   console.log("\n7) the other landings are where they were");
   for (const tab of ["sessions", "devices"]) {
-    await rail(tab).click();
+    await go(tab);
     await until(`the ${tab} pane`, 10_000, async () =>
       (await page.locator("[data-list]").getAttribute("aria-label")) ===
       (await rail(tab).getAttribute("aria-label")),
@@ -622,7 +638,7 @@ try {
   //   could have broken, and a pane bar being present says nothing
   //   about it. (`smoke.mjs` §23 asserts the same; this is the cheap
   //   copy that can be run on its own.)
-  await rail("devices").click();
+  await go("devices");
   await until("machines on the devices pane", 10_000, async () =>
     (await page.locator('[data-device="alpha"] [data-row-open]').count()) === 1,
   );
@@ -669,7 +685,21 @@ try {
   console.log("\n8) the browser landing, through the same shell");
   await page.setViewportSize({ width: 1200, height: 800 });
   const openBrowser = async () => {
-    await rail("browser").click();
+    // Browser is past the fourth landing, so on the narrow bar it lives
+    // behind「…」(App.tsx `NARROW_SHOWN`, 2026-09-02) — two presses
+    // there, one on the wide column where every landing has a glyph.
+    // Wait for the rail to settle before deciding which: `.count()`
+    // does not auto-wait, and reading it a tick before the wide rail
+    // re-rendered once sent a wide open down the narrow (fold) path.
+    await until("the rail to settle", 10_000, async () =>
+      (await rail("browser").count()) + (await page.locator("[data-rail-more]").count()) > 0,
+    );
+    if ((await rail("browser").count()) === 0) {
+      await page.locator("[data-rail-more]").click();
+      await page.locator('[data-more-landing="browser"]').click();
+    } else {
+      await rail("browser").click();
+    }
     await until("the browser landing", 10_000, async () =>
       (await page.locator('[data-browse-landing="page"]').count()) === 1,
     );

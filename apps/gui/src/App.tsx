@@ -31,6 +31,12 @@ import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -186,16 +192,25 @@ function storedWordsAll(): Record<Landing, string[]> {
   };
 }
 
+// In the order the user set on 2026-09-02 —「分别是会话、机器、文件、
+// 用量、浏览器」— which is also the fold order: the narrow bar shows
+// the first `NARROW_SHOWN` and folds the rest behind「…」.
 const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
   { key: "sessions", name: gui.sessions_tab, glyph: <IconSessions /> },
   { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
   { key: "files", name: gui.files_tab, glyph: <IconFiles /> },
-  { key: "browser", name: gui.browser_tab, glyph: <IconBrowser /> },
   // 额度: the registered API accounts as rings (`QuotaLanding`). Like
   // the browsing landings it is one region rather than a list beside a
   // detail — its list is its own, and the rail only opens it.
   { key: "quota", name: gui.accounts_tab, glyph: <IconQuota /> },
+  { key: "browser", name: gui.browser_tab, glyph: <IconBrowser /> },
 ];
+
+/** How many landings the narrow bar seats before folding the rest
+    (2026-09-02:「窄屏的时候,下面的侧边栏最多只显示四个icon,多余的
+    折叠为...」). Four glyphs, the fold and this machine's face sit a
+    390 bar comfortably; the wide rail is a column and folds nothing. */
+const NARROW_SHOWN = 4;
 
 const NO_QUERIES: Record<Landing, string> = {
   sessions: "",
@@ -645,6 +660,15 @@ export default function App() {
   // two rules about what may appear here.
   const status = useStatusBar(rows);
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
+  // The open row's workspace, in the same words the list's chips and
+  // headings use (`placeLabels` over every row, so two checkouts that
+  // share a leaf stay told apart). Resolved here because only the
+  // shell holds every row; the detail header just prints it.
+  const placeWord = useMemo(() => {
+    if (!selectedRow?.place) return null;
+    const names = placeLabels(rows.map((r) => `at:${r.place ?? ""}`));
+    return names.get(`at:${selectedRow.place}`) ?? groupLabel(`at:${selectedRow.place}`);
+  }, [rows, selectedRow]);
   // A session that is gone stops being the selected one, and on the
   // narrow face the screen goes back to the list.
   //
@@ -815,6 +839,10 @@ export default function App() {
     { key: "join", label: gui.join_with_a_ticket, onSelect: () => setSheet("join") },
   ];
 
+  // Whether the open landing is one the narrow bar folded away — the
+  // 「…」trigger lights for it, because the rail must always answer
+  // 我在哪一页, even for a page whose own glyph is off the bar.
+  const foldedOn = !mark && LANDINGS.slice(NARROW_SHOWN).some((l) => l.key === landing);
   const rail = (
     <nav
       className={cn(
@@ -837,7 +865,7 @@ export default function App() {
         narrow ? "flex-row justify-around gap-1 border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
-      {LANDINGS.map((l) => (
+      {(narrow ? LANDINGS.slice(0, NARROW_SHOWN) : LANDINGS).map((l) => (
         <RailItem
           key={l.key}
           label={l.name}
@@ -854,24 +882,92 @@ export default function App() {
           // and machines do not go away when you have looked at them.
           badge={l.key === "sessions" ? blockedOrUnread : undefined}
           onClick={() => {
+            // The open landing's glyph pressed again puts its list away
+            // and brings it back (2026-09-02:「再次点击侧边栏icon,应该
+            // 收起这个列表,再次点击打开。初次点击默认是打开的」) — the
+            // activity-bar gesture, and a second handle on the same
+            // fold the seam's drag owns. Only where a list exists to
+            // put away (the two inbox landings) and only wide: narrow
+            // shows one screen, so there is nothing beside the list to
+            // give its room to.
+            const again = !mark && landing === l.key;
             setMark(false);
             setLanding(l.key);
             setScreen("list");
             setSwitchingTabs(false);
-            // Choosing a landing reopens a collapsed list: the rail is
-            // the anchor a hidden pane comes back from (the seam's own
-            // handle is the other way), and it comes back at the width
-            // it had, not at the default.
-            listPane.expand();
+            if (again && !narrow && (l.key === "sessions" || l.key === "devices")) {
+              listPane.toggle();
+            } else {
+              // Choosing a landing reopens a collapsed list: the rail is
+              // the anchor a hidden pane comes back from (the seam's own
+              // handle is the other way), and it comes back at the width
+              // it had, not at the default.
+              listPane.expand();
+            }
           }}
         >
           {l.glyph}
         </RailItem>
       ))}
       {!narrow && <span className="flex-1" />}
-      <RailItem label={gui.settings} narrow={narrow} onClick={() => setSettings(true)}>
-        <IconMore />
-      </RailItem>
+      {narrow ? (
+        // The rest of the rail, folded (2026-09-02:「窄屏的时候,下面的
+        // 侧边栏最多只显示四个icon,多余的折叠为...」): the landings past
+        // the fourth, and 设置 — which already answered to this same
+        // glyph, so the two「…」s merged instead of standing side by
+        // side. The trigger's classes mirror `RailItem`'s button (one
+        // look for every rail seat; the reasons live there).
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              aria-label={gui.rail_more}
+              data-rail-item
+              data-rail-more
+              data-on={foldedOn}
+              className={cn(
+                "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+                "hover:text-rail-ink",
+                foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
+              )}
+            >
+              <IconMore />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" data-rail-more-menu>
+            {LANDINGS.slice(NARROW_SHOWN).map((l) => (
+              <DropdownMenuItem
+                key={l.key}
+                data-more-landing={l.key}
+                data-on={!mark && landing === l.key}
+                className="min-h-touch gap-2"
+                onSelect={() => {
+                  setMark(false);
+                  setLanding(l.key);
+                  setScreen("list");
+                  setSwitchingTabs(false);
+                  listPane.expand();
+                }}
+              >
+                {l.glyph}
+                {l.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem
+              data-more-settings
+              className="min-h-touch gap-2"
+              onSelect={() => setSettings(true)}
+            >
+              <IconMore />
+              {gui.settings}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <RailItem label={gui.settings} narrow={narrow} onClick={() => setSettings(true)}>
+          <IconMore />
+        </RailItem>
+      )}
       {/* This machine, at the foot of the rail — **and it is the way
           into the mesh now**.
           「不要右上角的 icon 了吧。取而代之,用左下角的点击作为原来的
@@ -943,15 +1039,22 @@ export default function App() {
   // row rather than the front one, so switching tabs costs no fetch.
   const detailBox = useRef<HTMLDivElement>(null);
   const days = useDayStrips(useStripWidth(detailBox, sessions));
-  // The open sessions as the strip paints them: each tab wears its row's
-  // title, machine face and state word — the same facts, one doctrine. A
+  // The open sessions as the strip paints them: each tab wears its
+  // row's title and the row's own identity assembly (`SessionFace` —
+  // face, state halo, kind mark), the same facts in the same clothes. A
   // tab whose row has not been listed yet (just opened) wears its id.
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
         const r = rows.find((row) => row.id === id);
         return r
-          ? { id, label: r.title, face: r.face, path: r.place ?? "", word: r.word }
+          ? {
+              id,
+              label: r.title,
+              face: r.face,
+              path: r.place ?? "",
+              session: { word: r.word, kind: r.kind, category: r.category },
+            }
           : { id, label: id, face: null, path: "" };
       }),
     [openTabs, rows],
@@ -1072,6 +1175,7 @@ export default function App() {
       days={selectedRow ? days[selectedRow.id] : undefined}
       onBack={() => setScreen("list")}
       onNew={() => setSheet("new")}
+      placeWord={placeWord}
       // The way to the other open tabs on the face that has no strip:
       // the count is the button (`TabCount`), and pressing it swaps
       // this pane for the switcher. Wide has the strip above the pane,

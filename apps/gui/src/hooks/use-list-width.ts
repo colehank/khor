@@ -189,10 +189,25 @@ export function useListWidth(narrow: boolean) {
     });
   }, []);
 
+  /** The open landing's own glyph pressed again: put the list away, or
+      bring it back — the activity-bar gesture (2026-09-02:「再次点击侧
+      边栏icon,应该收起这个列表,再次点击打开」). The width survives and
+      only `collapsed` flips, the same promise the drag's snap makes, so
+      the comeback — from here, the seam, or another landing — is the
+      width it had. */
+  const toggle = useCallback(() => {
+    setPref((p) => {
+      const next = { ...p, collapsed: !p.collapsed };
+      persist(next);
+      return next;
+    });
+  }, []);
+
   return {
     width: pref.w,
     collapsed: pref.collapsed,
     expand,
+    toggle,
     handleProps: { onPointerDown, onPointerMove, onPointerUp, onDoubleClick, onKeyDown },
     /** What the seam reports about itself, for anything that reads it
         aloud: where it sits between its two ends. */

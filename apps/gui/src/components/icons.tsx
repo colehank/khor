@@ -86,19 +86,23 @@ export function IconSessions({ className }: IconProps) {
   );
 }
 
-/** 额度 = a token: a coin's rim, and a solid centre the same family's
-    weight — the one filled piece, with the rim cut where it meets it so
-    the two never touch (`CUT`). */
+/** 额度 = a stack of coins (2026-09-02: 「额度的icon,得是……这样的硬币」,
+    with a picture): the front coin lies at an angle — an ellipse rim
+    whose face is the family's one solid piece — over the edge of a
+    second coin behind it, cut where the two meet (`CUT`). One coin was
+    the old glyph and it read as an abstract ring; the second is what
+    makes it money. */
 export function IconQuota({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
-      cut={<circle cx="12" cy="12" r="3.3" fill="black" stroke="black" strokeWidth={CUT} />}
+      cut={<ellipse cx="9.8" cy="8.8" rx="7.2" ry="5.6" fill="black" stroke="black" strokeWidth={CUT} />}
     >
       {(cutId) => (
         <>
-          <circle mask={`url(#${cutId})`} cx="12" cy="12" r="8.6" />
-          <circle data-body cx="12" cy="12" r="3.3" />
+          <circle mask={`url(#${cutId})`} cx="13.6" cy="14.6" r="6.6" />
+          <ellipse cx="9.8" cy="8.8" rx="7.2" ry="5.6" />
+          <ellipse data-body cx="9.8" cy="8.8" rx="3.6" ry="2.6" />
         </>
       )}
     </RailGlyph>

@@ -166,13 +166,28 @@ try {
           cores: 10,
           mem: fill(13_000_000_000, 16_000_000_000),
           disk: fill(400_000_000_000, 500_000_000_000),
-          gpu: { util_pct: 67, cards: 1, mem: fill(2_000_000_000, 8_000_000_000) },
+          gpu: { util_pct: 67, cards: 2, mem: fill(2_000_000_000, 8_000_000_000) },
           version: "0.1.0",
+          // The surveyed shape (2026-09-02): cards one by one — one
+          // named, one nameless (the word fallback) — and volumes one
+          // by one, the second wearing a minted strain. Real data
+          // always carries these fields (serde default fills them), so
+          // a fixture without them is the loud-drift red this file's
+          // head promises, not a case to support.
+          gpus: [
+            { name: "RTX A5000", util_pct: 90, mem: fill(1_000_000_000, 4_000_000_000) },
+            { name: "", util_pct: 4, mem: fill(3_000_000_000, 4_000_000_000) },
+          ],
+          volumes: [
+            { mount: "/", fill: fill(400_000_000_000, 500_000_000_000) },
+            { mount: "/data", fill: fill(46_000_000_000, 50_000_000_000) },
+          ],
         },
         age_ms: 42_000,
         mem_strain: null,
         disk_strain: null,
         vram_strain: null,
+        volume_strains: [null, "tight"],
       },
       hop: "direct",
       sponsor: null,
@@ -182,6 +197,38 @@ try {
       // so the picture this gate measures is the picture the product
       // draws.
       seat: { left: 50, top: 84 },
+    },
+    {
+      id: "d".repeat(64),
+      name: "elder",
+      me: false,
+      face: null,
+      pinned: false,
+      // Yesterday's reporter: the aggregate readings and nothing per
+      // card or per volume — what an un-upgraded khor's frame decodes
+      // to on this end (serde defaults, `khor_core::Vitals`). The card
+      // must fall back to the one-ring shapes, and section 9 holds it.
+      vitals: {
+        vitals: {
+          cpu_pct: 5,
+          cores: 4,
+          mem: fill(1_000_000_000, 8_000_000_000),
+          disk: fill(10_000_000_000, 100_000_000_000),
+          gpu: { util_pct: 30, cards: 2, mem: fill(2_000_000_000, 8_000_000_000) },
+          version: "0.1.0",
+          gpus: [],
+          volumes: [],
+        },
+        age_ms: 60_000,
+        mem_strain: null,
+        disk_strain: null,
+        vram_strain: null,
+        volume_strains: [],
+      },
+      hop: "relay",
+      sponsor: null,
+      // ring(2)'s other seat: opposite the peer, up top.
+      seat: { left: 50, top: 16 },
     },
   ];
   await page.route("**/sessions", (r) =>
@@ -693,8 +740,21 @@ try {
     return true;
   };
   const press = (sel) => pressNth(sel, 0);
+  // Reach a landing as a *switch*, never a re-click. Pressing the open
+  // landing's own glyph now collapses its list (App.tsx 再点收起,
+  // 2026-09-02), and this walk re-opens the same landing across
+  // consecutive stops — so a raw re-press would put the list away and
+  // the row a stop then reaches for would be unclickable. Hopping
+  // through another landing makes the return a fresh switch, which
+  // always leaves the list expanded. Only sessions/devices carry a
+  // list that toggles; the others no-op through this unchanged.
+  const open = async (tab) => {
+    const on = await page.locator(rail(tab)).getAttribute("data-on").catch(() => null);
+    if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
+    return press(rail(tab));
+  };
   const STOPS = [
-    { name: "sessions list", anchor: "[data-list]", go: () => press(rail("sessions")) },
+    { name: "sessions list", anchor: "[data-list]", go: () => open("sessions") },
     {
       // A row's own menu — pin and close, on right-click and on a long
       // press (`RowMenu`). **It is the first surface in this walk that
@@ -721,7 +781,7 @@ try {
       // rendered nothing would still satisfy the box.
       anchor: "[data-row-menu] [data-menu-item]",
       go: async () => {
-        if (!(await press(rail("sessions")))) return false;
+        if (!(await open("sessions"))) return false;
         const row = page.locator("[data-list] [data-row-open]").first();
         if ((await row.count()) === 0) return false;
         await row.click({ button: "right" });
@@ -740,19 +800,19 @@ try {
     {
       name: "session detail",
       anchor: "[data-detail-header]",
-      go: async () => (await press(rail("sessions"))) && press("[data-list] [data-row-open]"),
+      go: async () => (await open("sessions")) && press("[data-list] [data-row-open]"),
     },
     // The map rides along on the wide face, where it is what the pane
     // opens into; narrow has the list alone, so the anchor is the row —
     // an anchor that only exists in one posture would report the other
     // one as a dead probe forever.
-    { name: "devices", anchor: "[data-device]", go: () => press(rail("devices")) },
+    { name: "devices", anchor: "[data-device]", go: () => open("devices") },
     {
       // This machine's card: the only one carrying the hooks control,
       // and the only one with no readings (it never asks itself).
       name: "machine card · this machine",
       anchor: "[data-hooks]",
-      go: async () => (await press(rail("devices"))) && press("[data-list] [data-row-open]"),
+      go: async () => (await open("devices")) && press("[data-list] [data-row-open]"),
     },
     {
       // …and a machine that has answered, which is the only way the
@@ -762,7 +822,7 @@ try {
       // 「never reached」line instead.
       name: "machine card · a machine that answered",
       anchor: "[data-vitals]",
-      go: async () => (await press(rail("devices"))) && pressNth("[data-list] [data-row-open]", 1),
+      go: async () => (await open("devices")) && pressNth("[data-list] [data-row-open]", 1),
     },
     { name: "files", anchor: '[data-browse-landing="dir"]', go: () => press(rail("files")) },
     {
@@ -774,7 +834,19 @@ try {
       anchor: "[data-crumb]",
       go: async () => (await press(rail("files"))) && press("[data-place]"),
     },
-    { name: "browser", anchor: '[data-browse-landing="page"]', go: () => press(rail("browser")) },
+    {
+      // Folded behind「…」on the narrow bar (App.tsx `NARROW_SHOWN`),
+      // so the way in is two presses there; the direct press is tried
+      // first so wide stays one. The fold's own menu gets no stop of
+      // its own — it closes on select, and an anchor only one posture
+      // has would read probe-dead on the other (the devices stop's
+      // rule).
+      name: "browser",
+      anchor: '[data-browse-landing="page"]',
+      go: async () =>
+        (await press(rail("browser"))) ||
+        ((await press("[data-rail-more]")) && press('[data-more-landing="browser"]')),
+    },
     {
       // 额度: one region, no list-beside-detail, and the anchor is a
       // row so a drifted `AccountRing` shape says probe dead instead of
@@ -803,12 +875,17 @@ try {
       // both say *probe dead* here rather than passing.
       name: "settings",
       anchor: '[data-face-axis="shape"] [data-face-option]',
-      // The one rail item that opens no landing and is not the mark, so
-      // it is named by what it is not rather than by a key it does not
-      // have. (The mark's own marker sits on the drawing inside its
-      // button, which is why this excludes by `:has` rather than by
-      // the attribute.)
-      go: () => press("[data-rail-item]:not([data-landing]):not(:has([data-rail-mark]))"),
+      // On the wide column 设置 is its own rail item — the one that
+      // opens no landing and is not the mark, so it is named by what it
+      // is not. On the narrow bar it moved inside the「…」fold
+      // (2026-09-02 `NARROW_SHOWN`), so there it is two presses: open
+      // the fold, then its own row. The direct press is tried first, so
+      // a renamed wide glyph still says probe-dead rather than being
+      // masked by the fold path.
+      go: async () =>
+        (await press(
+          "[data-rail-item]:not([data-landing]):not([data-rail-more]):not(:has([data-rail-mark]))",
+        )) || ((await press("[data-rail-more]")) && press("[data-more-settings]")),
       after: async () => {
         await page.keyboard.press("Escape");
         await wait(300);
@@ -913,6 +990,12 @@ try {
     ["wide", { width: 1400, height: 900 }],
   ]) {
     await page.setViewportSize(vp);
+    // A fresh list each posture: the rail's collapse persists
+    // (`khor.list-width`), and a walk that collapsed one posture would
+    // start the next one hidden.
+    await page.evaluate(() => {
+      try { localStorage.removeItem("khor.list-width"); } catch { /* ignore */ }
+    });
     await page.reload({ waitUntil: "load" });
     await wait(900);
     // The instrument, before the readings. A floor asserted on a screen
@@ -1409,7 +1492,7 @@ try {
     }, what);
   };
   await page.setViewportSize({ width: 1120, height: 1000 });
-  await press(rail("devices"));
+  await open("devices");
   await press("[data-list] [data-row-open]");
   const mineCard = await arcsOn("[data-machine-card]");
   if (!mineCard) fail("probe dead: this machine's card never drew, so nothing below measured it");
@@ -1418,7 +1501,7 @@ try {
   } else if (mineCard.windows !== 0 || mineCard.via !== 0) {
     fail(`this machine's card draws ${mineCard.windows} quota windows — they left this surface on 2026-09-02`);
   }
-  await press(rail("devices"));
+  await open("devices");
   await pressNth("[data-list] [data-row-open]", 1);
   const peerCard = await arcsOn("[data-machine-card]");
   if (!peerCard) fail("probe dead: the peer's card never drew");
@@ -1498,7 +1581,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
-  await press(rail("sessions"));
+  await open("sessions");
   await press("[data-list] [data-row-open]");
   if ((await page.locator("[data-back]").count()) === 0) {
     fail("probe dead: the narrow session detail never drew, so the tab count was never on a screen");
@@ -1525,7 +1608,7 @@ try {
       if ((await page.locator("[data-tab-switcher]").count()) !== 0) {
         fail("picking a tab did not put the switcher away");
       }
-      if ((await page.locator("[data-detail-header] [data-word]").count()) !== 1) {
+      if ((await page.locator("[data-detail-header] [data-halo]").count()) !== 1) {
         fail("the switcher's pick did not land on a session detail");
       }
       // Closing from inside: the switcher stays up (it is the screen
@@ -1536,6 +1619,45 @@ try {
       const left = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
       if (left !== 1) fail(`closing one of two tabs left ${left} rows in the switcher`);
     }
+  }
+
+  // ── 9) readings per volume and per card, with a whole fallback ────
+  // Tied to the fixture: the peer surveys (two cards, two volumes, one
+  // minted strain), elder does not (empty lists, aggregate only). An
+  // implementation that ignores the lists reds the first half; one
+  // that forgets the fallback — the un-upgraded reporter every mesh
+  // has — reds the second. Both cards are opened by row order, the
+  // walk's own convention.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await open("devices");
+  await pressNth("[data-list] [data-row-open]", 1);
+  await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
+  const surveyed = await page.evaluate(() => ({
+    vols: [...document.querySelectorAll('[data-machine-card] [data-vitals-unit="vol"]')].length,
+    gpus: [...document.querySelectorAll('[data-machine-card] [data-vitals-unit="gpu"]')].length,
+    vram: document.querySelectorAll('[data-machine-card] [data-vitals-unit="vram"]').length,
+    disk: document.querySelectorAll('[data-machine-card] [data-vitals-unit="disk"]').length,
+    strained: document.querySelectorAll('[data-machine-card] [data-vitals-detail][data-strain="tight"]').length,
+  }));
+  if (surveyed.vols !== 2) fail(`the surveyed card draws ${surveyed.vols} volume rings for 2 routed volumes`);
+  if (surveyed.gpus !== 2) fail(`the surveyed card draws ${surveyed.gpus} GPU rings for 2 routed cards`);
+  if (surveyed.vram !== 0) fail("a per-card row plus an aggregate VRAM ring is the same bytes twice");
+  if (surveyed.disk !== 0) fail("the single-disk ring is still drawn beside the volumes it became");
+  if (surveyed.strained !== 1) fail(`the minted volume strain did not land (${surveyed.strained} tight details)`);
+  await open("devices");
+  await pressNth("[data-list] [data-row-open]", 2);
+  await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
+  const elder = await page.evaluate(() => ({
+    vols: document.querySelectorAll('[data-machine-card] [data-vitals-unit="vol"]').length,
+    gpus: document.querySelectorAll('[data-machine-card] [data-vitals-unit="gpu"]').length,
+    vram: document.querySelectorAll('[data-machine-card] [data-vitals-unit="vram"]').length,
+    disk: document.querySelectorAll('[data-machine-card] [data-vitals-unit="disk"]').length,
+  }));
+  if (elder.disk !== 1 || elder.gpus !== 1 || elder.vram !== 1 || elder.vols !== 0) {
+    fail(
+      `the un-surveyed card lost its old rings: disk ${elder.disk}, gpu ${elder.gpus}, ` +
+        `vram ${elder.vram}, vols ${elder.vols} — the fallback is the un-upgraded mesh's face`,
+    );
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);

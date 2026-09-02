@@ -216,7 +216,7 @@ function measure(read) {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const say = (n) => n.toFixed(2);
 
-const LANDINGS = ["sessions", "devices", "files", "browser", "quota"];
+const LANDINGS = ["sessions", "devices", "files", "quota", "browser"];
 
 let vite;
 let browser;
@@ -367,24 +367,32 @@ try {
     const over = await page.locator("nav").evaluate((el) => el.scrollWidth - el.clientWidth);
     if (over > 0) fail(`${face}: the rail overflows its own box by ${over}`);
 
-    const boxes = {};
-    for (const tab of LANDINGS) boxes[tab] = await boxOf(item(tab));
+    // The seats this face actually shows: wide is every landing, narrow
+    // is the first four and the「…」fold that holds the rest
+    // (2026-09-02, App.tsx `NARROW_SHOWN`).
+    const seats = vertical
+      ? LANDINGS.map((tab) => item(tab))
+      : [...LANDINGS.slice(0, 4).map((tab) => item(tab)), page.locator("[data-rail-more]")];
+    const boxes = [];
+    for (const seat of seats) boxes.push(await boxOf(seat));
 
-    // Inside the group first: four landings at one distance. Without
-    // this, "the mark is further away" would also be satisfied by a rail
-    // with four random gaps in it.
+    // Inside the group first: the seats at one distance. Without this,
+    // "the mark is further away" would also be satisfied by a rail with
+    // random gaps in it.
     const inside = [];
-    for (let i = 1; i < LANDINGS.length; i++) {
-      inside.push(near(boxes[LANDINGS[i]]) - far(boxes[LANDINGS[i - 1]]));
+    for (let i = 1; i < boxes.length; i++) {
+      inside.push(near(boxes[i]) - far(boxes[i - 1]));
     }
     const spread = Math.max(...inside) - Math.min(...inside);
     if (spread > 1) {
-      fail(`${face}: the four landings are not evenly spaced — gaps ${inside.map((g) => g.toFixed(1))}`);
+      fail(`${face}: the rail's seats are not evenly spaced — gaps ${inside.map((g) => g.toFixed(1))}`);
     }
     const within = Math.min(...inside);
 
+    // The glyph just before the door: 设置 on the wide column, the
+    // 「…」fold on the narrow bar (设置 lives inside it there).
     const settings = page.locator("[data-rail-item]:not([data-landing])", { hasNot: page.locator("[data-rail-mark]") });
-    if ((await settings.count()) !== 1) throw new Error("probe dead: cannot find the settings glyph");
+    if ((await settings.count()) !== 1) throw new Error("probe dead: cannot find the glyph before the door");
     if ((await mesh.count()) !== 1) throw new Error("probe dead: no way into the mesh in the rail");
     // **It is wearing a face, and either form of one counts.** The
     // derived SVG when a backend answered, the blank when none did —

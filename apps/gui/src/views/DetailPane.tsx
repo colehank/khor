@@ -1,11 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
-  closeSession,
   type DayRun,
   type SessionRow,
 } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
+import { SessionFace } from "@/components/SessionFace";
 import { SessionTitle } from "@/components/SessionTitle";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import { ChatView } from "@/views/ChatView";
 import { DayStrip } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
-import { word } from "@/words";
+import { groupLabel, word } from "@/words";
 
 /**
  * **One session, one face.** A session is held in exactly one form —
@@ -108,105 +107,12 @@ export function closeWarning(kind: string): string {
   return gui.close_warn;
 }
 
-/**
- * Ending the session this pane is showing.
- *
- * **The button does not decide whether the close is possible.** A
- * discovered session is not khor's to end, and a remote one routes to
- * the machine it lives on — both are `Node::close`'s judgment, and a
- * refusal comes back as a whole sentence written for a person ("不是
- * khor 起的,关不了它;去它自己的窗口里退"). Guessing the same rule here
- * would be this face re-deriving a backend judgment, and it would go
- * stale the day one of those paths changes. So it asks, and prints what
- * comes back.
- *
- * The confirm takes a strip of its own under the header rather than
- * squeezing into it: the sentence is the point, and a warning truncated
- * to fit beside a title is a warning nobody reads.
- */
-function useCloseSession(row: SessionRow | null) {
-  const [confirming, setConfirming] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The row is the subject: moving to another session must not leave
-  // this one's confirm — or its refusal — standing over a row it was
-  // never about.
-  useEffect(() => {
-    setConfirming(false);
-    setClosing(false);
-    setError(null);
-  }, [row?.id]);
-  // Two pieces because they sit in two places: the control belongs on
-  // the header's line, the sentence needs a line of its own. A hook
-  // rather than two components so there is still exactly one piece of
-  // state behind them.
-  const button = !row ? null : (
-    <Button
-        size="sm"
-        variant="ghost"
-        data-close-session
-        // The finger floor, same as its neighbour on this line.
-        className="min-h-touch flex-none"
-        onClick={() => {
-          setError(null);
-          setConfirming(true);
-        }}
-    >
-      {gui.close}
-    </Button>
-  );
-  const strip = !row ? null : (
-    <>
-      {confirming && (
-        <div
-          data-close-confirm
-          className="flex flex-none items-center gap-2 border-b px-3 py-1.5 text-sm"
-        >
-          <span data-close-warn className="min-w-0 flex-1 text-muted-foreground">
-            {closeWarning(row.kind)}
-          </span>
-          <Button
-            size="sm"
-            data-close-go
-            className="min-h-touch"
-            disabled={closing}
-            onClick={() => {
-              setClosing(true);
-              closeSession(row.id)
-                .then(() => {
-                  // Nothing to paint on success: the row leaves the
-                  // list on its next poll and this pane goes with it.
-                  setConfirming(false);
-                })
-                .catch((e) => {
-                  setError(String(e instanceof Error ? e.message : e));
-                  setClosing(false);
-                  setConfirming(false);
-                });
-            }}
-          >
-            {gui.close}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-close-back
-            className="min-h-touch"
-            onClick={() => setConfirming(false)}
-          >
-            {gui.back}
-          </Button>
-        </div>
-      )}
-      {error && (
-        <div data-close-error className="flex-none border-b px-3 py-1.5 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-    </>
-  );
-  return { button, strip };
-}
+// (The header's 关闭 — its confirm strip, and the refusal line under
+// it — left on 2026-09-02 with the header diet:「标签本来就自带关闭」.
+// What a tab's × closes is the *view*; ending the session lives in the
+// row's menu (`SessionsList`), whose confirm reads `closeWarning`
+// above and whose refusal lands as the item's own note — one act, one
+// place, same sentences.)
 
 // Per-kind faces: a GUI session gets the conversation (ChatView); a
 // session khor hosts here gets its live terminal (TerminalPane); the
@@ -224,6 +130,7 @@ export function DetailPane({
   onNew,
   empty,
   tabs,
+  placeWord,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -249,8 +156,11 @@ export function DetailPane({
       a browser keeps it; absent on wide, where the strip above this
       pane already shows every tab. */
   tabs?: ReactNode;
+  /** The row's workspace, in the words the list's chips use — resolved
+      by the shell (`placeLabels` needs every row) and only printed
+      here. Null for a row with no place. */
+  placeWord?: string | null;
 }) {
-  const close = useCloseSession(row);
   return (
     <section className="flex h-full min-w-0 flex-col">
       {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
@@ -281,13 +191,24 @@ export function DetailPane({
             <IconBack />
           </Button>
         )}
+        {/* The row's identity assembly, only where the strip is not
+            there to carry it: on wide the front tab wears this exact
+            face — halo for the state, corner mark for the kind — a few
+            pixels up, and repeating it here was the header's old
+            crowding (2026-09-02:「都和标签内容重复了」— the state word,
+            the machine face and name, 复制 id and 关闭 all left
+            together; the copy and the close live in the row's menu
+            now). Narrow has no strip, so the face stays, or an open
+            session's state would be on no screen at all. */}
+        {narrow && row && (
+          <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} />
+        )}
         {/* `min-w-0` (inside SessionTitle) is what lets it actually
             truncate: a flex child will not shrink below its content
             without it, so on the narrow face the title would push the
-            facts and the two controls off the end of the header instead
-            of clipping itself. Keyed by the row so switching sessions
-            drops any half-typed edit — a draft belongs to the row it
-            was typed over. */}
+            facts off the end of the header instead of clipping itself.
+            Keyed by the row so switching sessions drops any half-typed
+            edit — a draft belongs to the row it was typed over. */}
         {row ? (
           <SessionTitle
             key={row.id}
@@ -299,46 +220,19 @@ export function DetailPane({
         ) : (
           <span className="min-w-0 truncate font-title" />
         )}
+        {/* What the title is *of* — the workspace and the kind, which
+            the user named as the header's whole remaining content
+            (「标题应该就是session名,所属工作区,session类型」). Both in
+            the list's own words: the place label the shell resolved
+            (`placeLabels`, handed in as `placeWord`) and the
+            category's group word — so a heading here and a chip there
+            cannot spell one fact two ways. */}
         {row && (
-          <>
-            {/* The state, in the same clothes the row wears it in — the
-                same `data-word` pair, so the colour, the breath and the
-                reduced-motion guard are the doctrine's and not a second
-                copy of it (app.css). Two places, one fact, one word:
-                what must never differ between a list and a detail is
-                what they say about the same thing (docs/UX.md). */}
-            {/* `text-fact`, the tier the word wears in the list — "a
-                reading, a state word, a count" is the tier's own
-                definition, and this is the same word about the same
-                session. It was `text-sm`, which is the raw size `aux`
-                resolves to, so the header said in aux clothes what the
-                list is now saying in fact clothes: one fact, two
-                sizes. */}
-            <span data-word={row.word} className="flex-none text-fact">
-              <span data-word-text style={{ color: `var(--state-${row.word})` }}>
-                {word(row.word)}
-              </span>
-            </span>
-            {/* Which machine this session is on. **The face is always
-                there, the name only on a reported row** — and that is
-                one rule, not two: the face is the machine's identity and
-                every row carries one, while the *name* is the offline
-                axis and only a row another device told us about has it.
-                It is exactly what the list shows, which is the point —
-                one machine, one face, wherever it appears. */}
-            <span data-detail-machine className="flex flex-none items-center gap-1.5">
-              <MachineAvatar face={row.face} className="size-kind-mark" />
-              {row.source && (
-                <span data-detail-device className="truncate text-sm text-muted-foreground">
-                  {gui.from_device(row.source.device)}
-                </span>
-              )}
-            </span>
-            <span className="min-w-0 flex-1" />
-            <CopyId id={row.id} />
-            {close.button}
-          </>
+          <span data-detail-facts className="min-w-0 shrink truncate text-sm text-muted-foreground">
+            {[placeWord, groupLabel(`cat:${row.category ?? ""}`)].filter(Boolean).join(" · ")}
+          </span>
         )}
+        <span className="min-w-0 flex-1" />
         {tabs}
       </header>
       {/* The session's day, as a band the width of the pane, directly
@@ -352,7 +246,6 @@ export function DetailPane({
           <DayStrip runs={days} />
         </div>
       )}
-      {close.strip}
       {row && row.kind === "chat" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills. Keyed so switching machines
