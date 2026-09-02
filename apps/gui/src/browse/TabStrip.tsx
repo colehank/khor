@@ -18,15 +18,15 @@
 //
 // **…and the wide half of that had a condition nobody checked.** "Every
 // tab on screen at once" is not a property of the strip, it is a
-// property of the strip *while the tabs still fit*, and the strip's own
-// floor decides when they stop. Measured at `--tab-w-min`: the strip
-// scrolls (1900 against 1336 of room at 20 tabs on a 1400 window, and
-// at 6 tabs on the narrowest wide face there is), so tabs are literally
-// not on screen — and the label on the ones that are measured **12
-// wide** beside a face of 14, which is not a truncation of a name, it
-// is the absence of one. At that point the strip answers none of the three
-// things somebody with fifteen tabs is doing: getting back to the one
-// they were just on, seeing what is even open, or closing a batch.
+// property of the strip *while the tabs still fit*. Tabs are two fixed
+// widths now (tokens.css `--tab-w` / `--tab-w-on`: a stub when not in
+// front, the whole name when it is — 2026-09-02:「未选中固定长度,选中
+// 变宽」), so the strip scrolls the moment the stubs and the open tab
+// outgrow the room, and the tabs past that edge are literally not on
+// screen. At that point the strip answers none of the
+// three things somebody with fifteen tabs is doing: getting back to
+// the one they were just on, seeing what is even open, or closing a
+// batch.
 //
 // So the count and the switcher are **not the narrow face's** — they
 // are the answer to "too many to find one in", which is a question
@@ -139,9 +139,9 @@ export function TabStrip({
       // rule as well would cut the open tab off from the page again.
       // `items-end` and a top-only radius do the rest.
       //
-      // The strip scrolls rather than shrinking past `--tab-w-min`
-      // (that token says why), and `flex-none` keeps it from being the
-      // thing that gives when the window is short.
+      // The strip scrolls rather than shrinking its tabs (tokens.css
+      // `--tab-w` says why they are fixed), and `flex-none` keeps it
+      // from being the thing that gives when the window is short.
       //
       // **The band is as tall as the floor under a finger**, which is
       // the one place in this file where Chrome's proportions had to
@@ -185,8 +185,19 @@ export function TabStrip({
                 // box inside a short pill. A tab whose colour stops short
                 // of where it can be pressed is a tab that lies about
                 // where it is.
-                "group flex h-touch w-tab max-w-tab min-w-tab-min flex-1 items-center gap-1 rounded-t-md pr-0.5 pl-2",
-                on ? "bg-background text-foreground" : "text-muted-foreground hover:bg-background/50",
+                "group flex h-touch flex-none items-center gap-1 rounded-t-md pr-0.5 pl-2",
+                // **Two widths, and each tab wears exactly one.** The one
+                // in front takes its own name's width — never less than a
+                // stub, so it does not read as the smallest tab on the
+                // strip, and up to the ceiling; every other is the stub.
+                // Spelled as two branches rather than a base plus an
+                // override because `w-tab` is a custom spacing class and
+                // `cn()` cannot lift one of those off another (button.tsx
+                // measured that) — both would survive and the
+                // stylesheet's order would pick.
+                on
+                  ? "min-w-tab max-w-tab-on bg-background text-foreground"
+                  : "w-tab text-muted-foreground hover:bg-background/50",
               )}
             >
               <button
@@ -226,20 +237,17 @@ export function TabStrip({
                 // the box, and the ghost wash paints that box, so what
                 // lights up is what can be pressed.
                 //
-                // What it costs, said out loud: the close takes 44 of the
-                // tab's width where it took 30, and the half that holds
-                // the face and the name gives them up — measured at
-                // `--tab-w`, 156 wide to 142. At `--tab-w-min` that half
-                // was already a truncation (see that token) and this
-                // makes it a shorter one.
+                // What it costs, said out loud: the close takes 44 of a
+                // stub's 160 where it took 30, and the half that holds
+                // the face and the name gives them up. On the open tab
+                // it costs nothing — that tab is as wide as its name
+                // plus this.
                 //
-                // **And at the floor it made the destructive half the
-                // bigger one** — 30 that opened against 44 that closed —
-                // which is why `--tab-w-min` moved to 102 rather than why
-                // this went back to 30. A close that outweighs the open
-                // is the tab telling a finger the wrong thing; a strip
-                // that scrolls sooner is the price, and Chrome's answer
-                // to too many tabs is to scroll anyway.
+                // **A close that outweighs the open is the tab telling a
+                // finger the wrong thing**, and at 160 the open half is
+                // still the bigger one (102 was the width where they
+                // crossed, back when tabs shrank; fixed stubs never reach
+                // it).
                 className={cn(
                   "min-h-touch min-w-touch flex-none",
                   !on && "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",

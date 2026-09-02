@@ -65,8 +65,8 @@ export function BrowseLanding({
   // switcher over it would be a second way to do a thing that is not
   // hidden". The second clause is still right and the first was a
   // condition read as a fact: measured, the strip stops showing every
-  // tab as soon as it scrolls, and the tabs it does show wear a label
-  // 12 wide (`TabStrip`, tokens.css `--tab-w-min`). So the switcher is
+  // tab as soon as it scrolls (`TabStrip`, tokens.css `--tab-w`: fixed
+  // stubs, so it scrolls rather than shrinks). So the switcher is
   // offered on the wide face exactly when the strip has stopped being
   // able to do what the old comment credited it with, and `TabStrip`
   // owns that condition because it is the only thing that can measure

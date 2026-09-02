@@ -554,60 +554,40 @@
    * and lives where the drag is measured). */
   --list-w-min: 180px;
   --list-w-snap: 100px;
-  /* One tab in the file landing's strip: what it takes when there is
-   * room, and the floor it shrinks to before the strip starts
-   * scrolling instead.
+  /* A tab that is not in front, and the most the one in front may take.
    *
-   * **Neither of the pair above would do**, and not because they are
-   * the wrong number: `--list-w` is how wide a *region* is, dragged by
-   * the person looking at it, while this is a ceiling on a *control*
-   * that nobody drags — two tabs in a 1400px window must not become two
-   * 700px tabs, which is what a strip of `flex-1` children does when
-   * nothing caps them. The three `--ctl-*` are heights and have no
-   * width to lend.
+   * **Two widths, not a range** (2026-09-02:「标签页没有被选中的时候
+   * 固定长度,选中了变宽来显示完整标签」). A tab that is not in front
+   * is exactly `--tab-w` wide: a face and the head of a name, the same
+   * size as its neighbours, so a strip reads as a row of equal stubs
+   * and a finger finds the fifth one where the fifth one always is.
+   * The tab in front grows to its whole name — the one tab whose name
+   * matters is the one that says all of it — and stops at `--tab-w-on`
+   * so a pasted-path-of-a-name does not push every other tab off the
+   * strip.
    *
-   * 200 is a name-plus-face at this app's `--text-sm`: a machine's face
-   * (`--avatar` is bigger than what a tab wears, but the crop is the
-   * same picture), a directory leaf, and the close mark, with the leaf
-   * still readable rather than an ellipsis with two characters in front
-   * of it.
+   * What this replaced was a `flex-1` between a ceiling and a floor:
+   * every tab shared the room equally and shrank together, and its
+   * floor (102: a `--touch` to open plus a `--touch` to close, and the
+   * gaps) was where the strip gave up and scrolled. Under fixed widths
+   * that floor has no tab to bound — an unselected tab never shrinks,
+   * so it is never a stub with a 12px label; the strip scrolls as soon
+   * as the stubs no longer fit, which is the same place Chrome's does.
    *
-   * **The floor is whichever comes first of two limits, and the first
-   * spelling of it only knew one.** It was 88, derived from the leaf:
-   * below that a tab is a face and a truncation, so the strip should
-   * scroll (Chrome's own answer) rather than go on grinding tabs into
-   * identical stubs. True, and not the binding limit — a tab holds two
-   * targets, and at 88 the one that opens it measured **30 wide**
-   * against a `--touch` of 44, while the one that *closes* it was a
-   * full 44. Of an 88 tab: 8 of padding, 30 that opens, 4 of gap, 44
-   * that closes, 2 of padding. **The destructive half was the bigger
-   * target**, so a finger aimed at a compressed tab was likelier to
-   * throw it away than to open it — and that is not a floor being
-   * missed by a few pixels, it is the wrong action winning the tab.
+   * 160 is a face, a gap, and about ten characters of a name at
+   * `--text-sm`, then the close mark: enough to tell `khor` from
+   * `khor-docs`, not enough for the whole of most. 420 holds a name of
+   * about forty, which is longer than a session is usually called —
+   * **and never more than the strip itself**: the ceiling is
+   * `min(420px, 100%)`, because the narrowest wide face leaves the
+   * strip less than 420, and a tab wider than its own strip is a tab
+   * that scrolls off it while it is the one in front.
    *
-   * So 102: `8 + 44 + 4 + 44 + 2`, the two floors plus the gaps already
-   * between them. Not a new tier and not a new judgment — the same
-   * token, re-derived from both of the things that bound it instead of
-   * one. It is written as a number rather than a `calc()` off `--touch`
-   * because the padding and the gap are `TabStrip`'s and would have to
-   * be mirrored here to compute it, which is a second copy of them; the
-   * arithmetic is above, and the measurement below is what actually
-   * holds it.
-   *
-   * Measured after the change rather than computed (this token's own
-   * history is the reason): 102 wide, the open half 44×44, the close
-   * 44×44, at both 1400×900 and 720×900.
-   *
-   * **What it still cannot block, and the half it does not even
-   * touch**: at the floor the tab's *label* measured 12px wide beside a
-   * 14px face — so a floored tab says nothing about which tab it is,
-   * and 102 makes that 26px, which says no more. The finger is fixed;
-   * finding the tab is a different question and is not this token's to
-   * answer. The wide strip's own answer — every tab on screen at once —
-   * expires the moment the strip scrolls, which is what `TabStrip`'s
-   * switcher is doing on this face now. */
-  --tab-w: 200px;
-  --tab-w-min: 102px;
+   * Neither is `--list-w` (a region, dragged) nor a `--ctl-*` (a
+   * height): a tab is a control with a width, and that is its own
+   * kind of number. */
+  --tab-w: 160px;
+  --tab-w-on: min(420px, 100%);
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted
@@ -1015,7 +995,7 @@
   --spacing-rail: var(--rail-w);
   --spacing-list: var(--list-w);
   --spacing-tab: var(--tab-w);
-  --spacing-tab-min: var(--tab-w-min);
+  --spacing-tab-on: var(--tab-w-on);
   --spacing-chat-box: var(--chat-box);
   /* `max-w-measure`. Through the spacing namespace rather than a
      `--container-*` of its own because `max-w` reads `--max-width`,
@@ -1203,8 +1183,8 @@
    * **CJK is deliberately not in this stack.** No monospace face on
    * this platform carries it, so it falls back whatever we write, and
    * naming a face here would only hide that from the next reader —
-   * the geometry is held by the cell boxes instead (`TermRun`), which
-   * is the only thing that works regardless of which font answers.
+   * xterm measures the cell from this face and draws a wide glyph
+   * across two of them, whichever font ends up answering for it.
    *
    * 14/20 rather than the 14/17.5 it was: the grid was drawn at
    * `leading-tight`, which packs rows closer than any terminal sets

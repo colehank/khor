@@ -293,6 +293,25 @@ export function IconClose({ className }: IconProps) {
   );
 }
 
+/** The two steps through a list of matches (the terminal's search).
+    A chevron and not an arrow: an arrow says "go", these say "the one
+    before / the one after", which is what ⇧⏎ / ⏎ do in the field. */
+export function IconChevronUp({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M4 10l4-4 4 4" />
+    </Mark>
+  );
+}
+
+export function IconChevronDown({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M4 6l4 4 4-4" />
+    </Mark>
+  );
+}
+
 /** Paperclip — attach a file to the conversation. One continuous line,
     the family's density; drawn for the 16 canvas, not scaled in. */
 export function IconAttach({ className }: IconProps) {

@@ -4379,6 +4379,217 @@ for line in sys.stdin:
     const seen = await onScreen();
     return seen.includes(200) && (await page.locator("[data-term-bottom]").count()) === 0;
   });
+
+  // 24u) 全功能面 (完整终端 T2, 2026-09-03): the things a terminal
+  //      emulator leaves to the window around it — search, links, the
+  //      title a program sets, the bell, copy-on-select — on the same
+  //      `cat` with its four hundred lines (every pasted line is on the
+  //      screen twice: the tty's echo and cat's own output). Each one
+  //      is driven through the real road: keys into xterm's textarea,
+  //      bytes out of the pty, a pointer on a cell. None through the
+  //      addon's API, which is what a gate that could not fail would
+  //      read.
+  //
+  //      (1) ⌘F is the terminal's search. The bar opens with the keys in
+  //      it, the word is found, the count is *the* count (compared to
+  //      the buffer's own occurrences, so a search that always says
+  //      "1 / 1" fails), ⏎ steps, ⎋ hands the keys back.
+  const hitsText = () => page.locator("[data-term-find-hits]").innerText();
+  await page.locator("[data-terminal]").click();
+  await page.keyboard.press("Meta+f");
+  await until("the search bar", 5_000, async () => (await page.locator("[data-term-find-input]").count()) === 1);
+  if (!(await page.evaluate(() => document.activeElement?.hasAttribute("data-term-find-input")))) {
+    throw new Error("the search bar opened without the keys in it");
+  }
+  await page.keyboard.type("sb-line-42");
+  const wantHits = ((await termText()).match(/sb-line-42(?!\d)/g) ?? []).length;
+  if (wantHits < 2) throw new Error(`probe dead: sb-line-42 is on the buffer ${wantHits} times`);
+  await until(`the count 1 / ${wantHits}`, 10_000, async () => (await hitsText()).trim() === `1 / ${wantHits}`);
+  const pickedByFind = await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.getSelection());
+  if (pickedByFind !== "sb-line-42") {
+    throw new Error(`the search found ${JSON.stringify(pickedByFind)}, not the word`);
+  }
+  if (!(await onScreen()).includes(42)) {
+    throw new Error("the search counted a match the view did not move to");
+  }
+  await page.keyboard.press("Enter");
+  await until(`the count 2 / ${wantHits}`, 10_000, async () => (await hitsText()).trim() === `2 / ${wantHits}`);
+  await page.keyboard.press("Shift+Enter");
+  await until(`back to 1 / ${wantHits}`, 10_000, async () => (await hitsText()).trim() === `1 / ${wantHits}`);
+  //      The control: a word that is not there says so in words, not in
+  //      a number and not in nothing — an empty count is what a search
+  //      that never ran would show.
+  await page.keyboard.press("Meta+a");
+  await page.keyboard.type("sb-line-999");
+  await until("a no-matches answer", 10_000, async () => {
+    const t = (await hitsText()).trim();
+    return t.length > 0 && !/\d/.test(t);
+  });
+  await page.keyboard.press("Escape");
+  await until("the bar gone and the keys back", 5_000, async () =>
+    (await page.locator("[data-term-find]").count()) === 0 && (await termFocused()),
+  );
+  //      The search left the view up at the match (iTerm2 leaves it
+  //      there too: closing a find is not a scroll), so the way back
+  //      down is offered — and everything below reads the *viewport*,
+  //      so it is taken first. The first run of this stop timed out on
+  //      an address that had arrived fine, four hundred lines under
+  //      the screen.
+  await until("the way back down after the search", 10_000, async () =>
+    (await page.locator("[data-term-bottom]").count()) === 1,
+  );
+  await page.locator("[data-term-bottom]").click();
+  await until("the live screen again", 20_000, async () => (await onScreen()).includes(200));
+
+  //      (2) the title a program sets (OSC 0) is shown; (3) a bell
+  //      flashes the frame. Both arrive as bytes through `cat` — the tty
+  //      echoes the escape as `^[` and cat writes the real one — and the
+  //      bell is caught by an observer armed *before* the byte is sent,
+  //      because the flash is shorter than a poll.
+  await pasteVia(sbRow, "\x1b]0;smoke-title\x07\n");
+  await until("the title on the pane", 10_000, async () =>
+    (await page.locator("[data-term-title]").count()) === 1 &&
+    (await page.locator("[data-term-title]").innerText()).trim() === "smoke-title",
+  );
+  await page.evaluate(() => {
+    const box = document.querySelector("[data-terminal]");
+    window.__bellSeen = false;
+    new MutationObserver(() => {
+      if (box.getAttribute("data-term-bell") === "true") window.__bellSeen = true;
+    }).observe(box, { attributes: true, attributeFilter: ["data-term-bell"] });
+  });
+  await pasteVia(sbRow, "\x07\n");
+  await until("the bell's flash", 10_000, async () => page.evaluate(() => window.__bellSeen === true));
+
+  //      (4) a link opens on ⌘-click and not on a click. The pointer is
+  //      put on the URL's own cell (the screen's box divided by the
+  //      grid: xterm sizes it to exactly cols × rows cells) — a click
+  //      anywhere else is a click on nothing. In a browser the link is
+  //      a new page; the control is the plain click opening none.
+  await pasteVia(sbRow, "see https://example.com/khor-smoke now\n");
+  await until("the address on screen", 10_000, async () => (await termView()).includes("https://example.com/khor-smoke"));
+  const urlAt = await page.evaluate(() => {
+    const t = document.querySelector("[data-terminal]").__xterm;
+    const b = t.buffer.active;
+    const screen = document.querySelector("[data-terminal] .xterm-screen").getBoundingClientRect();
+    for (let r = 0; r < t.rows; r += 1) {
+      const line = b.getLine(b.viewportY + r)?.translateToString(true) ?? "";
+      const c = line.indexOf("https://example.com");
+      if (c >= 0) {
+        return {
+          x: screen.left + ((c + 4) * screen.width) / t.cols,
+          y: screen.top + ((r + 0.5) * screen.height) / t.rows,
+        };
+      }
+    }
+    return null;
+  });
+  if (!urlAt) throw new Error("probe dead: the address is on screen but on no row");
+  //      The pointer is on the link only once xterm says so (it marks
+  //      the screen `xterm-cursor-pointer` when a link is under the
+  //      pointer — the underline's own class). Waited for before *both*
+  //      clicks: without it the plain click below is a click on nothing
+  //      and passes for the wrong reason, and the ⌘-click races the
+  //      link detection, which is asynchronous.
+  const onLink = () =>
+    page.evaluate(() => document.querySelector("[data-terminal] .xterm-screen")?.classList.contains("xterm-cursor-pointer") === true);
+  const pagesBefore = page.context().pages().length;
+  await page.mouse.move(urlAt.x, urlAt.y);
+  await until("the pointer on the link", 10_000, onLink);
+  await page.mouse.click(urlAt.x, urlAt.y);
+  await settle();
+  if (page.context().pages().length !== pagesBefore) {
+    throw new Error("a plain click on a link opened it — that click is the start of a selection");
+  }
+  //      ⌘ held through the keyboard, not `click({ modifiers })`: this
+  //      playwright's modifier option never reached the mouse events
+  //      (a document-level `mouseup` read `metaKey=false` under it,
+  //      measured with a probe), which read as "the link ignores ⌘"
+  //      until the probe said whose fault it was.
+  //      Two halves, told apart on purpose: the pane asking the browser
+  //      to open the address (its own `window.open`, wrapped here so
+  //      the ask is recorded), and the browser opening it. A blocked
+  //      popup and a link that never fired look the same from the
+  //      outside and are not the same fault — and only the first half
+  //      is the pane's. **The second is not asserted**: measured twice,
+  //      headless Chrome opens no page for this `window.open` on the
+  //      face (the same call on a bare xterm page does open one), while
+  //      headed Chrome on the served face opened the tab on ⌘-click
+  //      (2026-09-03, live, `tabs_context` listed it). The popup policy
+  //      is the browser's; the ask with the right address is what this
+  //      stop can honestly hold.
+  await page.evaluate(() => {
+    const real = window.open.bind(window);
+    window.__opened = null;
+    window.open = (u, ...rest) => {
+      window.__opened = String(u);
+      return real(u, ...rest);
+    };
+  });
+  await page.keyboard.down("Meta");
+  await page.mouse.move(urlAt.x + 1, urlAt.y);
+  await until("the pointer on the link, ⌘ held", 10_000, onLink);
+  const opened = page.context().waitForEvent("page", { timeout: 3_000 }).catch(() => null);
+  await page.mouse.click(urlAt.x, urlAt.y);
+  await page.keyboard.up("Meta");
+  await until("the pane asking to open the address", 10_000, async () =>
+    (await page.evaluate(() => window.__opened)) === "https://example.com/khor-smoke",
+  );
+  const popup = await opened;
+  if (popup) await popup.close();
+
+  //      (5) a selection is a copy. The clipboard is seeded first so a
+  //      copy that never happened cannot pass on an earlier one.
+  await page.evaluate(() => navigator.clipboard.writeText("not-the-selection"));
+  await page.evaluate(() => {
+    const t = document.querySelector("[data-terminal]").__xterm;
+    const b = t.buffer.active;
+    for (let i = 0; i < b.length; i += 1) {
+      if ((b.getLine(i)?.translateToString(true) ?? "") === "sb-line-42") {
+        t.select(0, i, t.cols);
+        return;
+      }
+    }
+    throw new Error("probe dead: no row reads sb-line-42 exactly");
+  });
+  await until("the selection on the clipboard", 10_000, async () =>
+    (await page.evaluate(() => navigator.clipboard.readText())).trim() === "sb-line-42",
+  );
+  await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.clearSelection());
+
+  //      (6) 标签宽度 (2026-09-02:「未选中固定长度,选中了变宽来显示
+  //      完整标签」): a second hosted session with a name longer than a
+  //      stub. In front, its tab is wider than a stub and its whole
+  //      name shows; the tab that stepped back is exactly a stub.
+  const longName = "stretch-the-tab-well-past-the-stub-width";
+  const stretchRow = cli(envB, "open", "-d", "--title", longName, "--", "cat").trim();
+  await until("the long-named session in the list", 30_000, async () =>
+    (await page.locator(`[data-row="${stretchRow}"]`).count()) === 1,
+  );
+  await page.locator(`[data-row="${stretchRow}"] [data-row-open]`).click();
+  await until("its tab in front", 20_000, async () =>
+    (await page.locator(`[data-tab="${stretchRow}"][data-on="true"]`).count()) === 1,
+  );
+  const tabW = await page.evaluate(
+    ([onId, offId]) => {
+      const w = (id) => document.querySelector(`[data-tab="${id}"]`).getBoundingClientRect().width;
+      const label = document.querySelector(`[data-tab="${onId}"] [data-tab-label]`);
+      const stub = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--tab-w"));
+      return { on: w(onId), off: w(offId), stub, clipped: label.scrollWidth > label.clientWidth };
+    },
+    [stretchRow, sbRow],
+  );
+  if (Math.abs(tabW.off - tabW.stub) > 1) {
+    throw new Error(`a tab not in front is ${tabW.off} wide, not the stub's ${tabW.stub}`);
+  }
+  if (tabW.on <= tabW.stub + 40) {
+    throw new Error(`the tab in front is ${tabW.on} wide for a ${longName.length}-character name — it did not grow`);
+  }
+  if (tabW.clipped) throw new Error("the tab in front still truncates its name");
+  cli(envB, "close", stretchRow);
+  await until("the stretched tab gone", 20_000, async () =>
+    (await page.locator(`[data-tab="${stretchRow}"]`).count()) === 0,
+  );
   cli(envB, "close", sbRow);
 
   //      …and the tmux pane has none of this, on purpose. Asserted so
@@ -5720,7 +5931,13 @@ for line in sys.stdin:
     (await page.locator('[data-menu-confirm="close"]').count()) === 1,
   );
   await page.locator('[data-menu-item="close"]').click();
-  await until("the wizard row gone", 20_000, async () => {
+  // Closing a live GUI-hosted session is not the near-instant `khor
+  // close` of a plain shell: the host is killed, its pty dropped, the
+  // agent under it reaped, the exit recorded, and only then does the
+  // row leave. Measured at 30.0s on an unloaded internal disk (2026-09-03),
+  // so the wait is generous — a tight one here is a flake waiting for a
+  // busy machine, not a bug being caught.
+  await until("the wizard row gone", 90_000, async () => {
     const why = await page.locator('[data-menu-note="close"]').innerText().catch(() => "");
     if (why) throw new Error(why);
     return (await page.locator(`[data-row="${wizId}"]`).count()) === 0;

@@ -36,15 +36,35 @@
 // shell-quoted paste via `term_drop`, cross-machine aware), and the
 // theme — xterm takes concrete colours, so the app's tokens are
 // resolved to values here and re-resolved when the theme flips.
+//
+// And the four things a terminal *emulator* leaves to the window
+// around it, each set to what iTerm2 does out of the box (the app's
+// rule: defaults over settings, aligned to iTerm):
+//   - **links** open on ⌘-click (`WebLinksAddon`), through the same
+//     `open_link` the conversation pane uses — the whitelist of schemes
+//     is khor's, not the addon's;
+//   - **a selection is a copy** (`onSelectionChange` → clipboard), so
+//     there is no ⌘C to remember and nothing to lose by clicking away;
+//   - **⌘F is the terminal's own search** (`SearchAddon` + the bar in
+//     this file), not the page's — a page find would search the DOM of
+//     a webgl canvas and find nothing;
+//   - **a bell is a flash** on the frame, and **the title a program
+//     sets** (OSC 0/2) is shown in the corner: the shell said it, and a
+//     title that goes nowhere is a program talking to no one.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
+import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
+import { IconChevronDown, IconChevronUp, IconClose } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 
@@ -66,6 +86,41 @@ const LIVE_MS = 50;
     (`khor_gui_core::term::SCROLLBACK`) so the two authorities never
     disagree about how far back "back" goes. */
 const SCROLLBACK = 2000;
+
+/** How long the frame lights for a bell (BEL). iTerm2's visual bell is
+    a flash; a flash that stays is a border, and a border says nothing. */
+const BELL_MS = 160;
+
+/** Where the search paints what it found: the terminal's own yellow,
+    thinned for every match and solid under the one the search stands
+    on. Terminal colours rather than app tokens, the same rule as
+    `ANSI16` — these sit on top of program output, whose colours are
+    the terminal's. */
+const FOUND = {
+  matchBackground: "#c4a00055",
+  matchOverviewRuler: "#c4a000",
+  activeMatchBackground: "#c4a000bb",
+  activeMatchColorOverviewRuler: "#c4a000",
+};
+
+/** The key that opens the search: ⌘F on a Mac. Elsewhere ⌃⇧F, because
+    ⌃F is a byte a shell wants (readline's forward-char) and stealing
+    it would be the app taking a key the program had. */
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent);
+function asksToFind(ev: KeyboardEvent): boolean {
+  if (ev.key.toLowerCase() !== "f" || ev.altKey) return false;
+  return IS_MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && ev.shiftKey;
+}
+
+/** Where a link goes. In the app, through khor (`open_link`: the
+    scheme whitelist is the same one the conversation pane's links go
+    through). In a browser, the browser's own new tab — `open` on the
+    serving machine would open it on the wrong screen when the face is
+    being read from a phone. */
+function follow(uri: string) {
+  if (inApp) openLink(uri).catch(() => {});
+  else window.open(uri, "_blank", "noopener");
+}
 
 /** Base64 → bytes, the shape `term.write` takes. The api boundary is
     JSON strings (gui-core `to_json`), so the feed crosses encoded. */
@@ -152,6 +207,18 @@ export function TerminalPane({ id }: { id: string }) {
   // conversation uses.
   const [back, setBack] = useState(false);
   const [freshBelow, setFreshBelow] = useState(false);
+  // The search: whether the bar is up, what is in it, and where the
+  // addon says the matches are (`of` is -1 past the highlight limit).
+  const searchRef = useRef<SearchAddon | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<{ at: number; of: number } | null>(null);
+  // What the program running inside called itself (OSC 0/2). Empty
+  // until something sets one; a shell that never does says nothing.
+  const [title, setTitle] = useState("");
+  // The bell's flash, and the timer that ends it.
+  const [rang, setRang] = useState(false);
+  const bellTimer = useRef(0);
 
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -183,6 +250,43 @@ export function TerminalPane({ id }: { id: string }) {
     } catch {
       /* DOM renderer stands */
     }
+    // The search paints its matches as decorations, which is the one
+    // proposed API this file leans on besides unicode11.
+    const search = new SearchAddon();
+    term.loadAddon(search);
+    searchRef.current = search;
+    const found = search.onDidChangeResults((r) => setHits({ at: r.resultIndex, of: r.resultCount }));
+    // Links underline on hover and open on ⌘-click, iTerm2's gesture.
+    // A plain click on a URL in a terminal is more often the start of a
+    // selection than a wish to leave, so the modifier is the intent.
+    term.loadAddon(
+      new WebLinksAddon((ev, uri) => {
+        if (ev.metaKey || ev.ctrlKey) follow(uri);
+      }),
+    );
+    // ⌘F is caught before xterm sees it, so it neither reaches the pty
+    // nor falls through to the page's own find. Everything else passes.
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type === "keydown" && asksToFind(ev)) {
+        ev.preventDefault();
+        setFinding(true);
+        return false;
+      }
+      return true;
+    });
+    const rung = term.onBell(() => {
+      setRang(true);
+      window.clearTimeout(bellTimer.current);
+      bellTimer.current = window.setTimeout(() => setRang(false), BELL_MS);
+    });
+    const titled = term.onTitleChange(setTitle);
+    // Copy on select. The clipboard can refuse (no permission, no
+    // secure context on a LAN address) and then ⌘C still works — this
+    // is the shortcut, not the only way.
+    const selected = term.onSelectionChange(() => {
+      const s = term.getSelection();
+      if (s) navigator.clipboard?.writeText(s).catch(() => {});
+    });
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -303,8 +407,14 @@ export function TerminalPane({ id }: { id: string }) {
       data.dispose();
       scrolled.dispose();
       wrote.dispose();
+      found.dispose();
+      rung.dispose();
+      titled.dispose();
+      selected.dispose();
+      window.clearTimeout(bellTimer.current);
       term.dispose();
       termRef.current = null;
+      searchRef.current = null;
       keysRef.current = null;
       termLeave(id).catch(() => {});
     };
@@ -390,19 +500,61 @@ export function TerminalPane({ id }: { id: string }) {
     };
   }, [id]);
 
+  // The search bar's three verbs. Typing looks incrementally (the
+  // match under the caret grows with the word instead of jumping to
+  // the next one), ⏎/⇧⏎ and the two chevrons step, ⎋ and the close
+  // put it away and hand the keys back to the terminal.
+  const look = (q: string) => {
+    setQuery(q);
+    const s = searchRef.current;
+    if (!s) return;
+    if (!q) {
+      s.clearDecorations();
+      setHits(null);
+      return;
+    }
+    s.findNext(q, { incremental: true, decorations: FOUND });
+  };
+  const step = (dir: 1 | -1) => {
+    const s = searchRef.current;
+    if (!s || !query) return;
+    if (dir > 0) s.findNext(query, { decorations: FOUND });
+    else s.findPrevious(query, { decorations: FOUND });
+  };
+  const stopFinding = () => {
+    searchRef.current?.clearDecorations();
+    setFinding(false);
+    setQuery("");
+    setHits(null);
+    termRef.current?.focus();
+  };
+  // The count beside the field: nothing until there is a word, the
+  // lists' own 没有匹配的 for none, "3 / 12" otherwise. Past the
+  // highlight limit the addon stops counting and says -1; the place
+  // still means something, the total does not.
+  const hitsText = !query || !hits ? "" : hits.of === 0 ? gui.no_matches : hits.of < 0 ? `${hits.at + 1}` : `${hits.at + 1} / ${hits.of}`;
+
   return (
     <div
       data-terminal
+      data-term-bell={rang}
       ref={boxRef}
       // The terminal owns its own two colours; they follow the theme so
       // a plain shell is the app's paper, not a black box. The font
       // tokens are read off this element by `fontOf` — one source, no
       // copy in JS.
-      className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-bg)] p-1 text-[var(--term-fg)]"
+      className={cn(
+        "relative min-h-0 flex-1 overflow-hidden bg-[var(--term-bg)] p-1 text-[var(--term-fg)]",
+        // The bell: an inset line the terminal's own yellow, gone in
+        // `BELL_MS`. Inset so the flash never changes the box's size —
+        // a resize on every bell would be a reflow on every bell.
+        rang && "shadow-[inset_0_0_0_2px_var(--term-bell)]",
+      )}
       style={
         {
           "--term-bg": "var(--background)",
           "--term-fg": "var(--foreground)",
+          "--term-bell": ANSI16[3],
           fontFamily: "var(--font-term)",
           fontSize: "var(--text-term)",
           lineHeight: "var(--text-term--line-height)",
@@ -412,6 +564,45 @@ export function TerminalPane({ id }: { id: string }) {
       {/* xterm's mount. Everything inside is the renderer's own — the
           gates read the buffer through `__xterm`, not this subtree. */}
       <div data-term-screen ref={mountRef} className="h-full w-full" />
+      {/* The search bar, over the top-right corner of the screen. A
+          field, the count, the two steps, the way out — the shape every
+          find bar has, because a person arriving here has used one. */}
+      {finding && (
+        <div
+          data-term-find
+          className="absolute right-2 top-1 z-20 flex items-center gap-1 rounded-md border bg-popover p-1 shadow-md"
+        >
+          <input
+            data-term-find-input
+            autoFocus
+            value={query}
+            placeholder={gui.search_terminal}
+            onChange={(e) => look(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                stopFinding();
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                step(e.shiftKey ? -1 : 1);
+              }
+            }}
+            className="h-ctl-sm w-48 bg-transparent px-2 text-sm outline-none"
+          />
+          <span data-term-find-hits className="min-w-12 text-right text-xs tabular-nums text-muted-foreground">
+            {hitsText}
+          </span>
+          <Button size="icon" variant="ghost" data-term-find-prev aria-label={gui.match_prev} onClick={() => step(-1)}>
+            <IconChevronUp />
+          </Button>
+          <Button size="icon" variant="ghost" data-term-find-next aria-label={gui.match_next} onClick={() => step(1)}>
+            <IconChevronDown />
+          </Button>
+          <Button size="icon" variant="ghost" data-term-find-close aria-label={gui.close} onClick={stopFinding}>
+            <IconClose />
+          </Button>
+        </div>
+      )}
       {/* The way back down, and the only sign that anything arrived
           while the reader was up in history. Two sentences on one
           control: "something came in" and "you are simply not at the
@@ -443,7 +634,22 @@ export function TerminalPane({ id }: { id: string }) {
           {why}
         </div>
       ) : (
-        <div className="pointer-events-none absolute right-2 top-1 z-10 flex flex-col items-end gap-1 text-xs">
+        <div
+          className={cn(
+            "pointer-events-none absolute right-2 z-10 flex flex-col items-end gap-1 text-xs",
+            // Under the search bar while that is up, so the two never
+            // overprint each other.
+            finding ? "top-12" : "top-1",
+          )}
+        >
+          {/* What the program calls itself. Muted and on a wash so it
+              reads over output without hiding it; `pointer-events-none`
+              from the column, so a click lands on the screen beneath. */}
+          {title && (
+            <div data-term-title className="max-w-72 truncate rounded bg-background/70 px-1 text-muted-foreground">
+              {title}
+            </div>
+          )}
           {gone && (
             <div data-term-over className="text-muted-foreground">
               {gui.term_over}
