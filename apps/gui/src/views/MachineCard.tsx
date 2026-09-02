@@ -379,7 +379,7 @@ function Readings({ row }: { row: DeviceRow }) {
       </div>
     );
   }
-  const { vitals: v, age_ms } = row.vitals;
+  const { vitals: v, age_ms, volume_strains } = row.vitals;
   return (
     <div data-vitals className="flex flex-wrap gap-row pt-pane">
       <Unit
@@ -395,7 +395,24 @@ function Readings({ row }: { row: DeviceRow }) {
         fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
         strain={row.vitals.mem_strain}
       />
-      {v.disk ? (
+      {v.volumes.length > 0 ? (
+        // The volumes one by one (2026-09-02:「硬盘存储」明细) — the
+        // home volume leads (the node sorts), each ring wearing the
+        // strain the node minted for its own fill. The two branches
+        // below are the older shape's fallback, and 「说不上」 belongs
+        // only there: an empty survey is an old reporter, never an
+        // empty machine.
+        v.volumes.map((vol, i) => (
+          <Unit
+            key={vol.mount}
+            name="vol"
+            word={volWord(vol.mount)}
+            label={cli.vitals_vol(volWord(vol.mount), bytes(vol.fill.used), bytes(vol.fill.total))}
+            fraction={vol.fill.total > 0 ? vol.fill.used / vol.fill.total : null}
+            strain={volume_strains[i]}
+          />
+        ))
+      ) : v.disk ? (
         <Unit
           name="disk"
           word={cli.vitals_name_disk}
@@ -424,24 +441,52 @@ function Readings({ row }: { row: DeviceRow }) {
           desktop without a card reports a non-event. Same again one level
           in for the video memory: a unified-memory machine has none to
           report, and those bytes are already in the 内存 line above. */}
-      {v.gpu && (
-        <>
+      {v.gpus.length > 0 ? (
+        // One ring per card (2026-09-02:「多个GPU，应该分多个环」— the
+        // aggregate hides the idle card somebody is looking for,
+        // `khor_core::GpuCard`); its VRAM rides the flip side of the
+        // same ring, because a per-card row plus an aggregate VRAM
+        // ring would be the same bytes on screen twice. The ring count
+        // stays equal to `khor devices`' sentence count — smoke holds
+        // the two faces to it.
+        v.gpus.map((c, i) => (
           <Unit
+            key={i}
             name="gpu"
-            word={cli.vitals_name_gpu}
-            label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
-            fraction={v.gpu.util_pct / 100}
+            word={v.gpus.length > 1 ? `${cli.vitals_name_gpu} ${i}` : cli.vitals_name_gpu}
+            label={
+              c.mem
+                ? cli.vitals_gpu_card_mem(
+                    c.name || cli.vitals_name_gpu,
+                    Math.round(c.util_pct),
+                    bytes(c.mem.used),
+                    bytes(c.mem.total),
+                  )
+                : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, Math.round(c.util_pct))
+            }
+            fraction={c.util_pct / 100}
           />
-          {v.gpu.mem && (
+        ))
+      ) : (
+        v.gpu && (
+          <>
             <Unit
-              name="vram"
-              word={cli.vitals_name_vram}
-              label={cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
-              fraction={v.gpu.mem.total > 0 ? v.gpu.mem.used / v.gpu.mem.total : null}
-              strain={row.vitals.vram_strain}
+              name="gpu"
+              word={cli.vitals_name_gpu}
+              label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
+              fraction={v.gpu.util_pct / 100}
             />
-          )}
-        </>
+            {v.gpu.mem && (
+              <Unit
+                name="vram"
+                word={cli.vitals_name_vram}
+                label={cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
+                fraction={v.gpu.mem.total > 0 ? v.gpu.mem.used / v.gpu.mem.total : null}
+                strain={row.vitals.vram_strain}
+              />
+            )}
+          </>
+        )
       )}
       {/* Which khor that machine runs. It rides with the readings
           because it is the same kind of fact — something a machine says
@@ -544,6 +589,17 @@ function Unit({
  * handing back strings would be deciding what a screen it cannot see has
  * room for.
  */
+/** A volume's short name — `/System/Volumes/Data` and `/` both draw as
+    `/` (the disk a person means), the rest keep their last step. The
+    CLI keeps a copy of its own (`vol_word`), the `bytes` precedent
+    below: painting is not judgment, and the wire carries the honest
+    mount. */
+function volWord(mount: string): string {
+  if (mount === "/System/Volumes/Data" || mount === "/") return "/";
+  const steps = mount.split("/").filter(Boolean);
+  return steps[steps.length - 1] ?? mount;
+}
+
 function bytes(n: number): string {
   const units = ["B", "K", "M", "G", "T"];
   let v = n;

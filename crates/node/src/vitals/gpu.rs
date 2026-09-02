@@ -62,29 +62,57 @@
 //! Windows and for a Mac whose driver went quiet — an absence, never a
 //! neighbouring value.
 
-use khor_core::Gpu;
+use khor_core::{Fill, Gpu, GpuCard};
 
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "linux")]
 mod nvidia;
 
-/// This machine's graphics hardware, or `None` when khor cannot say.
+/// This machine's graphics hardware: the aggregate ring and the cards
+/// one by one, from one walk. `(None, empty)` when khor cannot say.
 ///
 /// **Blocking**, like everything else a reading is made of — the one
 /// caller inside async code goes through `spawn_blocking` (`link.rs`).
-/// Measured cost is on each platform's own `sample`.
 ///
-/// Platforms with no implementation answer `None`, which is the truthful
-/// answer rather than a placeholder: khor on Windows genuinely cannot say
-/// yet, and a machine reporting no GPU field is exactly what that means.
-pub(super) fn sample() -> Option<Gpu> {
+/// Platforms with no implementation answer nothing, which is the
+/// truthful answer rather than a placeholder: khor on Windows genuinely
+/// cannot say yet, and a machine reporting no GPU field is exactly what
+/// that means.
+pub(super) fn sample_all() -> (Option<Gpu>, Vec<GpuCard>) {
     #[cfg(target_os = "macos")]
-    return mac::sample();
+    let cards = mac::cards();
     #[cfg(target_os = "linux")]
-    return nvidia::sample();
+    let cards = nvidia::cards();
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    return None;
+    let cards: Vec<GpuCard> = Vec::new();
+    (aggregate(&cards), cards)
+}
+
+/// The one-ring answer, derived from the cards — so the flattening
+/// [`khor_core::Gpu::util_pct`] documents happens in exactly one place
+/// and the aggregate can never disagree with the breakdown beside it.
+///
+/// Memory is all-or-nothing, the NVIDIA reader's old rule kept: a sum
+/// missing one card is a wrong number that looks like a right one, so
+/// one card without a memory reading (a unified-memory Mac, a card
+/// that went quiet) leaves the aggregate without one.
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
+fn aggregate(cards: &[GpuCard]) -> Option<Gpu> {
+    let pcts: Vec<f32> = cards.iter().map(|c| c.util_pct).collect();
+    let (util_pct, count) = across(&pcts)?;
+    let mem = cards
+        .iter()
+        .map(|c| c.mem)
+        .collect::<Option<Vec<Fill>>>()
+        .map(|fills| {
+            fills.iter().fold(Fill { used: 0, total: 0 }, |a, f| Fill {
+                used: a.used + f.used,
+                total: a.total + f.total,
+            })
+        })
+        .filter(|m| m.total > 0);
+    Some(Gpu { util_pct, cards: count, mem })
 }
 
 /// The average of what the cards reported, as a percentage, with however
@@ -136,9 +164,15 @@ mod tests {
     /// is a machine to be sure about.
     #[test]
     fn a_gpu_reading_is_a_percentage_or_nothing_at_all() {
-        let Some(g) = sample() else {
+        let (agg, cards) = sample_all();
+        let Some(g) = agg else {
+            assert!(cards.is_empty(), "no aggregate must mean no cards: {cards:?}");
             return;
         };
+        assert_eq!(g.cards as usize, cards.len(), "the ring counts the cards beside it");
+        for c in &cards {
+            assert!((0.0..=100.0).contains(&c.util_pct), "per card too: {}", c.util_pct);
+        }
         assert!(
             (0.0..=100.0).contains(&g.util_pct),
             "a percentage is a percentage: {}",
@@ -171,6 +205,25 @@ mod tests {
     /// one nonsensical one reports the good card alone, and says it came
     /// from one card. Averaging the pair would move the figure, and
     /// keeping the count at two would claim a reading khor does not have.
+    /// The aggregate is the cards' own arithmetic — and its memory is
+    /// all-or-nothing, so one quiet card cannot leave a sum that looks
+    /// whole while missing a member.
+    #[test]
+    fn the_aggregate_is_derived_from_the_cards_and_memory_is_all_or_nothing() {
+        let card = |pct, mem| GpuCard { name: String::new(), util_pct: pct, mem };
+        let both = [
+            card(100.0, Some(Fill { used: 1, total: 4 })),
+            card(0.0, Some(Fill { used: 2, total: 4 })),
+        ];
+        assert_eq!(
+            aggregate(&both),
+            Some(Gpu { util_pct: 50.0, cards: 2, mem: Some(Fill { used: 3, total: 8 }) })
+        );
+        let one_quiet = [card(40.0, Some(Fill { used: 1, total: 4 })), card(40.0, None)];
+        assert_eq!(aggregate(&one_quiet).unwrap().mem, None, "a sum missing a card is dropped whole");
+        assert_eq!(aggregate(&[]), None);
+    }
+
     #[test]
     fn a_figure_off_the_scale_is_not_a_percentage_at_all() {
         assert_eq!(across(&[140.0]), None);

@@ -553,6 +553,8 @@ mod tests {
             disk: None,
             gpu: None,
             version: None,
+            gpus: vec![],
+            volumes: vec![],
         };
         let bytes = encode(&Response::SatVitals { vitals: sent.clone(), age_ms: 38_000 }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
@@ -576,6 +578,11 @@ mod tests {
             disk: Some(khor_core::Fill { used: 5, total: 6 }),
             gpu: Some(khor_core::Gpu { util_pct: 12.0, cards: 1, mem: None }),
             version: Some("9.9.9".to_owned()),
+            gpus: vec![khor_core::GpuCard { name: "A".to_owned(), util_pct: 12.0, mem: None }],
+            volumes: vec![khor_core::Volume {
+                mount: "/".to_owned(),
+                fill: khor_core::Fill { used: 1, total: 2 },
+            }],
         };
         let bytes = encode(&Response::Vitals { vitals: sent.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

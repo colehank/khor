@@ -327,21 +327,57 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
     let mut parts = vec![
         cli::vitals_cpu(format_args!("{:.0}", v.cpu_pct), v.cores),
         cli::vitals_mem(bytes(v.mem.used), bytes(v.mem.total)),
-        match v.disk {
+    ];
+    // The volumes one by one when the machine surveyed them
+    // (2026-09-02:「硬盘存储」明细); the single home-volume reading is
+    // the older shape's fallback — and 「说不上」 belongs only to that
+    // fallback: an empty survey is an old reporter, not an empty
+    // machine.
+    if v.volumes.is_empty() {
+        parts.push(match v.disk {
             Some(d) => cli::vitals_disk(bytes(d.used), bytes(d.total)),
             None => cli::VITALS_DISK_UNKNOWN.to_owned(),
-        },
-    ];
+        });
+    } else {
+        for vol in &v.volumes {
+            parts.push(cli::vitals_vol(
+                vol_word(&vol.mount),
+                bytes(vol.fill.used),
+                bytes(vol.fill.total),
+            ));
+        }
+    }
     // **Nothing is said when there is no reading**, unlike the disk right
     // above — a machine with no GPU is an ordinary machine, and the word
     // for that would be printed by most desktops to report a non-event
     // (`khor_core::Gpu`). Same again one level in: video memory is its
     // own absence, because a unified-memory machine has none to report
     // rather than none left.
-    if let Some(g) = v.gpu {
-        parts.push(cli::vitals_gpu(format_args!("{:.0}", g.util_pct), g.cards));
-        if let Some(m) = g.mem {
-            parts.push(cli::vitals_vram(bytes(m.used), bytes(m.total)));
+    if v.gpus.is_empty() {
+        if let Some(g) = v.gpu {
+            parts.push(cli::vitals_gpu(format_args!("{:.0}", g.util_pct), g.cards));
+            if let Some(m) = g.mem {
+                parts.push(cli::vitals_vram(bytes(m.used), bytes(m.total)));
+            }
+        }
+    } else {
+        // One sentence per card (2026-09-02:「多个GPU，应该分多个环」),
+        // its memory inside the same sentence — the GUI draws one ring
+        // per card and smoke counts the two faces' pieces against each
+        // other, so a second piece here would be a phantom ring there.
+        // A card with no name gets the generic word, both ends' rule
+        // (`khor_core::GpuCard::name`).
+        for c in &v.gpus {
+            let name = if c.name.is_empty() { cli::VITALS_NAME_GPU } else { c.name.as_str() };
+            parts.push(match c.mem {
+                Some(m) => cli::vitals_gpu_card_mem(
+                    name,
+                    format_args!("{:.0}", c.util_pct),
+                    bytes(m.used),
+                    bytes(m.total),
+                ),
+                None => cli::vitals_gpu_card(name, format_args!("{:.0}", c.util_pct)),
+            });
         }
     }
     // Which khor that machine runs. Silent when unknown, for the GPU's
@@ -358,6 +394,18 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
         parts.push(cli::vitals_taken(human_age(age)));
     }
     parts.join("  ")
+}
+
+/// A volume's short name: the last step of its mount point, with the
+/// two spellings of "the main disk" both drawn as `/` — macOS's
+/// `/System/Volumes/Data` IS the root a person means. Painting, not
+/// judgment, so the GUI keeps a copy of its own the way `bytes` below
+/// has one; the wire carries the honest mount.
+fn vol_word(mount: &str) -> &str {
+    if mount == "/System/Volumes/Data" || mount == "/" {
+        return "/";
+    }
+    mount.rsplit('/').find(|s| !s.is_empty()).unwrap_or(mount)
 }
 
 /// Bytes as a person reads them: 1024-based, one decimal, no space.

@@ -47,7 +47,6 @@ use io_kit_sys::{
     kIOMasterPortDefault, IOIteratorNext, IOObjectRelease, IORegistryEntryCreateCFProperty,
     IOServiceGetMatchingServices, IOServiceMatching,
 };
-use khor_core::Gpu;
 
 /// The registry class every Mac GPU driver is a subclass of, so one name
 /// covers Apple silicon, Intel and AMD without khor knowing which it is
@@ -68,8 +67,12 @@ const UTILIZATION: &str = "Device Utilization %";
 /// the table on [`utilizations`] shows zeros gone by 100 ms.
 const SETTLE: std::time::Duration = std::time::Duration::from_millis(100);
 
-/// This machine's accelerators, averaged. `None` when none of them
-/// answered — see the rule at the top of the parent module.
+/// This machine's accelerators, one card each. Empty when none of them
+/// answered — see the rule at the top of the parent module. No name:
+/// the registry walk reads a statistics dictionary, not a model string,
+/// and an invented name is worse than the generic word a face falls
+/// back to (`khor_core::GpuCard::name`). No `mem` either — unified
+/// memory is already in the machine's own 内存 line.
 ///
 /// **A zero is read a second time, and nothing else is.** The reason is
 /// on [`utilizations`]: zero is the one answer that means either "idle"
@@ -79,14 +82,16 @@ const SETTLE: std::time::Duration = std::time::Duration::from_millis(100);
 ///
 /// A machine that really is idle pays [`SETTLE`] to say so — and still
 /// answers zero, which is the truth about it.
-pub(super) fn sample() -> Option<Gpu> {
-    let mut cards = utilizations();
-    if !cards.is_empty() && cards.iter().all(|p| *p == 0.0) {
+pub(super) fn cards() -> Vec<khor_core::GpuCard> {
+    let mut pcts = utilizations();
+    if !pcts.is_empty() && pcts.iter().all(|p| *p == 0.0) {
         std::thread::sleep(SETTLE);
-        cards = utilizations();
+        pcts = utilizations();
     }
-    let (util_pct, count) = super::across(&cards)?;
-    Some(Gpu { util_pct, cards: count, mem: None })
+    pcts.into_iter()
+        .filter(|p| (0.0..=100.0).contains(p))
+        .map(|util_pct| khor_core::GpuCard { name: String::new(), util_pct, mem: None })
+        .collect()
 }
 
 /// One percentage per accelerator that reported one.
@@ -238,6 +243,13 @@ unsafe fn utilization_of(service: io_service_t) -> Option<f32> {
 mod tests {
     use super::*;
 
+    /// The old one-ring read, rebuilt from the split pieces — the
+    /// controls below compare a single figure against `ioreg`, and the
+    /// aggregation now lives one module up (`gpu::aggregate`).
+    fn sample() -> Option<khor_core::Gpu> {
+        super::super::aggregate(&cards())
+    }
+
     /// **Every Mac has an accelerator**, so this end of the rule is the
     /// positive one: khor really does read a figure here, and the absence
     /// handling everywhere else is not covering for a lookup that never
@@ -249,14 +261,18 @@ mod tests {
     /// correctly reported nothing" all the way to the screen.
     #[test]
     fn this_mac_reports_a_gpu() {
-        let g = sample().expect("every Mac has an accelerator to read");
-        assert!(
-            (0.0..=100.0).contains(&g.util_pct),
-            "a percentage is a percentage: {}",
-            g.util_pct
-        );
-        assert!(g.cards >= 1, "at least one accelerator answered: {}", g.cards);
-        assert_eq!(g.mem, None, "unified memory has no video memory of its own");
+        let cards = cards();
+        assert!(!cards.is_empty(), "every Mac has an accelerator to read");
+        for c in &cards {
+            assert!(
+                (0.0..=100.0).contains(&c.util_pct),
+                "a percentage is a percentage: {}",
+                c.util_pct
+            );
+            assert_eq!(c.mem, None, "unified memory has no video memory of its own");
+        }
+        let g = super::super::aggregate(&cards).expect("cards must aggregate");
+        assert_eq!(g.cards as usize, cards.len());
     }
 
     /// The reading moves.

@@ -124,7 +124,9 @@ esac
 df -k "$HOME" 2>/dev/null | awk 'NR==2{printf "disk_total=%d\ndisk_used=%d\n", ($3+$4)*1024, $3*1024}'
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{n++; u+=$1; mu+=$2; mt+=$3} END{if(n>0) printf "gpu_pct=%.1f\ngpu_cards=%d\nvram_used=%d\nvram_total=%d\n", u/n, n, mu*1048576, mt*1048576}'
+  nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,name --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{printf "gpu_card=%s|%d|%d|%s\n", $1, $2*1048576, $3*1048576, $4}'
 fi
+df -kP 2>/dev/null | awk 'NR>1 && $1 ~ /^\// {printf "vol=%s|%d|%d\n", $6, $3*1024, ($3+$4)*1024}'
 "#;
 
 /// One reading of the satellite, taken over the user's ssh road — the
@@ -139,7 +141,22 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
     if !out.status.success() {
         return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
     }
-    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(parse_vitals(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// key=value lines into a reading. Split from the ssh so yesterday's
+/// text can be fed to today's parser (the degrade test below): an
+/// answer without the per-card and per-volume lines — truncated, or a
+/// pre-2026-09-02 shape — yields empty lists and everything else
+/// intact, never a guessed row.
+///
+/// Which way the volume lines can be wrong: `df -kP` is parsed by awk
+/// column, so a mount point with a space in it arrives truncated at
+/// the space — the numbers stay that volume's own (they sit in earlier
+/// columns), only the name is short. Accepted: such mounts are rare on
+/// the servers satellites are, and a short name is a display flaw
+/// where a shifted number would be a lie.
+fn parse_vitals(text: &str) -> khor_core::Vitals {
     let get = |key: &str| -> Option<f64> {
         text.lines()
             .find_map(|l| l.strip_prefix(key)?.strip_prefix('=')?.trim().parse().ok())
@@ -147,7 +164,43 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
     let fill = |used: &str, total: &str| -> Option<khor_core::Fill> {
         Some(khor_core::Fill { used: get(used)? as u64, total: get(total)? as u64 })
     };
-    Ok(khor_core::Vitals {
+    let gpus: Vec<khor_core::GpuCard> = text
+        .lines()
+        .filter_map(|l| {
+            let rest = l.strip_prefix("gpu_card=")?;
+            let mut it = rest.splitn(4, '|');
+            let util_pct: f32 = it.next()?.trim().parse().ok()?;
+            let used: u64 = it.next()?.trim().parse().ok()?;
+            let total: u64 = it.next()?.trim().parse().ok()?;
+            // Off-scale is evidence of a wrong read; the card is
+            // dropped whole (`vitals::gpu`'s clamp scar).
+            if !(0.0..=100.0).contains(&util_pct) {
+                return None;
+            }
+            Some(khor_core::GpuCard {
+                name: it.next().unwrap_or("").trim().to_owned(),
+                util_pct,
+                mem: (total > 0).then_some(khor_core::Fill { used, total }),
+            })
+        })
+        .collect();
+    let volumes: Vec<khor_core::Volume> = text
+        .lines()
+        .filter_map(|l| {
+            let rest = l.strip_prefix("vol=")?;
+            let mut it = rest.splitn(3, '|');
+            let mount = it.next()?.trim().to_owned();
+            let used: u64 = it.next()?.trim().parse().ok()?;
+            let total: u64 = it.next()?.trim().parse().ok()?;
+            (total > 0 && crate::vitals::keeps_volume(&mount))
+                .then_some(khor_core::Volume { mount, fill: khor_core::Fill { used, total } })
+        })
+        .collect();
+    // `/` as the home: no khor runs on a satellite, so there is no home
+    // volume to lead with — the tidy pass still dedupes and drops the
+    // sealed twin.
+    let volumes = crate::vitals::tidy_volumes(volumes, std::path::Path::new("/"));
+    khor_core::Vitals {
         cpu_pct: get("cpu_pct").unwrap_or(0.0) as f32,
         cores: get("cores").unwrap_or(1.0) as u32,
         mem: fill("mem_used", "mem_total").unwrap_or(khor_core::Fill { used: 0, total: 0 }),
@@ -158,7 +211,9 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
             mem: fill("vram_used", "vram_total"),
         }),
         version: None,
-    })
+        gpus,
+        volumes,
+    }
 }
 
 /// The argv prefix for an **interactive** ssh to the satellite — what a
@@ -417,6 +472,44 @@ mod tests {
     /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the
     /// device table's 64-hex shape out — and the two malformed shapes
     /// (bad base64, wrong length) mint nothing rather than a wrong id.
+    /// Yesterday's script text — no per-card, no per-volume lines —
+    /// parses into today's reading with both lists empty and the
+    /// aggregate intact: the degrade path a truncated answer walks.
+    #[test]
+    fn an_old_scripts_text_parses_with_empty_cards_and_volumes() {
+        let old = "cores=8\ncpu_pct=12.5\nmem_total=1000\nmem_used=400\ndisk_total=90\ndisk_used=30\ngpu_pct=40.0\ngpu_cards=2\nvram_used=10\nvram_total=100\n";
+        let v = parse_vitals(old);
+        assert!(v.gpus.is_empty() && v.volumes.is_empty());
+        assert_eq!(v.cpu_pct, 12.5);
+        assert_eq!(
+            v.gpu,
+            Some(khor_core::Gpu {
+                util_pct: 40.0,
+                cards: 2,
+                mem: Some(khor_core::Fill { used: 10, total: 100 })
+            })
+        );
+    }
+
+    /// Today's lines parse per card and per volume; machinery mounts,
+    /// off-scale figures and the sealed `/` twin are dropped at the
+    /// door — the same rules the local sampler lives by.
+    #[test]
+    fn todays_text_parses_cards_and_volumes_and_drops_the_noise() {
+        let text = "cores=8\ncpu_pct=1.0\nmem_total=10\nmem_used=1\ngpu_card=35.0|1048576|2097152|NVIDIA RTX A5000\ngpu_card=900|1|2|broken\ngpu_card=0.0|0|0|\nvol=/|30|90\nvol=/data|5|50\nvol=/proc|1|2\nvol=/System/Volumes/Data|3|9\n";
+        let v = parse_vitals(text);
+        let names: Vec<_> = v.gpus.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["NVIDIA RTX A5000", ""], "the off-scale card is dropped whole");
+        assert_eq!(v.gpus[0].mem, Some(khor_core::Fill { used: 1048576, total: 2097152 }));
+        assert_eq!(v.gpus[1].mem, None, "a zero total is no memory reading");
+        let mounts: Vec<_> = v.volumes.iter().map(|m| m.mount.as_str()).collect();
+        assert_eq!(
+            mounts,
+            ["/System/Volumes/Data", "/data"],
+            "machinery and the sealed twin are gone"
+        );
+    }
+
     #[test]
     fn a_sha256_fingerprint_becomes_a_device_shaped_id() {
         let b64 = {

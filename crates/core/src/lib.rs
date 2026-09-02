@@ -599,16 +599,19 @@ impl Fill {
 /// be: a reading is a message a machine sent, and messages get moved and
 /// cloned deliberately, not duplicated by accident.
 ///
-/// **Three fields have been appended at the tail here — and what that
+/// **Five fields have been appended at the tail here — and what that
 /// costs an older peer is the whole reading, not the field it has not
 /// heard of** (`khor_node::proto`'s head has the mechanism and the
-/// question to ask before a fourth). It is acceptable *here* for one
+/// question to ask before a sixth). It is acceptable *here* for one
 /// reason worth writing down rather than rediscovering: a reading
 /// carries the moment it was taken, so a peer that refuses the frame
 /// keeps painting the last one it could read **with an age that goes on
 /// climbing**. The failure is visible, which is the whole test — on a
-/// frame whose consumer had no such axis, the same three appends would
-/// have been three silent lies.
+/// frame whose consumer had no such axis, the same appends would have
+/// been silent lies. The question was asked again for the fourth and
+/// fifth (`gpus`, `volumes`, 2026-09-02) and the answer is the same
+/// branch: the un-upgraded peer's copy of this machine goes stale in
+/// plain sight, never wrong.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Vitals {
     /// Whole-machine CPU use, 0–100.
@@ -658,6 +661,34 @@ pub struct Vitals {
     /// to follow that discipline.
     #[serde(default)]
     pub version: Option<String>,
+    /// The cards one by one — the per-card truth [`Vitals::gpu`]
+    /// deliberately flattens (its own doc calls the breakdown "a
+    /// different screen"; 2026-09-02 the user asked for that screen:
+    /// 「多个GPU，应该分多个环」). The aggregate stays and stays filled,
+    /// derived from these when they are known, so older faces keep
+    /// their one ring.
+    ///
+    /// Empty means khor could not read per-card — an older satellite
+    /// text, a platform without a reader — never "no cards": that is
+    /// still [`Vitals::gpu`]'s `None`.
+    ///
+    /// Wire: at the tail with a serde default, the fourth field to
+    /// follow that discipline. The consumer's error branch, named as
+    /// `khor_node::proto`'s head demands: an older peer refuses this
+    /// whole reading and keeps painting the last one it could decode,
+    /// with `vitals-taken` climbing beside it — visible, not misread.
+    #[serde(default)]
+    pub gpus: Vec<GpuCard>,
+    /// The mounted filesystems worth acting on, one by one — where
+    /// [`Vitals::disk`] answers only for the volume khor's home fills
+    /// (2026-09-02:「硬盘存储」明细). `disk` stays filled for older
+    /// faces. Empty means not surveyed (an older peer, an older
+    /// satellite text), never "no disks".
+    ///
+    /// Wire: tail, serde default, fifth in the row; same named error
+    /// branch as `gpus` one field up.
+    #[serde(default)]
+    pub volumes: Vec<Volume>,
 }
 
 /// What the graphics hardware is doing.
@@ -704,6 +735,45 @@ pub struct Gpu {
     /// reported in [`Vitals::mem`], and giving it its own bar would put
     /// the same bytes on the screen twice under two names.
     pub mem: Option<Fill>,
+}
+
+/// One graphics card by itself — the row [`Gpu`] averages away.
+///
+/// A machine with one busy card and three idle ones reads 25% in the
+/// aggregate, which is a true sentence about the machine and a false
+/// lead about the job: the person deciding where to run looks for the
+/// idle card, not the mean. So each card carries its own share.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct GpuCard {
+    /// The driver's own name for the card, verbatim. Empty when the
+    /// platform reader has no name to give (macOS reads utilisation out
+    /// of the IO registry and no name with it) — a face falls back to
+    /// its generic word, never to an invented model.
+    pub name: String,
+    /// This card's use, 0–100. Off-scale figures never get here: a
+    /// number that is not a percentage is evidence the wrong thing was
+    /// read, and that card is dropped whole (`khor_node::vitals::gpu`'s
+    /// clamp scar).
+    pub util_pct: f32,
+    /// This card's own video memory. `None` on unified memory, where
+    /// those bytes are already in [`Vitals::mem`].
+    pub mem: Option<Fill>,
+}
+
+/// One mounted filesystem a person can act on — a volume of
+/// [`Vitals::volumes`].
+///
+/// Pseudo and system mounts never get in (`khor_node::vitals` owns the
+/// predicate); what remains is the short list somebody asking 「还有多少
+/// 地方」 actually means. This very machine keeps its build output on an
+/// external volume, so the single-disk answer was hiding the one that
+/// fills up.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Volume {
+    /// The mount point, spelled as the machine spells it. Shortening it
+    /// for a screen is painting and stays with the painters.
+    pub mount: String,
+    pub fill: Fill,
 }
 
 /// Tokens spent, in the four kinds a vendor bills separately.
@@ -1618,9 +1688,11 @@ mod tests {
             disk: Some(Fill { used: 5, total: 9 }),
             gpu: None,
             version: None,
+            gpus: vec![],
+            volumes: vec![],
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x96, "six fields today");
+        assert_eq!(bytes[0], 0x98, "eight fields today");
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 
@@ -1720,11 +1792,71 @@ mod tests {
                 disk: None,
                 gpu: Some(Gpu { util_pct: 48.0, cards: 2, mem }),
                 version: None,
+                gpus: vec![],
+                volumes: vec![],
             };
             let bytes = rmp_serde::to_vec(&v).unwrap();
-            assert_eq!(bytes[0], 0x96, "six fields today");
+            assert_eq!(bytes[0], 0x98, "eight fields today");
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
+    }
+
+    /// **Over the wire from a peer that predates the per-card and
+    /// per-volume readings**: six fields arrive and this end reads
+    /// them, with both new lists empty — not guessed, never `0 / 0`.
+    ///
+    /// Hand-built as a six-tuple, byte-asserted first, for the reason
+    /// every test in this family says: encoding today's struct and
+    /// decoding it back proves nothing about yesterday's peers.
+    #[test]
+    fn a_vitals_frame_from_an_older_peer_decodes_with_no_cards_or_volumes() {
+        let old = (
+            7.5f32,
+            4u32,
+            Fill { used: 2, total: 16 },
+            Some(Fill { used: 5, total: 9 }),
+            Some(Gpu { util_pct: 40.0, cards: 2, mem: None }),
+            Some("0.1.13".to_owned()),
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x96, "the sample must be a six-field frame, or it proves nothing");
+
+        let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
+        assert!(v.gpus.is_empty(), "an older peer said nothing per card");
+        assert!(v.volumes.is_empty(), "…nor per volume");
+        assert_eq!(v.cpu_pct, 7.5, "…and the rest of the reading survived");
+        assert_eq!(v.gpu, Some(Gpu { util_pct: 40.0, cards: 2, mem: None }));
+    }
+
+    /// The cards and the volumes are on the wire when they are known and
+    /// survive whole — including a card with no memory of its own and a
+    /// card with no name, the two shapes a round trip that only ever
+    /// carried the full form would let rot quietly.
+    #[test]
+    fn a_vitals_frame_carries_the_cards_and_the_volumes_when_known() {
+        let v = Vitals {
+            cpu_pct: 3.0,
+            cores: 8,
+            mem: Fill { used: 1, total: 2 },
+            disk: Some(Fill { used: 5, total: 9 }),
+            gpu: Some(Gpu { util_pct: 25.0, cards: 2, mem: None }),
+            version: None,
+            gpus: vec![
+                GpuCard {
+                    name: "RTX A5000".to_owned(),
+                    util_pct: 50.0,
+                    mem: Some(Fill { used: 3, total: 24 }),
+                },
+                GpuCard { name: String::new(), util_pct: 0.0, mem: None },
+            ],
+            volumes: vec![
+                Volume { mount: "/".to_owned(), fill: Fill { used: 5, total: 9 } },
+                Volume { mount: "/data".to_owned(), fill: Fill { used: 1, total: 4 } },
+            ],
+        };
+        let bytes = rmp_serde::to_vec(&v).unwrap();
+        assert_eq!(bytes[0], 0x98, "eight fields today");
+        assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 
     /// The token frame is a fixed-order array of four, and a day's frame

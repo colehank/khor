@@ -97,7 +97,7 @@
 
 use std::sync::OnceLock;
 
-use khor_core::{Fill, Gpu};
+use khor_core::Fill;
 use nvml_wrapper::Nvml;
 
 /// The library handle, opened once.
@@ -113,72 +113,52 @@ use nvml_wrapper::Nvml;
 /// that has no NVIDIA card at all, which is most of them.
 static NVML: OnceLock<Option<Nvml>> = OnceLock::new();
 
-/// This machine's NVIDIA cards, averaged. `None` when there is no driver,
-/// no card, or nothing that would answer.
-pub(super) fn sample() -> Option<Gpu> {
-    let nvml = NVML.get_or_init(|| Nvml::init().ok()).as_ref()?;
-    let count = nvml.device_count().ok()?;
-
-    let mut utilisation = Vec::new();
-    // `Some` while every card counted so far has also reported its
-    // memory — see the note below on why one silent card poisons the sum.
-    let mut memory = Some((0u64, 0u64));
-
+/// This machine's NVIDIA cards, one by one. Empty when there is no
+/// driver, no card, or nothing that would answer.
+///
+/// The aggregation — including the all-or-nothing memory rule this
+/// function used to enforce inline — lives in `super::aggregate` now,
+/// so the one ring and the per-card rows can never disagree.
+pub(super) fn cards() -> Vec<khor_core::GpuCard> {
+    let Some(nvml) = NVML.get_or_init(|| Nvml::init().ok()).as_ref() else {
+        return Vec::new();
+    };
+    let Ok(count) = nvml.device_count() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
     for index in 0..count {
         let Ok(card) = nvml.device_by_index(index) else {
             continue;
         };
+        // No utilisation means this card contributes nothing at all,
+        // rather than a zero that would paint a busy machine half idle.
         let Ok(rates) = card.utilization_rates() else {
-            // No utilisation means this card contributes nothing at all,
-            // rather than a zero that would drag the average down and
-            // paint a busy machine as half idle.
             continue;
         };
-        utilisation.push(rates.gpu as f32);
-
-        // **A sum missing one card is a wrong number that looks like a
-        // right one**, so it is dropped entirely rather than reported
-        // short. The count and the memory then always describe the same
-        // set of cards.
-        match card.memory_info() {
-            // **The same rule the utilisation follows one line up**, in
-            // the shape memory takes: a figure that is not a possible
-            // reading is evidence the wrong thing was read, so the card
-            // is dropped rather than squeezed into shape (`super::across`
-            // does exactly this for percentages, and it does it for both
-            // platforms because it is shared). `used` above `total` is
-            // that case here — a bar cannot be more than full, and
-            // clamping it would hide the same class of mistake a clamp
-            // once hid on the macOS side.
-            Ok(info) if info.used <= info.total => {
-                if let Some((used, total)) = memory.as_mut() {
-                    // **Both figures as NVML reports them.** The disk
-                    // reading next door derives `used` from what is free,
-                    // and copying that here would be the wrong lesson: it
-                    // does that because APFS reports three numbers that do
-                    // not add up (purgeable space belongs to no column),
-                    // so *somebody* has to decide what counts as used.
-                    // NVML states `used` outright. Recomputing it would be
-                    // khor overruling the driver about its own memory —
-                    // and on a card holding back ECC or reserved regions
-                    // the two genuinely differ.
-                    //
-                    // **The dividing line is whether the source answers
-                    // the question**, not which arithmetic looks tidier.
-                    *used += info.used;
-                    *total += info.total;
-                }
-            }
-            _ => memory = None,
+        let util_pct = rates.gpu as f32;
+        // Off-scale is evidence the wrong thing was read; the card is
+        // dropped whole (`super::across`'s clamp scar).
+        if !(0.0..=100.0).contains(&util_pct) {
+            continue;
         }
+        // The driver's own name, verbatim; a card that will not name
+        // itself keeps its reading under an empty name rather than an
+        // invented one.
+        let name = card.name().unwrap_or_default();
+        // **Both figures as NVML reports them** — `used` is read, not
+        // derived; the disk reading's opposite choice is its own note
+        // and does not transfer (`khor_core::GpuCard`). `used` above
+        // `total`, like a zero total, is not a possible reading, so the
+        // card keeps its utilisation and loses its memory rather than
+        // shipping a bar more than full.
+        let mem = match card.memory_info() {
+            Ok(info) if info.used <= info.total && info.total > 0 => {
+                Some(Fill { used: info.used, total: info.total })
+            }
+            _ => None,
+        };
+        out.push(khor_core::GpuCard { name, util_pct, mem });
     }
-
-    let (util_pct, cards) = super::across(&utilisation)?;
-    Some(Gpu {
-        util_pct,
-        cards,
-        // A total of zero is not a memory reading, it is a machine that
-        // answered nothing useful.
-        mem: memory.filter(|(_, total)| *total > 0).map(|(used, total)| Fill { used, total }),
-    })
+    out
 }

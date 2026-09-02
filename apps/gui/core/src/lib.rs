@@ -225,6 +225,11 @@ pub struct VitalsReading {
     /// same grey as a 2% CPU). Minted from the same `Fill::strain`, so
     /// the thresholds stay one fact in one place.
     pub vram_strain: Option<khor_core::Strain>,
+    /// One word per volume, index-parallel with `vitals.volumes` —
+    /// minted here like the three above, from the same `Fill::strain`,
+    /// so the per-volume rows the card grew on 2026-09-02 paint the
+    /// same judgment the single disk ring always did.
+    pub volume_strains: Vec<Option<khor_core::Strain>>,
 }
 
 impl VitalsReading {
@@ -233,6 +238,7 @@ impl VitalsReading {
             mem_strain: vitals.mem.strain(),
             disk_strain: vitals.disk.and_then(|d| d.strain()),
             vram_strain: vitals.gpu.as_ref().and_then(|g| g.mem).and_then(|m| m.strain()),
+            volume_strains: vitals.volumes.iter().map(|v| v.fill.strain()).collect(),
             vitals,
             age_ms,
         }
@@ -262,11 +268,27 @@ mod vitals_reading_tests {
                 mem: Some(Fill { used: 91, total: 100 }),
             }),
             version: None,
+            gpus: vec![],
+            volumes: vec![
+                khor_core::Volume {
+                    mount: "/".to_owned(),
+                    fill: Fill { used: 96, total: 100 },
+                },
+                khor_core::Volume {
+                    mount: "/data".to_owned(),
+                    fill: Fill { used: 50, total: 100 },
+                },
+            ],
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));
         assert_eq!(r.disk_strain, None, "a half-full disk says nothing");
         assert_eq!(r.vram_strain, Some(Strain::Tight), "a 91% VRAM is worth a glance");
+        assert_eq!(
+            r.volume_strains,
+            vec![Some(Strain::Critical), None],
+            "each volume wears its own word, in its own seat"
+        );
     }
 
     /// No GPU, no vram word — the absent card must not read as anything.
@@ -279,8 +301,12 @@ mod vitals_reading_tests {
             disk: None,
             gpu: None,
             version: None,
+            gpus: vec![],
+            volumes: vec![],
         };
-        assert_eq!(VitalsReading::of(v, 0).vram_strain, None);
+        let r = VitalsReading::of(v, 0);
+        assert_eq!(r.vram_strain, None);
+        assert!(r.volume_strains.is_empty(), "no volumes, no words");
     }
 }
 
@@ -1194,6 +1220,19 @@ pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
 mod wizard_agent_tests {
     use super::*;
 
+    /// The wizard's door went async on 2026-09-02 (在哪台批 — it can
+    /// dial another machine now) and these tests never followed: they
+    /// sat red, unrun, until the 机器页 batch tripped over them. The
+    /// runtime is built the way every blocking door in this file
+    /// builds one.
+    fn wait<T>(f: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(f)
+    }
+
     fn root(tag: &str) -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!("khor-wizard-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
@@ -1219,7 +1258,7 @@ mod wizard_agent_tests {
         let n = khor_node::Node::open(r.clone()).unwrap();
         n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
 
-        let why = open_session(&r, "~", "", "chat", "zedd").expect_err("no such registration");
+        let why = wait(open_session(&r, "~", "", "chat", "zedd", "")).expect_err("no such registration");
         assert_eq!(
             why,
             n.agent_or_refuse("zedd").unwrap_err(),
@@ -1243,8 +1282,8 @@ mod wizard_agent_tests {
         let n = khor_node::Node::open(r.clone()).unwrap();
         n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
 
-        let term = open_session(&r, "~", "", "term", "zed").expect_err("no terminal form");
-        let sched = open_session(&r, "~", "", "agent", "zed").expect_err("no scheduler form");
+        let term = wait(open_session(&r, "~", "", "term", "zed", "")).expect_err("no terminal form");
+        let sched = wait(open_session(&r, "~", "", "agent", "zed", "")).expect_err("no scheduler form");
         assert_eq!(term, khor_catalog::msg::WIZARD_REGISTERED_NO_TERMINAL);
         assert_eq!(sched, khor_catalog::msg::WIZARD_REGISTERED_NO_SCHEDULER);
         assert_ne!(term, sched, "starting it and arming it are different walls");
@@ -1267,12 +1306,12 @@ mod wizard_agent_tests {
         // chat-only and claude is not, which is the pre-批⑥ shape and
         // must survive the open position.
         assert_eq!(
-            open_session(&r, "~", "", "term", "codex").expect_err("codex has no terminal form"),
+            wait(open_session(&r, "~", "", "term", "codex", "")).expect_err("codex has no terminal form"),
             khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY
         );
         // claude's `term` is not refused on the agent axis at all: it
         // gets as far as the directory, which is the next question.
-        let claude_term = open_session(&r, "/nonexistent/khor-no-such-dir", "", "term", "claude")
+        let claude_term = wait(open_session(&r, "/nonexistent/khor-no-such-dir", "", "term", "claude", ""))
             .expect_err("that directory does not exist");
         assert_eq!(
             claude_term,

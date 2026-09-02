@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use khor_core::{Fill, Vitals};
+use khor_core::{Fill, Vitals, Volume};
 
 mod gpu;
 
@@ -103,6 +103,7 @@ pub fn sample(home: &Path) -> Vitals {
     let cores = s.sys.cpus().len() as u32;
     let mem = Fill { used: s.sys.used_memory(), total: s.sys.total_memory() };
     let disk = disk_under(&s.disks, home);
+    let volumes = tidy_volumes(volumes_of(&s.disks), home);
     // **Released before the GPU is asked**, and the ordering is the
     // whole reason these are locals rather than fields written inline.
     // The GPU keeps nothing between readings, so it has no use for the
@@ -110,6 +111,7 @@ pub fn sample(home: &Path) -> Vitals {
     // driver would make every other sampler in the process wait behind
     // it for nothing.
     drop(s);
+    let (gpu, gpus) = gpu::sample_all();
     // The version of the binary doing the sampling — which is the one
     // running on this machine, whatever else is on its disk.
     Vitals {
@@ -117,8 +119,10 @@ pub fn sample(home: &Path) -> Vitals {
         cores,
         mem,
         disk,
-        gpu: gpu::sample(),
+        gpu,
         version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+        gpus,
+        volumes,
     }
 }
 
@@ -159,6 +163,76 @@ fn disk_under(disks: &sysinfo::Disks, home: &Path) -> Option<Fill> {
             used: d.total_space().saturating_sub(d.available_space()),
             total: d.total_space(),
         })
+}
+
+/// Whether a mount point is a volume a person means by 「硬盘存储」.
+///
+/// A blacklist rather than a whitelist, because real volumes mount in
+/// too many places to enumerate (`/`, `/home`, `/data`, `/mnt`,
+/// `/Volumes/…`) while the noise is a short known family:
+/// system-managed service volumes and virtual filesystems.
+/// `/System/Volumes/Data` is the one system-managed exception — on
+/// macOS it *is* the person's data volume, the filesystem everything
+/// they touch lives on.
+///
+/// Which way this can be wrong: a genuinely interesting volume mounted
+/// under a rejected prefix (say `/private/var/…`) stays off the list;
+/// the single-volume reading (`Vitals::disk`) still reports it when
+/// khor's home is there, so the loss is a missing row, never a wrong
+/// one.
+pub(crate) fn keeps_volume(mount: &str) -> bool {
+    if mount == "/" || mount == "/System/Volumes/Data" {
+        return true;
+    }
+    const NOISE: [&str; 9] =
+        ["/System/", "/private/", "/dev", "/proc", "/sys", "/run", "/boot", "/snap", "/var/lib/"];
+    !NOISE.iter().any(|p| mount.starts_with(p))
+}
+
+/// Every volume worth a row, raw — [`tidy_volumes`] finishes the list.
+fn volumes_of(disks: &sysinfo::Disks) -> Vec<Volume> {
+    disks
+        .list()
+        .iter()
+        .filter_map(|d| {
+            let total = d.total_space();
+            if total == 0 {
+                return None;
+            }
+            let mount = d.mount_point().to_string_lossy().into_owned();
+            keeps_volume(&mount).then(|| Volume {
+                mount,
+                // Used as the complement of available — `disk_under`'s
+                // APFS note is the reason, and two derivations of one
+                // number on one screen would disagree.
+                fill: Fill { used: total.saturating_sub(d.available_space()), total },
+            })
+        })
+        .collect()
+}
+
+/// Dedupes, drops the sealed twin, and puts the volume khor lives on
+/// first — split from the collection so a hand-built list can prove
+/// each rule (a `sysinfo::Disks` cannot be built by hand). Shared with
+/// the satellite parser, whose lines come over ssh instead of sysinfo.
+///
+/// The sealed twin: on macOS `/` is a snapshot sharing one APFS
+/// container with `/System/Volumes/Data`, so with Data on the list `/`
+/// is the same space twice under another name.
+pub(crate) fn tidy_volumes(mut volumes: Vec<Volume>, home: &Path) -> Vec<Volume> {
+    let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
+    let mut seen = std::collections::HashSet::new();
+    volumes.retain(|v| seen.insert(v.mount.clone()));
+    if volumes.iter().any(|v| v.mount == "/System/Volumes/Data") {
+        volumes.retain(|v| v.mount != "/");
+    }
+    let home_mount = volumes
+        .iter()
+        .filter(|v| home.starts_with(&v.mount))
+        .max_by_key(|v| v.mount.len())
+        .map(|v| v.mount.clone());
+    volumes.sort_by_key(|v| (Some(&v.mount) != home_mount.as_ref(), v.mount.clone()));
+    volumes
 }
 
 #[cfg(test)]
@@ -232,5 +306,58 @@ mod tests {
         // Not a prefix of any mount point on any platform: mount points
         // are absolute paths, and this is not one.
         assert_eq!(disk_under(&disks, Path::new("khor-no-such-relative-path")), None);
+    }
+
+    /// The predicate keeps what a person means by 「硬盘」 and drops the
+    /// machinery — including keeping the one system-managed path that
+    /// IS the person's data volume.
+    #[test]
+    fn a_volume_is_kept_by_what_it_means_not_where_it_mounts() {
+        for keep in ["/", "/System/Volumes/Data", "/home", "/data", "/mnt/scratch", "/Volumes/disk0"]
+        {
+            assert!(keeps_volume(keep), "{keep} is a person's volume");
+        }
+        for noise in [
+            "/System/Volumes/VM",
+            "/private/var/vm",
+            "/dev",
+            "/proc",
+            "/run/lock",
+            "/boot/efi",
+            "/snap/core",
+            "/var/lib/docker",
+        ] {
+            assert!(!keeps_volume(noise), "{noise} is machinery");
+        }
+    }
+
+    /// The tidy pass: duplicates collapse, the sealed `/` twin leaves
+    /// when Data is present, and the volume khor's home fills leads.
+    /// (The hand-built homes do not exist, so `canonicalize` falls back
+    /// to the literal path — the branch every platform takes here.)
+    #[test]
+    fn tidied_volumes_lead_with_home_and_drop_the_sealed_twin() {
+        let vol = |mount: &str, used| Volume {
+            mount: mount.to_owned(),
+            fill: Fill { used, total: 100 },
+        };
+        let raw = vec![
+            vol("/", 1),
+            vol("/System/Volumes/Data", 2),
+            vol("/Volumes/disk0", 3),
+            vol("/Volumes/disk0", 3),
+        ];
+        let out = tidy_volumes(raw, Path::new("/System/Volumes/Data/Users/x"));
+        assert_eq!(
+            out.iter().map(|v| v.mount.as_str()).collect::<Vec<_>>(),
+            ["/System/Volumes/Data", "/Volumes/disk0"],
+        );
+
+        let out = tidy_volumes(vec![vol("/", 1), vol("/data", 2)], Path::new("/data/khor"));
+        assert_eq!(
+            out.iter().map(|v| v.mount.as_str()).collect::<Vec<_>>(),
+            ["/data", "/"],
+            "home's own volume leads even against the root",
+        );
     }
 }
