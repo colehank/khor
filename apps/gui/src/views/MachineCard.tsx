@@ -1062,6 +1062,7 @@ function Busy({
         </div>
       </Panel>
       <Panel>
+        <Scatter rows={load.top} />
         <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} />
       </Panel>
     </>
@@ -1250,6 +1251,128 @@ function Top({
               </span>
             </div>
           ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Every process as a point: **CPU across, memory up**, card memory as
+ * the halo around it.
+ *
+ * # Why these two axes on every machine
+ *
+ * The pair this replaced was CPU against card memory, and it had two
+ * faults that only show on a real fleet. On turing the two axes were
+ * filled by **two non-overlapping sets of processes** — the compilers
+ * are not on a card, so their `gpu_mem` is `None` — and a scatter whose
+ * axes describe different populations is not read as a scatter. And a
+ * machine with no card had no second axis at all, so it quietly became
+ * memory: **a silent change of axis, which is the widest door to a
+ * misreading there is.**
+ *
+ * CPU and memory exist for every process on every machine. So the three
+ * cards can be read side by side, and every row is on the picture.
+ *
+ * # Card memory is the halo, and area is the encoding
+ *
+ * Radius by square root, so **area** is proportional to bytes — the
+ * codex's rule for encoding a quantity as a size. The foot prints the
+ * two largest readings and the pixel radii they produced, so anybody
+ * can check on the spot that the two are told apart rather than taking
+ * it on faith.
+ *
+ * **Three states, three appearances, never merged**: memory on the card
+ * draws a halo; exactly zero draws a dashed ring (「looked, it is
+ * zero」); nothing to read draws nothing at all (「did not look」). The
+ * middle one is why they cannot be merged — a card that is idle and a
+ * machine that cannot see cards are different facts.
+ */
+function Scatter({ rows }: { rows: Load["top"] }) {
+  const W = 1000;
+  const H = 260;
+  const pad = 26;
+  const maxCpu = Math.max(1, ...rows.map((r) => r.cpu_pct));
+  const maxMem = Math.max(1, ...rows.map((r) => Number(r.mem)));
+  const vrams = rows.map((r) => r.gpu_mem).filter((v): v is number => v !== null && v > 0);
+  const maxVram = vrams.length > 0 ? Math.max(...vrams) : 0;
+  const RMAX = 11;
+  const halo = (v: number) => (maxVram > 0 ? RMAX * Math.sqrt(v / maxVram) : 0);
+  const x = (v: number) => pad + (v / maxCpu) * (W - pad * 2);
+  const y = (v: number) => H - pad - (v / maxMem) * (H - pad * 2);
+  // The two biggest card readings, printed as bytes and as the radius
+  // they became — the foot is what makes the encoding checkable.
+  const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
+  return (
+    <div data-top-plot className="flex flex-col gap-in">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-40 w-full text-foreground">
+        <line
+          x1={pad}
+          y1={H - pad}
+          x2={W - pad}
+          y2={H - pad}
+          stroke="currentColor"
+          strokeOpacity={0.15}
+          vectorEffect="non-scaling-stroke"
+        />
+        <line
+          x1={pad}
+          y1={pad}
+          x2={pad}
+          y2={H - pad}
+          stroke="currentColor"
+          strokeOpacity={0.15}
+          vectorEffect="non-scaling-stroke"
+        />
+        {rows.map((r) => {
+          const cx = x(r.cpu_pct);
+          const cy = y(Number(r.mem));
+          return (
+            <g key={r.pid} data-plot-point={r.pid}>
+              {r.gpu_mem !== null && r.gpu_mem > 0 && (
+                <circle
+                  data-plot-halo={Math.round(halo(r.gpu_mem) * 10) / 10}
+                  cx={cx}
+                  cy={cy}
+                  r={halo(r.gpu_mem)}
+                  fill="currentColor"
+                  fillOpacity={0.14}
+                />
+              )}
+              {r.gpu_mem === 0 && (
+                <circle
+                  data-plot-zero
+                  cx={cx}
+                  cy={cy}
+                  r={5}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeOpacity={0.35}
+                  strokeDasharray="2 2"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              <circle cx={cx} cy={cy} r={1.8} fill="currentColor" fillOpacity={0.75}>
+                <title>{`${r.name} ${Math.round(r.cpu_pct)}% ${bytes(r.mem)}`}</title>
+              </circle>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="flex justify-between gap-row text-aux text-muted-foreground">
+        <span>
+          {cli.vitals_name_cpu} × {cli.vitals_name_mem}
+        </span>
+        {two.length === 2 && (
+          <span data-plot-foot className="tabular-nums">
+            {cli.top_plot_halo(
+              bytes(two[0]),
+              Math.round(halo(two[0]) * 10) / 10,
+              bytes(two[1]),
+              Math.round(halo(two[1]) * 10) / 10,
+            )}
+          </span>
         )}
       </div>
     </div>

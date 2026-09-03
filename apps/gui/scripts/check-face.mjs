@@ -286,7 +286,7 @@ try {
       // prettier-ignore
       { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, arg: "serve" },
       // prettier-ignore
-      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so" },
+      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: 5, gpu_mem: 2_000_000_000, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so" },
       // prettier-ignore
       { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null },
     ],
@@ -2025,6 +2025,49 @@ try {
       fail("no hairline spanning the marks — 「spread out or not」 has to have a length that can be measured");
     }
     else if (dial.gpu.arc !== 1) fail(`the GPU dial draws ${dial.gpu.arc} summary arcs`);
+  }
+
+  //     ── the scatter: one pair of axes, and three states kept apart
+  //
+  //     **Card memory is an area, and the two biggest must be told
+  //     apart.** Radius by square root means area follows bytes; the
+  //     foot prints both readings and both radii so the claim is
+  //     checkable on the page rather than taken on faith. And the three
+  //     states are three appearances on purpose: a halo (there is card
+  //     memory), a dashed ring (looked, it is zero), nothing at all
+  //     (could not look) — merging the last two would turn 「did not
+  //     look」 into 「is idle」, which is the neighbouring-value mistake
+  //     this whole surface is shaped to avoid.
+  const plot = await page.evaluate(() => {
+    const box = document.querySelector("[data-machine-card] [data-top-plot]");
+    if (!box) return null;
+    const halos = [...box.querySelectorAll("[data-plot-halo]")].map((n) => Number(n.dataset.plotHalo));
+    return {
+      points: box.querySelectorAll("[data-plot-point]").length,
+      halos,
+      zeros: box.querySelectorAll("[data-plot-zero]").length,
+      foot: box.querySelector("[data-plot-foot]")?.textContent?.trim() ?? "",
+      axes: box.textContent.includes("CPU") && box.textContent.includes("内存"),
+    };
+  });
+  if (!plot) fail("no scatter on the card — every process was to be on the picture");
+  else {
+    if (plot.points !== load.top.length) fail(`the scatter draws ${plot.points} points for ${load.top.length} rows`);
+    if (!plot.axes) fail(`the scatter does not name its axes: "${plot.foot}"`);
+    //   The fixture has one row with card memory, one with none — so
+    //   the halo count is a fact about the data, not about the chart.
+    const withVram = load.top.filter((r) => r.gpu_mem !== null && r.gpu_mem > 0).length;
+    if (plot.halos.length !== withVram) {
+      fail(`${plot.halos.length} halos for ${withVram} rows holding card memory`);
+    }
+    //   **Area, not radius.** Two readings a factor of four apart must
+    //   come out a factor of two apart in radius; a chart that scaled
+    //   the radius directly would show four.
+    if (plot.halos.length > 1) {
+      const sorted = [...plot.halos].sort((a, b) => b - a);
+      const ratio = sorted[0] / sorted[sorted.length - 1];
+      if (!(ratio > 1.05)) fail(`the halos are ${sorted.join(",")} — the biggest and smallest are the same size`);
+    }
   }
 
   //     ── the process table: PID, and marks that were measured ─────
