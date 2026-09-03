@@ -840,6 +840,31 @@ pub struct TopRow {
     pub gpu_mem: Option<u64>,
 }
 
+/// Which column a process table is ranked by, and which way.
+///
+/// **It rides to the machine rather than being applied here.** A table
+/// of ten thousand processes (measured on turing, a shared box) sorted
+/// on the asking side means ten thousand rows crossing the wire every
+/// few seconds to show nine — and the alternative, sorting a cut, ranks
+/// the wrong set: the process holding the most memory is rarely among
+/// the hungriest by CPU. Ranking where the rows are lets the answer be
+/// both true and small.
+///
+/// `Busiest` is the node's own order (CPU, then memory, then pid) and
+/// the default a frame decodes to, so a machine that never heard of
+/// this field answers exactly what it always answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ts_rs::TS)]
+pub enum TopBy {
+    #[default]
+    Busiest,
+    Name,
+    User,
+    Cpu,
+    Mem,
+    Gpu,
+    Vram,
+}
+
 /// The last day of a machine's CPU, five minutes at a stride — what the
 /// band under the machine card's CPU ring draws (`khor_node::history`
 /// keeps it).

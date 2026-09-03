@@ -229,7 +229,19 @@ pub enum Request {
     /// it answers [`Response::Refused`], which the asker says out loud
     /// (`msg::LOAD_PREDATES`) rather than painting an empty table: an
     /// empty table reads as an idle machine.
-    Load { top: u32 },
+    /// `by`/`desc` rank the table **over there**, before the cut: a
+    /// shared box runs ten thousand processes, and the alternative to
+    /// ranking at the source is either all of them on the wire or a cut
+    /// ordered by the wrong column (`khor_core::TopBy`). Tail-appended
+    /// with defaults, so a khor that predates them answers its own
+    /// busiest-first order — which is exactly what the defaults name.
+    Load {
+        top: u32,
+        #[serde(default)]
+        by: khor_core::TopBy,
+        #[serde(default)]
+        desc: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -406,7 +418,7 @@ mod tests {
             ),
             (Request::Places, &b"Places"[..]),
             (Request::Quotas, &b"Quotas"[..]),
-            (Request::Load { top: 8 }, &b"Load"[..]),
+            (Request::Load { top: 8, by: khor_core::TopBy::Busiest, desc: false }, &b"Load"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(
@@ -460,8 +472,11 @@ mod tests {
         }
         // The asker's own words decode too, `top` and all — a request
         // whose count was lost would size the table from nothing.
-        let ask = encode(&Request::Load { top: 8 }).unwrap();
-        assert!(matches!(decode::<Request>(&ask), Ok(Request::Load { top: 8 })));
+        let ask = encode(&Request::Load { top: 8, by: khor_core::TopBy::Mem, desc: true }).unwrap();
+        assert!(matches!(
+            decode::<Request>(&ask),
+            Ok(Request::Load { top: 8, by: khor_core::TopBy::Mem, desc: true })
+        ));
     }
 
     /// The three fields the card's redesign added (2026-09-03: uptime,

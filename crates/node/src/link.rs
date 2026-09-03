@@ -456,7 +456,7 @@ impl Node {
                 Ok(places) => ipc::Reply::Places { places },
                 Err(why) => ipc::Reply::Refused { why },
             },
-            ipc::Op::LoadOn { machine, top } => match self.load_on_with(ep, &machine, top).await {
+            ipc::Op::LoadOn { machine, top, by, desc } => match self.load_on_with(ep, &machine, top, by, desc).await {
                 Ok(load) => ipc::Reply::Load { load },
                 Err(why) => ipc::Reply::Refused { why },
             },
@@ -541,7 +541,6 @@ impl Node {
             };
             return self.open_persistent_at(&cwd, kind, title, &cmd, size);
         }
-        let conn = self.dial_named(ep, &channel).await?;
         let req = Request::Open {
             kind: kind.to_owned(),
             title: title.to_owned(),
@@ -550,7 +549,7 @@ impl Node {
             cols: size.0,
             rows: size.1,
         };
-        match request(&conn, &req).await? {
+        match self.ask(ep, &channel, &req).await? {
             Response::Opened { session } => Ok(crate::SessionId(session)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -578,8 +577,8 @@ impl Node {
             let addr: std::net::SocketAddr = ([127, 0, 0, 1], hf.port).into();
             return Ok((addr, hf.cookie));
         }
-        let conn = self.dial_named(ep, &channel).await?;
-        let (port, cookie) = match request(&conn, &Request::Reach { session: session.0.clone() })
+        let (port, cookie) = match self
+            .ask(ep, &channel, &Request::Reach { session: session.0.clone() })
             .await?
         {
             Response::Reached { port, cookie } => (port, cookie),
@@ -665,6 +664,38 @@ impl Node {
     /// here still sees what the serve does with it.
     pub fn wire_watch(&self) -> crate::WireWatch {
         crate::WireWatch::of(&self.wires)
+    }
+
+    /// One request to a named machine, on the pipe already open to it
+    /// when there is one.
+    ///
+    /// **A failure retires the pipe.** `close_reason` catches a
+    /// connection that was closed, and that is not the same as a
+    /// connection whose far end is *gone*: kill a serve and its QUIC
+    /// connection stays unclosed here until an idle timeout nobody
+    /// wants to sit through — the stream opens, the answer never
+    /// comes, and the card says 读不到应答 about a machine that came
+    /// back seconds ago. Measured, the first time turing was upgraded
+    /// under an open card. So the ask that fails is also the ask that
+    /// tells this map its entry is stale.
+    ///
+    /// **It does not retry**, and that is the point of leaving it to
+    /// the caller: `Open` on a fresh pipe after a timeout would be a
+    /// second session on a machine that may well have started the
+    /// first. Only a caller that knows its request is a *reading*
+    /// (`load_on_with`) asks twice.
+    async fn ask(
+        &self,
+        ep: &iroh::Endpoint,
+        channel: &str,
+        req: &Request,
+    ) -> Result<Response, String> {
+        let conn = self.dial_named(ep, channel).await?;
+        let out = request(&conn, req).await;
+        if out.is_err() {
+            self.wires.lock().await.remove(channel);
+        }
+        out
     }
 
     /// The held connection to that machine, if one is held **and is
@@ -914,7 +945,7 @@ impl Node {
                 .map_err(|e| e.to_string())??;
                 Ok(Response::Quotas { readings })
             }
-            Request::Load { top } => {
+            Request::Load { top, by, desc } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
@@ -922,7 +953,7 @@ impl Node {
                 // the `Vitals` arm's reason (the first process-table
                 // read in a process pays a CPU window).
                 let root = self.root().to_path_buf();
-                let load = tokio::task::spawn_blocking(move || crate::Node::load(&root, top as usize))
+                let load = tokio::task::spawn_blocking(move || crate::Node::load(&root, top as usize, by, desc))
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Load { load })
@@ -1493,14 +1524,13 @@ impl Node {
             .await
             .map_err(|e| e.to_string())?;
         }
-        let conn = self.dial_named(ep, &channel).await?;
         let req = Request::OpenAgent {
             dir: dir.to_owned(),
             title: title.to_owned(),
             form: form.to_owned(),
             agent: agent.to_owned(),
         };
-        match request(&conn, &req).await? {
+        match self.ask(ep, &channel, &req).await? {
             Response::Opened { session } => Ok(crate::SessionId(session)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -1538,14 +1568,20 @@ impl Node {
     /// `Places` may fall silent because a wizard with no list still
     /// takes a path, but a card with no rows reads as an idle machine,
     /// which is the one thing this screen must never say by accident.
-    pub async fn load_on(&self, machine: &str, top: u32) -> Result<khor_core::Load, String> {
+    pub async fn load_on(
+        &self,
+        machine: &str,
+        top: u32,
+        by: khor_core::TopBy,
+        desc: bool,
+    ) -> Result<khor_core::Load, String> {
         if machine.is_empty() || machine == self.name() {
             let root = self.root.clone();
-            return tokio::task::spawn_blocking(move || Self::load(&root, top as usize))
+            return tokio::task::spawn_blocking(move || Self::load(&root, top as usize, by, desc))
                 .await
                 .map_err(|e| e.to_string());
         }
-        let op = ipc::Op::LoadOn { machine: machine.to_owned(), top };
+        let op = ipc::Op::LoadOn { machine: machine.to_owned(), top, by, desc };
         if let Some(reply) = self.via_serve(op).await {
             return match reply? {
                 ipc::Reply::Load { load } => Ok(load),
@@ -1556,7 +1592,7 @@ impl Node {
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
-        let outcome = self.load_on_with(&ep, machine, top).await;
+        let outcome = self.load_on_with(&ep, machine, top, by, desc).await;
         ep.close().await;
         outcome
     }
@@ -1566,16 +1602,28 @@ impl Node {
         ep: &iroh::Endpoint,
         machine: &str,
         top: u32,
+        by: khor_core::TopBy,
+        desc: bool,
     ) -> Result<khor_core::Load, String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
             let root = self.root.clone();
-            return tokio::task::spawn_blocking(move || Self::load(&root, top as usize))
+            return tokio::task::spawn_blocking(move || Self::load(&root, top as usize, by, desc))
                 .await
                 .map_err(|e| e.to_string());
         }
-        let conn = self.dial_named(ep, &channel).await?;
-        match request(&conn, &Request::Load { top }).await? {
+        let req = Request::Load { top, by, desc };
+        // **Asked twice, because this one is a reading.** The first ask
+        // may land on a pipe whose far end went away without closing
+        // it (`ask` says why that is not the same as a closed one) —
+        // and by the time it fails, `ask` has retired that entry, so
+        // the second ask dials. Safe to repeat precisely because it
+        // reads and changes nothing; `Open` next door may not.
+        let answer = match self.ask(ep, &channel, &req).await {
+            Ok(a) => a,
+            Err(_) => self.ask(ep, &channel, &req).await?,
+        };
+        match answer {
             Response::Load { load } => Ok(load),
             // A khor over there that predates the op refuses the frame
             // it cannot read — and any refusal of a paired machine's
@@ -1596,8 +1644,7 @@ impl Node {
         if home == self.device() {
             return Ok(self.places_shown());
         }
-        let conn = self.dial_named(ep, &channel).await?;
-        match request(&conn, &Request::Places).await? {
+        match self.ask(ep, &channel, &Request::Places).await? {
             Response::Places { places } => Ok(places),
             // A khor over there that predates the op: no list, not a
             // fault — the wizard says nothing where it has nothing.
@@ -1660,9 +1707,8 @@ impl Node {
         session: &crate::SessionId,
     ) -> Result<(), String> {
         let (channel, _) = self.resolve(machine)?;
-        let conn = self.dial_named(ep, &channel).await?;
         let req = Request::Act { session: session.0.clone(), action: "close".into() };
-        match request(&conn, &req).await? {
+        match self.ask(ep, &channel, &req).await? {
             Response::Acted { .. } => Ok(()),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),

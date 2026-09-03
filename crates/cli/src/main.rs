@@ -320,7 +320,7 @@ fn top(rest: &[String]) -> Result<(), String> {
         [machine] => machine.as_str(),
         _ => return Err(USAGE.into()),
     };
-    let load = rt()?.block_on(node()?.load_on(machine, TOP_ROWS))?;
+    let load = rt()?.block_on(node()?.load_on(machine, TOP_ROWS, khor_node::TopBy::Busiest, true))?;
     println!(
         "pid\t{}\t{}\t{}\t{}",
         cli::TOP_USER,

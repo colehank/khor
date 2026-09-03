@@ -71,8 +71,26 @@ async fn devices() -> Result<Vec<DeviceRow>, String> {
 /// required, the `cells` rule — a default here would be this side
 /// sizing a table it cannot see.
 #[tauri::command]
-async fn load(machine: String, top: u32) -> Result<khor_node::Load, String> {
-    khor_gui_core::load(&Node::root_from_env(), &machine, top).await
+async fn load(
+    machine: String,
+    top: u32,
+    by: Option<String>,
+    desc: Option<bool>,
+) -> Result<khor_node::Load, String> {
+    // The same words the HTTP arm takes, and the same refusal for one
+    // it does not know (`api.rs` carries the reasoning): a column read
+    // as the default would look exactly like a working sort.
+    let by = match by.as_deref() {
+        None | Some("") | Some("busiest") => khor_node::TopBy::Busiest,
+        Some("name") => khor_node::TopBy::Name,
+        Some("user") => khor_node::TopBy::User,
+        Some("cpu") => khor_node::TopBy::Cpu,
+        Some("mem") => khor_node::TopBy::Mem,
+        Some("gpu") => khor_node::TopBy::Gpu,
+        Some("vram") => khor_node::TopBy::Vram,
+        Some(other) => return Err(format!("no such column: {other}")),
+    };
+    khor_gui_core::load(&Node::root_from_env(), &machine, top, by, desc.unwrap_or(true)).await
 }
 
 /// **Blocking, and the first call can take seconds**: reading every

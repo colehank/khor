@@ -84,8 +84,28 @@ pub fn answer(
         // `top` is required, the `cells` rule: how many rows fit is the
         // screen's fact, and a default here would be this layer sizing
         // a table it cannot see.
+        // `by`/`desc` rank the table on the machine it is about, before
+        // the cut (`khor_core::TopBy`): a shared box runs ten thousand
+        // processes, and the alternative is either all of them on the
+        // wire or a cut ordered by the wrong column. Absent means the
+        // node's own busiest-first, which is what the enum defaults to;
+        // a word this build does not know is **refused by name** rather
+        // than quietly read as that default — a face asking for 显存 and
+        // silently getting CPU is the neighbouring-value mistake, and
+        // it would look exactly like a working sort.
         "load" => {
-            to_json(&rt.block_on(crate::load(root, &arg("machine")?, num("top")? as u32))?)
+            let by = match opt_str("by")?.as_deref() {
+                None | Some("") | Some("busiest") => khor_core::TopBy::Busiest,
+                Some("name") => khor_core::TopBy::Name,
+                Some("user") => khor_core::TopBy::User,
+                Some("cpu") => khor_core::TopBy::Cpu,
+                Some("mem") => khor_core::TopBy::Mem,
+                Some("gpu") => khor_core::TopBy::Gpu,
+                Some("vram") => khor_core::TopBy::Vram,
+                Some(other) => return Err(format!("no such column: {other}")),
+            };
+            let desc = args.get("desc").and_then(|v| v.as_bool()).unwrap_or(true);
+            to_json(&rt.block_on(crate::load(root, &arg("machine")?, num("top")? as u32, by, desc))?)
         }
         // The 额度 page: one ring per registered account, wherever its
         // key lives (`Node::quota_board`).

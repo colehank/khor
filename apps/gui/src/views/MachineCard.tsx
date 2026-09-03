@@ -135,7 +135,7 @@ function Body({
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
   const [sort, setSort] = useState<Sort | null>(null);
-  const { load, why } = useLoad(row);
+  const { load, why } = useLoad(row, sort);
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
@@ -758,6 +758,15 @@ function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** How deep the table goes. **A bound, and it is honest about being
+    one**: the window shows the top 200 of whichever column it is
+    ranked by, ranked on the machine itself. Not "every process" —
+    turing has ten thousand, and 800 KB every five seconds to show nine
+    rows is the kind of traffic the mesh should not spend on a screen.
+    Two hundred is past any question a person asks a card ("what is
+    eating this machine") and small enough to be free (~16 KB). */
+const TOP_LIMIT = 200;
+
 /** How often an open card re-asks. Five seconds is the vitals beat the
     rings above already move on; the table and the band moving on
     another would make the card describe two moments. */
@@ -1042,7 +1051,7 @@ function sortRows(rows: Load["top"], sort: Sort | null): Load["top"] {
  * and the sentence on the card does not get truer by being re-fetched
  * every five seconds.
  */
-function useLoad(row: DeviceRow | null) {
+function useLoad(row: DeviceRow | null, sort: Sort | null) {
   const [load, setLoad] = useState<Load | null>(null);
   const [why, setWhy] = useState<string | null>(null);
   const id = row?.id ?? null;
@@ -1060,13 +1069,13 @@ function useLoad(row: DeviceRow | null) {
         // A name, not an id: the node resolves machines by the name its
         // table knows them by, and its own by being asked for itself
         // (`Node::load_on`).
-        // **0 is "every process"** (`Node::load`). The table is a
-        // window over the whole list, and sorting one column of it is
-        // only true over the whole list: the row holding the most
-        // memory is rarely among the eight hungriest by CPU, so a cut
-        // sorted by memory would answer a different question than the
-        // one asked — confidently, which is the worse half.
-        const l = await fetchLoad(me ? "" : name, 0);
+        // **The ranking travels; the rows do not.** turing answered
+        // with 10 175 processes the first time this asked for all of
+        // them — 800 KB every five seconds to show nine. So the column
+        // goes over with the ask and the machine ranks before it cuts
+        // (`khor_core::TopBy`), which makes「按显存排的前 200」a true
+        // answer rather than a re-sort of the busiest 200 by CPU.
+        const l = await fetchLoad(me ? "" : name, TOP_LIMIT, sort?.col ?? "", sort?.dir !== "up");
         if (stopped) return;
         setLoad(l);
         setWhy(null);
@@ -1082,7 +1091,7 @@ function useLoad(row: DeviceRow | null) {
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [id, me, name]);
+  }, [id, me, name, sort?.col, sort?.dir]);
   return { load, why };
 }
 

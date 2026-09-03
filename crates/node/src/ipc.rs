@@ -63,7 +63,14 @@ pub enum Op {
     PlacesOn { machine: String },
     /// Tail-appended: [`crate::proto::Request::Load`] through the
     /// resident — what that machine is busy with, `top` rows deep.
-    LoadOn { machine: String, top: u32 },
+    LoadOn {
+        machine: String,
+        top: u32,
+        #[serde(default)]
+        by: khor_core::TopBy,
+        #[serde(default)]
+        desc: bool,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -204,8 +204,15 @@ export const fetchDevices = () => call<DeviceRow[]>("devices");
     never on the row beat: a process table nobody is looking at is a
     table nobody is paying for. An older khor over there rejects with
     its own sentence, which the card prints where the table would be
-    — an empty table would read as an idle machine. */
-export const fetchLoad = (machine: string, top: number) => call<Load>("load", { machine, top });
+    — an empty table would read as an idle machine.
+
+    **`by`/`desc` rank the table over there, before `top` cuts it**
+    (`khor_core::TopBy`). Measured on turing: 10 175 processes. Ranking
+    here would mean either all of them crossing the wire every few
+    seconds, or a cut ordered by the wrong column — the process holding
+    the most memory is rarely among the hungriest by CPU. */
+export const fetchLoad = (machine: string, top: number, by: string, desc: boolean) =>
+  call<Load>("load", { machine, top, by, desc });
 /** The 额度 page's rings: one per registered account, wherever its key
     lives — this machine's read now, another's as last carried here
     with its age (`Node::quota_board`). */

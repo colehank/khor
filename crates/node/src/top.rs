@@ -64,10 +64,26 @@ fn user_of(users: &mut sysinfo::Users, p: &sysinfo::Process) -> String {
     }
 }
 
-/// The `n` hungriest processes right now, by CPU then by memory.
+/// The `n` processes at the top of `by`, ranked **here**, on the
+/// machine the rows are about.
+///
+/// **Ranking travels; rows do not.** A shared box runs ten thousand
+/// processes (measured on turing), and a face that wanted them ordered
+/// by memory used to have two bad choices: pull all ten thousand every
+/// few seconds to show nine, or rank a cut that was cut by something
+/// else — the process holding the most memory is rarely among the
+/// hungriest by CPU. Ranking where the rows are makes the answer both
+/// true and small (`khor_core::TopBy`).
+///
+/// **A column this machine cannot read sinks, both ways.** Sorting by
+/// GPU on a Mac must not promote the rows whose GPU is unknown to the
+/// top of "least busy" — absence is not a small number, so it is last
+/// in either direction and the pid breaks the tie so two asks in one
+/// quiet second agree.
+///
 /// **Blocking** — the one caller inside async code goes through
 /// `spawn_blocking`, the vitals rule.
-pub fn sample_top(n: usize) -> Vec<TopRow> {
+pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
     let mut held = SAMPLER
         .get_or_init(|| {
             let mut sys = sysinfo::System::new();
@@ -102,22 +118,115 @@ pub fn sample_top(n: usize) -> Vec<TopRow> {
             }
         })
         .collect();
-    // CPU first; memory breaks the tie so an idle machine still ranks
-    // by something a person recognises, and the whole thing is stable
-    // on pid so two asks in a quiet second agree.
-    rows.sort_by(|a, b| {
-        b.cpu_pct
-            .total_cmp(&a.cpu_pct)
-            .then(b.mem.cmp(&a.mem))
-            .then(a.pid.cmp(&b.pid))
-    });
+    rank(&mut rows, by, desc);
     rows.truncate(n);
     rows
+}
+
+/// Puts the rows in the asked order. Separate from the sampling so it
+/// can be tested without a machine under it.
+pub(crate) fn rank(rows: &mut [TopRow], by: khor_core::TopBy, desc: bool) {
+    use khor_core::TopBy;
+    // Absent readings last whichever way the column is read: `None` is
+    // "this machine cannot say", and letting it sort as a zero would
+    // turn 没看到 into 最小的 the moment somebody reverses the column.
+    let num = |r: &TopRow| -> Option<f64> {
+        match by {
+            TopBy::Cpu => Some(r.cpu_pct as f64),
+            TopBy::Mem => Some(r.mem as f64),
+            TopBy::Gpu => r.gpu_pct.map(|v| v as f64),
+            TopBy::Vram => r.gpu_mem.map(|v| v as f64),
+            _ => None,
+        }
+    };
+    rows.sort_by(|a, b| {
+        let order = match by {
+            // CPU first, memory breaking the tie: an idle machine still
+            // ranks by something a person recognises.
+            TopBy::Busiest => b.cpu_pct.total_cmp(&a.cpu_pct).then(b.mem.cmp(&a.mem)),
+            TopBy::Name => a.name.cmp(&b.name),
+            TopBy::User => a.user.cmp(&b.user),
+            _ => match (num(a), num(b)) {
+                (Some(x), Some(y)) => x.total_cmp(&y),
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, _) => return std::cmp::Ordering::Greater,
+                (_, None) => return std::cmp::Ordering::Less,
+            },
+        };
+        // `Busiest` is already biggest-first; the others are read the
+        // way the caller asked.
+        let order = if desc && !matches!(by, TopBy::Busiest) { order.reverse() } else { order };
+        order.then(a.pid.cmp(&b.pid))
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(pid: u32, name: &str, cpu: f32, mem: u64, gpu: Option<f32>) -> TopRow {
+        TopRow {
+            pid,
+            name: name.to_owned(),
+            user: "zgh".to_owned(),
+            cpu_pct: cpu,
+            mem,
+            gpu_pct: gpu,
+            gpu_mem: gpu.map(|_| 1),
+        }
+    }
+
+    /// **A column with holes puts the holes last, whichever way it is
+    /// read.**
+    ///
+    /// This is the one property of the ranking that cannot be seen by
+    /// looking at a screen: sorted one way the absent rows are at the
+    /// bottom because they are "smallest", and a reader would believe
+    /// it. Reversing is what tells the two apart — and a `None` that
+    /// sorted as a zero would climb to the top of "least busy" and
+    /// report 没看到 as 最闲的.
+    #[test]
+    fn a_reading_this_machine_cannot_take_sinks_either_way() {
+        use khor_core::TopBy;
+        let mut rows = vec![
+            row(1, "a", 1.0, 10, Some(50.0)),
+            row(2, "b", 2.0, 20, None),
+            row(3, "c", 3.0, 30, Some(90.0)),
+        ];
+        rank(&mut rows, TopBy::Gpu, true);
+        assert_eq!(
+            rows.iter().map(|r| r.pid).collect::<Vec<_>>(),
+            vec![3, 1, 2],
+            "biggest first, and the one with no reading is last"
+        );
+        rank(&mut rows, TopBy::Gpu, false);
+        assert_eq!(
+            rows.iter().map(|r| r.pid).collect::<Vec<_>>(),
+            vec![1, 3, 2],
+            "smallest first — and the one with no reading is STILL last, not first"
+        );
+    }
+
+    /// Each column ranks by itself, and the node's own order is not
+    /// any of them: `Busiest` is CPU with memory breaking the tie, and
+    /// that is what a frame with no column asked for decodes to.
+    #[test]
+    fn every_column_ranks_by_its_own_number() {
+        use khor_core::TopBy;
+        // The busiest by CPU is not the biggest by memory — which is the
+        // whole reason ranking travels to the machine.
+        let base =
+            vec![row(1, "big-mem", 1.0, 900, None), row(2, "busy", 90.0, 10, None), row(3, "mid", 50.0, 500, None)];
+        let ranked = |by: TopBy, desc: bool| {
+            let mut r = base.clone();
+            rank(&mut r, by, desc);
+            r.iter().map(|x| x.pid).collect::<Vec<_>>()
+        };
+        assert_eq!(ranked(TopBy::Cpu, true), vec![2, 3, 1]);
+        assert_eq!(ranked(TopBy::Mem, true), vec![1, 3, 2], "memory ranks a different machine's worth of rows");
+        assert_eq!(ranked(TopBy::Busiest, true), vec![2, 3, 1], "the node's own order is CPU first");
+        assert_eq!(ranked(TopBy::Name, false), vec![1, 2, 3], "A to Z: big-mem, busy, mid");
+    }
 
     /// The reading is of a real machine, so the assertions are the ones
     /// that hold on every machine (`vitals`' rule) — and the positive
@@ -138,9 +247,9 @@ mod tests {
         });
         // A window for the spin to be visible in: the first ask arms
         // the sampler, the second reads a real delta.
-        let _ = sample_top(8);
+        let _ = sample_top(8, khor_core::TopBy::Busiest, true);
         std::thread::sleep(std::time::Duration::from_millis(400));
-        let rows = sample_top(usize::MAX);
+        let rows = sample_top(usize::MAX, khor_core::TopBy::Busiest, true);
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = spin.join();
 
@@ -172,8 +281,8 @@ mod tests {
     /// the same table, not an arbitrary member of it.
     #[test]
     fn the_cut_keeps_the_hungriest() {
-        let all = sample_top(usize::MAX);
-        let one = sample_top(1);
+        let all = sample_top(usize::MAX, khor_core::TopBy::Busiest, true);
+        let one = sample_top(1, khor_core::TopBy::Busiest, true);
         assert_eq!(one.len(), 1.min(all.len()));
         if let (Some(first), Some(head)) = (one.first(), all.first()) {
             // Two asks are two windows, so the *figures* may differ;

@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use khor_node::Node;
+use khor_node::TopBy;
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -50,7 +51,7 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
 
     let beta = Node::open_as(rb.clone(), "beta").unwrap();
     assert!(
-        beta.load_on("alpha", 3).await.is_err(),
+        beta.load_on("alpha", 3, TopBy::Busiest, true).await.is_err(),
         "a machine beta has never met must be refused, not answered"
     );
 
@@ -61,7 +62,7 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
         .unwrap();
     khor_node::reactor::forget();
 
-    let load = timeout(Duration::from_secs(60), beta.load_on("alpha", 3))
+    let load = timeout(Duration::from_secs(60), beta.load_on("alpha", 3, TopBy::Busiest, true))
         .await
         .expect("the ask must finish")
         .expect("alpha answers its paired peer");
@@ -88,7 +89,7 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
     while day.buckets.last().copied().flatten().is_none() && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        day = beta.load_on("alpha", 3).await.expect("alpha keeps answering").cpu_day;
+        day = beta.load_on("alpha", 3, TopBy::Busiest, true).await.expect("alpha keeps answering").cpu_day;
     }
     let file = std::fs::read_to_string(ra.join(".khor").join("history").join("cpu"));
     assert!(
@@ -150,7 +151,7 @@ async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
     assert!(wires.names().await.is_empty(), "nothing is held before anything is asked");
 
     for round in 1..=3 {
-        timeout(Duration::from_secs(60), beta.load_on("alpha", 3))
+        timeout(Duration::from_secs(60), beta.load_on("alpha", 3, TopBy::Busiest, true))
             .await
             .unwrap_or_else(|_| panic!("ask {round} must finish"))
             .unwrap_or_else(|e| panic!("ask {round} must be answered: {e}"));

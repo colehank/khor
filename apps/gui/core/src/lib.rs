@@ -279,6 +279,7 @@ mod vitals_reading_tests {
                     fill: Fill { used: 50, total: 100 },
                 },
             ],
+            uptime_s: 0,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));
@@ -303,6 +304,7 @@ mod vitals_reading_tests {
             version: None,
             gpus: vec![],
             volumes: vec![],
+            uptime_s: 0,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.vram_strain, None);
@@ -594,8 +596,14 @@ pub async fn places(root: &Path, machine: &str) -> Result<Vec<PlaceRow>, String>
 /// (`khor_node::Node::load_on`; a name, or empty for this one). An
 /// older khor over there is a refusal with its own sentence, which the
 /// card prints where the table would be.
-pub async fn load(root: &Path, machine: &str, top: u32) -> Result<khor_core::Load, String> {
-    open(root)?.load_on(machine, top).await
+pub async fn load(
+    root: &Path,
+    machine: &str,
+    top: u32,
+    by: khor_core::TopBy,
+    desc: bool,
+) -> Result<khor_core::Load, String> {
+    open(root)?.load_on(machine, top, by, desc).await
 }
 
 /// One cell of a day strip, in the shape the frontend can paint.

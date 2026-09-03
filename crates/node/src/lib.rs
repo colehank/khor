@@ -37,7 +37,10 @@ pub mod vitals;
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
 };
-pub use khor_core::{kind, CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopRow, Usage, UsageDay, Vitals};
+pub use khor_core::{
+    kind, CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopBy, TopRow, Usage, UsageDay,
+    Vitals,
+};
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
 
@@ -1483,9 +1486,15 @@ impl Node {
     /// a face means when it says "no limit", and because the wire
     /// carries a `u32` whose maximum is a plausible typo. A caller that
     /// really wants a cut still asks for one (`khor top` does).
-    pub fn load(root: &Path, top: usize) -> khor_core::Load {
+    ///
+    /// **And `by` is why a cut is enough.** The ranking happens here,
+    /// so "the two hundred biggest by memory" is a true answer to that
+    /// question rather than a re-sort of the two hundred busiest by
+    /// CPU (`top::rank`). Before it existed the card had to choose
+    /// between a wrong order and ten thousand rows every five seconds.
+    pub fn load(root: &Path, top: usize, by: khor_core::TopBy, desc: bool) -> khor_core::Load {
         khor_core::Load {
-            top: top::sample_top(if top == 0 { usize::MAX } else { top }),
+            top: top::sample_top(if top == 0 { usize::MAX } else { top }, by, desc),
             cpu_day: history::CpuHistory::open(&Self::history_dir(root)).day(now_ms()),
         }
     }
