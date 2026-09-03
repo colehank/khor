@@ -222,14 +222,26 @@ fn fill_args(sys: &mut sysinfo::System, rows: &mut [khor_core::TopRow]) {
 /// would hand back `python3` for every one of the rows this field
 /// exists to tell apart.
 ///
-/// **What it does not do**: a flag that takes a value is not known to
-/// be one, so `rustc --crate-name khor_core crates/…/lib.rs` answers
-/// `khor_core` rather than the path. Knowing better would mean knowing
-/// every program's flags; the alternative rule — skip a flag *and* the
-/// word after it — breaks the `-m` case above, where the word after the
-/// flag is the whole answer. This is the trade, taken deliberately.
+/// **A bare number is never that word**, so it is skipped too. A flag
+/// that takes a value cannot be told from a positional argument, and
+/// the values that leak through are overwhelmingly numeric — measured
+/// 2026-09-04 across 200 rows on each machine: `go.d.plugin 1`,
+/// `apps.plugin 1`, `nvidia-smi 5`, `systemd 76`, **44 of hinton's 158
+/// answers**. A number sitting where a program name goes reads as a
+/// fact about the program, and it is not one; nothing at all is the
+/// truer answer, and leaves the row saying `go.d.plugin`.
+///
+/// **What it still does not do**: `rustc --crate-name khor_core
+/// crates/…/lib.rs` answers `khor_core` rather than the path, because
+/// that flag's value is a word. Knowing better would mean knowing every
+/// program's flags; the alternative rule — skip a flag *and* the word
+/// after it — breaks the `-m` case above, where the word after the flag
+/// is the whole answer. This is the trade, taken deliberately.
 fn pick_arg(argv: &[String]) -> Option<String> {
-    let word = argv.iter().skip(1).find(|a| !a.starts_with('-') && !a.trim().is_empty())?;
+    let word = argv
+        .iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-') && !a.trim().is_empty() && !a.chars().all(|c| c.is_ascii_digit()))?;
     Some(word.chars().take(khor_core::ARG_CAP).collect())
 }
 
@@ -323,6 +335,30 @@ mod tests {
         assert_eq!(age(1_788_000_000, 0, up), None, "and zero is absent, not 刚起的");
     }
 
+    /// **The identifying word actually arrives on a real reading.**
+    ///
+    /// `pick_arg` can be perfect while the column stays empty, and that
+    /// is exactly what happened on 2026-09-04: the command line is only
+    /// populated for the processes a refresh was asked about, so the
+    /// rule had nothing to pick from. A unit test on the rule cannot
+    /// see that — only a reading of this machine can.
+    ///
+    /// Asserted the way `vitals` asserts: the half that holds on every
+    /// machine. **This process is in its own table and it has an
+    /// argument** (the test binary is run with a filter), so at least
+    /// one row must carry a word.
+    #[test]
+    fn the_identifying_word_reaches_a_real_reading() {
+        let rows = sample_top(200, khor_core::TopBy::Busiest, true);
+        assert!(!rows.is_empty(), "probe dead: no rows at all");
+        let with = rows.iter().filter(|r| r.arg.is_some()).count();
+        assert!(
+            with > 0,
+            "not one of {} rows carries an identifying word — the command line was never asked for",
+            rows.len()
+        );
+    }
+
     /// **The word that tells two `python3` rows apart**, on the shapes
     /// a process is actually started in.
     ///
@@ -341,8 +377,14 @@ mod tests {
         // for exactly the rows this is meant to separate.
         assert_eq!(pick("python3").as_deref(), None, "an executable with no arguments identifies nothing further");
         assert_eq!(pick("khor serve").as_deref(), Some("serve"));
-        assert_eq!(pick("sleep 5").as_deref(), Some("5"));
         assert_eq!(pick("nginx -g daemon off;").as_deref(), Some("daemon"), "a flag's value counts when nothing else does");
+        // **A bare number is never the word.** These are the real
+        // readings the rule leaked before it skipped them — 44 of
+        // hinton's 158 answers were one of these.
+        assert_eq!(pick("sleep 5").as_deref(), None, "「5」 says nothing about which program this is");
+        assert_eq!(pick("/lib/systemd/systemd --system --deserialize 76").as_deref(), None, "systemd, not systemd 76");
+        assert_eq!(pick("go.d.plugin 1").as_deref(), None);
+        assert_eq!(pick("python 2to3.py").as_deref(), Some("2to3.py"), "a word that merely starts with a digit stays");
         assert_eq!(pick_arg(&[]), None, "a kernel thread has no command line at all");
         assert_eq!(pick_arg(&["python".into(), "--verbose".into()]).as_deref(), None, "flags only: nothing to say");
         // **The rule's own limit, pinned so it is a decision rather
