@@ -44,7 +44,18 @@ fn refresh(sys: &mut sysinfo::System) {
         // Dead processes leave the table — a row for a pid that is gone
         // would be a reading of nothing.
         true,
-        sysinfo::ProcessRefreshKind::nothing().with_cpu().with_memory().with_user(sysinfo::UpdateKind::OnlyIfNotSet),
+        // `with_cmd` is what makes `Process::cmd()` answer at all — the
+        // refresh kind is `nothing()` plus exactly what is asked for,
+        // and a field nobody asked for comes back empty rather than
+        // missing, so the column read 「没有命令行」 for every process
+        // on every machine (measured 2026-09-04, over the wire, on all
+        // three). `OnlyIfNotSet`: a command line is read once and does
+        // not change under a running pid.
+        sysinfo::ProcessRefreshKind::nothing()
+            .with_cpu()
+            .with_memory()
+            .with_user(sysinfo::UpdateKind::OnlyIfNotSet)
+            .with_cmd(sysinfo::UpdateKind::OnlyIfNotSet),
     );
 }
 
@@ -115,13 +126,7 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 mem: p.memory(),
                 gpu_pct: on_card.pct,
                 gpu_mem: on_card.mem,
-                // Zero means the platform did not say, not "started
-                // this instant" — the same absent-is-not-zero rule the
-                // GPU columns carry.
-                run_secs: match p.run_time() {
-                    0 => None,
-                    secs => Some(secs),
-                },
+                run_secs: age_of(p),
                 cmd: cmdline(p),
             }
         })
@@ -129,6 +134,43 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
     rank(&mut rows, by, desc);
     rows.truncate(n);
     rows
+}
+
+/// How long a process has been up, or `None` when the machine cannot
+/// honestly say.
+///
+/// **`run_time()` is not safe to send as it stands**, measured
+/// 2026-09-04 over the wire: on this Mac, `launchd` and `logd` came back
+/// with **1788456301 seconds — 56 years**, which is the current unix
+/// time, not an age. sysinfo derives the age by subtracting the start
+/// time, and for a process it cannot read the start time of (the
+/// root-owned ones, on macOS) that start time is `0`, so the
+/// subtraction hands back the clock. The column would have printed
+/// 「20699 天」 next to a machine that has been up five days.
+///
+/// So the two ways it can be wrong are both refused rather than shown:
+///
+/// - a start time of `0` is 「没读到」, and anything derived from it is
+///   arithmetic on a missing number;
+/// - an age longer than the machine's own uptime cannot be true of a
+///   process running on it, whatever the platform says. This is the
+///   general form — it catches the same lie on a platform that spells
+///   its missing start time as something other than zero.
+///
+/// Absent, never zero: `0 秒` would name the oldest process on the box
+/// as its newest, which is the neighbouring-value trap in its most
+/// convincing dress.
+fn age_of(p: &sysinfo::Process) -> Option<u64> {
+    age(p.start_time(), p.run_time(), sysinfo::System::uptime())
+}
+
+/// The decision itself, on three numbers, so the measured failure can
+/// be a test rather than a memory — see [`age_of`].
+fn age(start_time: u64, run_time: u64, uptime: u64) -> Option<u64> {
+    if start_time == 0 {
+        return None;
+    }
+    (run_time > 0 && run_time <= uptime).then_some(run_time)
 }
 
 /// The command line, joined and cut **here** — on the machine that has
@@ -215,6 +257,33 @@ mod tests {
             run_secs: None,
             cmd: None,
         }
+    }
+
+    /// **The clock is not an age**, and this is the reading that proved
+    /// it rather than a worry about one.
+    ///
+    /// Measured 2026-09-04 over the wire, before the guard existed: this
+    /// Mac reported `launchd` and `logd` at **1788456507 seconds**,
+    /// which is not 56 years of uptime — it is the current unix time.
+    /// sysinfo subtracts a start time it could not read (`0` for the
+    /// root-owned processes on macOS) and hands back the clock, and the
+    /// column would have printed 「20699 天」 on a machine five days up.
+    ///
+    /// The uptime ceiling is the general half: whatever a platform
+    /// spells its missing start time as, **a process cannot have been
+    /// running longer than the machine it is running on.**
+    #[test]
+    fn a_clock_is_not_an_age() {
+        // The machine as it stood when this was measured: up five days
+        // and change, with `loginwindow` running for all of it.
+        let up = 447_400;
+        assert_eq!(age(0, 1_788_456_507, up), None, "the real reading that started this: unreadable start time");
+        assert_eq!(age(1, 1_788_456_507, up), None, "and the same lie with a start time that is merely wrong");
+        assert_eq!(age(1_788_000_000, 447_360, up), Some(447_360), "a process up as long as the box is fine");
+        assert_eq!(age(1_788_000_000, up, up), Some(up), "including one that has been up for exactly all of it");
+        assert_eq!(age(1_788_000_000, up + 1, up), None, "one second older than the machine cannot be true");
+        assert_eq!(age(1_788_000_000, 3, up), Some(3), "so is one that started three seconds ago");
+        assert_eq!(age(1_788_000_000, 0, up), None, "and zero is absent, not 刚起的");
     }
 
     /// **The command line is cut on the machine that has it**, and the
