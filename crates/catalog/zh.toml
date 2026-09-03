@@ -1110,7 +1110,24 @@ web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条�
 # op with Refused. Said as a fact about its version, never as "no
 # processes": the empty face is the other reading, and it points at a
 # machine that is not idle.
+#
+# **Only for a refusal that carries no words of its own.** It used to be
+# printed for *every* refusal of a Load, and on 2026-09-04 ordering by
+# PID on a remote printed it while that same machine answered its top
+# and its day chart on every other column in the same second. Note what
+# went wrong: the far side really was an older khor, so the first half
+# was true — it is the second half, 「还报不了进程和 CPU 走势」, that
+# turned one unreadable word into a whole broken op. A guess that is
+# right about the cause can still send the reader to fix the wrong
+# thing.
 load-predates = "那边的 khor 版本旧,还报不了进程和 CPU 走势"
+# What the far side actually said. Its own words rather than a guess at
+# what they mean: a refusal that reaches here with a reason in it is the
+# one case where the machine on the other end has already answered the
+# question, and translating that answer into a sentence about its
+# version is how a working machine gets blamed for a frame it merely
+# could not read.
+load-refused = "那台机器没接这次读数:{0}"
 
 [gui]
 sessions-tab = "会话"

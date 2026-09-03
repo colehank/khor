@@ -1625,12 +1625,27 @@ impl Node {
         };
         match answer {
             Response::Load { load } => Ok(load),
-            // A khor over there that predates the op refuses the frame
-            // it cannot read — and any refusal of a paired machine's
-            // ask is that one, since the only other reason to refuse
-            // (not paired) cannot hold for a machine this side just
-            // resolved from its own table.
-            Response::Refused { .. } => Err(msg::LOAD_PREDATES.into()),
+            // **The far side gets to say why.** This used to read
+            // `Refused { .. }` and answer `LOAD_PREDATES` for every
+            // refusal, arguing that a machine this side just resolved
+            // from its own table can only be refusing because its khor
+            // predates the op. **The inference was right about the
+            // cause and wrong about everything it went on to say.** On
+            // 2026-09-04 ordering by PID on a remote printed 「那边的
+            // khor 版本旧,还报不了进程和 CPU 走势」: the first half was
+            // true (that khor's `TopBy` has no `Pid`), and the second
+            // half was false in the same second — every other column on
+            // that same machine answered, top and day chart included.
+            // One word it could not read became a sentence about the
+            // whole op, and the reader is sent to fix the wrong thing.
+            //
+            // A `why` that travelled all this way is the answer to the
+            // question the sentence was guessing at, so it is what goes
+            // on screen. The guess is kept only for a refusal that
+            // arrived empty-handed, which is the one case where there
+            // is nothing to say but what we can infer.
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::LOAD_PREDATES.into()),
+            Response::Refused { why } => Err(msg::load_refused(why)),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
