@@ -44,18 +44,20 @@ fn refresh(sys: &mut sysinfo::System) {
         // Dead processes leave the table — a row for a pid that is gone
         // would be a reading of nothing.
         true,
-        // `with_cmd` is what makes `Process::cmd()` answer at all — the
-        // refresh kind is `nothing()` plus exactly what is asked for,
-        // and a field nobody asked for comes back empty rather than
-        // missing, so the column read 「没有命令行」 for every process
-        // on every machine (measured 2026-09-04, over the wire, on all
-        // three). `OnlyIfNotSet`: a command line is read once and does
-        // not change under a running pid.
+        // **No `with_cmd` here, and that is the point.** The refresh
+        // kind is `nothing()` plus exactly what is asked for, so a
+        // field nobody asks for comes back empty rather than missing —
+        // which is why the command line read as absent everywhere until
+        // it was asked for (measured 2026-09-04 over the wire). But
+        // asking for it *here* asks it of every process on the machine,
+        // every five seconds, to show nine rows: 2173 of them on turing
+        // today. The nine that survive the cut are the only ones whose
+        // command line anybody reads, so the ask moved after the cut
+        // (`fill_args`).
         sysinfo::ProcessRefreshKind::nothing()
             .with_cpu()
             .with_memory()
-            .with_user(sysinfo::UpdateKind::OnlyIfNotSet)
-            .with_cmd(sysinfo::UpdateKind::OnlyIfNotSet),
+            .with_user(sysinfo::UpdateKind::OnlyIfNotSet),
     );
 }
 
@@ -127,12 +129,14 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 gpu_pct: on_card.pct,
                 gpu_mem: on_card.mem,
                 run_secs: age_of(p),
-                cmd: cmdline(p),
+                // Filled after the cut — see `fill_args`.
+                arg: None,
             }
         })
         .collect();
     rank(&mut rows, by, desc);
     rows.truncate(n);
+    fill_args(sys, &mut rows);
     rows
 }
 
@@ -173,27 +177,60 @@ fn age(start_time: u64, run_time: u64, uptime: u64) -> Option<u64> {
     (run_time > 0 && run_time <= uptime).then_some(run_time)
 }
 
-/// The command line, joined and cut **here** — on the machine that has
-/// it (`khor_core::CMD_CAP`, and see [`khor_core::TopRow::cmd`] for why
-/// the cut is not the face's job).
+/// Reads the command line **of the rows that survived the cut**, and
+/// puts each one's identifying word on it.
 ///
-/// `None` rather than an empty string when the platform will not spell
-/// it: a kernel thread has no command line, and an empty one would draw
-/// as a name that failed to load rather than as a process that has
-/// none. Cut by `char` so the cut cannot land inside a UTF-8 sequence.
-fn cmdline(p: &sysinfo::Process) -> Option<String> {
-    cut(&p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "))
+/// Asking for the command line is a per-process read (`/proc/[pid]/
+/// cmdline` and its equivalents), so what it costs is set by how many
+/// processes are asked. Measured on this Mac, 640 processes: asking all
+/// of them costs about the same as the reading refresh itself, while
+/// asking only two hundred took **2.15ms**. turing runs 2173 — the
+/// whole point of ranking on the machine is that only the cut crosses
+/// the wire, and only the cut needs this either.
+fn fill_args(sys: &mut sysinfo::System, rows: &mut [khor_core::TopRow]) {
+    if rows.is_empty() {
+        return;
+    }
+    let pids: Vec<sysinfo::Pid> = rows.iter().map(|r| sysinfo::Pid::from_u32(r.pid)).collect();
+    // `false`: this is a second look at processes already in the table,
+    // not a census — a process that died since the ranking should not
+    // take the whole table's rows with it.
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&pids),
+        false,
+        sysinfo::ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always),
+    );
+    for r in rows.iter_mut() {
+        let Some(p) = sys.process(sysinfo::Pid::from_u32(r.pid)) else { continue };
+        let argv: Vec<String> = p.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        r.arg = pick_arg(&argv);
+    }
 }
 
-/// The cut itself, taking the joined string rather than the process, so
-/// it can be tested against a command line longer than anything this
-/// machine happens to be running — a cap tested only against whatever
-/// `ps` shows today is a cap nothing proves.
-fn cut(joined: &str) -> Option<String> {
-    if joined.trim().is_empty() {
-        return None;
-    }
-    Some(joined.chars().take(khor_core::CMD_CAP).collect())
+/// The word that says which program this is: **the first argument after
+/// the executable that is not a flag**.
+///
+/// One rule, and it lands on the identifying part of the three shapes a
+/// process is usually started in:
+///
+/// - `python -m vllm.entrypoints.openai.api_server` → the module
+/// - `python train.py --config x` → the script
+/// - `cargo build --release` → the subcommand
+///
+/// **`argv[0]` is skipped** because it is the interpreter, and the
+/// interpreter is exactly the word `name` already said — keeping it
+/// would hand back `python3` for every one of the rows this field
+/// exists to tell apart.
+///
+/// **What it does not do**: a flag that takes a value is not known to
+/// be one, so `rustc --crate-name khor_core crates/…/lib.rs` answers
+/// `khor_core` rather than the path. Knowing better would mean knowing
+/// every program's flags; the alternative rule — skip a flag *and* the
+/// word after it — breaks the `-m` case above, where the word after the
+/// flag is the whole answer. This is the trade, taken deliberately.
+fn pick_arg(argv: &[String]) -> Option<String> {
+    let word = argv.iter().skip(1).find(|a| !a.starts_with('-') && !a.trim().is_empty())?;
+    Some(word.chars().take(khor_core::ARG_CAP).collect())
 }
 
 /// Puts the rows in the asked order. Separate from the sampling so it
@@ -255,7 +292,7 @@ mod tests {
             gpu_pct: gpu,
             gpu_mem: gpu.map(|_| 1),
             run_secs: None,
-            cmd: None,
+            arg: None,
         }
     }
 
@@ -286,30 +323,45 @@ mod tests {
         assert_eq!(age(1_788_000_000, 0, up), None, "and zero is absent, not 刚起的");
     }
 
-    /// **The command line is cut on the machine that has it**, and the
-    /// cut is by character so it cannot land inside a UTF-8 sequence
-    /// and produce a row that will not decode.
+    /// **The word that tells two `python3` rows apart**, on the shapes
+    /// a process is actually started in.
     ///
-    /// Tested against a line longer than anything this machine is
-    /// running: a cap checked only against today's `ps` output passes
-    /// on a machine with nothing long on it, which is a check that
-    /// cannot fail. The multi-byte half is the one that would bite in
-    /// production — a path with Chinese in it is ordinary.
+    /// The first case is the one this field exists for: three vLLM
+    /// workers on turing, all named `python3`, holding 21.7G / 10.9G /
+    /// 10.3G of card memory.
     #[test]
-    fn a_command_line_is_cut_where_it_lives_and_never_mid_character() {
-        let cap = khor_core::CMD_CAP;
-        let long = "a".repeat(cap * 3);
-        assert_eq!(cut(&long).unwrap().chars().count(), cap, "a long line is cut to the cap");
-        let short = "python3 -m vllm.entrypoints.openai.api_server";
-        assert_eq!(cut(short).as_deref(), Some(short), "a short one is left alone");
-        assert_eq!(cut("").as_deref(), None, "a kernel thread has no command line, and absent is not empty");
-        assert_eq!(cut("   ").as_deref(), None, "nor does whitespace count as one");
-        // Every char is 3 bytes here, so a byte-wise cut at the cap
-        // would slice one in half and the result would not be a string.
-        let cjk = "路".repeat(cap * 2);
-        let got = cut(&cjk).unwrap();
-        assert_eq!(got.chars().count(), cap, "counted in characters, not bytes");
-        assert!(got.chars().all(|c| c == '路'), "and every one of them survived whole");
+    fn the_identifying_word_is_the_first_argument_that_is_not_a_flag() {
+        let argv = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        let pick = |s: &str| pick_arg(&argv(s));
+        assert_eq!(pick("python -m vllm.entrypoints.openai.api_server").as_deref(), Some("vllm.entrypoints.openai.api_server"));
+        assert_eq!(pick("python train.py --config big.yaml").as_deref(), Some("train.py"));
+        assert_eq!(pick("cargo build --release").as_deref(), Some("build"));
+        // argv[0] is the interpreter, and the interpreter is the word
+        // `name` already said — handing it back would answer `python3`
+        // for exactly the rows this is meant to separate.
+        assert_eq!(pick("python3").as_deref(), None, "an executable with no arguments identifies nothing further");
+        assert_eq!(pick("khor serve").as_deref(), Some("serve"));
+        assert_eq!(pick("sleep 5").as_deref(), Some("5"));
+        assert_eq!(pick("nginx -g daemon off;").as_deref(), Some("daemon"), "a flag's value counts when nothing else does");
+        assert_eq!(pick_arg(&[]), None, "a kernel thread has no command line at all");
+        assert_eq!(pick_arg(&["python".into(), "--verbose".into()]).as_deref(), None, "flags only: nothing to say");
+        // **The rule's own limit, pinned so it is a decision rather
+        // than a surprise**: a flag that takes a value is not known to
+        // be one, so this lands on the value rather than the path
+        // after it. Fixing that would break the `-m` case above, where
+        // the value *is* the answer.
+        assert_eq!(
+            pick("rustc --crate-name khor_core crates/core/src/lib.rs").as_deref(),
+            Some("khor_core"),
+            "the documented trade: a flag's value cannot be told from a positional argument"
+        );
+        // Counted in characters, not bytes: a byte-wise cut would slice
+        // a multi-byte character in half and the row would not decode.
+        let cap = khor_core::ARG_CAP;
+        let long = format!("python /{}", "路".repeat(cap * 2));
+        let got = pick(&long).unwrap();
+        assert_eq!(got.chars().count(), cap, "a very long token is cut to the cap");
+        assert!(got.chars().skip(1).all(|c| c == '路'), "and every character survived whole");
     }
 
     /// The age column obeys the same rule as the card columns: **a

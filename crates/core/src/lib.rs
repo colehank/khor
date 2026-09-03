@@ -854,31 +854,40 @@ pub struct TopRow {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub run_secs: Option<u64>,
-    /// The command line, as far as the machine will spell it and
-    /// **truncated over there** ([`CMD_CAP`]).
+    /// **The one word from the command line that says which program
+    /// this is** — the first argument after the executable that is not
+    /// a flag.
     ///
     /// **Why a second name at all**: `name` is the platform's short
-    /// name, and on the one machine where this table matters most it
-    /// collapses the answer — turing's three vLLM workers holding
-    /// 21.7G, 10.9G and 10.3G of card memory are all called `python3`,
-    /// so 「按显存排,看谁在吃卡」 arrives at three identical rows. The
-    /// command line is what tells them apart.
+    /// name (on Linux the `comm` out of `/proc/[pid]/stat`), and on the
+    /// machine where this table matters most it collapses the answer —
+    /// three workers holding 21.7G, 10.9G and 10.3G of card memory all
+    /// called `python3`, so 「按显存排,看谁在吃卡」 arrives at three
+    /// identical rows.
     ///
-    /// Cut on the machine that has it rather than on the face: 200 rows
-    /// of unbounded argv is the frame growing without a ceiling, and a
-    /// ceiling applied after the crossing would not have saved anything.
+    /// **Why one word and not the whole line.** Where the identifying
+    /// part sits moves with how the program was called — `-m
+    /// vllm.entrypoints.openai.api_server` puts it last, `train.py
+    /// --config …` puts it first — so a face that truncates a whole
+    /// argv is guessing which end to keep, and guesses wrong half the
+    /// time. Picking the word here means the face never has to guess.
+    ///
+    /// `None` when the machine will not spell it (a kernel thread has
+    /// no command line) or when nothing but flags followed the
+    /// executable. Absent, never an empty string: an empty one draws as
+    /// a name that failed to load rather than as a process that has
+    /// none.
     #[serde(default)]
-    pub cmd: Option<String>,
+    pub arg: Option<String>,
 }
 
-/// How much of a command line crosses the wire, characters.
+/// How much of that one word crosses the wire, characters.
 ///
-/// Long enough for the part that identifies a process — the script or
-/// the model name, which is what tells two `python3` rows apart — and
-/// short enough that two hundred of them stay a small frame. Counted in
-/// `char`s rather than bytes so a truncation cannot land inside a UTF-8
-/// sequence and produce a row that will not decode.
-pub const CMD_CAP: usize = 160;
+/// It is a single argv token, not a line — but a token can be a
+/// deeply-nested path, so it still wants a ceiling. Counted in `char`s
+/// rather than bytes so a cut cannot land inside a UTF-8 sequence and
+/// produce a row that will not decode.
+pub const ARG_CAP: usize = 160;
 
 /// Which column a process table is ranked by, and which way.
 ///

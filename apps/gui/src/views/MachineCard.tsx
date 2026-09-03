@@ -997,18 +997,24 @@ function Top({
                   and it is only wanted where there is a shortage: on a
                   narrow card. Wide gets a ceiling instead — see the
                   table. */}
-              {/* **The command line is what tells two rows apart when
-                  the name cannot.** turing's three vLLM workers are all
-                  called `python3`, and 「按显存排,看谁在吃卡」 lands on
-                  three identical rows — so the command rides behind the
-                  name in the muted ink, the same place the account
-                  already sits. Truncation is the cell's, and the far
-                  side has already cut it to `CMD_CAP` so a long argv
-                  never crossed the wire in the first place. */}
+              {/* The name, and the two words that qualify it.
+                  **Narrow drops the account and keeps the word from the
+                  command line**, and the asymmetry is the whole point:
+                  the account is the same on every row of one person's
+                  own machine, while the identifying word is different
+                  on every row — that is what it is for. Dropping both
+                  (which this did until 2026-09-04) left a 390 card
+                  showing three rows all called `python3`, which is
+                  exactly the case the column was added for, failing on
+                  the face where the table is hardest to read. */}
               <td className={cn("truncate", narrow ? "w-full max-w-0" : "max-w-top-name")}>
                 {r.name}
                 {!narrow && r.user && <span className="ml-in text-muted-foreground">{r.user}</span>}
-                {!narrow && r.cmd && <span className="ml-in text-muted-foreground">{r.cmd}</span>}
+                {r.arg && (
+                  <span data-top-arg className="ml-in text-muted-foreground">
+                    {r.arg}
+                  </span>
+                )}
               </td>
               <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
               {onCards && (

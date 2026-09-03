@@ -454,7 +454,7 @@ mod tests {
                 gpu_pct: Some(37.0),
                 gpu_mem: Some(1_073_741_824),
                 run_secs: Some(86_400),
-                cmd: Some("khor serve".into()),
+                arg: Some("serve".into()),
             }],
             cpu_day: khor_core::CpuDay {
                 bucket_ms: 300_000,
@@ -603,7 +603,7 @@ mod tests {
             gpu_pct: None,
             gpu_mem: None,
             run_secs: None,
-            cmd: None,
+            arg: None,
         })
         .unwrap();
         assert!(old.len() < fresh.len(), "the old row really is shorter: it lacks the GPU columns");
@@ -656,7 +656,7 @@ mod tests {
             gpu_pct: Some(44.0),
             gpu_mem: Some(21_700_000_000),
             run_secs: Some(3),
-            cmd: Some("python3 -m vllm.entrypoints".into()),
+            arg: Some("vllm.entrypoints".into()),
         })
         .unwrap();
         assert_eq!(fresh[0], 0x99, "and today's is nine — the two new ones are really on the wire");
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
         assert_eq!(r.gpu_mem, Some(21_700_000_000), "including the last one before the new tail");
         assert_eq!(r.run_secs, None, "an age nobody sent is absent — a zero would read as 刚起的");
-        assert_eq!(r.cmd, None, "and a command line nobody sent is absent, not an empty name");
+        assert_eq!(r.arg, None, "and an identifying word nobody sent is absent, not an empty name");
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and

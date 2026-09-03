@@ -264,11 +264,11 @@ try {
       // it the newest process on the box. The kernel row carries no
       // command line either, for the same reason: absent is not empty.
       // prettier-ignore
-      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, cmd: "khor serve --gate" },
+      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, arg: "serve" },
       // prettier-ignore
-      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null, run_secs: 45, cmd: "node scripts/check-face.mjs" },
+      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null, run_secs: 45, arg: "scripts/check-face.mjs" },
       // prettier-ignore
-      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, cmd: null },
+      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null },
     ],
     cpu_day: {
       bucket_ms: 300_000,
@@ -1750,6 +1750,29 @@ try {
   }
   if (busy.ages.some((t) => /^0\s/.test(t))) {
     fail(`an age drew as a zero (${JSON.stringify(busy.ages)}) — 「没说」 became 「刚起的」`);
+  }
+  //     **The identifying word survives the narrow card**, and this is
+  //     the one posture where it was lost. The account is dropped
+  //     narrow because every row of one person's own machine says the
+  //     same word; the word off the command line is dropped by the same
+  //     reflex and must not be, because it is different on every row —
+  //     which is the entire reason the column exists. Measured
+  //     2026-09-04: a 390 card showed three rows all reading `python3`.
+  const withArg = load.top.filter((r) => r.arg !== null).length;
+  const argsAt = async (what) =>
+    page.evaluate(() => document.querySelectorAll("[data-machine-card] [data-top-arg]").length);
+  const wideArgs = await argsAt();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await new Promise((r) => setTimeout(r, 400));
+  const narrowArgs = await argsAt();
+  await page.setViewportSize({ width: 1120, height: 1000 });
+  await new Promise((r) => setTimeout(r, 400));
+  if (wideArgs !== withArg) fail(`the wide card draws ${wideArgs} identifying words for ${withArg} rows that carry one`);
+  if (narrowArgs !== withArg) {
+    fail(
+      `the narrow card draws ${narrowArgs} identifying words for ${withArg} rows that carry one — ` +
+        `on 390 the rows collapse to their short names, which is the case this column exists for`,
+    );
   }
   //     **One row per series that has a reading, and the all-hole one
   //     is not a row.** A named row of pure absence would read as a
