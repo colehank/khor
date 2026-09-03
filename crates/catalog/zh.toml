@@ -297,6 +297,10 @@ gpu-sub-nomem = "{0} 卡"
 uptime-days = "已运行 {0} 天"
 uptime-hours = "已运行 {0} 小时"
 updated-at = "更新于 {0}"
+# The day chart's left end when it falls on the previous calendar day —
+# which a whole day always does, so "13:19 → 13:19" would read as a bug
+# where it is exactly twenty-four hours.
+yesterday-at = "昨天 {0}"
 # 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"

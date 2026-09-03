@@ -487,7 +487,10 @@ function GpuDetail({ row }: { row: DeviceRow }) {
             className="flex items-center gap-row rounded-md bg-muted/40 px-row py-in text-sm tabular-nums"
           >
             <span className="flex-none font-label">GPU{i}</span>
-            <span className="w-48 min-w-0 truncate text-muted-foreground">{c.name || cli.vitals_name_gpu}</span>
+            {/* The driver's name, when it gave one; a card that will not
+                name itself (Apple's) is "GPU0" and nothing more — not
+                "GPU0 GPU". */}
+            {c.name && <span className="w-48 min-w-0 truncate text-muted-foreground">{c.name}</span>}
             <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/10">
               <span
                 className="block h-full rounded-full"
@@ -774,7 +777,10 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
           )}
         </span>
         <span className="tabular-nums">
-          {clock(startMs)} → {clock(day.now_ms)}
+          {new Date(startMs).toDateString() === new Date(day.now_ms).toDateString()
+            ? clock(startMs)
+            : cli.yesterday_at(clock(startMs))}{" "}
+          → {clock(day.now_ms)}
         </span>
       </div>
       <svg
