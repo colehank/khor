@@ -1855,6 +1855,49 @@ try {
   const after = await sortStateNow();
   if (!after.sorted.includes("mem:descending")) fail(`the answer landed but aria-sort still says ${after.sorted.join(",")}`);
   if (after.asking.length !== 0) fail(`a head is still marked waiting after the answer landed: ${after.asking.join(",")}`);
+  //     ── one busy card among idle ones is still visible ───────────
+  //
+  //     **The aggregate flattens it, and the aggregate is what a
+  //     careless implementation would draw.** This fixture's two cards
+  //     are 90 and 4 while `gpu.util_pct` says 67; an implementation
+  //     that painted the machine's mean per card would put 67 on both
+  //     and the spread would collapse to 0. `khor_core::Gpu::util_pct`
+  //     carries the ruling: the mean is a true sentence about the
+  //     machine and a false lead about the job.
+  const cardsNow = await page.evaluate(() => ({
+    named: [...document.querySelectorAll("[data-machine-card] [data-gpu-card]")].map((e) => e.dataset.gpuCard),
+    utils: [...document.querySelectorAll("[data-machine-card] [data-gpu-util]")].map((e) =>
+      Number(e.dataset.gpuUtil),
+    ),
+    //   And the day block must not have grown per-card bands: the
+    //   recorder keeps one aggregate series, so a card's own 24 hours
+    //   is a promise the backend cannot pay (`history.rs`). Copying the
+    //   aggregate four times would look exactly like the real thing.
+    inDay: document.querySelectorAll("[data-machine-card] [data-day-band-axis] [data-gpu-card]").length,
+  }));
+  //     The finder proves itself before the negative claim below is
+  //     worth anything.
+  const peerGpus = devs.find((d) => d.name === "peer").vitals.vitals.gpus;
+  const wantCards = peerGpus.length;
+  if (cardsNow.named.length !== wantCards || cardsNow.utils.length !== wantCards) {
+    fail(
+      `probe dead: ${cardsNow.named.length} card rows and ${cardsNow.utils.length} readings for ${wantCards} routed cards`,
+    );
+  } else {
+    const spread = Math.max(...cardsNow.utils) - Math.min(...cardsNow.utils);
+    const want = peerGpus.map((g) => Math.round(g.util_pct));
+    const spreadWanted = Math.max(...want) - Math.min(...want);
+    if (spread < spreadWanted - 1) {
+      fail(
+        `the cards read [${cardsNow.utils.join(",")}] where the fixture is [${want.join(",")}] — ` +
+          `a spread of ${spread} against ${spreadWanted} is the machine's mean drawn once per card`,
+      );
+    }
+    if (cardsNow.inDay !== 0) {
+      fail(`${cardsNow.inDay} per-card rows inside the 24-hour block — the recorder keeps no per-card history to draw`);
+    }
+  }
+
   //     ── the band is a heat band: the value is the ink ────────────
   //
   //     **A · the shade really encodes the number.** Pinned to two

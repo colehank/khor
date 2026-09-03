@@ -691,7 +691,14 @@ function Parts({ row }: { row: DeviceRow }) {
           : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, util);
         return (
           <Fragment key={`gpu${i}`}>
-            <span data-vitals-unit="gpu" data-gpu-card={i} className="flex min-w-0 items-baseline gap-in">
+            {/* **Named, so an assertion can name it too.** The index
+                said which row this was; the name says which card, and
+                「哪张卡是空的」 is a question about a card. */}
+            <span
+              data-vitals-unit="gpu"
+              data-gpu-card={c.name || `GPU${i}`}
+              className="flex min-w-0 items-baseline gap-in"
+            >
               <span className="flex-none font-label">GPU{i}</span>
               {/* The driver's name, when it gave one; a card that will
                   not name itself (Apple's) is "GPU0" and nothing more —
@@ -702,7 +709,15 @@ function Parts({ row }: { row: DeviceRow }) {
               </span>
             </span>
             <Bar pct={util} strain={null} />
-            <span className="text-right">{util}%</span>
+            {/* **Each card's own number, not the machine's mean.** The
+                aggregate flattens one busy card among three idle ones
+                to 25 (`khor_core::Gpu::util_pct` says so itself), which
+                is true about the machine and a false lead about where
+                to run a job — the person is looking for the idle card.
+                In the DOM as a value so that stays assertable. */}
+            <span data-gpu-util={util} className="text-right">
+              {util}%
+            </span>
             <span className="text-right text-muted-foreground">
               {c.mem ? `${bytes(c.mem.used)} / ${bytes(c.mem.total)}` : ""}
             </span>
