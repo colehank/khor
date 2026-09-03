@@ -1909,7 +1909,7 @@ try {
           const out = { doc: de.scrollWidth - de.clientWidth, drawer: 0, table: 0 };
           // A box carrying `overflow-x: hidden` reports nothing and
           // turns this into a check that cannot fail — none of these do.
-          for (const n of document.querySelectorAll("[data-drawer]")) {
+          for (const n of document.querySelectorAll("[data-drawer],[data-drawer-scroll]")) {
             out.drawer = Math.max(out.drawer, n.scrollWidth - n.clientWidth);
           }
           for (const n of document.querySelectorAll("[data-load-top-box]")) {
@@ -2031,6 +2031,19 @@ try {
     const hs = new Set(drawerHeights.map((x) => x.split(":")[1]));
     if (drawerHeights.length < 2) fail(`probe dead: only ${drawerHeights.length} drawers could be opened`);
     else if (hs.size !== 1) fail(`the drawers are ${drawerHeights.join(" ")} — pressing around makes the card jump`);
+  }
+  //     **The heading names the reading and counts what is in the
+  //     drawer.** Without it a block of six rows under four dials does
+  //     not say which dial it belongs to, and the count is what tells a
+  //     drawer of parts from a drawer of occupants at a glance.
+  const head = await page.evaluate(() => {
+    const h = document.querySelector("[data-machine-card] [data-drawer-head]");
+    return h ? { text: h.innerText.replace(/\s+/g, " ").trim(), glyphs: h.querySelectorAll("[data-ring-glyph]").length } : null;
+  });
+  if (!head) fail("the open drawer has no heading — six rows under four dials do not say which dial they are");
+  else {
+    if (head.glyphs !== 1) fail(`the drawer heading carries ${head.glyphs} glyphs`);
+    if (!/\d/.test(head.text)) fail(`the drawer heading counts nothing: "${head.text}"`);
   }
   //     **The bar's two edges are one value each, down the whole list.**
   //     That is what the shared grid buys, and a row that sized its own

@@ -59,6 +59,46 @@ const ang = (frac: number) => ARC0 + Math.min(1, Math.max(0, frac)) * SPAN;
     all** rather than a mark sitting at zero. */
 export type Pip = { word: string; v: number | null; strain?: Strain | null };
 
+/** The same dial, small enough to sit in a heading — **the same 210°
+    geometry, one size down**, not a circle that happens to be little.
+    A miniature circle would say 「a ring lives here」 while the thing it
+    stands for is a gauge, and the two vocabularies would sit one line
+    apart on the same card.
+
+    It is an identity mark, not a reading: the number it belongs to is
+    on the big dial directly above, in view at the same time. (An
+    earlier draft counted 「too small to read a value from」 against a
+    glyph like this; there it was the only dial in its group, and here
+    it is not.) */
+export function Glyph({ fraction, strain }: { fraction: number | null; strain?: Strain | null }) {
+  const S = 16;
+  const R = 5.5;
+  const W = 1.8;
+  const cx = S / 2;
+  const cy = S / 2;
+  return (
+    <svg data-ring-glyph viewBox={`0 0 ${S} ${S}`} width={S} height={S} aria-hidden="true" className="flex-none">
+      <path
+        d={arc(cx, cy, R, ARC0, ARC0 + SPAN)}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity={0.2}
+        strokeWidth={W}
+        strokeLinecap="round"
+      />
+      {fraction !== null && (
+        <path
+          d={arc(cx, cy, R, ARC0, ang(fraction))}
+          fill="none"
+          stroke={gaugeColor(strain)}
+          strokeWidth={W}
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
+}
+
 export function Face({
   size,
   stroke,

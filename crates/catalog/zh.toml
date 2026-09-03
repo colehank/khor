@@ -355,6 +355,12 @@ top-time = "时长"
 # (`Vitals` 里没有 per-core 数组、也没有内存分解,所以这两个环底下能诚实摆出来的
 # 只有「谁占得最多」,不是「它由什么构成」。)
 top-share-note = "占用最多的几个,加起来不等于上面那个环"
+# 抽屉的小标题右半:这一组有几样东西。**是数量不是读数**——读数在上面那个环里,
+# 这里回答的是「这个环底下有几张卡 / 几个卷 / 几个占用者」。卷用这个键,卡和核
+# 复用已有的 `gpu-sub-nomem` / `cores-sub`。
+vols-sub = "{0} 卷"
+# CPU 与内存那两组的数量词:抽屉里是占用者,所以数的是进程条数,不是零件个数。
+procs-sub = "{0} 个进程"
 # The band under the CPU ring: a day of five-minute buckets.
 top-day = "最近 24 小时 CPU"
 # How old the reading is. **Printed on every reading that is not this

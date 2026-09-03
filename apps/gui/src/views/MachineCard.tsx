@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { Face, type Pip } from "@/components/Face";
+import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -661,7 +661,35 @@ function Readings({
           facts={[disk ? left(disk) : null]}
         />
       </div>
-      <Drawers row={row} top={top} open={open} />
+      <Drawers
+        row={row}
+        top={top}
+        open={open}
+        heads={{
+          cpu: {
+            word: cli.vitals_name_cpu,
+            count: cli.procs_sub(Math.min(6, top.length)),
+            fraction: v.cpu_pct / 100,
+          },
+          gpu: {
+            word: cli.vitals_name_gpu,
+            count: cli.gpu_sub_nomem(cards.length || (v.gpu?.cards ?? 0)),
+            fraction: gpuMean !== null ? gpuMean / 100 : (v.gpu ? v.gpu.util_pct / 100 : null),
+          },
+          mem: {
+            word: cli.vitals_name_mem,
+            count: cli.procs_sub(Math.min(6, top.length)),
+            fraction: v.mem.total > 0 ? v.mem.used / v.mem.total : null,
+            strain: row.vitals.mem_strain,
+          },
+          disk: {
+            word: cli.vitals_name_disk,
+            count: cli.vols_sub(vols.length),
+            fraction: disk && disk.total > 0 ? disk.used / disk.total : null,
+            strain: diskStrain,
+          },
+        }}
+      />
     </Panel>
   );
 }
@@ -691,6 +719,7 @@ function Drawers({
   row,
   top,
   open,
+  heads,
 }: {
   row: DeviceRow;
   /** The face's own two hundred process rows. **The CPU and memory
@@ -700,6 +729,10 @@ function Drawers({
       honestly be shown there is who is taking the most. */
   top: Load["top"];
   open: string;
+  /** Each group's heading: the reading's own glyph, its word, and **how
+      many things are in the drawer** — not a second copy of the reading
+      (that is the dial directly above). */
+  heads: Record<string, { word: string; count: string; fraction: number | null; strain?: Strain | null }>;
 }) {
   if (!row.vitals) return null;
   const { vitals: v, volume_strains } = row.vitals;
@@ -760,9 +793,26 @@ function Drawers({
         ref={box}
         data-drawer={open}
         data-tight={tight ? "" : undefined}
-        className="mt-row max-h-drawer-h min-h-drawer-h overflow-y-auto overscroll-contain border-t pt-row text-sm tabular-nums"
-        style={{ scrollSnapType: "y proximity" }}
+        className="mt-row flex max-h-drawer-h min-h-drawer-h flex-col border-t pt-row text-sm tabular-nums"
       >
+        {heads[open] && (
+          <div data-drawer-head className="mb-in flex items-center gap-in text-aux text-muted-foreground">
+            <Glyph fraction={heads[open].fraction} strain={heads[open].strain} />
+            <span>{heads[open].word}</span>
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums">{heads[open].count}</span>
+          </div>
+        )}
+        {/* **The rows scroll, the heading does not.** A heading that
+            scrolled away would take with it the one line saying which
+            reading these rows belong to — and four rows fit here without
+            scrolling at all, which is what makes 「just fits」 and 「just
+            does not」 different on screen. */}
+        <div
+          data-drawer-scroll
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          style={{ scrollSnapType: "y proximity" }}
+        >
         <div data-parts="cpu" hidden={open !== "cpu"}>
           {busiest("cpu").map((r) => (
             <Occupant key={r.pid} row={r} share={r.cpu_pct / whole} value={`${Math.round(r.cpu_pct)}%`} />
@@ -848,6 +898,7 @@ function Drawers({
               </div>
             );
           })}
+        </div>
         </div>
       </div>
       {/* **Outside the drawer, and that is not a detail.** Inside the
