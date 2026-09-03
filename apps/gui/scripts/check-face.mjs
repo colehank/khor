@@ -280,11 +280,24 @@ try {
     },
   };
   const ELDER_REFUSAL = "elder-refuses-load";
-  await page.route("**/load", (r) =>
-    r.request().postDataJSON().machine === "elder"
-      ? r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(ELDER_REFUSAL) })
-      : r.fulfill({ contentType: "application/json", body: JSON.stringify(load) }),
-  );
+  // **A held answer, so the in-flight window is something a test can
+  // stand inside.** While `hold` is set the route waits before
+  // answering, and answers with the rows reversed — which is what makes
+  // 「the table did not move while the answer was out」 an assertion
+  // with two distinguishable states rather than a wish.
+  const held = { on: false, release: null, seen: 0 };
+  await page.route("**/load", async (r) => {
+    if (r.request().postDataJSON().machine === "elder") {
+      return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(ELDER_REFUSAL) });
+    }
+    if (held.on) {
+      held.seen += 1;
+      await new Promise((ok) => (held.release = ok));
+      const flipped = { ...load, top: [...load.top].reverse() };
+      return r.fulfill({ contentType: "application/json", body: JSON.stringify(flipped) });
+    }
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(load) });
+  });
   // The shell polls sessions, devices and hooks in one Promise.all —
   // one rejection drops the whole batch, so the third leg answers too.
   await page.route("**/hooks_state", (r) =>
@@ -1774,6 +1787,60 @@ try {
         `on 390 the rows collapse to their short names, which is the case this column exists for`,
     );
   }
+
+  //     ── while an answer is out, nothing on the table moves ────────
+  //
+  //     **The bug this replaces was a re-sort wearing a ranking's
+  //     clothes** (measured 2026-09-04 on turing): pressing a column
+  //     re-ordered the rows already on screen while the true answer was
+  //     still crossing, so the table showed the busiest 200 sorted by
+  //     pid — `[10, 11, 25, 31, 43, 386, 410, 422]` against the
+  //     machine's `[1, 2, 3, 4, 6, 9, …]` — and became the real thing a
+  //     poll later. Worse than a blank: a blank says 「还没好」, this
+  //     says 「好了」 and is wrong, looking exactly like a true answer.
+  //
+  //     So: the rows keep the order of the answer that produced them,
+  //     `aria-sort` does not promise an order that has not arrived, and
+  //     the pressed head is the only thing that moves.
+  const pidsNow = () =>
+    page.locator("[data-machine-card] [data-top-row]").evaluateAll((els) => els.map((e) => e.dataset.topRow));
+  const sortStateNow = () =>
+    page.evaluate(() => ({
+      sorted: [...document.querySelectorAll("[data-machine-card] [data-top-head]")]
+        .filter((th) => th.getAttribute("aria-sort") !== "none")
+        .map((th) => th.dataset.topHead + ":" + th.getAttribute("aria-sort")),
+      asking: [...document.querySelectorAll("[data-machine-card] [data-top-head][data-asking]")].map(
+        (th) => th.dataset.topHead,
+      ),
+    }));
+  const before = { pids: await pidsNow(), state: await sortStateNow() };
+  held.on = true;
+  await page.locator('[data-machine-card] [data-top-head="mem"] button').click();
+  await until(5_000, async () => held.seen > 0);
+  await new Promise((r) => setTimeout(r, 500));
+  const during = { pids: await pidsNow(), state: await sortStateNow() };
+  if (during.pids.join(",") !== before.pids.join(",")) {
+    fail(
+      `the rows re-sorted while the answer was still out: ${before.pids.join(",")} became ${during.pids.join(",")} ` +
+        `— that is a re-ranking of the old set wearing the new ranking's clothes`,
+    );
+  }
+  if (during.state.sorted.join(",") !== before.state.sorted.join(",")) {
+    fail(
+      `aria-sort promised ${during.state.sorted.join(",")} while the rows were still ${before.state.sorted.join(",")} ` +
+        `— to a reader who cannot see the table that promise is the whole answer`,
+    );
+  }
+  if (during.state.asking.join(",") !== "mem") {
+    fail(`the pressed head does not say it is waiting (asking=[${during.state.asking.join(",")}])`);
+  }
+  held.release?.();
+  held.on = false;
+  const landed = await until(8_000, async () => (await pidsNow()).join(",") !== before.pids.join(","));
+  if (!landed) fail("the held answer never replaced the rows, so the assertion above was never tested against a change");
+  const after = await sortStateNow();
+  if (!after.sorted.includes("mem:descending")) fail(`the answer landed but aria-sort still says ${after.sorted.join(",")}`);
+  if (after.asking.length !== 0) fail(`a head is still marked waiting after the answer landed: ${after.asking.join(",")}`);
   //     **One row per series that has a reading, and the all-hole one
   //     is not a row.** A named row of pure absence would read as a
   //     reading this machine failed to take, rather than as one it does

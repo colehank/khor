@@ -135,7 +135,7 @@ function Body({
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
-  const { load, why } = useLoad(row, sort);
+  const { load, why, shown, asking } = useLoad(row, sort);
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
@@ -146,7 +146,14 @@ function Body({
               onBorrowWeb={onBorrowWeb}
             />
             <Readings row={row} day={load?.cpu_day ?? null} />
-            <Busy load={load} why={why} narrow={narrow} sort={sort} onSort={setSort} />
+            <Busy
+              load={load}
+              why={why}
+              narrow={narrow}
+              sort={shown ?? sort}
+              asking={asking}
+              onSort={setSort}
+            />
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
@@ -812,12 +819,17 @@ function Busy({
   why,
   narrow,
   sort,
+  asking,
   onSort,
 }: {
   load: Load | null;
   why: string | null;
   narrow: boolean;
+  /** **The order the rows on screen are in**, not the one just asked
+      for — see `useLoad`. */
   sort: Sort;
+  /** The column whose answer is still crossing, if any. */
+  asking: SortCol | null;
   onSort: (s: Sort) => void;
 }) {
   // **A refusal keeps the column heads and loses the rows.** It used to
@@ -835,7 +847,7 @@ function Busy({
   if (why) {
     return (
       <Panel>
-        <Top rows={load?.top ?? []} narrow={narrow} sort={sort} onSort={onSort} why={why} />
+        <Top rows={load?.top ?? []} narrow={narrow} sort={sort} asking={asking} onSort={onSort} why={why} />
       </Panel>
     );
   }
@@ -848,7 +860,7 @@ function Busy({
         </div>
       </Panel>
       <Panel>
-        <Top rows={load.top} narrow={narrow} sort={sort} onSort={onSort} />
+        <Top rows={load.top} narrow={narrow} sort={sort} asking={asking} onSort={onSort} />
       </Panel>
     </>
   );
@@ -891,12 +903,17 @@ function Top({
   rows,
   narrow,
   sort,
+  asking,
   onSort,
   why,
 }: {
   rows: Load["top"];
   narrow: boolean;
+  /** The order these rows are actually in — see `useLoad`. */
   sort: Sort;
+  /** The column whose answer has not landed yet. Its head says so, and
+      **nothing else on the table moves until the rows do.** */
+  asking: SortCol | null;
   onSort: (s: Sort) => void;
   /** Why the machine did not answer this ask. Set means: draw the heads
       and this sentence, and no rows — see `Busy`. The rows still come in
@@ -948,31 +965,31 @@ function Top({
                 then the four quantities with the two GPU ones inside
                 them — a card's GPU columns belong beside its CPU one,
                 not after the memory that has nothing to do with them. */}
-            <Column col="pid" sort={sort} onPress={press} align="right">
+            <Column col="pid" sort={sort} asking={asking} onPress={press} align="right">
               {cli.top_pid}
             </Column>
-            <Column col="name" sort={sort} onPress={press} align="left" grow={narrow}>
+            <Column col="name" sort={sort} asking={asking} onPress={press} align="left" grow={narrow}>
               {cli.top_name}
             </Column>
-            <Column col="cpu" sort={sort} onPress={press} align="right">
+            <Column col="cpu" sort={sort} asking={asking} onPress={press} align="right">
               {cli.vitals_name_cpu}
             </Column>
             {onCards && (
-              <Column col="gpu" sort={sort} onPress={press} align="right">
+              <Column col="gpu" sort={sort} asking={asking} onPress={press} align="right">
                 {cli.vitals_name_gpu}
               </Column>
             )}
             {onCards && (
-              <Column col="vram" sort={sort} onPress={press} align="right">
+              <Column col="vram" sort={sort} asking={asking} onPress={press} align="right">
                 {cli.vitals_name_vram}
               </Column>
             )}
-            <Column col="mem" sort={sort} onPress={press} align="right">
+            <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
               {cli.vitals_name_mem}
             </Column>
             {/* Last, because it is the one column that is not about how
                 much of this machine the process is taking. */}
-            <Column col="time" sort={sort} onPress={press} align="right">
+            <Column col="time" sort={sort} asking={asking} onPress={press} align="right">
               {cli.top_time}
             </Column>
           </tr>
@@ -1051,6 +1068,7 @@ function Top({
 function Column({
   col,
   sort,
+  asking,
   onPress,
   align,
   grow,
@@ -1058,6 +1076,8 @@ function Column({
 }: {
   col: SortCol;
   sort: Sort;
+  /** The column whose answer is still crossing — see `Top`. */
+  asking: SortCol | null;
   onPress: (col: SortCol) => void;
   align: "left" | "right";
   /** The one column that takes the leftover width, where there is any
@@ -1066,14 +1086,26 @@ function Column({
   children: React.ReactNode;
 }) {
   const on = sort.col === col;
+  // **`aria-sort` describes the rows, and the rows have not changed
+  // yet.** It used to turn over on the press, which is a promise about
+  // an answer still crossing the wire — and to a reader who cannot see
+  // the table, a promise is all there is. `data-asking` is the only
+  // thing a press moves.
+  const waiting = asking === col;
   return (
     <th
       data-top-head={col}
+      data-asking={waiting ? "" : undefined}
       aria-sort={on ? (sort.dir === "up" ? "ascending" : "descending") : "none"}
+      aria-busy={waiting || undefined}
       className={cn(
         "font-body",
         align === "right" ? "text-right px-row" : "text-left",
         grow && "w-full",
+        // Not a new visual language — the head simply goes quiet while
+        // its answer is out. What this looks like finally is the design
+        // lane's call.
+        waiting && "opacity-60",
       )}
     >
       <button
@@ -1147,6 +1179,23 @@ function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
 function useLoad(row: DeviceRow | null, sort: Sort) {
   const [load, setLoad] = useState<Load | null>(null);
   const [why, setWhy] = useState<string | null>(null);
+  // **Which order the rows on screen are actually in.**
+  //
+  // Not the same thing as the order somebody just asked for, and the
+  // gap between the two is where a real bug lived (measured
+  // 2026-09-04): pressing PID re-sorted the rows already on screen
+  // while the true answer was still crossing, so the table showed **the
+  // busiest 200 re-sorted by pid** — `[10, 11, 25, 31, 43, 386, 410,
+  // 422]` where the machine's answer is `[1, 2, 3, 4, 6, 9, …]` — and
+  // then silently became the real thing a poll later. That is the
+  // 「重排冒充排名」 this file's own comment warns about, and it is
+  // worse than a blank: a blank says 「还没好」, while this says
+  // 「好了」 and is wrong, for up to five seconds, looking exactly like
+  // a true answer.
+  //
+  // So the rows are drawn in the order of the answer that produced
+  // them, and this is that order. `null` until the first one lands.
+  const [shown, setShown] = useState<Sort | null>(null);
   const id = row?.id ?? null;
   const me = row?.me ?? false;
   const name = row?.name ?? "";
@@ -1160,6 +1209,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   useEffect(() => {
     setLoad(null);
     setWhy(null);
+    setShown(null);
   }, [id]);
   useEffect(() => {
     if (id === null) return;
@@ -1180,6 +1230,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
         const l = await fetchLoad(me ? "" : name, TOP_LIMIT, sort.col, sort.dir === "down");
         if (stopped) return;
         setLoad(l);
+        setShown({ col: sort.col, dir: sort.dir });
         setWhy(null);
       } catch (e: unknown) {
         if (stopped) return;
@@ -1194,7 +1245,10 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
       window.clearTimeout(timer);
     };
   }, [id, me, name, sort?.col, sort?.dir]);
-  return { load, why };
+  // `asking` is the column somebody pressed whose answer has not landed
+  // yet — the head wears it, and nothing else moves until the rows do.
+  const asking = shown === null || shown.col !== sort.col || shown.dir !== sort.dir ? sort.col : null;
+  return { load, why, shown, asking };
 }
 
 /**
