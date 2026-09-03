@@ -114,6 +114,16 @@ use nvml_wrapper::Nvml;
 /// that has no NVIDIA card at all, which is most of them.
 static NVML: OnceLock<Option<Nvml>> = OnceLock::new();
 
+/// The one handle, for every reader on this machine.
+///
+/// Shared with the per-process sampler (`crate::top::gpu`) rather than
+/// opened twice: NVML is a library and a driver conversation, and two
+/// of them would pay the open twice and cache two separate verdicts
+/// about whether this machine has a card at all.
+pub(crate) fn handle() -> Option<&'static Nvml> {
+    NVML.get_or_init(|| Nvml::init().ok()).as_ref()
+}
+
 /// This machine's NVIDIA cards, one by one. Empty when there is no
 /// driver, no card, or nothing that would answer.
 ///
@@ -121,7 +131,7 @@ static NVML: OnceLock<Option<Nvml>> = OnceLock::new();
 /// function used to enforce inline — lives in `super::aggregate` now,
 /// so the one ring and the per-card rows can never disagree.
 pub(super) fn cards() -> Vec<khor_core::GpuCard> {
-    let Some(nvml) = NVML.get_or_init(|| Nvml::init().ok()).as_ref() else {
+    let Some(nvml) = handle() else {
         return Vec::new();
     };
     let Ok(count) = nvml.device_count() else {

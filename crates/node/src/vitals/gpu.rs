@@ -67,7 +67,7 @@ use khor_core::{Fill, Gpu, GpuCard};
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "linux")]
-mod nvidia;
+pub(crate) mod nvidia;
 
 /// This machine's graphics hardware: the aggregate ring and the cards
 /// one by one, from one walk. `(None, empty)` when khor cannot say.

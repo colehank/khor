@@ -1468,9 +1468,24 @@ impl Node {
     /// the recorder — the GUI opens its own `Node` — and the file is the
     /// one copy both see. **Blocking** — the sampler's rule; the one
     /// async caller (`link`) goes through `spawn_blocking`.
+    ///
+    /// **`top` of 0 means every process, not none.**
+    ///
+    /// A face that sorts by a column has to sort the whole table: the
+    /// row holding the most memory is rarely among the eight hungriest
+    /// by CPU, so "sort by memory" over a cut of eight answers a
+    /// different question than it was asked — and answers it
+    /// confidently, which is the worse half. The machine card is a
+    /// window over the whole list for exactly that reason, and asks
+    /// with 0.
+    ///
+    /// Zero rather than a sentinel like `u32::MAX` because zero is what
+    /// a face means when it says "no limit", and because the wire
+    /// carries a `u32` whose maximum is a plausible typo. A caller that
+    /// really wants a cut still asks for one (`khor top` does).
     pub fn load(root: &Path, top: usize) -> khor_core::Load {
         khor_core::Load {
-            top: top::sample_top(top),
+            top: top::sample_top(if top == 0 { usize::MAX } else { top }),
             cpu_day: history::CpuHistory::open(&Self::history_dir(root)).day(now_ms()),
         }
     }

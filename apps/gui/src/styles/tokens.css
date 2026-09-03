@@ -594,6 +594,20 @@
    * essay eats the conversation it is being written into; without the
    * growth the box lies about how much has been typed. */
   --chat-box: 160px;
+  /* How tall the machine card's process table is, whatever a machine is
+   * running. The same kind of number as `--chat-box` — a ceiling on a
+   * box whose content has no natural end — and it is a ceiling rather
+   * than an unfold because the alternative was worse both ways
+   * (2026-09-03:「就不要展开了,就是一个固定相对高度的窗口,鼠标在里面
+   * 可以直接拖」): a folded table hides how much there is, and an
+   * unfolded one puts four hundred processes between the card's head
+   * and everything under it, so the control that folds it back is a
+   * long scroll away from the eye that wants it.
+   *
+   * Nine rows at the table's own line height, near enough: eight is
+   * `top`'s own fold on a short terminal, and the ninth row half in
+   * view is what says the box scrolls without a word saying so. */
+  --top-h: 232px;
   /* How wide a line of prose may get — **in `em`, and the unit is the
    * whole point.** A CJK glyph's advance is exactly 1em in this app's
    * font stack (measured 2026-08-30 in system Chrome, at 11, 12.5, 14,
@@ -997,6 +1011,7 @@
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);
   --spacing-chat-box: var(--chat-box);
+  --spacing-top-h: var(--top-h);
   /* `max-w-measure`. Through the spacing namespace rather than a
      `--container-*` of its own because `max-w` reads `--max-width`,
      `--spacing` and `--container` in that order (tailwind's own

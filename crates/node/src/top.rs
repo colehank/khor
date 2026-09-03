@@ -30,6 +30,8 @@ use std::sync::{Mutex, OnceLock};
 
 pub use khor_core::TopRow;
 
+mod gpu;
+
 /// The process table's own `System`, apart from the vitals sampler's on
 /// purpose: the two answer on different beats, and sharing one would
 /// let either ask reset the other's CPU window (the shared-window trap
@@ -79,15 +81,25 @@ pub fn sample_top(n: usize) -> Vec<TopRow> {
         .unwrap_or_else(|p| p.into_inner());
     let (sys, users) = &mut *held;
     refresh(sys);
+    // What the cards say about each pid, asked once for the whole
+    // table: NVML is a driver conversation, and one per row would be
+    // hundreds of them for one screen.
+    let cards = gpu::by_pid();
     let mut rows: Vec<TopRow> = sys
         .processes()
         .values()
-        .map(|p| TopRow {
-            pid: p.pid().as_u32(),
-            name: p.name().to_string_lossy().into_owned(),
-            user: user_of(users, p),
-            cpu_pct: p.cpu_usage(),
-            mem: p.memory(),
+        .map(|p| {
+            let pid = p.pid().as_u32();
+            let on_card = cards.get(&pid).copied().unwrap_or_default();
+            TopRow {
+                pid,
+                name: p.name().to_string_lossy().into_owned(),
+                user: user_of(users, p),
+                cpu_pct: p.cpu_usage(),
+                mem: p.memory(),
+                gpu_pct: on_card.pct,
+                gpu_mem: on_card.mem,
+            }
         })
         .collect();
     // CPU first; memory breaks the tie so an idle machine still ranks

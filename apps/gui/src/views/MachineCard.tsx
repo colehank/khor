@@ -4,9 +4,10 @@ import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring, RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
@@ -53,10 +54,6 @@ export function MachineCard({
       (docs/NET.md 借网). Local navigation, so it cannot fail. */
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
-  // **One poll for two sections.** The dials' 24-hour marks and the
-  // chart under them are the same 288 buckets; asking twice would put
-  // two moments on one card and cost the far machine two dials.
-  const { load, why } = useLoad(row);
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
       {/* **A strip only where something has to live in it.** Back exists
@@ -92,6 +89,54 @@ export function MachineCard({
         </header>
       )}
       {row && (
+        // **Keyed by the machine**, so every piece of state on this card
+        // belongs to the machine it was made on: a sort somebody set on
+        // one machine's table is not an opinion about the next one's,
+        // and neither is a turned-over dial or a scroll position.
+        <Body
+          key={row.id}
+          row={row}
+          narrow={narrow}
+          hooks={hooks}
+          hooksFailed={hooksFailed}
+          onInstallHooks={onInstallHooks}
+          onUninstallHooks={onUninstallHooks}
+          onOpenTerm={onOpenTerm}
+          onBrowseFiles={onBrowseFiles}
+          onBorrowWeb={onBorrowWeb}
+        />
+      )}
+    </section>
+  );
+}
+
+/** One machine's card, from its head to its hook. Split from the
+    section above only so that `key` can reset every bit of state on it
+    when the machine changes. */
+function Body({
+  row,
+  narrow,
+  hooks,
+  hooksFailed,
+  onInstallHooks,
+  onUninstallHooks,
+  onOpenTerm,
+  onBrowseFiles,
+  onBorrowWeb,
+}: {
+  row: DeviceRow;
+  narrow: boolean;
+  hooks: HooksState | null;
+  hooksFailed: boolean;
+  onInstallHooks: () => void;
+  onUninstallHooks: () => void;
+  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onBrowseFiles: (row: DeviceRow) => void;
+  onBorrowWeb: (row: DeviceRow) => void;
+}) {
+  const [sort, setSort] = useState<Sort | null>(null);
+  const { load, why } = useLoad(row);
+  return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
             <Head
@@ -101,7 +146,7 @@ export function MachineCard({
               onBorrowWeb={onBorrowWeb}
             />
             <Readings row={row} day={load?.cpu_day ?? null} />
-            <Busy load={load} why={why} narrow={narrow} />
+            <Busy load={load} why={why} narrow={narrow} sort={sort} onSort={setSort} />
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
@@ -122,8 +167,6 @@ export function MachineCard({
           )}
           </div>
         </div>
-      )}
-    </section>
   );
 }
 
@@ -208,13 +251,13 @@ function Head({
           )}
         </div>
       </div>
+      {/* **The facts sit over the verbs** (2026-09-03:「把操作按钮那一行
+          与版本、时间一行交换位置」). Both halves of the head then read
+          the same way down: what this is on the left, what it says on
+          the right, and the things you can press along the bottom of
+          both — rather than a row of buttons cutting across the middle
+          of the identity. */}
       <div className="flex flex-col items-end gap-in">
-        <Verbs
-          row={row}
-          onOpenTerm={onOpenTerm}
-          onBrowseFiles={onBrowseFiles}
-          onBorrowWeb={onBorrowWeb}
-        />
         {v && (
           <div className="flex flex-wrap justify-end gap-row text-sm text-muted-foreground">
             {/* The version is one of `khor devices`' sentences and keeps
@@ -229,6 +272,12 @@ function Head({
             )}
           </div>
         )}
+        <Verbs
+          row={row}
+          onOpenTerm={onOpenTerm}
+          onBrowseFiles={onBrowseFiles}
+          onBorrowWeb={onBorrowWeb}
+        />
       </div>
     </div>
   );
@@ -709,10 +758,6 @@ function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** How many rows the card's top shows. Eight: `top`'s own fold on a
-    short terminal, and the number past which the table is a list of
-    idle helpers rather than an answer to 在忙什么. */
-const TOP_SHOWN = 8;
 /** How often an open card re-asks. Five seconds is the vitals beat the
     rings above already move on; the table and the band moving on
     another would make the card describe two moments. */
@@ -721,6 +766,13 @@ const LOAD_MS = 5_000;
     machine that is away costs a dial each time, and the sentence on
     the card does not get truer by being re-fetched every five seconds. */
 const LOAD_RETRY_MS = 30_000;
+
+/** Which column the table is ordered by, and which way. `null` is the
+    node's own order — CPU first, memory breaking ties (`top::sample_top`) —
+    and it is not the same thing as sorting by CPU here: the node's order
+    is what the cut of eight was cut *by*. */
+type Sort = { col: SortCol; dir: "up" | "down" };
+type SortCol = "name" | "user" | "cpu" | "mem" | "gpu" | "vram";
 
 /**
  * What the machine is busy with (2026-09-02:「环下面显示进程 top,最近
@@ -741,7 +793,19 @@ const LOAD_RETRY_MS = 30_000;
  * read as an idle machine, which is the one thing this surface must not
  * say by accident (docs/SESSION.md 认不出就不落词).
  */
-function Busy({ load, why, narrow }: { load: Load | null; why: string | null; narrow: boolean }) {
+function Busy({
+  load,
+  why,
+  narrow,
+  sort,
+  onSort,
+}: {
+  load: Load | null;
+  why: string | null;
+  narrow: boolean;
+  sort: Sort | null;
+  onSort: (s: Sort | null) => void;
+}) {
   if (why) {
     return (
       <Panel>
@@ -760,39 +824,214 @@ function Busy({ load, why, narrow }: { load: Load | null; why: string | null; na
         </div>
       </Panel>
       <Panel>
-        <table data-load-top className="w-full text-sm tabular-nums">
-          <thead className="text-aux text-muted-foreground">
-            <tr>
-              <th className="text-left font-body">{cli.top_name}</th>
-              {/* The user column is the first thing a narrow card can
-                  do without: on one person's own machine every row says
-                  the same name, and the two numbers are why the table
-                  is here. */}
-              {!narrow && <th className="w-px whitespace-nowrap px-row text-left font-body">{cli.top_user}</th>}
-              <th className="w-px whitespace-nowrap px-row text-right font-body">{cli.vitals_name_cpu}</th>
-              <th className="w-px whitespace-nowrap text-right font-body">{cli.vitals_name_mem}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {load.top.map((r) => (
-              <tr key={r.pid} data-top-row={r.pid}>
-                {/* The name, then the pid in the muted colour: the pid
-                    is what a person would type after the name, not a
-                    fact they read, and a column of its own would push
-                    the name off a narrow card. */}
-                <td className="max-w-0 truncate">
-                  {r.name} <span className="text-muted-foreground">{r.pid}</span>
-                </td>
-                {!narrow && <td className="whitespace-nowrap px-row text-muted-foreground">{r.user}</td>}
-                <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
-                <td className="whitespace-nowrap text-right">{bytes(r.mem)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Top rows={load.top} narrow={narrow} sort={sort} onSort={onSort} />
       </Panel>
     </>
   );
+}
+
+/**
+ * The process table: what is eating this machine, by any column.
+ *
+ * # A window with a fixed height, not a fold
+ *
+ * Every process this machine is running is in here, and the box is a
+ * fixed height that scrolls itself (2026-09-03:「就不要展开了,就是一个
+ * 固定相对高度的窗口,鼠标在里面可以直接拖」). Both alternatives were
+ * worse: a folded table hides how much there is, and an unfolding one
+ * drops four hundred rows between the card's head and everything below
+ * it — so the control that folds it back ends up a long scroll away
+ * from the person who wants it. The height is `--top-h`, which carries
+ * the rest of that reasoning.
+ *
+ * The head stays put while the rows move under it: a column head you
+ * have to scroll back up to read is a sort control you cannot reach
+ * from where the sorting matters.
+ *
+ * # A column of numbers with holes in it
+ *
+ * GPU and 显存 are `None` on every machine that cannot report them
+ * (macOS reports no per-process GPU at all) and on every process that
+ * is not on a card. **The two columns disappear when nothing on this
+ * machine can fill them** — a column of blanks says "khor looked and
+ * found nothing", which is the opposite of what happened.
+ *
+ * # Sorting puts absence last, both ways
+ *
+ * A row whose GPU is unknown is not a row with 0% GPU, so it does not
+ * take a zero's place in the order. It sinks in both directions, which
+ * is the only arrangement where reversing the sort does not turn "we
+ * did not look" into "this is the smallest".
+ */
+function Top({
+  rows,
+  narrow,
+  sort,
+  onSort,
+}: {
+  rows: Load["top"];
+  narrow: boolean;
+  sort: Sort | null;
+  onSort: (s: Sort | null) => void;
+}) {
+  const onCards = rows.some((r) => r.gpu_pct !== null || r.gpu_mem !== null);
+  const ordered = sortRows(rows, sort);
+  const press = (col: SortCol) => {
+    // A second press on the same column turns it over and a third gives
+    // the order back to the node; a first press on a new one starts the
+    // way that column is usually read — biggest first for a quantity,
+    // A to Z for a name.
+    if (sort?.col === col) {
+      onSort(sort.dir === "down" ? { col, dir: "up" } : null);
+      return;
+    }
+    onSort({ col, dir: col === "name" || col === "user" ? "up" : "down" });
+  };
+  return (
+    <div data-load-top-box className="max-h-top-h overflow-y-auto">
+      <table data-load-top className="w-full text-sm tabular-nums">
+        <thead className="sticky top-0 bg-card text-aux text-muted-foreground">
+          <tr>
+            <Column col="name" sort={sort} onPress={press} align="left">
+              {cli.top_name}
+            </Column>
+            {/* The user column is the first thing a narrow card can do
+                without: on one person's own machine every row says the
+                same name, and the numbers are why the table is here. */}
+            {!narrow && (
+              <Column col="user" sort={sort} onPress={press} align="left">
+                {cli.top_user}
+              </Column>
+            )}
+            <Column col="cpu" sort={sort} onPress={press} align="right">
+              {cli.vitals_name_cpu}
+            </Column>
+            <Column col="mem" sort={sort} onPress={press} align="right">
+              {cli.vitals_name_mem}
+            </Column>
+            {onCards && (
+              <Column col="gpu" sort={sort} onPress={press} align="right">
+                {cli.vitals_name_gpu}
+              </Column>
+            )}
+            {onCards && (
+              <Column col="vram" sort={sort} onPress={press} align="right">
+                {cli.vitals_name_vram}
+              </Column>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((r) => (
+            <tr key={r.pid} data-top-row={r.pid}>
+              {/* The name, then the pid in the muted colour: the pid is
+                  what a person would type after the name, not a fact
+                  they read, and a column of its own would push the name
+                  off a narrow card. */}
+              <td className="max-w-0 truncate">
+                {r.name} <span className="text-muted-foreground">{r.pid}</span>
+              </td>
+              {!narrow && <td className="whitespace-nowrap px-row text-muted-foreground">{r.user}</td>}
+              <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
+              <td className="whitespace-nowrap px-row text-right">{bytes(r.mem)}</td>
+              {onCards && (
+                <td data-top-gpu className="whitespace-nowrap px-row text-right">
+                  {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
+                </td>
+              )}
+              {onCards && (
+                <td data-top-vram className="whitespace-nowrap text-right">
+                  {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** One column head: the word, and whether the table is ordered by it.
+    A press is what sorts, so it is a button — `aria-sort` says the same
+    thing to a reader who cannot see the chevron. */
+function Column({
+  col,
+  sort,
+  onPress,
+  align,
+  children,
+}: {
+  col: SortCol;
+  sort: Sort | null;
+  onPress: (col: SortCol) => void;
+  align: "left" | "right";
+  children: React.ReactNode;
+}) {
+  const on = sort?.col === col;
+  return (
+    <th
+      data-top-head={col}
+      aria-sort={on ? (sort.dir === "up" ? "ascending" : "descending") : "none"}
+      className={cn("font-body", align === "right" ? "text-right" : "text-left", align === "right" && "px-row")}
+    >
+      <button
+        type="button"
+        onClick={() => onPress(col)}
+        // The floor on both axes (tokens.css `--touch`): the ink here
+        // is two characters, and a head that is 44 tall and 25 wide is
+        // a target you miss sideways. `w-full` spreads the press over
+        // the whole column head rather than over the word alone, and
+        // the floor is what the narrow columns grow to.
+        className={cn(
+          "inline-flex min-h-touch min-w-touch w-full items-center gap-in hover:text-foreground",
+          align === "right" ? "flex-row-reverse justify-start" : "justify-start",
+          on && "text-foreground",
+        )}
+      >
+        {children}
+        {on && (sort.dir === "up" ? <IconChevronUp className="size-3" /> : <IconChevronDown className="size-3" />)}
+      </button>
+    </th>
+  );
+}
+
+/** The order a column press asks for.
+ *
+ * **Absence sinks in both directions.** A process khor could not read a
+ * GPU figure for is not a process using none of the GPU, so it may not
+ * take the place a zero would: reversing the sort would otherwise turn
+ * 「没看到」 into 「最小的那个」, which is the same neighbouring-value
+ * mistake the readings are built to avoid.
+ */
+function sortRows(rows: Load["top"], sort: Sort | null): Load["top"] {
+  if (!sort) return rows;
+  const dir = sort.dir === "up" ? 1 : -1;
+  const num = (r: Load["top"][number]): number | null => {
+    switch (sort.col) {
+      case "cpu":
+        return r.cpu_pct;
+      case "mem":
+        return r.mem;
+      case "gpu":
+        return r.gpu_pct;
+      case "vram":
+        return r.gpu_mem;
+      default:
+        return null;
+    }
+  };
+  const text = (r: Load["top"][number]) => (sort.col === "user" ? r.user : r.name);
+  return [...rows].sort((a, b) => {
+    if (sort.col === "name" || sort.col === "user") {
+      return dir * text(a).localeCompare(text(b)) || a.pid - b.pid;
+    }
+    const [x, y] = [num(a), num(b)];
+    if (x === null && y === null) return a.pid - b.pid;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return dir * (x - y) || a.pid - b.pid;
+  });
 }
 
 /**
@@ -821,7 +1060,13 @@ function useLoad(row: DeviceRow | null) {
         // A name, not an id: the node resolves machines by the name its
         // table knows them by, and its own by being asked for itself
         // (`Node::load_on`).
-        const l = await fetchLoad(me ? "" : name, TOP_SHOWN);
+        // **0 is "every process"** (`Node::load`). The table is a
+        // window over the whole list, and sorting one column of it is
+        // only true over the whole list: the row holding the most
+        // memory is rarely among the eight hungriest by CPU, so a cut
+        // sorted by memory would answer a different question than the
+        // one asked — confidently, which is the worse half.
+        const l = await fetchLoad(me ? "" : name, 0);
         if (stopped) return;
         setLoad(l);
         setWhy(null);

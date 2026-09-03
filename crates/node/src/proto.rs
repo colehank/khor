@@ -439,6 +439,8 @@ mod tests {
                 user: "zgh".into(),
                 cpu_pct: 250.5,
                 mem: 12_345_678,
+                gpu_pct: Some(37.0),
+                gpu_mem: Some(1_073_741_824),
             }],
             cpu_day: khor_core::CpuDay {
                 bucket_ms: 300_000,
@@ -524,6 +526,50 @@ mod tests {
         let d: khor_core::CpuDay = rmp_serde::from_slice(&day).unwrap();
         assert!(d.mem.is_empty(), "a day from before memory has no memory line");
         assert_eq!(d.buckets, vec![Some(1.0)]);
+    }
+
+    /// A process row from before the GPU columns decodes with them
+    /// absent — **absent, not zero**: a `0%` there would say "this
+    /// process is not on the GPU" about a machine whose khor was never
+    /// able to look, and a zero in a column of numbers reads as a
+    /// reading (`khor_core::TopRow` carries the ruling).
+    ///
+    /// The old bytes are shown to be shorter first, so a decoder that
+    /// silently accepted anything could not pass this by accident.
+    #[test]
+    fn a_process_row_from_before_the_gpu_columns_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct OldRow {
+            pid: u32,
+            name: String,
+            user: String,
+            cpu_pct: f32,
+            mem: u64,
+        }
+        let old = rmp_serde::to_vec(&OldRow {
+            pid: 7,
+            name: "khor".into(),
+            user: "zgh".into(),
+            cpu_pct: 5.0,
+            mem: 9,
+        })
+        .unwrap();
+        let fresh = rmp_serde::to_vec(&khor_core::TopRow {
+            pid: 7,
+            name: "khor".into(),
+            user: "zgh".into(),
+            cpu_pct: 5.0,
+            mem: 9,
+            gpu_pct: None,
+            gpu_mem: None,
+        })
+        .unwrap();
+        assert!(old.len() < fresh.len(), "the old row really is shorter: it lacks the GPU columns");
+        let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
+        assert_eq!(r.mem, 9);
+        assert_eq!(r.gpu_pct, None, "a row from a khor that could not look says nothing, not zero");
+        assert_eq!(r.gpu_mem, None);
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and

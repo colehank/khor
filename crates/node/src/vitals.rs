@@ -10,7 +10,7 @@ use std::sync::{Mutex, OnceLock};
 
 use khor_core::{Fill, Vitals, Volume};
 
-mod gpu;
+pub(crate) mod gpu;
 
 /// Everything a reading is taken from, kept alive between calls.
 ///

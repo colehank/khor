@@ -812,6 +812,32 @@ pub struct TopRow {
     /// rule: bytes fit a double and a `bigint` cannot be divided.
     #[ts(type = "number")]
     pub mem: u64,
+    /// The share of a GPU this process was using over the sampler's
+    /// window, percent — summed over the cards it is on, so a process
+    /// pinning two cards reads 200 the way `cpu_pct` reads 400 for four
+    /// cores.
+    ///
+    /// **`None` is "this machine cannot say", and it is not zero.** Only
+    /// NVIDIA's driver reports per-process utilisation (NVML); macOS
+    /// gives per-process nothing, and a card too old for the call gives
+    /// nothing either. A zero here would say "this process is not using
+    /// the GPU" on a machine that never looked — the neighbouring-value
+    /// trap the ledger keeps warning about.
+    ///
+    /// Tail-appended with a serde default, the wire rule: an older
+    /// node's row decodes with `None`, which draws as an empty cell.
+    #[serde(default)]
+    pub gpu_pct: Option<f32>,
+    /// GPU memory this process holds, bytes — summed over cards, and
+    /// `None` on the same terms as `gpu_pct`.
+    ///
+    /// **This is the figure that answers「为什么我的任务起不来」**: a
+    /// card can read 0% busy while holding 43 GiB, and only the memory
+    /// says there is no room (`vitals::gpu::nvidia` measured exactly
+    /// that on turing).
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub gpu_mem: Option<u64>,
 }
 
 /// The last day of a machine's CPU, five minutes at a stride — what the

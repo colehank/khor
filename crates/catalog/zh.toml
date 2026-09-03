@@ -314,6 +314,9 @@ yesterday-at = "昨天 {0}"
 # 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"
+# The GPU memory column's head, and the word an older node's aggregate
+# reading wears under its dial: one fact, one word, both places.
+vitals-name-vram = "显存"
 # The machine card's process top (2026-09-02:「环下面显示进程top」):
 # the two column heads that are not a vitals name. CPU and 内存 reuse
 # `vitals-name-cpu` / `vitals-name-mem` — same fact, same word.
