@@ -63,6 +63,18 @@ async fn devices() -> Result<Vec<DeviceRow>, String> {
     khor_gui_core::list_devices(&Node::root_from_env()).await
 }
 
+/// The machine's process top and the CPU day its serve recorded.
+///
+/// **Asked while a card is open, never on the device beat** — the top
+/// is a reading somebody is looking at, and `machine` empty means this
+/// one (`Node::load_on`). `top` is the row count the card has room for:
+/// required, the `cells` rule — a default here would be this side
+/// sizing a table it cannot see.
+#[tauri::command]
+async fn load(machine: String, top: u32) -> Result<khor_node::Load, String> {
+    khor_gui_core::load(&Node::root_from_env(), &machine, top).await
+}
+
 /// **Blocking, and the first call can take seconds**: reading every
 /// transcript on this machine is 18 s cold (`khor_node::usage`). Tauri
 /// runs commands on a worker thread rather than on the UI thread, so
@@ -559,6 +571,7 @@ pub fn run() {
             day_strips,
             places,
             devices,
+            load,
             quota_board,
             register_account,
             remove_account,
