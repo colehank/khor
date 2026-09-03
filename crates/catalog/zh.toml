@@ -165,6 +165,8 @@ usage = """
   web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
                         脸是 serve 开的,这条只发钥匙;链接里带钥匙,别贴进
                         会同步的文档。--new 换一把,之前发出去的链接全作废
+  gui                   开桌面 app 的窗口(桌面 app 是装在 khor 旁边的
+                        khor-gui;没装它会告诉你去哪儿拿)
   quit                  收摊:停掉本机的 serve 和所有 session 宿主
                         (文件都留着,再 serve 就都回来)
   hooks [install|uninstall]
@@ -915,6 +917,11 @@ frame-too-big = "帧超限: {0}"
 half-a-frame = "帧读了一半: {0}"
 cant-find-self = "找不到自己的可执行文件: {0}"
 host-wont-start = "宿主起不来: {0}"
+# `khor gui` looks for the desktop app beside itself. Naming the directory
+# it looked in (not just "not found") is what lets a person fix it in one
+# move — the fix is a copy into exactly that place.
+gui-not-installed = "桌面 app 没装在 khor 旁边({0}):把 target/release/Khor 拷成那里的 khor-gui"
+gui-wont-start = "桌面 app 起不来: {0}"
 # **This is now the "it really did hang" answer and nothing else.**
 # A host that dies on the way up leaves its own sentence behind
 # (`khor_node::host::host_error_path`) and the opener says that
