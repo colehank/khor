@@ -1752,12 +1752,33 @@ try {
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-why]").count()) === 1);
   const refused = await page.evaluate(() => ({
     why: document.querySelector("[data-machine-card] [data-load-why]")?.textContent ?? "",
-    table: document.querySelectorAll("[data-machine-card] [data-load-top]").length,
     band: document.querySelectorAll("[data-machine-card] [data-day-cell]").length,
+    //   **What a refusal must keep, and what it must not.** Rows and
+    //   band are the machine's readings: drawing either of them for an
+    //   answer that never arrived invents an idle machine, which is the
+    //   whole reason the sentence exists. The column heads are not
+    //   readings — they are the controls — and a refusal that takes
+    //   them away is a dead end: ordering a remote by PID is refused by
+    //   a khor that predates that column, and with the heads gone there
+    //   is no second column left to press (2026-09-04). So: heads yes,
+    //   rows no, and the sentence in the body where the rows would be.
+    rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
+    heads: document.querySelectorAll("[data-machine-card] [data-top-head]").length,
+    pressable: document.querySelectorAll("[data-machine-card] [data-top-head] button").length,
+    whyInBody: document.querySelectorAll("[data-machine-card] [data-load-top] tbody [data-load-why]").length,
   }));
   if (!refused.why.includes(ELDER_REFUSAL)) fail(`elder's refusal is not the sentence it sent: "${refused.why}"`);
-  if (refused.table !== 0 || refused.band !== 0) {
-    fail(`elder refused and the card still draws a table (${refused.table}) or a band (${refused.band}) — an idle machine invented`);
+  if (refused.rows !== 0 || refused.band !== 0) {
+    fail(`elder refused and the card still draws ${refused.rows} rows / ${refused.band} band cells — an idle machine invented`);
+  }
+  if (refused.heads === 0 || refused.pressable !== refused.heads) {
+    fail(
+      `elder refused and the way out went with it: ${refused.heads} column heads, ${refused.pressable} of them pressable ` +
+        `— a refusal with no head left to press can only be escaped by opening another machine`,
+    );
+  }
+  if (refused.whyInBody !== 1) {
+    fail(`the refusal is not where the rows would be (${refused.whyInBody} in the table body) — it has to read as what replaced them`);
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);

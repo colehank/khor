@@ -820,12 +820,22 @@ function Busy({
   sort: Sort;
   onSort: (s: Sort) => void;
 }) {
+  // **A refusal keeps the column heads and loses the rows.** It used to
+  // replace the whole table, heads included, and that made an ordinary
+  // mistake unrecoverable: ordering a remote by PID is refused by a khor
+  // that predates the column, and with the heads gone there was no
+  // second column to press — the only way back out was to open another
+  // machine and come back (measured 2026-09-04; two probes timed out
+  // reaching for a head that was no longer there).
+  //
+  // The rows still go. An empty table under live heads would say this
+  // machine is running nothing, which is the reading the refusal exists
+  // to prevent — so the sentence sits where the rows would be, and the
+  // heads stay because pressing one is the way out.
   if (why) {
     return (
       <Panel>
-        <div data-load-why className="text-sm text-muted-foreground">
-          {why}
-        </div>
+        <Top rows={load?.top ?? []} narrow={narrow} sort={sort} onSort={onSort} why={why} />
       </Panel>
     );
   }
@@ -882,13 +892,20 @@ function Top({
   narrow,
   sort,
   onSort,
+  why,
 }: {
   rows: Load["top"];
   narrow: boolean;
   sort: Sort;
   onSort: (s: Sort) => void;
+  /** Why the machine did not answer this ask. Set means: draw the heads
+      and this sentence, and no rows — see `Busy`. The rows still come in
+      because they decide which columns exist, and that is a fact about
+      the machine rather than about this one failed answer. */
+  why?: string | null;
 }) {
   const onCards = rows.some((r) => r.gpu_pct !== null || r.gpu_mem !== null);
+  const cols = 4 + (onCards ? 2 : 0);
   const ordered = sortRows(rows, sort);
   const press = (col: SortCol) => {
     // Pressing the column it is already on turns it over. Pressing a
@@ -952,7 +969,14 @@ function Top({
           </tr>
         </thead>
         <tbody>
-          {ordered.map((r) => (
+          {why ? (
+            <tr>
+              <td data-load-why colSpan={cols} className="py-row text-sm text-muted-foreground">
+                {why}
+              </td>
+            </tr>
+          ) : (
+            ordered.map((r) => (
             <tr key={r.pid} data-top-row={r.pid}>
               <td className="whitespace-nowrap pr-row text-right text-muted-foreground">{r.pid}</td>
               {/* The name, and under it whose it is — on a shared box
@@ -981,7 +1005,8 @@ function Top({
               )}
               <td className="whitespace-nowrap text-right">{bytes(r.mem)}</td>
             </tr>
-          ))}
+            ))
+          )}
         </tbody>
       </table>
     </div>

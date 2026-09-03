@@ -1663,6 +1663,22 @@ impl Node {
             Response::Places { places } => Ok(places),
             // A khor over there that predates the op: no list, not a
             // fault — the wizard says nothing where it has nothing.
+            //
+            // **This is the same swallow `load_on_with` was fixed for,
+            // and it is still here on purpose** (2026-09-04). There the
+            // `why` was dropped and every refusal became one sentence
+            // about the far side's version; the measured cost was a
+            // machine that refused *one unreadable word* being reported
+            // as unable to do the whole op. Here the swallow is wider:
+            // a refusal for any reason at all becomes 「没有常去的地
+            // 方」 — a refusal translated into an absence, which is the
+            // reading nobody can tell from the truth.
+            //
+            // Left alone because unswallowing it changes what the
+            // wizard shows, and that is a product decision rather than
+            // a bug fix. **If you are here because a machine's 常去的
+            // 地方 came back empty and you cannot see why: this line is
+            // why. It is not evidence the list is empty.**
             Response::Refused { .. } => Ok(Vec::new()),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
