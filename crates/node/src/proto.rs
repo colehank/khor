@@ -444,6 +444,7 @@ mod tests {
                 bucket_ms: 300_000,
                 now_ms: 1_700_000_000_000,
                 buckets: vec![Some(12.5), None, Some(80.0)],
+                mem: vec![Some(40.0), None, Some(41.5)],
             },
         };
         let bytes = encode(&Response::Load { load: sent.clone() }).unwrap();
@@ -459,6 +460,70 @@ mod tests {
         // whose count was lost would size the table from nothing.
         let ask = encode(&Request::Load { top: 8 }).unwrap();
         assert!(matches!(decode::<Request>(&ask), Ok(Request::Load { top: 8 })));
+    }
+
+    /// The three fields the card's redesign added (2026-09-03: uptime,
+    /// the memory day, a card's temperature) ride the tail of their
+    /// structs with a default, and this is the frame that proves it: an
+    /// older node's shape, encoded without them, decodes on a new node
+    /// with the defaults — and the bytes are first shown to be shorter,
+    /// so the test cannot pass by accident.
+    #[test]
+    fn a_frame_from_before_uptime_memory_day_and_temperature_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct OldCard {
+            name: String,
+            util_pct: f32,
+            mem: Option<khor_core::Fill>,
+        }
+        #[derive(serde::Serialize)]
+        struct OldVitals {
+            cpu_pct: f32,
+            cores: u32,
+            mem: khor_core::Fill,
+            disk: Option<khor_core::Fill>,
+            gpu: Option<khor_core::Gpu>,
+            version: Option<String>,
+            gpus: Vec<OldCard>,
+            volumes: Vec<khor_core::Volume>,
+        }
+        #[derive(serde::Serialize)]
+        struct OldDay {
+            bucket_ms: u64,
+            now_ms: u64,
+            buckets: Vec<Option<f32>>,
+        }
+        let old = rmp_serde::to_vec(&OldVitals {
+            cpu_pct: 1.0,
+            cores: 2,
+            mem: khor_core::Fill { used: 1, total: 2 },
+            disk: None,
+            gpu: None,
+            version: None,
+            gpus: vec![OldCard { name: "x".into(), util_pct: 3.0, mem: None }],
+            volumes: vec![],
+        })
+        .unwrap();
+        let fresh = rmp_serde::to_vec(&khor_core::Vitals {
+            cpu_pct: 1.0,
+            cores: 2,
+            mem: khor_core::Fill { used: 1, total: 2 },
+            disk: None,
+            gpu: None,
+            version: None,
+            gpus: vec![khor_core::GpuCard { name: "x".into(), util_pct: 3.0, mem: None, temp_c: None }],
+            volumes: vec![],
+            uptime_s: 0,
+        })
+        .unwrap();
+        assert!(old.len() < fresh.len(), "the old frame really is shorter: it lacks the new fields");
+        let v: khor_core::Vitals = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(v.uptime_s, 0);
+        assert_eq!(v.gpus[0].temp_c, None);
+        let day = rmp_serde::to_vec(&OldDay { bucket_ms: 1, now_ms: 2, buckets: vec![Some(1.0)] }).unwrap();
+        let d: khor_core::CpuDay = rmp_serde::from_slice(&day).unwrap();
+        assert!(d.mem.is_empty(), "a day from before memory has no memory line");
+        assert_eq!(d.buckets, vec![Some(1.0)]);
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and
@@ -604,6 +669,7 @@ mod tests {
             version: None,
             gpus: vec![],
             volumes: vec![],
+            uptime_s: 0,
         };
         let bytes = encode(&Response::SatVitals { vitals: sent.clone(), age_ms: 38_000 }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
@@ -627,11 +693,12 @@ mod tests {
             disk: Some(khor_core::Fill { used: 5, total: 6 }),
             gpu: Some(khor_core::Gpu { util_pct: 12.0, cards: 1, mem: None }),
             version: Some("9.9.9".to_owned()),
-            gpus: vec![khor_core::GpuCard { name: "A".to_owned(), util_pct: 12.0, mem: None }],
+            gpus: vec![khor_core::GpuCard { name: "A".to_owned(), util_pct: 12.0, mem: None, temp_c: None }],
             volumes: vec![khor_core::Volume {
                 mount: "/".to_owned(),
                 fill: khor_core::Fill { used: 1, total: 2 },
             }],
+            uptime_s: 12,
         };
         let bytes = encode(&Response::Vitals { vitals: sent.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

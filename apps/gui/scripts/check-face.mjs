@@ -175,13 +175,14 @@ try {
           // a fixture without them is the loud-drift red this file's
           // head promises, not a case to support.
           gpus: [
-            { name: "RTX A5000", util_pct: 90, mem: fill(1_000_000_000, 4_000_000_000) },
-            { name: "", util_pct: 4, mem: fill(3_000_000_000, 4_000_000_000) },
+            { name: "RTX A5000", util_pct: 90, mem: fill(1_000_000_000, 4_000_000_000), temp_c: 61 },
+            { name: "", util_pct: 4, mem: fill(3_000_000_000, 4_000_000_000), temp_c: null },
           ],
           volumes: [
             { mount: "/", fill: fill(400_000_000_000, 500_000_000_000) },
             { mount: "/data", fill: fill(46_000_000_000, 50_000_000_000) },
           ],
+          uptime_s: 86_400 * 125 + 3_600,
         },
         age_ms: 42_000,
         mem_strain: null,
@@ -218,6 +219,7 @@ try {
           version: "0.1.0",
           gpus: [],
           volumes: [],
+          uptime_s: 0,
         },
         age_ms: 60_000,
         mem_strain: null,
@@ -244,13 +246,16 @@ try {
   // from the fourth) so their count is derived here, not typed twice.
   const dayBuckets = Array.from({ length: 288 }, (_, i) => (i % 7 === 3 ? null : 5 + (i % 60)));
   const dayGaps = dayBuckets.filter((b) => b === null).length;
+  // Memory on the same buckets, with the same holes: the dashed line
+  // must break where the area does.
+  const memBuckets = dayBuckets.map((b, i) => (b === null ? null : 40 + (i % 20)));
   const load = {
     top: [
       { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000 },
       { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000 },
       { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000 },
     ],
-    cpu_day: { bucket_ms: 300_000, now_ms: Date.now(), buckets: dayBuckets },
+    cpu_day: { bucket_ms: 300_000, now_ms: Date.now(), buckets: dayBuckets, mem: memBuckets },
   };
   const ELDER_REFUSAL = "elder-refuses-load";
   await page.route("**/load", (r) =>

@@ -1374,7 +1374,8 @@ impl Node {
     /// **Blocking** — the sampler's rule.
     pub fn record_cpu(root: &Path) {
         let v = vitals::sample(root);
-        history::CpuHistory::open(&Self::history_dir(root)).record(now_ms(), v.cpu_pct);
+        let mem_pct = if v.mem.total > 0 { (v.mem.used as f64 / v.mem.total as f64 * 100.0) as f32 } else { 0.0 };
+        history::CpuHistory::open(&Self::history_dir(root)).record(now_ms(), v.cpu_pct, mem_pct);
     }
 
     /// Takes a CPU reading every [`history::RECORD_EVERY`], for as long

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { Ring, RING_SIZE } from "@/components/Ring";
+import { Ring, RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { IconBack, IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -171,7 +171,10 @@ export function MachineCard({
           </div>
           <Verbs row={row} onOpenTerm={onOpenTerm} onBrowseFiles={onBrowseFiles} />
           <Readings row={row} />
+          <GpuDetail row={row} />
           <Busy row={row} />
+          <Storage row={row} />
+          <Foot row={row} />
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
@@ -381,137 +384,231 @@ function Readings({ row }: { row: DeviceRow }) {
       </div>
     );
   }
-  const { vitals: v, age_ms, volume_strains } = row.vitals;
+  const { vitals: v } = row.vitals;
+  // The GPU ring when the node reports per card: one gauge for the
+  // machine (the cards' mean, their memory summed), **no unit of its
+  // own** — the 明细 rows below are the readings `khor devices` prints,
+  // one per card, and the smoke holds the two faces to that count. On an
+  // older node the aggregate is the reading, and the ring is the unit.
+  const cards = v.gpus;
+  const gpuMean = cards.length > 0 ? cards.reduce((a, c) => a + c.util_pct, 0) / cards.length : null;
+  const gpuMem = cards.some((c) => c.mem)
+    ? cards.reduce(
+        (acc, c) => (c.mem ? { used: acc.used + c.mem.used, total: acc.total + c.mem.total } : acc),
+        { used: 0, total: 0 },
+      )
+    : null;
   return (
-    <div data-vitals className="flex flex-wrap gap-row pt-pane">
+    <div data-vitals className="flex flex-wrap justify-around gap-row pt-pane">
       <Unit
         name="cpu"
         word={cli.vitals_name_cpu}
+        sub={cli.cores_sub(v.cores)}
         label={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
         fraction={v.cpu_pct / 100}
       />
+      {cards.length > 0 && gpuMean !== null ? (
+        <Unit
+          word={cli.vitals_name_gpu}
+          sub={
+            gpuMem
+              ? cli.gpu_sub(cards.length, bytes(gpuMem.used), bytes(gpuMem.total))
+              : cli.gpu_sub_nomem(cards.length)
+          }
+          label={cli.vitals_gpu(Math.round(gpuMean), cards.length)}
+          fraction={gpuMean / 100}
+        />
+      ) : (
+        v.gpu && (
+          <Unit
+            name="gpu"
+            word={cli.vitals_name_gpu}
+            // The memory rides under the ring as its own reading: an
+            // older node prints 显存 as a sentence of its own, and the
+            // count has to match — so the sub-line *is* the unit.
+            sub={
+              v.gpu.mem ? (
+                <span
+                  data-vitals-unit="vram"
+                  data-vitals-detail="vram"
+                  data-strain={row.vitals.vram_strain ?? undefined}
+                  className="data-[strain]:text-strain data-[strain=critical]:font-label"
+                >
+                  {cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
+                </span>
+              ) : (
+                cli.gpu_sub_nomem(v.gpu.cards)
+              )
+            }
+            label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
+            fraction={v.gpu.util_pct / 100}
+          />
+        )
+      )}
       <Unit
         name="mem"
         word={cli.vitals_name_mem}
+        sub={`${bytes(v.mem.used)} / ${bytes(v.mem.total)}`}
         label={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
         fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
         strain={row.vitals.mem_strain}
       />
-      {v.volumes.length > 0 ? (
-        // The volumes one by one (2026-09-02:「硬盘存储」明细) — the
-        // home volume leads (the node sorts), each ring wearing the
-        // strain the node minted for its own fill. The two branches
-        // below are the older shape's fallback, and 「说不上」 belongs
-        // only there: an empty survey is an old reporter, never an
-        // empty machine.
-        v.volumes.map((vol, i) => (
-          <Unit
-            key={vol.mount}
-            name="vol"
-            word={volWord(vol.mount)}
-            label={cli.vitals_vol(volWord(vol.mount), bytes(vol.fill.used), bytes(vol.fill.total))}
-            fraction={vol.fill.total > 0 ? vol.fill.used / vol.fill.total : null}
-            strain={volume_strains[i]}
-          />
-        ))
-      ) : v.disk ? (
-        <Unit
-          name="disk"
-          word={cli.vitals_name_disk}
-          label={cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total))}
-          fraction={v.disk.total > 0 ? v.disk.used / v.disk.total : null}
-          strain={row.vitals.disk_strain}
-        />
-      ) : (
-        // Said, not left out: a line that is simply absent and a machine
-        // that could not answer read the same, and `0 / 0` would read as
-        // an empty disk.
-        //
-        // **A ring with no reading rather than a bare line.** `fraction`
-        // of null draws the track and no arc, which is the shape of "no
-        // answer" — and it keeps this reading in the same row as its
-        // neighbours, where a lone line of text would have read as a
-        // different *kind* of thing rather than the same kind with
-        // nothing in it.
-        <Unit name="disk" word={cli.vitals_name_disk} label={cli.vitals_disk_unknown} fraction={null} unknown />
-      )}
-      {/* **Absent rather than explained**, which is the opposite of the
-          disk right above, and the asymmetry is the judgment. khor's home
-          is always on some filesystem, so failing to name it means khor
-          could not answer. A machine with no GPU — or one khor cannot ask
-          — is an ordinary machine, and a line announcing that on every
-          desktop without a card reports a non-event. Same again one level
-          in for the video memory: a unified-memory machine has none to
-          report, and those bytes are already in the 内存 line above. */}
-      {v.gpus.length > 0 ? (
-        // One ring per card (2026-09-02:「多个GPU，应该分多个环」— the
-        // aggregate hides the idle card somebody is looking for,
-        // `khor_core::GpuCard`); its VRAM rides the flip side of the
-        // same ring, because a per-card row plus an aggregate VRAM
-        // ring would be the same bytes on screen twice. The ring count
-        // stays equal to `khor devices`' sentence count — smoke holds
-        // the two faces to it.
-        v.gpus.map((c, i) => (
-          <Unit
-            key={i}
-            name="gpu"
-            word={v.gpus.length > 1 ? `${cli.vitals_name_gpu} ${i}` : cli.vitals_name_gpu}
-            label={
-              c.mem
-                ? cli.vitals_gpu_card_mem(
-                    c.name || cli.vitals_name_gpu,
-                    Math.round(c.util_pct),
-                    bytes(c.mem.used),
-                    bytes(c.mem.total),
-                  )
-                : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, Math.round(c.util_pct))
-            }
-            fraction={c.util_pct / 100}
-          />
-        ))
-      ) : (
-        v.gpu && (
-          <>
-            <Unit
-              name="gpu"
-              word={cli.vitals_name_gpu}
-              label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
-              fraction={v.gpu.util_pct / 100}
-            />
-            {v.gpu.mem && (
-              <Unit
-                name="vram"
-                word={cli.vitals_name_vram}
-                label={cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
-                fraction={v.gpu.mem.total > 0 ? v.gpu.mem.used / v.gpu.mem.total : null}
-                strain={row.vitals.vram_strain}
-              />
-            )}
-          </>
-        )
-      )}
-      {/* Which khor that machine runs. It rides with the readings
-          because it is the same kind of fact — something a machine says
-          about itself, on the cadence it already says the others on
-          (`Vitals::version`) — and it is drawn with no bar because it
-          divides by nothing.
+    </div>
+  );
+}
 
-          **Silent when unknown, and that silence is the answer**: a peer
-          whose khor predates this field says nothing here, and that is
-          exactly the machine an upgrade sweep is looking for. Printing
-          a placeholder would hide the one row worth finding. */}
-      {v.version && (
-        <div data-vitals-unit="version" className="text-sm text-muted-foreground">
-          {cli.vitals_version(v.version)}
-        </div>
-      )}
-      {/* Printed on every reading that was not taken to answer this very
-          call — which is every machine but this one. A number with no age
-          beside it is read as the present. */}
-      {age_ms > 0 && (
-        <div data-vitals-age className="text-sm text-muted-foreground">
-          {cli.vitals_taken(ago(Date.now() - age_ms))}
-        </div>
+/**
+ * The per-card GPU rows under the rings (2026-09-02:「环下面显示…
+ * GPU明细」; 2026-09-03 to the user's reference): index, the driver's
+ * name, a bar and the share in use, memory used over total, and the
+ * die temperature when the driver has one. **Each row is the unit** for
+ * one of `khor devices`' per-card sentences, and carries that sentence
+ * word for word for the smoke to read (`sr-only`: the row prints the
+ * same facts laid out, not the sentence twice). Absent when the node
+ * reported no cards: the aggregate ring is then the reading, and an
+ * empty section would read as "no cards".
+ */
+function GpuDetail({ row }: { row: DeviceRow }) {
+  const cards = row.vitals?.vitals.gpus ?? [];
+  if (cards.length === 0) return null;
+  return (
+    <div data-gpu-detail className="flex flex-col gap-in pt-pane">
+      <div className="text-aux text-muted-foreground">{cli.gpu_detail}</div>
+      {cards.map((c, i) => {
+        const util = Math.round(c.util_pct);
+        const sentence = c.mem
+          ? cli.vitals_gpu_card_mem(c.name || cli.vitals_name_gpu, util, bytes(c.mem.used), bytes(c.mem.total))
+          : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, util);
+        return (
+          <div
+            key={i}
+            data-vitals-unit="gpu"
+            data-gpu-card={i}
+            className="flex items-center gap-row rounded-md bg-muted/40 px-row py-in text-sm tabular-nums"
+          >
+            <span className="flex-none font-label">GPU{i}</span>
+            <span className="w-48 min-w-0 truncate text-muted-foreground">{c.name || cli.vitals_name_gpu}</span>
+            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/10">
+              <span
+                className="block h-full rounded-full"
+                style={{ width: `${Math.max(0, Math.min(100, util))}%`, background: gaugeColor(null) }}
+              />
+            </span>
+            <span className="w-10 flex-none text-right">{util}%</span>
+            {c.mem && (
+              <span className="flex-none text-muted-foreground">
+                {bytes(c.mem.used)} / {bytes(c.mem.total)}
+              </span>
+            )}
+            {c.temp_c != null && <span className="flex-none text-muted-foreground">{Math.round(c.temp_c)}°C</span>}
+            <span data-vitals-detail="gpu" className="sr-only">
+              {sentence}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Storage, a bar per volume (2026-09-03 to the user's reference; the
+ * rings the volumes wore before were the user's「硬盘存储」ask read
+ * too literally — a bar is how a person reads "how full"). Each bar is
+ * the unit for one of `khor devices`' volume sentences, and prints that
+ * sentence at its right, word for word, wearing the volume's strain. An
+ * older node that reports one disk gets one bar; one that could not
+ * name it gets the unknown sentence and no bar.
+ */
+function Storage({ row }: { row: DeviceRow }) {
+  if (!row.vitals) return null;
+  const { vitals: v, volume_strains } = row.vitals;
+  const rows =
+    v.volumes.length > 0
+      ? v.volumes.map((vol, i) => ({
+          name: "vol",
+          word: volWord(vol.mount),
+          fill: vol.fill,
+          strain: volume_strains[i] ?? null,
+          label: cli.vitals_vol(volWord(vol.mount), bytes(vol.fill.used), bytes(vol.fill.total)),
+        }))
+      : v.disk
+        ? [
+            {
+              name: "disk",
+              word: cli.vitals_name_disk,
+              fill: v.disk,
+              strain: row.vitals.disk_strain,
+              label: cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total)),
+            },
+          ]
+        : [{ name: "disk", word: cli.vitals_name_disk, fill: null, strain: null, label: cli.vitals_disk_unknown }];
+  return (
+    <div data-storage className="flex flex-col gap-row pt-pane">
+      {rows.map((r, i) => {
+        const pct = r.fill && r.fill.total > 0 ? (r.fill.used / r.fill.total) * 100 : null;
+        return (
+          <div
+            // By position, not by word: a Mac reports its data volume
+            // and `/` as two mounts that both print as `/`.
+            key={i}
+            data-vitals-unit={r.name}
+            data-vitals-unknown={r.fill ? undefined : ""}
+            className="flex flex-col gap-in"
+          >
+            <div className="flex items-baseline justify-between gap-row text-sm">
+              <span className="text-muted-foreground">
+                {cli.storage} · {r.word}
+              </span>
+              <span
+                data-vitals-detail={r.name}
+                data-strain={r.strain ?? undefined}
+                className="tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
+              >
+                {r.label}
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+              {pct !== null && (
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(r.strain) }}
+                />
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The wall clock for one instant, hours and minutes in the reader's
+    own locale — the day chart's two ends and the foot's 更新于. */
+function clock(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * The card's foot: which khor this machine runs (the version is one of
+ * `khor devices`' sentences and keeps its unit), how long it has been
+ * up, and when this reading is from — the age sentence for a machine
+ * reached over the wire (its own unit, counted with the readings), the
+ * present's clock for this one.
+ */
+function Foot({ row }: { row: DeviceRow }) {
+  if (!row.vitals) return null;
+  const { vitals: v, age_ms } = row.vitals;
+  const days = Math.floor(v.uptime_s / 86_400);
+  const hours = Math.floor(v.uptime_s / 3_600);
+  return (
+    <div data-foot className="flex flex-wrap gap-row pt-pane text-sm text-muted-foreground">
+      {v.version && <span data-vitals-unit="version">{cli.vitals_version(v.version)}</span>}
+      {v.uptime_s > 0 && <span data-uptime>{days >= 1 ? cli.uptime_days(days) : cli.uptime_hours(hours)}</span>}
+      {age_ms > 0 ? (
+        <span data-vitals-age>{cli.vitals_taken(ago(Date.now() - age_ms))}</span>
+      ) : (
+        <span data-updated>{cli.updated_at(clock(Date.now()))}</span>
       )}
     </div>
   );
@@ -594,8 +691,7 @@ function Busy({ row }: { row: DeviceRow }) {
   return (
     <div data-load className="flex flex-col gap-row pt-pane">
       <div data-load-day>
-        <div className="text-aux text-muted-foreground">{cli.top_day}</div>
-        <DayBand day={load.cpu_day} />
+        <DayChart day={load.cpu_day} />
       </div>
       <table data-load-top className="w-full text-sm tabular-nums">
         <thead className="text-aux text-muted-foreground">
@@ -628,32 +724,90 @@ function Busy({ row }: { row: DeviceRow }) {
 }
 
 /**
- * The CPU day as a band: one cell per bucket, oldest at the left, the
- * bar's height the bucket's mean. A `null` bucket is a cell with no bar
- * — the recorder was not running, and the band says so by drawing
- * nothing there rather than a zero or a bridge. Every cell is drawn
- * (the gate counts 288) so a gap holds its width and the axis stays
- * a day long whatever was measured.
+ * The CPU day as an area with the memory day dashed over it
+ * (2026-09-03 to the user's reference), on a hairline track with the
+ * two ends' clocks named.
+ *
+ * **Still one cell per bucket, and the gate still counts them.** The
+ * area is 288 adjacent rectangles — one per bucket, in a `data-day-cell`
+ * group — so a `null` bucket is a group with nothing in it: the recorder
+ * was not running, and the chart says so by drawing nothing there rather
+ * than a zero or a bridge. The memory line is a sibling of the cells,
+ * never a child, and it too breaks over a gap (one path per run of
+ * readings). `preserveAspectRatio="none"` lets the width follow the card;
+ * the dashed line keeps its weight through `non-scaling-stroke`.
  */
-function DayBand({ day }: { day: Load["cpu_day"] }) {
+function DayChart({ day }: { day: Load["cpu_day"] }) {
+  const n = Math.max(1, day.buckets.length);
+  const W = 1000;
+  const H = 100;
+  const x = (i: number) => (i / n) * W;
+  const w = W / n;
+  const y = (pct: number) => H - (Math.max(0, Math.min(100, pct)) / 100) * H;
+  // The memory line, one path per unbroken run — a gap ends a run.
+  const memRuns: string[] = [];
+  let run: string[] = [];
+  day.mem.forEach((m, i) => {
+    if (m === null) {
+      if (run.length > 1) memRuns.push(run.join(" "));
+      run = [];
+      return;
+    }
+    run.push(`${run.length === 0 ? "M" : "L"}${(x(i) + w / 2).toFixed(1)},${y(m).toFixed(1)}`);
+  });
+  if (run.length > 1) memRuns.push(run.join(" "));
+  const startMs = day.now_ms - day.bucket_ms * n;
   return (
-    <div data-day-band className="flex h-10 w-full items-end gap-px">
-      {day.buckets.map((b, i) => (
-        <div
-          key={i}
-          data-day-cell
-          data-gap={b === null ? "" : undefined}
-          className="min-w-0 flex-1 self-stretch"
-          title={b === null ? undefined : `${Math.round(b)}%`}
-        >
-          {b !== null && (
-            <div
-              className="h-full w-full bg-foreground/50"
-              style={{ height: `${Math.max(2, Math.min(100, b))}%`, marginTop: "auto" }}
-            />
+    <div data-day-band-axis className="flex flex-col gap-in">
+      <div className="flex items-center justify-between gap-row text-aux text-muted-foreground">
+        <span className="flex items-center gap-row">
+          <span>{cli.day_trend}</span>
+          <span className="flex items-center gap-in">
+            <span className="inline-block h-0.5 w-3 bg-foreground/60" />
+            {cli.vitals_name_cpu}
+          </span>
+          {day.mem.length > 0 && (
+            <span className="flex items-center gap-in">
+              <span className="inline-block h-0 w-3 border-t border-dashed border-foreground/80" />
+              {cli.vitals_name_mem}
+            </span>
           )}
-        </div>
-      ))}
+        </span>
+        <span className="tabular-nums">
+          {clock(startMs)} → {clock(day.now_ms)}
+        </span>
+      </div>
+      <svg
+        data-day-band
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="h-16 w-full text-foreground"
+        aria-hidden="true"
+      >
+        <line x1={0} y1={H} x2={W} y2={H} stroke="currentColor" strokeOpacity={0.15} vectorEffect="non-scaling-stroke" />
+        {day.buckets.map((b, i) => (
+          <g key={i} data-day-cell data-gap={b === null ? "" : undefined}>
+            {b !== null && (
+              <rect x={x(i)} y={y(b)} width={w + 0.6} height={H - y(b)} fill="currentColor" fillOpacity={0.5}>
+                <title>{`${Math.round(b)}%`}</title>
+              </rect>
+            )}
+          </g>
+        ))}
+        {memRuns.map((d, k) => (
+          <path
+            key={k}
+            data-day-mem
+            d={d}
+            fill="none"
+            stroke="currentColor"
+            strokeOpacity={0.85}
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
     </div>
   );
 }
@@ -661,14 +815,21 @@ function DayBand({ day }: { day: Load["cpu_day"] }) {
 function Unit({
   name,
   word,
+  sub,
   label,
   fraction,
   strain,
   unknown,
 }: {
-  name: string;
+  /** The reading's key on the wire, or none for a ring that is a
+      picture of readings counted elsewhere (the GPU ring above the
+      per-card rows). Without it the unit and detail marks are not set. */
+  name?: string;
   /** The reading's name on its own, for under the ring. */
   word: string;
+  /** The line under the name — the fact a person reads without
+      turning the ring: cores, memory used over total, cards. */
+  sub?: React.ReactNode;
   label: string;
   /** `null` when there is no denominator to divide by, and then only the
       track is drawn — a full circle of arc would read as "this is at
@@ -697,14 +858,15 @@ function Unit({
       aria-label={label}
       onClick={() => setFlipped((on) => !on)}
       className="rounded-md p-in"
-      style={{ minWidth: RING_SIZE }}
+      style={{ minWidth: RING_SIZE_CARD }}
     >
       <span data-metric-faces>
         <span data-metric-face="front" className="flex flex-col items-center gap-in">
-          <Ring fraction={fraction} color={gaugeColor(strain)}>
+          <Ring fraction={fraction} color={gaugeColor(strain)} size={RING_SIZE_CARD} stroke={RING_STROKE_CARD}>
             {value}
           </Ring>
-          <span className="text-aux text-muted-foreground">{word}</span>
+          <span className="text-sm">{word}</span>
+          {sub != null && <span className="text-aux tabular-nums text-muted-foreground">{sub}</span>}
         </span>
         {/* **The attribute marks the sentence itself**, not the unit
             around it: it is what `khor devices` prints word for word, and

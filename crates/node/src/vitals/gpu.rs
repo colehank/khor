@@ -210,7 +210,7 @@ mod tests {
     /// whole while missing a member.
     #[test]
     fn the_aggregate_is_derived_from_the_cards_and_memory_is_all_or_nothing() {
-        let card = |pct, mem| GpuCard { name: String::new(), util_pct: pct, mem };
+        let card = |pct, mem| GpuCard { name: String::new(), util_pct: pct, mem, temp_c: None };
         let both = [
             card(100.0, Some(Fill { used: 1, total: 4 })),
             card(0.0, Some(Fill { used: 2, total: 4 })),

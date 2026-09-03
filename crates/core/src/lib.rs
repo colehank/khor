@@ -689,6 +689,13 @@ pub struct Vitals {
     /// branch as `gpus` one field up.
     #[serde(default)]
     pub volumes: Vec<Volume>,
+    /// Seconds since this machine booted (`sysinfo::System::uptime`).
+    /// Tail-appended with a default, the wire rule: an older node's
+    /// frame decodes with 0, which the card prints as nothing rather
+    /// than as a machine that booted this instant.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub uptime_s: u64,
 }
 
 /// What the graphics hardware is doing.
@@ -758,6 +765,10 @@ pub struct GpuCard {
     /// This card's own video memory. `None` on unified memory, where
     /// those bytes are already in [`Vitals::mem`].
     pub mem: Option<Fill>,
+    /// The card's own temperature, when the driver reports one (NVML
+    /// does; Apple's GPUs do not). Tail-appended, default `None`.
+    #[serde(default)]
+    pub temp_c: Option<f32>,
 }
 
 /// One mounted filesystem a person can act on — a volume of
@@ -823,6 +834,12 @@ pub struct CpuDay {
     pub now_ms: u64,
     /// Oldest first, one slot per bucket, `None` where nobody measured.
     pub buckets: Vec<Option<f32>>,
+    /// Memory in use, percent, on the same buckets — the dashed line
+    /// beside the CPU's on the card's day. Same length as `buckets`
+    /// once a recorder that knows about it has run; empty from an older
+    /// node (tail-appended, default), and the face draws no line then.
+    #[serde(default)]
+    pub mem: Vec<Option<f32>>,
 }
 
 /// What a machine is busy with: the top now and the day behind it. One
@@ -1753,9 +1770,10 @@ mod tests {
             version: None,
             gpus: vec![],
             volumes: vec![],
+            uptime_s: 0,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x98, "eight fields today");
+        assert_eq!(bytes[0], 0x99, "nine fields today (uptime rode the tail on 2026-09-03)");
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 
@@ -1857,9 +1875,10 @@ mod tests {
                 version: None,
                 gpus: vec![],
                 volumes: vec![],
+                uptime_s: 0,
             };
             let bytes = rmp_serde::to_vec(&v).unwrap();
-            assert_eq!(bytes[0], 0x98, "eight fields today");
+            assert_eq!(bytes[0], 0x99, "nine fields today (uptime rode the tail on 2026-09-03)");
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
     }
@@ -1909,16 +1928,18 @@ mod tests {
                     name: "RTX A5000".to_owned(),
                     util_pct: 50.0,
                     mem: Some(Fill { used: 3, total: 24 }),
+                    temp_c: Some(61.0),
                 },
-                GpuCard { name: String::new(), util_pct: 0.0, mem: None },
+                GpuCard { name: String::new(), util_pct: 0.0, mem: None, temp_c: None },
             ],
             volumes: vec![
                 Volume { mount: "/".to_owned(), fill: Fill { used: 5, total: 9 } },
                 Volume { mount: "/data".to_owned(), fill: Fill { used: 1, total: 4 } },
             ],
+            uptime_s: 86_400 * 3,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x98, "eight fields today");
+        assert_eq!(bytes[0], 0x99, "nine fields today (uptime rode the tail on 2026-09-03)");
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 

@@ -5940,7 +5940,9 @@ for line in sys.stdin:
   // were running: the dev bridge serves requests on one thread, so a
   // starved machine serialises the poll behind other ops. That is the
   // harness, not the product — `khor serve` runs a four-worker pool.)
-  await until("the wizard row gone", 20_000, async () => {
+  // 60s, not 20: the same serialisation put it past 20s again while four
+  // builds ran beside it, and a harness wait is for the harness's load.
+  await until("the wizard row gone", 60_000, async () => {
     const why = await page.locator('[data-menu-note="close"]').innerText().catch(() => "");
     if (why) throw new Error(why);
     return (await page.locator(`[data-row="${wizId}"]`).count()) === 0;

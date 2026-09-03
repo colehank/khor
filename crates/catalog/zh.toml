@@ -277,6 +277,26 @@ vitals-vram = "显存 {0} / {1}"
 # 不拆第二段——smoke 按两空格数段落,GUI 一卡一环,两边段数要对得上。
 vitals-gpu-card = "{0} {1}%"
 vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
+# The card's GPU detail section — the per-card table under the rings
+# (2026-09-02:「环下面显示…GPU明细」). The ring keeps the number; this is
+# where the card's name and its memory are read without turning the
+# ring over. 占用 rather than a second CPU-ish word: it is the share of
+# the card in use, and the reading's own name (`vitals-name-gpu`) heads
+# the name column so the two faces say the same thing about one card.
+gpu-detail = "GPU 明细"
+gpu-util = "占用"
+# The card's day section and the words under its rings (2026-09-03,
+# redesigned to the user's reference: rings carry a sub-line, the day is
+# a CPU area with a dashed memory line, storage is a bar per volume, the
+# foot says how long the machine has been up and when it last spoke).
+day-trend = "24 小时趋势"
+storage = "存储"
+cores-sub = "{0} 核"
+gpu-sub = "{0} 卡 · 显存 {1} / {2}"
+gpu-sub-nomem = "{0} 卡"
+uptime-days = "已运行 {0} 天"
+uptime-hours = "已运行 {0} 小时"
+updated-at = "更新于 {0}"
 # 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"

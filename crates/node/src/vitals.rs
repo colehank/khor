@@ -123,6 +123,7 @@ pub fn sample(home: &Path) -> Vitals {
         version: Some(env!("CARGO_PKG_VERSION").to_owned()),
         gpus,
         volumes,
+        uptime_s: sysinfo::System::uptime(),
     }
 }
 

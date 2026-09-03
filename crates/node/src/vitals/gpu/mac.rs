@@ -90,7 +90,7 @@ pub(super) fn cards() -> Vec<khor_core::GpuCard> {
     }
     pcts.into_iter()
         .filter(|p| (0.0..=100.0).contains(p))
-        .map(|util_pct| khor_core::GpuCard { name: String::new(), util_pct, mem: None })
+        .map(|util_pct| khor_core::GpuCard { name: String::new(), util_pct, mem: None, temp_c: None })
         .collect()
 }
 

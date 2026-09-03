@@ -181,6 +181,9 @@ fn parse_vitals(text: &str) -> khor_core::Vitals {
                 name: it.next().unwrap_or("").trim().to_owned(),
                 util_pct,
                 mem: (total > 0).then_some(khor_core::Fill { used, total }),
+                // The ssh probe reads utilisation and memory only; a
+                // satellite's cards report no temperature.
+                temp_c: None,
             })
         })
         .collect();
@@ -213,6 +216,7 @@ fn parse_vitals(text: &str) -> khor_core::Vitals {
         version: None,
         gpus,
         volumes,
+        uptime_s: get("uptime_s").unwrap_or(0.0) as u64,
     }
 }
 

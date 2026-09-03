@@ -70,6 +70,11 @@ export const RING_SIZE = 64;
  * 看不明白。取消」).
  */
 export const RING_SIZE_ROW = 32;
+/** The machine card's rings (2026-09-03, to the user's reference): a
+    third again larger than a row's and drawn thinner, so the number
+    inside leads and the arc reads as a gauge rather than a badge. */
+export const RING_SIZE_CARD = 88;
+export const RING_STROKE_CARD = 4;
 
 /** Stroke for a single-track ring. Fixed, because the diameter is. */
 const STROKE = 5.5;
@@ -141,6 +146,7 @@ export function Ring({
   fraction,
   color,
   size = RING_SIZE,
+  stroke = STROKE,
   centerClass = "text-fact",
   children,
 }: {
@@ -148,6 +154,9 @@ export function Ring({
   fraction: number | null;
   color: string;
   size?: number;
+  /** The arc's width. The default is the row size's; a large ring on
+      the machine card is drawn thinner so the number inside leads. */
+  stroke?: number;
   /**
    * The size tier the centre reads at.
    *
@@ -166,7 +175,7 @@ export function Ring({
   centerClass?: string;
   children?: React.ReactNode;
 }) {
-  const r = (size - STROKE) / 2;
+  const r = (size - stroke) / 2;
   return (
     <span
       data-ring
@@ -174,7 +183,7 @@ export function Ring({
       style={{ width: size, height: size }}
     >
       <svg width={size} height={size} aria-hidden="true" className="col-start-1 row-start-1">
-        <Arc cx={size / 2} r={r} stroke={STROKE} color={color} fraction={fraction} />
+        <Arc cx={size / 2} r={r} stroke={stroke} color={color} fraction={fraction} />
       </svg>
       {/* The centre sits on top of the same grid cell rather than inside
           the SVG: it is text the app styles like all its other text, and

@@ -40,7 +40,11 @@ pub struct CpuHistory {
     /// Sum and count per absolute bucket index (`at_ms / BUCKET_MS`),
     /// pruned to the day — a mean needs both halves until the bucket
     /// closes.
-    buckets: BTreeMap<u64, (f64, u32)>,
+    /// Per bucket: the CPU sum, the sample count, and the memory sum —
+    /// `None` for a bucket written by a recorder that only knew CPU
+    /// (the file's older three-column lines), so it draws as absence
+    /// rather than as zero memory.
+    buckets: BTreeMap<u64, (f64, u32, Option<f64>)>,
     file: PathBuf,
 }
 
@@ -60,7 +64,10 @@ impl CpuHistory {
                     it.next().map(str::parse::<f64>),
                     it.next().map(str::parse::<u32>),
                 ) {
-                    buckets.insert(idx, (sum, n));
+                    // A fourth column is the memory sum; a line without
+                    // one predates memory and stays honest about it.
+                    let mem = it.next().and_then(|m| m.parse::<f64>().ok());
+                    buckets.insert(idx, (sum, n, mem));
                 }
             }
         }
@@ -71,17 +78,21 @@ impl CpuHistory {
     /// Writes through on every call: the file is at most [`BUCKETS`]
     /// short lines, and a crash between beats then costs one beat, not
     /// a day.
-    pub fn record(&mut self, at_ms: u64, cpu_pct: f32) {
+    pub fn record(&mut self, at_ms: u64, cpu_pct: f32, mem_pct: f32) {
         let idx = at_ms / BUCKET_MS;
-        let slot = self.buckets.entry(idx).or_insert((0.0, 0));
+        let slot = self.buckets.entry(idx).or_insert((0.0, 0, None));
         slot.0 += f64::from(cpu_pct);
         slot.1 += 1;
+        slot.2 = Some(slot.2.unwrap_or(0.0) + f64::from(mem_pct));
         let floor = idx.saturating_sub(BUCKETS as u64);
         self.buckets.retain(|k, _| *k > floor);
         let text: String = self
             .buckets
             .iter()
-            .map(|(k, (sum, n))| format!("{k} {sum} {n}\n"))
+            .map(|(k, (sum, n, mem))| match mem {
+                Some(m) => format!("{k} {sum} {n} {m}\n"),
+                None => format!("{k} {sum} {n}\n"),
+            })
             .collect();
         if let Some(parent) = self.file.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -92,13 +103,18 @@ impl CpuHistory {
     /// The last day as a face draws it, `now` at the right edge.
     pub fn day(&self, now_ms: u64) -> CpuDay {
         let newest = now_ms / BUCKET_MS;
+        let at = |back: u64| newest.wrapping_sub(BUCKETS as u64 - 1 - back);
         let buckets = (0..BUCKETS as u64)
+            .map(|back| self.buckets.get(&at(back)).map(|(sum, n, _)| (sum / f64::from(*n)) as f32))
+            .collect();
+        let mem = (0..BUCKETS as u64)
             .map(|back| {
-                let idx = newest.wrapping_sub(BUCKETS as u64 - 1 - back);
-                self.buckets.get(&idx).map(|(sum, n)| (sum / f64::from(*n)) as f32)
+                self.buckets
+                    .get(&at(back))
+                    .and_then(|(_, n, m)| m.map(|m| (m / f64::from(*n)) as f32))
             })
             .collect();
-        CpuDay { bucket_ms: BUCKET_MS, now_ms, buckets }
+        CpuDay { bucket_ms: BUCKET_MS, now_ms, buckets, mem }
     }
 }
 
@@ -122,9 +138,9 @@ mod tests {
         let d = dir("gap");
         let mut h = CpuHistory::open(&d);
         let t0 = 100 * BUCKET_MS;
-        h.record(t0, 10.0);
-        h.record(t0 + 1000, 30.0);
-        h.record(t0 + 2 * BUCKET_MS, 50.0); // one whole bucket skipped
+        h.record(t0, 10.0, 40.0);
+        h.record(t0 + 1000, 30.0, 40.0);
+        h.record(t0 + 2 * BUCKET_MS, 50.0, 40.0); // one whole bucket skipped
         let day = h.day(t0 + 2 * BUCKET_MS);
         let n = day.buckets.len();
         assert_eq!(n, BUCKETS);
@@ -144,7 +160,7 @@ mod tests {
         let t0 = 500 * BUCKET_MS;
         {
             let mut h = CpuHistory::open(&d);
-            h.record(t0, 42.0);
+            h.record(t0, 42.0, 40.0);
         }
         let again = CpuHistory::open(&d);
         let day = again.day(t0);
@@ -163,8 +179,8 @@ mod tests {
         let d = dir("prune");
         let t0 = 1000 * BUCKET_MS;
         let mut h = CpuHistory::open(&d);
-        h.record(t0, 99.0);
-        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, 1.0);
+        h.record(t0, 99.0, 40.0);
+        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, 1.0, 40.0);
         let reopened = CpuHistory::open(&d);
         let day = reopened.day(t0 + (BUCKETS as u64 + 1) * BUCKET_MS);
         assert_eq!(day.buckets[BUCKETS - 1], Some(1.0));
@@ -186,5 +202,50 @@ mod tests {
         assert_eq!(day.buckets[BUCKETS - 1], Some(10.0));
         assert_eq!(day.buckets[BUCKETS - 2], Some(20.0));
         let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// Memory rides the same buckets as CPU (2026-09-03, the card's dashed
+/// line): recorded beside it, averaged the same way, and **absent — not
+/// zero — for a bucket written before the recorder knew about memory**,
+/// which is what an older `cpu` file's three-column lines are.
+#[cfg(test)]
+mod memory_day {
+    use super::*;
+
+    fn fresh_dir(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("khor-history-mem-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        p
+    }
+
+    #[test]
+    fn memory_is_recorded_beside_cpu_and_averaged_per_bucket() {
+        let d = fresh_dir("avg");
+        let mut h = CpuHistory::open(&d);
+        let at = 10 * BUCKET_MS;
+        h.record(at, 50.0, 30.0);
+        h.record(at + 1_000, 70.0, 50.0);
+        let day = h.day(at);
+        let last = BUCKETS - 1;
+        assert_eq!(day.buckets[last], Some(60.0), "cpu is the bucket's mean");
+        assert_eq!(day.mem[last], Some(40.0), "memory is the bucket's mean too");
+        assert_eq!(day.mem.len(), day.buckets.len(), "one memory slot per cpu slot");
+        // And it comes back the same from a second instance — the file
+        // carries the fourth column.
+        let again = CpuHistory::open(&d).day(at);
+        assert_eq!(again.mem[last], Some(40.0));
+    }
+
+    #[test]
+    fn a_bucket_from_before_memory_draws_as_absence_not_zero() {
+        let d = fresh_dir("old");
+        std::fs::create_dir_all(&d).unwrap();
+        // A line the previous recorder wrote: index, cpu sum, count — no memory.
+        std::fs::write(d.join("cpu"), "10 120.0 2\n").unwrap();
+        let day = CpuHistory::open(&d).day(10 * BUCKET_MS);
+        let last = BUCKETS - 1;
+        assert_eq!(day.buckets[last], Some(60.0), "the old cpu reading still reads");
+        assert_eq!(day.mem[last], None, "and its memory is a gap, not 0%");
     }
 }
