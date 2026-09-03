@@ -3279,6 +3279,16 @@ for line in sys.stdin:
   //     markup. And it is read off the element that holds only the
   //     sentence, instead of off a box whose text happened to be the
   //     sentence and nothing else.
+  //     **The card's parts live in a drawer now**, and the drawer that
+  //     opens on arrival is the leftmost one (CPU) — so the way a
+  //     person reaches a card's row is to press the GPU dial first.
+  //     That is one more thing asserted, not one less: the drawer is
+  //     now on the path between somebody and this sentence, and a
+  //     drawer that would not open would red here.
+  const gpuDial = page.locator('[data-machine-card] [data-dial="gpu"]');
+  if ((await gpuDial.count()) === 1 && (await gpuDial.getAttribute("data-open")) !== "true") {
+    await gpuDial.click();
+  }
   await gpuRow.click();
   const gpuDetail = page.locator('[data-vitals-detail="gpu"]');
   await until(

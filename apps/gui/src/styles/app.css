@@ -427,3 +427,53 @@ input[type="search"]::-webkit-search-decoration {
 [data-md] .hljs-regexp {
   color: var(--code-string);
 }
+
+/* The parts under a dial: one grid for every row in the drawer, so the
+   bar's two edges are one value each down the whole list. Rows join the
+   grid with `display: contents` rather than being boxes of their own —
+   a row that is its own box is a row whose bar starts wherever that box
+   happens to start (`Parts` was two blocks with two layouts once, and
+   「很容易对不齐」 is what came of it). */
+[data-parts] {
+  display: grid;
+  grid-template-columns: var(--part-name) minmax(0, 1fr) var(--part-num);
+  column-gap: var(--gap-row);
+  align-items: center;
+  row-gap: 0;
+}
+[data-parts] [data-part] {
+  display: contents;
+}
+[data-parts] [data-part] > * {
+  height: var(--drawer-row);
+  display: flex;
+  align-items: center;
+  scroll-snap-align: start;
+}
+
+/* **A tight drawer drops the shared grid entirely.** Keyed off the
+   drawer's *own* width (`use-tight.ts`), not the window's: the card has
+   a rail and a list beside it, so it is far narrower than the viewport,
+   and a window breakpoint left a 106px overflow band from 720 to 830 —
+   measured by the full-bandwidth scan, invisible to any two-point
+   check.
+
+   Keeping the
+   rows wrap turns every row into one cell of the outer grid, and then
+   each bar is as wide as its own cell — measured on the prototype as
+   three bars of 178.75 / 320 / 170.91, which is the alignment this
+   whole structure exists to guarantee, gone. So the rows become their
+   own two-column grids and the bar takes a line of its own. */
+[data-drawer][data-tight] [data-parts] {
+  display: block;
+}
+[data-drawer][data-tight] [data-parts] [data-part] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--gap-row);
+  align-items: center;
+}
+[data-drawer][data-tight] [data-parts] [data-part] > [data-part-bar] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}

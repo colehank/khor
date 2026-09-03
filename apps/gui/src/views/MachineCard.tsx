@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
@@ -9,6 +9,7 @@ import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { useTight } from "@/hooks/use-tight";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
@@ -146,7 +147,7 @@ function Body({
               onBrowseFiles={onBrowseFiles}
               onBorrowWeb={onBorrowWeb}
             />
-            <Readings row={row} day={load?.cpu_day ?? null} />
+            <Readings row={row} day={load?.cpu_day ?? null} top={load?.top ?? []} />
             <Busy
               load={load}
               why={why}
@@ -507,7 +508,22 @@ function Panel({ children }: { children: React.ReactNode }) {
  * that count. On an older node that reports only aggregates, the
  * aggregate *is* the reading and the dial is the unit.
  */
-function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null }) {
+function Readings({
+  row,
+  day,
+  top,
+}: {
+  row: DeviceRow;
+  day: Load["cpu_day"] | null;
+  /** The face's own process rows, for the two drawers that have no
+      parts to show — see `Drawers`. */
+  top: Load["top"];
+}) {
+  // **The leftmost is open on arrival**, so the block below the dials is
+  // never an empty space waiting to be discovered. Pressing the open
+  // one closes it: the press is a toggle, and a control whose press
+  // does nothing when it is already on is a control that feels stuck.
+  const [open, setOpen] = useState("cpu");
   if (!row.vitals) {
     return (
       <Panel>
@@ -564,6 +580,8 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
       <div data-vitals className="flex flex-wrap justify-around gap-row">
         <Dial
           dial="cpu"
+          open={open === "cpu"}
+          onOpen={setOpen}
           name="cpu"
           word={cli.vitals_name_cpu}
           fraction={v.cpu_pct / 100}
@@ -573,6 +591,8 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
         {cards.length > 0 && gpuMean !== null ? (
           <Dial
             dial="gpu"
+            open={open === "gpu"}
+            onOpen={setOpen}
             word={cli.vitals_name_gpu}
             pips={cardPips}
             fraction={gpuMean / 100}
@@ -585,6 +605,8 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
           v.gpu && (
             <Dial
               dial="gpu"
+              open={open === "gpu"}
+              onOpen={setOpen}
               name="gpu"
               word={cli.vitals_name_gpu}
               fraction={v.gpu.util_pct / 100}
@@ -611,6 +633,8 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
         )}
         <Dial
           dial="mem"
+          open={open === "mem"}
+          onOpen={setOpen}
           name="mem"
           word={cli.vitals_name_mem}
           fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
@@ -620,6 +644,8 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
         />
         <Dial
           dial="disk"
+          open={open === "disk"}
+          onOpen={setOpen}
           word={cli.vitals_name_disk}
           pips={volPips}
           fraction={disk && disk.total > 0 ? disk.used / disk.total : null}
@@ -635,7 +661,7 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
           facts={[disk ? left(disk) : null]}
         />
       </div>
-      <Parts row={row} />
+      <Drawers row={row} top={top} open={open} />
     </Panel>
   );
 }
@@ -661,7 +687,20 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
  * it wore before answered a question nobody asked — which of these is
  * "the disk" — and lost the one thing a person picks a volume by.
  */
-function Parts({ row }: { row: DeviceRow }) {
+function Drawers({
+  row,
+  top,
+  open,
+}: {
+  row: DeviceRow;
+  /** The face's own two hundred process rows. **The CPU and memory
+      drawers are computed from these and nothing is asked of the node**
+      — there is no per-core array and no memory breakdown on the wire
+      (`khor_core::Vitals` is one `cpu_pct` and one `Fill`), so what can
+      honestly be shown there is who is taking the most. */
+  top: Load["top"];
+  open: string;
+}) {
   if (!row.vitals) return null;
   const { vitals: v, volume_strains } = row.vitals;
   const cards = v.gpus;
@@ -693,86 +732,153 @@ function Parts({ row }: { row: DeviceRow }) {
               sentence: cli.vitals_disk_unknown,
             },
           ];
-  if (cards.length === 0 && vols.length === 0) return null;
+  // The busiest few, by the reading the drawer is under. Six, because
+  // the drawer shows four without scrolling and the fifth and sixth are
+  // what the scroll is for.
+  const busiest = (by: "cpu" | "mem") =>
+    [...top]
+      .sort((a, b) => (by === "cpu" ? b.cpu_pct - a.cpu_pct : Number(b.mem) - Number(a.mem)))
+      .slice(0, 6);
+  const whole = v.cores > 0 ? v.cores * 100 : 100;
+  const box = useRef<HTMLDivElement>(null);
+  // What the three columns need before they stop fitting: the two fixed
+  // ones, the two gaps between them, and enough track left for a bar to
+  // still read as a length. Written from the tokens rather than guessed
+  // — `--part-name` 220 + `--part-num` 172 + two `--gap-row` 12 + 60.
+  const tight = useTight(box, 476);
   return (
-    <div
-      data-vitals-parts
-      className="mt-row grid items-center gap-x-row gap-y-in border-t pt-row text-sm tabular-nums"
-      // Name, bar, then whatever numbers that kind of part has. The
-      // bar's `1fr` is what makes the two groups line up at both ends.
-      style={{ gridTemplateColumns: "minmax(0, auto) minmax(0, 1fr) auto auto auto" }}
-    >
-      {cards.map((c, i) => {
-        const util = Math.round(c.util_pct);
-        const sentence = c.mem
-          ? cli.vitals_gpu_card_mem(c.name || cli.vitals_name_gpu, util, bytes(c.mem.used), bytes(c.mem.total))
-          : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, util);
-        return (
-          <Fragment key={`gpu${i}`}>
-            {/* **Named, so an assertion can name it too.** The index
-                said which row this was; the name says which card, and
-                「哪张卡是空的」 is a question about a card. */}
-            <span
-              data-vitals-unit="gpu"
-              data-gpu-card={c.name || `GPU${i}`}
-              className="flex min-w-0 items-baseline gap-in"
-            >
-              <span className="flex-none font-label">GPU{i}</span>
-              {/* The driver's name, when it gave one; a card that will
-                  not name itself (Apple's) is "GPU0" and nothing more —
-                  not "GPU0 GPU". */}
-              {c.name && <span className="min-w-0 truncate text-muted-foreground">{c.name}</span>}
-              <span data-vitals-detail="gpu" className="sr-only">
-                {sentence}
-              </span>
-            </span>
-            <Bar pct={util} strain={null} />
-            {/* **Each card's own number, not the machine's mean.** The
-                aggregate flattens one busy card among three idle ones
-                to 25 (`khor_core::Gpu::util_pct` says so itself), which
-                is true about the machine and a false lead about where
-                to run a job — the person is looking for the idle card.
-                In the DOM as a value so that stays assertable. */}
-            <span data-gpu-util={util} className="text-right">
-              {util}%
-            </span>
-            <span className="text-right text-muted-foreground">
-              {c.mem ? `${bytes(c.mem.used)} / ${bytes(c.mem.total)}` : ""}
-            </span>
-            <span className="text-right text-muted-foreground">{c.temp_c != null ? `${Math.round(c.temp_c)}°C` : ""}</span>
-          </Fragment>
-        );
-      })}
-      {vols.map((r, i) => {
-        const pct = r.fill && r.fill.total > 0 ? (r.fill.used / r.fill.total) * 100 : null;
-        return (
-          // By position, not by word: a Mac reports its data volume and
-          // `/` as two mounts that can both print as `/`.
-          <Fragment key={`vol${i}`}>
-            <span
-              data-vitals-unit={r.unit}
-              data-vitals-unknown={r.fill ? undefined : ""}
-              className="min-w-0 truncate"
-            >
-              {r.word}
-              <span
-                data-vitals-detail={r.unit}
-                data-strain={r.strain ?? undefined}
-                className="sr-only data-[strain]:text-strain data-[strain=critical]:font-label"
-              >
-                {r.sentence}
-              </span>
-            </span>
-            <Bar pct={pct} strain={r.strain} />
-            <span
-              data-strain={r.strain ?? undefined}
-              className="col-start-3 col-end-[-1] text-right text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
-            >
-              {r.fill ? `${bytes(r.fill.used)} / ${bytes(r.fill.total)}` : cli.vitals_disk_unknown}
-            </span>
-          </Fragment>
-        );
-      })}
+    <>
+      {/* **One box, fixed height, and every group inside it.** The
+          groups that are not open are hidden rather than dropped: the
+          card's readings are counted against what `khor devices` prints
+          (`smoke.mjs`'s `sameNumberOfReadings`), and a drawer that
+          unmounted three of them would make the card disagree with the
+          terminal — which reads as a broken backend, not as a drawer.
+          Hidden elements are still in the document, so the count holds
+          and only the eye is spared. */}
+      <div
+        ref={box}
+        data-drawer={open}
+        data-tight={tight ? "" : undefined}
+        className="mt-row max-h-drawer-h min-h-drawer-h overflow-y-auto overscroll-contain border-t pt-row text-sm tabular-nums"
+        style={{ scrollSnapType: "y proximity" }}
+      >
+        <div data-parts="cpu" hidden={open !== "cpu"}>
+          {busiest("cpu").map((r) => (
+            <Occupant key={r.pid} row={r} share={r.cpu_pct / whole} value={`${Math.round(r.cpu_pct)}%`} />
+          ))}
+        </div>
+        <div data-parts="gpu" hidden={open !== "gpu"}>
+          {cards.map((c, i) => {
+            const util = Math.round(c.util_pct);
+            const sentence = c.mem
+              ? cli.vitals_gpu_card_mem(c.name || cli.vitals_name_gpu, util, bytes(c.mem.used), bytes(c.mem.total))
+              : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, util);
+            return (
+              <div key={`gpu${i}`} data-part={i}>
+                <span
+                  data-part-name
+                  data-vitals-unit="gpu"
+                  data-gpu-card={c.name || `GPU${i}`}
+                  className="min-w-0 gap-in"
+                >
+                  <span className="flex-none font-label">GPU{i}</span>
+                  {/* The driver's name, when it gave one; a card that
+                      will not name itself (Apple's) is "GPU0" and
+                      nothing more — not "GPU0 GPU". */}
+                  {c.name && <span className="ml-in min-w-0 truncate text-muted-foreground">{c.name}</span>}
+                  <span data-vitals-detail="gpu" className="sr-only">
+                    {sentence}
+                  </span>
+                </span>
+                <Bar pct={util} strain={null} />
+                <span data-part-num className="justify-end gap-row text-right">
+                  <span data-gpu-util={util}>{util}%</span>
+                  <span className="text-muted-foreground">
+                    {c.mem ? `${bytes(c.mem.used)} / ${bytes(c.mem.total)}` : ""}
+                  </span>
+                  {c.temp_c != null && (
+                    <span className="text-muted-foreground">{`${Math.round(c.temp_c)}°C`}</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div data-parts="mem" hidden={open !== "mem"}>
+          {busiest("mem").map((r) => (
+            <Occupant
+              key={r.pid}
+              row={r}
+              share={v.mem.total > 0 ? Number(r.mem) / Number(v.mem.total) : null}
+              value={bytes(r.mem)}
+            />
+          ))}
+        </div>
+        <div data-parts="disk" hidden={open !== "disk"}>
+          {vols.map((r, i) => {
+            const pct = r.fill && r.fill.total > 0 ? (r.fill.used / r.fill.total) * 100 : null;
+            return (
+              // By position, not by word: a Mac reports its data volume
+              // and `/` as two mounts that can both print as `/`.
+              <div key={`vol${i}`} data-part={i}>
+                <span
+                  data-part-name
+                  data-vitals-unit={r.unit}
+                  data-vitals-unknown={r.fill ? undefined : ""}
+                  className="min-w-0 truncate"
+                >
+                  {r.word}
+                  <span
+                    data-vitals-detail={r.unit}
+                    data-strain={r.strain ?? undefined}
+                    className="sr-only data-[strain]:text-strain data-[strain=critical]:font-label"
+                  >
+                    {r.sentence}
+                  </span>
+                </span>
+                <Bar pct={pct} strain={r.strain} />
+                <span
+                  data-part-num
+                  data-strain={r.strain ?? undefined}
+                  className="justify-end text-right text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
+                >
+                  {r.fill ? `${bytes(r.fill.used)} / ${bytes(r.fill.total)}` : cli.vitals_disk_unknown}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {/* **Outside the drawer, and that is not a detail.** Inside the
+          scrolling box it made a four-row panel scroll, and then 「just
+          fits」 and 「just does not」 look the same on screen.
+
+          And it is not optional on these two: six occupants and six
+          parts draw identically, while a part's readings add up to the
+          ring above and an occupant's do not — there are several
+          thousand more. Without the sentence the two blocks say
+          different things in the same shape. */}
+      {(open === "cpu" || open === "mem") && (
+        <p data-drawer-note className="mt-in text-aux text-muted-foreground">
+          {cli.top_share_note}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** One occupant of a reading: a process, its share of the machine, and
+    what it is taking. **Not a part** — see `Drawers`. */
+function Occupant({ row, share, value }: { row: Load["top"][number]; share: number | null; value: string }) {
+  return (
+    <div data-part={row.pid} data-occupant={row.pid}>
+      <span data-part-name className="min-w-0 gap-in truncate">
+        <span className="truncate">{row.name}</span>
+        {row.arg && <span className="ml-in min-w-0 truncate text-muted-foreground">{row.arg}</span>}
+      </span>
+      <Bar pct={share === null ? null : share * 100} strain={null} />
+      <span data-part-num className="justify-end text-right">{value}</span>
     </div>
   );
 }
@@ -781,9 +887,10 @@ function Parts({ row }: { row: DeviceRow }) {
     the track alone — a reading that could not be taken is not a zero. */
 function Bar({ pct, strain }: { pct: number | null; strain: Strain | null }) {
   return (
-    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+    <span data-part-bar className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
       {pct !== null && (
         <span
+          data-part-ink
           className="block h-full rounded-full"
           style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(strain) }}
         />
@@ -1507,6 +1614,8 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
  */
 function Dial({
   dial,
+  open,
+  onOpen,
   name,
   word,
   facts,
@@ -1522,6 +1631,9 @@ function Dial({
       unaddressable, which is how a gate came to measure the wrong
       element (2026-09-04). Every dial has one of these. */
   dial: string;
+  /** Whether this dial's drawer is the one showing. */
+  open: boolean;
+  onOpen: (dial: string) => void;
   /** The reading's key on the wire, or none for a dial that is a
       picture of readings counted elsewhere (the GPU and disk dials
       above their per-part rows). Without it the unit and detail marks
@@ -1550,7 +1662,6 @@ function Dial({
       carries why). */
   pips?: Pip[];
 }) {
-  const [flipped, setFlipped] = useState(false);
   // A percentage, because the arc is one and the two should agree at a
   // glance. The exact quantity — bytes, cores, cards — is the back's job.
   const value = fraction === null ? null : `${Math.round(fraction * 100)}%`;
@@ -1561,14 +1672,17 @@ function Dial({
         type="button"
         data-metric
         data-dial={dial}
-        data-flipped={flipped}
+        data-open={open}
         data-vitals-unit={name}
         data-vitals-unknown={unknown ? "" : undefined}
-        aria-pressed={flipped}
+        aria-expanded={open}
         // The sentence, not "CPU" — a name that reads out the short form
         // would make a screen reader turn the card over for the number.
         aria-label={sentence}
-        onClick={() => setFlipped((on) => !on)}
+        // **A toggle, not an open.** Pressing the dial that is already
+        // showing closes it — anything else makes the press do nothing
+        // when it is already on, which reads as a stuck control.
+        onClick={() => onOpen(open ? "" : dial)}
         className="rounded-md"
         // Wider than the arc it holds, because the back has to fit a
         // sentence: the two faces share one box, and sizing it to the
@@ -1592,10 +1706,14 @@ function Dial({
               around it: it is what `khor devices` prints word for word,
               and it is compared as text — so it has to name exactly the
               sentence and not a box that also holds the quantities. */}
-          <span
-            data-metric-face="back"
-            className="flex h-full w-full flex-col items-center justify-center gap-in rounded-md border px-in text-center"
-          >
+          {/* **Every sentence stays in the document.** This used to be
+              the dial's other face, turned to by pressing; the press
+              opens the drawer now, and the sentences would have gone
+              with the flip. They cannot: `smoke.mjs` counts the card's
+              readings against what `khor devices` prints, word for
+              word, so dropping them makes the card disagree with the
+              terminal. Read aloud, not drawn. */}
+          <span data-metric-face="back" className="sr-only">
             {lines.map((line, i) => (
               <span key={i} className="text-sm tabular-nums">
                 {line}

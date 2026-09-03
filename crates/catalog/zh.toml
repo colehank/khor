@@ -348,6 +348,13 @@ top-user = "用户"
 # 格子里的数走 `lasting()` 的那套量词(秒/分钟/小时/天),和这个 app 里
 # 每一处时长同一套词——列头是名词,格子里是数,两者不重复。
 top-time = "时长"
+# CPU 与内存那两个抽屉的页脚。**不许省略。**
+# 一张卡、一个卷是机器的**零件**,它们的读数加起来就是上面那个环;一个进程只是
+# **占用者**,前几个加起来**不等于**那个环——后面还有几千个。少了这句,一块「六行
+# 占用者」和一块「六个部件」在屏幕上长得一模一样,而它们说的是两件不同的事。
+# (`Vitals` 里没有 per-core 数组、也没有内存分解,所以这两个环底下能诚实摆出来的
+# 只有「谁占得最多」,不是「它由什么构成」。)
+top-share-note = "占用最多的几个,加起来不等于上面那个环"
 # The band under the CPU ring: a day of five-minute buckets.
 top-day = "最近 24 小时 CPU"
 # How old the reading is. **Printed on every reading that is not this

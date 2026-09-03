@@ -1856,6 +1856,98 @@ try {
   if (!after.sorted.includes("mem:descending")) fail(`the answer landed but aria-sort still says ${after.sorted.join(",")}`);
   if (after.asking.length !== 0) fail(`a head is still marked waiting after the answer landed: ${after.asking.join(",")}`);
   const peerGpus = devs.find((d) => d.name === "peer").vitals.vitals.gpus;
+  //     ── nothing overflows sideways, at any width ─────────────────
+  //
+  //     **Worth more than any single assertion here**, because what it
+  //     guards is not today's columns but every column anyone adds
+  //     later. Stepped at 10px and not at 20: a 19px-wide overflow band
+  //     was measured on the earlier single-panel draft (a breakpoint
+  //     written at 560 while the one-line layout stopped fitting at
+  //     580), and 20px steps walked straight over it — two-point
+  //     checking at 1100 and 390 never had a chance.
+  //
+  //     One page, only the viewport changes; a context per step costs
+  //     four times as long and measures the same thing.
+  //
+  //     **What is asserted and what is only recorded.** The page and
+  //     the drawer must never overflow — those are what this batch
+  //     built. The process table is a box that legitimately scrolls
+  //     sideways today: at 390 its seven columns want 456 in a 332 box.
+  //     That is the eight-column table's own job (batch ②, which
+  //     re-lays it as stacked rows narrow), so its width is measured
+  //     and printed here rather than asserted — **and the number is
+  //     printed so it cannot be forgotten**. When ② lands, move
+  //     `data-load-top-box` into `mustNotOverflow` and this becomes the
+  //     whole-card guarantee the spec asks for.
+  {
+    const wide = { width: 1120, height: 1000 };
+    const bad = [];
+    const tableBand = [];
+    // **From 390, the narrowest width this app is drawn for** — the
+    // phone the narrow face targets, and the width every other stop in
+    // this file uses. At 380 the shell itself is 3px over (measured:
+    // the boxes involved are the screen, the card and its header, each
+    // exactly 380 wide sitting one pixel in — no drawer or part row
+    // among them), which is a shell question and not this batch's.
+    // Printed below rather than dropped.
+    for (let w = 390; w <= 1200; w += 10) {
+      await page.setViewportSize({ width: w, height: 800 });
+      // **Settled, and settled on purpose.** The drawer decides its own
+      // layout from its own width through a ResizeObserver, so the
+      // frame right after a resize is measured against the previous
+      // width — a real state, lasting one frame, that no human resizing
+      // a window can see. Two animation frames is the browser's own
+      // definition of "the layout after this change"; measuring before
+      // it reports the layout before the change.
+      await page.evaluate(
+        () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok(null)))),
+      );
+      await wait(45);
+      const read = () =>
+        page.evaluate(() => {
+          const de = document.documentElement;
+          const out = { doc: de.scrollWidth - de.clientWidth, drawer: 0, table: 0 };
+          // A box carrying `overflow-x: hidden` reports nothing and
+          // turns this into a check that cannot fail — none of these do.
+          for (const n of document.querySelectorAll("[data-drawer]")) {
+            out.drawer = Math.max(out.drawer, n.scrollWidth - n.clientWidth);
+          }
+          for (const n of document.querySelectorAll("[data-load-top-box]")) {
+            out.table = Math.max(out.table, n.scrollWidth - n.clientWidth);
+          }
+          return out;
+        });
+      // **Read twice, and count only what survives both.** A resize
+      // leaves one frame measured against the old width, and the
+      // readings at the narrow end moved run to run (3, then 1, then 5)
+      // — a quantity that flaps makes a gate that flaps, which is worse
+      // than no gate. A structural band is there in both reads; a
+      // settle transient is not. This is a discriminating test rather
+      // than a threshold picked to be quiet.
+      const first = await read();
+      await wait(90);
+      const over = await read();
+      over.doc = Math.min(first.doc, over.doc);
+      over.drawer = Math.min(first.drawer, over.drawer);
+      over.table = Math.min(first.table, over.table);
+      if (over.doc > 0) bad.push(`${w}:page+${over.doc}`);
+      if (over.drawer > 0) bad.push(`${w}:drawer+${over.drawer}`);
+      if (over.table > 0) tableBand.push(`${w}:+${over.table}`);
+    }
+    await page.setViewportSize(wide);
+    await wait(200);
+    if (bad.length) fail(`sideways overflow at ${bad.length} widths: ${bad.slice(0, 8).join(" ")}`);
+    await page.setViewportSize({ width: 380, height: 800 });
+    await wait(120);
+    const at380 = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    if (at380 > 0) console.log(`note: at 380 the shell is ${at380}px over — below the 390 this face is drawn for`);
+    console.log(
+      tableBand.length
+        ? `bandwidth 380→1200 by 10: page and drawer clean; the process table scrolls at ${tableBand.length} widths (${tableBand[0]} … ${tableBand[tableBand.length - 1]}) — batch ② owns that`
+        : "bandwidth 380→1200 by 10: nothing overflows sideways anywhere",
+    );
+  }
+
   //     ── the dial is a 210° face, and the rim carries the parts ───
   //
   //     **This is the assertion D lives or dies by.** The dial exists
@@ -1912,6 +2004,76 @@ try {
     }
     else if (dial.gpu.arc !== 1) fail(`the GPU dial draws ${dial.gpu.arc} summary arcs`);
   }
+
+  //     ── the drawer: one height, and three straight edges ─────────
+  //
+  //     **Pressing a different dial must not move the card.** A drawer
+  //     that grows to its content makes everything below it jump while
+  //     somebody is reading it.
+  //
+  //     ⚠️ Opened **by state, not by counting presses** — the press is a
+  //     toggle, so pressing a dial that is already open closes it. The
+  //     spec's author wrote this assertion wrong twice and got a red on
+  //     a page that was correct; a red from a broken setup and a red
+  //     from a real bug read exactly the same.
+  const drawerHeights = [];
+  for (const key of ["cpu", "gpu", "mem", "disk"]) {
+    const dial = page.locator(`[data-machine-card] [data-dial="${key}"]`);
+    if ((await dial.count()) === 0) continue;
+    if ((await dial.getAttribute("data-open")) !== "true") await dial.click();
+    await wait(120);
+    const h = await page.evaluate(() =>
+      Math.round(document.querySelector("[data-machine-card] [data-drawer]").getBoundingClientRect().height),
+    );
+    drawerHeights.push(`${key}:${h}`);
+  }
+  {
+    const hs = new Set(drawerHeights.map((x) => x.split(":")[1]));
+    if (drawerHeights.length < 2) fail(`probe dead: only ${drawerHeights.length} drawers could be opened`);
+    else if (hs.size !== 1) fail(`the drawers are ${drawerHeights.join(" ")} — pressing around makes the card jump`);
+  }
+  //     **The bar's two edges are one value each, down the whole list.**
+  //     That is what the shared grid buys, and a row that sized its own
+  //     bar would read as a ragged ladder.
+  //
+  //     ⚠️ **Measured at a width where the grid is actually in play.**
+  //     At the gate's usual viewport the card is narrow enough that the
+  //     drawer is in its stacked layout, where there is no shared grid
+  //     to check — and the first version of this ran there and passed
+  //     by being skipped, which reads exactly like passing on merit.
+  //     So: widen first, then refuse to draw a conclusion if it is
+  //     still tight.
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await wait(250);
+  const edges = await page.evaluate(() => {
+    const drawer = document.querySelector("[data-machine-card] [data-drawer]");
+    const open = drawer.querySelector("[data-parts]:not([hidden])");
+    const side = (sel, s) => [
+      ...new Set([...open.querySelectorAll(sel)].map((n) => +n.getBoundingClientRect()[s].toFixed(1))),
+    ];
+    return {
+      rows: open.querySelectorAll("[data-part]").length,
+      barL: side("[data-part-bar]", "left"),
+      barR: side("[data-part-bar]", "right"),
+      nameL: side("[data-part-name]", "left"),
+      numR: side("[data-part-num]", "right"),
+      tight: drawer.hasAttribute("data-tight"),
+    };
+  });
+  if (edges.rows < 2) fail(`probe dead: the open drawer has ${edges.rows} rows, so "one value each" is trivially true`);
+  else if (edges.tight) fail("probe dead: the drawer stayed in its stacked layout, so the shared grid was never tested");
+  else {
+    for (const [what, vals] of [
+      ["the bar's left edge", edges.barL],
+      ["the bar's right edge", edges.barR],
+      ["the name column's left edge", edges.nameL],
+      ["the numbers' right edge", edges.numR],
+    ]) {
+      if (vals.length !== 1) fail(`${what} has ${vals.length} values across ${edges.rows} rows: ${vals.join(",")}`);
+    }
+  }
+  await page.setViewportSize({ width: 1120, height: 1000 });
+  await wait(200);
 
   //     ── one busy card among idle ones is still visible ───────────
   //

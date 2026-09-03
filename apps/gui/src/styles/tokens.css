@@ -607,6 +607,30 @@
    * Nine rows at the table's own line height, near enough: eight is
    * `top`'s own fold on a short terminal, and the ninth row half in
    * view is what says the box scrolls without a word saying so. */
+  /* **The drawer under the dials, and it is a fixed height on purpose.**
+   * Pressing GPU and pressing 磁盘 must leave the block exactly as tall
+   * — a drawer that grows to its content makes the whole card jump as
+   * somebody looks around it, and the thing they were reading moves out
+   * from under the eye. Four rows plus the group's own heading; more
+   * than four scrolls inside, with the same drag the process window
+   * takes.
+   *
+   * Stopping half-way down a row is what a scroll box does by default,
+   * and a half-drawn row reads as a broken one — the rows snap
+   * (`app.css`). **Not a fading mask**: the codex forbids gradients,
+   * and a mask says 「there is more below」 as a material effect rather
+   * than as a fact. */
+  --drawer-row: 27px;
+  --drawer-h: calc(var(--drawer-row) * 4 + 46px);
+  /* The three columns every part row shares. Named widths rather than
+   * content sizing, because the point of the grid is that the bar's two
+   * edges are **one value each** down the whole list — 「对齐」 has to
+   * be structural, not two numbers somebody keeps equal by hand. The
+   * name column is measured against `GPU0 NVIDIA GeForce RTX 4090`: a
+   * width that truncates here would put a truncation mark somewhere the
+   * text actually fits, which turns a real signal into decoration. */
+  --part-name: 220px;
+  --part-num: 172px;
   --top-h: 232px;
   /* How wide the process-name column may get before it clips
    * (`max-w-top-name`). **A ceiling, not a width**: the column takes
@@ -1025,6 +1049,8 @@
   --spacing-tab-on: var(--tab-w-on);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
+  --spacing-drawer-h: var(--drawer-h);
+  --spacing-drawer-row: var(--drawer-row);
   --spacing-top-name: var(--top-name);
   /* `max-w-measure`. Through the spacing namespace rather than a
      `--container-*` of its own because `max-w` reads `--max-width`,

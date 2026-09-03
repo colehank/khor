@@ -353,6 +353,17 @@ function RailItem({
 
 export default function App() {
   const narrow = useNarrow();
+  // **The breakpoint, published once.** `use-narrow` owns the number
+  // and stylesheets need it too (the machine card's part rows drop
+  // their shared grid narrow) — so the shell stamps the answer on the
+  // root and CSS keys off the attribute, rather than a `@media`
+  // repeating a number that can drift with nothing to catch it. The px
+  // gate refuses the second copy out loud.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (narrow) root.setAttribute("data-narrow", "");
+    else root.removeAttribute("data-narrow");
+  }, [narrow]);
   const listPane = useListWidth(narrow);
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
