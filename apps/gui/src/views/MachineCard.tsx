@@ -957,20 +957,20 @@ function Top({
     <div data-load-top-box className="max-h-top-h overflow-y-auto">
       {/* **Wide sizes to its content; narrow fills the box.** `w-full`
           on a wide card spread four narrow columns across a thousand
-          pixels and pushed the pid — the first thing read — 229 pixels
-          into the panel (measured 2026-09-03 on the live face), with a
+          pixels and pushed the pid — the first thing read — 229px into
+          the panel (measured 2026-09-03 on the live face), with a
           hand's width of nothing in front of it. A table of numbers is
           read by running along a row and down a column, and neither
           works when the columns are a panel apart.
           **Handing the slack to one column instead does not fix that,
           it moves it**: with `w-full` on the name cell the same
-          measurement gave a left edge of 24.64 and 799 pixels of blank
+          measurement gave a left edge of 24.64px and 799px of blank
           between a process's name and its CPU number. So on a wide
-          card nothing grows — the table is 521 pixels of packed
-          columns with the card's spare width left spare, and the name
-          column stops at `max-w-top-name`.
-          Narrow is the opposite question: there the box is 332 pixels
-          and the columns want more, so `w-full` on the table and
+          card nothing grows — the table is 521px of packed columns
+          with the card's spare width left spare, and the name column
+          stops at `max-w-top-name`.
+          Narrow is the opposite question: there the box is 332px and
+          the columns want more, so `w-full` on the table and
           on the name cell rations what there is — the numbers keep
           their edges and the name gives up what it must. */}
       <table data-load-top className={cn("text-sm tabular-nums", narrow && "w-full")}>
@@ -1393,10 +1393,10 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
         // **`h-6`, not `h-8`.** Five readings at the old height would
-        // be 160 pixels where four were 128; at 24 apiece they are 120
-        // — a row was added and the block got *shorter*. The inner
-        // coordinates do not move: `preserveAspectRatio="none"` lets
-        // the same 0–100 box stretch into whatever height this is.
+        // be 160px where four were 128px; at 24px apiece they are
+        // 120px — a row was added and the block got *shorter*. The
+        // inner coordinates do not move: `preserveAspectRatio="none"`
+        // lets the same 0–100 box stretch into whatever height it is.
         className="h-6 min-w-0 flex-1 text-foreground"
         aria-hidden="true"
       >
