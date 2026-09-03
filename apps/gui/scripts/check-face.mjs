@@ -166,7 +166,14 @@ try {
           cores: 10,
           mem: fill(13_000_000_000, 16_000_000_000),
           disk: fill(400_000_000_000, 500_000_000_000),
-          gpu: { util_pct: 67, cards: 2, mem: fill(2_000_000_000, 8_000_000_000) },
+          // **The aggregate says four cards; the per-card list has
+          // two.** A real shape — an older node reports the count and
+          // no list — and the one arrangement that can tell 「count what
+          // the node claims」 apart from 「count what is drawn」. With
+          // both numbers equal, an implementation reading the wrong one
+          // passes, which is a control group whose arms were built
+          // identical.
+          gpu: { util_pct: 67, cards: 4, mem: fill(2_000_000_000, 8_000_000_000) },
           version: "0.1.0",
           // The surveyed shape (2026-09-02): cards one by one — one
           // named, one nameless (the word fallback) — and volumes one
@@ -2022,10 +2029,25 @@ try {
     if ((await dial.count()) === 0) continue;
     if ((await dial.getAttribute("data-open")) !== "true") await dial.click();
     await wait(120);
-    const h = await page.evaluate(() =>
-      Math.round(document.querySelector("[data-machine-card] [data-drawer]").getBoundingClientRect().height),
-    );
-    drawerHeights.push(`${key}:${h}`);
+    const seen = await page.evaluate(() => {
+      const drawer = document.querySelector("[data-machine-card] [data-drawer]");
+      const open = drawer.querySelector("[data-parts]:not([hidden])");
+      const head = drawer.querySelector("[data-drawer-head] [data-drawer-count]");
+      return {
+        h: Math.round(drawer.getBoundingClientRect().height),
+        says: Number(head?.dataset.drawerCount ?? -1),
+        rows: open ? open.querySelectorAll("[data-part]").length : -1,
+      };
+    });
+    drawerHeights.push(`${key}:${seen.h}`);
+    //   **Every group, not just whichever is open at the end.** The
+    //   first version read only the last one the loop left showing, so
+    //   a heading lying on one of the other three was never looked at —
+    //   an assertion pointed at the wrong element passes for reasons
+    //   that have nothing to do with what it claims.
+    if (seen.says !== seen.rows) {
+      fail(`the ${key} drawer's heading says ${seen.says} but draws ${seen.rows} rows — the count is about something else`);
+    }
   }
   {
     const hs = new Set(drawerHeights.map((x) => x.split(":")[1]));
@@ -2038,7 +2060,18 @@ try {
   //     drawer of parts from a drawer of occupants at a glance.
   const head = await page.evaluate(() => {
     const h = document.querySelector("[data-machine-card] [data-drawer-head]");
-    return h ? { text: h.innerText.replace(/\s+/g, " ").trim(), glyphs: h.querySelectorAll("[data-ring-glyph]").length } : null;
+    if (!h) return null;
+    const open = document.querySelector("[data-machine-card] [data-parts]:not([hidden])");
+    return {
+      text: h.innerText.replace(/\s+/g, " ").trim(),
+      glyphs: h.querySelectorAll("[data-ring-glyph]").length,
+      // **What it counts, against what is under it.** A heading saying
+      // 「4 卡」 over three rows is a lie about the thing directly
+      // below — and the node can report a card count while sending no
+      // per-card list, so the two really can disagree.
+      says: Number(h.querySelector("[data-drawer-count]")?.dataset.drawerCount ?? -1),
+      rows: open ? open.querySelectorAll("[data-part]").length : -1,
+    };
   });
   if (!head) fail("the open drawer has no heading — six rows under four dials do not say which dial they are");
   else {

@@ -666,25 +666,21 @@ function Readings({
         top={top}
         open={open}
         heads={{
-          cpu: {
-            word: cli.vitals_name_cpu,
-            count: cli.procs_sub(Math.min(6, top.length)),
-            fraction: v.cpu_pct / 100,
-          },
+          cpu: { word: cli.vitals_name_cpu, count: cli.procs_sub, fraction: v.cpu_pct / 100 },
           gpu: {
             word: cli.vitals_name_gpu,
-            count: cli.gpu_sub_nomem(cards.length || (v.gpu?.cards ?? 0)),
-            fraction: gpuMean !== null ? gpuMean / 100 : (v.gpu ? v.gpu.util_pct / 100 : null),
+            count: cli.gpu_sub_nomem,
+            fraction: gpuMean !== null ? gpuMean / 100 : v.gpu ? v.gpu.util_pct / 100 : null,
           },
           mem: {
             word: cli.vitals_name_mem,
-            count: cli.procs_sub(Math.min(6, top.length)),
+            count: cli.procs_sub,
             fraction: v.mem.total > 0 ? v.mem.used / v.mem.total : null,
             strain: row.vitals.mem_strain,
           },
           disk: {
             word: cli.vitals_name_disk,
-            count: cli.vols_sub(vols.length),
+            count: cli.vols_sub,
             fraction: disk && disk.total > 0 ? disk.used / disk.total : null,
             strain: diskStrain,
           },
@@ -729,10 +725,13 @@ function Drawers({
       honestly be shown there is who is taking the most. */
   top: Load["top"];
   open: string;
-  /** Each group's heading: the reading's own glyph, its word, and **how
-      many things are in the drawer** — not a second copy of the reading
-      (that is the dial directly above). */
-  heads: Record<string, { word: string; count: string; fraction: number | null; strain?: Strain | null }>;
+  /** Each group's heading: the reading's own glyph and its word. **The
+      count is not passed in** — it is taken from the rows this
+      component actually renders, so the number and the list cannot
+      disagree. A machine whose node reports 「4 cards」 while sending no
+      per-card list would otherwise print 「4 卡」 over an empty drawer,
+      which is a heading lying about the thing directly under it. */
+  heads: Record<string, { word: string; fraction: number | null; strain?: Strain | null; count: (n: number) => string }>;
 }) {
   if (!row.vitals) return null;
   const { vitals: v, volume_strains } = row.vitals;
@@ -773,6 +772,14 @@ function Drawers({
       .sort((a, b) => (by === "cpu" ? b.cpu_pct - a.cpu_pct : Number(b.mem) - Number(a.mem)))
       .slice(0, 6);
   const whole = v.cores > 0 ? v.cores * 100 : 100;
+  // **What each drawer actually draws.** The heading counts these, not
+  // what the node claims elsewhere — see `heads`.
+  const drawn: Record<string, number> = {
+    cpu: busiest("cpu").length,
+    gpu: cards.length,
+    mem: busiest("mem").length,
+    disk: vols.length,
+  };
   const box = useRef<HTMLDivElement>(null);
   // What the three columns need before they stop fitting: the two fixed
   // ones, the two gaps between them, and enough track left for a bar to
@@ -800,7 +807,9 @@ function Drawers({
             <Glyph fraction={heads[open].fraction} strain={heads[open].strain} />
             <span>{heads[open].word}</span>
             <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{heads[open].count}</span>
+            <span data-drawer-count={drawn[open]} className="tabular-nums">
+              {heads[open].count(drawn[open])}
+            </span>
           </div>
         )}
         {/* **The rows scroll, the heading does not.** A heading that
