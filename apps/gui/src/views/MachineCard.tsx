@@ -1287,6 +1287,12 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
     { key: "gpu", word: cli.vitals_name_gpu, series: day.gpu },
     { key: "mem", word: cli.vitals_name_mem, series: day.mem },
     { key: "disk", word: cli.vitals_name_disk, series: day.disk },
+    // **The cards' memory, and only where a machine has such a thing.**
+    // On unified memory it is empty by construction, because those
+    // bytes are already the 内存 row — see `khor_core::CpuDay::vram`.
+    // So an NVIDIA box draws five rows and this Mac draws four, from
+    // one code path and no branch about which machine it is.
+    { key: "vram", word: cli.vitals_name_vram, series: day.vram },
     // A series nobody recorded is not drawn — see the head. `some`
     // rather than `length`: a node can send 288 holes, and a row of
     // holes with a name over it reads as a reading that is missing
@@ -1320,12 +1326,47 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
  * (`Parts`). Without it each row would begin wherever its own word
  * ended, and a vertical comparison across rows would be off by the
  * length of a Chinese word. */
+/**
+ * How dark one bucket is drawn, and whether it is drawn in the strain
+ * colour at all.
+ *
+ * **The value is the ink.** Five steps, and the top boundary is 90 —
+ * the number the product already treats as the edge (`Fill::strain`),
+ * so the band and the dials break at the same place rather than at two
+ * numbers a reader has to hold apart.
+ *
+ * # Which rows may wear the strain colour, and why not the others
+ *
+ * Only 内存 and 磁盘. Those are the two readings where being full is a
+ * thing going wrong: a filesystem at 95 starts failing writes.
+ *
+ * **A busy CPU is not a warning, and neither is a busy card.** A
+ * machine at 95% CPU is a machine doing its job, and `TopRow::gpu_mem`
+ * already records the same for the cards — 「a card can read 0% busy
+ * while holding 43 GiB」 — so a card at 90% memory is the normal state
+ * of a box that is being used. Painting those in the alarm colour would
+ * light the alarm on every working machine, and this repo's own ruling
+ * is that a badge which is never zero is not a badge.
+ */
+function shadeOf(pct: number, row: string): { key: string; opacity: number; strain: boolean } {
+  const v = Math.max(0, Math.min(100, pct));
+  // `>=` at 90, pinned deliberately: the boundary bucket belongs to the
+  // top step, the way `Fill::strain` reads its own.
+  if (v >= 90) {
+    const strain = row === "mem" || row === "disk";
+    return { key: strain ? "strain" : "4", opacity: 1, strain };
+  }
+  if (v >= 70) return { key: "3", opacity: 0.66, strain: false };
+  if (v >= 45) return { key: "2", opacity: 0.4, strain: false };
+  if (v >= 20) return { key: "1", opacity: 0.22, strain: false };
+  return { key: "0", opacity: 0.1, strain: false };
+}
+
 function DayRow({ name, word, series }: { name: string; word: string; series: (number | null)[] }) {
   const n = Math.max(1, series.length);
   const W = 1000;
   const H = 100;
   const w = W / n;
-  const y = (pct: number) => H - (Math.max(0, Math.min(100, pct)) / 100) * H;
   const seen = series.filter((v): v is number => v !== null);
   const peak = seen.length > 0 ? Math.round(Math.max(...seen)) : null;
   return (
@@ -1333,9 +1374,15 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
       <span className="w-8 flex-none text-aux text-muted-foreground">{word}</span>
       <svg
         data-day-band
+        data-day-view="heat"
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
-        className="h-8 min-w-0 flex-1 text-foreground"
+        // **`h-6`, not `h-8`.** Five readings at the old height would
+        // be 160 pixels where four were 128; at 24 apiece they are 120
+        // — a row was added and the block got *shorter*. The inner
+        // coordinates do not move: `preserveAspectRatio="none"` lets
+        // the same 0–100 box stretch into whatever height this is.
+        className="h-6 min-w-0 flex-1 text-foreground"
         aria-hidden="true"
       >
         <line
@@ -1347,14 +1394,53 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
           strokeOpacity={0.15}
           vectorEffect="non-scaling-stroke"
         />
-        {series.map((b, i) => (
-          <g key={i} data-day-cell data-gap={b === null ? "" : undefined}>
-            {b !== null && (
-              <rect x={i * w} y={y(b)} width={w + 0.6} height={H - y(b)} fill="currentColor" fillOpacity={0.5}>
-                <title>{`${Math.round(b)}%`}</title>
-              </rect>
-            )}
-          </g>
+        {series.map((b, i) => {
+          const step = b === null ? null : shadeOf(b, name);
+          return (
+            <g key={i} data-day-cell data-gap={b === null ? "" : undefined}>
+              {b !== null && step !== null && (
+                <rect
+                  data-day-shade={step.key}
+                  x={i * w}
+                  // **Full height, every cell.** The value is in the
+                  // ink, not in the height: a column whose height was
+                  // the reading made five stacked rows into five
+                  // little charts to be read one at a time, and the
+                  // comparison this block exists for is vertical —
+                  // 「CPU 冲高的时候显存也满了吗」 — which wants one
+                  // column of one colour per moment.
+                  y={0}
+                  width={w + 0.6}
+                  height={H}
+                  fill={step.strain ? "var(--strain)" : "currentColor"}
+                  fillOpacity={step.opacity}
+                >
+                  <title>{`${Math.round(b)}%`}</title>
+                </rect>
+              )}
+            </g>
+          );
+        })}
+        {/* Twenty-four hour marks, one an hour. **Not decoration**: they
+            replaced a hair per bucket, and the difference is that an
+            hour is a unit somebody can count. 288 five-minute buckets
+            at three pixels each cannot be counted, so a tick per bucket
+            was a decoration claiming to be a scale. */}
+        {/* The marks *between* the hours, so the last one does not land
+            on the band's own right edge where it is a border rather
+            than a scale: 24 hours have 23 boundaries inside them. */}
+        {Array.from({ length: Math.max(0, Math.ceil(n / 12) - 1) }, (_, k) => (
+          <line
+            key={k}
+            data-day-hour
+            x1={(k + 1) * 12 * w}
+            y1={0}
+            x2={(k + 1) * 12 * w}
+            y2={H}
+            stroke="currentColor"
+            strokeOpacity={0.12}
+            vectorEffect="non-scaling-stroke"
+          />
         ))}
       </svg>
       {/* What the shape cannot say. Absent when nothing was measured —

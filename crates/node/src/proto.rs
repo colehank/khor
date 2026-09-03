@@ -463,6 +463,7 @@ mod tests {
                 mem: vec![Some(40.0), None, Some(41.5)],
                 gpu: vec![Some(7.0), None, None],
                 disk: vec![Some(96.0), None, Some(96.0)],
+                vram: vec![Some(90.0), None, Some(12.0)],
             },
         };
         let bytes = encode(&Response::Load { load: sent.clone() }).unwrap();
@@ -564,8 +565,9 @@ mod tests {
         .unwrap();
         let d2: khor_core::CpuDay = rmp_serde::from_slice(&two).unwrap();
         assert_eq!(d2.mem, vec![Some(2.0)], "the series it did record survive");
-        assert!(d2.gpu.is_empty(), "and the two it never knew are absent, not a day of zeros");
+        assert!(d2.gpu.is_empty(), "and the ones it never knew are absent, not a day of zeros");
         assert!(d2.disk.is_empty());
+        assert!(d2.vram.is_empty());
     }
 
     /// A process row from before the GPU columns decodes with them
@@ -612,6 +614,57 @@ mod tests {
         assert_eq!(r.mem, 9);
         assert_eq!(r.gpu_pct, None, "a row from a khor that could not look says nothing, not zero");
         assert_eq!(r.gpu_mem, None);
+    }
+
+    /// A day from before the cards' memory was recorded decodes with
+    /// that series **empty**, and the four before it intact.
+    ///
+    /// Empty rather than a day of zeros is what lets the face draw four
+    /// rows on a machine that never recorded a fifth — and it is the
+    /// same shape as the honest answer on an Apple Silicon machine,
+    /// where the cards' bytes are already the memory row
+    /// (`khor_core::CpuDay::vram`).
+    ///
+    /// **The old bytes are shown to lack the field precisely**: this
+    /// encoding writes a struct as an array and msgpack spells a short
+    /// array's element count into its first byte (`0x90 | n`), so six
+    /// fields against today's seven is the closest thing there is to
+    /// 「字节里确实没有那个键」.
+    #[test]
+    fn a_day_from_before_the_cards_memory_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct DayBeforeVram {
+            bucket_ms: u64,
+            now_ms: u64,
+            buckets: Vec<Option<f32>>,
+            mem: Vec<Option<f32>>,
+            gpu: Vec<Option<f32>>,
+            disk: Vec<Option<f32>>,
+        }
+        let old = rmp_serde::to_vec(&DayBeforeVram {
+            bucket_ms: 300_000,
+            now_ms: 7,
+            buckets: vec![Some(1.0)],
+            mem: vec![Some(2.0)],
+            gpu: vec![Some(3.0)],
+            disk: vec![Some(4.0)],
+        })
+        .unwrap();
+        assert_eq!(old[0], 0x96, "the day a node sent yesterday is six fields");
+        let fresh = rmp_serde::to_vec(&khor_core::CpuDay {
+            bucket_ms: 300_000,
+            now_ms: 7,
+            buckets: vec![Some(1.0)],
+            mem: vec![Some(2.0)],
+            gpu: vec![Some(3.0)],
+            disk: vec![Some(4.0)],
+            vram: vec![Some(5.0)],
+        })
+        .unwrap();
+        assert_eq!(fresh[0], 0x97, "and today's is seven — the new one is really on the wire");
+        let d: khor_core::CpuDay = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(d.disk, vec![Some(4.0)], "the series it did record survive, the last one included");
+        assert!(d.vram.is_empty(), "and the one it never knew is absent, not a day of zeros");
     }
 
     /// A process row from before **how long it has been up** and **the

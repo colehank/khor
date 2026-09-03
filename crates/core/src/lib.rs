@@ -975,6 +975,21 @@ pub struct CpuDay {
     pub gpu: Vec<Option<f32>>,
     #[serde(default)]
     pub disk: Vec<Option<f32>>,
+    /// The cards' memory over the same buckets, summed across the
+    /// machine.
+    ///
+    /// **Empty on a unified-memory machine, and that is correct rather
+    /// than missing.** [`Gpu::mem`] is `None` there because those bytes
+    /// are already counted in [`Vitals::mem`] — drawing them again
+    /// under a second name would put one machine's memory on the screen
+    /// twice. The face draws a row only for a series that has a reading
+    /// in it, so an Apple Silicon machine shows four rows and an NVIDIA
+    /// one shows five, from the same code.
+    ///
+    /// Tail-appended with a serde default, the wire rule: a node that
+    /// never recorded it sends nothing and this decodes empty.
+    #[serde(default)]
+    pub vram: Vec<Option<f32>>,
 }
 
 /// What a machine is busy with: the top now and the day behind it. One

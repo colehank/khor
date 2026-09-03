@@ -80,8 +80,8 @@ impl CpuHistory {
                     // two hundred short lines the recorder rewrites
                     // whole; a keyed format would be a parser to keep.
                     let mut tail = || it.next().and_then(|m| m.parse::<f64>().ok());
-                    let (mem, gpu, disk) = (tail(), tail(), tail());
-                    buckets.insert(idx, Bucket { cpu: sum, n, mem, gpu, disk });
+                    let (mem, gpu, disk, vram) = (tail(), tail(), tail(), tail());
+                    buckets.insert(idx, Bucket { cpu: sum, n, mem, gpu, disk, vram });
                 }
             }
         }
@@ -110,6 +110,9 @@ impl CpuHistory {
         if let Some(d) = r.disk_pct {
             slot.disk = Some(slot.disk.unwrap_or(0.0) + f64::from(d));
         }
+        if let Some(v) = r.vram_pct {
+            slot.vram = Some(slot.vram.unwrap_or(0.0) + f64::from(v));
+        }
         let floor = idx.saturating_sub(BUCKETS as u64);
         self.buckets.retain(|k, _| *k > floor);
         let text: String = self
@@ -126,7 +129,7 @@ impl CpuHistory {
                 // one character and `parse::<f64>` already reads it as
                 // absent, so the shorter lines an older recorder wrote
                 // still decode by running out of columns.
-                for v in [b.mem, b.gpu, b.disk] {
+                for v in [b.mem, b.gpu, b.disk, b.vram] {
                     match v {
                         Some(x) => line.push_str(&format!(" {x}")),
                         None => line.push_str(" -"),
@@ -164,6 +167,7 @@ impl CpuHistory {
             mem: mean(|b| b.mem),
             gpu: mean(|b| b.gpu),
             disk: mean(|b| b.disk),
+            vram: mean(|b| b.vram),
         }
     }
 }
@@ -177,6 +181,7 @@ struct Bucket {
     mem: Option<f64>,
     gpu: Option<f64>,
     disk: Option<f64>,
+    vram: Option<f64>,
 }
 
 /// One beat's four readings, as the recorder took them.
@@ -193,6 +198,10 @@ pub struct Reading {
     /// How full the filesystem khor lives on is — the same reading the
     /// disk dial aggregates, so the day and the dial agree.
     pub disk_pct: Option<f32>,
+    /// How full the machine's cards are, summed. `None` on a machine
+    /// with no card khor can ask **and on a unified-memory one**, where
+    /// those bytes are already `mem_pct` — see `khor_core::CpuDay::vram`.
+    pub vram_pct: Option<f32>,
 }
 
 #[cfg(test)]
@@ -222,7 +231,14 @@ mod tests {
         let t0 = 500 * BUCKET_MS;
         {
             let mut h = CpuHistory::open(&d);
-            h.record(t0, Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: Some(96.0) });
+            // No card to ask, but a readable disk **and** a readable
+            // card memory behind it — so the hole is in the middle of
+            // the tail, which is the arrangement a positional format
+            // gets wrong.
+            h.record(
+                t0,
+                Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: Some(96.0), vram_pct: Some(71.0) },
+            );
         }
         // A second instance, so what is asserted is what reached disk.
         let day = CpuHistory::open(&d).day(t0);
@@ -231,6 +247,7 @@ mod tests {
         assert_eq!(day.mem[last], Some(40.0));
         assert_eq!(day.gpu[last], None, "no card, no figure — and not a zero");
         assert_eq!(day.disk[last], Some(96.0), "the disk was measured, so it must have survived the write");
+        assert_eq!(day.vram[last], Some(71.0), "and so must the column after it");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -243,9 +260,9 @@ mod tests {
         let d = dir("gap");
         let mut h = CpuHistory::open(&d);
         let t0 = 100 * BUCKET_MS;
-        h.record(t0, Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
-        h.record(t0 + 1000, Reading { cpu_pct: 30.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
-        h.record(t0 + 2 * BUCKET_MS, Reading { cpu_pct: 50.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None }); // one whole bucket skipped
+        h.record(t0, Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+        h.record(t0 + 1000, Reading { cpu_pct: 30.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+        h.record(t0 + 2 * BUCKET_MS, Reading { cpu_pct: 50.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None }); // one whole bucket skipped
         let day = h.day(t0 + 2 * BUCKET_MS);
         let n = day.buckets.len();
         assert_eq!(n, BUCKETS);
@@ -265,7 +282,7 @@ mod tests {
         let t0 = 500 * BUCKET_MS;
         {
             let mut h = CpuHistory::open(&d);
-            h.record(t0, Reading { cpu_pct: 42.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
+            h.record(t0, Reading { cpu_pct: 42.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
         }
         let again = CpuHistory::open(&d);
         let day = again.day(t0);
@@ -284,8 +301,8 @@ mod tests {
         let d = dir("prune");
         let t0 = 1000 * BUCKET_MS;
         let mut h = CpuHistory::open(&d);
-        h.record(t0, Reading { cpu_pct: 99.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
-        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, Reading { cpu_pct: 1.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
+        h.record(t0, Reading { cpu_pct: 99.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, Reading { cpu_pct: 1.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
         let reopened = CpuHistory::open(&d);
         let day = reopened.day(t0 + (BUCKETS as u64 + 1) * BUCKET_MS);
         assert_eq!(day.buckets[BUCKETS - 1], Some(1.0));
@@ -329,8 +346,8 @@ mod memory_day {
         let d = fresh_dir("avg");
         let mut h = CpuHistory::open(&d);
         let at = 10 * BUCKET_MS;
-        h.record(at, Reading { cpu_pct: 50.0, mem_pct: 30.0, gpu_pct: None, disk_pct: None });
-        h.record(at + 1_000, Reading { cpu_pct: 70.0, mem_pct: 50.0, gpu_pct: None, disk_pct: None });
+        h.record(at, Reading { cpu_pct: 50.0, mem_pct: 30.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+        h.record(at + 1_000, Reading { cpu_pct: 70.0, mem_pct: 50.0, gpu_pct: None, disk_pct: None, vram_pct: None });
         let day = h.day(at);
         let last = BUCKETS - 1;
         assert_eq!(day.buckets[last], Some(60.0), "cpu is the bucket's mean");

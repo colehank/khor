@@ -251,11 +251,24 @@ try {
   // time axis. **Disk is deliberately all holes** — that is a series
   // this fixture's machine records nothing for, and the chart must draw
   // no row at all rather than a named row of absence (`DayChart`).
-  const memBuckets = dayBuckets.map((b, i) => (b === null ? null : 40 + (i % 20)));
+  // **One bucket at 95** so 内存 actually wears the strain colour
+  // somewhere: without it the strain assertion has only its negative
+  // half, and a chart that never painted strain at all would pass.
+  const memBuckets = dayBuckets.map((b, i) => (b === null ? null : i === 7 ? 95 : 40 + (i % 20)));
   const gpuBuckets = dayBuckets.map((b, i) => (b === null ? null : (i * 3) % 100));
   const diskBuckets = dayBuckets.map(() => null);
+  // The cards' memory, on the same holes as the rest. **One bucket is
+  // exactly 90.0** — the strain boundary — so a comparison written `>`
+  // instead of `>=` reds on that bucket alone, the way
+  // `strain_steps_at_ninety_and_ninety_five_exactly` pins its own.
+  const vramBuckets = dayBuckets.map((b, i) => (b === null ? null : i === 11 ? 90 : 20 + (i % 55)));
   // How many rows the chart owes: one per series with a reading in it.
-  const dayRows = 3;
+  // **Computed, not typed.** It used to be a literal `3`, under a
+  // comment describing a rule that can be evaluated — so adding a
+  // series here would have left it pointing at the old world while
+  // staying green (the ledger's 「过期的数为什么能活那么久」).
+  const daySeries = [dayBuckets, gpuBuckets, memBuckets, diskBuckets, vramBuckets];
+  const dayRows = daySeries.filter((x) => x.some((v) => v !== null)).length;
   const load = {
     top: [
       // **One row without an age on purpose.** `run_secs` is optional
@@ -277,6 +290,7 @@ try {
       mem: memBuckets,
       gpu: gpuBuckets,
       disk: diskBuckets,
+      vram: vramBuckets,
     },
   };
   const ELDER_REFUSAL = "elder-refuses-load";
@@ -1841,6 +1855,72 @@ try {
   const after = await sortStateNow();
   if (!after.sorted.includes("mem:descending")) fail(`the answer landed but aria-sort still says ${after.sorted.join(",")}`);
   if (after.asking.length !== 0) fail(`a head is still marked waiting after the answer landed: ${after.asking.join(",")}`);
+  //     ── the band is a heat band: the value is the ink ────────────
+  //
+  //     **A · the shade really encodes the number.** Pinned to two
+  //     named buckets rather than 「at least two shades exist」, which
+  //     a implementation that coloured by bucket index would also
+  //     satisfy.
+  const shades = await page.evaluate(() => {
+    const row = document.querySelector('[data-machine-card] [data-day-row="cpu"]');
+    const cells = [...row.querySelectorAll("[data-day-cell]")];
+    const at = (i) => cells[i]?.querySelector("[data-day-shade]")?.dataset.dayShade ?? null;
+    const rects = [...row.querySelectorAll("[data-day-shade]")];
+    return {
+      // the fixture's cpu series is 5 + (i % 60), so bucket 0 is 5 and
+      // bucket 58 is 63 — a low one and a high one, by construction.
+      low: at(0),
+      high: at(58),
+      heights: [...new Set(rects.map((r) => r.getAttribute("height")))],
+      views: [...new Set([...row.querySelectorAll("[data-day-view]")].map((e) => e.dataset.dayView))],
+      hours: row.querySelectorAll("[data-day-hour]").length,
+    };
+  });
+  if (shades.low === null || shades.high === null) {
+    fail(`probe dead: the cpu row has no shaded cells to read (low=${shades.low} high=${shades.high})`);
+  } else if (shades.low === shades.high) {
+    fail(`bucket 0 (5%) and bucket 58 (63%) drew the same shade "${shades.low}" — the ink is not carrying the value`);
+  }
+  //     **B · no bars.** Every drawn cell is the full height of the
+  //     row; a height proportional to the value is the old chart coming
+  //     back under a new name.
+  if (shades.heights.length !== 1 || shades.heights[0] !== "100") {
+    fail(`the cells draw ${shades.heights.length} different heights (${shades.heights.join(",")}) — a heat band has one`);
+  }
+  if (shades.views.join(",") !== "heat") fail(`the band does not say which reading it is (${shades.views.join(",")})`);
+  if (shades.hours !== 23) fail(`${shades.hours} hour marks on a 288-bucket day — one an hour is 23 between the ends`);
+  //     **F · strain is judged per bucket, and only where being full is
+  //     a fault.** 内存 wears it; CPU does not, because a busy machine
+  //     is a machine working (see `shadeOf`). The fixture puts one
+  //     bucket at exactly 90.0 in the vram series to pin `>=`.
+  const strain = await page.evaluate(() => {
+    const of = (name) => {
+      const row = document.querySelector(`[data-machine-card] [data-day-row="${name}"]`);
+      if (!row) return null;
+      return [...row.querySelectorAll("[data-day-cell]")].map((c) => {
+        const r = c.querySelector("[data-day-shade]");
+        return r ? r.dataset.dayShade : null;
+      });
+    };
+    return { mem: of("mem"), cpu: of("cpu"), vram: of("vram") };
+  });
+  const wantStrain = memBuckets.map((v, i) => (v !== null && v >= 90 ? i : -1)).filter((i) => i >= 0);
+  const gotStrain = (strain.mem ?? []).map((v, i) => (v === "strain" ? i : -1)).filter((i) => i >= 0);
+  if (gotStrain.join(",") !== wantStrain.join(",")) {
+    fail(`内存 wears strain on buckets [${gotStrain.join(",")}] where the fixture is ≥90 on [${wantStrain.join(",")}]`);
+  }
+  if ((strain.cpu ?? []).some((v) => v === "strain")) {
+    fail("a CPU bucket drew in the strain colour — a machine at 95% CPU is a machine doing its job, not an alarm");
+  }
+  if ((strain.vram ?? []).some((v) => v === "strain")) {
+    fail("a 显存 bucket drew in the strain colour — a full card is the normal state of a box being used");
+  }
+  //     And the boundary itself: the fixture's bucket 11 is exactly
+  //     90.0, so a `>` would leave it a step below.
+  if ((strain.vram ?? [])[11] !== "4") {
+    fail(`the bucket at exactly 90.0 drew "${(strain.vram ?? [])[11]}" — the top step is >= 90, not > 90`);
+  }
+
   //     **One row per series that has a reading, and the all-hole one
   //     is not a row.** A named row of pure absence would read as a
   //     reading this machine failed to take, rather than as one it does

@@ -1471,6 +1471,18 @@ impl Node {
                 // ask — the whole point of the optional column.
                 gpu_pct: v.gpu.as_ref().map(|g| g.util_pct),
                 disk_pct,
+                // **Also absent on a unified-memory machine**, where
+                // the cards' bytes are already `mem_pct` and drawing
+                // them again would put the same memory on the screen
+                // under two names (`khor_core::Gpu::mem`). A `total` of
+                // zero is 「读不出」 rather than 「空的」, the same
+                // first branch `Fill::strain` takes.
+                vram_pct: v
+                    .gpu
+                    .as_ref()
+                    .and_then(|g| g.mem.as_ref())
+                    .filter(|f| f.total > 0)
+                    .map(|f| (f.used as f64 / f.total as f64 * 100.0) as f32),
             },
         );
     }
