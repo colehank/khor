@@ -1855,6 +1855,64 @@ try {
   const after = await sortStateNow();
   if (!after.sorted.includes("mem:descending")) fail(`the answer landed but aria-sort still says ${after.sorted.join(",")}`);
   if (after.asking.length !== 0) fail(`a head is still marked waiting after the answer landed: ${after.asking.join(",")}`);
+  const peerGpus = devs.find((d) => d.name === "peer").vitals.vitals.gpus;
+  //     ── the dial is a 210° face, and the rim carries the parts ───
+  //
+  //     **This is the assertion D lives or dies by.** The dial exists
+  //     because a full ring cannot tell 「one card pinned, three idle」
+  //     from 「four cards half busy」 — the summary arc is identical in
+  //     both, and the person deciding where to run a job needs the idle
+  //     card. Without something holding the shape, a later hand puts a
+  //     plain circle back and nothing anywhere goes red.
+  const dial = await page.evaluate(() => {
+    const card = document.querySelector("[data-machine-card]");
+    const svgs = [...card.querySelectorAll("[data-dial-face]")];
+    // A gauge drawn as a full circle would be `<circle>` with a radius
+    // the size of the dial; the milestone dots are r=0.9.
+    const bigCircles = [...card.querySelectorAll("circle")].filter(
+      (c) => Number(c.getAttribute("r")) > 20,
+    ).length;
+    const pipsOn = (unit) => {
+      // **By `data-dial`, not by `data-vitals-unit`.** That one is
+      // also on the per-card rows under the dials, and it is absent
+      // entirely on two of the four dials — a selector built on it
+      // finds the wrong element, or none, and then answers "no marks"
+      // about a dial covered in them (which is what it did first).
+      const box = card.querySelector(`[data-metric][data-dial="${unit}"]`);
+      const face = box?.querySelector("[data-dial-face]");
+      if (!face) return null;
+      return {
+        pips: [...face.querySelectorAll("[data-dial-pip]")].map((p) => Number(p.dataset.dialPipAt)),
+        span: face.querySelectorAll("[data-dial-span]").length,
+        arc: face.querySelectorAll("[data-ring-fill]").length,
+      };
+    };
+    return { faces: svgs.length, bigCircles, gpu: pipsOn("gpu"), cpu: pipsOn("cpu"), mem: pipsOn("mem") };
+  });
+  if (dial.faces === 0) fail("probe dead: no dial face on this card, so nothing below measured a dial");
+  else {
+    //   A full circle anywhere on this card is the shape coming back.
+    if (dial.bigCircles !== 0) {
+      fail(`${dial.bigCircles} full circles on the machine card — the 210° dial was replaced by a ring again`);
+    }
+    //   **Marks belong to parts, not to occupants.** The processes under
+    //   CPU and memory do not partition those readings, and a mark for
+    //   one would claim a meaning the drawing does not have.
+    if (dial.cpu && dial.cpu.pips.length !== 0) fail(`the CPU dial carries ${dial.cpu.pips.length} rim marks — CPU has no parts`);
+    if (dial.mem && dial.mem.pips.length !== 0) fail(`the memory dial carries ${dial.mem.pips.length} rim marks`);
+    //   The GPU dial's marks are the cards' own readings, one each.
+    const want = peerGpus.map((g) => Math.round(g.util_pct)).sort((a, b) => a - b);
+    const got = (dial.gpu?.pips ?? []).slice().sort((a, b) => a - b);
+    if (got.join(",") !== want.join(",")) {
+      fail(`the GPU dial marks sit at [${got.join(",")}] for cards reading [${want.join(",")}]`);
+    }
+    if (!dial.gpu) fail("probe dead: no GPU dial found, so the mark assertions above measured nothing");
+    else if (want.length > 1 && dial.gpu.span !== 1) {
+      fail("no hairline spanning the marks — 「spread out or not」 has to have a length that can be measured");
+    }
+    else if (dial.gpu.arc !== 1) fail(`the GPU dial draws ${dial.gpu.arc} summary arcs`);
+  }
+
   //     ── one busy card among idle ones is still visible ───────────
   //
   //     **The aggregate flattens it, and the aggregate is what a
@@ -1877,7 +1935,6 @@ try {
   }));
   //     The finder proves itself before the negative claim below is
   //     worth anything.
-  const peerGpus = devs.find((d) => d.name === "peer").vitals.vitals.gpus;
   const wantCards = peerGpus.length;
   if (cardsNow.named.length !== wantCards || cardsNow.utils.length !== wantCards) {
     fail(

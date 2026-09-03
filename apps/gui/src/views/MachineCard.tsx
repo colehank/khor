@@ -3,7 +3,8 @@ import { Fragment, useEffect, useState } from "react";
 import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { Ring, RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
+import { Face, type Pip } from "@/components/Face";
+import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -545,6 +546,16 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
     const seen = xs.filter((x): x is number => x !== null);
     return seen.length > 0 ? Math.round(Math.max(...seen)) : null;
   };
+  // **The rim marks, and only where real parts exist.** A card and a
+  // volume are things the aggregate is made *of*; the processes under
+  // the CPU and memory dials are occupants of a reading, not parts of
+  // it, so those two dials carry no marks (`Face` carries why).
+  const cardPips: Pip[] = cards.map((c, i) => ({ word: c.name || `GPU${i}`, v: c.util_pct }));
+  const volPips: Pip[] = vols.map((x, i) => ({
+    word: x.mount,
+    v: x.fill.total > 0 ? (x.fill.used / x.fill.total) * 100 : null,
+    strain: volume_strains[i] ?? null,
+  }));
   const cpuPeak = day ? peak(day.buckets) : null;
   const memPeak = day ? peak(day.mem) : null;
   const left = (fill: { used: number; total: number }) => cli.fill_left(bytes(Math.max(0, fill.total - fill.used)));
@@ -552,6 +563,7 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
     <Panel>
       <div data-vitals className="flex flex-wrap justify-around gap-row">
         <Dial
+          dial="cpu"
           name="cpu"
           word={cli.vitals_name_cpu}
           fraction={v.cpu_pct / 100}
@@ -560,7 +572,9 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
         />
         {cards.length > 0 && gpuMean !== null ? (
           <Dial
+            dial="gpu"
             word={cli.vitals_name_gpu}
+            pips={cardPips}
             fraction={gpuMean / 100}
             sentence={cli.vitals_gpu(Math.round(gpuMean), cards.length)}
             facts={[
@@ -570,6 +584,7 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
         ) : (
           v.gpu && (
             <Dial
+              dial="gpu"
               name="gpu"
               word={cli.vitals_name_gpu}
               fraction={v.gpu.util_pct / 100}
@@ -595,6 +610,7 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
           )
         )}
         <Dial
+          dial="mem"
           name="mem"
           word={cli.vitals_name_mem}
           fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
@@ -603,7 +619,9 @@ function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null })
           facts={[left(v.mem), memPeak !== null ? cli.day_peak(`${memPeak}%`) : null]}
         />
         <Dial
+          dial="disk"
           word={cli.vitals_name_disk}
+          pips={volPips}
           fraction={disk && disk.total > 0 ? disk.used / disk.total : null}
           strain={diskStrain}
           unknown={!disk}
@@ -1488,6 +1506,7 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
  * not.
  */
 function Dial({
+  dial,
   name,
   word,
   facts,
@@ -1495,7 +1514,14 @@ function Dial({
   fraction,
   strain,
   unknown,
+  pips,
 }: {
+  /** **Which reading this dial is, for anything that has to find it.**
+      Separate from `name`, which is the key on the wire and is absent
+      on the dials whose parts are counted elsewhere — leaving those two
+      unaddressable, which is how a gate came to measure the wrong
+      element (2026-09-04). Every dial has one of these. */
+  dial: string;
   /** The reading's key on the wire, or none for a dial that is a
       picture of readings counted elsewhere (the GPU and disk dials
       above their per-part rows). Without it the unit and detail marks
@@ -1518,6 +1544,11 @@ function Dial({
   strain?: Strain | null;
   /** This reading could not be taken at all, as opposed to being zero. */
   unknown?: boolean;
+  /** The parts this reading is made of — cards, volumes — each marked
+      on the rim at its own reading. **Only where parts exist**: the
+      processes under CPU and memory are occupants, not parts (`Face`
+      carries why). */
+  pips?: Pip[];
 }) {
   const [flipped, setFlipped] = useState(false);
   // A percentage, because the arc is one and the two should agree at a
@@ -1529,6 +1560,7 @@ function Dial({
       <button
         type="button"
         data-metric
+        data-dial={dial}
         data-flipped={flipped}
         data-vitals-unit={name}
         data-vitals-unknown={unknown ? "" : undefined}
@@ -1545,9 +1577,16 @@ function Dial({
       >
         <span data-metric-faces className="block h-full w-full">
           <span data-metric-face="front" className="grid h-full w-full place-items-center">
-            <Ring fraction={fraction} color={gaugeColor(strain)} size={RING_SIZE_CARD} stroke={RING_STROKE_CARD}>
-              {value}
-            </Ring>
+            <Face
+              fraction={unknown ? null : fraction}
+              strain={strain}
+              pips={pips}
+              unknown={unknown}
+              size={RING_SIZE_CARD}
+              stroke={RING_STROKE_CARD}
+            >
+              {value === null || unknown ? "—" : value}
+            </Face>
           </span>
           {/* **The attribute marks the sentence itself**, not the box
               around it: it is what `khor devices` prints word for word,
