@@ -9,7 +9,7 @@ import { MandalaMap } from "@/views/MandalaMap";
 import { cli, gui, state } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { vitalsTracks } from "@/lib/vitals";
-import { ageIfOld } from "@/words";
+import { ageIfOld, connectionWord } from "@/words";
 
 /**
  * The mark's place: the mesh.
@@ -277,8 +277,12 @@ function MachineNodeCard({
           <MachineAvatar face={row.face} className="size-avatar flex-none" />
           <span data-node-card-name className="min-w-0 truncate text-fact">
             {row.name}
-            {row.me ? ` ${cli.this_machine}` : ""}
           </span>
+          {connectionWord(row) && (
+            <span data-node-card-connection className="flex-none text-aux text-muted-foreground">
+              {connectionWord(row)}
+            </span>
+          )}
         </>
       }
     >

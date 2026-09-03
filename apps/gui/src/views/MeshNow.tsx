@@ -1,9 +1,9 @@
 import type { DeviceRow, SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { cli, gui } from "@/gen/catalog";
+import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { word } from "@/words";
+import { connectionWord, word } from "@/words";
 
 /**
  * The network's now — what the biggest canvas in the app shows when no
@@ -158,8 +158,15 @@ export function MeshNow({
                 <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
                 <span data-now-name className="min-w-0 truncate text-sm">
                   {d.name}
-                  {d.me ? ` ${cli.this_machine}` : ""}
                 </span>
+                {/* The road, the machines list's own word for it
+                    (`connectionWord`): 本机 for this one, never a
+                    bracket on the name. */}
+                {connectionWord(d) && (
+                  <span data-now-connection className="flex-none text-aux text-muted-foreground">
+                    {connectionWord(d)}
+                  </span>
+                )}
               </button>
             ))}
           </div>

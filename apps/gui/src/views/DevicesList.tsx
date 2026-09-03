@@ -2,9 +2,9 @@ import type { DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { cli, gui } from "@/gen/catalog";
+import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { hopWord } from "@/words";
+import { connectionWord } from "@/words";
 
 /** Search matches the name people call the machine and the id they
     paste. The id left the row's face (2026-09-02 — the card carries it
@@ -153,13 +153,7 @@ export function DevicesList({
     over nothing, so its word is 本机, which is also why the name no
     longer carries the `(本机)` bracket. */
 function Identity({ row }: { row: DeviceRow }) {
-  const connection = row.me
-    ? gui.machine_here
-    : row.sponsor
-      ? cli.via_sponsor(row.sponsor)
-      : row.hop
-        ? hopWord(row.hop)
-        : null;
+  const connection = connectionWord(row);
   return (
     <>
       <MachineAvatar face={row.face} className="size-avatar" />

@@ -75,7 +75,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { cli, gui } from "@/gen/catalog";
+import { gui } from "@/gen/catalog";
+import { connectionWord } from "@/words";
 import { cn } from "@/lib/utils";
 
 export function NewSessionDialog({
@@ -380,7 +381,12 @@ export function NewSessionDialog({
                       setDir("~");
                     }}
                   >
-                    {d.me ? `${d.name} ${cli.this_machine}` : d.name}
+                    {d.name}
+                    {connectionWord(d) && (
+                      <span data-new-session-connection className="text-muted-foreground">
+                        {connectionWord(d)}
+                      </span>
+                    )}
                   </Button>
                 ))}
               </div>

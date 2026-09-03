@@ -22,6 +22,28 @@ export function hopWord(key: string): string {
 }
 
 /**
+ * How this machine reaches that one, as the word a row or a card prints
+ * beside the name — the one fact a person picks a machine by.
+ *
+ * **One derivation, every surface.** The machines list, the machine
+ * card, the landing's 机器 strip, the new-session picker and the
+ * place card all print this word; when it was spelled at each of them,
+ * two of the five kept the old `(本机)` bracket the user had asked to
+ * drop (2026-09-02:「本机不用写一个括号在机器名旁边。连接方式就是
+ * 本机」) while the other three had moved on — one fact, five sources,
+ * and the drift was visible on screen. This machine reaches itself over
+ * nothing, so its word is 本机; a satellite has no road of its own and
+ * its sponsor speaks for it; otherwise the road (`hopWord`). `null` when
+ * khor cannot name the road yet — absent beats a blank.
+ */
+export function connectionWord(row: { me: boolean; sponsor: string | null; hop: string | null }): string | null {
+  if (row.me) return gui.machine_here;
+  if (row.sponsor) return cli.via_sponsor(row.sponsor);
+  if (row.hop) return hopWord(row.hop);
+  return null;
+}
+
+/**
  * The word for one face option — a factory palette's id, a variant key
  * or a shape key, exactly as the node sent it.
  *
