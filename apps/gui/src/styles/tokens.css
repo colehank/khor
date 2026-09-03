@@ -629,6 +629,24 @@
    * name column is measured against `GPU0 NVIDIA GeForce RTX 4090`: a
    * width that truncates here would put a truncation mark somewhere the
    * text actually fits, which turns a real signal into decoration. */
+  /* The process table's eight columns. The three text ones are in `ch`
+   * because what they hold is characters: a pid is at most seven
+   * digits, a process name is the platform's short name. The command
+   * line takes what is left and truncates — it is the one column whose
+   * content has no natural end, so it is the one that carries the mark
+   * saying so. */
+  /* A hairline. One place, because a border width written into a
+   * stylesheet is a pixel literal and the px gate refuses those
+   * outside this file — correctly: it is how 614 stray pixels got in
+   * somewhere else. */
+  --hair: 1px;
+  --cw-pid: 7ch;
+  --cw-name: 13ch;
+  --cw-run: 78px;
+  --cw-cpu: 52px;
+  --cw-gpu: 46px;
+  --cw-vram: 74px;
+  --cw-mem: 66px;
   --part-name: 220px;
   --part-num: 172px;
   --top-h: 232px;

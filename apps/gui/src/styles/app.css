@@ -477,3 +477,62 @@ input[type="search"]::-webkit-search-decoration {
   grid-column: 1 / -1;
   grid-row: 2;
 }
+
+/* The process table: one grid, so every column edge is one line down
+   the whole list. Rows join it with `display: contents` — a row that is
+   its own box is a row whose columns start wherever that box does. */
+[data-load-top] {
+  display: grid;
+  column-gap: var(--gap-in);
+  grid-template-columns:
+    var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-run)
+    var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
+}
+/* **A column the machine cannot fill does not exist**, and the track
+   goes with it: a machine with no card would otherwise carry two empty
+   columns, which reads as "khor looked and found nothing". */
+[data-load-top][data-nogpu] {
+  grid-template-columns:
+    var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-run) var(--cw-cpu) var(--cw-mem);
+}
+[data-load-top][data-norun] {
+  grid-template-columns:
+    var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-cpu)
+    var(--cw-gpu) var(--cw-vram) var(--cw-mem);
+}
+[data-load-top][data-nogpu][data-norun] {
+  grid-template-columns: var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-cpu) var(--cw-mem);
+}
+[data-load-top] [data-top-row],
+[data-load-top] [data-top-heads] {
+  display: contents;
+}
+
+/* Tight: the eight columns stop fitting long before the window does, so
+   each row becomes three lines of its own — identity, then the command
+   line, then the quantities. Same reasoning as the drawer's rows, and
+   the same mechanism: the table's own width decides, not the window's. */
+[data-load-top][data-tight] {
+  display: block;
+}
+[data-load-top][data-tight] [data-top-heads] {
+  display: none;
+}
+[data-load-top][data-tight] [data-top-row] {
+  display: grid;
+  grid-template-columns: var(--cw-pid) minmax(0, 1fr);
+  column-gap: var(--gap-in);
+  padding-block: var(--gap-in);
+  border-block-start: var(--hair) solid var(--border);
+}
+[data-load-top][data-tight] [data-top-row] > [data-c="cmd"] {
+  grid-column: 1 / -1;
+}
+[data-load-top][data-tight] [data-top-row] > [data-c="time"],
+[data-load-top][data-tight] [data-top-row] > [data-c="cpu"],
+[data-load-top][data-tight] [data-top-row] > [data-c="gpu"],
+[data-load-top][data-tight] [data-top-row] > [data-c="vram"],
+[data-load-top][data-tight] [data-top-row] > [data-c="mem"] {
+  grid-column: span 1;
+  text-align: left;
+}

@@ -95,10 +95,17 @@ export function MachineCard({
         // belongs to the machine it was made on: a sort somebody set on
         // one machine's table is not an opinion about the next one's,
         // and neither is a turned-over dial or a scroll position.
+        //
+        // **And no `narrow` below this line.** Every part of the card
+        // that changes shape measures its own box now — the drawer's
+        // rows, the process table — because the card is not the window,
+        // and a window breakpoint left a 106px overflow band the first
+        // time it was tried (`use-tight.ts`). The strip above still
+        // asks the shell: whether there is a way back is a fact about
+        // the screen, not about a box on it.
         <Body
           key={row.id}
           row={row}
-          narrow={narrow}
           hooks={hooks}
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
@@ -117,7 +124,6 @@ export function MachineCard({
     when the machine changes. */
 function Body({
   row,
-  narrow,
   hooks,
   hooksFailed,
   onInstallHooks,
@@ -127,7 +133,6 @@ function Body({
   onBorrowWeb,
 }: {
   row: DeviceRow;
-  narrow: boolean;
   hooks: HooksState | null;
   hooksFailed: boolean;
   onInstallHooks: () => void;
@@ -151,7 +156,6 @@ function Body({
             <Busy
               load={load}
               why={why}
-              narrow={narrow}
               sort={shown ?? sort}
               asking={asking}
               onSort={setSort}
@@ -1017,14 +1021,12 @@ type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram" | "time"
 function Busy({
   load,
   why,
-  narrow,
   sort,
   asking,
   onSort,
 }: {
   load: Load | null;
   why: string | null;
-  narrow: boolean;
   /** **The order the rows on screen are in**, not the one just asked
       for — see `useLoad`. */
   sort: Sort;
@@ -1047,7 +1049,7 @@ function Busy({
   if (why) {
     return (
       <Panel>
-        <Top rows={load?.top ?? []} narrow={narrow} sort={sort} asking={asking} onSort={onSort} why={why} />
+        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} />
       </Panel>
     );
   }
@@ -1060,7 +1062,7 @@ function Busy({
         </div>
       </Panel>
       <Panel>
-        <Top rows={load.top} narrow={narrow} sort={sort} asking={asking} onSort={onSort} />
+        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} />
       </Panel>
     </>
   );
@@ -1101,14 +1103,12 @@ function Busy({
  */
 function Top({
   rows,
-  narrow,
   sort,
   asking,
   onSort,
   why,
 }: {
   rows: Load["top"];
-  narrow: boolean;
   /** The order these rows are actually in — see `useLoad`. */
   sort: Sort;
   /** The column whose answer has not landed yet. Its head says so, and
@@ -1121,9 +1121,18 @@ function Top({
       the machine rather than about this one failed answer. */
   why?: string | null;
 }) {
+  // **A column exists when the machine can fill it.** Two blank columns
+  // read as 「khor looked and found nothing」, which is the opposite of
+  // 「this machine has no cards」; and a whole column of blanks is worse
+  // than no column, because it takes width from the ones that speak.
   const onCards = rows.some((r) => r.gpu_pct !== null || r.gpu_mem !== null);
-  const cols = 5 + (onCards ? 2 : 0);
+  const onAges = rows.some((r) => r.run_secs != null);
   const ordered = sortRows(rows, sort);
+  const box = useRef<HTMLDivElement>(null);
+  // Eight columns need more room than the card has for most of its
+  // life. What decides is the table's own width, not the window's —
+  // the same lesson the drawer's rows cost (`use-tight.ts`).
+  const tight = useTight(box, 620);
   const press = (col: SortCol) => {
     // Pressing the column it is already on turns it over. Pressing a
     // new one starts the way that column is read — biggest first for a
@@ -1138,127 +1147,195 @@ function Top({
     // 「哪个刚起」.
     onSort({ col, dir: col === "name" || col === "user" || col === "pid" ? "up" : "down" });
   };
+  const cells = 5 + (onCards ? 2 : 0) + (onAges ? 1 : 0);
   return (
     <div data-load-top-box className="max-h-top-h overflow-y-auto">
-      {/* **Wide sizes to its content; narrow fills the box.** `w-full`
-          on a wide card spread four narrow columns across a thousand
-          pixels and pushed the pid — the first thing read — 229px into
-          the panel (measured 2026-09-03 on the live face), with a
-          hand's width of nothing in front of it. A table of numbers is
-          read by running along a row and down a column, and neither
-          works when the columns are a panel apart.
-          **Handing the slack to one column instead does not fix that,
-          it moves it**: with `w-full` on the name cell the same
-          measurement gave a left edge of 24.64px and 799px of blank
-          between a process's name and its CPU number. So on a wide
-          card nothing grows — the table is 521px of packed columns
-          with the card's spare width left spare, and the name column
-          stops at `max-w-top-name`.
-          Narrow is the opposite question: there the box is 332px and
-          the columns want more, so `w-full` on the table and
-          on the name cell rations what there is — the numbers keep
-          their edges and the name gives up what it must. */}
-      <table data-load-top className={cn("text-sm tabular-nums", narrow && "w-full")}>
-        <thead className="sticky top-0 bg-card text-aux text-muted-foreground">
-          <tr>
-            {/* **The order the user named**: what you type, what it is,
-                then the four quantities with the two GPU ones inside
-                them — a card's GPU columns belong beside its CPU one,
-                not after the memory that has nothing to do with them. */}
-            <Column col="pid" sort={sort} asking={asking} onPress={press} align="right">
-              {cli.top_pid}
-            </Column>
-            <Column col="name" sort={sort} asking={asking} onPress={press} align="left" grow={narrow}>
-              {cli.top_name}
-            </Column>
-            <Column col="cpu" sort={sort} asking={asking} onPress={press} align="right">
-              {cli.vitals_name_cpu}
-            </Column>
-            {onCards && (
-              <Column col="gpu" sort={sort} asking={asking} onPress={press} align="right">
-                {cli.vitals_name_gpu}
-              </Column>
-            )}
-            {onCards && (
-              <Column col="vram" sort={sort} asking={asking} onPress={press} align="right">
-                {cli.vitals_name_vram}
-              </Column>
-            )}
-            <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
-              {cli.vitals_name_mem}
-            </Column>
-            {/* Last, because it is the one column that is not about how
-                much of this machine the process is taking. */}
+      <div
+        ref={box}
+        data-load-top
+        data-panel
+        data-tight={tight ? "" : undefined}
+        data-nogpu={onCards ? undefined : ""}
+        data-norun={onAges ? undefined : ""}
+        className="text-sm tabular-nums"
+      >
+        <div data-top-heads className="sticky top-0 bg-card text-aux text-muted-foreground">
+          {/* **The order the user named**: what you type, what it is,
+              what it was started as, then the quantities with the two
+              GPU ones beside the CPU rather than after the memory that
+              has nothing to do with them. */}
+          <Column col="pid" sort={sort} asking={asking} onPress={press} align="right">
+            {cli.top_pid}
+          </Column>
+          <Column col="name" sort={sort} asking={asking} onPress={press} align="left">
+            {cli.top_name}
+          </Column>
+          {/* **The command line is a column, and it does not sort.**
+              Sorting by it would need a word on the wire that older
+              nodes refuse (`khor_core::TopBy`), and nobody asks 「order
+              these by their arguments」. */}
+          <span data-c="cmd" className="font-body">
+            {cli.top_cmd}
+          </span>
+          {onAges && (
             <Column col="time" sort={sort} asking={asking} onPress={press} align="right">
               {cli.top_time}
             </Column>
-          </tr>
-        </thead>
-        <tbody>
-          {why ? (
-            <tr>
-              <td data-load-why colSpan={cols} className="py-row text-sm text-muted-foreground">
-                {why}
-              </td>
-            </tr>
-          ) : (
-            ordered.map((r) => (
-            <tr key={r.pid} data-top-row={r.pid}>
-              <td className="whitespace-nowrap pr-row text-right text-muted-foreground">{r.pid}</td>
-              {/* The name, and under it whose it is — on a shared box
-                  that word is what tells two identical names apart, and
-                  it qualifies the name rather than standing beside it as
-                  a quantity. Narrow drops it: there, one person's own
-                  machine says the same word on every row. */}
-              {/* `max-w-0` is what lets a column shrink past its text,
-                  and it is only wanted where there is a shortage: on a
-                  narrow card. Wide gets a ceiling instead — see the
-                  table. */}
-              {/* The name, and the two words that qualify it.
-                  **Narrow drops the account and keeps the word from the
-                  command line**, and the asymmetry is the whole point:
-                  the account is the same on every row of one person's
-                  own machine, while the identifying word is different
-                  on every row — that is what it is for. Dropping both
-                  (which this did until 2026-09-04) left a 390 card
-                  showing three rows all called `python3`, which is
-                  exactly the case the column was added for, failing on
-                  the face where the table is hardest to read. */}
-              <td className={cn("truncate", narrow ? "w-full max-w-0" : "max-w-top-name")}>
-                {r.name}
-                {!narrow && r.user && <span className="ml-in text-muted-foreground">{r.user}</span>}
-                {r.arg && (
-                  <span data-top-arg className="ml-in text-muted-foreground">
-                    {r.arg}
-                  </span>
-                )}
-              </td>
-              <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
-              {onCards && (
-                <td data-top-gpu className="whitespace-nowrap px-row text-right">
-                  {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
-                </td>
-              )}
-              {onCards && (
-                <td data-top-vram className="whitespace-nowrap px-row text-right">
-                  {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
-                </td>
-              )}
-              <td className="whitespace-nowrap px-row text-right">{bytes(r.mem)}</td>
-              {/* **Nothing, not a zero, when the machine did not say.**
-                  An empty cell is a column that looked and found no
-                  answer; `0 秒` would name this the newest process on
-                  the machine, which is the same neighbouring-value
-                  mistake the GPU columns are shaped to avoid. */}
-              <td data-top-time className="whitespace-nowrap text-right">
-                {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
-              </td>
-            </tr>
-            ))
           )}
-        </tbody>
-      </table>
+          <Column col="cpu" sort={sort} asking={asking} onPress={press} align="right">
+            {cli.vitals_name_cpu}
+          </Column>
+          {onCards && (
+            <Column col="gpu" sort={sort} asking={asking} onPress={press} align="right">
+              {cli.vitals_name_gpu}
+            </Column>
+          )}
+          {onCards && (
+            <Column col="vram" sort={sort} asking={asking} onPress={press} align="right">
+              {cli.vitals_name_vram}
+            </Column>
+          )}
+          <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
+            {cli.vitals_name_mem}
+          </Column>
+        </div>
+        {why ? (
+          <div data-load-why className="py-row text-sm text-muted-foreground" style={{ gridColumn: `span ${cells}` }}>
+            {why}
+          </div>
+        ) : (
+          ordered.map((r) => (
+            <div key={r.pid} data-top-row={r.pid}>
+              {/* **The pid is first and flush left, at every width.** On
+                  turing the two vLLM workers carry the same name *and*
+                  the same command line — the only things that tell them
+                  apart are this number and their card memory. A layout
+                  that drops it to save room drops the answer. */}
+              {/* **Flush left, not right-aligned.** A pid is an
+                  identifier, not a quantity — nobody compares their
+                  magnitudes, and right-aligning them in a seven-column
+                  track pushes the first thing read away from the edge
+                  (measured here: 31.6px in). That is the same move that
+                  put the pid 229px into the panel once. */}
+              <span data-c="pid" className="whitespace-nowrap text-left text-muted-foreground">
+                {r.pid}
+              </span>
+              <span data-c="name" className="min-w-0 truncate">
+                {r.name}
+              </span>
+              <Cut text={r.arg} cells={cells} />
+              {onAges && (
+                <span data-c="time" data-top-time className="whitespace-nowrap text-right">
+                  {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
+                </span>
+              )}
+              <span data-c="cpu" className="whitespace-nowrap text-right">
+                {Math.round(r.cpu_pct)}%
+              </span>
+              {onCards && (
+                <span data-c="gpu" data-top-gpu className="whitespace-nowrap text-right">
+                  {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
+                </span>
+              )}
+              {onCards && (
+                <span data-c="vram" data-top-vram className="whitespace-nowrap text-right">
+                  {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
+                </span>
+              )}
+              <span data-c="mem" className="whitespace-nowrap text-right">
+                {bytes(r.mem)}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The command line's cell: the text, and **a mark when it did not fit**.
+ *
+ * # Why a mark and not an ellipsis
+ *
+ * An ellipsis reads as 「the value ends about here」 — it is punctuation
+ * inside the text. What has to be said is 「there is more of this, and
+ * you can have it」, which is a statement about the cell, not about the
+ * string. So it is a small bordered square outside the words.
+ *
+ * # Why a press and not a hover
+ *
+ * The narrow card has no hover at all, and narrow is exactly where the
+ * cell runs out of room first — a tooltip would put the answer where
+ * the people who need it cannot reach. A press opens it in place;
+ * keyboard reaches it the same way (`role`, `tabindex`, Enter and
+ * Space), because a control only a pointer can work is a control half
+ * the ways in cannot.
+ *
+ * # The mark is measured, never guessed
+ *
+ * `scrollWidth` against `clientWidth`, watched with a `ResizeObserver`.
+ * A mark decided by counting characters would appear on cells that fit
+ * (decoration) and miss cells that do not (a silent truncation), and
+ * both errors look fine on the machine of whoever wrote the guess.
+ */
+function Cut({ text, cells }: { text: string | null; cells: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [over, setOver] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    // Only while closed: open, the text wraps and nothing overflows, so
+    // measuring then would retract the mark and take the way back with
+    // it.
+    if (open) return;
+    const measure = () => setOver(node.scrollWidth - node.clientWidth > 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [text, open]);
+  if (!text) {
+    // **Nothing at all, not an empty cell.** A kernel thread has no
+    // command line; an element that exists but is empty would make
+    // 「count the ones that are missing」 impossible to ask.
+    return <span data-c="cmd" />;
+  }
+  const cut = over;
+  return (
+    <span
+      data-c="cmd"
+      data-cut={cut ? "" : undefined}
+      data-open={open ? "" : undefined}
+      role={cut ? "button" : undefined}
+      tabIndex={cut ? 0 : undefined}
+      aria-expanded={cut ? open : undefined}
+      onClick={cut ? () => setOpen((on) => !on) : undefined}
+      onKeyDown={
+        cut
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpen((on) => !on);
+              }
+            }
+          : undefined
+      }
+      className={cn("flex min-w-0 items-baseline gap-in text-muted-foreground", cut && "cursor-pointer")}
+      style={open ? { gridColumn: `span ${cells}` } : undefined}
+    >
+      <span ref={ref} className={cn("min-w-0", open ? "break-all" : "truncate")}>
+        {text}
+      </span>
+      {cut && !open && (
+        <span
+          data-cut-mark
+          aria-hidden="true"
+          className="size-2.5 flex-none rounded-xs border border-muted-foreground/60"
+        />
+      )}
+    </span>
   );
 }
 

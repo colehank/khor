@@ -286,7 +286,7 @@ try {
       // prettier-ignore
       { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, arg: "serve" },
       // prettier-ignore
-      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null, run_secs: 45, arg: "scripts/check-face.mjs" },
+      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so" },
       // prettier-ignore
       { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null },
     ],
@@ -1057,6 +1057,22 @@ try {
         "events) and will find 8 hard. That is open debt; the answer is a " +
         "separate touch affordance, not a wider seam. **It is not「no problem」.**",
     ],
+    "data-cut": [
+      "src/views/MachineCard.tsx",
+      "a row of the process table, which is 18 tall because nine rows in a " +
+        "fixed window is what the table is for — the height is the feature. " +
+        "Growing this cell to 44 grows the row, and the window then holds four " +
+        "rows instead of nine, so the floor here is not a floor under something " +
+        "free to grow: it trades the readability of the whole table for one " +
+        "cell's target. The target is also the **whole cell**, not the 10-pixel " +
+        "square drawn in it — 332 wide at the narrow stop, which is a long thin " +
+        "target rather than a tiny one. **What it does not buy:** a finger still " +
+        "has 18 pixels of height to land in, and on a touch screen that is hard. " +
+        "It is the only way to the full command line at narrow, so this is a " +
+        "real hole, not a technicality — the answer is a row that opens on a " +
+        "press anywhere along it, which is a bigger change to how the table " +
+        "reads. **It is not「no problem」.**",
+    ],
   };
 
   // Same control, same posture, same size, on four surfaces is one
@@ -1793,8 +1809,18 @@ try {
   //     which is the entire reason the column exists. Measured
   //     2026-09-04: a 390 card showed three rows all reading `python3`.
   const withArg = load.top.filter((r) => r.arg !== null).length;
-  const argsAt = async (what) =>
-    page.evaluate(() => document.querySelectorAll("[data-machine-card] [data-top-arg]").length);
+  //     Counted on the cell that carries it. It rode behind the
+  //     process name once and is a column of its own now; what is
+  //     asserted did not change — **the word that tells two identical
+  //     rows apart is on screen at 390 too**, which is where the rows
+  //     are hardest to read and where it was dropped before.
+  const argsAt = async () =>
+    page.evaluate(
+      () =>
+        [...document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="cmd"]')].filter(
+          (c) => c.textContent.trim().length > 0,
+        ).length,
+    );
   const wideArgs = await argsAt();
   await page.setViewportSize({ width: 390, height: 844 });
   await new Promise((r) => setTimeout(r, 400));
@@ -1876,20 +1902,16 @@ try {
   //     One page, only the viewport changes; a context per step costs
   //     four times as long and measures the same thing.
   //
-  //     **What is asserted and what is only recorded.** The page and
-  //     the drawer must never overflow — those are what this batch
-  //     built. The process table is a box that legitimately scrolls
-  //     sideways today: at 390 its seven columns want 456 in a 332 box.
-  //     That is the eight-column table's own job (batch ②, which
-  //     re-lays it as stacked rows narrow), so its width is measured
-  //     and printed here rather than asserted — **and the number is
-  //     printed so it cannot be forgotten**. When ② lands, move
-  //     `data-load-top-box` into `mustNotOverflow` and this becomes the
-  //     whole-card guarantee the spec asks for.
+  //     **The whole card, including the process table.** The table
+  //     used to be excused here — at 390 its seven columns wanted 456
+  //     in a 332 box — and the band was printed rather than asserted so
+  //     it could not be forgotten. The eight-column table re-lays
+  //     itself as stacked rows when its own box is too narrow, so the
+  //     excuse is gone and this is now the guarantee the whole card
+  //     makes at every width it is drawn for.
   {
     const wide = { width: 1120, height: 1000 };
     const bad = [];
-    const tableBand = [];
     // **From 390, the narrowest width this app is drawn for** — the
     // phone the narrow face targets, and the width every other stop in
     // this file uses. At 380 the shell itself is 3px over (measured:
@@ -1916,11 +1938,8 @@ try {
           const out = { doc: de.scrollWidth - de.clientWidth, drawer: 0, table: 0 };
           // A box carrying `overflow-x: hidden` reports nothing and
           // turns this into a check that cannot fail — none of these do.
-          for (const n of document.querySelectorAll("[data-drawer],[data-drawer-scroll]")) {
+          for (const n of document.querySelectorAll("[data-drawer],[data-drawer-scroll],[data-load-top-box]")) {
             out.drawer = Math.max(out.drawer, n.scrollWidth - n.clientWidth);
-          }
-          for (const n of document.querySelectorAll("[data-load-top-box]")) {
-            out.table = Math.max(out.table, n.scrollWidth - n.clientWidth);
           }
           return out;
         });
@@ -1939,7 +1958,7 @@ try {
       over.table = Math.min(first.table, over.table);
       if (over.doc > 0) bad.push(`${w}:page+${over.doc}`);
       if (over.drawer > 0) bad.push(`${w}:drawer+${over.drawer}`);
-      if (over.table > 0) tableBand.push(`${w}:+${over.table}`);
+
     }
     await page.setViewportSize(wide);
     await wait(200);
@@ -1948,11 +1967,7 @@ try {
     await wait(120);
     const at380 = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     if (at380 > 0) console.log(`note: at 380 the shell is ${at380}px over — below the 390 this face is drawn for`);
-    console.log(
-      tableBand.length
-        ? `bandwidth 380→1200 by 10: page and drawer clean; the process table scrolls at ${tableBand.length} widths (${tableBand[0]} … ${tableBand[tableBand.length - 1]}) — batch ② owns that`
-        : "bandwidth 380→1200 by 10: nothing overflows sideways anywhere",
-    );
+    console.log("bandwidth 390→1200 by 10: page, drawer and process table all clean");
   }
 
   //     ── the dial is a 210° face, and the rim carries the parts ───
@@ -2010,6 +2025,92 @@ try {
       fail("no hairline spanning the marks — 「spread out or not」 has to have a length that can be measured");
     }
     else if (dial.gpu.arc !== 1) fail(`the GPU dial draws ${dial.gpu.arc} summary arcs`);
+  }
+
+  //     ── the process table: PID, and marks that were measured ─────
+  //
+  //     **PID is on every row at every width, and its ink starts at the
+  //     panel's edge.** This is not a preference: on turing the two
+  //     vLLM workers carry the same name *and* the same command line,
+  //     so the only things that tell them apart are this number and
+  //     their card memory. A layout that drops the column to save room
+  //     drops the answer.
+  //
+  //     ⚠️ **Measured as ink, not as the cell.** A cell's box starts
+  //     where its track starts, whatever the text inside is doing — the
+  //     real incident this guards against (the pid pushed 229px into
+  //     the panel) was `text-right` on a wide track moving the *glyphs*
+  //     while the box never moved. A box-based version of this
+  //     assertion reads 0 at the scene of the accident.
+  const pid = await page.evaluate(() => {
+    const panel = document.querySelector("[data-machine-card] [data-panel]");
+    if (!panel) return null;
+    const rows = [...panel.querySelectorAll("[data-top-row]")];
+    const cells = rows.map((r) => r.querySelector('[data-c="pid"]')).filter(Boolean);
+    if (cells.length === 0) return { rows: rows.length, drawn: 0, left: null };
+    const r = document.createRange();
+    r.selectNodeContents(cells[0]);
+    return {
+      rows: rows.length,
+      drawn: cells.length,
+      left: +(r.getBoundingClientRect().left - panel.getBoundingClientRect().left).toFixed(1),
+    };
+  });
+  if (!pid || pid.rows === 0) fail("probe dead: no process rows, so nothing below measured the table");
+  else {
+    if (pid.drawn !== pid.rows) fail(`${pid.drawn} of ${pid.rows} rows draw a PID`);
+    if (pid.left === null || pid.left > 4) fail(`the PID's ink sits ${pid.left}px into the panel`);
+  }
+  //     **Every truncation mark was measured, and every overflow got
+  //     one.** Both directions, because each is its own kind of lie: a
+  //     mark on a cell that fits is decoration wearing a signal's
+  //     clothes, and an overflow without one is a value that ended
+  //     early with nothing saying so.
+  const marks = await page.evaluate(() => {
+    let decorative = 0;
+    let silent = 0;
+    let marked = 0;
+    let cells = 0;
+    for (const c of document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="cmd"]')) {
+      if (!c.firstElementChild || c.dataset.open !== undefined) continue;
+      cells += 1;
+      const inner = c.firstElementChild;
+      const over = inner.scrollWidth - inner.clientWidth > 1;
+      const has = c.dataset.cut !== undefined;
+      if (has) marked += 1;
+      if (has && !over) decorative += 1;
+      if (!has && over) silent += 1;
+    }
+    return { cells, marked, decorative, silent };
+  });
+  //     **And at least one cell really did not fit.** With none, both
+  //     assertions above are satisfied by a table that never marks
+  //     anything — the fixture carries a command line long enough that
+  //     the column cannot hold it.
+  if (marks.marked === 0) fail(`no cell overflowed (${marks.cells} checked) — the two assertions below tested nothing`);
+  if (marks.decorative !== 0) fail(`${marks.decorative} cells that fit carry a truncation mark — the mark is decoration`);
+  if (marks.silent !== 0) fail(`${marks.silent} cells overflow with no mark — a value ended early and nothing said so`);
+  console.log(`command line: ${marks.marked}/${marks.cells} cells marked, ${marks.decorative} decorative, ${marks.silent} silent`);
+  //     **A mark can be opened, by pointer and by keyboard.** The
+  //     narrow card has no hover at all, and narrow is where cells run
+  //     out of room first.
+  if (marks.marked > 0) {
+    const grew = await page.evaluate(async () => {
+      const c = document.querySelector('[data-machine-card] [data-c="cmd"][data-cut]');
+      const h0 = c.getBoundingClientRect().height;
+      c.click();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const h1 = c.getBoundingClientRect().height;
+      c.click();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      return { h0, h1, h2: c.getBoundingClientRect().height, role: c.getAttribute("role"), tab: c.getAttribute("tabindex") };
+    });
+    if (!(grew.h1 > grew.h0 && Math.abs(grew.h2 - grew.h0) < 1)) {
+      fail(`pressing a cut cell went ${grew.h0} → ${grew.h1} → ${grew.h2} — it did not open and close`);
+    }
+    if (grew.role !== "button" || grew.tab !== "0") {
+      fail(`a cut cell is role=${grew.role} tabindex=${grew.tab} — the keyboard cannot reach it`);
+    }
   }
 
   //     ── the drawer: one height, and three straight edges ─────────
@@ -2270,7 +2371,7 @@ try {
     rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
     heads: document.querySelectorAll("[data-machine-card] [data-top-head]").length,
     pressable: document.querySelectorAll("[data-machine-card] [data-top-head] button").length,
-    whyInBody: document.querySelectorAll("[data-machine-card] [data-load-top] tbody [data-load-why]").length,
+    whyInBody: document.querySelectorAll("[data-machine-card] [data-load-top] > [data-load-why]").length,
   }));
   if (!refused.why.includes(ELDER_REFUSAL)) fail(`elder's refusal is not the sentence it sent: "${refused.why}"`);
   if (refused.rows !== 0 || refused.band !== 0) {
