@@ -77,21 +77,27 @@ say() { printf '%s\n' "$*"; }
 # nothing else. Everything below uses absolute paths, so no PATH is
 # needed to install; the PATH line written into `.profile` is for the
 # *person* who logs in later.
-remote() { ssh_ "sh -s" < "$1"; }
+# **Every remote script gets the shared half in front of it**, so
+# "which store is mine" and "is this pid really khor" are answered the
+# same way whether we are installing, starting or removing (onset-lib.sh
+# carries why both questions are dangerous).
+LIB="$REPO/scripts/onset-lib.sh"
+remote() { cat "$LIB" "$1" | ssh_ "sh -s"; }
 
 # ── uninstall ────────────────────────────────────────────
 if [ "$MODE" = uninstall ]; then
     cat > "$STAGE/off.sh" <<'REMOTE'
 set -eu
-for root in "$HOME" "$HOME/.khor-hosts/$(hostname)"; do
-    pidf="$root/.khor/serve.pid"
-    if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
-        kill "$(cat "$pidf")" 2>/dev/null || true
-        sleep 1
-    fi
-    rm -f "$pidf"
-done
+# **This machine's store only.** The loop used to walk both candidate
+# roots, and on a shared home `$HOME/.khor/serve.pid` is *another
+# machine's* pid file — so removing khor from hinton would read turing's
+# number and kill whatever on hinton happens to hold it.
+khor_stop_serve "$(khor_root)/.khor/serve.pid" || true
 rm -f "$HOME/.local/bin/khor"
+# The note that started all this. Deleted rather than updated: nothing
+# reads it any more, and a stale pointer left lying about is exactly
+# what it was.
+rm -f "$HOME/.local/bin/.khor-root"
 echo "onset: binary and resident removed"
 REMOTE
     say "onset: removing khor from $HOST"
@@ -190,7 +196,12 @@ if [ -n "$owner" ] && [ "$owner" != "$(hostname)" ]; then
     echo "onset: this home belongs to $owner — $(hostname) gets its own store at $root"
 fi
 mkdir -p "$root/.khor"
-printf '%s\n' "$root" > "$HOME/.local/bin/.khor-root"
+# **No pointer file.** It lived at `~/.local/bin/.khor-root`, which on a
+# cluster with one shared home is one file for every machine — last
+# writer wins, and everyone else reads a path that is not theirs. The
+# root is recomputed instead (`khor_root`), from the same `owner` marker
+# this block just used.
+rm -f "$HOME/.local/bin/.khor-root"
 
 # The PATH line, and KHOR_HOME when it is not the default. Written once:
 # appending on every run is how a .profile ends up with twelve copies.
@@ -211,13 +222,15 @@ remote "$STAGE/on.sh"
 if [ "$SERVE" = yes ]; then
     cat > "$STAGE/serve.sh" <<'REMOTE'
 set -eu
-root=$(cat "$HOME/.local/bin/.khor-root")
+root=$(khor_root)
 pidf="$root/.khor/serve.pid"
 # Stopped by **its own pid file**, never by name: `pkill -f khor` on a
-# shared machine is somebody else's outage.
-if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
-    kill "$(cat "$pidf")" 2>/dev/null || true
-    sleep 1
+# shared machine is somebody else's outage. And never on the file's word
+# alone — `khor_stop_serve` checks the pid really is khor's resident
+# before killing, because a number in a file is a claim about the past.
+if ! khor_stop_serve "$pidf"; then
+    echo "onset: refusing to start on top of that — check $pidf by hand" >&2
+    exit 1
 fi
 # setsid: the resident must outlive this ssh session, and be nobody's
 # child so a logout cannot take it along.

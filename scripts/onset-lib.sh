@@ -1,0 +1,85 @@
+# The remote half's two dangerous questions, answered in one place.
+#
+# `onset.sh` pastes this in front of every script it runs on the target,
+# so the answers cannot drift between installing, starting and removing.
+# POSIX sh: the targets are whatever `/bin/sh` is over there.
+
+# **Which store on this machine is khor's.**
+#
+# Recomputed from what khor itself records, never read back from a note
+# left on disk. The note was `~/.local/bin/.khor-root`, and on a cluster
+# that mounts one home on every machine it is **one file for the whole
+# fleet**: turing writes its root, hinton overwrites it with hinton's,
+# and afterwards turing reads hinton's path out of its own home. Found
+# 2026-09-04 on exactly that pair — the file said
+# `…/.khor-hosts/hinton` while turing's own store is `$HOME`.
+#
+# A single install run never noticed, because it writes the note and
+# reads it back seconds later. Everything that reads it *later* — the
+# next `--uninstall`, the next restart — got the other machine's answer.
+#
+# The rule reproduced here is khor's own, not a third scheme: the shared
+# home belongs to whichever machine claimed it (`$HOME/.khor/owner`),
+# and every other machine gets `$HOME/.khor-hosts/<hostname>`.
+khor_root() {
+    _owner=""
+    [ -f "$HOME/.khor/owner" ] && _owner=$(cat "$HOME/.khor/owner" 2>/dev/null)
+    if [ -n "$_owner" ] && [ "$_owner" != "$(hostname)" ]; then
+        printf '%s\n' "$HOME/.khor-hosts/$(hostname)"
+    else
+        printf '%s\n' "$HOME"
+    fi
+}
+
+# **Is this pid actually khor's resident, right now?**
+#
+# A pid read out of a file is a claim about the past. Pids get reused,
+# files go stale, and on a shared home the file may have been written by
+# a different machine entirely — so the number can name a stranger's
+# process that happens to be running here. `kill` does not ask.
+#
+# So nothing is killed on the strength of the file alone: the number is
+# checked against the process table first, and a pid whose command line
+# is not khor's is left alone and reported. **This is the half that
+# matters even after the note is gone** — every remaining way for the
+# pid to be wrong (reuse, a crash between write and start, a hand-edited
+# file) ends in the same place.
+khor_is_serve() {
+    [ -n "$1" ] || return 1
+    _cmd=$(ps -o args= -p "$1" 2>/dev/null) || return 1
+    [ -n "$_cmd" ] || return 1
+    # The resident runs from a copy the keeper made, so the path varies
+    # (`/tmp/khor-shield-…/khor-<hash> serve`); what is stable is a
+    # `khor` in the program and `serve` as the verb.
+    case "$_cmd" in
+    *khor*" serve") return 0 ;;
+    *khor*" serve "*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+# Stops the resident named by `$1` (a pid file), and says what it did.
+# Never kills what it did not recognise.
+khor_stop_serve() {
+    _pidf="$1"
+    [ -f "$_pidf" ] || return 0
+    _pid=$(cat "$_pidf" 2>/dev/null)
+    if [ -z "$_pid" ]; then
+        rm -f "$_pidf"
+        return 0
+    fi
+    if ! kill -0 "$_pid" 2>/dev/null; then
+        # Nobody home: the file outlived the process it named.
+        rm -f "$_pidf"
+        return 0
+    fi
+    if khor_is_serve "$_pid"; then
+        kill "$_pid" 2>/dev/null || true
+        sleep 1
+        rm -f "$_pidf"
+        return 0
+    fi
+    echo "onset: $_pidf says pid $_pid, but that pid is not khor serve — leaving it alone" >&2
+    echo "onset:   it is: $(ps -o args= -p "$_pid" 2>/dev/null | head -1)" >&2
+    return 1
+}
