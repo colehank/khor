@@ -920,7 +920,7 @@ host-wont-start = "宿主起不来: {0}"
 # `khor gui` looks for the desktop app beside itself. Naming the directory
 # it looked in (not just "not found") is what lets a person fix it in one
 # move — the fix is a copy into exactly that place.
-gui-not-installed = "桌面 app 没装在 khor 旁边({0}):把 target/release/Khor 拷成那里的 khor-gui"
+gui-not-installed = "桌面 app 没装在 khor 旁边({0}):把 target/release/khor-gui 拷到那里"
 gui-wont-start = "桌面 app 起不来: {0}"
 # **This is now the "it really did hang" answer and nothing else.**
 # A host that dies on the way up leaves its own sentence behind

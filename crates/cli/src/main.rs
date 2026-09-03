@@ -1230,24 +1230,30 @@ fn start_web_face(root: &std::path::Path) {
 /// not need to be — the key *is* the link.
 /// Opens the desktop app's window.
 ///
-/// The desktop app is its own binary (`khor-gui`, the tauri crate — cargo
-/// names the raw file after `productName`, `Khor`), installed **beside**
-/// `khor` the way `_ghost` and `_host` are found beside it: one directory,
-/// no registry, nothing to configure. Spawned into its own session so the
-/// window outlives the terminal that asked for it; the CLI returns at once
+/// The desktop app is its own binary, `khor-gui` (the tauri crate, named
+/// by cargo after its package), installed **beside** `khor` the way
+/// `_ghost` and `_host` are found beside it: one directory, no registry,
+/// nothing to configure. Spawned into its own session so the window
+/// outlives the terminal that asked for it; the CLI returns at once
 /// because a window is not something to wait on. A missing binary is said
 /// in words that name where to put it, never as a generic "not found".
+///
+/// **Only `khor-gui` is looked for, never tauri's `Khor`.** tauri also
+/// emits a copy named after `productName`, and on the case-insensitive
+/// APFS this Mac runs, `Khor` *is* `khor` — the same inode as the CLI
+/// (measured: both 28 MB, one inode; the real app is the 34 MB
+/// `khor-gui`). A fallback to that name would have this verb exec the
+/// CLI itself and call it a window.
 fn gui(rest: &[String]) -> Result<(), String> {
     if !rest.is_empty() {
         return Err(USAGE.into());
     }
     let me = khor_node::self_exe()?;
     let dir = me.parent().ok_or_else(|| msg::gui_not_installed(me.display()))?;
-    let bin = ["khor-gui", "Khor"]
-        .iter()
-        .map(|n| dir.join(n))
-        .find(|p| p.is_file())
-        .ok_or_else(|| msg::gui_not_installed(dir.display()))?;
+    let bin = dir.join("khor-gui");
+    if !bin.is_file() {
+        return Err(msg::gui_not_installed(dir.display()));
+    }
     let mut c = std::process::Command::new(&bin);
     c.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
