@@ -512,27 +512,48 @@ input[type="search"]::-webkit-search-decoration {
    each row becomes three lines of its own — identity, then the command
    line, then the quantities. Same reasoning as the drawer's rows, and
    the same mechanism: the table's own width decides, not the window's. */
-[data-load-top][data-tight] {
+[data-load-top-box][data-tight] {
+  max-height: var(--top-h-tight);
+}
+[data-tight] > [data-load-top] {
   display: block;
 }
-[data-load-top][data-tight] [data-top-heads] {
+[data-tight] > [data-load-top] [data-top-heads] {
   display: none;
 }
-[data-load-top][data-tight] [data-top-row] {
-  display: grid;
-  grid-template-columns: var(--cw-pid) minmax(0, 1fr);
+[data-tight] > [data-load-top] [data-top-row] {
+  /* **Three lines, and the quantities share the third.** A two-column
+     grid put every quantity on a line of its own — measured: a row 89
+     tall, five grid rows where three were meant. Flex with wrapping
+     lets the short numbers sit together and only the command line take
+     a whole line of its own, which is what it needs. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   column-gap: var(--gap-in);
-  padding-block: var(--gap-in);
+  padding-block: calc(var(--gap-in) / 2);
   border-block-start: var(--hair) solid var(--border);
 }
-[data-load-top][data-tight] [data-top-row] > [data-c="cmd"] {
-  grid-column: 1 / -1;
+[data-tight] > [data-load-top] [data-top-row] > [data-c="pid"] {
+  flex: 0 0 var(--cw-pid);
 }
-[data-load-top][data-tight] [data-top-row] > [data-c="time"],
-[data-load-top][data-tight] [data-top-row] > [data-c="cpu"],
-[data-load-top][data-tight] [data-top-row] > [data-c="gpu"],
-[data-load-top][data-tight] [data-top-row] > [data-c="vram"],
-[data-load-top][data-tight] [data-top-row] > [data-c="mem"] {
-  grid-column: span 1;
+[data-tight] > [data-load-top] [data-top-row] > [data-c="name"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+[data-tight] > [data-load-top] [data-top-row] > [data-c="cmd"] {
+  flex: 1 0 100%;
+}
+[data-tight] > [data-load-top] [data-top-row] > [data-c="time"],
+[data-tight] > [data-load-top] [data-top-row] > [data-c="cpu"],
+[data-tight] > [data-load-top] [data-top-row] > [data-c="gpu"],
+[data-tight] > [data-load-top] [data-top-row] > [data-c="vram"],
+[data-tight] > [data-load-top] [data-top-row] > [data-c="mem"] {
+  flex: 0 0 auto;
   text-align: left;
+}
+/* An empty quantity takes no room narrow: a machine with no cards would
+   otherwise carry two invisible gaps on every row. */
+[data-tight] > [data-load-top] [data-top-row] > [data-c]:empty {
+  display: none;
 }

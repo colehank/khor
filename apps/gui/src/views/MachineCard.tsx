@@ -1149,12 +1149,15 @@ function Top({
   };
   const cells = 5 + (onCards ? 2 : 0) + (onAges ? 1 : 0);
   return (
-    <div data-load-top-box className="max-h-top-h overflow-y-auto">
+    <div
+      ref={box}
+      data-load-top-box
+      data-tight={tight ? "" : undefined}
+      className="max-h-top-h overflow-y-auto"
+    >
       <div
-        ref={box}
         data-load-top
         data-panel
-        data-tight={tight ? "" : undefined}
         data-nogpu={onCards ? undefined : ""}
         data-norun={onAges ? undefined : ""}
         className="text-sm tabular-nums"

@@ -639,6 +639,18 @@
    * stylesheet is a pixel literal and the px gate refuses those
    * outside this file — correctly: it is how 614 stray pixels got in
    * somewhere else. */
+  /* The process window when the table is in its stacked shape. A
+   * stacked row is three lines rather than one — measured 63 tall on
+   * this tree — so the height that showed nine rows wide shows four
+   * here. **Measured, not carried over**: 232→4, 280→5, 320→6, 344→6,
+   * 400→7 at 390 wide on turing (2026-09-04). Six is where 「who is
+   * eating this machine」 is still answerable at a glance, and 344
+   * keeps a little slack over the 320 that first reaches it, because
+   * rows without a command line are shorter and the mix changes.
+   *
+   * Keyed off the table's own width, like everything else on this
+   * card — the window is not the box. */
+  --top-h-tight: 344px;
   --hair: 1px;
   --cw-pid: 7ch;
   --cw-name: 13ch;
