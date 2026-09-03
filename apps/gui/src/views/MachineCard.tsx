@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring, RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
-import { IconBack, IconPin } from "@/components/icons";
+import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { gaugeColor } from "@/lib/vitals";
@@ -30,30 +30,33 @@ export function MachineCard({
   row,
   narrow,
   onBack,
-  onPin,
-  pinFailed,
   hooks,
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
   onOpenTerm,
   onBrowseFiles,
+  onBorrowWeb,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
   onBack: () => void;
-  onPin: (row: DeviceRow) => void;
-  /** Rows whose last pin attempt did not take — see `App`. */
-  pinFailed: Set<string>;
   /** This machine's hooks, or `null` until the first answer is in. */
   hooks: HooksState | null;
   hooksFailed: boolean;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
-  /** 在这台开终端 — rejects with the refusal, which lands on the button. */
+  /** 开会话 — rejects with the refusal, which lands on the button. */
   onOpenTerm: (row: DeviceRow) => Promise<void>;
   onBrowseFiles: (row: DeviceRow) => void;
+  /** 借网 — this machine's network, opened from where you stand
+      (docs/NET.md 借网). Local navigation, so it cannot fail. */
+  onBorrowWeb: (row: DeviceRow) => void;
 }) {
+  // **One poll for two sections.** The dials' 24-hour marks and the
+  // chart under them are the same 288 buckets; asking twice would put
+  // two moments on one card and cost the far machine two dials.
+  const { load, why } = useLoad(row);
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
       {/* **A strip only where something has to live in it.** Back exists
@@ -90,91 +93,15 @@ export function MachineCard({
       )}
       {row && (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="flex items-start gap-4">
-            {/* The same derivation as its row and as the rail's foot: one
-                machine, one face, painted from what that machine said
-                about itself. Bigger here, not different. */}
-            <MachineAvatar face={row.face} className="size-avatar-lg" />
-            <div className="min-w-0 flex-1">
-              {/* The row's arrangement, larger: the name over the two
-                  facts that qualify one machine (2026-09-02:「机器页面
-                  打开,标题那也是左边头像,右上名称,右下序列号与连接
-                  方式」). The suffix the name used to carry is gone —
-                  「本机不用写一个括号在机器名旁边」— the connection
-                  slot says the same thing as a reading instead of a
-                  bracket. */}
-              <div className="truncate text-title font-title">{row.name}</div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {/* The first twelve characters — a prefix to recognise,
-                    not to paste. The whole id stays behind 复制 id in
-                    the verb row, and smoke ties the two together (the
-                    prefix must open a card that hands over the full
-                    id). */}
-                <span data-card-id className="truncate">{row.id.slice(0, 12)}</span>
-                {/* Which road this machine is being reached over
-                    (`khor_core::Hop`), the same reading `khor devices`
-                    prints, from the same call. Not a liveness signal —
-                    it lags the far end going away by minutes; the age
-                    beside the readings below is what says whether this
-                    machine has been heard from.
-
-                    Three shapes for one slot. This machine reaches
-                    itself over nothing, so its word is 本机 and it is
-                    deliberately **not** `data-hop` — smoke asserts the
-                    own card carries no road. A satellite has no road of
-                    its own; its sponsor speaks for it (附属机器批). */}
-                {row.me ? (
-                  <span data-machine-here className="flex-none">
-                    {gui.machine_here}
-                  </span>
-                ) : row.sponsor ? (
-                  <span data-via-sponsor={row.sponsor} className="flex-none">
-                    {cli.via_sponsor(row.sponsor)}
-                  </span>
-                ) : (
-                  row.hop && (
-                    <span data-hop={row.hop} className="flex-none">
-                      {hopWord(row.hop)}
-                    </span>
-                  )
-                )}
-              </div>
-            </div>
-            {/* The same control as on the row, with the same two names
-                and the same failure face — it is one fact about this
-                machine, and a second way to express it would be a second
-                thing to keep in step. */}
-            <Button
-              variant="ghost"
-              size="icon"
-              data-card-pin
-              data-on={row.pinned}
-              data-pin-failed={pinFailed.has(row.id)}
-              aria-label={
-                pinFailed.has(row.id)
-                  ? row.pinned
-                    ? gui.unpin_failed
-                    : gui.pin_failed
-                  : row.pinned
-                    ? gui.unpin
-                    : gui.pin
-              }
-              onClick={() => onPin(row)}
-              // The finger floor, the same one the row's pin carries in
-              // both lists — one control, one target size wherever it
-              // stands (tokens.css `--touch`). It grows the box the
-              // ghost's hover block paints, not the glyph.
-              className="min-h-touch min-w-touch flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
-            >
-              <IconPin pinned={row.pinned} />
-            </Button>
-          </div>
-          <Verbs row={row} onOpenTerm={onOpenTerm} onBrowseFiles={onBrowseFiles} />
-          <Readings row={row} />
-          <GpuDetail row={row} />
-          <Busy row={row} />
-          <Storage row={row} />
-          <Foot row={row} />
+          <div className="flex flex-col gap-row">
+            <Head
+              row={row}
+              onOpenTerm={onOpenTerm}
+              onBrowseFiles={onBrowseFiles}
+              onBorrowWeb={onBorrowWeb}
+            />
+            <Readings row={row} day={load?.cpu_day ?? null} />
+            <Busy load={load} why={why} narrow={narrow} />
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
@@ -193,6 +120,7 @@ export function MachineCard({
               onUninstall={onUninstallHooks}
             />
           )}
+          </div>
         </div>
       )}
     </section>
@@ -200,51 +128,153 @@ export function MachineCard({
 }
 
 /**
+ * The card's head: who this machine is, what you can do on it, and
+ * which khor it is running.
+ *
+ * **Three lines and one row of verbs** (2026-09-03 to the user's
+ * layout): the name with the id beside it small, under it the road and
+ * how long the machine has been up, and on the right the verbs over
+ * the version. The id is small **and** the control that copies it —
+ * `CopyId`'s `id` face — because a string already on screen does not
+ * need a button to fetch it.
+ *
+ * **The version moved up here from a foot** and brought the freshness
+ * with it: both are facts about the *answer*, not about the machine's
+ * hardware, and they belong beside the machine's name for the same
+ * reason a letter's date belongs at its head. The pin went the other
+ * way — off the card entirely (2026-09-03:「置顶统一和 session 一样,
+ * 右键机器选择」): one gesture for one job across both lists beats a
+ * button that only one of the two surfaces has.
+ */
+function Head({
+  row,
+  onOpenTerm,
+  onBrowseFiles,
+  onBorrowWeb,
+}: {
+  row: DeviceRow;
+  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onBrowseFiles: (row: DeviceRow) => void;
+  onBorrowWeb: (row: DeviceRow) => void;
+}) {
+  const v = row.vitals;
+  const days = v ? Math.floor(v.vitals.uptime_s / 86_400) : 0;
+  const hours = v ? Math.floor(v.vitals.uptime_s / 3_600) : 0;
+  return (
+    <div className="flex flex-wrap items-start gap-row">
+      {/* The same derivation as its row and as the rail's foot: one
+          machine, one face, painted from what that machine said about
+          itself. Bigger here, not different. */}
+      <MachineAvatar face={row.face} className="size-avatar-lg" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-row">
+          <span className="min-w-0 truncate text-title font-title">{row.name}</span>
+          {/* The first twelve characters — a prefix to recognise, and
+              pressing it puts all sixty-four on the clipboard. */}
+          <CopyId id={row.id} face="id" />
+        </div>
+        <div className="flex flex-wrap items-center gap-row text-sm text-muted-foreground">
+          {/* Which road this machine is being reached over
+              (`khor_core::Hop`), the same reading `khor devices`
+              prints, from the same call. Not a liveness signal — it
+              lags the far end going away by minutes; the freshness on
+              the right is what says whether this machine has been heard
+              from.
+
+              Three shapes for one slot. This machine reaches itself
+              over nothing, so its word is 本机 and it is deliberately
+              **not** `data-hop` — smoke asserts the own card carries no
+              road. A satellite has no road of its own; its sponsor
+              speaks for it (附属机器批). */}
+          {row.me ? (
+            <span data-machine-here className="flex-none">
+              {gui.machine_here}
+            </span>
+          ) : row.sponsor ? (
+            <span data-via-sponsor={row.sponsor} className="flex-none">
+              {cli.via_sponsor(row.sponsor)}
+            </span>
+          ) : (
+            row.hop && (
+              <span data-hop={row.hop} className="flex-none">
+                {hopWord(row.hop)}
+              </span>
+            )
+          )}
+          {v && v.vitals.uptime_s > 0 && (
+            <span data-uptime className="flex-none">
+              {days >= 1 ? cli.uptime_days(days) : cli.uptime_hours(hours)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-in">
+        <Verbs
+          row={row}
+          onOpenTerm={onOpenTerm}
+          onBrowseFiles={onBrowseFiles}
+          onBorrowWeb={onBorrowWeb}
+        />
+        {v && (
+          <div className="flex flex-wrap justify-end gap-row text-sm text-muted-foreground">
+            {/* The version is one of `khor devices`' sentences and keeps
+                its unit; the freshness is the age sentence for a machine
+                reached over the wire (its own unit, counted with the
+                readings) and the present's clock for this one. */}
+            {v.vitals.version && <span data-vitals-unit="version">{cli.vitals_version(v.vitals.version)}</span>}
+            {v.age_ms > 0 ? (
+              <span data-vitals-age>{cli.vitals_taken(ago(Date.now() - v.age_ms))}</span>
+            ) : (
+              <span data-updated>{cli.updated_at(clock(Date.now()))}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * The card's verbs, in one row — the pane stops being a pure dashboard
- * here (docs/KHOR.md 等价: the CLI can already `open --on`, `ls`, and
- * copy this machine's id from any terminal, so the card owes the same
+ * here (docs/KHOR.md 等价: the CLI can already `open --on`, `ls` and
+ * `borrow` this machine from any terminal, so the card owes the same
  * moves).
  *
- * 开终端 is the one that can fail — the far machine can be away — and
- * the refusal lands on the button in the failure colour, the pin's
- * rule, then yields the offer back after a beat (`CopyId`'s cadence:
- * the report is about the press, not about the row). While the call is
- * out the button is disabled rather than reworded: a second press
- * would open a second terminal, and "pressed twice, got two" is the
- * kind of surprise a disable is for.
+ * **Three verbs, one per landing this machine can be the subject of**
+ * (2026-09-03:「右侧是终端、文件、借网三个操作按钮」): a session on it,
+ * its disk, its network. 复制 id left this row the same day — the id is
+ * on the card, and pressing it copies (`CopyId`'s `id` face), so a
+ * button that fetched a visible string was a control with nothing left
+ * to do.
  *
- * The id keeps its 64 characters out of the header: it is the string a
- * person pastes, not a fact they read, so it travels behind the same
- * 复制 id button the session detail uses — one control for one job on
- * both cards.
+ * 开会话 is the one that can fail — the far machine can be away — and
+ * the refusal lands on the button in the failure colour, the pin's
+ * rule, then yields the offer back after a beat. While the call is out
+ * the button is disabled rather than reworded: a second press would
+ * open a second session, and "pressed twice, got two" is the kind of
+ * surprise a disable is for.
  *
  * **The finger floor is worn here, not fixed in `ui/button.tsx`.** All
- * three of these are `size="sm"`, which is 24 tall, and this is the
- * screen's main row of actions — so all three took `min-h-touch`
- * (`CopyId` carries its own). Raising the floor inside the `sm` variant
- * would have looked like the smaller edit and been the larger one: `sm`
- * is a *look* for controls that sit inline beside text (the `--ctl-*`
+ * three are `size="sm"`, which is 24 tall, and this is the screen's
+ * main row of actions. Raising the floor inside the `sm` variant would
+ * have looked like the smaller edit and been the larger one: `sm` is a
+ * *look* for controls that sit inline beside text (the `--ctl-*`
  * family), and tokens.css says in as many words that the touch floor is
- * not a fourth `--ctl-*` — the two move for different reasons. Changing
- * the variant would also regrow every `sm` button in the app, in files
- * two other lanes have open right now, for a reading nobody on those
- * screens asked for.
- *
- * The mechanism is worth knowing before copying it: `min-height` beats
- * `height`, so a caller-side `min-h-touch` lands even though `cn()`
- * cannot take `h-ctl-sm` off (tailwind-merge does not read `ctl-sm` as a
- * height — `ui/button.tsx` has the scar). What the caller cannot do is
- * make the box *smaller*; the floor is the only direction that works
- * from here, which is the direction we want.
+ * not a fourth `--ctl-*`. The mechanism is worth knowing before copying
+ * it: `min-height` beats `height`, so a caller-side `min-h-touch` lands
+ * even though `cn()` cannot take `h-ctl-sm` off (tailwind-merge does not
+ * read `ctl-sm` as a height — `ui/button.tsx` has the scar).
  */
 function Verbs({
   row,
   onOpenTerm,
   onBrowseFiles,
+  onBorrowWeb,
 }: {
   row: DeviceRow;
   onOpenTerm: (row: DeviceRow) => Promise<void>;
   onBrowseFiles: (row: DeviceRow) => void;
+  onBorrowWeb: (row: DeviceRow) => void;
 }) {
   const [opening, setOpening] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -254,7 +284,7 @@ function Verbs({
     return () => window.clearTimeout(t);
   }, [failed]);
   return (
-    <div data-machine-verbs className="flex flex-wrap items-center gap-2 pt-pane">
+    <div data-machine-verbs className="flex flex-wrap items-center justify-end gap-in">
       <Button
         variant="outline"
         size="sm"
@@ -284,12 +314,19 @@ function Verbs({
       >
         {gui.browse_files}
       </Button>
-      {/* Outline like its two neighbours (动作排语法批): the verb row
-          is this page's "what you can do here" list, three peer verbs
-          in one dress — bare text among outlined buttons reads as a
-          lower rank, or as a link. The session header keeps its ghost:
-          that row is all quiet text, and each row speaks one language. */}
-      <CopyId id={row.id} variant="outline" />
+      {/* Outline like its two neighbours (动作排语法批): the verb row is
+          this page's "what you can do here" list, three peer verbs in
+          one dress — bare text among outlined buttons reads as a lower
+          rank, or as a link. */}
+      <Button
+        variant="outline"
+        size="sm"
+        data-borrow-web
+        className="min-h-touch"
+        onClick={() => onBorrowWeb(row)}
+      >
+        {gui.borrow_web}
+      </Button>
     </div>
   );
 }
@@ -357,6 +394,19 @@ function Hooks({
   );
 }
 
+/** One region of the card, in a box of its own.
+ *
+ * **The boxes arrived when the card stopped being one column of
+ * paragraphs** (2026-09-03): readings, the day, the top and the hook
+ * are four answers to four questions, and with nothing but headings
+ * between them a person had to find the seams. What a box may not do is
+ * make a second column — a row of two boxes side by side is a row that
+ * cannot line up, and 「很容易对不齐」 is exactly what the user saw when
+ * one was tried. So every panel is full width and they stack. */
+function Panel({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-md border bg-card px-row py-row">{children}</div>;
+}
+
 /**
  * What the machine is doing, and how old that answer is.
  *
@@ -375,21 +425,42 @@ function Hooks({
  * rather than a second hue. The judgment itself — which resources, at
  * what thresholds, why — is `khor_core::Fill::strain`, minted into the
  * row by gui-core; this file only paints the word it was handed.
+ *
+ * # Four dials, and every one of them is a whole
+ *
+ * CPU, GPU, 内存, 磁盘 (2026-09-03:「就是 CPU、GPU、Mem、Disk。GPU 和
+ * Disk 是汇总的,下面分硬件显示 bar」). A dial may only draw something
+ * that has **one** denominator — that is what lets an arc say how full
+ * without being learnt — so the two that are made of parts draw the
+ * sum and hand the parts to a row apiece underneath.
+ *
+ * **The disk dial's percentage is the sum; its colour is the worst part
+ * it is made of.** A machine with a full 1 TB scratch disk beside an
+ * empty 2 TB one averages to comfortable, and the average is a true
+ * number that answers the wrong question — what a person needs to know
+ * is that *something* is out of room. The colour is not invented here
+ * either: it is the worst of the strains gui-core already minted per
+ * volume (`khor_core::Fill::strain`), so this file still only picks
+ * among words it was handed.
+ *
+ * **`data-vitals-unit` marks a reading, and a whole made of parts is
+ * not one.** The GPU and disk dials carry no unit when the parts are
+ * there — the rows below are the readings `khor devices` prints, one
+ * per card and one per volume, and the smoke holds the two faces to
+ * that count. On an older node that reports only aggregates, the
+ * aggregate *is* the reading and the dial is the unit.
  */
-function Readings({ row }: { row: DeviceRow }) {
+function Readings({ row, day }: { row: DeviceRow; day: Load["cpu_day"] | null }) {
   if (!row.vitals) {
     return (
-      <div data-vitals-never className="pt-pane text-sm text-muted-foreground">
-        {cli.vitals_never}
-      </div>
+      <Panel>
+        <div data-vitals-never className="text-sm text-muted-foreground">
+          {cli.vitals_never}
+        </div>
+      </Panel>
     );
   }
-  const { vitals: v } = row.vitals;
-  // The GPU ring when the node reports per card: one gauge for the
-  // machine (the cards' mean, their memory summed), **no unit of its
-  // own** — the 明细 rows below are the readings `khor devices` prints,
-  // one per card, and the smoke holds the two faces to that count. On an
-  // older node the aggregate is the reading, and the ring is the unit.
+  const { vitals: v, volume_strains } = row.vitals;
   const cards = v.gpus;
   const gpuMean = cards.length > 0 ? cards.reduce((a, c) => a + c.util_pct, 0) / cards.length : null;
   const gpuMem = cards.some((c) => c.mem)
@@ -398,223 +469,244 @@ function Readings({ row }: { row: DeviceRow }) {
         { used: 0, total: 0 },
       )
     : null;
-  return (
-    <div data-vitals className="flex flex-wrap justify-around gap-row pt-pane">
-      <Unit
-        name="cpu"
-        word={cli.vitals_name_cpu}
-        sub={cli.cores_sub(v.cores)}
-        label={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
-        fraction={v.cpu_pct / 100}
-      />
-      {cards.length > 0 && gpuMean !== null ? (
-        <Unit
-          word={cli.vitals_name_gpu}
-          sub={
-            gpuMem
-              ? cli.gpu_sub(cards.length, bytes(gpuMem.used), bytes(gpuMem.total))
-              : cli.gpu_sub_nomem(cards.length)
-          }
-          label={cli.vitals_gpu(Math.round(gpuMean), cards.length)}
-          fraction={gpuMean / 100}
-        />
-      ) : (
-        v.gpu && (
-          <Unit
-            name="gpu"
-            word={cli.vitals_name_gpu}
-            // The memory rides under the ring as its own reading: an
-            // older node prints 显存 as a sentence of its own, and the
-            // count has to match — so the sub-line *is* the unit.
-            sub={
-              v.gpu.mem ? (
-                <span
-                  data-vitals-unit="vram"
-                  data-vitals-detail="vram"
-                  data-strain={row.vitals.vram_strain ?? undefined}
-                  className="data-[strain]:text-strain data-[strain=critical]:font-label"
-                >
-                  {cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
-                </span>
-              ) : (
-                cli.gpu_sub_nomem(v.gpu.cards)
-              )
-            }
-            label={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
-            fraction={v.gpu.util_pct / 100}
-          />
+  // The disk whole: every volume this machine reports, summed. An
+  // older node that reports one disk and no volumes has that disk as
+  // its whole; one that could not read either has no denominator, and
+  // then only the track is drawn.
+  const vols = v.volumes;
+  const disk =
+    vols.length > 0
+      ? vols.reduce(
+          (acc, x) => ({ used: acc.used + x.fill.used, total: acc.total + x.fill.total }),
+          { used: 0, total: 0 },
         )
-      )}
-      <Unit
-        name="mem"
-        word={cli.vitals_name_mem}
-        sub={`${bytes(v.mem.used)} / ${bytes(v.mem.total)}`}
-        label={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
-        fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
-        strain={row.vitals.mem_strain}
-      />
-    </div>
+      : v.disk;
+  const diskStrain =
+    vols.length > 0
+      ? (volume_strains.find((w) => w === "critical") ?? volume_strains.find((w) => w === "tight") ?? null)
+      : row.vitals.disk_strain;
+  const peak = (xs: (number | null)[]) => {
+    const seen = xs.filter((x): x is number => x !== null);
+    return seen.length > 0 ? Math.round(Math.max(...seen)) : null;
+  };
+  const cpuPeak = day ? peak(day.buckets) : null;
+  const memPeak = day ? peak(day.mem) : null;
+  const left = (fill: { used: number; total: number }) => cli.fill_left(bytes(Math.max(0, fill.total - fill.used)));
+  return (
+    <Panel>
+      <div data-vitals className="flex flex-wrap justify-around gap-row">
+        <Dial
+          name="cpu"
+          word={cli.vitals_name_cpu}
+          fraction={v.cpu_pct / 100}
+          sentence={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
+          facts={[cli.cores_sub(v.cores), cpuPeak !== null ? cli.day_peak(`${cpuPeak}%`) : null]}
+        />
+        {cards.length > 0 && gpuMean !== null ? (
+          <Dial
+            word={cli.vitals_name_gpu}
+            fraction={gpuMean / 100}
+            sentence={cli.vitals_gpu(Math.round(gpuMean), cards.length)}
+            facts={[
+              gpuMem ? cli.vitals_vram(bytes(gpuMem.used), bytes(gpuMem.total)) : cli.gpu_sub_nomem(cards.length),
+            ]}
+          />
+        ) : (
+          v.gpu && (
+            <Dial
+              name="gpu"
+              word={cli.vitals_name_gpu}
+              fraction={v.gpu.util_pct / 100}
+              sentence={cli.vitals_gpu(Math.round(v.gpu.util_pct), v.gpu.cards)}
+              // An older node prints 显存 as a sentence of its own, and
+              // the count of readings has to match — so on that node the
+              // memory line *is* a unit, here on the back of the dial.
+              facts={[
+                v.gpu.mem ? (
+                  <span
+                    data-vitals-unit="vram"
+                    data-vitals-detail="vram"
+                    data-strain={row.vitals.vram_strain ?? undefined}
+                    className="data-[strain]:text-strain data-[strain=critical]:font-label"
+                  >
+                    {cli.vitals_vram(bytes(v.gpu.mem.used), bytes(v.gpu.mem.total))}
+                  </span>
+                ) : (
+                  cli.gpu_sub_nomem(v.gpu.cards)
+                ),
+              ]}
+            />
+          )
+        )}
+        <Dial
+          name="mem"
+          word={cli.vitals_name_mem}
+          fraction={v.mem.total > 0 ? v.mem.used / v.mem.total : null}
+          strain={row.vitals.mem_strain}
+          sentence={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
+          facts={[left(v.mem), memPeak !== null ? cli.day_peak(`${memPeak}%`) : null]}
+        />
+        <Dial
+          word={cli.vitals_name_disk}
+          fraction={disk && disk.total > 0 ? disk.used / disk.total : null}
+          strain={diskStrain}
+          unknown={!disk}
+          sentence={
+            disk
+              ? vols.length > 0
+                ? cli.disk_whole(bytes(disk.total), vols.length)
+                : cli.vitals_disk(bytes(disk.used), bytes(disk.total))
+              : cli.vitals_disk_unknown
+          }
+          facts={[disk ? left(disk) : null]}
+        />
+      </div>
+      <Parts row={row} />
+    </Panel>
   );
 }
 
 /**
- * The per-card GPU rows under the rings (2026-09-02:「环下面显示…
- * GPU明细」; 2026-09-03 to the user's reference): index, the driver's
- * name, a bar and the share in use, memory used over total, and the
- * die temperature when the driver has one. **Each row is the unit** for
- * one of `khor devices`' per-card sentences, and carries that sentence
- * word for word for the smoke to read (`sr-only`: the row prints the
- * same facts laid out, not the sentence twice). Absent when the node
- * reported no cards: the aggregate ring is then the reading, and an
- * empty section would read as "no cards".
+ * The parts the two aggregate dials are made of: one row per GPU card,
+ * then one per volume (2026-09-03:「GPU 和 Disk 是汇总的,下面分硬件显示
+ * bar」).
+ *
+ * **One grid for both groups, and that is the whole point of the
+ * component.** They were two blocks with two layouts once, and the bars
+ * did not start on the same pixel — 「很容易对不齐」. Sharing a grid
+ * makes alignment structural rather than a pair of numbers somebody has
+ * to keep equal. The bar column is `1fr`, so the rows follow the card
+ * rather than reserving a width the window may not have.
+ *
+ * **Each row is the unit** for one of `khor devices`' sentences and
+ * carries that sentence word for word for the smoke to read (`sr-only`:
+ * the row prints the same facts laid out, not the sentence twice).
+ *
+ * A volume is named by its mount point, spelled the way the machine
+ * spells it (2026-09-03:「就写 /Volumes/disk0 就可以」). The short name
+ * it wore before answered a question nobody asked — which of these is
+ * "the disk" — and lost the one thing a person picks a volume by.
  */
-function GpuDetail({ row }: { row: DeviceRow }) {
-  const cards = row.vitals?.vitals.gpus ?? [];
-  if (cards.length === 0) return null;
+function Parts({ row }: { row: DeviceRow }) {
+  if (!row.vitals) return null;
+  const { vitals: v, volume_strains } = row.vitals;
+  const cards = v.gpus;
+  const vols =
+    v.volumes.length > 0
+      ? v.volumes.map((vol, i) => ({
+          unit: "vol",
+          word: mountWord(vol.mount),
+          fill: vol.fill,
+          strain: volume_strains[i] ?? null,
+          sentence: cli.vitals_vol(volWord(vol.mount), bytes(vol.fill.used), bytes(vol.fill.total)),
+        }))
+      : v.disk
+        ? [
+            {
+              unit: "disk",
+              word: cli.vitals_name_disk,
+              fill: v.disk,
+              strain: row.vitals.disk_strain,
+              sentence: cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total)),
+            },
+          ]
+        : [
+            {
+              unit: "disk",
+              word: cli.vitals_name_disk,
+              fill: null,
+              strain: null,
+              sentence: cli.vitals_disk_unknown,
+            },
+          ];
+  if (cards.length === 0 && vols.length === 0) return null;
   return (
-    <div data-gpu-detail className="flex flex-col gap-in pt-pane">
-      <div className="text-aux text-muted-foreground">{cli.gpu_detail}</div>
+    <div
+      data-vitals-parts
+      className="mt-row grid items-center gap-x-row gap-y-in border-t pt-row text-sm tabular-nums"
+      // Name, bar, then whatever numbers that kind of part has. The
+      // bar's `1fr` is what makes the two groups line up at both ends.
+      style={{ gridTemplateColumns: "minmax(0, auto) minmax(0, 1fr) auto auto auto" }}
+    >
       {cards.map((c, i) => {
         const util = Math.round(c.util_pct);
         const sentence = c.mem
           ? cli.vitals_gpu_card_mem(c.name || cli.vitals_name_gpu, util, bytes(c.mem.used), bytes(c.mem.total))
           : cli.vitals_gpu_card(c.name || cli.vitals_name_gpu, util);
         return (
-          <div
-            key={i}
-            data-vitals-unit="gpu"
-            data-gpu-card={i}
-            className="flex items-center gap-row rounded-md bg-muted/40 px-row py-in text-sm tabular-nums"
-          >
-            <span className="flex-none font-label">GPU{i}</span>
-            {/* The driver's name, when it gave one; a card that will not
-                name itself (Apple's) is "GPU0" and nothing more — not
-                "GPU0 GPU". */}
-            {c.name && <span className="w-48 min-w-0 truncate text-muted-foreground">{c.name}</span>}
-            <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/10">
-              <span
-                className="block h-full rounded-full"
-                style={{ width: `${Math.max(0, Math.min(100, util))}%`, background: gaugeColor(null) }}
-              />
-            </span>
-            <span className="w-10 flex-none text-right">{util}%</span>
-            {c.mem && (
-              <span className="flex-none text-muted-foreground">
-                {bytes(c.mem.used)} / {bytes(c.mem.total)}
+          <Fragment key={`gpu${i}`}>
+            <span data-vitals-unit="gpu" data-gpu-card={i} className="flex min-w-0 items-baseline gap-in">
+              <span className="flex-none font-label">GPU{i}</span>
+              {/* The driver's name, when it gave one; a card that will
+                  not name itself (Apple's) is "GPU0" and nothing more —
+                  not "GPU0 GPU". */}
+              {c.name && <span className="min-w-0 truncate text-muted-foreground">{c.name}</span>}
+              <span data-vitals-detail="gpu" className="sr-only">
+                {sentence}
               </span>
-            )}
-            {c.temp_c != null && <span className="flex-none text-muted-foreground">{Math.round(c.temp_c)}°C</span>}
-            <span data-vitals-detail="gpu" className="sr-only">
-              {sentence}
             </span>
-          </div>
+            <Bar pct={util} strain={null} />
+            <span className="text-right">{util}%</span>
+            <span className="text-right text-muted-foreground">
+              {c.mem ? `${bytes(c.mem.used)} / ${bytes(c.mem.total)}` : ""}
+            </span>
+            <span className="text-right text-muted-foreground">{c.temp_c != null ? `${Math.round(c.temp_c)}°C` : ""}</span>
+          </Fragment>
+        );
+      })}
+      {vols.map((r, i) => {
+        const pct = r.fill && r.fill.total > 0 ? (r.fill.used / r.fill.total) * 100 : null;
+        return (
+          // By position, not by word: a Mac reports its data volume and
+          // `/` as two mounts that can both print as `/`.
+          <Fragment key={`vol${i}`}>
+            <span
+              data-vitals-unit={r.unit}
+              data-vitals-unknown={r.fill ? undefined : ""}
+              className="min-w-0 truncate"
+            >
+              {r.word}
+              <span
+                data-vitals-detail={r.unit}
+                data-strain={r.strain ?? undefined}
+                className="sr-only data-[strain]:text-strain data-[strain=critical]:font-label"
+              >
+                {r.sentence}
+              </span>
+            </span>
+            <Bar pct={pct} strain={r.strain} />
+            <span
+              data-strain={r.strain ?? undefined}
+              className="col-start-3 col-end-[-1] text-right text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
+            >
+              {r.fill ? `${bytes(r.fill.used)} / ${bytes(r.fill.total)}` : cli.vitals_disk_unknown}
+            </span>
+          </Fragment>
         );
       })}
     </div>
   );
 }
 
-/**
- * Storage, a bar per volume (2026-09-03 to the user's reference; the
- * rings the volumes wore before were the user's「硬盘存储」ask read
- * too literally — a bar is how a person reads "how full"). Each bar is
- * the unit for one of `khor devices`' volume sentences, and prints that
- * sentence at its right, word for word, wearing the volume's strain. An
- * older node that reports one disk gets one bar; one that could not
- * name it gets the unknown sentence and no bar.
- */
-function Storage({ row }: { row: DeviceRow }) {
-  if (!row.vitals) return null;
-  const { vitals: v, volume_strains } = row.vitals;
-  const rows =
-    v.volumes.length > 0
-      ? v.volumes.map((vol, i) => ({
-          name: "vol",
-          word: volWord(vol.mount),
-          fill: vol.fill,
-          strain: volume_strains[i] ?? null,
-          label: cli.vitals_vol(volWord(vol.mount), bytes(vol.fill.used), bytes(vol.fill.total)),
-        }))
-      : v.disk
-        ? [
-            {
-              name: "disk",
-              word: cli.vitals_name_disk,
-              fill: v.disk,
-              strain: row.vitals.disk_strain,
-              label: cli.vitals_disk(bytes(v.disk.used), bytes(v.disk.total)),
-            },
-          ]
-        : [{ name: "disk", word: cli.vitals_name_disk, fill: null, strain: null, label: cli.vitals_disk_unknown }];
+/** One part's share, on the track every other part shares. `null` draws
+    the track alone — a reading that could not be taken is not a zero. */
+function Bar({ pct, strain }: { pct: number | null; strain: Strain | null }) {
   return (
-    <div data-storage className="flex flex-col gap-row pt-pane">
-      {rows.map((r, i) => {
-        const pct = r.fill && r.fill.total > 0 ? (r.fill.used / r.fill.total) * 100 : null;
-        return (
-          <div
-            // By position, not by word: a Mac reports its data volume
-            // and `/` as two mounts that both print as `/`.
-            key={i}
-            data-vitals-unit={r.name}
-            data-vitals-unknown={r.fill ? undefined : ""}
-            className="flex flex-col gap-in"
-          >
-            <div className="flex items-baseline justify-between gap-row text-sm">
-              <span className="text-muted-foreground">
-                {cli.storage} · {r.word}
-              </span>
-              <span
-                data-vitals-detail={r.name}
-                data-strain={r.strain ?? undefined}
-                className="tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
-              >
-                {r.label}
-              </span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-              {pct !== null && (
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(r.strain) }}
-                />
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+      {pct !== null && (
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(strain) }}
+        />
+      )}
+    </span>
   );
 }
 
 /** The wall clock for one instant, hours and minutes in the reader's
-    own locale — the day chart's two ends and the foot's 更新于. */
+    own locale — the day chart's two ends and the head's 更新于. */
 function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-/**
- * The card's foot: which khor this machine runs (the version is one of
- * `khor devices`' sentences and keeps its unit), how long it has been
- * up, and when this reading is from — the age sentence for a machine
- * reached over the wire (its own unit, counted with the readings), the
- * present's clock for this one.
- */
-function Foot({ row }: { row: DeviceRow }) {
-  if (!row.vitals) return null;
-  const { vitals: v, age_ms } = row.vitals;
-  const days = Math.floor(v.uptime_s / 86_400);
-  const hours = Math.floor(v.uptime_s / 3_600);
-  return (
-    <div data-foot className="flex flex-wrap gap-row pt-pane text-sm text-muted-foreground">
-      {v.version && <span data-vitals-unit="version">{cli.vitals_version(v.version)}</span>}
-      {v.uptime_s > 0 && <span data-uptime>{days >= 1 ? cli.uptime_days(days) : cli.uptime_hours(hours)}</span>}
-      {age_ms > 0 ? (
-        <span data-vitals-age>{cli.vitals_taken(ago(Date.now() - age_ms))}</span>
-      ) : (
-        <span data-updated>{cli.updated_at(clock(Date.now()))}</span>
-      )}
-    </div>
-  );
 }
 
 /** How many rows the card's top shows. Eight: `top`'s own fold on a
@@ -631,30 +723,94 @@ const LOAD_MS = 5_000;
 const LOAD_RETRY_MS = 30_000;
 
 /**
- * What the machine is busy with, under its rings (2026-09-02:「环下面
- * 显示进程top,最近24小时cpu」): the process top as a table and the CPU
- * day as a band.
+ * What the machine is busy with (2026-09-02:「环下面显示进程 top,最近
+ * 24 小时 cpu」): the CPU day as a chart, and the process top as a
+ * table, one panel each.
  *
- * **Asked by this card, not carried on the row** — the rings read a
+ * **Asked by the card, not carried on the row** — the rings read a
  * reading that rides the device beat, but a process table is asked for
  * only while somebody is looking at it, and the band is a day of
- * buckets that has no business on a two-second heartbeat.
+ * buckets that has no business on a two-second heartbeat. The ask
+ * itself is `useLoad`, one level up, because the dials' 24-hour marks
+ * read the same buckets this chart draws.
  *
  * **Three faces, and the empty one is never drawn.** Nothing until the
- * first answer (the ask is out); the table and the band once it lands;
+ * first answer (the ask is out); the chart and the table once it lands;
  * and the refusal's own sentence in their place when it does not — an
  * older khor over there, or a machine that is away. A blank table would
  * read as an idle machine, which is the one thing this surface must not
  * say by accident (docs/SESSION.md 认不出就不落词).
- *
- * The band paints absence as absence: a bucket the recorder never saw
- * (`null`) is a cell with no bar, never a bar of height zero and never
- * a line bridged from its neighbours (`khor_core::CpuDay`).
  */
-function Busy({ row }: { row: DeviceRow }) {
+function Busy({ load, why, narrow }: { load: Load | null; why: string | null; narrow: boolean }) {
+  if (why) {
+    return (
+      <Panel>
+        <div data-load-why className="text-sm text-muted-foreground">
+          {why}
+        </div>
+      </Panel>
+    );
+  }
+  if (!load) return null;
+  return (
+    <>
+      <Panel>
+        <div data-load-day>
+          <DayChart day={load.cpu_day} />
+        </div>
+      </Panel>
+      <Panel>
+        <table data-load-top className="w-full text-sm tabular-nums">
+          <thead className="text-aux text-muted-foreground">
+            <tr>
+              <th className="text-left font-body">{cli.top_name}</th>
+              {/* The user column is the first thing a narrow card can
+                  do without: on one person's own machine every row says
+                  the same name, and the two numbers are why the table
+                  is here. */}
+              {!narrow && <th className="w-px whitespace-nowrap px-row text-left font-body">{cli.top_user}</th>}
+              <th className="w-px whitespace-nowrap px-row text-right font-body">{cli.vitals_name_cpu}</th>
+              <th className="w-px whitespace-nowrap text-right font-body">{cli.vitals_name_mem}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {load.top.map((r) => (
+              <tr key={r.pid} data-top-row={r.pid}>
+                {/* The name, then the pid in the muted colour: the pid
+                    is what a person would type after the name, not a
+                    fact they read, and a column of its own would push
+                    the name off a narrow card. */}
+                <td className="max-w-0 truncate">
+                  {r.name} <span className="text-muted-foreground">{r.pid}</span>
+                </td>
+                {!narrow && <td className="whitespace-nowrap px-row text-muted-foreground">{r.user}</td>}
+                <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
+                <td className="whitespace-nowrap text-right">{bytes(r.mem)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
+    </>
+  );
+}
+
+/**
+ * The one ask behind both the dials' 24-hour marks and the chart.
+ *
+ * Its cadence is the vitals beat the dials already move on; a refusal
+ * backs off, because a far machine that is away costs a dial each time
+ * and the sentence on the card does not get truer by being re-fetched
+ * every five seconds.
+ */
+function useLoad(row: DeviceRow | null) {
   const [load, setLoad] = useState<Load | null>(null);
   const [why, setWhy] = useState<string | null>(null);
+  const id = row?.id ?? null;
+  const me = row?.me ?? false;
+  const name = row?.name ?? "";
   useEffect(() => {
+    if (id === null) return;
     let stopped = false;
     let timer = 0;
     setLoad(null);
@@ -662,10 +818,10 @@ function Busy({ row }: { row: DeviceRow }) {
     const ask = async () => {
       let wait = LOAD_MS;
       try {
-        // A name, not an id: the node resolves machines by the name
-        // its table knows them by, and its own by being asked for
-        // itself (`Node::load_on`).
-        const l = await fetchLoad(row.me ? "" : row.name, TOP_SHOWN);
+        // A name, not an id: the node resolves machines by the name its
+        // table knows them by, and its own by being asked for itself
+        // (`Node::load_on`).
+        const l = await fetchLoad(me ? "" : name, TOP_SHOWN);
         if (stopped) return;
         setLoad(l);
         setWhy(null);
@@ -681,49 +837,8 @@ function Busy({ row }: { row: DeviceRow }) {
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [row.id, row.me, row.name]);
-
-  if (why) {
-    return (
-      <div data-load-why className="pt-pane text-sm text-muted-foreground">
-        {why}
-      </div>
-    );
-  }
-  if (!load) return null;
-  return (
-    <div data-load className="flex flex-col gap-row pt-pane">
-      <div data-load-day>
-        <DayChart day={load.cpu_day} />
-      </div>
-      <table data-load-top className="w-full text-sm tabular-nums">
-        <thead className="text-aux text-muted-foreground">
-          <tr>
-            <th className="text-left font-body">{cli.top_name}</th>
-            <th className="text-left font-body">{cli.top_user}</th>
-            <th className="text-right font-body">{cli.vitals_name_cpu}</th>
-            <th className="text-right font-body">{cli.vitals_name_mem}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {load.top.map((r) => (
-            <tr key={r.pid} data-top-row={r.pid}>
-              {/* The name, then the pid in the muted colour: the pid
-                  is what a person would type after the name, not a
-                  fact they read, and a column of its own would push
-                  the name off a narrow card. */}
-              <td className="max-w-0 truncate pr-2">
-                {r.name} <span className="text-muted-foreground">{r.pid}</span>
-              </td>
-              <td className="truncate pr-2 text-muted-foreground">{r.user}</td>
-              <td className="text-right">{Math.round(r.cpu_pct)}%</td>
-              <td className="text-right">{bytes(r.mem)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  }, [id, me, name]);
+  return { load, why };
 }
 
 /**
@@ -818,25 +933,48 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
   );
 }
 
-function Unit({
+/**
+ * One dial: an arc with its share inside, its name under it, and the
+ * quantities behind the share on its back.
+ *
+ * **Only the arc turns** (2026-09-03:「翻转只翻转环,下面的标题保留」).
+ * The name is what a person is looking for while scanning four of
+ * these, and a name that vanishes mid-turn makes them wait for the
+ * animation to know which reading they are reading.
+ *
+ * **What the back says is what the front cannot.** The front is a share
+ * — 96% — and the back is the quantity a person acts on: 还剩 51.6G, the
+ * day's high-water mark, how many cards or volumes the whole is made
+ * of. Under those sits the sentence `khor devices` prints, which is
+ * both the provenance of the numbers above it and what smoke compares
+ * word for word.
+ *
+ * The unit and the sentence's mark ride together only when this dial
+ * *is* a reading — see `Readings` on why an aggregate over parts is
+ * not.
+ */
+function Dial({
   name,
   word,
-  sub,
-  label,
+  facts,
+  sentence,
   fraction,
   strain,
   unknown,
 }: {
-  /** The reading's key on the wire, or none for a ring that is a
-      picture of readings counted elsewhere (the GPU ring above the
-      per-card rows). Without it the unit and detail marks are not set. */
+  /** The reading's key on the wire, or none for a dial that is a
+      picture of readings counted elsewhere (the GPU and disk dials
+      above their per-part rows). Without it the unit and detail marks
+      are not set. */
   name?: string;
-  /** The reading's name on its own, for under the ring. */
+  /** The reading's name, under the dial and never turning with it. */
   word: string;
-  /** The line under the name — the fact a person reads without
-      turning the ring: cores, memory used over total, cards. */
-  sub?: React.ReactNode;
-  label: string;
+  /** One or two lines of what the share is made of. `null` entries are
+      dropped, so a caller may pass a fact that does not exist yet (a
+      machine with no day recorded has no 24-hour mark). */
+  facts: (React.ReactNode | null)[];
+  /** What `khor devices` prints for this reading, word for word. */
+  sentence: string;
   /** `null` when there is no denominator to divide by, and then only the
       track is drawn — a full circle of arc would read as "this is at
       100%", and no circle at all as "this is at zero". */
@@ -851,43 +989,57 @@ function Unit({
   // A percentage, because the arc is one and the two should agree at a
   // glance. The exact quantity — bytes, cores, cards — is the back's job.
   const value = fraction === null ? null : `${Math.round(fraction * 100)}%`;
+  const lines = facts.filter((f) => f !== null && f !== undefined);
   return (
-    <button
-      type="button"
-      data-metric
-      data-flipped={flipped}
-      data-vitals-unit={name}
-      data-vitals-unknown={unknown ? "" : undefined}
-      aria-pressed={flipped}
-      // The sentence, not "CPU" — a name that reads out the short form
-      // would make a screen reader turn the card over for the number.
-      aria-label={label}
-      onClick={() => setFlipped((on) => !on)}
-      className="rounded-md p-in"
-      style={{ minWidth: RING_SIZE_CARD }}
-    >
-      <span data-metric-faces>
-        <span data-metric-face="front" className="flex flex-col items-center gap-in">
-          <Ring fraction={fraction} color={gaugeColor(strain)} size={RING_SIZE_CARD} stroke={RING_STROKE_CARD}>
-            {value}
-          </Ring>
-          <span className="text-sm">{word}</span>
-          {sub != null && <span className="text-aux tabular-nums text-muted-foreground">{sub}</span>}
+    <div className="flex flex-col items-center gap-in">
+      <button
+        type="button"
+        data-metric
+        data-flipped={flipped}
+        data-vitals-unit={name}
+        data-vitals-unknown={unknown ? "" : undefined}
+        aria-pressed={flipped}
+        // The sentence, not "CPU" — a name that reads out the short form
+        // would make a screen reader turn the card over for the number.
+        aria-label={sentence}
+        onClick={() => setFlipped((on) => !on)}
+        className="rounded-md"
+        // Wider than the arc it holds, because the back has to fit a
+        // sentence: the two faces share one box, and sizing it to the
+        // circle would wrap 「内存 12.3G / 16.0G」 into four lines.
+        style={{ width: RING_SIZE_CARD * 1.6, height: RING_SIZE_CARD }}
+      >
+        <span data-metric-faces className="block h-full w-full">
+          <span data-metric-face="front" className="grid h-full w-full place-items-center">
+            <Ring fraction={fraction} color={gaugeColor(strain)} size={RING_SIZE_CARD} stroke={RING_STROKE_CARD}>
+              {value}
+            </Ring>
+          </span>
+          {/* **The attribute marks the sentence itself**, not the box
+              around it: it is what `khor devices` prints word for word,
+              and it is compared as text — so it has to name exactly the
+              sentence and not a box that also holds the quantities. */}
+          <span
+            data-metric-face="back"
+            className="flex h-full w-full flex-col items-center justify-center gap-in rounded-md border px-in text-center"
+          >
+            {lines.map((line, i) => (
+              <span key={i} className="text-sm tabular-nums">
+                {line}
+              </span>
+            ))}
+            <span
+              data-vitals-detail={name}
+              data-strain={strain ?? undefined}
+              className="text-aux tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
+            >
+              {sentence}
+            </span>
+          </span>
         </span>
-        {/* **The attribute marks the sentence itself**, not the unit
-            around it: it is what `khor devices` prints word for word, and
-            it is compared as text — so it has to name exactly the
-            sentence and not a box that also holds a number in a ring. */}
-        <span
-          data-metric-face="back"
-          data-vitals-detail={name}
-          data-strain={strain ?? undefined}
-          className="grid place-items-center text-center text-aux tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
-        >
-          {label}
-        </span>
-      </span>
-    </button>
+      </button>
+      <span className="text-sm">{word}</span>
+    </div>
   );
 }
 
@@ -900,11 +1052,22 @@ function Unit({
  * handing back strings would be deciding what a screen it cannot see has
  * room for.
  */
-/** A volume's short name — `/System/Volumes/Data` and `/` both draw as
-    `/` (the disk a person means), the rest keep their last step. The
-    CLI keeps a copy of its own (`vol_word`), the `bytes` precedent
-    below: painting is not judgment, and the wire carries the honest
-    mount. */
+/** How a volume is **named on the card**: its mount point as the
+    machine spells it (2026-09-03:「就写 /Volumes/disk0 就可以」), with
+    one substitution — macOS mounts the volume everything a person
+    touches lives on at `/System/Volumes/Data`, and nobody calls it
+    that. Every other mount keeps every character, because the path is
+    what a person picks a volume by and the last step alone (`disk0`)
+    threw away where it is. */
+function mountWord(mount: string): string {
+  return mount === "/System/Volumes/Data" ? "/" : mount;
+}
+
+/** A volume's short name **in the sentence `khor devices` prints** —
+    `/System/Volumes/Data` and `/` both draw as `/`, the rest keep their
+    last step. The CLI keeps a copy of its own (`vol_word`), the `bytes`
+    precedent below: painting is not judgment, and the wire carries the
+    honest mount. */
 function volWord(mount: string): string {
   if (mount === "/System/Volumes/Data" || mount === "/") return "/";
   const steps = mount.split("/").filter(Boolean);

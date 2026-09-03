@@ -49,13 +49,61 @@ import { groupLabel, word } from "@/words";
  * worked — until somebody pastes. The word goes back to the offer after
  * a beat, because "复制好了" is about the press and not about the row.
  */
-export function CopyId({ id, variant = "ghost" }: { id: string; variant?: "ghost" | "outline" }) {
+export function CopyId({
+  id,
+  variant = "ghost",
+  face = "verb",
+}: {
+  id: string;
+  variant?: "ghost" | "outline";
+  /** **What the control looks like, never what it does.**
+      `verb` is a button in a row of buttons and reads 复制 id.
+      `id` is the id itself, standing where a machine's name needs it
+      anyway, and copying is what pressing it does (2026-09-03:「复制 id
+      就是点小字 id 自动复制」) — a separate button for a string already
+      on screen was one control too many.
+
+      The prefix keeps its own element so that what it says never
+      changes: the report of the press rides beside it, because smoke
+      reads that prefix immediately after clicking to copy, and a
+      control that reports by *replacing* the fact would hand back
+      「复制好了」 where an id was asked for. */
+  face?: "verb" | "id";
+}) {
   const [said, setSaid] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
     if (!said) return;
     const t = window.setTimeout(() => setSaid(null), YIELD_MS);
     return () => window.clearTimeout(t);
   }, [said]);
+  const copy = () =>
+    navigator.clipboard.writeText(id).then(
+      () => setSaid("copied"),
+      () => setSaid("failed"),
+    );
+  if (face === "id") {
+    return (
+      <button
+        type="button"
+        data-copy-id
+        data-said={said ?? undefined}
+        // The word, for anyone who cannot see that this is an id: the
+        // visible text is twelve characters of hex, which reads out as
+        // nothing at all.
+        aria-label={gui.copy_id}
+        onClick={copy}
+        // The finger floor again (tokens.css `--touch`), on a target
+        // whose ink is twelve small characters — the one on this card
+        // most likely to be missed.
+        className="flex min-h-touch min-w-0 items-center gap-in rounded-md text-sm text-muted-foreground hover:text-foreground data-[said=failed]:text-state-failed"
+      >
+        <span data-card-id className="truncate">
+          {id.slice(0, 12)}
+        </span>
+        {said && <span className="flex-none text-aux">{said === "copied" ? gui.copied : gui.copy_failed}</span>}
+      </button>
+    );
+  }
   return (
     <Button
       size="sm"
@@ -71,12 +119,7 @@ export function CopyId({ id, variant = "ghost" }: { id: string; variant?: "ghost
       // `sm` look stays; the box it is pressed in grows to 44, and the
       // ghost wash paints that box.
       className="min-h-touch flex-none data-[said=failed]:text-state-failed"
-      onClick={() => {
-        navigator.clipboard.writeText(id).then(
-          () => setSaid("copied"),
-          () => setSaid("failed"),
-        );
-      }}
+      onClick={copy}
     >
       {said === "copied" ? gui.copied : said === "failed" ? gui.copy_failed : gui.copy_id}
     </Button>

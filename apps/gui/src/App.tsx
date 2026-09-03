@@ -1209,8 +1209,6 @@ export default function App() {
       row={openDevice}
       narrow={narrow}
       onBack={() => setScreen("list")}
-      onPin={onPinDevice}
-      pinFailed={pinFailed}
       hooks={hooks}
       hooksFailed={hooksFailed}
       onInstallHooks={onInstallHooks}
@@ -1235,6 +1233,15 @@ export default function App() {
         setMark(false);
         setLanding("files");
         dirTabs.open(row.id, "");
+        setScreen("detail");
+      }}
+      // This machine's network, in a new tab of the browser landing —
+      // the same judgment as the disk above it, and the address bar is
+      // what an empty place opens to (docs/NET.md 借网).
+      onBorrowWeb={(row) => {
+        setMark(false);
+        setLanding("browser");
+        pageTabs.open(row.id, "");
         setScreen("detail");
       }}
     />

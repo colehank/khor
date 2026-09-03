@@ -277,23 +277,33 @@ vitals-vram = "显存 {0} / {1}"
 # 不拆第二段——smoke 按两空格数段落,GUI 一卡一环,两边段数要对得上。
 vitals-gpu-card = "{0} {1}%"
 vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
-# The card's GPU detail section — the per-card table under the rings
-# (2026-09-02:「环下面显示…GPU明细」). The ring keeps the number; this is
-# where the card's name and its memory are read without turning the
-# ring over. 占用 rather than a second CPU-ish word: it is the share of
-# the card in use, and the reading's own name (`vitals-name-gpu`) heads
-# the name column so the two faces say the same thing about one card.
-gpu-detail = "GPU 明细"
-gpu-util = "占用"
-# The card's day section and the words under its rings (2026-09-03,
-# redesigned to the user's reference: rings carry a sub-line, the day is
-# a CPU area with a dashed memory line, storage is a bar per volume, the
-# foot says how long the machine has been up and when it last spoke).
+# The card's day section and the words its dials turn over to
+# (2026-09-03, redesigned twice to the user's references: four dials —
+# CPU, GPU, 内存, 磁盘 — each an aggregate whose parts are a row apiece
+# under it; a dial's face is the arc and its name, and what it turns
+# over to is the quantity behind the share). `storage` went with the
+# section it headed: a volume's row is its own mount point spelled out,
+# and a heading over one row is a word that names nothing the row does
+# not (2026-09-03「就写 /Volumes/disk0 就可以」).
 day-trend = "24 小时趋势"
-storage = "存储"
 cores-sub = "{0} 核"
-gpu-sub = "{0} 卡 · 显存 {1} / {2}"
 gpu-sub-nomem = "{0} 卡"
+# The disk dial's whole, said as **how big and how many** rather than
+# as used-over-total: the sum of two volumes rounds to 「1.1T / 1.1T」
+# at one decimal — a sentence that reads full while the arc beside it
+# says 95%. Used-over-total is right for one filesystem (`vitals-disk`,
+# what `khor devices` prints per volume) and wrong for a sum, and the
+# fix is the sentence, not more decimals.
+disk-whole = "磁盘 {0} · {1} 卷"
+# What every fill dial turns over to: how much is **left**, which is the
+# number a person acts on — 95% and 「还剩 53.8G」 are the same reading,
+# and only the second one answers 「能不能再放一份进去」.
+fill-left = "还剩 {0}"
+# The CPU and memory dials' second line: the day's high-water mark, from
+# the same 288 buckets the chart below draws. Not an average — an
+# average over a day of a machine that idles at night says nothing about
+# whether it was ever short.
+day-peak = "24 小时峰值 {0}"
 uptime-days = "已运行 {0} 天"
 uptime-hours = "已运行 {0} 小时"
 updated-at = "更新于 {0}"
@@ -304,7 +314,6 @@ yesterday-at = "昨天 {0}"
 # 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"
-vitals-name-vram = "显存"
 # The machine card's process top (2026-09-02:「环下面显示进程top」):
 # the two column heads that are not a vitals name. CPU and 内存 reuse
 # `vitals-name-cpu` / `vitals-name-mem` — same fact, same word.
@@ -1397,9 +1406,19 @@ unpin-failed = "取消不了"
 # landing with this machine picked. The failure word rides the button
 # that was pressed, the pin's rule; the files jump is a local
 # navigation and cannot fail, so it carries none.
-open-term-on = "在这台开终端"
+# **Verbs, not places** (2026-09-03「终端改名为 session 或对话」): what
+# khor opens on a machine is a session, and calling it 终端 named the
+# window it happens to appear in. The words stay one step longer than
+# the landings they lead to (会话 / 文件) because the catalog refuses two
+# keys that spell the same string — and the refusal is right here: a
+# button that reads exactly like a rail tab is a button that looks like
+# it goes somewhere rather than does something.
+open-term-on = "开会话"
 open-term-on-failed = "开不了"
-browse-files = "看它的文件"
+browse-files = "看文件"
+# The third verb, the one the browser landing is for (docs/NET.md 借网):
+# this machine's network, borrowed from where you are standing.
+borrow-web = "借网"
 # The hook, on this machine's own card. Two names because the button has
 # two jobs and shows the one it will do next — the same rule the pin
 # follows.
