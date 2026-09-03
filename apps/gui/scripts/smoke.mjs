@@ -5931,13 +5931,16 @@ for line in sys.stdin:
     (await page.locator('[data-menu-confirm="close"]').count()) === 1,
   );
   await page.locator('[data-menu-item="close"]').click();
-  // Closing a live GUI-hosted session is not the near-instant `khor
-  // close` of a plain shell: the host is killed, its pty dropped, the
-  // agent under it reaped, the exit recorded, and only then does the
-  // row leave. Measured at 30.0s on an unloaded internal disk (2026-09-03),
-  // so the wait is generous — a tight one here is a flake waiting for a
-  // busy machine, not a bug being caught.
-  await until("the wizard row gone", 90_000, async () => {
+  // Closing a live GUI-hosted session does real work — kill the host,
+  // drop its pty, reap the agent, record the exit, remove the dir — then
+  // the row leaves on the next 2s list poll. Measured end to end at
+  // 1.2s (internal disk) and 2.4s (external) on 2026-09-03; the backend
+  // `close_session` alone is 0.3-2.1s. 20s is ~10x that. (A one-off 30s
+  // was seen while the external disk was 97% full and four cargo builds
+  // were running: the dev bridge serves requests on one thread, so a
+  // starved machine serialises the poll behind other ops. That is the
+  // harness, not the product — `khor serve` runs a four-worker pool.)
+  await until("the wizard row gone", 20_000, async () => {
     const why = await page.locator('[data-menu-note="close"]').innerText().catch(() => "");
     if (why) throw new Error(why);
     return (await page.locator(`[data-row="${wizId}"]`).count()) === 0;
