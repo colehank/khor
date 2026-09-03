@@ -103,6 +103,7 @@ pub fn answer(
                 Some("mem") => khor_core::TopBy::Mem,
                 Some("gpu") => khor_core::TopBy::Gpu,
                 Some("vram") => khor_core::TopBy::Vram,
+                Some("time") => khor_core::TopBy::Time,
                 Some(other) => return Err(format!("no such column: {other}")),
             };
             let desc = args.get("desc").and_then(|v| v.as_bool()).unwrap_or(true);

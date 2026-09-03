@@ -838,7 +838,47 @@ pub struct TopRow {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub gpu_mem: Option<u64>,
+    /// How long this process has been running, seconds.
+    ///
+    /// **A length, not a moment** (2026-09-04:「表格多个时间列」). The
+    /// question a person asks a remote machine's table is 「这进程是刚
+    /// 起的还是挂了三天」, and that is a duration; a start *time* would
+    /// have to be read against the far machine's date and timezone, and
+    /// against two clocks that do not agree. The far side counts, so
+    /// neither clock has to be trusted.
+    ///
+    /// `None` when the platform will not say — absent, never zero,
+    /// because a zero here reads as "started just now".
+    ///
+    /// Tail-appended with a serde default, the wire rule.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub run_secs: Option<u64>,
+    /// The command line, as far as the machine will spell it and
+    /// **truncated over there** ([`CMD_CAP`]).
+    ///
+    /// **Why a second name at all**: `name` is the platform's short
+    /// name, and on the one machine where this table matters most it
+    /// collapses the answer — turing's three vLLM workers holding
+    /// 21.7G, 10.9G and 10.3G of card memory are all called `python3`,
+    /// so 「按显存排,看谁在吃卡」 arrives at three identical rows. The
+    /// command line is what tells them apart.
+    ///
+    /// Cut on the machine that has it rather than on the face: 200 rows
+    /// of unbounded argv is the frame growing without a ceiling, and a
+    /// ceiling applied after the crossing would not have saved anything.
+    #[serde(default)]
+    pub cmd: Option<String>,
 }
+
+/// How much of a command line crosses the wire, characters.
+///
+/// Long enough for the part that identifies a process — the script or
+/// the model name, which is what tells two `python3` rows apart — and
+/// short enough that two hundred of them stay a small frame. Counted in
+/// `char`s rather than bytes so a truncation cannot land inside a UTF-8
+/// sequence and produce a row that will not decode.
+pub const CMD_CAP: usize = 160;
 
 /// Which column a process table is ranked by, and which way.
 ///
@@ -864,6 +904,29 @@ pub enum TopBy {
     Mem,
     Gpu,
     Vram,
+    /// How long the process has been up ([`TopRow::run_secs`]).
+    ///
+    /// **Appended at the end, and the position is not what matters.**
+    /// This enum crosses the wire **by variant name**, measured
+    /// 2026-09-04 from an older node's own refusal: `unknown variant
+    /// `Pid`, expected one of `Busiest`, `Name`, `User`, `Cpu`, `Mem`,
+    /// `Gpu`, `Vram``. Two things follow, and they pull in opposite
+    /// directions:
+    ///
+    /// - Inserting in the middle is **safe** — no older peer silently
+    ///   reads `Cpu` as its own `Mem` the way an index-keyed encoding
+    ///   would. That failure would have been a table sorted by the
+    ///   wrong column with every light green.
+    /// - Adding a name at all is **a break** — every node that predates
+    ///   it refuses the frame outright, and the face has to survive
+    ///   that. It does, since a refusal now keeps the column heads and
+    ///   says what the far side said (`MachineCard`'s `Busy`,
+    ///   `link::load_on_with`).
+    ///
+    /// So a new column word is a fleet upgrade, not a free addition —
+    /// unlike a new *field* on [`TopRow`], which an old node simply
+    /// does not send.
+    Time,
 }
 
 /// The last day of a machine's CPU, five minutes at a stride — what the

@@ -89,6 +89,7 @@ async fn load(
         Some("mem") => khor_node::TopBy::Mem,
         Some("gpu") => khor_node::TopBy::Gpu,
         Some("vram") => khor_node::TopBy::Vram,
+        Some("time") => khor_node::TopBy::Time,
         Some(other) => return Err(format!("no such column: {other}")),
     };
     khor_gui_core::load(&Node::root_from_env(), &machine, top, by, desc.unwrap_or(true)).await

@@ -115,12 +115,43 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 mem: p.memory(),
                 gpu_pct: on_card.pct,
                 gpu_mem: on_card.mem,
+                // Zero means the platform did not say, not "started
+                // this instant" — the same absent-is-not-zero rule the
+                // GPU columns carry.
+                run_secs: match p.run_time() {
+                    0 => None,
+                    secs => Some(secs),
+                },
+                cmd: cmdline(p),
             }
         })
         .collect();
     rank(&mut rows, by, desc);
     rows.truncate(n);
     rows
+}
+
+/// The command line, joined and cut **here** — on the machine that has
+/// it (`khor_core::CMD_CAP`, and see [`khor_core::TopRow::cmd`] for why
+/// the cut is not the face's job).
+///
+/// `None` rather than an empty string when the platform will not spell
+/// it: a kernel thread has no command line, and an empty one would draw
+/// as a name that failed to load rather than as a process that has
+/// none. Cut by `char` so the cut cannot land inside a UTF-8 sequence.
+fn cmdline(p: &sysinfo::Process) -> Option<String> {
+    cut(&p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "))
+}
+
+/// The cut itself, taking the joined string rather than the process, so
+/// it can be tested against a command line longer than anything this
+/// machine happens to be running — a cap tested only against whatever
+/// `ps` shows today is a cap nothing proves.
+fn cut(joined: &str) -> Option<String> {
+    if joined.trim().is_empty() {
+        return None;
+    }
+    Some(joined.chars().take(khor_core::CMD_CAP).collect())
 }
 
 /// Puts the rows in the asked order. Separate from the sampling so it
@@ -136,6 +167,9 @@ pub(crate) fn rank(rows: &mut [TopRow], by: khor_core::TopBy, desc: bool) {
             TopBy::Mem => Some(r.mem as f64),
             TopBy::Gpu => r.gpu_pct.map(|v| v as f64),
             TopBy::Vram => r.gpu_mem.map(|v| v as f64),
+            // A process whose age the machine will not say sinks both
+            // ways, like the card columns: unknown is not 「刚起的」.
+            TopBy::Time => r.run_secs.map(|v| v as f64),
             _ => None,
         }
     };
@@ -178,7 +212,66 @@ mod tests {
             mem,
             gpu_pct: gpu,
             gpu_mem: gpu.map(|_| 1),
+            run_secs: None,
+            cmd: None,
         }
+    }
+
+    /// **The command line is cut on the machine that has it**, and the
+    /// cut is by character so it cannot land inside a UTF-8 sequence
+    /// and produce a row that will not decode.
+    ///
+    /// Tested against a line longer than anything this machine is
+    /// running: a cap checked only against today's `ps` output passes
+    /// on a machine with nothing long on it, which is a check that
+    /// cannot fail. The multi-byte half is the one that would bite in
+    /// production — a path with Chinese in it is ordinary.
+    #[test]
+    fn a_command_line_is_cut_where_it_lives_and_never_mid_character() {
+        let cap = khor_core::CMD_CAP;
+        let long = "a".repeat(cap * 3);
+        assert_eq!(cut(&long).unwrap().chars().count(), cap, "a long line is cut to the cap");
+        let short = "python3 -m vllm.entrypoints.openai.api_server";
+        assert_eq!(cut(short).as_deref(), Some(short), "a short one is left alone");
+        assert_eq!(cut("").as_deref(), None, "a kernel thread has no command line, and absent is not empty");
+        assert_eq!(cut("   ").as_deref(), None, "nor does whitespace count as one");
+        // Every char is 3 bytes here, so a byte-wise cut at the cap
+        // would slice one in half and the result would not be a string.
+        let cjk = "路".repeat(cap * 2);
+        let got = cut(&cjk).unwrap();
+        assert_eq!(got.chars().count(), cap, "counted in characters, not bytes");
+        assert!(got.chars().all(|c| c == '路'), "and every one of them survived whole");
+    }
+
+    /// The age column obeys the same rule as the card columns: **a
+    /// process whose age the machine will not say sinks both ways.**
+    ///
+    /// Reversing is the only thing that tells the two apart. Sorted
+    /// youngest-first, a `None` that ranked as a zero would sit at the
+    /// very top and read as 刚起的 — the newest process on the machine
+    /// — which is the neighbouring-value mistake in its most convincing
+    /// form, because that row looks exactly like a true answer.
+    #[test]
+    fn an_age_the_machine_will_not_say_sinks_either_way() {
+        use khor_core::TopBy;
+        let aged = |pid: u32, secs: Option<u64>| {
+            let mut r = row(pid, "p", 1.0, 10, None);
+            r.run_secs = secs;
+            r
+        };
+        let mut rows = vec![aged(1, Some(60)), aged(2, None), aged(3, Some(86_400))];
+        rank(&mut rows, TopBy::Time, true);
+        assert_eq!(
+            rows.iter().map(|r| r.pid).collect::<Vec<_>>(),
+            vec![3, 1, 2],
+            "longest-running first, and the one with no age is last"
+        );
+        rank(&mut rows, TopBy::Time, false);
+        assert_eq!(
+            rows.iter().map(|r| r.pid).collect::<Vec<_>>(),
+            vec![1, 3, 2],
+            "youngest first — and the ageless one is STILL last, not passing itself off as the newest"
+        );
     }
 
     /// **A column with holes puts the holes last, whichever way it is

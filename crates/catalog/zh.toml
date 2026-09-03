@@ -341,6 +341,13 @@ vitals-name-vram = "显存"
 top-pid = "PID"
 top-name = "进程"
 top-user = "用户"
+# How long the process has been up (2026-09-04:「表格多个时间列」).
+# **一段时长,不是一个时刻**:跨机器读「03:14 起的」要先知道对面的日期
+# 和时区,而人在这张表前问的是「这进程是刚起的还是挂了三天了」。时长在
+# 对面那台机器上算,所以两边的钟对不对得上都不影响它。
+# 格子里的数走 `lasting()` 的那套量词(秒/分钟/小时/天),和这个 app 里
+# 每一处时长同一套词——列头是名词,格子里是数,两者不重复。
+top-time = "时长"
 # The band under the CPU ring: a day of five-minute buckets.
 top-day = "最近 24 小时 CPU"
 # How old the reading is. **Printed on every reading that is not this

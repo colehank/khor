@@ -258,9 +258,17 @@ try {
   const dayRows = 3;
   const load = {
     top: [
-      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000 },
-      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null },
-      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null },
+      // **One row without an age on purpose.** `run_secs` is optional
+      // on the wire, and a machine that will not say how old a process
+      // is must draw an empty cell rather than 0 秒 — which would name
+      // it the newest process on the box. The kernel row carries no
+      // command line either, for the same reason: absent is not empty.
+      // prettier-ignore
+      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, cmd: "khor serve --gate" },
+      // prettier-ignore
+      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null, run_secs: 45, cmd: "node scripts/check-face.mjs" },
+      // prettier-ignore
+      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, cmd: null },
     ],
     cpu_day: {
       bucket_ms: 300_000,
@@ -1722,8 +1730,27 @@ try {
       peak: r.querySelector("[data-day-peak]")?.textContent?.trim() ?? "",
     })),
     why: document.querySelectorAll("[data-machine-card] [data-load-why]").length,
+    //   The age column, cell by cell. **The row the fixture gave no age
+    //   must be empty** — a `0 秒` there would be this table naming the
+    //   oldest kind of process on a machine as its newest.
+    ages: [...document.querySelectorAll("[data-machine-card] [data-top-time]")].map((td) =>
+      td.textContent.trim(),
+    ),
   }));
   if (busy.rows !== load.top.length) fail(`the peer's top draws ${busy.rows} rows for ${load.top.length} routed`);
+  //     Written against the fixture rather than as literals, so a
+  //     changed fixture cannot leave this asserting yesterday's numbers.
+  const withAge = load.top.filter((r) => r.run_secs !== null).length;
+  const drawn = busy.ages.filter((t) => t !== "").length;
+  if (busy.ages.length !== load.top.length) {
+    fail(`the age column has ${busy.ages.length} cells for ${load.top.length} rows`);
+  }
+  if (drawn !== withAge) {
+    fail(`${drawn} ages drawn for ${withAge} rows that carry one — an absent age must draw nothing, not 0`);
+  }
+  if (busy.ages.some((t) => /^0\s/.test(t))) {
+    fail(`an age drew as a zero (${JSON.stringify(busy.ages)}) — 「没说」 became 「刚起的」`);
+  }
   //     **One row per series that has a reading, and the all-hole one
   //     is not a row.** A named row of pure absence would read as a
   //     reading this machine failed to take, rather than as one it does

@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
-import { ago, hopWord } from "@/words";
+import { ago, hopWord, lasting } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -786,7 +786,7 @@ const LOAD_RETRY_MS = 30_000;
  * person opens a machine card to ask. */
 type Sort = { col: SortCol; dir: "up" | "down" };
 const SORT_FIRST: Sort = { col: "cpu", dir: "down" };
-type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram";
+type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram" | "time";
 
 /**
  * What the machine is busy with (2026-09-02:「环下面显示进程 top,最近
@@ -905,7 +905,7 @@ function Top({
   why?: string | null;
 }) {
   const onCards = rows.some((r) => r.gpu_pct !== null || r.gpu_mem !== null);
-  const cols = 4 + (onCards ? 2 : 0);
+  const cols = 5 + (onCards ? 2 : 0);
   const ordered = sortRows(rows, sort);
   const press = (col: SortCol) => {
     // Pressing the column it is already on turns it over. Pressing a
@@ -915,6 +915,10 @@ function Top({
       onSort({ col, dir: sort.dir === "down" ? "up" : "down" });
       return;
     }
+    // A first press reads the column the way that column is usually
+    // read: A to Z for a name, smallest first for a pid — and **longest
+    // first for an age**, because 「哪个挂了最久」 is the question, not
+    // 「哪个刚起」.
     onSort({ col, dir: col === "name" || col === "user" || col === "pid" ? "up" : "down" });
   };
   return (
@@ -966,6 +970,11 @@ function Top({
             <Column col="mem" sort={sort} onPress={press} align="right">
               {cli.vitals_name_mem}
             </Column>
+            {/* Last, because it is the one column that is not about how
+                much of this machine the process is taking. */}
+            <Column col="time" sort={sort} onPress={press} align="right">
+              {cli.top_time}
+            </Column>
           </tr>
         </thead>
         <tbody>
@@ -988,9 +997,18 @@ function Top({
                   and it is only wanted where there is a shortage: on a
                   narrow card. Wide gets a ceiling instead — see the
                   table. */}
+              {/* **The command line is what tells two rows apart when
+                  the name cannot.** turing's three vLLM workers are all
+                  called `python3`, and 「按显存排,看谁在吃卡」 lands on
+                  three identical rows — so the command rides behind the
+                  name in the muted ink, the same place the account
+                  already sits. Truncation is the cell's, and the far
+                  side has already cut it to `CMD_CAP` so a long argv
+                  never crossed the wire in the first place. */}
               <td className={cn("truncate", narrow ? "w-full max-w-0" : "max-w-top-name")}>
                 {r.name}
                 {!narrow && r.user && <span className="ml-in text-muted-foreground">{r.user}</span>}
+                {!narrow && r.cmd && <span className="ml-in text-muted-foreground">{r.cmd}</span>}
               </td>
               <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
               {onCards && (
@@ -1003,7 +1021,15 @@ function Top({
                   {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
                 </td>
               )}
-              <td className="whitespace-nowrap text-right">{bytes(r.mem)}</td>
+              <td className="whitespace-nowrap px-row text-right">{bytes(r.mem)}</td>
+              {/* **Nothing, not a zero, when the machine did not say.**
+                  An empty cell is a column that looked and found no
+                  answer; `0 秒` would name this the newest process on
+                  the machine, which is the same neighbouring-value
+                  mistake the GPU columns are shaped to avoid. */}
+              <td data-top-time className="whitespace-nowrap text-right">
+                {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
+              </td>
             </tr>
             ))
           )}
@@ -1085,6 +1111,8 @@ function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
         return r.gpu_pct;
       case "vram":
         return r.gpu_mem;
+      case "time":
+        return r.run_secs;
       default:
         return null;
     }

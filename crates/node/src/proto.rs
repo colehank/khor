@@ -453,6 +453,8 @@ mod tests {
                 mem: 12_345_678,
                 gpu_pct: Some(37.0),
                 gpu_mem: Some(1_073_741_824),
+                run_secs: Some(86_400),
+                cmd: Some("khor serve".into()),
             }],
             cpu_day: khor_core::CpuDay {
                 bucket_ms: 300_000,
@@ -600,6 +602,8 @@ mod tests {
             mem: 9,
             gpu_pct: None,
             gpu_mem: None,
+            run_secs: None,
+            cmd: None,
         })
         .unwrap();
         assert!(old.len() < fresh.len(), "the old row really is shorter: it lacks the GPU columns");
@@ -608,6 +612,59 @@ mod tests {
         assert_eq!(r.mem, 9);
         assert_eq!(r.gpu_pct, None, "a row from a khor that could not look says nothing, not zero");
         assert_eq!(r.gpu_mem, None);
+    }
+
+    /// A process row from before **how long it has been up** and **the
+    /// command line** decodes with both absent (2026-09-04:「表格多个
+    /// 时间列」 and the three `python3` rows on turing).
+    ///
+    /// **The old bytes are shown to lack the fields precisely, not by
+    /// being shorter.** This encoding writes a struct as an array, and
+    /// msgpack spells a short array's element count into its first byte
+    /// (`0x90 | n`) — so the count is the closest thing there is to
+    /// "the key is not in the bytes", and asserting it is what stops
+    /// this test from quietly comparing today's row against itself.
+    #[test]
+    fn a_process_row_from_before_run_time_and_the_command_line_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct RowBeforeTime {
+            pid: u32,
+            name: String,
+            user: String,
+            cpu_pct: f32,
+            mem: u64,
+            gpu_pct: Option<f32>,
+            gpu_mem: Option<u64>,
+        }
+        let old = rmp_serde::to_vec(&RowBeforeTime {
+            pid: 7,
+            name: "python3".into(),
+            user: "zzl-zgh".into(),
+            cpu_pct: 5.0,
+            mem: 9,
+            gpu_pct: Some(44.0),
+            gpu_mem: Some(21_700_000_000),
+        })
+        .unwrap();
+        assert_eq!(old[0], 0x97, "the row a node sent yesterday is seven fields");
+        let fresh = rmp_serde::to_vec(&khor_core::TopRow {
+            pid: 7,
+            name: "python3".into(),
+            user: "zzl-zgh".into(),
+            cpu_pct: 5.0,
+            mem: 9,
+            gpu_pct: Some(44.0),
+            gpu_mem: Some(21_700_000_000),
+            run_secs: Some(3),
+            cmd: Some("python3 -m vllm.entrypoints".into()),
+        })
+        .unwrap();
+        assert_eq!(fresh[0], 0x99, "and today's is nine — the two new ones are really on the wire");
+        let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
+        assert_eq!(r.gpu_mem, Some(21_700_000_000), "including the last one before the new tail");
+        assert_eq!(r.run_secs, None, "an age nobody sent is absent — a zero would read as 刚起的");
+        assert_eq!(r.cmd, None, "and a command line nobody sent is absent, not an empty name");
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and
