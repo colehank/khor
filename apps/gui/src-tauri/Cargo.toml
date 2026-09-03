@@ -43,3 +43,19 @@ tauri = { version = "2", features = ["macos-proxy"] }
 # branch is cfg'd out, so the dependency would be dead weight there.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 khor-catalog.workspace = true
+
+[features]
+# **On by default, and that is the whole fix for the white window.**
+# tauri decides at *compile time* whether the app loads `build.devUrl`
+# (a vite dev server) or the embedded `frontendDist`: its build script
+# sets `dev = !custom_protocol`. The tauri CLI passes this feature on
+# `tauri build`; khor has no tauri CLI (zero deps — the desktop app is
+# a plain `cargo build -p khor-gui`), so without it *every* build, release
+# included, shipped as a dev build that dials http://localhost:1430,
+# found nobody, and showed a white window that collapsed
+# (2026-09-03, measured: the release binary's page was
+# `/src/main.tsx?t=…` served by vite once vite happened to be up).
+# Dev mode — vite with hot reload — is the explicit opt-out:
+#   cargo build -p khor-gui --no-default-features
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
