@@ -144,6 +144,11 @@ pub(crate) fn rank(rows: &mut [TopRow], by: khor_core::TopBy, desc: bool) {
             // CPU first, memory breaking the tie: an idle machine still
             // ranks by something a person recognises.
             TopBy::Busiest => b.cpu_pct.total_cmp(&a.cpu_pct).then(b.mem.cmp(&a.mem)),
+            // The pid is a number, and the pid is also the tiebreak
+            // every other column falls back to — so ranking *by* it
+            // needs no second key, and reversing it is the only place
+            // the tiebreak itself turns over.
+            TopBy::Pid => a.pid.cmp(&b.pid),
             TopBy::Name => a.name.cmp(&b.name),
             TopBy::User => a.user.cmp(&b.user),
             _ => match (num(a), num(b)) {

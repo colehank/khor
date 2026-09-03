@@ -1446,8 +1446,33 @@ impl Node {
     /// **Blocking** — the sampler's rule.
     pub fn record_cpu(root: &Path) {
         let v = vitals::sample(root);
-        let mem_pct = if v.mem.total > 0 { (v.mem.used as f64 / v.mem.total as f64 * 100.0) as f32 } else { 0.0 };
-        history::CpuHistory::open(&Self::history_dir(root)).record(now_ms(), v.cpu_pct, mem_pct);
+        let pct = |f: &khor_core::Fill| {
+            (f.total > 0).then(|| (f.used as f64 / f.total as f64 * 100.0) as f32)
+        };
+        // **The disk of the day is the whole of the disk dial**, summed
+        // over the volumes this machine reports so the line under the
+        // dials and the dial itself answer with one number. A node that
+        // reports no volumes falls back to the one filesystem it knows.
+        let disk_pct = if v.volumes.is_empty() {
+            v.disk.as_ref().and_then(pct)
+        } else {
+            let (used, total) = v
+                .volumes
+                .iter()
+                .fold((0u64, 0u64), |(u, t), x| (u + x.fill.used, t + x.fill.total));
+            pct(&khor_core::Fill { used, total })
+        };
+        history::CpuHistory::open(&Self::history_dir(root)).record(
+            now_ms(),
+            history::Reading {
+                cpu_pct: v.cpu_pct,
+                mem_pct: pct(&v.mem).unwrap_or(0.0),
+                // Absent, not zero, on a machine with no card khor can
+                // ask — the whole point of the optional column.
+                gpu_pct: v.gpu.as_ref().map(|g| g.util_pct),
+                disk_pct,
+            },
+        );
     }
 
     /// Takes a CPU reading every [`history::RECORD_EVERY`], for as long

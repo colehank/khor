@@ -286,6 +286,17 @@ vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
 # and a heading over one row is a word that names nothing the row does
 # not (2026-09-03「就写 /Volumes/disk0 就可以」).
 day-trend = "24 小时趋势"
+# The chart's own rows. Four readings, each on its own baseline
+# (2026-09-03:「GPU、CPU、Mem、Disk 都绘制」): four lines in one frame
+# cross, and a crossing is a place where two numbers become one shape.
+# Stacked rows share the time axis instead, so a spike at 14:20 lines up
+# vertically across all four without any of them hiding another. The
+# row's name is the reading's own word (CPU / GPU / 内存 / 磁盘) — the
+# same word its dial wears, so nobody has to learn a second vocabulary.
+# `day-row-peak` is what the row says about itself at the right: the
+# day's high-water mark, because a row that only draws a shape does not
+# answer 「多高」.
+day-row-peak = "峰值 {0}"
 cores-sub = "{0} 核"
 gpu-sub-nomem = "{0} 卡"
 # The disk dial's whole, said as **how big and how many** rather than
@@ -320,6 +331,14 @@ vitals-name-vram = "显存"
 # The machine card's process top (2026-09-02:「环下面显示进程top」):
 # the two column heads that are not a vitals name. CPU and 内存 reuse
 # `vitals-name-cpu` / `vitals-name-mem` — same fact, same word.
+# The process table's columns (2026-09-03:「PID、name、CPU、GPU、显存、
+# Mem」). **PID is a column of its own** because it is what a person
+# types next — `kill`, `lsof -p`, a grep — and a number buried beside a
+# name is a number you have to select carefully. The account keeps no
+# column: on one person's own machine every row says the same word, and
+# on a shared box it belongs to the name it qualifies, so it rides under
+# the name in the muted ink.
+top-pid = "PID"
 top-name = "进程"
 top-user = "用户"
 # The band under the CPU ring: a day of five-minute buckets.

@@ -246,16 +246,30 @@ try {
   // from the fourth) so their count is derived here, not typed twice.
   const dayBuckets = Array.from({ length: 288 }, (_, i) => (i % 7 === 3 ? null : 5 + (i % 60)));
   const dayGaps = dayBuckets.filter((b) => b === null).length;
-  // Memory on the same buckets, with the same holes: the dashed line
-  // must break where the area does.
+  // The other three readings on the same buckets, with the same holes:
+  // every row must break where the CPU row does, and the rows share one
+  // time axis. **Disk is deliberately all holes** — that is a series
+  // this fixture's machine records nothing for, and the chart must draw
+  // no row at all rather than a named row of absence (`DayChart`).
   const memBuckets = dayBuckets.map((b, i) => (b === null ? null : 40 + (i % 20)));
+  const gpuBuckets = dayBuckets.map((b, i) => (b === null ? null : (i * 3) % 100));
+  const diskBuckets = dayBuckets.map(() => null);
+  // How many rows the chart owes: one per series with a reading in it.
+  const dayRows = 3;
   const load = {
     top: [
-      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000 },
-      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000 },
-      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000 },
+      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000 },
+      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: null, gpu_mem: null },
+      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null },
     ],
-    cpu_day: { bucket_ms: 300_000, now_ms: Date.now(), buckets: dayBuckets, mem: memBuckets },
+    cpu_day: {
+      bucket_ms: 300_000,
+      now_ms: Date.now(),
+      buckets: dayBuckets,
+      mem: memBuckets,
+      gpu: gpuBuckets,
+      disk: diskBuckets,
+    },
   };
   const ELDER_REFUSAL = "elder-refuses-load";
   await page.route("**/load", (r) =>
@@ -1699,17 +1713,39 @@ try {
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-top]").count()) === 1);
   const busy = await page.evaluate(() => ({
     rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
-    cells: document.querySelectorAll("[data-machine-card] [data-day-cell]").length,
-    gaps: document.querySelectorAll("[data-machine-card] [data-day-cell][data-gap]").length,
-    barsInGaps: document.querySelectorAll("[data-machine-card] [data-day-cell][data-gap] > *").length,
-    bars: document.querySelectorAll("[data-machine-card] [data-day-cell]:not([data-gap]) > *").length,
+    dayRows: [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((r) => ({
+      name: r.getAttribute("data-day-row"),
+      cells: r.querySelectorAll("[data-day-cell]").length,
+      gaps: r.querySelectorAll("[data-day-cell][data-gap]").length,
+      barsInGaps: r.querySelectorAll("[data-day-cell][data-gap] > *").length,
+      bars: r.querySelectorAll("[data-day-cell]:not([data-gap]) > *").length,
+      peak: r.querySelector("[data-day-peak]")?.textContent?.trim() ?? "",
+    })),
     why: document.querySelectorAll("[data-machine-card] [data-load-why]").length,
   }));
   if (busy.rows !== load.top.length) fail(`the peer's top draws ${busy.rows} rows for ${load.top.length} routed`);
-  if (busy.cells !== 288) fail(`the CPU day draws ${busy.cells} cells for a day of 288 buckets`);
-  if (busy.gaps !== dayGaps) fail(`${busy.gaps} cells are gaps where the fixture left ${dayGaps} unmeasured`);
-  if (busy.barsInGaps !== 0) fail(`${busy.barsInGaps} gap cells draw a bar — an unmeasured bucket painted as a reading`);
-  if (busy.bars !== 288 - dayGaps) fail(`${busy.bars} measured cells draw a bar for ${288 - dayGaps} readings`);
+  //     **One row per series that has a reading, and the all-hole one
+  //     is not a row.** A named row of pure absence would read as a
+  //     reading this machine failed to take, rather than as one it does
+  //     not take at all — and the fixture's disk series is exactly that
+  //     case, so an implementation that draws a row per *field* reds
+  //     here.
+  if (busy.dayRows.length !== dayRows) {
+    fail(
+      `the day draws ${busy.dayRows.length} rows for ${dayRows} recorded series ` +
+        `(${busy.dayRows.map((r) => r.name).join(",")}) — the fixture's disk series is all holes`,
+    );
+  }
+  if (busy.dayRows.some((r) => r.name === "disk")) fail("a series with no reading in it still got a row");
+  for (const r of busy.dayRows) {
+    if (r.cells !== 288) fail(`the ${r.name} row draws ${r.cells} cells for a day of 288 buckets`);
+    if (r.gaps !== dayGaps) fail(`${r.name}: ${r.gaps} gaps where the fixture left ${dayGaps} unmeasured`);
+    if (r.barsInGaps !== 0) fail(`${r.name}: ${r.barsInGaps} gap cells draw a bar — absence painted as a reading`);
+    if (r.bars !== 288 - dayGaps) fail(`${r.name}: ${r.bars} bars for ${288 - dayGaps} readings`);
+    //   And each row says how high it got: a shape alone answers 什么
+    //   时候 and never 多高.
+    if (!/\d+%/.test(r.peak)) fail(`${r.name}: the row draws a shape but never says its peak ("${r.peak}")`);
+  }
   if (busy.why !== 0) fail("the peer answered and the card still prints a refusal");
   await open("devices");
   await pressNth("[data-list] [data-row-open]", 2);

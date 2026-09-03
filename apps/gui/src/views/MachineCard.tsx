@@ -134,7 +134,7 @@ function Body({
   onBrowseFiles: (row: DeviceRow) => void;
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
-  const [sort, setSort] = useState<Sort | null>(null);
+  const [sort, setSort] = useState<Sort>(SORT_FIRST);
   const { load, why } = useLoad(row, sort);
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -776,12 +776,17 @@ const LOAD_MS = 5_000;
     the card does not get truer by being re-fetched every five seconds. */
 const LOAD_RETRY_MS = 30_000;
 
-/** Which column the table is ordered by, and which way. `null` is the
-    node's own order — CPU first, memory breaking ties (`top::sample_top`) —
-    and it is not the same thing as sorting by CPU here: the node's order
-    is what the cut of eight was cut *by*. */
+/** Which column the table is ordered by, and which way.
+ *
+ * **Never absent, and never a third state** (2026-09-03:「默认按 CPU
+ * 降序。不存在现在这样,一个列名可以点三次,升、降、空」). A press
+ * turns the column over and that is all it does: a control whose third
+ * press lands somewhere the reader cannot name is a control that reads
+ * as broken. The table opens on CPU, biggest first — the question a
+ * person opens a machine card to ask. */
 type Sort = { col: SortCol; dir: "up" | "down" };
-type SortCol = "name" | "user" | "cpu" | "mem" | "gpu" | "vram";
+const SORT_FIRST: Sort = { col: "cpu", dir: "down" };
+type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram";
 
 /**
  * What the machine is busy with (2026-09-02:「环下面显示进程 top,最近
@@ -812,8 +817,8 @@ function Busy({
   load: Load | null;
   why: string | null;
   narrow: boolean;
-  sort: Sort | null;
-  onSort: (s: Sort | null) => void;
+  sort: Sort;
+  onSort: (s: Sort) => void;
 }) {
   if (why) {
     return (
@@ -880,43 +885,56 @@ function Top({
 }: {
   rows: Load["top"];
   narrow: boolean;
-  sort: Sort | null;
-  onSort: (s: Sort | null) => void;
+  sort: Sort;
+  onSort: (s: Sort) => void;
 }) {
   const onCards = rows.some((r) => r.gpu_pct !== null || r.gpu_mem !== null);
   const ordered = sortRows(rows, sort);
   const press = (col: SortCol) => {
-    // A second press on the same column turns it over and a third gives
-    // the order back to the node; a first press on a new one starts the
-    // way that column is usually read — biggest first for a quantity,
-    // A to Z for a name.
-    if (sort?.col === col) {
-      onSort(sort.dir === "down" ? { col, dir: "up" } : null);
+    // Pressing the column it is already on turns it over. Pressing a
+    // new one starts the way that column is read — biggest first for a
+    // quantity, A to Z for a name.
+    if (sort.col === col) {
+      onSort({ col, dir: sort.dir === "down" ? "up" : "down" });
       return;
     }
-    onSort({ col, dir: col === "name" || col === "user" ? "up" : "down" });
+    onSort({ col, dir: col === "name" || col === "user" || col === "pid" ? "up" : "down" });
   };
   return (
     <div data-load-top-box className="max-h-top-h overflow-y-auto">
-      <table data-load-top className="w-full text-sm tabular-nums">
+      {/* **Wide sizes to its content; narrow fills the box.** `w-full`
+          on a wide card spread four narrow columns across a thousand
+          pixels and pushed the pid — the first thing read — 229 pixels
+          into the panel (measured 2026-09-03 on the live face), with a
+          hand's width of nothing in front of it. A table of numbers is
+          read by running along a row and down a column, and neither
+          works when the columns are a panel apart.
+          **Handing the slack to one column instead does not fix that,
+          it moves it**: with `w-full` on the name cell the same
+          measurement gave a left edge of 24.64 and 799 pixels of blank
+          between a process's name and its CPU number. So on a wide
+          card nothing grows — the table is 521 pixels of packed
+          columns with the card's spare width left spare, and the name
+          column stops at `max-w-top-name`.
+          Narrow is the opposite question: there the box is 332 pixels
+          and the columns want more, so `w-full` on the table and
+          on the name cell rations what there is — the numbers keep
+          their edges and the name gives up what it must. */}
+      <table data-load-top className={cn("text-sm tabular-nums", narrow && "w-full")}>
         <thead className="sticky top-0 bg-card text-aux text-muted-foreground">
           <tr>
-            <Column col="name" sort={sort} onPress={press} align="left">
+            {/* **The order the user named**: what you type, what it is,
+                then the four quantities with the two GPU ones inside
+                them — a card's GPU columns belong beside its CPU one,
+                not after the memory that has nothing to do with them. */}
+            <Column col="pid" sort={sort} onPress={press} align="right">
+              {cli.top_pid}
+            </Column>
+            <Column col="name" sort={sort} onPress={press} align="left" grow={narrow}>
               {cli.top_name}
             </Column>
-            {/* The user column is the first thing a narrow card can do
-                without: on one person's own machine every row says the
-                same name, and the numbers are why the table is here. */}
-            {!narrow && (
-              <Column col="user" sort={sort} onPress={press} align="left">
-                {cli.top_user}
-              </Column>
-            )}
             <Column col="cpu" sort={sort} onPress={press} align="right">
               {cli.vitals_name_cpu}
-            </Column>
-            <Column col="mem" sort={sort} onPress={press} align="right">
-              {cli.vitals_name_mem}
             </Column>
             {onCards && (
               <Column col="gpu" sort={sort} onPress={press} align="right">
@@ -928,31 +946,40 @@ function Top({
                 {cli.vitals_name_vram}
               </Column>
             )}
+            <Column col="mem" sort={sort} onPress={press} align="right">
+              {cli.vitals_name_mem}
+            </Column>
           </tr>
         </thead>
         <tbody>
           {ordered.map((r) => (
             <tr key={r.pid} data-top-row={r.pid}>
-              {/* The name, then the pid in the muted colour: the pid is
-                  what a person would type after the name, not a fact
-                  they read, and a column of its own would push the name
-                  off a narrow card. */}
-              <td className="max-w-0 truncate">
-                {r.name} <span className="text-muted-foreground">{r.pid}</span>
+              <td className="whitespace-nowrap pr-row text-right text-muted-foreground">{r.pid}</td>
+              {/* The name, and under it whose it is — on a shared box
+                  that word is what tells two identical names apart, and
+                  it qualifies the name rather than standing beside it as
+                  a quantity. Narrow drops it: there, one person's own
+                  machine says the same word on every row. */}
+              {/* `max-w-0` is what lets a column shrink past its text,
+                  and it is only wanted where there is a shortage: on a
+                  narrow card. Wide gets a ceiling instead — see the
+                  table. */}
+              <td className={cn("truncate", narrow ? "w-full max-w-0" : "max-w-top-name")}>
+                {r.name}
+                {!narrow && r.user && <span className="ml-in text-muted-foreground">{r.user}</span>}
               </td>
-              {!narrow && <td className="whitespace-nowrap px-row text-muted-foreground">{r.user}</td>}
               <td className="whitespace-nowrap px-row text-right">{Math.round(r.cpu_pct)}%</td>
-              <td className="whitespace-nowrap px-row text-right">{bytes(r.mem)}</td>
               {onCards && (
                 <td data-top-gpu className="whitespace-nowrap px-row text-right">
                   {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
                 </td>
               )}
               {onCards && (
-                <td data-top-vram className="whitespace-nowrap text-right">
+                <td data-top-vram className="whitespace-nowrap px-row text-right">
                   {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
                 </td>
               )}
+              <td className="whitespace-nowrap text-right">{bytes(r.mem)}</td>
             </tr>
           ))}
         </tbody>
@@ -969,20 +996,28 @@ function Column({
   sort,
   onPress,
   align,
+  grow,
   children,
 }: {
   col: SortCol;
-  sort: Sort | null;
+  sort: Sort;
   onPress: (col: SortCol) => void;
   align: "left" | "right";
+  /** The one column that takes the leftover width, where there is any
+      to take — narrow only, and see `Top` for why. */
+  grow?: boolean;
   children: React.ReactNode;
 }) {
-  const on = sort?.col === col;
+  const on = sort.col === col;
   return (
     <th
       data-top-head={col}
       aria-sort={on ? (sort.dir === "up" ? "ascending" : "descending") : "none"}
-      className={cn("font-body", align === "right" ? "text-right" : "text-left", align === "right" && "px-row")}
+      className={cn(
+        "font-body",
+        align === "right" ? "text-right px-row" : "text-left",
+        grow && "w-full",
+      )}
     >
       <button
         type="button"
@@ -1013,8 +1048,7 @@ function Column({
  * 「没看到」 into 「最小的那个」, which is the same neighbouring-value
  * mistake the readings are built to avoid.
  */
-function sortRows(rows: Load["top"], sort: Sort | null): Load["top"] {
-  if (!sort) return rows;
+function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
   const dir = sort.dir === "up" ? 1 : -1;
   const num = (r: Load["top"][number]): number | null => {
     switch (sort.col) {
@@ -1051,18 +1085,27 @@ function sortRows(rows: Load["top"], sort: Sort | null): Load["top"] {
  * and the sentence on the card does not get truer by being re-fetched
  * every five seconds.
  */
-function useLoad(row: DeviceRow | null, sort: Sort | null) {
+function useLoad(row: DeviceRow | null, sort: Sort) {
   const [load, setLoad] = useState<Load | null>(null);
   const [why, setWhy] = useState<string | null>(null);
   const id = row?.id ?? null;
   const me = row?.me ?? false;
   const name = row?.name ?? "";
+  // **Clearing belongs to the machine changing, not to the column.**
+  // Pressing 内存 used to blank the chart, the table and everything
+  // under them for one round trip — because the answer was dropped
+  // while the new one was in the air, and the day chart is drawn from
+  // the same answer. The day did not change; only the order did. So
+  // the old answer stays on screen until the new one lands, and the
+  // only thing that empties the card is picking a different machine.
+  useEffect(() => {
+    setLoad(null);
+    setWhy(null);
+  }, [id]);
   useEffect(() => {
     if (id === null) return;
     let stopped = false;
     let timer = 0;
-    setLoad(null);
-    setWhy(null);
     const ask = async () => {
       let wait = LOAD_MS;
       try {
@@ -1075,7 +1118,7 @@ function useLoad(row: DeviceRow | null, sort: Sort | null) {
         // goes over with the ask and the machine ranks before it cuts
         // (`khor_core::TopBy`), which makes「按显存排的前 200」a true
         // answer rather than a re-sort of the busiest 200 by CPU.
-        const l = await fetchLoad(me ? "" : name, TOP_LIMIT, sort?.col ?? "", sort?.dir !== "up");
+        const l = await fetchLoad(me ? "" : name, TOP_LIMIT, sort.col, sort.dir === "down");
         if (stopped) return;
         setLoad(l);
         setWhy(null);
@@ -1096,93 +1139,116 @@ function useLoad(row: DeviceRow | null, sort: Sort | null) {
 }
 
 /**
- * The CPU day as an area with the memory day dashed over it
- * (2026-09-03 to the user's reference), on a hairline track with the
- * two ends' clocks named.
+ * The machine's last day, one reading to a row (2026-09-03:「GPU、CPU、
+ * Mem、Disk 都绘制」).
  *
- * **Still one cell per bucket, and the gate still counts them.** The
- * area is 288 adjacent rectangles — one per bucket, in a `data-day-cell`
- * group — so a `null` bucket is a group with nothing in it: the recorder
- * was not running, and the chart says so by drawing nothing there rather
- * than a zero or a bridge. The memory line is a sibling of the cells,
- * never a child, and it too breaks over a gap (one path per run of
- * readings). `preserveAspectRatio="none"` lets the width follow the card;
- * the dashed line keeps its weight through `non-scaling-stroke`.
+ * # Why rows and not four lines in one frame
+ *
+ * Four series over one baseline cross, and every crossing is a place
+ * where two numbers become one shape — the reader has to pick them
+ * apart by colour or dash, which is a second vocabulary to learn before
+ * the chart says anything. Small multiples on a **shared time axis**
+ * cost vertical room and give back the two things that matter: each row
+ * is read on its own, and a spike at 14:20 lines up vertically across
+ * all four. That is the comparison somebody opens this chart for —
+ * 「CPU 冲高的时候显存也满了吗」.
+ *
+ * Each row carries its own name and its own high-water mark, because a
+ * shape without a number answers 什么时候 and never 多高.
+ *
+ * # Still one cell per bucket, and the gate still counts them
+ *
+ * Every row is 288 adjacent rectangles in a `data-day-cell` group, so a
+ * `null` bucket is a group with nothing in it: the recorder was not
+ * running, and the chart says so by drawing nothing rather than a zero
+ * or a bridge. **A series the recorder never knew is not a row at all**
+ * — an older node sends two series, not four flat lines claiming its
+ * cards were idle all day.
+ *
+ * `preserveAspectRatio="none"` lets the width follow the card; the
+ * hairline baselines keep their weight through `non-scaling-stroke`.
  */
 function DayChart({ day }: { day: Load["cpu_day"] }) {
+  const rows = [
+    { key: "cpu", word: cli.vitals_name_cpu, series: day.buckets },
+    { key: "gpu", word: cli.vitals_name_gpu, series: day.gpu },
+    { key: "mem", word: cli.vitals_name_mem, series: day.mem },
+    { key: "disk", word: cli.vitals_name_disk, series: day.disk },
+    // A series nobody recorded is not drawn — see the head. `some`
+    // rather than `length`: a node can send 288 holes, and a row of
+    // holes with a name over it reads as a reading that is missing
+    // rather than as one this machine never takes.
+  ].filter((r) => r.series.some((v) => v !== null));
   const n = Math.max(1, day.buckets.length);
-  const W = 1000;
-  const H = 100;
-  const x = (i: number) => (i / n) * W;
-  const w = W / n;
-  const y = (pct: number) => H - (Math.max(0, Math.min(100, pct)) / 100) * H;
-  // The memory line, one path per unbroken run — a gap ends a run.
-  const memRuns: string[] = [];
-  let run: string[] = [];
-  day.mem.forEach((m, i) => {
-    if (m === null) {
-      if (run.length > 1) memRuns.push(run.join(" "));
-      run = [];
-      return;
-    }
-    run.push(`${run.length === 0 ? "M" : "L"}${(x(i) + w / 2).toFixed(1)},${y(m).toFixed(1)}`);
-  });
-  if (run.length > 1) memRuns.push(run.join(" "));
   const startMs = day.now_ms - day.bucket_ms * n;
+  const sameDay = new Date(startMs).toDateString() === new Date(day.now_ms).toDateString();
   return (
     <div data-day-band-axis className="flex flex-col gap-in">
       <div className="flex items-center justify-between gap-row text-aux text-muted-foreground">
-        <span className="flex items-center gap-row">
-          <span>{cli.day_trend}</span>
-          <span className="flex items-center gap-in">
-            <span className="inline-block h-0.5 w-3 bg-foreground/60" />
-            {cli.vitals_name_cpu}
-          </span>
-          {day.mem.length > 0 && (
-            <span className="flex items-center gap-in">
-              <span className="inline-block h-0 w-3 border-t border-dashed border-foreground/80" />
-              {cli.vitals_name_mem}
-            </span>
-          )}
-        </span>
+        <span>{cli.day_trend}</span>
+        {/* The two ends of the window, and nothing between them: the
+            rows below share this axis, so naming it once is naming it
+            for all four. */}
         <span className="tabular-nums">
-          {new Date(startMs).toDateString() === new Date(day.now_ms).toDateString()
-            ? clock(startMs)
-            : cli.yesterday_at(clock(startMs))}{" "}
-          → {clock(day.now_ms)}
+          {sameDay ? clock(startMs) : cli.yesterday_at(clock(startMs))} → {clock(day.now_ms)}
         </span>
       </div>
+      {rows.map((r) => (
+        <DayRow key={r.key} name={r.key} word={r.word} series={r.series} />
+      ))}
+    </div>
+  );
+}
+
+/** One reading's day: its name, its shape, and how high it got.
+ *
+ * The name sits to the left at a fixed width so the four shapes start
+ * on one edge — the same reason the parts under the dials share a grid
+ * (`Parts`). Without it each row would begin wherever its own word
+ * ended, and a vertical comparison across rows would be off by the
+ * length of a Chinese word. */
+function DayRow({ name, word, series }: { name: string; word: string; series: (number | null)[] }) {
+  const n = Math.max(1, series.length);
+  const W = 1000;
+  const H = 100;
+  const w = W / n;
+  const y = (pct: number) => H - (Math.max(0, Math.min(100, pct)) / 100) * H;
+  const seen = series.filter((v): v is number => v !== null);
+  const peak = seen.length > 0 ? Math.round(Math.max(...seen)) : null;
+  return (
+    <div data-day-row={name} className="flex items-center gap-row">
+      <span className="w-8 flex-none text-aux text-muted-foreground">{word}</span>
       <svg
         data-day-band
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
-        className="h-16 w-full text-foreground"
+        className="h-8 min-w-0 flex-1 text-foreground"
         aria-hidden="true"
       >
-        <line x1={0} y1={H} x2={W} y2={H} stroke="currentColor" strokeOpacity={0.15} vectorEffect="non-scaling-stroke" />
-        {day.buckets.map((b, i) => (
+        <line
+          x1={0}
+          y1={H}
+          x2={W}
+          y2={H}
+          stroke="currentColor"
+          strokeOpacity={0.15}
+          vectorEffect="non-scaling-stroke"
+        />
+        {series.map((b, i) => (
           <g key={i} data-day-cell data-gap={b === null ? "" : undefined}>
             {b !== null && (
-              <rect x={x(i)} y={y(b)} width={w + 0.6} height={H - y(b)} fill="currentColor" fillOpacity={0.5}>
+              <rect x={i * w} y={y(b)} width={w + 0.6} height={H - y(b)} fill="currentColor" fillOpacity={0.5}>
                 <title>{`${Math.round(b)}%`}</title>
               </rect>
             )}
           </g>
         ))}
-        {memRuns.map((d, k) => (
-          <path
-            key={k}
-            data-day-mem
-            d={d}
-            fill="none"
-            stroke="currentColor"
-            strokeOpacity={0.85}
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
       </svg>
+      {/* What the shape cannot say. Absent when nothing was measured —
+          a peak of 0% would be a reading. */}
+      <span data-day-peak className="w-16 flex-none text-right text-aux tabular-nums text-muted-foreground">
+        {peak === null ? "" : cli.day_row_peak(`${peak}%`)}
+      </span>
     </div>
   );
 }

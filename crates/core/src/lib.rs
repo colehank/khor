@@ -857,6 +857,7 @@ pub struct TopRow {
 pub enum TopBy {
     #[default]
     Busiest,
+    Pid,
     Name,
     User,
     Cpu,
@@ -891,6 +892,17 @@ pub struct CpuDay {
     /// node (tail-appended, default), and the face draws no line then.
     #[serde(default)]
     pub mem: Vec<Option<f32>>,
+    /// The same day for the graphics cards, and for the filesystem khor
+    /// lives on (2026-09-03:「GPU、CPU、Mem、Disk 都绘制」).
+    ///
+    /// **Empty, not zero-filled, on a machine that never recorded
+    /// them** — the wire rule, so an older node's day decodes to two
+    /// series and the chart draws two rows instead of four flat lines
+    /// claiming a machine had no GPU all day.
+    #[serde(default)]
+    pub gpu: Vec<Option<f32>>,
+    #[serde(default)]
+    pub disk: Vec<Option<f32>>,
 }
 
 /// What a machine is busy with: the top now and the day behind it. One

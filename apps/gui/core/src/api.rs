@@ -96,6 +96,7 @@ pub fn answer(
         "load" => {
             let by = match opt_str("by")?.as_deref() {
                 None | Some("") | Some("busiest") => khor_core::TopBy::Busiest,
+                Some("pid") => khor_core::TopBy::Pid,
                 Some("name") => khor_core::TopBy::Name,
                 Some("user") => khor_core::TopBy::User,
                 Some("cpu") => khor_core::TopBy::Cpu,

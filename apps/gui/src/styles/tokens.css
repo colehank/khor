@@ -608,6 +608,19 @@
    * `top`'s own fold on a short terminal, and the ninth row half in
    * view is what says the box scrolls without a word saying so. */
   --top-h: 232px;
+  /* How wide the process-name column may get before it clips
+   * (`max-w-top-name`). **A ceiling, not a width**: the column takes
+   * what the names on that machine actually need, and this only stops
+   * the runaway case — a table whose name column follows one 200-char
+   * command line puts the numbers off the right of the card.
+   *
+   * In `em` for the reason `--measure` is, and read against
+   * `--text-sm`, the table's own size: 32em is about 70 Latin
+   * characters there. The widest name on the three machines to hand
+   * measured **267px = 21.4em** on 2026-09-03 (「Google Chrome Helper
+   * (Renderer)」 and friends), so real names sit under this with room
+   * to spare and nothing is clipped that did not have to be. */
+  --top-name: 32em;
   /* How wide a line of prose may get — **in `em`, and the unit is the
    * whole point.** A CJK glyph's advance is exactly 1em in this app's
    * font stack (measured 2026-08-30 in system Chrome, at 11, 12.5, 14,
@@ -1012,6 +1025,7 @@
   --spacing-tab-on: var(--tab-w-on);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
+  --spacing-top-name: var(--top-name);
   /* `max-w-measure`. Through the spacing namespace rather than a
      `--container-*` of its own because `max-w` reads `--max-width`,
      `--spacing` and `--container` in that order (tailwind's own

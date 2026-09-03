@@ -82,6 +82,7 @@ async fn load(
     // as the default would look exactly like a working sort.
     let by = match by.as_deref() {
         None | Some("") | Some("busiest") => khor_node::TopBy::Busiest,
+        Some("pid") => khor_node::TopBy::Pid,
         Some("name") => khor_node::TopBy::Name,
         Some("user") => khor_node::TopBy::User,
         Some("cpu") => khor_node::TopBy::Cpu,

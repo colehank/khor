@@ -459,6 +459,8 @@ mod tests {
                 now_ms: 1_700_000_000_000,
                 buckets: vec![Some(12.5), None, Some(80.0)],
                 mem: vec![Some(40.0), None, Some(41.5)],
+                gpu: vec![Some(7.0), None, None],
+                disk: vec![Some(96.0), None, Some(96.0)],
             },
         };
         let bytes = encode(&Response::Load { load: sent.clone() }).unwrap();
@@ -510,6 +512,16 @@ mod tests {
             now_ms: u64,
             buckets: Vec<Option<f32>>,
         }
+        // A day from the recorder that knew CPU and memory but not the
+        // other two: its GPU and disk series come back **empty**, which
+        // the chart draws as two rows instead of four flat zeros.
+        #[derive(serde::Serialize)]
+        struct DayBeforeGpu {
+            bucket_ms: u64,
+            now_ms: u64,
+            buckets: Vec<Option<f32>>,
+            mem: Vec<Option<f32>>,
+        }
         let old = rmp_serde::to_vec(&OldVitals {
             cpu_pct: 1.0,
             cores: 2,
@@ -541,6 +553,17 @@ mod tests {
         let d: khor_core::CpuDay = rmp_serde::from_slice(&day).unwrap();
         assert!(d.mem.is_empty(), "a day from before memory has no memory line");
         assert_eq!(d.buckets, vec![Some(1.0)]);
+        let two = rmp_serde::to_vec(&DayBeforeGpu {
+            bucket_ms: 1,
+            now_ms: 2,
+            buckets: vec![Some(1.0)],
+            mem: vec![Some(2.0)],
+        })
+        .unwrap();
+        let d2: khor_core::CpuDay = rmp_serde::from_slice(&two).unwrap();
+        assert_eq!(d2.mem, vec![Some(2.0)], "the series it did record survive");
+        assert!(d2.gpu.is_empty(), "and the two it never knew are absent, not a day of zeros");
+        assert!(d2.disk.is_empty());
     }
 
     /// A process row from before the GPU columns decodes with them

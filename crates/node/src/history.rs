@@ -1,5 +1,13 @@
-//! The last day of CPU, five minutes at a stride — what the band under
-//! the machine card's CPU ring draws (2026-09-02:「最近24小时cpu」).
+//! The last day of this machine's four readings, five minutes at a
+//! stride — what the chart under the machine card's dials draws
+//! (2026-09-02:「最近24小时cpu」; 2026-09-03:「GPU、CPU、Mem、Disk 都
+//! 绘制」).
+//!
+//! **Four series, one file, and three of them are optional.** CPU is
+//! always readable; memory is too; a machine with no card khor can ask
+//! has no GPU figure, and a filesystem it cannot read has no disk one.
+//! Absent is written as absent, so a machine that grew a GPU last week
+//! has a day that says so instead of a week of zeros.
 //!
 //! # A gap is a gap
 //!
@@ -40,11 +48,12 @@ pub struct CpuHistory {
     /// Sum and count per absolute bucket index (`at_ms / BUCKET_MS`),
     /// pruned to the day — a mean needs both halves until the bucket
     /// closes.
-    /// Per bucket: the CPU sum, the sample count, and the memory sum —
-    /// `None` for a bucket written by a recorder that only knew CPU
-    /// (the file's older three-column lines), so it draws as absence
-    /// rather than as zero memory.
-    buckets: BTreeMap<u64, (f64, u32, Option<f64>)>,
+    /// Per bucket: the CPU sum, the sample count, then the memory, GPU
+    /// and disk sums — each `None` when no beat in that bucket could
+    /// read it. A bucket written by an older recorder simply has fewer
+    /// columns, and the ones it never knew stay absent rather than
+    /// becoming zero.
+    buckets: BTreeMap<u64, Bucket>,
     file: PathBuf,
 }
 
@@ -64,10 +73,15 @@ impl CpuHistory {
                     it.next().map(str::parse::<f64>),
                     it.next().map(str::parse::<u32>),
                 ) {
-                    // A fourth column is the memory sum; a line without
-                    // one predates memory and stays honest about it.
-                    let mem = it.next().and_then(|m| m.parse::<f64>().ok());
-                    buckets.insert(idx, (sum, n, mem));
+                    // The tail columns are memory, GPU and disk, in
+                    // that order — a line stops wherever the recorder
+                    // that wrote it stopped, and everything past its
+                    // end is absent. Positional because the file is
+                    // two hundred short lines the recorder rewrites
+                    // whole; a keyed format would be a parser to keep.
+                    let mut tail = || it.next().and_then(|m| m.parse::<f64>().ok());
+                    let (mem, gpu, disk) = (tail(), tail(), tail());
+                    buckets.insert(idx, Bucket { cpu: sum, n, mem, gpu, disk });
                 }
             }
         }
@@ -78,20 +92,48 @@ impl CpuHistory {
     /// Writes through on every call: the file is at most [`BUCKETS`]
     /// short lines, and a crash between beats then costs one beat, not
     /// a day.
-    pub fn record(&mut self, at_ms: u64, cpu_pct: f32, mem_pct: f32) {
+    pub fn record(&mut self, at_ms: u64, r: Reading) {
         let idx = at_ms / BUCKET_MS;
-        let slot = self.buckets.entry(idx).or_insert((0.0, 0, None));
-        slot.0 += f64::from(cpu_pct);
-        slot.1 += 1;
-        slot.2 = Some(slot.2.unwrap_or(0.0) + f64::from(mem_pct));
+        let slot = self.buckets.entry(idx).or_insert(Bucket::default());
+        slot.cpu += f64::from(r.cpu_pct);
+        slot.n += 1;
+        slot.mem = Some(slot.mem.unwrap_or(0.0) + f64::from(r.mem_pct));
+        // **A reading nobody could take adds nothing, not zero.** The
+        // sum stays absent until some beat in this bucket manages one,
+        // and the mean below divides by the bucket's beat count — so a
+        // bucket where the GPU answered once out of five reads as that
+        // one answer's share, which is the honest thing a mean of what
+        // was measured can say.
+        if let Some(g) = r.gpu_pct {
+            slot.gpu = Some(slot.gpu.unwrap_or(0.0) + f64::from(g));
+        }
+        if let Some(d) = r.disk_pct {
+            slot.disk = Some(slot.disk.unwrap_or(0.0) + f64::from(d));
+        }
         let floor = idx.saturating_sub(BUCKETS as u64);
         self.buckets.retain(|k, _| *k > floor);
         let text: String = self
             .buckets
             .iter()
-            .map(|(k, (sum, n, mem))| match mem {
-                Some(m) => format!("{k} {sum} {n} {m}\n"),
-                None => format!("{k} {sum} {n}\n"),
+            .map(|(k, b)| {
+                let mut line = format!("{k} {} {}", b.cpu, b.n);
+                // **Every column is written, absent ones as `-`.**
+                // Stopping at the first absent field was the first
+                // version and it was wrong: a machine with no GPU but a
+                // readable disk (every card-less Linux box) writes
+                // `mem` then nothing, and the disk figure it *did*
+                // measure never reaches the file. A placeholder costs
+                // one character and `parse::<f64>` already reads it as
+                // absent, so the shorter lines an older recorder wrote
+                // still decode by running out of columns.
+                for v in [b.mem, b.gpu, b.disk] {
+                    match v {
+                        Some(x) => line.push_str(&format!(" {x}")),
+                        None => line.push_str(" -"),
+                    }
+                }
+                line.push('\n');
+                line
             })
             .collect();
         if let Some(parent) = self.file.parent() {
@@ -104,18 +146,53 @@ impl CpuHistory {
     pub fn day(&self, now_ms: u64) -> CpuDay {
         let newest = now_ms / BUCKET_MS;
         let at = |back: u64| newest.wrapping_sub(BUCKETS as u64 - 1 - back);
-        let buckets = (0..BUCKETS as u64)
-            .map(|back| self.buckets.get(&at(back)).map(|(sum, n, _)| (sum / f64::from(*n)) as f32))
-            .collect();
-        let mem = (0..BUCKETS as u64)
-            .map(|back| {
-                self.buckets
-                    .get(&at(back))
-                    .and_then(|(_, n, m)| m.map(|m| (m / f64::from(*n)) as f32))
-            })
-            .collect();
-        CpuDay { bucket_ms: BUCKET_MS, now_ms, buckets, mem }
+        let mean = |pick: fn(&Bucket) -> Option<f64>| -> Vec<Option<f32>> {
+            (0..BUCKETS as u64)
+                .map(|back| {
+                    let b = self.buckets.get(&at(back))?;
+                    if b.n == 0 {
+                        return None;
+                    }
+                    pick(b).map(|sum| (sum / f64::from(b.n)) as f32)
+                })
+                .collect()
+        };
+        CpuDay {
+            bucket_ms: BUCKET_MS,
+            now_ms,
+            buckets: mean(|b| Some(b.cpu)),
+            mem: mean(|b| b.mem),
+            gpu: mean(|b| b.gpu),
+            disk: mean(|b| b.disk),
+        }
     }
+}
+
+/// One bucket's running sums. Absent means no beat in this bucket could
+/// read that figure — see the type's field docs.
+#[derive(Default, Clone, Copy)]
+struct Bucket {
+    cpu: f64,
+    n: u32,
+    mem: Option<f64>,
+    gpu: Option<f64>,
+    disk: Option<f64>,
+}
+
+/// One beat's four readings, as the recorder took them.
+///
+/// A struct rather than four positional arguments because two of them
+/// are optional percentages of the same shape — and `record(t, 12.0,
+/// 40.0, None, Some(96.0))` is a call nobody can read, let alone check.
+#[derive(Clone, Copy)]
+pub struct Reading {
+    pub cpu_pct: f32,
+    pub mem_pct: f32,
+    /// The machine's graphics use, when khor can ask at all.
+    pub gpu_pct: Option<f32>,
+    /// How full the filesystem khor lives on is — the same reading the
+    /// disk dial aggregates, so the day and the dial agree.
+    pub disk_pct: Option<f32>,
 }
 
 #[cfg(test)]
@@ -129,6 +206,34 @@ mod tests {
         p
     }
 
+    /// **A gap in one series does not take the next one with it.**
+    ///
+    /// The file is positional, so the question is what happens to a
+    /// machine that reads a disk but has no GPU to read — every
+    /// card-less Linux box. The first version of the writer stopped at
+    /// the first absent column and silently dropped the disk figure it
+    /// had actually measured; this reads it back through a second
+    /// instance (the restart rule: the verb in the claim has to happen
+    /// in the check) and asserts the hole is where it belongs and the
+    /// reading after it survived.
+    #[test]
+    fn an_absent_series_does_not_swallow_the_one_behind_it() {
+        let d = dir("placeholder");
+        let t0 = 500 * BUCKET_MS;
+        {
+            let mut h = CpuHistory::open(&d);
+            h.record(t0, Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: Some(96.0) });
+        }
+        // A second instance, so what is asserted is what reached disk.
+        let day = CpuHistory::open(&d).day(t0);
+        let last = day.buckets.len() - 1;
+        assert_eq!(day.buckets[last], Some(10.0), "the reader finds what is there");
+        assert_eq!(day.mem[last], Some(40.0));
+        assert_eq!(day.gpu[last], None, "no card, no figure — and not a zero");
+        assert_eq!(day.disk[last], Some(96.0), "the disk was measured, so it must have survived the write");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     /// Two beats in one bucket average; the bucket nobody sampled stays
     /// a hole. The gap assertion only counts because the two filled
     /// neighbours prove the reader finds what is there (否定式断言之前
@@ -138,9 +243,9 @@ mod tests {
         let d = dir("gap");
         let mut h = CpuHistory::open(&d);
         let t0 = 100 * BUCKET_MS;
-        h.record(t0, 10.0, 40.0);
-        h.record(t0 + 1000, 30.0, 40.0);
-        h.record(t0 + 2 * BUCKET_MS, 50.0, 40.0); // one whole bucket skipped
+        h.record(t0, Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
+        h.record(t0 + 1000, Reading { cpu_pct: 30.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
+        h.record(t0 + 2 * BUCKET_MS, Reading { cpu_pct: 50.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None }); // one whole bucket skipped
         let day = h.day(t0 + 2 * BUCKET_MS);
         let n = day.buckets.len();
         assert_eq!(n, BUCKETS);
@@ -160,7 +265,7 @@ mod tests {
         let t0 = 500 * BUCKET_MS;
         {
             let mut h = CpuHistory::open(&d);
-            h.record(t0, 42.0, 40.0);
+            h.record(t0, Reading { cpu_pct: 42.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
         }
         let again = CpuHistory::open(&d);
         let day = again.day(t0);
@@ -179,8 +284,8 @@ mod tests {
         let d = dir("prune");
         let t0 = 1000 * BUCKET_MS;
         let mut h = CpuHistory::open(&d);
-        h.record(t0, 99.0, 40.0);
-        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, 1.0, 40.0);
+        h.record(t0, Reading { cpu_pct: 99.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
+        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, Reading { cpu_pct: 1.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None });
         let reopened = CpuHistory::open(&d);
         let day = reopened.day(t0 + (BUCKETS as u64 + 1) * BUCKET_MS);
         assert_eq!(day.buckets[BUCKETS - 1], Some(1.0));
@@ -224,8 +329,8 @@ mod memory_day {
         let d = fresh_dir("avg");
         let mut h = CpuHistory::open(&d);
         let at = 10 * BUCKET_MS;
-        h.record(at, 50.0, 30.0);
-        h.record(at + 1_000, 70.0, 50.0);
+        h.record(at, Reading { cpu_pct: 50.0, mem_pct: 30.0, gpu_pct: None, disk_pct: None });
+        h.record(at + 1_000, Reading { cpu_pct: 70.0, mem_pct: 50.0, gpu_pct: None, disk_pct: None });
         let day = h.day(at);
         let last = BUCKETS - 1;
         assert_eq!(day.buckets[last], Some(60.0), "cpu is the bucket's mean");
