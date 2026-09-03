@@ -305,6 +305,74 @@ pub struct Node {
             >,
         >,
     >,
+    /// The live connections this node holds to other machines, by the
+    /// name it reaches them under (`Node::dial_named` fills it).
+    ///
+    /// **A QUIC connection is a pipe with many streams in it, and every
+    /// ask here is one stream.** Before this existed, each ask dialled
+    /// its own connection and dropped it on the way out — and a dial is
+    /// not cheap: it races a direct road against a relay road, both of
+    /// which are full handshakes, and the far machine sees a new
+    /// connection each time. An open machine card asks every five
+    /// seconds. That is a card costing a far machine (and whatever
+    /// relay stands between) 12 handshakes a minute to answer a
+    /// question it already answered.
+    ///
+    /// **Held by name, checked by liveness.** A connection that has
+    /// closed — idle timeout over there, a serve restarted, a road that
+    /// went away — reports a `close_reason`, and the holder dials again
+    /// rather than handing back a pipe with no water in it. iroh's own
+    /// net_report keeps its probe connections exactly this way, and the
+    /// check is the same one.
+    ///
+    /// **This is the resident serve's win, not the CLI's.** A one-shot
+    /// verb opens a node, asks once and exits, so its map is filled and
+    /// dropped in one breath; every face in the app routes through the
+    /// serve (`via_serve`), and that is the process this saves.
+    pub(crate) wires:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+}
+
+/// A read-only look at the connections a node is holding
+/// (`Node::wires`).
+///
+/// **It exists because reuse is otherwise unobservable.** What this
+/// batch changed is that a second ask rides the first ask's pipe, and
+/// from outside the process both versions look the same: two asks, two
+/// answers. A test that could only assert "both asks answered" would
+/// have passed just as loudly before the change — a control whose two
+/// arms were built to agree. This is the arm that can tell them apart.
+///
+/// It hands out names and a count, never the connections: nothing
+/// outside the node may send on a pipe the node is holding for its own
+/// asks.
+#[derive(Clone)]
+pub struct WireWatch(Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>);
+
+impl WireWatch {
+    pub(crate) fn of(
+        wires: &Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+    ) -> Self {
+        Self(wires.clone())
+    }
+
+    /// The machines this node has an open connection to, sorted — a
+    /// name appears once however many asks have ridden it.
+    pub async fn names(&self) -> Vec<String> {
+        let held = self.0.lock().await;
+        let mut names: Vec<String> = held.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    /// Whether the connection held for that machine is still up. A
+    /// closed one is still in the map until the next ask replaces it,
+    /// and telling the two apart is what proves the liveness check has
+    /// something to catch.
+    pub async fn is_open(&self, channel: &str) -> Option<bool> {
+        let held = self.0.lock().await;
+        held.get(channel).map(|c| c.close_reason().is_none())
+    }
 }
 
 /// This binary's own path, for the re-exec convention (`_host`,
@@ -435,6 +503,7 @@ impl Node {
             sync_gate: tokio::sync::Mutex::new(()),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         };
         node.register_self()?;
         Ok(node)

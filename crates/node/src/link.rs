@@ -622,20 +622,69 @@ impl Node {
     /// every request-reply verb repeats — resolved twice on purpose, the
     /// second time against the table, because two reads can straddle a
     /// removal.
+    ///
+    /// **The connection is the one already open when there is one**
+    /// (`Node::wires` carries the reasoning and the cost).
+    ///
+    /// Every caller of this is the same shape: dial, send one request,
+    /// read one answer, walk away. That shape is what makes holding the
+    /// connection safe — nobody here owns it past their own stream, and
+    /// QUIC carries the next stream over the same pipe.
+    ///
+    /// **The dial happens outside the lock.** Two asks that arrive
+    /// together may each dial and the second will replace the first in
+    /// the map; the replaced one stays alive as long as its own asker
+    /// holds it (the type is a handle, not the socket), so the cost of
+    /// that race is one extra handshake, never a request cut off. The
+    /// alternative — holding the map locked across a dial — would make
+    /// one unreachable machine stall every ask to every other one.
     async fn dial_named(
         &self,
         ep: &iroh::Endpoint,
         channel: &str,
     ) -> Result<iroh::endpoint::Connection, String> {
+        if let Some(open) = self.held_wire(channel).await {
+            return Ok(open);
+        }
         let target = self
             .devices_loaded()?
             .doc
             .by_name(channel)
             .ok_or_else(|| msg::machine_left_table(channel))?;
-        self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
+        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
             DialFailure::TimedOut => msg::machine_unreachable_timeout(channel),
             DialFailure::Refused(why) => msg::cant_reach_named(channel, why),
-        })
+        })?;
+        self.wires.lock().await.insert(channel.to_owned(), conn.clone());
+        Ok(conn)
+    }
+
+    /// A look at the connections this node is holding — for tests and
+    /// for whatever diagnostic verb wants it later. Taken **before**
+    /// `serve` consumes the node: the map is shared, so a watch made
+    /// here still sees what the serve does with it.
+    pub fn wire_watch(&self) -> crate::WireWatch {
+        crate::WireWatch::of(&self.wires)
+    }
+
+    /// The held connection to that machine, if one is held **and is
+    /// still up**.
+    ///
+    /// A closed connection is dropped here rather than handed back: a
+    /// pipe that reports a `close_reason` will fail every stream opened
+    /// on it, and handing it out would turn one dead connection into an
+    /// endless run of "machine unreachable" for a machine that is right
+    /// there.
+    async fn held_wire(&self, channel: &str) -> Option<iroh::endpoint::Connection> {
+        let mut held = self.wires.lock().await;
+        match held.get(channel) {
+            Some(conn) if conn.close_reason().is_none() => Some(conn.clone()),
+            Some(_) => {
+                held.remove(channel);
+                None
+            }
+            None => None,
+        }
     }
 
     /// Routes an op to the resident serve when one holds this key.

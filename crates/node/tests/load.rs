@@ -103,3 +103,66 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
         "a serve a minute old has no history to show"
     );
 }
+
+/// **A second ask rides the pipe the first one opened.**
+///
+/// The app asks a far machine for its top every five seconds while a
+/// card is open. Before this, every ask dialled its own connection —
+/// a direct road and a relay road raced, both full handshakes — and
+/// dropped it on the way out; the far machine and whatever relay sits
+/// between them saw twelve of those a minute to answer a question that
+/// had not changed. A QUIC connection carries many streams, so the
+/// pipe is what gets held and the stream is what gets opened.
+///
+/// **What makes this a control rather than a ritual:** the two asks
+/// answered before the change too, so "both answered" proves nothing.
+/// What separates the two versions is the count of pipes held after
+/// them — one, not two, and the same name both times. `WireWatch` is
+/// there for exactly this reading and says so.
+///
+/// The path is the app's: every face routes through the resident serve
+/// (`via_serve`), so beta runs one and the watch is taken on the node
+/// that serve consumes — the map is shared, so it still sees it.
+#[tokio::test]
+async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
+    let ra = root("reuse-a");
+    let rb = root("reuse-b");
+
+    let alpha = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server_a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let _serve_a = tokio::spawn(async move { server_a.serve().await });
+    wait_for_endpoint_file(&ra).await;
+
+    let beta = Node::open_as(rb.clone(), "beta").unwrap();
+    let ticket = alpha.invite().unwrap();
+    timeout(Duration::from_secs(60), beta.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    // Beta's own serve, the way every face reaches the wire.
+    let server_b = Node::open_as(rb.clone(), "beta").unwrap();
+    let wires = server_b.wire_watch();
+    let _serve_b = tokio::spawn(async move { server_b.serve().await });
+    wait_for_endpoint_file(&rb).await;
+    khor_node::reactor::forget();
+
+    assert!(wires.names().await.is_empty(), "nothing is held before anything is asked");
+
+    for round in 1..=3 {
+        timeout(Duration::from_secs(60), beta.load_on("alpha", 3))
+            .await
+            .unwrap_or_else(|_| panic!("ask {round} must finish"))
+            .unwrap_or_else(|e| panic!("ask {round} must be answered: {e}"));
+        assert_eq!(
+            wires.names().await,
+            vec!["alpha".to_owned()],
+            "after ask {round} the serve holds one pipe, to the machine it asked"
+        );
+        assert_eq!(
+            wires.is_open("alpha").await,
+            Some(true),
+            "the pipe held after ask {round} is one that can carry the next stream"
+        );
+    }
+}
