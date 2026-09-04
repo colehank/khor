@@ -9,7 +9,7 @@ import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { useTight } from "@/hooks/use-tight";
+import { useHiddenRows, useTight } from "@/hooks/use-tight";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
@@ -797,6 +797,10 @@ function Drawers({
     disk: vols.length,
   };
   const box = useRef<HTMLDivElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  // **What is out of sight right now**, so the heading can say it —
+  // and stop saying it the moment somebody scrolls to the bottom.
+  const hidden = useHiddenRows(scroll, open);
   // What the three columns need before they stop fitting: the two fixed
   // ones, the two gaps between them, and enough track left for a bar to
   // still read as a length. Written from the tokens rather than guessed
@@ -826,6 +830,11 @@ function Drawers({
             <span data-drawer-count={drawn[open]} className="tabular-nums">
               {heads[open].count(drawn[open])}
             </span>
+            {hidden > 0 && (
+              <span data-drawer-more={hidden} className="tabular-nums">
+                · {cli.drawer_more(hidden)}
+              </span>
+            )}
           </div>
         )}
         {/* **The rows scroll, the heading does not.** A heading that
@@ -834,6 +843,7 @@ function Drawers({
             scrolling at all, which is what makes 「just fits」 and 「just
             does not」 different on screen. */}
         <div
+          ref={scroll}
           data-drawer-scroll
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
           style={{ scrollSnapType: "y proximity" }}
@@ -1951,7 +1961,29 @@ function Overlay({
  * How dark one bucket is drawn, and whether it is drawn in the strain
  * colour at all.
  *
- * **The value is the ink.** Five steps, and the top boundary is 90 —
+ * # Two extra cuts, both under 20, and why they were needed
+ *
+ * The four bands started at 20, and **a machine that idles does not
+ * reach it**. Measured on the live fleet 2026-09-04: turing drew 564
+ * buckets across CPU, GPU, memory and disk and **every single one
+ * landed in the bottom band** — one shade for a whole day, on four
+ * rows out of five. The block read as 「this machine has no data」, and
+ * the reason was not that the ink was faint: it was that **there was
+ * no variation left to read**. A band that swallows the entire range a
+ * quiet machine lives in is a band that answers nothing.
+ *
+ * So two cuts go in below 20 (`3` and `8`) and **the existing four are
+ * untouched** — the top of the scale is where 「full」 is decided, and
+ * moving it would change what 90 means. Darkening the whole ramp was
+ * the other way out and it is worse: it pulls 16 and 90 towards each
+ * other, trading the top of the range for the bottom.
+ *
+ * **Not per-row auto-scaling**, either: the same shade would then mean
+ * different things on different machines, which is the silent change
+ * of axis this whole card keeps refusing — and 90 would stop being a
+ * boundary at all.
+ *
+ * **The value is the ink.** The top boundary is 90 —
  * the number the product already treats as the edge (`Fill::strain`),
  * so the band and the dials break at the same place rather than at two
  * numbers a reader has to hold apart.
@@ -1969,18 +2001,20 @@ function Overlay({
  * light the alarm on every working machine, and this repo's own ruling
  * is that a badge which is never zero is not a badge.
  */
+const BANDS = [3, 8, 20, 45, 70, 90];
+/** One step per band, plus the floor. Chosen so the *ink* separates:
+    see `shadeOf`. */
+const SHADES = [0.11, 0.19, 0.29, 0.42, 0.58, 0.77, 1];
+
 function shadeOf(pct: number, row: string): { key: string; opacity: number; strain: boolean } {
   const v = Math.max(0, Math.min(100, pct));
+  let step = 0;
+  while (step < BANDS.length && v >= BANDS[step]) step += 1;
+  const top = step === SHADES.length - 1;
   // `>=` at 90, pinned deliberately: the boundary bucket belongs to the
   // top step, the way `Fill::strain` reads its own.
-  if (v >= 90) {
-    const strain = row === "mem" || row === "disk";
-    return { key: strain ? "strain" : "4", opacity: 1, strain };
-  }
-  if (v >= 70) return { key: "3", opacity: 0.66, strain: false };
-  if (v >= 45) return { key: "2", opacity: 0.4, strain: false };
-  if (v >= 20) return { key: "1", opacity: 0.22, strain: false };
-  return { key: "0", opacity: 0.1, strain: false };
+  const strain = top && (row === "mem" || row === "disk");
+  return { key: strain ? "strain" : String(step), opacity: SHADES[step], strain };
 }
 
 function DayRow({

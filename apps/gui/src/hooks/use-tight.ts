@@ -28,3 +28,57 @@ export function useTight(ref: RefObject<HTMLElement | null>, min: number): boole
   }, [ref, min]);
   return tight;
 }
+
+/**
+ * How many rows of a scrolling box are below its bottom edge right now.
+ *
+ * **Counted, not computed from a total.** 「the list has six and four
+ * fit」 is a different claim from 「two are out of sight」, and only the
+ * second one goes away when somebody scrolls — a note that never
+ * changes stops being a state and becomes part of the heading.
+ *
+ * **Measured on the cells, not on the rows.** A row here joins its
+ * grid with `display: contents` and therefore has no box at all;
+ * `getBoundingClientRect()` on one returns zeros, and a count built on
+ * that reports 「six visible of six」 about a panel that is visibly
+ * scrolling. So each row is judged by its first child, which is a real
+ * box.
+ */
+export function useHiddenRows(ref: RefObject<HTMLElement | null>, deps: unknown): number {
+  const [hidden, setHidden] = useState(0);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const count = () => {
+      const bottom = node.getBoundingClientRect().bottom;
+      let below = 0;
+      for (const row of node.querySelectorAll("[data-part]")) {
+        const cell = row.firstElementChild;
+        if (!cell) continue;
+        if (cell.getBoundingClientRect().top >= bottom - 1) below += 1;
+      }
+      setHidden(below);
+    };
+    count();
+    // **Watch the content, not just the box.** This box has a fixed
+    // height on purpose, so it never resizes — and a `ResizeObserver`
+    // on it alone fires once at mount, before the rows have been laid
+    // out, and then never again. The count stayed at whatever it was
+    // in that first frame: zero, on a panel with three rows out of
+    // sight. So every child is observed too, which is what actually
+    // changes when the drawer switches groups.
+    const ro = new ResizeObserver(count);
+    ro.observe(node);
+    for (const child of node.children) ro.observe(child);
+    node.addEventListener("scroll", count, { passive: true });
+    // A frame later as well: the first pass can land before the
+    // browser has finished laying the rows out.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(count));
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+      node.removeEventListener("scroll", count);
+    };
+  }, [ref, deps]);
+  return hidden;
+}

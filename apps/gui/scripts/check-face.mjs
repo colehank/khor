@@ -262,7 +262,13 @@ try {
   // somewhere: without it the strain assertion has only its negative
   // half, and a chart that never painted strain at all would pass.
   const memBuckets = dayBuckets.map((b, i) => (b === null ? null : i === 7 ? 95 : 40 + (i % 20)));
-  const gpuBuckets = dayBuckets.map((b, i) => (b === null ? null : (i * 3) % 100));
+  // **An idle machine's day, which is what the bands were widened
+  // for.** Everything here lives under 20 — turing really does draw
+  // 564 buckets in that range across four rows — and with the old
+  // four bands the whole row lands in one shade, which is the
+  // regression the flat-slab check exists to catch. A fixture whose
+  // every series happens to span the full range cannot see it.
+  const gpuBuckets = dayBuckets.map((b, i) => (b === null ? null : 2 + (i % 14)));
   const diskBuckets = dayBuckets.map(() => null);
   // The cards' memory, on the same holes as the rest. **One bucket is
   // exactly 90.0** — the strain boundary — so a comparison written `>`
@@ -2074,6 +2080,48 @@ try {
     else if (dial.gpu.arc !== 1) fail(`the GPU dial draws ${dial.gpu.arc} summary arcs`);
   }
 
+  //     ── no row paints a whole day as one flat slab ───────────────
+  //
+  //     **The failure this catches is not faintness, it is sameness.**
+  //     Measured on the live fleet: turing drew 564 buckets across four
+  //     rows and every one of them landed in the bottom band, so each
+  //     row was a single shade from end to end. The block read as 「no
+  //     data here」 — and a check comparing 「missing draws no ink」
+  //     against 「low draws some ink」 is **green while that ships**
+  //     (the gap is a real ΔL* 7.35). What is broken is along the row,
+  //     so that is where it has to be measured.
+  //
+  //     ⚠️ Grouped by the row element, not by the rectangles' `y`. A
+  //     drawing that puts two rects in one bucket would read as two
+  //     rows to a `y`-based grouping and report each half flat — two
+  //     false reds, on a chart that is fine.
+  const flat = await page.evaluate(() => {
+    return [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((row) => ({
+      name: row.dataset.dayRow,
+      shades: [...new Set([...row.querySelectorAll("[data-day-shade]")].map((n) => n.dataset.dayShade))],
+      drawn: row.querySelectorAll("[data-day-shade]").length,
+    }));
+  });
+  {
+    const series = { cpu: dayBuckets, gpu: gpuBuckets, mem: memBuckets, disk: diskBuckets, vram: vramBuckets };
+    for (const r of flat) {
+      const seen = (series[r.name] ?? []).filter((v) => v !== null);
+      if (seen.length === 0 || r.drawn === 0) continue;
+      //   **A reading that really is constant is excused by name.** A
+      //   machine that sat at exactly one value all day should draw one
+      //   shade; asking for variation there would be a false red about
+      //   a chart telling the truth.
+      const spread = Math.max(...seen) - Math.min(...seen);
+      if (spread <= 1) continue;
+      if (r.shades.length === 1) {
+        fail(
+          `the ${r.name} row paints all ${r.drawn} of its buckets in one shade (${r.shades[0]}) ` +
+            `while the readings span ${Math.round(spread)} points — a day with nothing to read`,
+        );
+      }
+    }
+  }
+
   //     ── three readings of one day, and one cursor across them ────
   //
   //     **The moment survives the switch.** Three readings of the same
@@ -2349,6 +2397,30 @@ try {
     //   a heading lying on one of the other three was never looked at —
     //   an assertion pointed at the wrong element passes for reasons
     //   that have nothing to do with what it claims.
+    //   **The 「more below」 note is a state, not decoration.** It has
+    //   to be absent when everything fits, present when it does not,
+    //   and its number has to be what is actually out of sight —
+    //   counted on the cells, because a row here has `display:
+    //   contents` and no box of its own to measure.
+    const more = await page.evaluate(() => {
+      const drawer = document.querySelector("[data-machine-card] [data-drawer]");
+      const scroller = drawer.querySelector("[data-drawer-scroll]");
+      const open = drawer.querySelector("[data-parts]:not([hidden])");
+      const bottom = scroller.getBoundingClientRect().bottom;
+      let below = 0;
+      for (const row of open.querySelectorAll("[data-part]")) {
+        const cell = row.firstElementChild;
+        if (cell && cell.getBoundingClientRect().top >= bottom - 1) below += 1;
+      }
+      const note = drawer.querySelector("[data-drawer-more]");
+      return { below, says: note ? Number(note.dataset.drawerMore) : 0, overflows: scroller.scrollHeight - scroller.clientHeight > 1 };
+    });
+    if (more.says !== more.below) {
+      fail(`the ${key} drawer says ${more.says} more below and ${more.below} rows are out of sight`);
+    }
+    if (!more.overflows && more.says !== 0) {
+      fail(`the ${key} drawer fits entirely and still offers to be dragged`);
+    }
     if (seen.says !== seen.rows) {
       fail(`the ${key} drawer's heading says ${seen.says} but draws ${seen.rows} rows — the count is about something else`);
     }
@@ -2529,8 +2601,17 @@ try {
   }
   //     And the boundary itself: the fixture's bucket 11 is exactly
   //     90.0, so a `>` would leave it a step below.
-  if ((strain.vram ?? [])[11] !== "4") {
-    fail(`the bucket at exactly 90.0 drew "${(strain.vram ?? [])[11]}" — the top step is >= 90, not > 90`);
+  //     **The boundary bucket belongs to the top step, whatever the
+  //     top step is numbered.** Written against the highest shade the
+  //     row actually drew rather than a literal: the ladder gained two
+  //     bands and a hard-coded 「4」 started pointing at the middle of
+  //     it while claiming to be about the top.
+  {
+    const drawn = (strain.vram ?? []).filter((v) => v !== null && v !== "strain").map(Number);
+    const top = drawn.length ? Math.max(...drawn) : null;
+    if ((strain.vram ?? [])[11] !== String(top)) {
+      fail(`the bucket at exactly 90.0 drew "${(strain.vram ?? [])[11]}" and the top step is "${top}" — the top step is >= 90, not > 90`);
+    }
   }
 
   //     **One row per series that has a reading, and the all-hole one
