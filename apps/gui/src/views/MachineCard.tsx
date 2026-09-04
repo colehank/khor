@@ -1892,9 +1892,24 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
   // **A new answer redraws; it does not remount.** The reading somebody
   // picked and the moment they left the cursor on live inside the
   // module, and tearing it down every five seconds would take both.
+  //
+  // ⚠️ **A new *answer*, not a new render.** This effect had no
+  // dependency list, so it ran after every render of this component —
+  // and a machine card re-renders for a dozen reasons that have nothing
+  // to do with the day. Each run rebuilt the whole figure. Measured
+  // 2026-09-04 on the real face: eleven of sixteen one-second samples
+  // caught a fresh node set, most of them mid-fade. The signature below
+  // is what a redraw is *for*: the window moved, or its shape changed.
+  // `day` itself cannot be the dependency — it is parsed fresh from the
+  // wire on every poll, so its identity changes even when it says the
+  // same thing.
+  const answer = `${day.now_ms}/${day.bucket_ms}/${day.buckets.length}`;
   useEffect(() => {
     panel.current?.update(day, words);
-  });
+    // `day` and `words` are read, not depended on: the signature above
+    // is the dependency, and `words` is the same catalog every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answer]);
   const n = Math.max(1, day.buckets.length);
   const startMs = day.now_ms - day.bucket_ms * n;
   const sameDay = new Date(startMs).toDateString() === new Date(day.now_ms).toDateString();

@@ -2275,6 +2275,134 @@ try {
     }
   }
 
+  //     ── all three readings, and the words each one draws ─────────
+  //
+  //     **The section above switches between two of the three.** 叠放
+  //     was never opened by anything here, and on 2026-09-04 that is
+  //     where a `TypeError` lived: the drawing's three functions take
+  //     the figure's pixel width in a parameter named `W`, and the
+  //     module's words were in a global of the same name, so inside
+  //     them `W.peakAt(…)` was a call on a number. It killed the whole
+  //     card's subtree. The gap label, the shade legend and the strain
+  //     legend were on the same fault and did not throw — they wrote
+  //     the string 「undefined」 into the figure and everything stayed
+  //     green.
+  //
+  //     Nothing above would have caught either half, and not because
+  //     an assertion was wrong: **every one of them measures a number
+  //     or a position** — cells, coverage, spacing, heights, the
+  //     viewBox, the cursor's moment. None asks whether the figure
+  //     says anything. So this section asks two things, on all three
+  //     readings:
+  //
+  //       - **no word came out missing**, which on this drawing means
+  //         **empty**, not the string 「undefined」. `txt()` assigns
+  //         `textContent`, and that attribute is nullable, so `undefined`
+  //         converts to `null` and `null` to `""` — the three labels on
+  //         the fault rendered as **empty `<text>` elements**, invisible
+  //         and silent. A sweep for the word 「undefined」 is the
+  //         obvious assertion here and it is a blind one: it cannot
+  //         fire on the bug it is named after. (It is kept alongside,
+  //         for the ways a word can arrive wrong rather than absent.)
+  //       - **叠放 says its peak in words**, which is the one call the
+  //         crash was in. 热力带 and 山脊 print the bare number there
+  //         on purpose (`day-peak-at` is only the parallel figure's,
+  //         where a hair is a moment and 「什么时候」 has to be
+  //         written), so the two arms of this are opposite: bare there,
+  //         a moment as well here. A sentence that lost its call comes
+  //         back a bare number, and a bare number that grew one is the
+  //         other mistake — one assertion, and it fails both ways.
+  //
+  //     ⚠️ **At a width where the figure is not in short mode.** The
+  //     block above leaves the viewport at 380, and at 380 the drawing
+  //     skips `peakAt` by design — the assertion would have measured a
+  //     branch that was never the broken one.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await wait(300);
+  const beforeSwitching = thrown.length;
+  const spoken = await page.evaluate(async () => {
+    const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+    const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    const out = {};
+    for (const view of ["heat", "ridge", "para"]) {
+      pick(view)?.click();
+      await frame();
+      await new Promise((ok) => setTimeout(ok, 120));
+      const band = document.querySelector("[data-machine-card] [data-day-band]");
+      out[view] = {
+        drawn: !!band,
+        view: band?.dataset.dayView ?? null,
+        //   Each text element on its own, so a failure can name the one
+        //   that is empty rather than a wall of the whole figure.
+        texts: band ? [...band.querySelectorAll("text")].map((t) => t.textContent) : [],
+      };
+    }
+    pick("heat")?.click();
+    await frame();
+    return out;
+  });
+  for (const view of ["heat", "ridge", "para"]) {
+    const seen = spoken[view];
+    if (!seen?.drawn) {
+      fail(`picking ${view} left no figure at all — nothing below this was measured for it`);
+      continue;
+    }
+    if (seen.view !== view) fail(`picking ${view} left the band saying it is ${seen.view}`);
+    //   **Probe alive.** A figure with no words in it passes an
+    //   「no word is undefined」 sweep for the wrong reason, and that is
+    //   the exact shape the bug had in 叠放 (the subtree was gone).
+    if (seen.texts.length < 4) {
+      fail(`probe dead: ${view} draws ${seen.texts.length} text elements, so 「its words are there」 measured nothing`);
+      continue;
+    }
+    const wrong = seen.texts.filter((t) => /undefined|\[object Object\]|\bNaN\b/.test(t ?? ""));
+    if (wrong.length) {
+      fail(
+        `${view} writes ${wrong.length} of its ${seen.texts.length} words as a missing value ` +
+          `(${wrong.slice(0, 3).map((t) => JSON.stringify(t)).join(", ")}) — a word the drawing never got`,
+      );
+    }
+    const empty = seen.texts.filter((t) => !String(t ?? "").trim()).length;
+    if (empty > 0) {
+      fail(
+        `${view} draws ${empty} of its ${seen.texts.length} <text> elements with nothing in them — ` +
+          `a label positioned, styled and animated around a word that never arrived`,
+      );
+    }
+    //   A peak said with its moment: the value and an `hh:mm`, in one
+    //   text element. 热力带/山脊 must not have one; 叠放 must.
+    const withMoment = seen.texts.filter((t) => /\d+\s*%.*\d{2}:\d{2}/.test(t ?? ""));
+    if (view === "para" && withMoment.length === 0) {
+      fail(
+        `叠放 prints no peak with its moment (${seen.texts.length} words, none of them 「value · hh:mm」) — ` +
+          `on that figure a hair is a moment and the time is compressed out, so a bare number answers 多高 and never 什么时候`,
+      );
+    }
+    if (view !== "para" && withMoment.length > 0) {
+      fail(
+        `${view} prints ${withMoment.length} peaks with a clock on them (${JSON.stringify(withMoment[0])}) — ` +
+          `on a band whose x *is* the clock, the moment is where the mark already is`,
+      );
+    }
+  }
+  if (thrown.length > beforeSwitching) {
+    fail(`changing the reading threw: ${thrown.slice(beforeSwitching).join(" | ")}`);
+  }
+  //   **The line reports, it does not conclude.** It used to end 「none
+  //   missing」 and printed that verbatim on a run where three of these
+  //   assertions had just failed — a summary that states the finding
+  //   rather than the reading will eventually state the wrong one.
+  console.log(
+    `day readings: ${["heat", "ridge", "para"]
+      .map((v) => {
+        const t = spoken[v]?.texts ?? [];
+        return `${v} ${t.length} words / ${t.filter((s) => !String(s ?? "").trim()).length} empty`;
+      })
+      .join(", ")}`,
+  );
+  await page.setViewportSize({ width: 380, height: 800 });
+  await wait(200);
+
   //     ── the scatter: one pair of axes, and three states kept apart
   //
   //     **Card memory is an area, and the two biggest must be told

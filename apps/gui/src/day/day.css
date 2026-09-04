@@ -265,6 +265,29 @@
     stroke-dashoffset: 0;
   }
 }
+/* **A redraw is not an entrance.** Added in the app, not in the
+ * prototype, and for a reason the prototype could not have: over there
+ * the figure was rebuilt when somebody picked a different fixture, so
+ * every rebuild *was* an arrival and playing the entrance was right.
+ * Here a new answer lands every few seconds and the drawing is rebuilt
+ * for each one — measured 2026-09-04 on the real face, eleven of
+ * sixteen one-second samples caught a fresh node set mid-fade. The
+ * whole figure was spending most of its life on the way in.
+ *
+ * So the module hangs `nofx` on the host for every redraw after the
+ * first, and takes it off when somebody picks a different reading —
+ * **that** is an arrival. Same three rules as the reduced-motion block
+ * below, `.draw` included: without resetting its dash the path would
+ * stay drawn at offset 1, which is invisible. */
+.dayblk.nofx .wipe,
+.dayblk.nofx .fade {
+  animation: none;
+}
+.dayblk.nofx .draw {
+  animation: none;
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+}
 @media (prefers-reduced-motion: reduce) {
   .dayblk .wipe,
   .dayblk .fade {

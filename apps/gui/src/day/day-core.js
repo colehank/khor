@@ -25,7 +25,9 @@
  *    the whole of it — the drawing functions' signatures are untouched.
  * 2. **Where the words come from.** No Chinese lives in this repo's
  *    code; every literal the original wrote inline is now a field on
- *    `W`, filled from `crates/catalog/zh.toml`.
+ *    `WORDS`, filled from `crates/catalog/zh.toml`. (It was `W` for a
+ *    day, and that name collided with the drawing functions' width
+ *    parameter — see the declaration.)
  * 3. **Where the clock comes from.** The original's fixture pinned
  *    「now」 at 20:00 and could write its hour ticks as constants. A real
  *    window starts wherever the machine was last heard from, so
@@ -56,8 +58,25 @@
 
 /** How many buckets a day is, per the answer being drawn. */
 let N = 288;
-/** Every word this drawing says, from the catalog — see the head. */
-let W = {};
+/** Every word this drawing says, from the catalog — see the head.
+ *
+ *  ⚠️ **Not `W`, and the name is the fix.** It was `W` until
+ *  2026-09-04, and the three drawing functions take the figure's pixel
+ *  width in a parameter of that same name (`drawHeat(svg, T, W,
+ *  narrow)` — the prototype's own signature, kept). So inside all three
+ *  every `W.something` read a property off **a number**: the gap label,
+ *  the shade legend and the strain legend came out `undefined`, and
+ *  `W.peakAt(…)` in 叠放 threw `TypeError: W.peakAt is not a function`
+ *  and took the whole card's subtree down with it.
+ *
+ *  The collision is the transplant's, not the prototype's: over there
+ *  the words were Chinese literals in the drawing, so there was no
+ *  second `W` to shadow. It was found by **looking at a screenshot of
+ *  real data** — `tsc`, seven gates and the smoke run were all green
+ *  through it, because a shadowed name is well-typed, the numbers and
+ *  positions everything measured were right, and nothing asked whether
+ *  the words were there. */
+let WORDS = {};
 /** The window: when the oldest bucket opens, and how wide one is. */
 let T0 = 0;
 let BUCKET_MS = 300000;
@@ -221,7 +240,7 @@ function drawHeat(svg, T, W, narrow){
         'stroke-width':.8,'stroke-dasharray':'2 2.5',class:'hair fade'});
       if(b-a>=22 && !narrow)
         txt(svg,{x:(px(a)+px(b))/2,y:y+CH/2+2.5,'font-size':6.5,'font-weight':600,
-          'text-anchor':'middle',class:'fnt fade'},W.gap);
+          'text-anchor':'middle',class:'fnt fade'},WORDS.gap);
     });
 
     const pk = peakOf(t);
@@ -245,7 +264,7 @@ function drawHeat(svg, T, W, narrow){
       .concat([['r'+(BANDS.length+1), BANDS[BANDS.length-1]+'+']]);
     const ly = yb+22; let lx = X0;
     txt(svg,{x:X0-8,y:ly+7,'font-size':7,'font-weight':600,'text-anchor':'end',
-      class:'fnt fade',style:'animation-delay:1s'},W.shade);
+      class:'fnt fade',style:'animation-delay:1s'},WORDS.shade);
     LG.forEach(([c,s],k)=>{
       el(svg,'rect',{x:lx,y:ly,width:7,height:7,rx:1.5,class:c+' fade',
         style:`animation-delay:${1+k*.03}s`});
@@ -256,10 +275,10 @@ function drawHeat(svg, T, W, narrow){
     el(svg,'rect',{x:lx,y:ly,width:7,height:7,rx:1.5,class:'st fade',
       style:'animation-delay:1.2s'});
     txt(svg,{x:lx+10,y:ly+7,'font-size':7,'font-weight':600,class:'fnt fade',
-      style:'animation-delay:1.2s'},W.strainLegend);
+      style:'animation-delay:1.2s'},WORDS.strainLegend);
     if(T.some(t=>t.kind==='range'))
       txt(svg,{x:X1,y:ly+7,'font-size':7,'font-weight':600,'text-anchor':'end',
-        class:'fnt fade',style:'animation-delay:1.25s'},W.cards||'');
+        class:'fnt fade',style:'animation-delay:1.25s'},WORDS.cards||'');
   }
   return {
     top: TOP-3, bot: yb, X0, X1, slot,
@@ -314,7 +333,7 @@ function drawRidge(svg, T, W, narrow){
         'stroke-dasharray':'1.5 3'});
       if(b-a>=20 && !narrow && !dense)
         txt(g,{x:(X(a)+X(b))/2,y:y0-3,'font-size':6.5,'font-weight':600,
-          'text-anchor':'middle',class:'fnt'},W.gap);
+          'text-anchor':'middle',class:'fnt'},WORDS.gap);
     });
     txt(svg,{x:X0-7,y:y0-2,'font-size':narrow?8:8.5,'font-weight':700,
       'text-anchor':'end',class:'lab fade',style:`animation-delay:${r*.05}s`,
@@ -448,7 +467,7 @@ function drawPara(svg, T, W, narrow){
       'font-weight':800,'text-anchor':left?'end':'start',
       class:(strained?'sf':'ink')+' fade',
       style:`paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:${.9+k*.04}s`},
-      short?Math.round(pk.v)+'%':W.peakAt(Math.round(pk.v)+'%',hhmm(pk.i)));
+      short?Math.round(pk.v)+'%':WORDS.peakAt(Math.round(pk.v)+'%',hhmm(pk.i)));
     peakY[k]=mapY(pk.v);
   });
 
@@ -465,7 +484,7 @@ function drawPara(svg, T, W, narrow){
         txt(svg,{x:AX[n-1]+(n>1?-8:8),y:clash?y+14:y-8,'font-size':8.5,'font-weight':800,
           'text-anchor':n>1?'end':'start',class:'ink fade',
           style:'paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:1s'},
-          W.now);
+          WORDS.now);
       }
     }
   }
@@ -483,7 +502,7 @@ function timeAxis(svg, X0, X1, slot, yb, narrow){
       class:'fnt fade'},String(Hh).padStart(2,'0')+':00');
   });
   txt(svg,{x:X1,y:yb+13,'font-size':narrow?7:7.5,'font-weight':700,'text-anchor':'end',
-    class:'lab fade'},W.now);
+    class:'lab fade'},WORDS.now);
 }
 
 /* ══ 读数条：三种读法共用同一句话，所以切换视图时它一个字都不变 ══ */
@@ -491,12 +510,12 @@ function readout(T, i){
   if(i==null) return null;
   return '<b>'+hhmm(i)+'</b> &nbsp; ' + T.map(t=>{
     if(t.kind==='range'){
-      if(t.hi[i]==null) return '<span class="gone">'+t.name+' '+W.gap+'</span>';
+      if(t.hi[i]==null) return '<span class="gone">'+t.name+' '+WORDS.gap+'</span>';
       const hi=Math.round(t.hi[i]), lo=Math.round(t.lo[i]);
       const sp = t.strain && t.hi[i]>=90 ? 'sp' : 'b';
-      return t.name+' '+(W.busiest||'')+' <'+sp+'>'+hi+'%</'+sp+'> / '+(W.idlest||'')+' <b>'+lo+'%</b>';
+      return t.name+' '+(WORDS.busiest||'')+' <'+sp+'>'+hi+'%</'+sp+'> / '+(WORDS.idlest||'')+' <b>'+lo+'%</b>';
     }
-    if(t.v[i]==null) return '<span class="gone">'+t.name+' '+W.gap+'</span>';
+    if(t.v[i]==null) return '<span class="gone">'+t.name+' '+WORDS.gap+'</span>';
     const v=Math.round(t.v[i]);
     return t.name+(t.strain&&t.v[i]>=90 ? ' <span class="sp">'+v+'%</span>'
                                         : ' <b>'+v+'%</b>');
@@ -504,7 +523,7 @@ function readout(T, i){
 }
 
 /** The three readings, as the words this face calls them. */
-const viewsOf = () => [['heat', W.heat], ['ridge', W.ridge], ['para', W.para]];
+const viewsOf = () => [['heat', WORDS.heat], ['ridge', WORDS.ridge], ['para', WORDS.para]];
 
 /**
  * `CpuDay`'s five series as the tracks the drawing functions eat.
@@ -547,7 +566,7 @@ export function toTracks(day, words) {
  * React's business**, which is the point.
  */
 export function mount(host, opts) {
-  const st = { view: 'heat', cur: null, pin: false, W: 0, geo: null, T: [], series: [] };
+  const st = { view: 'heat', cur: null, pin: false, W: 0, geo: null, T: [], series: [], first: true };
   host.classList.add('dayblk');
   host.innerHTML =
     '<div class="ch"><svg preserveAspectRatio="xMinYMin meet" data-day-band></svg></div>' +
@@ -647,13 +666,13 @@ export function mount(host, opts) {
         box.setAttribute('height',Math.max(2,G.mapY(lo)-G.mapY(hi)));
         box.setAttribute('opacity',1);
         if(!idx.length){ ro.innerHTML='<span class="gone">'
-          +W.brushEmpty(t.name, Math.round(lo)+'–'+Math.round(hi)+'%')+'</span>'; return; }
+          +WORDS.brushEmpty(t.name, Math.round(lo)+'–'+Math.round(hi)+'%')+'</span>'; return; }
         const med=a=>{const b=a.slice().sort((x,y)=>x-y);return b[Math.floor(b.length/2)]};
         const others = T.map((o,oi)=>{ if(oi===k) return null;
           const vs=idx.map(i=>topOf(o,i)).filter(v=>v!=null);
-          return vs.length ? W.brushMedian(o.name, '<b>'+Math.round(med(vs))+'%</b>') : W.brushNone(o.name);
+          return vs.length ? WORDS.brushMedian(o.name, '<b>'+Math.round(med(vs))+'%</b>') : WORDS.brushNone(o.name);
         }).filter(Boolean);
-        ro.innerHTML=W.brushHead('<b>'+t.name+' '+Math.round(lo)+'–'+Math.round(hi)+'%</b>',
+        ro.innerHTML=WORDS.brushHead('<b>'+t.name+' '+Math.round(lo)+'–'+Math.round(hi)+'%</b>',
           idx.length, (idx.length*BUCKET_MIN/60).toFixed(1))+others.join(' &nbsp; ');
       };
       hit.addEventListener('mousemove',ev=>brush(at(ev)));
@@ -688,6 +707,9 @@ export function mount(host, opts) {
     const b = ev.target.closest('button[data-day-view-pick]');
     if (!b) return;
     st.view = b.dataset.dayViewPick;
+    //   **This one is an arrival**, so it plays the entrance — see
+    //   `nofx` in the stylesheet and in `update` below.
+    host.classList.remove('nofx');
     drawSwitch();
     render();                                    // st.cur / st.pin kept
   });
@@ -698,13 +720,19 @@ export function mount(host, opts) {
   ro_.observe(ch);
   return {
     update(day, words) {
-      W = words;
+      WORDS = words;
       N = Math.max(1, day.buckets.length);
       BUCKET_MS = day.bucket_ms;
       BUCKET_MIN = day.bucket_ms / 60000;
       T0 = day.now_ms - day.bucket_ms * N;
       st.series = toTracks(day, words);
       if (st.cur !== null && st.cur >= N) st.cur = N - 1;
+      //   **Only the first answer is an arrival.** Every one after it
+      //   is the same figure with a newer number in it, and replaying
+      //   the entrance for those left the drawing fading in more often
+      //   than it stood still — see `nofx` in the stylesheet.
+      if (!st.first) host.classList.add('nofx');
+      st.first = false;
       drawSwitch();
       st.W = 0;                                  // force a redraw at the same width
       render();
