@@ -1840,8 +1840,15 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
     if (id === null) return;
     let stopped = false;
     let timer = 0;
+    // **Whether this is the ask a press caused.** The effect restarts
+    // when the ordering changes, so the first ask of a run is the one
+    // somebody asked for and every ask after it is the beat — see where
+    // this is read, below.
+    let pressed = true;
     const ask = async () => {
       let wait = LOAD_MS;
+      const reorder = pressed;
+      pressed = false;
       try {
         // A name, not an id: the node resolves machines by the name its
         // table knows them by, and its own by being asked for itself
@@ -1854,7 +1861,29 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
         // answer rather than a re-sort of the busiest 200 by CPU.
         const l = await fetchLoad(me ? "" : name, TOP_LIMIT, sort.col, sort.dir === "down");
         if (stopped) return;
-        setLoad(l);
+        // **A press re-orders the table and touches nothing else.**
+        // 2026-09-04:「表点一些 sorting 方式,趋势和 CPU、GPU、内存都在
+        // 变。不应该这样」.
+        //
+        // One ask carries both the rows and the day, so the answer to
+        // 「order these by memory」 arrives with a *newer day* attached
+        // — a different `now_ms`, and with it a redrawn chart. Nothing
+        // about the last 24 hours changed; the reader asked for the
+        // rows to move and the figure under them moved too.
+        //
+        // Measured against a control, because 「it changed after I
+        // clicked」 and 「it changes anyway」 look identical on a live
+        // machine: five presses rebuilt the chart 5/5 times, five waits
+        // of the same length without a press rebuilt it 1/5 — the beat.
+        // (**The dials came out 3/5 either way**, which is how it was
+        // settled that their numbers moving is the beat and not the
+        // press. They are drawn from `row.vitals`, which this ask never
+        // touches.)
+        //
+        // So a press keeps the day already on screen, and the next beat
+        // brings a new one. There is no old day to keep on the first
+        // ask for a machine, and none is wanted — `id` cleared it.
+        setLoad((was) => (reorder && was ? { ...l, cpu_day: was.cpu_day } : l));
         setShown({ col: sort.col, dir: sort.dir });
         setWhy(null);
         if (l.top.some((r) => r.run_secs != null)) setAges(true);

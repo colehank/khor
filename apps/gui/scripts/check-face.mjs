@@ -371,6 +371,21 @@ try {
   // 「the table did not move while the answer was out」 an assertion
   // with two distinguishable states rather than a wish.
   const held = { on: false, release: null, seen: 0 };
+  //   **The window moves between answers, because on a real node it
+  //   does.** `load.cpu_day.now_ms` is stamped once when this object is
+  //   built, and a fixture that hands out the same instant forever
+  //   cannot show a chart being redrawn for a newer one — which is the
+  //   whole of the 「a press must not move the day」 section below.
+  //   Written without this, that section passed with its fix removed:
+  //   an assertion resting on a constant (`index.html`'s
+  //   `group_totals`, the first of the false greens in this repo's
+  //   ledger).
+  //
+  //   A second per answer: enough to be a different instant, small
+  //   enough that the window's hour marks and its 「yesterday」 label
+  //   are the ones every other section here was written against.
+  let served = 0;
+  const dayNow = () => ({ ...load, cpu_day: { ...load.cpu_day, now_ms: load.cpu_day.now_ms + served++ * 1000 } });
   await page.route("**/load", async (r) => {
     if (r.request().postDataJSON().machine === "elder") {
       return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(ELDER_REFUSAL) });
@@ -383,16 +398,18 @@ try {
     // states — without it every ordering answers with the same rows and
     // an implementation that reads the column set off the rows passes.
     if (r.request().postDataJSON().by === "pid") {
-      const bare = { ...load, top: load.top.map((t) => ({ ...t, gpu_pct: null, gpu_mem: null, run_secs: null })) };
+      const fresh = dayNow();
+      const bare = { ...fresh, top: fresh.top.map((t) => ({ ...t, gpu_pct: null, gpu_mem: null, run_secs: null })) };
       return r.fulfill({ contentType: "application/json", body: JSON.stringify(bare) });
     }
     if (held.on) {
       held.seen += 1;
       await new Promise((ok) => (held.release = ok));
-      const flipped = { ...load, top: [...load.top].reverse() };
+      const fresh = dayNow();
+      const flipped = { ...fresh, top: [...fresh.top].reverse() };
       return r.fulfill({ contentType: "application/json", body: JSON.stringify(flipped) });
     }
-    return r.fulfill({ contentType: "application/json", body: JSON.stringify(load) });
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(dayNow()) });
   });
   // The shell polls sessions, devices and hooks in one Promise.all —
   // one rejection drops the whole batch, so the third leg answers too.
@@ -2185,6 +2202,84 @@ try {
       }
     }
   }
+  //     ── a press orders the rows and moves nothing else ───────────
+  //
+  //     2026-09-04:「表点一些 sorting 方式,趋势和 CPU、GPU、内存都在变。
+  //     不应该这样」. One ask carries the rows *and* the day, so the
+  //     answer to 「order by memory」 came back with a newer `now_ms`
+  //     and the 24-hour figure was rebuilt under a reader who had asked
+  //     for nothing of the sort.
+  //
+  //     **Node identity, not content.** The fixture's day is the same
+  //     numbers every time, so a redrawn chart draws the same picture —
+  //     an assertion on what it *says* passes straight through the bug.
+  //     What changes is that every node is a new one, so the probe
+  //     marks a cell and looks for that mark afterwards. (The mark
+  //     survives a React re-render; it does not survive the module
+  //     rebuilding the figure, which is the thing being caught.)
+  //
+  //     ⚠️ **And the rows must actually move**, or this is a section
+  //     about a table that ignored every press.
+  {
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    await wait(300);
+    const heads = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-machine-card] [data-top-heads] > *")]
+        .map((h) => h.dataset.topHead)
+        .filter(Boolean),
+    );
+    if (heads.length < 4) {
+      fail(`probe dead: ${heads.length} column heads, so 「a press moves nothing else」 was not measured`);
+    } else {
+      let moved = 0;
+      let kept = true;
+      for (const h of heads) {
+        const before = await page.evaluate(() => {
+          const cell = document.querySelector("[data-machine-card] [data-day-cell]");
+          if (cell) cell.setAttribute("data-probe-tag", "1");
+          return {
+            marked: !!cell,
+            dials: [...document.querySelectorAll("[data-machine-card] [data-dial]")]
+              .map((d) => `${d.dataset.dial}=${d.innerText.replace(/\s+/g, "")}`)
+              .join("|"),
+            rows: [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
+          };
+        });
+        if (!before.marked) {
+          fail("probe dead: no day cell to mark, so nothing was watched across the press");
+          break;
+        }
+        await page.locator(`[data-machine-card] [data-top-head="${h}"] button`).click();
+        await wait(900);
+        const after = await page.evaluate(() => ({
+          kept: !!document.querySelector('[data-machine-card] [data-day-cell][data-probe-tag="1"]'),
+          dials: [...document.querySelectorAll("[data-machine-card] [data-dial]")]
+            .map((d) => `${d.dataset.dial}=${d.innerText.replace(/\s+/g, "")}`)
+            .join("|"),
+          rows: [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
+        }));
+        if (!after.kept) {
+          kept = false;
+          fail(`pressing 「${h}」 rebuilt the 24-hour figure — the reader asked for the rows to move, not the chart`);
+          break;
+        }
+        if (after.dials !== before.dials) {
+          fail(`pressing 「${h}」 changed the dials — they are drawn from the machine's vitals, which an ordering does not touch`);
+          break;
+        }
+        if (after.rows !== before.rows) moved += 1;
+      }
+      if (moved === 0) {
+        fail(`probe dead: ${heads.length} presses and the rows never changed, so 「and nothing else moved」 measured a table that ignores its heads`);
+      }
+      //   Reports what it saw; it does not state the finding. The
+      //   first draft ended 「untouched by all of them」 and printed
+      //   that verbatim on the run where the very first press had just
+      //   failed.
+      console.log(`sorting: ${heads.length} heads, rows re-ordered on ${moved}, day rebuilt by ${kept ? 0 : "a press"}`);
+    }
+  }
+
   const peerGpus = devs.find((d) => d.name === "peer").vitals.vitals.gpus;
   //     ── nothing overflows sideways, at any width ─────────────────
   //
