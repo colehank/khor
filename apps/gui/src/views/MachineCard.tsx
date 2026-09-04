@@ -1313,28 +1313,25 @@ function Top({
         data-norun={onAges ? undefined : ""}
         className="text-sm tabular-nums"
       >
-        <div data-top-heads className="sticky top-0 bg-card text-aux text-muted-foreground">
-          {/* **The order the user named**: what you type, what it is,
-              then the quantities with the two GPU ones beside the CPU
-              rather than after the memory that has nothing to do with
-              them. */}
+        <div data-top-heads className="bg-card text-aux text-muted-foreground">
+          {/* **The order the user named** (2026-09-04:「表头的顺序是:
+              PID、时长、CPU、GPU、内存、显存,命令这样」): the pid you
+              type next, then how long it has been up, then the
+              quantities — the two GPU ones beside the CPU rather than
+              after the memory that has nothing to do with them — and
+              **「命令」 last**.
+
+              **Last is what makes the table fill without a canyon.**
+              「命令」 is the only column whose content has no bound, so
+              it is the one the leftover width goes to; while it sat
+              second, that width opened **between the name and the
+              numbers** — measured 700+px on turing at 1500, which is
+              the same visual event as the 799px hole this card was
+              rebuilt to remove. At the end, the same slack lands inside
+              it and runs to the table's own right edge, and no two
+              columns are pushed apart at all. */}
           <Column col="pid" sort={sort} asking={asking} onPress={press} align="right">
             {cli.top_pid}
-          </Column>
-          {/* **One column, 「命令」** (2026-09-04:「表的进程和命令合并
-              为一列,就叫命令」). It was two — the short name, then the
-              identifying word beside it — and they are one thing said
-              in two places: the word only ever means anything *next to*
-              the name it disambiguates (three rows called `python3`,
-              one of them `api_server`). Two columns put a gap between
-              them and made the second one look like a separate fact.
-
-              **It sorts, and it sorts by the name** — see `head` on
-              `Column`. What it cannot sort by is the word: that would
-              need a `TopBy` older nodes refuse, and nobody asks 「order
-              these by their arguments」. */}
-          <Column col="name" head="cmd" sort={sort} asking={asking} onPress={press} align="left">
-            {cli.top_cmd}
           </Column>
           {onAges && (
             <Column col="time" sort={sort} asking={asking} onPress={press} align="right">
@@ -1349,13 +1346,28 @@ function Top({
               {cli.vitals_name_gpu}
             </Column>
           )}
+          <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
+            {cli.vitals_name_mem}
+          </Column>
           {onCards && (
             <Column col="vram" sort={sort} asking={asking} onPress={press} align="right">
               {cli.vitals_name_vram}
             </Column>
           )}
-          <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
-            {cli.vitals_name_mem}
+          {/* **One column, 「命令」** (2026-09-04:「表的进程和命令合并
+              为一列,就叫命令」). It was two — the short name, then the
+              identifying word beside it — and they are one thing said
+              in two places: the word only ever means anything *next to*
+              the name it disambiguates (three rows called `python3`,
+              one of them `api_server`). Two columns put a gap between
+              them and made the second one look like a separate fact.
+
+              **It sorts, and it sorts by the name** — see `head` on
+              `Column`. What it cannot sort by is the word: that would
+              need a `TopBy` older nodes refuse, and nobody asks 「order
+              these by their arguments」. */}
+          <Column col="name" head="cmd" sort={sort} asking={asking} onPress={press} align="left">
+            {cli.top_cmd}
           </Column>
         </div>
         {why ? (
@@ -1379,7 +1391,6 @@ function Top({
               <span data-c="pid" className="whitespace-nowrap text-left text-muted-foreground">
                 {r.pid}
               </span>
-              <Cut name={r.name} arg={r.arg} />
               {onAges && (
                 <span data-c="time" data-top-time className="whitespace-nowrap text-right">
                   {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
@@ -1393,14 +1404,17 @@ function Top({
                   {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
                 </span>
               )}
+              <span data-c="mem" className="whitespace-nowrap text-right">
+                {bytes(r.mem)}
+              </span>
               {onCards && (
                 <span data-c="vram" data-top-vram className="whitespace-nowrap text-right">
                   {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
                 </span>
               )}
-              <span data-c="mem" className="whitespace-nowrap text-right">
-                {bytes(r.mem)}
-              </span>
+              {/* Last, and it takes the table's leftover width — see
+                  the head. */}
+              <Cut name={r.name} arg={r.arg} />
             </div>
           ))
         )}

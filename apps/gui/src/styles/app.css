@@ -543,26 +543,26 @@ input[type="search"]::-webkit-search-decoration {
   display: grid;
   column-gap: var(--gap-in);
   grid-template-columns:
-    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
-    var(--cw-run) var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
+    var(--cw-pid) var(--cw-run) var(--cw-cpu) var(--cw-gpu) var(--cw-mem) var(--cw-vram)
+    minmax(var(--cw-cmd), 1fr);
 }
 /* **A column the machine cannot fill does not exist**, and the track
    goes with it: a machine with no card would otherwise carry two empty
    columns, which reads as "khor looked and found nothing". */
 [data-load-top][data-nogpu] {
   grid-template-columns:
-    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
-    var(--cw-run) var(--cw-cpu) var(--cw-mem);
+    var(--cw-pid) var(--cw-run) var(--cw-cpu) var(--cw-mem)
+    minmax(var(--cw-cmd), 1fr);
 }
 [data-load-top][data-norun] {
   grid-template-columns:
-    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
-    var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
+    var(--cw-pid) var(--cw-cpu) var(--cw-gpu) var(--cw-mem) var(--cw-vram)
+    minmax(var(--cw-cmd), 1fr);
 }
 [data-load-top][data-nogpu][data-norun] {
   grid-template-columns:
-    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
-    var(--cw-cpu) var(--cw-mem);
+    var(--cw-pid) var(--cw-cpu) var(--cw-mem)
+    minmax(var(--cw-cmd), 1fr);
 }
 [data-load-top] [data-top-row],
 [data-load-top] [data-top-heads] {
