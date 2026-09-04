@@ -1452,13 +1452,95 @@ function Top({
  * `null` on either axis **is not drawn** — see `Scatter`.
  */
 const AXES = {
-  cpu: { word: () => cli.vitals_name_cpu, of: (r: Load["top"][number]) => r.cpu_pct, tick: (v: number) => `${Math.round(v)}%` },
+  //   **The tick keeps its significant figures.** `Math.round` was
+  //   enough while every axis was a square root — its ticks are even
+  //   fractions of the maximum, so the small ones are still whole
+  //   percents. On a log axis the ticks are even fractions of the
+  //   *axis*, and the first few land at 0.03%, 0.2%, 1.3% — measured on
+  //   this Mac, where they came out as four ticks all reading 「0%」.
+  cpu: {
+    word: () => cli.vitals_name_cpu,
+    of: (r: Load["top"][number]) => r.cpu_pct,
+    tick: (v: number) => `${v >= 10 || v === 0 ? Math.round(v) : v < 1 ? v.toFixed(2) : v.toFixed(1)}%`,
+  },
   mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number) => bytes(v) },
   vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number) => bytes(v) },
   time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000) },
 } as const;
 type AxisKey = keyof typeof AXES;
 const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
+
+/**
+ * **How one axis turns a reading into a position, and which ruler it
+ * had to use to do it.**
+ *
+ * 2026-09-04:「因 X 或 y scale 不一无法绘制出有意义的图的时候,用 log 或
+ * 什么方法非线性的绘制呀」.
+ *
+ * # The measurement that decides, so it is not switched unconditionally
+ *
+ * `max / median`. Under a square root a ratio `R` puts the median at
+ * `1/√R` of the axis, so **`R > 44` is exactly 「half the points are in
+ * the first 15%」** — the shape of a picture that answers nothing. It is
+ * measured on the readings actually being drawn, not assumed from the
+ * quantity: on the live fleet CPU comes out 400–1600 on all three
+ * machines, while 内存 is 16 / 34 / 52 and 时长 is 5.5 / 803 / 10.3.
+ * **Two of the four are degenerate on one machine and not on another**,
+ * which is why the ruler is printed on the axis rather than assumed.
+ *
+ * A median of 0 is `R = ∞` and takes the log branch: half the readings
+ * at zero is the worst case of the same problem, and √ cannot separate
+ * the other half either.
+ *
+ * # Why `log1p` of a ratio, and not `log`
+ *
+ * **`log 0` is undefined and 0 is the commonest value in this table**
+ * (three machines' CPU medians are 0.02 / 1.6 / 0.12 against maxima in
+ * the tens and thousands, and plenty of rows read exactly 0). `log1p`
+ * is defined there and **`log1p(0) = 0`, so zero is drawn at zero** —
+ * no `v + 1` fudge, no ruler whose labels lie about where they sit.
+ *
+ * The argument is `v / s`, not `v`: `log1p` only compresses above 1, so
+ * on a quantity whose values are all below 1 (CPU percent) it is
+ * indistinguishable from linear. `s` is the **smallest positive reading
+ * on this axis** — the data's own resolution — floored at `max / 1e6`
+ * so a single tiny outlier cannot stretch the ruler. Measured with it,
+ * the three machines' CPU medians land at 0.219 / 0.221 / 0.176 of the
+ * axis instead of 0.025 / 0.027 / 0.05.
+ *
+ * # Ticks
+ *
+ * **On the square root the ticks are even fractions of the value** and
+ * the transform decides where they sit, so they crowd towards the top —
+ * and that crowding is the evidence that the ruler is not linear.
+ *
+ * **On the log they are even fractions of the axis** and the *labels*
+ * come out uneven (0, 0.03%, 0.2%, 1.3%, 8%, 47%). The same evidence,
+ * on the other channel, and it has to be that way round here: even
+ * value fractions on a log axis put every tick but the first in the top
+ * fifth, leaving the stretch where all the points are unlabelled.
+ * Either way **a tick's label is a real reading**, never a transformed
+ * number.
+ */
+function ruler(vals: number[]): { kind: "sqrt" | "log"; at: (v: number) => number; tick: (f: number) => number } {
+  const max = Math.max(1e-9, ...vals);
+  const sorted = [...vals].sort((a, b) => a - b);
+  const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const wide = !(med > 0) || max / med > 44;
+  if (!wide) {
+    return { kind: "sqrt", at: (v) => Math.sqrt(Math.max(0, v) / max), tick: (f) => max * f };
+  }
+  const pos = vals.filter((v) => v > 0);
+  const s = Math.max(pos.length ? Math.min(...pos) : max / 1e6, max / 1e6);
+  const span = Math.log1p(max / s);
+  return {
+    kind: "log",
+    at: (v) => Math.log1p(Math.max(0, v) / s) / span,
+    // The value whose position is `f` — so the label is a real reading
+    // and the tick is where that reading belongs.
+    tick: (f) => (Math.exp(f * span) - 1) * s,
+  };
+}
 
 /**
  * Which pair of axes the scatter is drawn against — **one pair for
@@ -1608,29 +1690,73 @@ function Scatter({ rows }: { rows: Load["top"] }) {
     .map((r) => ({ r, x: ax.of(r), y: ay.of(r) }))
     .filter((p): p is { r: Load["top"][number]; x: number; y: number } => p.x !== null && p.y !== null);
   const off = rows.length - placed.length;
-  const maxX = Math.max(1, ...placed.map((p) => p.x));
-  const maxY = Math.max(1, ...placed.map((p) => p.y));
+  const rx = ruler(placed.map((p) => p.x));
+  const ry = ruler(placed.map((p) => p.y));
   const vrams = rows.map((r) => r.gpu_mem).filter((v): v is number => v !== null && v > 0);
   const maxVram = vrams.length > 0 ? Math.max(...vrams) : 0;
   const RMAX = 11;
   const halo = (v: number) => (maxVram > 0 ? RMAX * Math.sqrt(v / maxVram) : 0);
-  const sx = (v: number) => padL + Math.sqrt(Math.max(0, v) / maxX) * (W - padL - padR);
-  const sy = (v: number) => H - padB - Math.sqrt(Math.max(0, v) / maxY) * (H - padT - padB);
+  const sx = (v: number) => padL + rx.at(v) * (W - padL - padR);
+  const sy = (v: number) => H - padB - ry.at(v) * (H - padT - padB);
   // **Ticks at round fractions of the real value**, placed where the
   // root puts them — so they crowd together towards the right, and
   // that crowding is itself the evidence that the ruler is not linear.
   // An axis that looks evenly spaced while a transform hides underneath
   // is the one that misleads.
-  const ticks = [0, 1, 2, 3, 4, 5, 6].map((k) => k / 6);
+  const steps = [0, 1, 2, 3, 4, 5, 6].map((k) => k / 6);
   const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
   return (
-    <div data-top-plot data-plot-axes={`${axes.x}x${axes.y}`} className="flex flex-col gap-in">
+    <div
+      data-top-plot
+      data-plot-axes={`${axes.x}x${axes.y}`}
+      data-plot-scale-x={rx.kind}
+      data-plot-scale-y={ry.kind}
+      className="flex flex-col gap-in"
+    >
       <div ref={box} className="h-44 w-full">
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
           <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
-          {ticks.map((f) => {
-            const v = maxX * f;
+          {/* **Which ruler each axis is on, written on the axis.**
+              Whether a reading needs the log one is decided from that
+              machine's own numbers (see `ruler`), so the same pair can
+              be two different rulers on two machines — and then 「the
+              same position」 means two different things. This is the
+              only honest way out of that: say it, on the axis, where
+              somebody reading a position is already looking.
+
+              **Both of them, not only the one that changed.** Marking
+              only the exception asks the reader to know that no mark
+              means a square root, which is a rule nobody taught them. */}
+          {/* Inside the plot and just off each axis's far end, because
+              outside it the tick labels are already there: the x mark
+              landed on the last percentage and the y mark on the top
+              byte figure (measured, and visible in a screenshot as
+              「5|3%」 and a ruler word through 「606.8M」). */}
+          <text
+            data-plot-ruler="x"
+            x={W - padR}
+            y={H - padB - 5}
+            fontSize={9}
+            textAnchor="end"
+            fill="currentColor"
+            fillOpacity={0.4}
+          >
+            {rx.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
+          </text>
+          <text
+            data-plot-ruler="y"
+            x={padL + 4}
+            y={padT + 7}
+            fontSize={9}
+            textAnchor="start"
+            fill="currentColor"
+            fillOpacity={0.4}
+          >
+            {ry.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
+          </text>
+          {steps.map((f) => {
+            const v = rx.tick(f);
             return (
               <g key={`x${f}`} data-plot-tick-x={Math.round(v * 10) / 10}>
                 <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
@@ -1640,8 +1766,8 @@ function Scatter({ rows }: { rows: Load["top"] }) {
               </g>
             );
           })}
-          {ticks.map((f) => {
-            const v = maxY * f;
+          {steps.map((f) => {
+            const v = ry.tick(f);
             return (
               <g key={`y${f}`} data-plot-tick-y={Math.round(v)}>
                 <line x1={padL - 3} y1={sy(v)} x2={padL} y2={sy(v)} stroke="currentColor" strokeOpacity={0.3} />

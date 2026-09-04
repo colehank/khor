@@ -3328,6 +3328,121 @@ try {
     }
   }
 
+  //     ── the ruler is chosen, said, and lands zero at zero ────────
+  //
+  //     2026-09-04:「因 X 或 y scale 不一无法绘制出有意义的图的时候,用
+  //     log 或什么方法非线性的绘制呀」.
+  //
+  //     Four things, and each is one of the ways this could be done
+  //     wrong:
+  //
+  //       - **it is decided by measurement, not always on.** A log axis
+  //         on data that did not need one is its own distortion, so a
+  //         quantity whose spread the square root handles must stay on
+  //         the square root;
+  //       - **zero is at zero.** `log 0` is undefined and 0 is the
+  //         commonest value in this table; a ruler that fudged it with
+  //         `v + 1` would put every reading slightly off the place its
+  //         own label claims;
+  //       - **the ruler is written on the axis.** Whether it is needed
+  //         depends on that machine's numbers, so two machines can be
+  //         two rulers — and then a position means two things unless it
+  //         is said;
+  //       - **the log actually spreads them.** The whole point is the
+  //         crowding, and 「we changed the maths」 is not evidence that
+  //         it helped.
+  {
+    const read = () =>
+      page.evaluate(() => {
+        const plot = document.querySelector("[data-machine-card] [data-top-plot]");
+        if (!plot) return null;
+        const pts = [...plot.querySelectorAll("[data-plot-point]")].map((g) => ({
+          x: Number(g.dataset.plotX),
+          y: Number(g.dataset.plotY),
+        }));
+        let close = 0;
+        for (let i = 0; i < pts.length; i += 1) {
+          for (let j = i + 1; j < pts.length; j += 1) {
+            if (Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) < 6) close += 1;
+          }
+        }
+        return {
+          pair: plot.dataset.plotAxes,
+          sx: plot.dataset.plotScaleX,
+          sy: plot.dataset.plotScaleY,
+          said: [...plot.querySelectorAll("[data-plot-ruler]")].map((t) => `${t.dataset.plotRuler}:${t.textContent}`).join(" "),
+          n: pts.length,
+          close,
+          //   Where the x axis's zero tick sits, and where the leftmost
+          //   point sits. On a ruler that put zero anywhere else the
+          //   two would not meet.
+          zeroTickX: (() => {
+            const g = [...plot.querySelectorAll("[data-plot-tick-x]")].find((n) => Number(n.dataset.plotTickX) === 0);
+            return g ? +(+g.querySelector("line").getAttribute("x1")).toFixed(2) : null;
+          })(),
+          minPointX: pts.length ? Math.min(...pts.map((p) => p.x)) : null,
+          //   Where the axis itself starts — the vertical rule at the
+          //   plot's left edge. `at(0)` has to land exactly there, and
+          //   comparing the zero tick with the *points* would not show
+          //   it: both come from the same transform, so a ruler shifted
+          //   off its origin moves them together.
+          axisX: (() => {
+            const lines = [...plot.querySelectorAll("svg > line")];
+            const v = lines.find((l) => l.getAttribute("x1") === l.getAttribute("x2"));
+            return v ? +(+v.getAttribute("x1")).toFixed(2) : null;
+          })(),
+        };
+      });
+    const pick = async (which, key) => {
+      await page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${key}"]`).click();
+      await wait(300);
+    };
+    await pick("x", "cpu");
+    await pick("y", "mem");
+    const now = await read();
+    if (!now) {
+      fail("probe dead: no plot, so nothing about its rulers was measured");
+    } else {
+      if (!/x:/.test(now.said) || !/y:/.test(now.said)) {
+        fail(`the plot does not say which ruler each axis is on (${JSON.stringify(now.said)}) — two machines can be two rulers`);
+      }
+      //   **Both rulers have to be reachable in one run**, or the
+      //   choosing is not being tested — only whichever one this
+      //   fixture happens to want.
+      const seen = new Set([now.sx, now.sy]);
+      const crowd = { [`${now.pair} ${now.sx}×${now.sy}`]: `${now.close}/${now.n}` };
+      await pick("y", "time");
+      const onTime = await read();
+      seen.add(onTime.sx).add(onTime.sy);
+      crowd[`${onTime.pair} ${onTime.sx}×${onTime.sy}`] = `${onTime.close}/${onTime.n}`;
+      if (seen.size < 2) {
+        fail(
+          `every axis in this fixture came out on the same ruler (${[...seen].join(",")}) — ` +
+            `「it is chosen by measurement」 was not tested, only 「it is always this one」`,
+        );
+      }
+      //   **Zero at zero.** The `0` tick and the leftmost point have to
+      //   agree; a `log(v+1)` ruler puts the tick where `log 1` is and
+      //   the point somewhere else.
+      if (now.zeroTickX === null || now.axisX === null) {
+        fail(`probe dead: no zero tick (${now.zeroTickX}) or no axis line (${now.axisX}), so 「zero is at zero」 measured nothing`);
+      } else {
+        if (Math.abs(now.zeroTickX - now.axisX) > 0.6) {
+          fail(
+            `the reading 0 is drawn at x=${now.zeroTickX} while the axis begins at ${now.axisX} — ` +
+              `a ruler that cannot put zero at its own origin (log(v+1) is the usual way in) has labels that lie about where they sit`,
+          );
+        }
+        if (now.minPointX !== null && now.minPointX < now.axisX - 0.6) {
+          fail(`a point sits at x=${now.minPointX}, left of the axis at ${now.axisX}`);
+        }
+      }
+      console.log(`plot rulers: ${Object.entries(crowd).map(([k, v]) => `${k} ${v} crowded`).join(", ")}, said 「${now.said}」`);
+      await pick("y", "mem");
+      await wait(200);
+    }
+  }
+
   //     ── the two axes are the reader's, and changing one changes ──
   //        the picture, the ruler and the sentence together
   //
