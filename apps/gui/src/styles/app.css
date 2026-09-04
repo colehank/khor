@@ -593,6 +593,24 @@ input[type="search"]::-webkit-search-decoration {
   background: var(--card);
 }
 
+/* **The heads have to read as heads.** 2026-09-04:「表头要明显,现在看起来
+   就是上面的散点图的 X 和 y 设置是下面表的表头」 — two rows of small muted
+   words, one under the other, and nothing saying which belonged to what.
+   The separation between the two blocks is `[data-top-seam]` in the
+   markup; this is the other half, the head standing up on its own.
+
+   **Weight and ink and one hairline, and that is all.** No ground, no
+   box: the same restraint as everywhere else on this card, and the same
+   two channels the rail and the reading words use. The rule under the
+   heads is what a table's head has always been — it says 「everything
+   below this line is rows」 — and it doubles as the edge the rows slide
+   under while the heads stay put. */
+[data-load-top] [data-top-heads] > * {
+  color: var(--foreground);
+  font-weight: var(--font-weight-title);
+  box-shadow: inset 0 calc(-1 * var(--hair)) 0 0 var(--border);
+}
+
 /* **Nothing in this table wraps.** 2026-09-04:「表的内容,比如"内存"是不
    允许换行的」. A cell that runs out of room truncates and puts up the
    bordered mark; it does not become two lines.

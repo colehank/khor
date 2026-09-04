@@ -2566,6 +2566,85 @@ try {
     console.log(`bandwidth 390→1200 by 10: ${bad.length} widths flagged (sideways overflow or a cell on two lines)`);
   }
 
+  //     ── the heads read as heads, and not as the figure's foot ────
+  //
+  //     2026-09-04:「表头要明显,现在看起来就是上面的散点图的 X 和 y 设置
+  //     是下面表的表头」. Two rows of small muted words, one under the
+  //     other, with nothing between them: the reader joins them, and
+  //     「横 CPU 内存 显存 时长」 is read as the columns of the table.
+  //
+  //     Two things, and either alone leaves the complaint standing: the
+  //     head has to **look different from the rows under it**, and the
+  //     table has to be **visibly separated from the figure above it**.
+  {
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    await wait(300);
+    const look = await page.evaluate(() => {
+      const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
+      const cell = document.querySelector("[data-machine-card] [data-top-row] > *");
+      const pick = document.querySelector("[data-machine-card] [data-plot-pick]");
+      const seam = document.querySelector("[data-machine-card] [data-top-seam]");
+      if (!head || !cell) return null;
+      const cs = (n) => getComputedStyle(n);
+      return {
+        headWeight: +cs(head).fontWeight,
+        rowWeight: +cs(cell).fontWeight,
+        headColor: cs(head).color,
+        rowColor: cs(cell).color,
+        //   The rule under the heads, and the one above the table.
+        headRule: cs(head).boxShadow,
+        seamRule: seam ? +parseFloat(cs(seam).borderTopWidth || "0") : null,
+        //   How far the table's head sits from the figure's foot,
+        //   against how far two rows sit from each other. A break has
+        //   to be bigger than the rhythm it is breaking.
+        pickToHead:
+          pick && head
+            ? +(head.getBoundingClientRect().top - pick.getBoundingClientRect().bottom).toFixed(1)
+            : null,
+        rowPitch: (() => {
+          const rows = [...document.querySelectorAll("[data-machine-card] [data-top-row]")].slice(0, 2);
+          if (rows.length < 2) return null;
+          return +(
+            rows[1].firstElementChild.getBoundingClientRect().top - rows[0].firstElementChild.getBoundingClientRect().top
+          ).toFixed(1);
+        })(),
+      };
+    });
+    if (!look) {
+      fail("probe dead: no column head or no row, so 「the heads read as heads」 measured nothing");
+    } else {
+      //   **Heavier, darker, or both — and something must differ.** A
+      //   head set exactly like the rows is the thing complained about.
+      if (look.headWeight <= look.rowWeight && look.headColor === look.rowColor) {
+        fail(
+          `the column heads are set like the rows (weight ${look.headWeight} vs ${look.rowWeight}, ` +
+            `ink ${look.headColor}) — nothing on screen says which line is the head`,
+        );
+      }
+      if (!look.headRule || look.headRule === "none") {
+        fail("the column heads carry no rule under them — the line that says 「rows start here」 is missing");
+      }
+      if (!(look.seamRule > 0)) {
+        fail(
+          `the table is not separated from the figure above it (seam rule ${look.seamRule}) — ` +
+            `the scatter's axis words and the table's head are two rows of small text with nothing between them, ` +
+            `and they get read as one`,
+        );
+      }
+      if (look.pickToHead !== null && look.rowPitch !== null && look.pickToHead < look.rowPitch * 1.5) {
+        fail(
+          `the figure's axis words sit ${look.pickToHead}px above the table's head where a row is ${look.rowPitch}px tall — ` +
+            `a break has to be bigger than the rhythm it breaks`,
+        );
+      }
+      console.log(
+        `heads: weight ${look.rowWeight}→${look.headWeight}, ink ${look.rowColor}→${look.headColor}, ` +
+          `rule under them ${look.headRule !== "none"}, seam ${look.seamRule}px, ` +
+          `axis words ${look.pickToHead}px above the head against a ${look.rowPitch}px row`,
+      );
+    }
+  }
+
   //     ── the column heads do not go with the rows ─────────────────
   //
   //     2026-09-04:「拖动进程列表的时候,表头要悬浮,不要被拖走,这种基础

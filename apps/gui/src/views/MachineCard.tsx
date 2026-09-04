@@ -1198,7 +1198,23 @@ function Busy({
   return (
     <Panel>
       <Scatter rows={load.top} />
-      <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} cards={cards} ages={ages} />
+      {/* **A rule between the figure and the table** (2026-09-04:
+          「现在看起来就是上面的散点图的 X 和 y 设置是下面表的表头」).
+          The scatter's foot is a row of small words and so is the
+          table's head; with nothing between them the reader joins them,
+          and 「横 CPU 内存 显存 时长」 reads as the columns below.
+
+          A hairline and `--gap-group` on both sides, not two cards:
+          they are one block — the same two hundred processes, drawn and
+          then listed — and splitting them would say they are two
+          subjects. **`--gap-group` is the token whose whole definition
+          is this case** (「between groups that must not read as one
+          list」); `--gap-row` was tried first and measured 25px against
+          an 18px row, which is a break narrower than twice the rhythm
+          it is breaking. */}
+      <div data-top-seam className="mt-group border-t pt-group">
+        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} cards={cards} ages={ages} />
+      </div>
     </Panel>
   );
 }
