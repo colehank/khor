@@ -2203,6 +2203,30 @@ try {
     if (grew.role !== "button" || grew.tab !== "0") {
       fail(`a cut cell is role=${grew.role} tabindex=${grew.tab} — the keyboard cannot reach it`);
     }
+    //   **And the table is still a table while it is open.** The first
+    //   version made the open cell span every column, which pushed the
+    //   rest of that row onto the next grid line and took every row
+    //   below it with them — the whole table came apart, while the
+    //   assertion above (「it grew, then it shrank」) stayed true. So:
+    //   open one, and check the columns still line up.
+    const whileOpen = await page.evaluate(async () => {
+      const c = document.querySelector('[data-machine-card] [data-c="cmd"][data-cut]');
+      c.click();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const lefts = [
+        ...new Set(
+          [...document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="pid"]')].map(
+            (n) => +n.getBoundingClientRect().left.toFixed(1),
+          ),
+        ),
+      ];
+      c.click();
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      return lefts;
+    });
+    if (whileOpen.length !== 1) {
+      fail(`with a cell open the PID column has ${whileOpen.length} left edges (${whileOpen.slice(0, 4).join(",")}) — the grid came apart`);
+    }
   }
 
   //     ── the drawer: one height, and three straight edges ─────────

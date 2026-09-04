@@ -973,9 +973,15 @@ function Bar({ pct, strain }: { pct: number | null; strain: Strain | null }) {
   // (seen on the real face before this — the track swallowed the row
   // and the bars overlapped each other). So the cell is a full-height
   // box and the track is a hairline centred inside it.
+  //
+  // **`data-part-bar` stays on the cell**, not on the track: the narrow
+  // layout moves this whole cell to a line of its own, and a selector
+  // written for the row's direct child stops matching the moment the
+  // attribute moves a level down — which is how the bars disappeared at
+  // 390 the first time this was split.
   return (
-    <span className="flex w-full items-center">
-      <span data-part-bar className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+    <span data-part-bar className="flex w-full items-center">
+      <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
         {pct !== null && (
           <span
             data-part-ink
@@ -1252,7 +1258,7 @@ function Top({
               <span data-c="name" className="min-w-0 truncate">
                 {r.name}
               </span>
-              <Cut text={r.arg} cells={cells} />
+              <Cut text={r.arg} />
               {onAges && (
                 <span data-c="time" data-top-time className="whitespace-nowrap text-right">
                   {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
@@ -1430,7 +1436,7 @@ function Scatter({ rows }: { rows: Load["top"] }) {
  * (decoration) and miss cells that do not (a silent truncation), and
  * both errors look fine on the machine of whoever wrote the guess.
  */
-function Cut({ text, cells }: { text: string | null; cells: number }) {
+function Cut({ text }: { text: string | null }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [over, setOver] = useState(false);
   const [open, setOpen] = useState(false);
@@ -1473,8 +1479,14 @@ function Cut({ text, cells }: { text: string | null; cells: number }) {
             }
           : undefined
       }
+      // **Opening wraps inside this column; it does not span the
+      //     table.** Spanning was the first version and it pushed every
+      //     following cell of that row into the next grid line — the
+      //     whole table below the opened cell came apart (seen in a
+      //     screenshot; the assertion that the cell grew and shrank was
+      //     perfectly happy, because it was true). The row grows in
+      //     height instead, and the columns stay where they are.
       className={cn("flex min-w-0 items-baseline gap-in text-muted-foreground", cut && "cursor-pointer")}
-      style={open ? { gridColumn: `span ${cells}` } : undefined}
     >
       <span ref={ref} className={cn("min-w-0", open ? "break-all" : "truncate")}>
         {text}
