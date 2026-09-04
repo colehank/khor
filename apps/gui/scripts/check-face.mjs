@@ -2410,7 +2410,11 @@ try {
       let below = 0;
       for (const row of open.querySelectorAll("[data-part]")) {
         const cell = row.firstElementChild;
-        if (cell && cell.getBoundingClientRect().top >= bottom - 1) below += 1;
+        // Same rule as the hook: a row clipped by the edge is below.
+        // (Writing the assertion with the *other* rule would have
+        // agreed with the bug — which is what happened first time, and
+        // why a screenshot caught it instead of this.)
+        if (cell && cell.getBoundingClientRect().bottom > bottom + 1) below += 1;
       }
       const note = drawer.querySelector("[data-drawer-more]");
       return { below, says: note ? Number(note.dataset.drawerMore) : 0, overflows: scroller.scrollHeight - scroller.clientHeight > 1 };

@@ -55,7 +55,12 @@ export function useHiddenRows(ref: RefObject<HTMLElement | null>, deps: unknown)
       for (const row of node.querySelectorAll("[data-part]")) {
         const cell = row.firstElementChild;
         if (!cell) continue;
-        if (cell.getBoundingClientRect().top >= bottom - 1) below += 1;
+        // **Not fully visible counts as below.** A row clipped in half
+        // by the box's edge is half a row you cannot read, and dragging
+        // is what brings it up — counting it as 「visible」 undercounts
+        // exactly what the note is offering (seen on the real face:
+        // the note said 1 while two rows were out of sight).
+        if (cell.getBoundingClientRect().bottom > bottom + 1) below += 1;
       }
       setHidden(below);
     };
