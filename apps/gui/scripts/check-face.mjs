@@ -2237,26 +2237,12 @@ try {
       if (rest.showing !== "day") fail(`the card opens showing ${rest.showing} — with no ring pressed the slot is the day's`);
       if (rest.on !== 0) fail(`${rest.on} ring names are marked as open on a card where nothing is open`);
       const seen = [rest];
-      let drawerFloors = null;
       const onCpu = await press("cpu");
       seen.push(onCpu);
       if (onCpu.showing !== "cpu") fail(`pressing CPU left the slot showing ${onCpu.showing}`);
       if (onCpu.on !== 1) fail(`${onCpu.on} ring names are marked with the CPU drawer open — exactly the open one says so`);
       const onMem = await press("mem");
       seen.push(onMem);
-      //   Measured **while a drawer is the thing in the slot** — asked
-      //   after the slot went back to the day it answers `null`, which
-      //   is not「the drawers are fine」, it is「nobody looked」.
-      drawerFloors = await page.evaluate(() => {
-        const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
-        const drawer = slot?.querySelector("[data-drawer]");
-        const open = drawer?.querySelector("[data-parts]:not([hidden])");
-        if (!open) return null;
-        const rows = [...open.querySelectorAll("[data-part]")];
-        if (!rows.length) return { rows: 0 };
-        const last = Math.max(...rows.map((r) => Math.max(...[...r.children].map((c) => c.getBoundingClientRect().bottom))));
-        return { which: drawer.dataset.drawer, rows: rows.length, gap: +(slot.getBoundingClientRect().bottom - last).toFixed(1) };
-      });
       if (onMem.showing !== "mem") fail(`pressing 内存 while CPU was open left the slot showing ${onMem.showing}`);
       const back = await press("mem");
       seen.push(back);
@@ -2290,33 +2276,122 @@ try {
       if (rows.length !== 1 || rows[0] === 0) {
         fail(`the drawers hold ${rows.join("/")} rows depending on which is open — closed groups are hidden, never unmounted`);
       }
-      //   **How much room each drawer leaves under its last row, printed
-      //   and not asserted — and that is a judgment, not an omission.**
+      //   **Every drawer's air, and it has to be shared not parked.**
+      //   2026-09-04:「不要满足最高高度,而导致部分图下面空掉了」 was
+      //   said of the three readings; the drawers share that slot and
+      //   had it worse. Measured on the fleet before the fix: the GPU
+      //   drawer's last row sat **152px** above the floor on a machine
+      //   with one card, 磁盘 121px with two volumes, against 13px for
+      //   the six-row ones.
       //
-      //   The three readings are held to the floor (see 「all three
-      //   readings end where the slot ends」). The drawers are not, and
-      //   the numbers are here so anybody can overrule that with data:
-      //   measured 2026-09-04, the CPU and 内存 drawers stop 13px above
-      //   the floor (they are six rows and scroll), while GPU stops 125
-      //   on turing and 152 on this Mac, and 磁盘 94 and 121.
+      //   ⚠️ **This section used to print those numbers and assert
+      //   nothing**, on the argument that a list's bottom edge is where
+      //   its items ran out and is a different fact from a drawing's.
+      //   That argument was overruled by the person reading the screen,
+      //   and he was right about what it produced: ink at the top and a
+      //   void under it is the same picture whatever is drawing it.
       //
-      //   Why they are not stretched to close that:
+      //   **The check is symmetry, not zero, and that is the decision
+      //   this replaces the argument with.** Six rows fill the box and
+      //   touch both its edges; one card cannot — there is nothing left
+      //   to stretch but the air. What was complained about is air at
+      //   one end, so what is asked is that there is as much above as
+      //   below. Measured after: 0/0 for the six-row drawers, 34.8/34.8
+      //   for two cards, 78.5/78.5 for one.
       //
-      //     - **a drawing's bottom edge is the drawing**, and one that
-      //       stops early reads as one that failed; **a list's bottom
-      //       edge is where its items ran out**, and the room under it
-      //       is where the next one would go. Two different facts, read
-      //       differently.
-      //     - the row pitch is a **density** (`--drawer-row`), measured
-      //       against the process table above it. Spreading two cards
-      //       over the whole box gives the same reading a different
-      //       density on two machines — and 「三台机器并排读」 is the
-      //       property this card keeps being rebuilt to protect.
-      //     - anchoring cannot switch on the count without a jump: a
-      //       machine that gains a volume would have its list snap from
-      //       centred to top.
-      if (!drawerFloors) fail("probe dead: the drawer's floor was never measured — nothing was in the slot when it was asked");
-      console.log(`drawer floor: ${JSON.stringify(drawerFloors)} — printed, not asserted; see the note above it`);
+      //   **All four, not whichever one the presses above left open** —
+      //   the short ones are the only ones that can fail this, and a
+      //   six-row drawer passes it for free.
+      const air = [];
+      for (const k of ["cpu", "gpu", "mem", "disk"]) {
+        const dial = page.locator(`[data-machine-card] [data-dial="${k}"]`).first();
+        if (!(await dial.count())) continue;
+        if ((await dial.getAttribute("data-open")) !== "true") await dial.click();
+        await wait(350);
+        const one = await page.evaluate(() => {
+          const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
+          const drawer = slot?.querySelector("[data-drawer]");
+          const open = drawer?.querySelector("[data-parts]:not([hidden])");
+          if (!open || drawer.hidden) return null;
+          const rows = [...open.querySelectorAll("[data-part]")];
+          if (!rows.length) return { which: drawer.dataset.drawer, rows: 0 };
+          const cells = rows.flatMap((r) => [...r.children]).map((c) => c.getBoundingClientRect());
+          const body = open.closest("[data-drawer-scroll]") ?? open;
+          return {
+            which: drawer.dataset.drawer,
+            rows: rows.length,
+            gap: +(slot.getBoundingClientRect().bottom - Math.max(...cells.map((r) => r.bottom))).toFixed(1),
+            headGap: +(Math.min(...cells.map((r) => r.top)) - body.getBoundingClientRect().top).toFixed(1),
+          };
+        });
+        if (one && one.rows > 0) air.push(one);
+      }
+      // Leave the slot back on the day, which is where this section found it.
+      {
+        const openDial = page.locator('[data-machine-card] [data-dial][data-open="true"]').first();
+        if (await openDial.count()) await openDial.click();
+        await wait(300);
+      }
+      //   ⚠️ **Prove the detector can see lopsided air before trusting
+      //   it.** In this fixture every drawer fills its box outright
+      //   (0/0 four times), so the assertion below has nothing to catch
+      //   here — the shape it is for needs a machine with one card,
+      //   which the fleet has and this data does not. So: make one
+      //   drawer huddle its rows at the top, check it is reported, put
+      //   it back. Same reading as the check, deliberately.
+      {
+        const dial = page.locator('[data-machine-card] [data-dial="gpu"]').first();
+        const has = (await dial.count()) > 0;
+        if (has && (await dial.getAttribute("data-open")) !== "true") await dial.click();
+        await wait(350);
+        const bent = await page.evaluate(() => {
+          const open = document.querySelector("[data-machine-card] [data-parts]:not([hidden])");
+          if (!open) return null;
+          open.style.alignContent = "start";
+          open.style.gridAutoRows = "min-content";
+          const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
+          const rows = [...open.querySelectorAll("[data-part]")];
+          const cells = rows.flatMap((r) => [...r.children]).map((c) => c.getBoundingClientRect());
+          const body = open.closest("[data-drawer-scroll]") ?? open;
+          const out = {
+            gap: +(slot.getBoundingClientRect().bottom - Math.max(...cells.map((r) => r.bottom))).toFixed(1),
+            headGap: +(Math.min(...cells.map((r) => r.top)) - body.getBoundingClientRect().top).toFixed(1),
+          };
+          open.style.removeProperty("align-content");
+          open.style.removeProperty("grid-auto-rows");
+          return out;
+        });
+        const openDial = page.locator('[data-machine-card] [data-dial][data-open="true"]').first();
+        if (await openDial.count()) await openDial.click();
+        await wait(300);
+        if (!bent) fail("probe dead: no drawer to bend, so 「the air is shared」 was never shown to be checkable");
+        else if (Math.abs(bent.headGap - bent.gap) <= 1) {
+          fail(
+            `probe dead: a drawer forced to huddle its rows at the top reported ${bent.headGap} above and ${bent.gap} below — ` +
+              `the check below cannot fail`,
+          );
+        }
+      }
+      if (air.length < 2) {
+        fail(`probe dead: only ${air.length} drawers had rows to measure, so 「the air is shared」 was not tested`);
+      } else {
+        const parked = air.filter((a) => Math.abs(a.headGap - a.gap) > 1);
+        if (parked.length) {
+          const w = parked[0];
+          fail(
+            `the ${w.which} drawer leaves ${w.headGap}px above its ${w.rows} rows and ${w.gap}px below — ` +
+              `the slack is parked at one end, which is the strip of nothing the fixed slot was for`,
+          );
+        }
+        //   Probe alive: at least one of them is short enough that it
+        //   *could* have been lopsided. A run where every drawer
+        //   overflowed would pass this without testing it.
+        if (!air.some((a) => a.gap > 1)) {
+          console.log(`drawer air: ${air.map((a) => `${a.which} ${a.rows}r ${a.headGap}/${a.gap}`).join(", ")} — every drawer filled its box outright`);
+        } else {
+          console.log(`drawer air: ${air.map((a) => `${a.which} ${a.rows}r ${a.headGap}/${a.gap}`).join(", ")}`);
+        }
+      }
       console.log(
         `ring slot: opens on ${rest.showing}, slot ${heights.join("/")} tall and what is under it at ${belows.join("/")} across ` +
           `[${seen.map((x) => x.showing).join(" → ")}], first line ${JSON.stringify(firsts[0])}, ${rows[0]} rows in the document throughout`,
