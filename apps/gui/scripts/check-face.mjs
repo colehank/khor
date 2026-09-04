@@ -2720,10 +2720,40 @@ try {
         );
       }
     };
+    //   **And no bucket overlaps the next one.** The fill is
+    //   semi-transparent, so an overlap paints twice and reads as a
+    //   darker stripe: at 390 the plot is 244 pixels for 288 buckets,
+    //   and a one-pixel floor on each bucket's width combed the whole
+    //   row (seen on the real face, invisible to every count and every
+    //   bounding box). Exact tiling is the only arrangement in which
+    //   the ink means the value.
+    const tiles = async (where) => {
+      const bad = await page.evaluate(() => {
+        const row = document.querySelector('[data-machine-card] [data-day-row="cpu"]');
+        if (!row) return null;
+        const r = [...row.querySelectorAll("[data-day-shade]")].map((n) => ({
+          x: Number(n.getAttribute("x")),
+          w: Number(n.getAttribute("width")),
+        }));
+        if (r.length < 2) return null;
+        let worst = 0;
+        for (let i = 1; i < r.length; i += 1) worst = Math.max(worst, r[i - 1].x + r[i - 1].w - r[i].x);
+        return { worst, n: r.length };
+      });
+      if (!bad) return fail(`probe dead: no cpu buckets to check for overlap at ${where}`);
+      if (bad.worst > 0.01) {
+        fail(
+          `at ${where} a bucket overlaps the next by ${bad.worst.toFixed(2)}px — a semi-transparent fill painted twice is a ` +
+            `darker stripe, and the ink is supposed to be the value`,
+        );
+      }
+    };
     await fits(`${wide.width}`);
+    await tiles(`${wide.width}`);
     await page.setViewportSize({ width: 390, height: wide.height });
     await new Promise((r) => setTimeout(r, 400));
     await fits("390");
+    await tiles("390");
     await page.setViewportSize(wide);
     await new Promise((r) => setTimeout(r, 400));
   }

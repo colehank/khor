@@ -2100,7 +2100,19 @@ function Heat({
                     className={shadeKey(t.key, b) === "strain" ? "day-strain" : `day-r${bandOf(b)}`}
                     x={px(i)}
                     y={y}
-                    width={Math.max(1, px(i + 1) - px(i))}
+                    // **A bucket the ruler has no room for is drawn
+                    // zero wide, not one wide.** At 390 the plot is 244
+                    // pixels for 288 buckets, so `px(i)` and `px(i+1)`
+                    // land on the same integer for most of them — and a
+                    // floor of 1 there makes each of those overlap its
+                    // neighbour by a whole pixel. The fill is
+                    // semi-transparent, so an overlap paints *twice*:
+                    // the row came out combed with darker stripes at
+                    // the beat frequency between 0.847 and 1 (seen on
+                    // the real face at 390). Tiling exactly means some
+                    // buckets have no pixel of their own, which is what
+                    // 244 pixels for 288 buckets actually means.
+                    width={Math.max(0, px(i + 1) - px(i))}
                     height={g.CH}
                   >
                     <title>{`${Math.round(b)}%`}</title>
