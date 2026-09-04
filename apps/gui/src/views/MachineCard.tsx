@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { DeviceRow, HooksState, Load, Strain } from "@/api";
 import { fetchLoad } from "@/api";
@@ -1374,10 +1374,70 @@ function Top({
 }
 
 /**
- * Every process as a point: **CPU across, memory up**, card memory as
- * the halo around it.
+ * The four quantities either axis of the scatter can be, and how each
+ * one is read off a row and written on a tick.
  *
- * # Why these two axes on every machine
+ * **The same four the table has columns for** (2026-09-04:「表要可以
+ * 设定 x 和 y 轴」), because those are the quantities a person is
+ * already looking at when they decide they want to see two of them
+ * against each other.
+ *
+ * `of` returns `null` for 「did not read」, and a row that answers
+ * `null` on either axis **is not drawn** — see `Scatter`.
+ */
+const AXES = {
+  cpu: { word: () => cli.vitals_name_cpu, of: (r: Load["top"][number]) => r.cpu_pct, tick: (v: number) => `${Math.round(v)}%` },
+  mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number) => bytes(v) },
+  vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number) => bytes(v) },
+  time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000) },
+} as const;
+type AxisKey = keyof typeof AXES;
+const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
+
+/**
+ * Which pair of axes the scatter is drawn against — **one pair for
+ * every machine**, which is why it is not `useState` inside the card.
+ *
+ * A card unmounts when somebody opens a different machine, so state
+ * kept in it would reset to the default on every hop, and three cards
+ * read side by side would be three different pictures. **A silent
+ * change of axis is the widest door to a misreading there is** and this
+ * component's own history is the proof: the pair before this one fell
+ * back to memory on a machine with no card, and nothing said so.
+ *
+ * Deliberately not persisted to disk. It is a way of looking, not a
+ * setting, and it costs one press to get back.
+ */
+const axesStore = {
+  pair: { x: "cpu" as AxisKey, y: "mem" as AxisKey },
+  subs: new Set<() => void>(),
+  get() {
+    return this.pair;
+  },
+  set(next: { x: AxisKey; y: AxisKey }) {
+    if (next.x === this.pair.x && next.y === this.pair.y) return;
+    this.pair = next;
+    this.subs.forEach((f) => f());
+  },
+  subscribe(f: () => void) {
+    this.subs.add(f);
+    return () => {
+      this.subs.delete(f);
+    };
+  },
+};
+function useAxes() {
+  return useSyncExternalStore(
+    (f) => axesStore.subscribe(f),
+    () => axesStore.get(),
+  );
+}
+
+/**
+ * Every process as a point, on **two axes the reader picks**, with card
+ * memory as the halo around it.
+ *
+ * # Why the pair defaults to CPU and memory
  *
  * The pair this replaced was CPU against card memory, and it had two
  * faults that only show on a real fleet. On turing the two axes were
@@ -1388,8 +1448,45 @@ function Top({
  * memory: **a silent change of axis, which is the widest door to a
  * misreading there is.**
  *
- * CPU and memory exist for every process on every machine. So the three
- * cards can be read side by side, and every row is on the picture.
+ * CPU and memory exist for every process on every machine, so as a
+ * default the three cards can be read side by side and every row is on
+ * the picture. **The reader may now choose otherwise, and that is not
+ * the same thing**: a chosen axis is on screen in the foot, and the
+ * count of rows it left out is printed beside it. What was forbidden is
+ * the app changing an axis on its own.
+ *
+ * # A row with nothing to say on an axis is not drawn at zero
+ *
+ * 显存 and 时长 are not readings every process has. Measured on the
+ * live fleet: **200 of 200 rows on Mac-mini and on hinton carry no card
+ * memory at all, and 3 of 200 do on turing.** Drawing those at 0 would
+ * put 「没看到」 exactly where 「最小的那个」 goes, which is the
+ * neighbouring-value mistake this whole card is shaped to avoid. So
+ * they are left out — **and the number left out is printed**, because a
+ * picture missing two thirds of its points and a machine that is idle
+ * look identical.
+ *
+ * # One ruler for all four
+ *
+ * Square root, on whichever quantity is chosen. **Not because √ centres
+ * these distributions — it does not** — but because the alternative is
+ * a ruler that changes with the axis, which is the silent change again.
+ * Measured 2026-09-04, where the median lands along a √ axis:
+ *
+ *     axis     Mac-mini   hinton   turing
+ *     CPU         0.025    0.027    0.05
+ *     内存        0.171    0.249    0.139
+ *     时长        0.426    0.035    0.311
+ *
+ * 时长 is the one worth checking, since it spans five orders of
+ * magnitude — and it comes out **no worse than CPU**, the axis this
+ * picture already shipped with. (Linear, for comparison, puts CPU's
+ * median at 0.0006.)
+ *
+ * `√` and not `log` is structural rather than a matter of taste:
+ * **`log 0` is undefined and 「0」 is the commonest value here.** A log
+ * axis has to be `log(v+1)`, and then the ruler is no longer the one
+ * its own labels claim. `√0 = 0`, so zero is drawn at zero.
  *
  * # Card memory is the halo, and area is the encoding
  *
@@ -1399,6 +1496,13 @@ function Top({
  * can check on the spot that the two are told apart rather than taking
  * it on faith.
  *
+ * **The halo stays 显存 even when 显存 is one of the axes.** It then
+ * says one thing twice, which is redundant and harmless. The two
+ * alternatives are not: swapping the halo to some other quantity, or
+ * dropping it, would both be **the app changing an encoding without
+ * being asked** — the exact failure this component's first version was
+ * rewritten for.
+ *
  * **Three states, three appearances, never merged**: memory on the card
  * draws a halo; exactly zero draws a dashed ring (「looked, it is
  * zero」); nothing to read draws nothing at all (「did not look」). The
@@ -1407,6 +1511,7 @@ function Top({
  */
 function Scatter({ rows }: { rows: Load["top"] }) {
   const box = useRef<HTMLDivElement>(null);
+  const axes = useAxes();
   // **The picture is drawn in real pixels, not in a stretched box.**
   // It used to carry `preserveAspectRatio="none"`, which stretches the
   // viewBox to the element — and a circle under a non-uniform stretch
@@ -1429,26 +1534,22 @@ function Scatter({ rows }: { rows: Load["top"] }) {
   const padB = 22;
   const padT = 12;
   const padR = 14;
-  const maxCpu = Math.max(1, ...rows.map((r) => r.cpu_pct));
-  const maxMem = Math.max(1, ...rows.map((r) => Number(r.mem)));
+  const ax = AXES[axes.x];
+  const ay = AXES[axes.y];
+  // **The rows this picture can actually place.** Both readings, or the
+  // row is not on it — see the head.
+  const placed = rows
+    .map((r) => ({ r, x: ax.of(r), y: ay.of(r) }))
+    .filter((p): p is { r: Load["top"][number]; x: number; y: number } => p.x !== null && p.y !== null);
+  const off = rows.length - placed.length;
+  const maxX = Math.max(1, ...placed.map((p) => p.x));
+  const maxY = Math.max(1, ...placed.map((p) => p.y));
   const vrams = rows.map((r) => r.gpu_mem).filter((v): v is number => v !== null && v > 0);
   const maxVram = vrams.length > 0 ? Math.max(...vrams) : 0;
   const RMAX = 11;
   const halo = (v: number) => (maxVram > 0 ? RMAX * Math.sqrt(v / maxVram) : 0);
-  // **A square-root scale on both axes, and not a log one.** The
-  // readings here are wildly skewed — measured on the live fleet, the
-  // median process uses 0.0% / 0.2% / 1.3% of a core against maxima of
-  // 18 / 43 / 89 — so on a linear axis almost every point lands in one
-  // corner and the picture answers nothing.
-  //
-  // The reason it is `√` rather than `log` is structural, not a matter
-  // of which looked better: **`log 0` is undefined, and 「0%」 is the
-  // commonest value in this table.** A log axis has to be `log(v+1)`,
-  // and then the ruler is no longer the one its own labels claim —
-  // a tick saying 0.8% sits where `log(1.008)` puts it. `√0 = 0`, so
-  // zero is drawn at zero and not one row is dropped or nudged.
-  const sx = (v: number) => padL + Math.sqrt(Math.max(0, v) / maxCpu) * (W - padL - padR);
-  const sy = (v: number) => H - padB - Math.sqrt(Math.max(0, v) / maxMem) * (H - padT - padB);
+  const sx = (v: number) => padL + Math.sqrt(Math.max(0, v) / maxX) * (W - padL - padR);
+  const sy = (v: number) => H - padB - Math.sqrt(Math.max(0, v) / maxY) * (H - padT - padB);
   // **Ticks at round fractions of the real value**, placed where the
   // root puts them — so they crowd together towards the right, and
   // that crowding is itself the evidence that the ruler is not linear.
@@ -1457,36 +1558,36 @@ function Scatter({ rows }: { rows: Load["top"] }) {
   const ticks = [0, 1, 2, 3, 4, 5, 6].map((k) => k / 6);
   const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
   return (
-    <div data-top-plot className="flex flex-col gap-in">
+    <div data-top-plot data-plot-axes={`${axes.x}x${axes.y}`} className="flex flex-col gap-in">
       <div ref={box} className="h-44 w-full">
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
           <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           {ticks.map((f) => {
-            const v = maxCpu * f;
+            const v = maxX * f;
             return (
               <g key={`x${f}`} data-plot-tick-x={Math.round(v * 10) / 10}>
                 <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
                 <text x={sx(v)} y={H - padB + 14} fontSize={10} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
-                  {`${Math.round(v)}%`}
+                  {ax.tick(v)}
                 </text>
               </g>
             );
           })}
           {ticks.map((f) => {
-            const v = maxMem * f;
+            const v = maxY * f;
             return (
               <g key={`y${f}`} data-plot-tick-y={Math.round(v)}>
                 <line x1={padL - 3} y1={sy(v)} x2={padL} y2={sy(v)} stroke="currentColor" strokeOpacity={0.3} />
                 <text x={padL - 6} y={sy(v) + 3} fontSize={10} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
-                  {bytes(v)}
+                  {ay.tick(v)}
                 </text>
               </g>
             );
           })}
-          {rows.map((r) => {
-            const cx = sx(r.cpu_pct);
-            const cy = sy(Number(r.mem));
+          {placed.map(({ r, x, y }) => {
+            const cx = sx(x);
+            const cy = sy(y);
             return (
               <g key={r.pid} data-plot-point={r.pid} data-plot-x={Math.round(cx * 10) / 10} data-plot-y={Math.round(cy * 10) / 10}>
                 {r.gpu_mem !== null && r.gpu_mem > 0 && (
@@ -1512,16 +1613,22 @@ function Scatter({ rows }: { rows: Load["top"] }) {
                   />
                 )}
                 <circle cx={cx} cy={cy} r={1.8} fill="currentColor" fillOpacity={0.75}>
-                  <title>{`${r.name} ${Math.round(r.cpu_pct)}% ${bytes(r.mem)}`}</title>
+                  <title>{`${r.name} ${ax.tick(x)} ${ay.tick(y)}`}</title>
                 </circle>
               </g>
             );
           })}
         </svg>
       </div>
-      <div className="flex justify-between gap-row text-aux text-muted-foreground">
-        <span>
-          {cli.vitals_name_cpu} × {cli.vitals_name_mem}
+      <div className="flex flex-wrap items-baseline justify-between gap-row text-aux text-muted-foreground">
+        <span className="flex flex-wrap items-baseline gap-in">
+          <AxisPick which="x" label={cli.top_plot_x} chosen={axes.x} onPick={(k) => axesStore.set({ ...axes, x: k })} />
+          <span aria-hidden="true">·</span>
+          <AxisPick which="y" label={cli.top_plot_y} chosen={axes.y} onPick={(k) => axesStore.set({ ...axes, y: k })} />
+          {/* **Not optional.** See the head: a picture that quietly
+              dropped two thirds of its rows draws the same as an idle
+              machine. */}
+          {off > 0 && <span data-plot-off={off}>{cli.top_plot_off(off)}</span>}
         </span>
         {two.length === 2 && (
           <span data-plot-foot className="tabular-nums">
@@ -1535,6 +1642,56 @@ function Scatter({ rows }: { rows: Load["top"] }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** One axis's four candidates, as four words.
+ *
+ * **Weight and ink, and nothing else** — no ground, no border, no
+ * capsule. The same writing as the 24-hour block's three reading words,
+ * for the same reason: these are not three places, they are one place
+ * looked at differently, and a control drawn as a tab says the first of
+ * those. */
+function AxisPick({
+  which,
+  label,
+  chosen,
+  onPick,
+}: {
+  which: "x" | "y";
+  label: string;
+  chosen: AxisKey;
+  onPick: (k: AxisKey) => void;
+}) {
+  return (
+    <span data-plot-pick={which} className="flex items-baseline gap-in">
+      <span>{label}</span>
+      {/* **The floor is on the hit area, not on the word.** Each of
+          these is 44 tall and 44 wide to a finger while the ink stays
+          the footnote's size — the same arrangement as the 24-hour
+          block's three reading words (`day.css`, `.sw button`), and
+          the reason the gap between them is zero: at the floor's width
+          they are already far enough apart, and a gap on top of it
+          would spread eight words across half the card. */}
+      <span className="flex items-baseline gap-0">
+        {AXIS_KEYS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            data-plot-axis={k}
+            data-on={k === chosen ? "true" : "false"}
+            aria-pressed={k === chosen}
+            onClick={() => onPick(k)}
+            className={cn(
+              "inline-flex min-h-touch min-w-touch items-center justify-center px-in hover:text-foreground",
+              k === chosen ? "font-title text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {AXES[k].word()}
+          </button>
+        ))}
+      </span>
+    </span>
   );
 }
 

@@ -2887,6 +2887,125 @@ try {
     }
   }
 
+  //     ── the two axes are the reader's, and changing one changes ──
+  //        the picture, the ruler and the sentence together
+  //
+  //     2026-09-04:「表要可以设定 x 和 y 轴」. Four candidates on each
+  //     axis, the four quantities the table has columns for.
+  //
+  //     **Three things have to move together, and each of them alone
+  //     would pass on a broken build:**
+  //
+  //       - the *ticks*, because a picture redrawn against a new
+  //         quantity under the old ruler's labels is the worst thing
+  //         this chart could do;
+  //       - the *points*, because ticks alone can be relabelled while
+  //         every dot stays where it was;
+  //       - the *word*, because the foot is the only place the picture
+  //         says what it is of.
+  //
+  //     **And the rows that have no reading on an axis must be absent,
+  //     not at zero.** 显存 is the case that matters: measured on the
+  //     live fleet, 200 of 200 rows carry no card memory on two of the
+  //     three machines. Drawn at zero they would pile on the origin and
+  //     read as 「two hundred processes using none of the card」, which
+  //     is the neighbouring-value mistake. So: fewer points, and a foot
+  //     that says how many fewer.
+  {
+    const read = () =>
+      page.evaluate(() => {
+        const plot = document.querySelector("[data-machine-card] [data-top-plot]");
+        if (!plot) return null;
+        return {
+          pair: plot.dataset.plotAxes,
+          xTicks: [...plot.querySelectorAll("[data-plot-tick-x] text")].map((t) => t.textContent).join(","),
+          yTicks: [...plot.querySelectorAll("[data-plot-tick-y] text")].map((t) => t.textContent).join(","),
+          points: plot.querySelectorAll("[data-plot-point]").length,
+          xs: [...plot.querySelectorAll("[data-plot-point]")].map((g) => g.dataset.plotX).join(","),
+          chosen: [...plot.querySelectorAll('[data-plot-axis][data-on="true"]')].map((b) => b.dataset.plotAxis).join(","),
+          off: plot.querySelector("[data-plot-off]")?.dataset.plotOff ?? null,
+          words: [...plot.querySelectorAll("[data-plot-pick] [data-plot-axis]")].length,
+        };
+      });
+    const pick = async (which, key) => {
+      await page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${key}"]`).click();
+      await wait(250);
+    };
+    const start = await read();
+    if (!start || start.words !== 8) {
+      fail(`probe dead: the plot offers ${start ? start.words : 0} axis words, not two sets of four`);
+    } else {
+      if (start.pair !== "cpuxmem") fail(`the plot opens on ${start.pair} — the pair every machine can be read against is cpu×mem`);
+      await pick("y", "time");
+      const onTime = await read();
+      if (onTime.yTicks === start.yTicks) {
+        fail(`picking 时长 left the vertical ruler reading ${start.yTicks} — the labels are the old quantity's`);
+      }
+      if (onTime.xs === start.xs) fail("picking 时长 moved no point — the ruler changed and the picture did not");
+      if (onTime.chosen !== "cpu,time") fail(`the foot says the axes are ${onTime.chosen} after picking 时长`);
+      //   **A quantity most rows do not have.** The fixture's rows carry
+      //   `gpu_mem` on some and `null` on the rest, which is the shape
+      //   the fleet has.
+      await pick("x", "vram");
+      const onVram = await read();
+      if (onVram.points >= start.points) {
+        fail(
+          `on 显存 the plot still draws ${onVram.points} of ${start.points} points — ` +
+            `a row with no card reading is being placed, and the only place to put it is zero`,
+        );
+      }
+      const off = Number(onVram.off ?? -1);
+      if (off !== start.points - onVram.points) {
+        fail(
+          `${start.points - onVram.points} rows were left off the picture and the foot says ${onVram.off} — ` +
+            `a chart quietly missing its rows draws the same as an idle machine`,
+        );
+      }
+      //   **The pair survives the card going away and coming back.**
+      //   Kept in the module rather than in the card for exactly this:
+      //   three cards read one after another must be three pictures of
+      //   the same thing.
+      //
+      //   ⚠️ **Leaving the pane, not just opening another machine.**
+      //   React keeps the card mounted when the machine changes under
+      //   it — same component, same position — so `useState` inside it
+      //   survives that too, and the first version of this assertion
+      //   passed with the shared store swapped out for local state.
+      //   Going to the sessions landing and back is what actually
+      //   unmounts it.
+      await open("sessions");
+      await wait(200);
+      await open("devices");
+      //   Row 1, not row 2: row 2 is the machine that refuses to answer
+      //   `load`, so it draws no plot at all and the read below comes
+      //   back `null` — which is how this assertion first came to be
+      //   skipped rather than run.
+      await pressNth("[data-list] [data-row-open]", 1);
+      await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) === 1);
+      const elsewhere = await read();
+      //   `null` is not 「fine」 — it is 「there was no plot to ask」,
+      //   and a guard that skips on it is a section that stops being
+      //   evaluated the day the navigation drifts.
+      if (!elsewhere) {
+        fail("probe dead: no plot after leaving the pane and coming back, so 「the pair survives」 measured nothing");
+      } else if (elsewhere.chosen !== "vram,time") {
+        fail(`the axes came back as ${elsewhere.chosen} after leaving the pane — the pair belongs to the reader, not to one card`);
+      }
+      await open("devices");
+      await pressNth("[data-list] [data-row-open]", 1);
+      await until(5_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) === 1);
+      await pick("x", "cpu");
+      await pick("y", "mem");
+      const back = await read();
+      if (back.chosen !== "cpu,mem") fail(`the axes could not be put back (${back.chosen})`);
+      //   Reports; does not conclude. (Third time this batch.)
+      console.log(
+        `plot axes: cpu×mem ${start.points} points → cpu×时长 ruler ${onTime.yTicks.slice(0, 24)}… → ` +
+          `显存×时长 ${onVram.points} points with ${onVram.off} said to be off; after leaving the pane ${elsewhere ? elsewhere.chosen : "no plot"}`,
+      );
+    }
+  }
+
   //     ── the process table: PID, and marks that were measured ─────
   //
   //     **PID is on every row at every width, and its ink starts at the
