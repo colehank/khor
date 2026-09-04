@@ -285,7 +285,10 @@ vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
 # section it headed: a volume's row is its own mount point spelled out,
 # and a heading over one row is a word that names nothing the row does
 # not (2026-09-03「就写 /Volumes/disk0 就可以」).
-day-trend = "24 小时趋势"
+# **`day-trend` 撤掉了,没有替代键**(2026-09-04)。那块图搬进四个环下面那个槽
+# 之后,槽顶上那一行是它的三个读法词;再放一个标题要么把词挤出去、要么把图压下去。
+# 而它说的那件事本来就不必说:一块画着 CPU/GPU/内存/磁盘 四行、横轴是钟点、右端
+# 写着「现在」的图,不需要一句话告诉人它是「24 小时趋势」。
 # The chart's own rows. Four readings, each on its own baseline
 # (2026-09-03:「GPU、CPU、Mem、Disk 都绘制」): four lines in one frame
 # cross, and a crossing is a place where two numbers become one shape.
@@ -345,10 +348,10 @@ day-peak = "24 小时峰值 {0}"
 uptime-days = "已运行 {0} 天"
 uptime-hours = "已运行 {0} 小时"
 updated-at = "更新于 {0}"
-# The day chart's left end when it falls on the previous calendar day —
-# which a whole day always does, so "13:19 → 13:19" would read as a bug
-# where it is exactly twenty-four hours.
-yesterday-at = "昨天 {0}"
+# **`yesterday-at` 撤掉了,没有替代键**(2026-09-04)。它是那块图上面
+# 「昨天 15:34 → 15:34」里的「昨天」。整句一起删的:**窗口是画在轴上的**——
+# 每三小时一个整点刻度,右端一个「现在」——再用一句话复述一遍,是同一个事实说
+# 两遍,而复述的那一遍是会过期的那一遍。
 # 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"

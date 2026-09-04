@@ -621,7 +621,36 @@
    * and a mask says 「there is more below」 as a material effect rather
    * than as a fact. */
   --drawer-row: 27px;
-  --drawer-h: calc(var(--drawer-row) * 4 + 46px);
+  /* **The slot under the four rings**, which the 24-hour figure and
+   * whichever drawer is open both live in (2026-09-04:「上环下趋势,合成
+   * 一个模块」). One height for both, because a slot that resized would
+   * make the whole card jump every time somebody pressed a ring — and
+   * pressing rings is what this block is for.
+   *
+   * **Set by the tallest thing it has to hold**, which is the parallel
+   * figure (叠放). Measured on the real face, the three readings' own
+   * parts:
+   *
+   *     reading   drawing   readout   words   + margin   total
+   *     热力带         92        14      44          6     156
+   *     山脊          108        14      44          6     172
+   *     叠放          153        14      44          6     217
+   *
+   * plus this block's own rule and the room under it (13), so 230 is
+   * the floor and 232 is it with two pixels of slack. 热力带 then
+   * leaves 76 under it, which is the price of one height — and the
+   * price of the other choice is the whole card moving under a press.
+   *
+   * ⚠️ **The readout's 6px `margin-top` is in that table on purpose.**
+   * It is not in `getBoundingClientRect().height`, and leaving it out
+   * is how the first number here came out 224: every reading fitted
+   * except 叠放, which overflowed by exactly six.
+   *
+   * The old `--drawer-h` is gone with it: it was a height written for a
+   * block that stood on its own (four rows plus its heading), and the
+   * drawer does not decide its own height any more. */
+  --slot-head-h: var(--touch);
+  --slot-h: 232px;
   /* The three columns every part row shares. Named widths rather than
    * content sizing, because the point of the grid is that the bar's two
    * edges are **one value each** down the whole list — 「对齐」 has to
@@ -1135,7 +1164,6 @@
   --spacing-tab-on: var(--tab-w-on);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
-  --spacing-drawer-h: var(--drawer-h);
   --spacing-drawer-row: var(--drawer-row);
   --spacing-top-name: var(--top-name);
   /* `max-w-measure`. Through the spacing namespace rather than a

@@ -478,6 +478,49 @@ input[type="search"]::-webkit-search-decoration {
   grid-row: 2;
 }
 
+/* **The slot under the four rings: one height, two things it can show.**
+   ⚠️ Named `data-ring-slot` and not `data-slot`: **`data-slot` is
+   Radix's own**, on every primitive in `components/ui/`, so a rule
+   written for it reaches the whole app. Measured — `[data-slot]
+   { height: 224px }` made the files listing's rows 224 tall and the
+   face gate caught it as one listing with three rhythms.
+   2026-09-04:「上环下趋势,合成一个模块」— 「点一个环,下面换成那个环的
+   抽屉;再点同一个环,回到趋势」.
+
+   The height is fixed (`--slot-h`) and the first line inside it is a
+   fixed row (`--slot-head-h`). That pair is the whole of 「不许一切一
+   跳」: whichever of the two is showing, its heading sits on the same
+   line at the same height, and the body under it starts at the same
+   pixel. **The reading words do not disappear and come back when a ring
+   is pressed — they are replaced**, by the drawer's own heading.
+
+   Both children are `height: 100%` rather than free-standing blocks, so
+   neither of them decides the card's height any more. The one that is
+   not showing is `hidden`, **never unmounted**: `smoke.mjs` counts this
+   card's readings against what `khor devices` prints, and a slot that
+   dropped its rows would make the card disagree with the terminal —
+   which reads as a broken backend rather than as a closed drawer. */
+[data-ring-slot] {
+  height: var(--slot-h);
+  margin-top: var(--gap-row);
+  padding-top: var(--gap-row);
+  border-block-start: var(--hair) solid var(--border);
+}
+[data-ring-slot] > [data-drawer],
+[data-ring-slot] > [data-load-day] {
+  height: 100%;
+  min-height: 0;
+}
+[data-ring-slot] > [data-load-day] {
+  display: flex;
+  flex-direction: column;
+}
+[data-ring-slot] [data-drawer-head] {
+  flex: none;
+  height: var(--slot-head-h);
+  margin-bottom: 0;
+}
+
 /* The process table: one grid, so every column edge is one line down
    the whole list. Rows join it with `display: contents` — a row that is
    its own box is a row whose columns start wherever that box does. */

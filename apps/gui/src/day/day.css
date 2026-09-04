@@ -87,13 +87,35 @@
    10px 的词,只有当前那个上墨:tab 说的是「三个地方」,而这里自始至终是一个
    地方。原型用的是 `<i>` 加一个代理点击;这里是 button,因为这张脸对每一个
    控件只有一条硬要求 —— 手指够得着,而量它的守门看的是**挂着按压的那个元素**。 */
+/* **The three words sit above the figure, not under it** (2026-09-04).
+   In the gallery this block ended with them; in the app it lives in a
+   slot whose first line is either these or the open drawer's heading —
+   one line, one position, one height, so pressing a ring replaces the
+   words rather than making them vanish and come back.
+
+   `order` and not a different mount point: the module builds its three
+   parts in the prototype's own order and that is left alone. The host
+   is a column so the order can be read at all, and the row is the
+   slot's head height because that is the line it has to fill. */
+.dayblk {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.dayblk .ch,
+.dayblk .ro {
+  flex: none;
+}
 .dayblk .sw {
+  order: -1;
+  flex: none;
+  height: var(--slot-head-h);
   font-size: 10px;
   color: var(--fnt);
   white-space: nowrap;
   letter-spacing: 0.02em;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0;
 }
 .dayblk .sw button {

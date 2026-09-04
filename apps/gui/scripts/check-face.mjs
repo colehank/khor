@@ -2202,6 +2202,119 @@ try {
       }
     }
   }
+  //     ── one slot: the rings, the day, and no jump ────────────────
+  //
+  //     2026-09-04:「上环下趋势,合成一个模块」、「点一个环,下面换成那个
+  //     环的抽屉;再点同一个环,回到趋势」、「那个槽定高,两种内容共用同一个
+  //     高度」、「开着抽屉时那个环要看得出是选中的」.
+  //
+  //     Five things, and each of them is the whole point of one of
+  //     those sentences:
+  //
+  //       1. **it opens on the day**, with no ring pressed;
+  //       2. **a press trades the day for that ring's drawer**, and the
+  //          same ring pressed again trades it back — a control whose
+  //          press does nothing when it is already on reads as stuck;
+  //       3. **the slot is one height**, whichever of the two is in it
+  //          and whichever ring is open — this is 「不许一切一跳」 and it
+  //          is measured on the card, not on the slot alone, because a
+  //          slot that held its height while the card below it moved
+  //          would satisfy a smaller claim;
+  //       4. **the first line is one line**: the reading words and the
+  //          drawer's heading start at the same y and are the same
+  //          height, so the words are *replaced* rather than vanishing
+  //          and coming back;
+  //       5. **what is closed is hidden, never unmounted** — `smoke.mjs`
+  //          counts this card's readings against `khor devices`, and a
+  //          slot that dropped its rows would make the card disagree
+  //          with the terminal, which reads as a broken backend.
+  {
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    await wait(300);
+    const look = () =>
+      page.evaluate(() => {
+        const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
+        //   **What is under the slot**, which is the thing that
+        //   actually moves when the slot changes size. The card's own
+        //   box was measured here first and it is a scroll container —
+        //   1000 tall in every state, including the one where the slot
+        //   went 169 → 219. An assertion on it cannot fail.
+        const below = document.querySelector("[data-machine-card] [data-top-plot]");
+        const day = slot?.querySelector("[data-load-day]");
+        const drawer = slot?.querySelector("[data-drawer]");
+        const head = slot?.querySelector("[data-drawer-head]");
+        const words = slot?.querySelector("[data-day-views]");
+        const line = (n) => (n && !n.hidden ? { y: Math.round(n.getBoundingClientRect().top), h: Math.round(n.getBoundingClientRect().height) } : null);
+        return {
+          slotH: slot ? Math.round(slot.getBoundingClientRect().height) : null,
+          belowY: below ? Math.round(below.getBoundingClientRect().top) : null,
+          showing: day && !day.hidden ? "day" : (drawer && !drawer.hidden ? drawer.dataset.drawer : null),
+          //   Present in the document either way — that is the claim.
+          dayInDom: !!day,
+          rowsInDom: document.querySelectorAll("[data-machine-card] [data-parts] [data-part]").length,
+          bandInDom: !!slot?.querySelector("[data-day-band]"),
+          first: line(head) ?? line(words),
+          on: [...document.querySelectorAll("[data-machine-card] [data-dial-word]")].filter((w) => w.dataset.on === "true").length,
+        };
+      });
+    const press = async (k) => {
+      await page.locator(`[data-machine-card] [data-dial="${k}"]`).click();
+      await wait(300);
+      return look();
+    };
+    const rest = await look();
+    if (rest.slotH === null) {
+      fail("probe dead: the machine card has no ring slot, so nothing about it was measured");
+    } else {
+      if (rest.showing !== "day") fail(`the card opens showing ${rest.showing} — with no ring pressed the slot is the day's`);
+      if (rest.on !== 0) fail(`${rest.on} ring names are marked as open on a card where nothing is open`);
+      const seen = [rest];
+      const onCpu = await press("cpu");
+      seen.push(onCpu);
+      if (onCpu.showing !== "cpu") fail(`pressing CPU left the slot showing ${onCpu.showing}`);
+      if (onCpu.on !== 1) fail(`${onCpu.on} ring names are marked with the CPU drawer open — exactly the open one says so`);
+      const onMem = await press("mem");
+      seen.push(onMem);
+      if (onMem.showing !== "mem") fail(`pressing 内存 while CPU was open left the slot showing ${onMem.showing}`);
+      const back = await press("mem");
+      seen.push(back);
+      if (back.showing !== "day") fail(`pressing the open ring again left the slot showing ${back.showing} — it has to go back to the day`);
+      if (back.on !== 0) fail(`${back.on} ring names still marked after closing the drawer`);
+      //   3 — one height, everywhere.
+      const heights = [...new Set(seen.map((x) => x.slotH))];
+      if (heights.length !== 1) fail(`the slot is ${heights.join("/")} tall depending on what is in it — pressing a ring moves the card`);
+      const belows = [...new Set(seen.map((x) => x.belowY))];
+      if (belows.length !== 1 || belows[0] === null) {
+        fail(`what sits under the slot starts at ${belows.join("/")} depending on what the slot shows — pressing a ring moves the rest of the card`);
+      }
+      //   4 — one first line.
+      const firsts = seen.map((x) => x.first).filter(Boolean);
+      if (firsts.length < 2) {
+        fail(`probe dead: only ${firsts.length} of the slot's states drew a first line, so 「same line」 compared nothing`);
+      } else {
+        const ys = [...new Set(firsts.map((f) => f.y))];
+        const hs = [...new Set(firsts.map((f) => f.h))];
+        if (ys.length !== 1) fail(`the slot's first line starts at ${ys.join("/")} — the reading words and the drawer's heading are not the same line`);
+        if (hs.length !== 1) fail(`the slot's first line is ${hs.join("/")} tall — one of them pushes what is under it`);
+      }
+      //   5 — closed is hidden, not gone.
+      for (const x of seen) {
+        if (!x.dayInDom || !x.bandInDom) {
+          fail(`the 24-hour figure left the document while the slot showed ${x.showing} — smoke counts this card against 「khor devices」`);
+          break;
+        }
+      }
+      const rows = [...new Set(seen.map((x) => x.rowsInDom))];
+      if (rows.length !== 1 || rows[0] === 0) {
+        fail(`the drawers hold ${rows.join("/")} rows depending on which is open — closed groups are hidden, never unmounted`);
+      }
+      console.log(
+        `ring slot: opens on ${rest.showing}, slot ${heights.join("/")} tall and what is under it at ${belows.join("/")} across ` +
+          `[${seen.map((x) => x.showing).join(" → ")}], first line ${JSON.stringify(firsts[0])}, ${rows[0]} rows in the document throughout`,
+      );
+    }
+  }
+
   //     ── a press orders the rows and moves nothing else ───────────
   //
   //     2026-09-04:「表点一些 sorting 方式,趋势和 CPU、GPU、内存都在变。
@@ -3373,6 +3486,21 @@ try {
       }
     }
   }
+  //     **Open one first.** Since the 24-hour figure moved into this
+  //     slot (2026-09-04) the card arrives with **no ring pressed** —
+  //     the slot shows the day — so the sections below, which are about
+  //     the drawer, have to ask for one. They used to inherit whatever
+  //     the loop above left open, and the first run after the change
+  //     crashed here on a `null` drawer: state that arrives by accident
+  //     is state a section is not really testing.
+  {
+    const dial = page.locator('[data-machine-card] [data-dial="cpu"]').first();
+    if ((await dial.getAttribute("data-open")) !== "true") await dial.click();
+    await wait(250);
+    if ((await page.locator("[data-machine-card] [data-parts]:not([hidden])").count()) !== 1) {
+      fail("probe dead: pressing the CPU ring opened no drawer, so every drawer section below measured nothing");
+    }
+  }
   //     **The heading names the reading and counts what is in the
   //     drawer.** Without it a block of six rows under four dials does
   //     not say which dial it belongs to, and the count is what tells a
@@ -3410,9 +3538,19 @@ try {
   //     still tight.
   await page.setViewportSize({ width: 1600, height: 1000 });
   await wait(250);
+  //   And ask for a drawer again after the resize — see the note above
+  //   the previous press. Nothing about a width should close one, but
+  //   this section's whole subject is inside an open drawer and it is
+  //   cheaper to ask than to inherit.
+  {
+    const dial = page.locator('[data-machine-card] [data-dial="cpu"]').first();
+    if ((await dial.getAttribute("data-open")) !== "true") await dial.click();
+    await wait(250);
+  }
   const edges = await page.evaluate(() => {
     const drawer = document.querySelector("[data-machine-card] [data-drawer]");
-    const open = drawer.querySelector("[data-parts]:not([hidden])");
+    const open = drawer && drawer.querySelector("[data-parts]:not([hidden])");
+    if (!open) return { dead: true, drawer: drawer ? drawer.dataset.drawer : null };
     const side = (sel, s) => [
       ...new Set([...open.querySelectorAll(sel)].map((n) => +n.getBoundingClientRect()[s].toFixed(1))),
     ];
@@ -3425,7 +3563,9 @@ try {
       tight: drawer.hasAttribute("data-tight"),
     };
   });
-  if (edges.rows < 2) fail(`probe dead: the open drawer has ${edges.rows} rows, so "one value each" is trivially true`);
+  if (edges.dead) {
+    fail(`probe dead: no drawer is open at 1600 (data-drawer=${JSON.stringify(edges.drawer)}), so the shared grid was never measured`);
+  } else if (edges.rows < 2) fail(`probe dead: the open drawer has ${edges.rows} rows, so "one value each" is trivially true`);
   else if (edges.tight) fail("probe dead: the drawer stayed in its stacked layout, so the shared grid was never tested");
   else {
     for (const [what, vals] of [
@@ -3482,6 +3622,53 @@ try {
     }
   }
 
+  //     ── the 24-hour figure, which shares a slot with the drawers ──
+  //
+  //     **Every section below needs the figure showing.** Since the
+  //     merge (2026-09-04) it lives in the slot under the four rings and
+  //     a pressed ring hides it — hidden, so it is still in the DOM and
+  //     every selector still finds it, while **`getBBox` returns 0×0 for
+  //     all of it and the layout numbers are the ones from before it was
+  //     hidden**. That is the worst kind of state to measure in: the
+  //     probes do not come back empty, they come back stale.
+  //
+  //     So: put the slot back on the day, and refuse to continue if it
+  //     did not go back.
+  {
+    const openDial = page.locator('[data-machine-card] [data-dial][data-open="true"]').first();
+    if (await openDial.count()) await openDial.click();
+    await wait(300);
+    const showing = await page.evaluate(() => {
+      const d = document.querySelector("[data-machine-card] [data-load-day]");
+      return d ? { hidden: d.hidden, w: Math.round(d.getBoundingClientRect().width) } : null;
+    });
+    if (!showing || showing.hidden || showing.w < 60) {
+      fail(`probe dead: the 24-hour figure is not showing (${JSON.stringify(showing)}), so every reading of it below is stale`);
+    }
+    //   **And it fits the slot it shares, in all three readings.** The
+    //   slot is one height for the drawings and the drawers both, so
+    //   the tallest reading is what sets it — and a reading that
+    //   outgrows it is silently clipped at the bottom, where its
+    //   readout line lives. Measured this way because the number that
+    //   sets the height is arrived at by adding up parts, and one of
+    //   them (the readout's `margin-top`) is not in any element's
+    //   height: 叠放 overflowed by exactly that 6px on the first try.
+    for (const view of ["heat", "ridge", "para"]) {
+      await page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).click();
+      await wait(400);
+      const over = await page.evaluate(() => {
+        const blk = document.querySelector("[data-machine-card] [data-load-day] .dayblk");
+        if (!blk) return null;
+        return { over: blk.scrollHeight - blk.clientHeight, parts: [...blk.children].map((c) => `${c.className}:${Math.round(c.getBoundingClientRect().height)}`) };
+      });
+      if (!over) fail(`probe dead: no day block while showing ${view}`);
+      else if (over.over > 0) {
+        fail(`叠放/山脊/热力带 — ${view} is ${over.over}px taller than the slot it shares (${over.parts.join(" ")}) — its foot is clipped`);
+      }
+    }
+    await page.locator('[data-machine-card] [data-day-view-pick="heat"]').click();
+    await wait(300);
+  }
   //     ── the band is a heat band: the value is the ink ────────────
   //
   //     **A · the shade really encodes the number.** Pinned to two

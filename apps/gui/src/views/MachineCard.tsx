@@ -536,11 +536,19 @@ function Readings({
       parts to show — see `Drawers`. */
   top: Load["top"];
 }) {
-  // **The leftmost is open on arrival**, so the block below the dials is
-  // never an empty space waiting to be discovered. Pressing the open
-  // one closes it: the press is a toggle, and a control whose press
-  // does nothing when it is already on is a control that feels stuck.
-  const [open, setOpen] = useState("cpu");
+  // **Nothing is open on arrival, and the slot below the dials shows
+  // the day.** It used to open the leftmost dial, because the slot had
+  // nothing else to hold and an empty box under four dials is a space
+  // waiting to be discovered. It has something else to hold now: the
+  // 24-hour figure moved in here (2026-09-04), so the resting state of
+  // this block is 「four readings now, and the day behind them」 and a
+  // ring is pressed to trade the day for what that ring is made of.
+  //
+  // Pressing the open one closes it — back to the day. The press is a
+  // toggle, and a control whose press does nothing when it is already
+  // on is a control that feels stuck (`Dial`'s `onOpen`, which has
+  // always sent `""` for that).
+  const [open, setOpen] = useState("");
   if (!row.vitals) {
     return (
       <Panel>
@@ -678,6 +686,10 @@ function Readings({
           facts={[disk ? left(disk) : null]}
         />
       </div>
+      {/* **One slot, one height, two things it can show.** See
+          `--slot-h`: the figure and the drawers are the same height, so
+          the card does not move under a press. */}
+      <div data-ring-slot>
       <Drawers
         row={row}
         top={top}
@@ -706,6 +718,21 @@ function Readings({
           },
         }}
       />
+        {/* **The day lives in the same slot as the drawers**
+            (2026-09-04). It is not a fourth thing under the dials, it
+            is what this slot shows when no ring is pressed — and the
+            two share one height so pressing a ring does not make the
+            card jump.
+
+            **Hidden, never unmounted.** `smoke.mjs` counts the
+            readings on this card against what `khor devices` prints,
+            and a block that unmounted its figure or its rows would make
+            the card disagree with the terminal — which reads as a
+            broken backend rather than as a closed drawer. */}
+        <div data-load-day hidden={open !== ""}>
+          {day && <DayChart day={day} />}
+        </div>
+      </div>
     </Panel>
   );
 }
@@ -856,7 +883,18 @@ function Drawers({
         ref={box}
         data-drawer={open}
         data-tight={tight ? "" : undefined}
-        className="mt-row flex max-h-drawer-h min-h-drawer-h flex-col border-t pt-row text-sm tabular-nums"
+        // **The slot decides the height now**, not this box: the day
+        // and the drawers share one, so pressing a ring cannot move
+        // anything below (`--slot-h`, and `[data-slot]` in app.css).
+        // It used to carry `min-h-drawer-h max-h-drawer-h`, a height
+        // written for a block that stood on its own.
+        hidden={open === ""}
+        // **The rule above the slot and the room under it belong to the
+        // slot**, not to this box: they were here, and the day beside
+        // it had neither, so the drawer's heading sat 13px below the
+        // reading words — two things that have to be the same line
+        // (`[data-ring-slot]`, and the assertion that caught it).
+        className="flex h-full flex-col text-sm tabular-nums"
       >
         {heads[open] && (
           <div
@@ -1054,7 +1092,9 @@ function Bar({ pct, strain }: { pct: number | null; strain: Strain | null }) {
 }
 
 /** The wall clock for one instant, hours and minutes in the reader's
-    own locale — the day chart's two ends and the head's 更新于. */
+    own locale — the head's 更新于. (It printed the day chart's two ends
+    as well until 2026-09-04; the window is drawn on that figure's axis
+    and does not need writing out beside it.) */
 function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -1152,18 +1192,14 @@ function Busy({
     );
   }
   if (!load) return null;
+  //   **The day is not a panel of its own any more** (2026-09-04): it
+  //   moved into the slot under the four rings, which is where it is
+  //   read against them. See `Readings`.
   return (
-    <>
-      <Panel>
-        <div data-load-day>
-          <DayChart day={load.cpu_day} />
-        </div>
-      </Panel>
-      <Panel>
-        <Scatter rows={load.top} />
-        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} cards={cards} ages={ages} />
-      </Panel>
-    </>
+    <Panel>
+      <Scatter rows={load.top} />
+      <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} cards={cards} ages={ages} />
+    </Panel>
   );
 }
 
@@ -2140,23 +2176,23 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
     // is the dependency, and `words` is the same catalog every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answer]);
-  const n = Math.max(1, day.buckets.length);
-  const startMs = day.now_ms - day.bucket_ms * n;
-  const sameDay = new Date(startMs).toDateString() === new Date(day.now_ms).toDateString();
-  return (
-    <div data-day-band-axis className="flex flex-col gap-in">
-      <div className="flex items-center justify-between gap-row text-aux text-muted-foreground">
-        <span>{cli.day_trend}</span>
-        {/* The two ends of the window, and nothing between them: the
-            rows below share this axis, so naming it once is naming it
-            for all of them. */}
-        <span className="tabular-nums">
-          {sameDay ? clock(startMs) : cli.yesterday_at(clock(startMs))} → {clock(day.now_ms)}
-        </span>
-      </div>
-      <div ref={box} className="w-full" />
-    </div>
-  );
+  // **No heading, and no window written out.** It used to carry
+  // 「24 小时趋势」 and 「昨天 15:34 → 15:34」 above the figure;
+  // 2026-09-04 both went, for two different reasons.
+  //
+  // The window is **drawn on the axis** — hour marks every three hours
+  // and 「现在」 at its right end — so printing it again was the same
+  // fact said twice, and the second telling is the one that goes stale
+  // in somebody's memory. The heading went because the slot this block
+  // now lives in has one line at the top for whatever it is showing,
+  // and for the figure that line is the three reading words. A title
+  // there would push them out or push the figure down.
+  //
+  // What that buys is the thing the merge is for: **the reading words
+  // do not vanish and come back** when a ring is pressed. They are
+  // replaced, in place, by the drawer's own heading — one line, one
+  // position, one height, so nothing moves.
+  return <div ref={box} data-day-band-axis className="h-full w-full" />;
 }
 
 /**
@@ -2296,7 +2332,21 @@ function Dial({
           </span>
         </span>
       </button>
-      <span className="text-sm">{word}</span>
+      {/* **The open ring's name says so, in weight and ink and nothing
+          else** (2026-09-04:「开着抽屉时那个环要看得出是选中的」). The
+          slot under these four belongs to whichever one is open, and
+          without a mark on the ring the block below is a set of rows
+          with no stated owner.
+
+          No ground, no border, no capsule: the same two channels the
+          24-hour block's reading words use and the rail's own rule —
+          a plate says 「a place」, and this is one place looked at from
+          four sides. The word and not the arc, because the arc is a
+          reading and a reading may not be dimmed to mean something
+          about the interface. */}
+      <span data-dial-word data-on={open ? "true" : "false"} className={cn("text-sm", open && "font-title text-foreground")}>
+        {word}
+      </span>
     </div>
   );
 }
