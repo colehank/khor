@@ -775,7 +775,19 @@ function Drawers({
     [...top]
       .sort((a, b) => (by === "cpu" ? b.cpu_pct - a.cpu_pct : Number(b.mem) - Number(a.mem)))
       .slice(0, 6);
-  const whole = v.cores > 0 ? v.cores * 100 : 100;
+  // **An occupant's bar is drawn against the biggest occupant shown,
+  // not against the machine.** Against the machine it is invisible and
+  // therefore says nothing: turing's hungriest process is 41% of one
+  // core on a box with sixty-four of them, so a share-of-machine bar
+  // for the row at the top of the list draws a hairline and every row
+  // below it draws nothing at all — a column that is blank for every
+  // value it can hold is not a reading.
+  //
+  // What it does say is 「how these few compare to each other」, which
+  // is the question the drawer is answering. **It is not a fraction of
+  // the ring above**, and the foot says so in as many words — that
+  // sentence is doing real work here rather than being a formality.
+  const against = (xs: number[]) => Math.max(1, ...xs);
   // **What each drawer actually draws.** The heading counts these, not
   // what the node claims elsewhere — see `heads`.
   const drawn: Record<string, number> = {
@@ -827,8 +839,13 @@ function Drawers({
           style={{ scrollSnapType: "y proximity" }}
         >
         <div data-parts="cpu" hidden={open !== "cpu"}>
-          {busiest("cpu").map((r) => (
-            <Occupant key={r.pid} row={r} share={r.cpu_pct / whole} value={`${Math.round(r.cpu_pct)}%`} />
+          {busiest("cpu").map((r, _i, all) => (
+            <Occupant
+              key={r.pid}
+              row={r}
+              share={r.cpu_pct / against(all.map((x) => x.cpu_pct))}
+              value={`${Math.round(r.cpu_pct)}%`}
+            />
           ))}
         </div>
         <div data-parts="gpu" hidden={open !== "gpu"}>
@@ -869,11 +886,11 @@ function Drawers({
           })}
         </div>
         <div data-parts="mem" hidden={open !== "mem"}>
-          {busiest("mem").map((r) => (
+          {busiest("mem").map((r, _i, all) => (
             <Occupant
               key={r.pid}
               row={r}
-              share={v.mem.total > 0 ? Number(r.mem) / Number(v.mem.total) : null}
+              share={Number(r.mem) / against(all.map((x) => Number(x.mem)))}
               value={bytes(r.mem)}
             />
           ))}
