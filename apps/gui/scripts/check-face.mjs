@@ -2269,12 +2269,26 @@ try {
       if (rest.showing !== "day") fail(`the card opens showing ${rest.showing} — with no ring pressed the slot is the day's`);
       if (rest.on !== 0) fail(`${rest.on} ring names are marked as open on a card where nothing is open`);
       const seen = [rest];
+      let drawerFloors = null;
       const onCpu = await press("cpu");
       seen.push(onCpu);
       if (onCpu.showing !== "cpu") fail(`pressing CPU left the slot showing ${onCpu.showing}`);
       if (onCpu.on !== 1) fail(`${onCpu.on} ring names are marked with the CPU drawer open — exactly the open one says so`);
       const onMem = await press("mem");
       seen.push(onMem);
+      //   Measured **while a drawer is the thing in the slot** — asked
+      //   after the slot went back to the day it answers `null`, which
+      //   is not「the drawers are fine」, it is「nobody looked」.
+      drawerFloors = await page.evaluate(() => {
+        const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
+        const drawer = slot?.querySelector("[data-drawer]");
+        const open = drawer?.querySelector("[data-parts]:not([hidden])");
+        if (!open) return null;
+        const rows = [...open.querySelectorAll("[data-part]")];
+        if (!rows.length) return { rows: 0 };
+        const last = Math.max(...rows.map((r) => Math.max(...[...r.children].map((c) => c.getBoundingClientRect().bottom))));
+        return { which: drawer.dataset.drawer, rows: rows.length, gap: +(slot.getBoundingClientRect().bottom - last).toFixed(1) };
+      });
       if (onMem.showing !== "mem") fail(`pressing 内存 while CPU was open left the slot showing ${onMem.showing}`);
       const back = await press("mem");
       seen.push(back);
@@ -2308,6 +2322,33 @@ try {
       if (rows.length !== 1 || rows[0] === 0) {
         fail(`the drawers hold ${rows.join("/")} rows depending on which is open — closed groups are hidden, never unmounted`);
       }
+      //   **How much room each drawer leaves under its last row, printed
+      //   and not asserted — and that is a judgment, not an omission.**
+      //
+      //   The three readings are held to the floor (see 「all three
+      //   readings end where the slot ends」). The drawers are not, and
+      //   the numbers are here so anybody can overrule that with data:
+      //   measured 2026-09-04, the CPU and 内存 drawers stop 13px above
+      //   the floor (they are six rows and scroll), while GPU stops 125
+      //   on turing and 152 on this Mac, and 磁盘 94 and 121.
+      //
+      //   Why they are not stretched to close that:
+      //
+      //     - **a drawing's bottom edge is the drawing**, and one that
+      //       stops early reads as one that failed; **a list's bottom
+      //       edge is where its items ran out**, and the room under it
+      //       is where the next one would go. Two different facts, read
+      //       differently.
+      //     - the row pitch is a **density** (`--drawer-row`), measured
+      //       against the process table above it. Spreading two cards
+      //       over the whole box gives the same reading a different
+      //       density on two machines — and 「三台机器并排读」 is the
+      //       property this card keeps being rebuilt to protect.
+      //     - anchoring cannot switch on the count without a jump: a
+      //       machine that gains a volume would have its list snap from
+      //       centred to top.
+      if (!drawerFloors) fail("probe dead: the drawer's floor was never measured — nothing was in the slot when it was asked");
+      console.log(`drawer floor: ${JSON.stringify(drawerFloors)} — printed, not asserted; see the note above it`);
       console.log(
         `ring slot: opens on ${rest.showing}, slot ${heights.join("/")} tall and what is under it at ${belows.join("/")} across ` +
           `[${seen.map((x) => x.showing).join(" → ")}], first line ${JSON.stringify(firsts[0])}, ${rows[0]} rows in the document throughout`,
@@ -3645,6 +3686,92 @@ try {
     if (!showing || showing.hidden || showing.w < 60) {
       fail(`probe dead: the 24-hour figure is not showing (${JSON.stringify(showing)}), so every reading of it below is stale`);
     }
+    //   ── all three readings end where the slot ends ─────────────
+    //
+    //   2026-09-04:「24小时趋势图,不要满足最高高度,而导致部分图下面空掉
+    //   了。可以全部图画到等高。不然视觉一致性很差」. The block has one
+    //   height, and the three drawings are not naturally the same size
+    //   (92 / 108 / 153 for four rows), so two of them used to stop in
+    //   mid-air with a strip of nothing under them.
+    //
+    //   **Measured on the ink, not on the box.** The box is `height:
+    //   100%` in every case — it was already the same in every reading
+    //   while the strip was plainly there, so an assertion on it passes
+    //   through the bug. What has to match is where the drawing's own
+    //   bounding box stops: **the distance from the last ink to the
+    //   slot's floor, the same in all three, to the pixel.**
+    //
+    //   One pixel of tolerance and no more. The three fill by different
+    //   arithmetic — a row pitch, a stagger, an axis length — and a
+    //   looser bound would let one of them drift a visible amount while
+    //   the assertion still called it 「等高」.
+    {
+      const floorOf = () =>
+        page.evaluate(() => {
+          const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
+          const svg = document.querySelector("[data-machine-card] [data-load-day] [data-day-band]");
+          if (!slot || !svg) return null;
+          //   Only what is painted, and in page coordinates: the
+          //   cursor's parked dots are at `opacity:0` and are not ink.
+          let bottom = -Infinity;
+          for (const n of svg.querySelectorAll("*")) {
+            if (n.getAttribute("opacity") === "0") continue;
+            const r = n.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) continue;
+            bottom = Math.max(bottom, r.bottom);
+          }
+          if (!Number.isFinite(bottom)) return null;
+          const box = slot.getBoundingClientRect();
+          //   **What is allowed to be between the last ink and the
+          //   floor**: the cursor's readout line and the room above it,
+          //   and nothing else. Read off the element rather than
+          //   written here, so the number cannot drift from the
+          //   stylesheet.
+          const ro = document.querySelector("[data-machine-card] [data-load-day] .ro");
+          const roH = ro ? ro.getBoundingClientRect().height + (parseFloat(getComputedStyle(ro).marginTop) || 0) : 0;
+          return {
+            gap: +(box.bottom - bottom).toFixed(1),
+            allowed: +roH.toFixed(1),
+            svgH: Math.round(svg.getBoundingClientRect().height),
+          };
+        });
+      const floors = {};
+      for (const view of ["heat", "ridge", "para"]) {
+        await page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).click();
+        await wait(500);
+        floors[view] = await floorOf();
+      }
+      const got = Object.entries(floors).filter(([, v]) => v !== null);
+      if (got.length !== 3) {
+        fail(`probe dead: only ${got.length} of the three readings could be measured (${JSON.stringify(floors)})`);
+      } else {
+        const gaps = got.map(([, v]) => v.gap);
+        const spread = Math.max(...gaps) - Math.min(...gaps);
+        if (spread > 1) {
+          fail(
+            `the three readings stop at ${got.map(([k, v]) => `${k} ${v.gap}`).join(", ")} px above the slot's floor ` +
+              `— a spread of ${spread.toFixed(1)}, so switching reading opens a strip of nothing under two of them`,
+          );
+        }
+        //   ⚠️ **Equal is not enough, and this is the half that was
+        //   missing.** Written with only the spread, the section passed
+        //   on a build where all three under-filled by the same 5px —
+        //   three drawings agreeing on where to stop short is still the
+        //   strip of nothing the reader complained about. So the gap
+        //   itself is bounded by the one thing that belongs there.
+        const tall = got.filter(([, v]) => v.gap > v.allowed + 1);
+        if (tall.length) {
+          fail(
+            `${tall.map(([k, v]) => `${k} stops ${v.gap}px above the floor where only the readout's ${v.allowed}px belongs`).join(", ")} ` +
+              `— the drawing is not filling the box it was given`,
+          );
+        }
+        console.log(
+          `day fill: ${got.map(([k, v]) => `${k} svg ${v.svgH} ink ${v.gap}/${v.allowed} off the floor`).join(", ")}`,
+        );
+      }
+    }
+
     //   **And it fits the slot it shares, in all three readings.** The
     //   slot is one height for the drawings and the drawers both, so
     //   the tallest reading is what sets it — and a reading that

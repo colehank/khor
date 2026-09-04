@@ -102,7 +102,18 @@
   flex-direction: column;
   height: 100%;
 }
-.dayblk .ch,
+/* **The figure's box is the flexible one, and the drawing fills it.**
+   The words and the readout are fixed lines; whatever is left over
+   between them is the figure's, and each reading is told that number
+   and draws to it (`render`, and the three `fill` arguments). Before
+   2026-09-04 this was `flex: none` and the box took whatever height
+   the drawing happened to want — 92 for 热力带 against 153 for 叠放 —
+   so two of the three ended in mid-air with a strip of nothing under
+   them. */
+.dayblk .ch {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .dayblk .ro {
   flex: none;
 }

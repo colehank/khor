@@ -190,14 +190,23 @@ function runs(keyAt){
    明度 = 占用率，行 = 指标，列 = 时刻。一竖列同时读五个指标。
    多卡折叠：上厚条 = 最忙的卡，下薄条 = 最闲的卡。两条不同色 = 各卡不一致。
    ══════════════════════════════════════════════════════════════════ */
-function drawHeat(svg, T, W, narrow){
+function drawHeat(svg, T, W, narrow, fill){
   const GL = narrow?46:56, GR = narrow?42:58;
-  const ROW = narrow?17:14, CH = narrow?13:11, HB = Math.round(CH*0.64);
+  const CH = narrow?13:11, HB = Math.round(CH*0.64);
   const TOP = 5, AXIS = narrow?18:31;
   const X0=GL, X1=W-GR, PW=X1-X0, slot=PW/N;
-  const H = TOP + T.length*ROW + AXIS;
+  // **余量放在行距上,不放在带的厚度上。** `CH` 是那条带的厚度,而带是
+  // **明度编码的载体** —— 同一支灰在一条更胖的带上读起来就是另一个数,
+  // 所以它是这三张图里唯一不许动的尺寸。`ROW` 只是两行之间隔多远,
+  // 把它拉开改变的是呼吸,不是任何一个读数。
+  const ROW0 = narrow?17:14;
+  const nat = TOP + T.length*ROW0 + AXIS;
+  const H = fill > nat ? fill : nat;
+  const ROW = (H - TOP - AXIS) / T.length;
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('height',H);
-  const rowY = r => TOP + r*ROW;
+  // 取整:带的上下沿是水平边,落在小数位上抗锯齿会把每一行的边啃出深浅
+  // —— 和横向那条「段边界对齐到整数像素」是同一个理由,只是换了个轴。
+  const rowY = r => TOP + Math.round(r*ROW);
   // 段边界对齐到整数 CSS 像素：相邻段共用同一个取整结果，所以既不留缝也不重叠。
   // 不对齐的话每一段的边都落在小数位上，抗锯齿会把边缘啃出深浅不一的灰。
   const px = i => Math.round(X0 + i*slot);
@@ -293,16 +302,31 @@ function drawHeat(svg, T, W, narrow){
    逐列墨量的变异系数是 12.5–21.5%，而数据本身只有 3.6% —— 它凭空
    造出 4.7~6 倍于数据的明暗抖动，dpr=2 时最重。见 README。
    ══════════════════════════════════════════════════════════════════ */
-function drawRidge(svg, T, W, narrow){
+function drawRidge(svg, T, W, narrow, fill){
   const n=T.length, dense = n>6;
   const GL = narrow?42:48, GR = narrow?34:38;
-  const SP  = dense ? (narrow?16:14) : (narrow?22:20);
+  const SP0 = dense ? (narrow?16:14) : (narrow?22:20);
   const AMP = dense ? (narrow?20:18) : (narrow?26:24);
-  const TOP = 8, AXIS = 16;
+  // AXIS 是**最后一笔墨到图底还剩多少**,三张图的这个数是一组、要一起改:
+  // 热力带 31(时间轴 + 明度图例)、山脊 15(只有时间轴)、叠放 31(轴名 + 计数)。
+  // 它们凑在一起是为了让三张图**画到同一条底线上** —— 高度一样只是容器一样,
+  // 墨停在不同的地方,读者看到的仍然是一块空地(2026-09-04)。
+  const TOP = 8, AXIS = 15;
   const X0=GL, X1=W-GR, PW=X1-X0, slot=PW/N;
   const rowOf = k => (n-1)-k;                 // 最重要的排最前排（最下面）
-  const baseY = r => TOP + AMP + r*SP;
-  const bot = baseY(n-1), H = bot + AXIS;
+  // **余量放在错层间距上,不放在振幅上。** `AMP` 是 100% 对应多少像素——
+  // 撑大它,同一条脊的起伏看起来就更剧烈,那是在改这张图说的话。`SP` 是
+  // 前后两排隔多远,拉开它只是让后排从前排背后多露出来一点。
+  //
+  // **只有一条脊时没有「排与排之间」可分**,那时余量对半放在上下(居中):
+  // 把一条脊拉长只能靠 AMP,而 AMP 不许动。
+  const natBot = TOP + AMP + (n-1)*SP0, nat = natBot + AXIS;
+  const H = fill > nat ? fill : nat;
+  const room = H - AXIS - TOP - AMP;
+  const SP  = n > 1 ? room/(n-1) : SP0;
+  const PADY = n > 1 ? 0 : room/2;
+  const baseY = r => TOP + PADY + AMP + r*SP;
+  const bot = baseY(n-1);
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('height',H);
   const X = i => X0 + i*slot, mapH = v => v/100*AMP;
 
@@ -391,9 +415,18 @@ function drawRidge(svg, T, W, narrow){
    换来的是跨指标关系成为图形本身。轴上上下划动可以刷选。
    多卡展开时它是唯一**高度一点不涨**的读法：加卡只是加轴。
    ══════════════════════════════════════════════════════════════════ */
-function drawPara(svg, T, W, narrow){
+function drawPara(svg, T, W, narrow, fill){
   const n=T.length;
-  const PAD = narrow?26:44, TOP=14, BOT=narrow?122:116, H=BOT+37;
+  // **余量放在轴的长度上。** 这张图的纵向是每根轴的 0..100,把轴拉长
+  // 不改变任何一个读数落在轴上的比例——一条 15% 的线在更长的轴上还是
+  // 15%,只是分得开一点。这是三张图里最便宜的一处:它本来就是最高的那张,
+  // 要补的那点最少。
+  // 31 = 轴名 + 它下面那行计数到图底的距离。**和另外两张图的同一个数是一组**
+  // —— 见 `drawRidge` 里那一段。
+  const FOOT = 31;
+  const BOT0 = narrow?122:116, nat = BOT0 + FOOT;
+  const H = fill > nat ? fill : nat;
+  const PAD = narrow?26:44, TOP=14, BOT=H-FOOT;
   const AX = Array.from({length:n},(_,k)=> n===1 ? W/2 : PAD + k*(W-2*PAD)/(n-1));
   const mapY = v => BOT - v/100*(BOT-TOP);
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('height',H);
@@ -566,7 +599,7 @@ export function toTracks(day, words) {
  * React's business**, which is the point.
  */
 export function mount(host, opts) {
-  const st = { view: 'heat', cur: null, pin: false, W: 0, geo: null, T: [], series: [], first: true };
+  const st = { view: 'heat', cur: null, pin: false, W: 0, H: 0, geo: null, T: [], series: [], first: true };
   host.classList.add('dayblk');
   host.innerHTML =
     '<div class="ch"><svg preserveAspectRatio="xMinYMin meet" data-day-band></svg></div>' +
@@ -599,14 +632,29 @@ export function mount(host, opts) {
   const render = () => {
     const w = Math.round(ch.clientWidth);
     if (w < 60) return;
+    // **How tall the drawing is allowed to be, and is expected to fill.**
+    //
+    // The three readings are not naturally the same height — 92, 108 and
+    // 153 for four rows — and the block they live in has one height, so
+    // two of them used to end well above its floor. 2026-09-04:
+    // 「24小时趋势图,不要满足最高高度,而导致部分图下面空掉了。可以全部
+    // 图画到等高。不然视觉一致性很差」.
+    //
+    // So the box owns the height (`.ch` is the flexible one in the
+    // column) and each drawing is told what to fill. **What each one
+    // puts the slack into is its own decision and is written where that
+    // decision lives** — none of them scales: a drawing stretched to
+    // fit is a drawing whose numbers moved.
+    const h = Math.round(ch.clientHeight);
     st.W = w;
+    st.H = h;
     const narrow = w < 520;
     const T = tracks(st.series, false);
     svg.innerHTML = '';
     st.T = T;
-    st.geo = st.view === 'heat' ? drawHeat(svg, T, w, narrow)
-           : st.view === 'ridge' ? drawRidge(svg, T, w, narrow)
-           :                       drawPara(svg, T, w, narrow);
+    st.geo = st.view === 'heat' ? drawHeat(svg, T, w, narrow, h)
+           : st.view === 'ridge' ? drawRidge(svg, T, w, narrow, h)
+           :                       drawPara(svg, T, w, narrow, h);
     svg.setAttribute('data-day-view', st.view);
     attach(T);
     paint();
@@ -715,7 +763,12 @@ export function mount(host, opts) {
   });
   const ro_ = new ResizeObserver(() => {
     const w = Math.round(ch.clientWidth);
-    if (w >= 60 && w !== st.W) render();
+    // **Height too, now that the drawing fills it.** Watching only the
+    // width was right while every reading picked its own height; it is
+    // not now, and a box that grew without the drawing following would
+    // put the empty strip straight back.
+    const h = Math.round(ch.clientHeight);
+    if (w >= 60 && (w !== st.W || h !== st.H)) render();
   });
   ro_.observe(ch);
   return {
