@@ -1747,32 +1747,40 @@ function AxisPick({
 
 /**
  * The 「命令」 cell: **a process's short name and the one word that
- * identifies it**, together, with a mark when they did not fit.
+ * identifies it, as one run of text**, with a mark when it did not fit.
  *
- * # Why the two are one cell
+ * # One width, not two
  *
- * 2026-09-04:「表的进程和命令合并为一列,就叫命令」. They were two
- * columns, and they are one thing said in two places — the word only
- * means something *beside* the name it disambiguates. Three rows called
- * `python3` are told apart by `api_server`, `train.py`, `worker`; with a
- * column boundary between them the second reads as a separate fact
- * about the process rather than as the rest of its name.
+ * 2026-09-04:「这俩就是俩字符串,放一列是有原因的,干嘛还要单独显示宽度呢?
+ * 他俩加一块共享列宽」.
+ *
+ * The version this replaces gave each half its own width — a floor on
+ * the word, a ceiling on the name, and shrink factors deciding which
+ * gave way first. **What that produced is what he saw: a name squeezed
+ * out entirely and replaced by a `▪`.** A cell that cannot show what
+ * the process *is* has not truncated anything, it has deleted the
+ * answer; the identifying word beside it is then a word identifying
+ * nothing.
+ *
+ * So there is one text flow and one truncation, at the end, where a
+ * truncation belongs. **Neither half has a `min-width` any more**, and
+ * the name comes first, so the first characters on screen are always
+ * the ones that say which process this is.
+ *
+ * The two inks stay (name in the body ink, word in the muted one).
+ * **That is semantics, not layout** — it says 「this part is the name
+ * and that part qualifies it」 and it costs no width at all.
  *
  * # What may not be squeezed out
  *
- * The name has a floor and the word has a floor (`--cw-cmd-name-min`,
- * `--cw-cmd-arg-min`), so neither can be reduced to nothing by the
- * other. **And the pid is a track of its own and is never dropped**: on
- * turing the two vLLM workers carry the same name *and* the same
- * identifying word — `argv[0]` is `VLLM::EngineCore` for both — so the
- * only things that tell those two rows apart are the pid and the card
- * memory. A layout that saves room by dropping either drops the answer.
+ * **The pid is a track of its own and is never dropped**: on turing the
+ * two vLLM workers carry the same name *and* the same identifying word
+ * — `argv[0]` is `VLLM::EngineCore` for both — so the only things that
+ * tell those two rows apart are the pid and the card memory.
  *
  * **When the word repeats the name it is not drawn twice.** That is the
  * vLLM case above, and printing `VLLM::EngineCore VLLM::EngineCore`
- * would spend a column's width saying one thing and read as a rendering
- * fault. The row is still distinguishable — by the two things that
- * actually differ.
+ * would spend a column's width saying one thing.
  *
  * # Why a mark and not an ellipsis
  *
@@ -1792,34 +1800,29 @@ function AxisPick({
  *
  * # The mark is measured, never guessed
  *
- * `scrollWidth` against `clientWidth` on **both** halves, watched with a
- * `ResizeObserver`. A mark decided by counting characters would appear
- * on cells that fit (decoration) and miss cells that do not (a silent
- * truncation), and both errors look fine on the machine of whoever
- * wrote the guess.
+ * `scrollWidth` against `clientWidth` on the one flowing line, watched
+ * with a `ResizeObserver`. A mark decided by counting characters would
+ * appear on cells that fit (decoration) and miss cells that do not (a
+ * silent truncation), and both errors look fine on the machine of
+ * whoever wrote the guess.
  */
 function Cut({ name, arg }: { name: string; arg: string | null }) {
-  const nameRef = useRef<HTMLSpanElement>(null);
-  const argRef = useRef<HTMLSpanElement>(null);
+  const line = useRef<HTMLSpanElement>(null);
   const [over, setOver] = useState(false);
   const [open, setOpen] = useState(false);
   // **Not drawn twice** — see the head of this component.
   const word = arg && arg !== name ? arg : null;
   useEffect(() => {
+    const node = line.current;
+    if (!node) return;
     // Only while closed: open, the text wraps and nothing overflows, so
     // measuring then would retract the mark and take the way back with
     // it.
     if (open) return;
-    const nodes = [nameRef.current, argRef.current].filter((n): n is HTMLSpanElement => n !== null);
-    if (nodes.length === 0) return;
-    // **Either half short of room puts the mark up.** Measuring only
-    // the word would leave a clipped name with no way to see the rest
-    // of it, which is the silent truncation this whole component is
-    // against.
-    const measure = () => setOver(nodes.some((n) => n.scrollWidth - n.clientWidth > 1));
+    const measure = () => setOver(node.scrollWidth - node.clientWidth > 1);
     measure();
     const ro = new ResizeObserver(measure);
-    nodes.forEach((n) => ro.observe(n));
+    ro.observe(node);
     return () => ro.disconnect();
   }, [name, word, open]);
   const cut = over;
@@ -1849,16 +1852,22 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
       //     screenshot; the assertion that the cell grew and shrank was
       //     perfectly happy, because it was true). The row grows in
       //     height instead, and the columns stay where they are.
-      className={cn("flex min-w-0 items-baseline gap-in", open && "flex-wrap", cut && "cursor-pointer")}
+      className={cn("flex min-w-0 items-baseline gap-in", cut && "cursor-pointer")}
     >
-      <span ref={nameRef} data-cmd-name className={cn("min-w-0", open ? "break-all" : "truncate")}>
-        {name}
+      {/* **One box, one line, one truncation.** The name and the word
+          are two spans only so they can wear two inks; they are not two
+          columns, and neither carries a width of its own. */}
+      <span ref={line} data-cmd-line className={cn("min-w-0", open ? "break-all" : "truncate")}>
+        <span data-cmd-name>{name}</span>
+        {word && (
+          <>
+            {" "}
+            <span data-cmd-arg className="text-muted-foreground">
+              {word}
+            </span>
+          </>
+        )}
       </span>
-      {word && (
-        <span ref={argRef} data-cmd-arg className={cn("min-w-0 text-muted-foreground", open ? "break-all" : "truncate")}>
-          {word}
-        </span>
-      )}
       {cut && !open && (
         <span
           data-cut-mark

@@ -623,55 +623,26 @@ input[type="search"]::-webkit-search-decoration {
   white-space: normal;
 }
 
-/* **The two halves of 「命令」: a ceiling on the name, a floor under the
-   word.** The cell is a short name and the one word that tells this row
-   from the next (2026-09-04:「表的进程和命令合并为一列,就叫命令」).
-   They compete for one width, and the two settings are not symmetric
-   because the two failures are not:
+/* ⚠️ **Tombstone: the two halves of 「命令」 used to each have a width,
+   and that is what put a `▪` where a process name should be.**
 
-     - the **word** disappearing is the disambiguation gone — three rows
-       all reading `python3` — so it has a floor, and under pressure the
-       name is what gives way. Padding it costs nothing: the word is the
-       last ink in the cell, so its slack falls in empty space.
-     - the **name** is protected by the word's floor being small and by
-       its own ceiling, which is what stops one 40-character name from
-       leaving the word no room.
+   There was a ceiling on the name (`--cw-name-max`), a floor under the
+   word (`--cw-cmd-arg-min`), and `flex-shrink: 100` on the word so it
+   gave way first. Every one of those numbers was argued for, and
+   together they did the one thing the cell may never do: on a narrow
+   enough cell the name was squeezed past its own text and out, leaving
+   a single glyph standing for it. 2026-09-04:「这俩就是俩字符串,放一列
+   是有原因的,干嘛还要单独显示宽度呢?他俩加一块共享列宽」.
 
-   ⚠️ **The name had a `min-width` for one build and it was wrong.** A
-   floor is not only a floor — it is a width, so a short name was padded
-   out to it and the word started 63px in no matter how short the name
-   was. On screen that is a gap in the middle of one cell that reads as
-   two columns, which is exactly the thing this merge undid. Caught in a
-   screenshot: `khor` and its `serve` sat a third of an inch apart. */
-[data-c="cmd"] > [data-cmd-name] {
-  flex-shrink: 1;
-  max-width: var(--cw-name-max);
-}
-[data-c="cmd"] > [data-cmd-arg] {
-  /* **The word absorbs the squeeze, then stops; then the name gives
-     way.** Two stages, and `flex-shrink` is what buys them without a
-     `min-width` on the name: shrinkage is shared in proportion to
-     shrink factor × base size, so a factor a hundred times the name's
-     sends essentially all of it here until this floor stops it, after
-     which the name takes what is left.
+   **A cell that cannot say what the process is has not truncated, it
+   has deleted the answer** — and the identifying word left beside it
+   then identifies nothing.
 
-     ⚠️ **Equal factors put the squeeze in the wrong place**, and it
-     shows: with them a row whose word was a 60-character path clipped
-     the *name* to 「n…」 while the path still had room — the four
-     letters that say what the process is, given up to a path that had
-     a fold of its own. Caught in a screenshot; every width on that
-     table was correct. */
-  flex-shrink: 100;
-  min-width: var(--cw-cmd-arg-min);
-}
-/* Open, the floors stop applying: the cell wraps and every character is
-   on screen, so a floor could only force a line break that nothing
-   asked for. */
-[data-c="cmd"][data-open] > [data-cmd-name],
-[data-c="cmd"][data-open] > [data-cmd-arg] {
-  min-width: 0;
-  max-width: none;
-}
+   So there are no rules here any more: one flowing line, one `truncate`
+   on it, the name first (`Cut`). The two inks remain, and they cost no
+   width. `--cw-cmd-arg-min` went with this; `--cw-name-max` is gone
+   too. */
+
 
 /* Tight: the eight columns stop fitting long before the window does, so
    each row becomes three lines of its own — identity, then the command

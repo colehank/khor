@@ -682,33 +682,19 @@
   --top-h-tight: 344px;
   --hair: 1px;
   --cw-pid: 7ch;
-  /* How wide a process's **short name** may get inside the 「命令」
-   * cell. It was a column of its own until 2026-09-04 (「表的进程和
-   * 命令合并为一列,就叫命令」) and is now the first half of one cell,
-   * but the number's job did not change: it stops the runaway case, so
-   * one 40-character name cannot take the whole cell and leave no room
-   * for the word that tells this row from the next.
+  /* ⚠️ **Tombstone: `--cw-name-max` and `--cw-cmd-arg-min` are gone,
+   * and there is no replacement pair.**
    *
-   * It replaced a flat `13ch`, at which the real names clip on every
-   * machine to hand (`khor-2077930-6a…`, `kworker/u266:3…`). */
-  --cw-name-max: 24ch;
-  /* **The word in 「命令」 may not be squeezed to nothing**, because a
-   * word reduced to nothing is the disambiguation gone — the one thing
-   * that half of the cell exists to carry (three rows all reading
-   * `python3`). Under pressure the name gives way instead; it can be
-   * read back by opening the cell, and the word cannot be read back at
-   * all if it is not drawn.
+   * They were the ceiling on the name and the floor under the word
+   * inside the 「命令」 cell. Between them they gave that cell two
+   * widths, and 2026-09-04 the person using this said what two widths
+   * cost: 「这俩就是俩字符串,放一列是有原因的,干嘛还要单独显示宽度呢?
+   * 他俩加一块共享列宽」 — after seeing a row where the process name
+   * had been squeezed out entirely and stood as a single `▪`.
    *
-   * **There is deliberately no matching floor on the name.** A floor is
-   * also a width, so one there padded every short name out to it and
-   * pushed the word away — a gap in the middle of a cell, reading as
-   * the two columns this merge just undid (2026-09-04, seen in a
-   * screenshot). The name is held up by this floor being small and by
-   * its own ceiling, `--cw-name-max`.
-   *
-   * In `ch` because what is protected is a number of characters, read
-   * against `--text-sm`, the table's own size. */
-  --cw-cmd-arg-min: 6ch;
+   * The cell is one flowing line now with one truncation at its end
+   * (`Cut`, and the tombstone in app.css). Nothing in it has a width of
+   * its own, so there is nothing here to name. */
   --cw-run: 78px;
   --cw-cpu: 52px;
   --cw-gpu: 46px;
