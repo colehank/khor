@@ -481,11 +481,19 @@ input[type="search"]::-webkit-search-decoration {
 /* The process table: one grid, so every column edge is one line down
    the whole list. Rows join it with `display: contents` — a row that is
    its own box is a row whose columns start wherever that box does. */
+/* **The command line has a ceiling and the quantities take the slack.**
+   The `1fr` used to sit on the command line, so every pixel the fixed
+   columns did not want went to it. Now the first quantity's track is
+   the flexible one, which puts the whole block of numbers against the
+   right edge instead of wherever one machine's longest argument left
+   them — and keeps them together, which is the half the earlier
+   「让名字列吃余量」 attempt got wrong (it opened 799px between a
+   process's name and its CPU). */
 [data-load-top] {
   display: grid;
   column-gap: var(--gap-in);
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-run)
+    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-run), 1fr)
     var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
 }
 /* **A column the machine cannot fill does not exist**, and the track
@@ -493,15 +501,17 @@ input[type="search"]::-webkit-search-decoration {
    columns, which reads as "khor looked and found nothing". */
 [data-load-top][data-nogpu] {
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-run) var(--cw-cpu) var(--cw-mem);
+    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-run), 1fr)
+    var(--cw-cpu) var(--cw-mem);
 }
 [data-load-top][data-norun] {
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-cpu)
+    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-cpu), 1fr)
     var(--cw-gpu) var(--cw-vram) var(--cw-mem);
 }
 [data-load-top][data-nogpu][data-norun] {
-  grid-template-columns: var(--cw-pid) var(--cw-name) minmax(0, 1fr) var(--cw-cpu) var(--cw-mem);
+  grid-template-columns:
+    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-cpu), 1fr) var(--cw-mem);
 }
 [data-load-top] [data-top-row],
 [data-load-top] [data-top-heads] {
@@ -556,4 +566,193 @@ input[type="search"]::-webkit-search-decoration {
    otherwise carry two invisible gaps on every row. */
 [data-tight] > [data-load-top] [data-top-row] > [data-c]:empty {
   display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   The 24-hour block's own ink ramp.
+
+   **Eight steps of khor's ink, at the prototype's alphas verbatim**
+   (`/private/tmp/khor-machine-face/card-whole.html`, `.dayblk`). They
+   are one colour — the same 26,26,20 the whole face is drawn in — at
+   eight alphas, so this is not a second palette living beside the
+   first: it is the ramp that *encodes a number*, which is the one job
+   a scale of greys is allowed to have here.
+
+   Why the alphas are these and not evenly spaced: the prototype
+   solved them for even **ΔL\***, not even alpha. Alpha is linear in
+   coverage and lightness is not, so a linear ramp crowds its middle
+   and wastes its ends.
+
+   Why they live in CSS rather than as `fill-opacity` on `currentColor`:
+   the ink is already `rgba(…, .94)`, so an opacity of `.101` on top of
+   it paints `.095` — every step would be off by 6%, and the gate that
+   measures L\* would be measuring a ramp nobody designed.
+   ───────────────────────────────────────────────────────────────── */
+[data-day-band-axis] {
+  --day-r0: rgba(26, 26, 20, 0.101);
+  --day-r1: rgba(26, 26, 20, 0.17);
+  --day-r2: rgba(26, 26, 20, 0.24);
+  --day-r3: rgba(26, 26, 20, 0.325);
+  --day-r4: rgba(26, 26, 20, 0.43);
+  --day-r5: rgba(26, 26, 20, 0.56);
+  --day-r6: rgba(26, 26, 20, 0.72);
+  --day-r7: rgba(26, 26, 20, 0.94);
+  /* The ridge's strokes, front row first. */
+  --day-s1: rgba(26, 26, 20, 0.94);
+  --day-s2: rgba(26, 26, 20, 0.76);
+  --day-s3: rgba(26, 26, 20, 0.58);
+  --day-s4: rgba(26, 26, 20, 0.4);
+  --day-s5: rgba(26, 26, 20, 0.26);
+  --day-mass: rgba(26, 26, 20, 0.34);
+  --day-thread: rgba(26, 26, 20, 0.42);
+  --day-recent: rgba(26, 26, 20, 0.64);
+  /* The three inks the words are written in: a row's name, a footnote,
+     a hairline. `--day-lab` is `--muted-foreground` to the digit; it is
+     spelled out rather than aliased so the whole ramp reads as one
+     table. */
+  --day-lab: rgba(26, 26, 20, 0.62);
+  --day-fnt: rgba(26, 26, 20, 0.4);
+  --day-hair: rgba(26, 26, 20, 0.14);
+}
+@media (prefers-color-scheme: dark) {
+  [data-day-band-axis] {
+    --day-r0: rgba(238, 238, 231, 0.11);
+    --day-r1: rgba(238, 238, 231, 0.18);
+    --day-r2: rgba(238, 238, 231, 0.25);
+    --day-r3: rgba(238, 238, 231, 0.34);
+    --day-r4: rgba(238, 238, 231, 0.45);
+    --day-r5: rgba(238, 238, 231, 0.58);
+    --day-r6: rgba(238, 238, 231, 0.74);
+    --day-r7: rgba(238, 238, 231, 0.96);
+    --day-s1: rgba(238, 238, 231, 0.96);
+    --day-s2: rgba(238, 238, 231, 0.78);
+    --day-s3: rgba(238, 238, 231, 0.58);
+    --day-s4: rgba(238, 238, 231, 0.4);
+    --day-s5: rgba(238, 238, 231, 0.26);
+    --day-mass: rgba(238, 238, 231, 0.34);
+    --day-thread: rgba(238, 238, 231, 0.42);
+    --day-recent: rgba(238, 238, 231, 0.66);
+    --day-lab: rgba(238, 238, 231, 0.6);
+    --day-fnt: rgba(238, 238, 231, 0.38);
+    --day-hair: rgba(238, 238, 231, 0.14);
+  }
+}
+[data-day-band-axis] .day-r0 {
+  fill: var(--day-r0);
+}
+[data-day-band-axis] .day-r1 {
+  fill: var(--day-r1);
+}
+[data-day-band-axis] .day-r2 {
+  fill: var(--day-r2);
+}
+[data-day-band-axis] .day-r3 {
+  fill: var(--day-r3);
+}
+[data-day-band-axis] .day-r4 {
+  fill: var(--day-r4);
+}
+[data-day-band-axis] .day-r5 {
+  fill: var(--day-r5);
+}
+[data-day-band-axis] .day-r6 {
+  fill: var(--day-r6);
+}
+[data-day-band-axis] .day-r7 {
+  fill: var(--day-r7);
+}
+[data-day-band-axis] .day-strain {
+  fill: var(--strain);
+}
+[data-day-band-axis] .day-k1 {
+  stroke: var(--day-s1);
+}
+[data-day-band-axis] .day-k2 {
+  stroke: var(--day-s2);
+}
+[data-day-band-axis] .day-k3 {
+  stroke: var(--day-s3);
+}
+[data-day-band-axis] .day-k4 {
+  stroke: var(--day-s4);
+}
+[data-day-band-axis] .day-k5 {
+  stroke: var(--day-s5);
+}
+[data-day-band-axis] .day-f1 {
+  fill: var(--day-s1);
+}
+[data-day-band-axis] .day-f2 {
+  fill: var(--day-s2);
+}
+[data-day-band-axis] .day-f3 {
+  fill: var(--day-s3);
+}
+[data-day-band-axis] .day-f4 {
+  fill: var(--day-s4);
+}
+[data-day-band-axis] .day-f5 {
+  fill: var(--day-s5);
+}
+[data-day-band-axis] .day-area {
+  fill: var(--day-mass);
+}
+[data-day-band-axis] .day-thr {
+  stroke: var(--day-thread);
+}
+[data-day-band-axis] .day-rec {
+  stroke: var(--day-recent);
+}
+[data-day-band-axis] .day-lab {
+  fill: var(--day-lab);
+}
+[data-day-band-axis] .day-fnt {
+  fill: var(--day-fnt);
+}
+[data-day-band-axis] .day-ink {
+  fill: var(--foreground);
+}
+[data-day-band-axis] .day-sf {
+  fill: var(--strain);
+}
+[data-day-band-axis] .day-sk {
+  stroke: var(--strain);
+}
+[data-day-band-axis] .day-hair {
+  stroke: var(--day-hair);
+}
+[data-day-band-axis] .day-inkline {
+  stroke: var(--foreground);
+}
+[data-day-band-axis] .day-halo {
+  stroke: var(--card);
+}
+/* The cursor's readout. **The weights and the inks are the prototype's**
+   — the metric's name in the muted ink at the body weight, its value in
+   full ink at 700, a reading nobody took in the footnote ink, and a
+   strained one in the strain colour. What was wrong before was not the
+   words: it was that all of them were one weight and one grey, so the
+   line read as a sentence instead of as a row of readings. */
+[data-day-band-axis] [data-day-at] {
+  color: var(--day-lab);
+}
+[data-day-band-axis] [data-day-at] b {
+  font-weight: var(--font-weight-title);
+  color: var(--foreground);
+}
+[data-day-band-axis] [data-day-at] [data-gone] {
+  color: var(--day-fnt);
+}
+[data-day-band-axis] [data-day-at] [data-strained] {
+  font-weight: var(--font-weight-title);
+  color: var(--strain);
+}
+/* The three readings, as three words. Unpressed they wear the footnote
+   ink, pressed they wear full ink at the title weight — the prototype's `.sw i`, whose 700 this scale stops one step short of. */
+[data-day-band-axis] [data-day-view-pick] {
+  color: var(--day-fnt);
+}
+[data-day-band-axis] [data-day-view-pick][data-on="true"] {
+  font-weight: var(--font-weight-title);
+  color: var(--foreground);
 }

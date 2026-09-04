@@ -261,7 +261,11 @@ try {
   // **One bucket at 95** so 内存 actually wears the strain colour
   // somewhere: without it the strain assertion has only its negative
   // half, and a chart that never painted strain at all would pass.
-  const memBuckets = dayBuckets.map((b, i) => (b === null ? null : i === 7 ? 95 : 40 + (i % 20)));
+  // **Two buckets are pinned: 95, and 90 exactly.** The second is the
+  // strain boundary, and it lives on a row that wears strain because
+  // that is where `>= 90` is nameable — a `>` written instead reds on
+  // that bucket alone.
+  const memBuckets = dayBuckets.map((b, i) => (b === null ? null : i === 7 ? 95 : i === 11 ? 90 : 40 + (i % 20)));
   // **An idle machine's day, which is what the bands were widened
   // for.** Everything here lives under 20 — turing really does draw
   // 564 buckets in that range across four rows — and with the old
@@ -270,11 +274,18 @@ try {
   // every series happens to span the full range cannot see it.
   const gpuBuckets = dayBuckets.map((b, i) => (b === null ? null : 2 + (i % 14)));
   const diskBuckets = dayBuckets.map(() => null);
-  // The cards' memory, on the same holes as the rest. **One bucket is
-  // exactly 90.0** — the strain boundary — so a comparison written `>`
-  // instead of `>=` reds on that bucket alone, the way
-  // `strain_steps_at_ninety_and_ninety_five_exactly` pins its own.
-  const vramBuckets = dayBuckets.map((b, i) => (b === null ? null : i === 11 ? 90 : 20 + (i % 55)));
+  // **A day spent wholly inside the 70–90 band, which is what the
+  // eighth cut was made for.** turing's video memory really does live
+  // between 74.6 and 89.6 for a whole day: fifteen points of range,
+  // every one of them in one band, so it drew as a slab no matter how
+  // many cuts went in at the bottom. This series is that shape — under
+  // the seven-band ramp it is one shade across 15 points of a 20-point
+  // band and the flat-slab check reds; under eight it draws two.
+  //
+  // It carries no outlier on purpose: one bucket in a second band is
+  // all it takes for a row to stop being flat, and then the arm proves
+  // nothing.
+  const vramBuckets = dayBuckets.map((b, i) => (b === null ? null : 72 + (i % 16)));
   // How many rows the chart owes: one per series with a reading in it.
   // **Computed, not typed.** It used to be a literal `3`, under a
   // comment describing a rule that can be evaluated — so adding a
@@ -363,6 +374,17 @@ try {
   await page.route("**/load", async (r) => {
     if (r.request().postDataJSON().machine === "elder") {
       return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(ELDER_REFUSAL) });
+    }
+    // **A page with nothing on a card in it, and no ages either.** This
+    // is what ordering turing by PID really returns: the lowest pids
+    // are the boot daemons, none of them on a card and several of them
+    // started before the kernel could say when. It is here so that
+    // 「the columns do not depend on the page」 has two distinguishable
+    // states — without it every ordering answers with the same rows and
+    // an implementation that reads the column set off the rows passes.
+    if (r.request().postDataJSON().by === "pid") {
+      const bare = { ...load, top: load.top.map((t) => ({ ...t, gpu_pct: null, gpu_mem: null, run_secs: null })) };
+      return r.fulfill({ contentType: "application/json", body: JSON.stringify(bare) });
     }
     if (held.on) {
       held.seen += 1;
@@ -1941,6 +1963,42 @@ try {
   const after = await sortStateNow();
   if (!after.sorted.includes("mem:descending")) fail(`the answer landed but aria-sort still says ${after.sorted.join(",")}`);
   if (after.asking.length !== 0) fail(`a head is still marked waiting after the answer landed: ${after.asking.join(",")}`);
+
+  //     ── the column set is a fact about the machine ───────────────
+  //
+  //     **Press every head in turn; not one column may appear or
+  //     disappear.** 「这台机器有没有卡」 is a property of the machine,
+  //     not of the two hundred rows the current ordering cut — and when
+  //     it was read off the rows, pressing 「GPU」 on turing deleted the
+  //     GPU column, taking with it the head you would press to undo it
+  //     (user, 2026-09-04:「一点整个表就变了，比如GPU，一点就没有GPU这
+  //     列了」).
+  //
+  //     The route above answers a PID ordering with a page that has no
+  //     card readings and no ages in it, which is what the real one
+  //     does; so this goes red on the implementation it was written
+  //     against, and green only on one that asks the machine.
+  const colsNow = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("[data-machine-card] [data-top-heads] > *")]
+        .map((n) => n.dataset.topHead ?? n.dataset.c ?? "?")
+        .join(","),
+    );
+  {
+    const first = await colsNow();
+    if (first.split(",").length < 6) fail(`probe dead: the table shows only [${first}], so pressing its heads proves nothing`);
+    for (const col of first.split(",").filter((c) => c !== "cmd")) {
+      await page.locator(`[data-machine-card] [data-top-head="${col}"] button`).click();
+      // Let the ask land — the rows are redrawn from the answer, and it
+      // is the redraw that used to take the column with it.
+      await new Promise((r) => setTimeout(r, 700));
+      const now = await colsNow();
+      if (now !== first) {
+        fail(`pressing 「${col}」 changed the table's columns from [${first}] to [${now}] — an ordering may not decide which columns exist`);
+        break;
+      }
+    }
+  }
   const peerGpus = devs.find((d) => d.name === "peer").vitals.vitals.gpus;
   //     ── nothing overflows sideways, at any width ─────────────────
   //
@@ -2107,16 +2165,41 @@ try {
     for (const r of flat) {
       const seen = (series[r.name] ?? []).filter((v) => v !== null);
       if (seen.length === 0 || r.drawn === 0) continue;
-      //   **A reading that really is constant is excused by name.** A
-      //   machine that sat at exactly one value all day should draw one
-      //   shade; asking for variation there would be a false red about
-      //   a chart telling the truth.
       const spread = Math.max(...seen) - Math.min(...seen);
-      if (spread <= 1) continue;
-      if (r.shades.length === 1) {
+      if (r.shades.length !== 1) continue;
+      //   **The excuse is relative to the band the row sits in, not an
+      //   absolute span.** An absolute threshold is wrong at both ends:
+      //   low, it reds a machine that genuinely did not move; high, it
+      //   waves through turing's video memory, which crosses **fifteen
+      //   points** and still lands wholly inside one band — the exact
+      //   defect the eighth band was cut for. So the question is what
+      //   fraction of its own band the row's range fills: measured on
+      //   the live fleet, 显存 is 14.9 of a 20-wide band (75%, a
+      //   defect) and 磁盘 is 2.4 of a 12-wide one (21%, not).
+      //
+      //   turing's disk row is a flat slab and **that is correct**: a
+      //   day that moves 2.4 points cannot be drawn by any quantised
+      //   ramp — a hundred points cut into N bands puts a boundary
+      //   inside 2.4 only past N=41, by which point neighbouring steps
+      //   are below the eye's threshold. It is arithmetic, and a disk
+      //   that gains 2.4 points in a day *should* look flat.
+      //
+      //   ⚠️ The boundaries are written here rather than read from the
+      //   page on purpose — a gate that asks the implementation what
+      //   its bands are agrees with it whatever they become. They must
+      //   be changed here deliberately when `BANDS` changes, and the
+      //   top-step assertion above is what notices if they have not.
+      const edges = [3, 8, 20, 45, 70, 80, 90];
+      const k = Number(r.shades[0]);
+      if (!Number.isFinite(k)) continue;
+      const lo = k === 0 ? 0 : edges[k - 1];
+      const hi = k >= edges.length ? 100 : edges[k];
+      const share = spread / (hi - lo);
+      if (share > 0.5) {
         fail(
           `the ${r.name} row paints all ${r.drawn} of its buckets in one shade (${r.shades[0]}) ` +
-            `while the readings span ${Math.round(spread)} points — a day with nothing to read`,
+            `while the readings span ${spread.toFixed(1)} points — ${Math.round(share * 100)}% of that band's own ` +
+            `${hi - lo}-point width, so there was something to read and the ramp did not read it`,
         );
       }
     }
@@ -2554,14 +2637,31 @@ try {
     const cells = [...row.querySelectorAll("[data-day-cell]")];
     const at = (i) => cells[i]?.querySelector("[data-day-shade]")?.dataset.dayShade ?? null;
     const rects = [...row.querySelectorAll("[data-day-shade]")];
+    //   **The band is one drawing now, not one per row**, so the
+    //   reading's name and the hour marks belong to the figure and are
+    //   read from it. Asked of the row they come back empty, and an
+    //   empty answer reads like 「it is not there」 — the same trap as a
+    //   renamed selector.
+    const band = document.querySelector("[data-machine-card] [data-day-band]");
     return {
       // the fixture's cpu series is 5 + (i % 60), so bucket 0 is 5 and
       // bucket 58 is 63 — a low one and a high one, by construction.
       low: at(0),
       high: at(58),
       heights: [...new Set(rects.map((r) => r.getAttribute("height")))],
-      views: [...new Set([...row.querySelectorAll("[data-day-view]")].map((e) => e.dataset.dayView))],
-      hours: row.querySelectorAll("[data-day-hour]").length,
+      views: [band.dataset.dayView],
+      //   The hour marks' own x, so the claim can be about spacing
+      //   rather than about a count that only holds for one clock.
+      hourX: [...band.querySelectorAll("[data-day-hour] line")].map((l) => Number(l.getAttribute("x1"))),
+      //   The plot's two edges, from the first and last bucket drawn —
+      //   **not from one cell's width**, which is rounded to a whole
+      //   pixel and so multiplies its rounding by 36.
+      plot:
+        rects.length > 1
+          ? Number(rects[rects.length - 1].getAttribute("x")) +
+            Number(rects[rects.length - 1].getAttribute("width")) -
+            Number(rects[0].getAttribute("x"))
+          : 0,
     };
   });
   if (shades.low === null || shades.high === null) {
@@ -2572,11 +2672,23 @@ try {
   //     **B · no bars.** Every drawn cell is the full height of the
   //     row; a height proportional to the value is the old chart coming
   //     back under a new name.
-  if (shades.heights.length !== 1 || shades.heights[0] !== "100") {
+  if (shades.heights.length !== 1) {
     fail(`the cells draw ${shades.heights.length} different heights (${shades.heights.join(",")}) — a heat band has one`);
   }
   if (shades.views.join(",") !== "heat") fail(`the band does not say which reading it is (${shades.views.join(",")})`);
-  if (shades.hours !== 23) fail(`${shades.hours} hour marks on a 288-bucket day — one an hour is 23 between the ends`);
+  //     **The hours are three apart, and that is checked as a spacing
+  //     rather than as a count.** A count only holds for the clock the
+  //     window happened to start on; the spacing holds for every one.
+  //     36 buckets is three hours at five minutes a bucket.
+  {
+    const gaps = shades.hourX.slice(1).map((x, i) => x - shades.hourX[i]);
+    const want = (shades.plot * 36) / 288;
+    if (shades.hourX.length < 6) {
+      fail(`${shades.hourX.length} hour marks on a 288-bucket day — every third hour is seven or eight of them`);
+    } else if (gaps.some((g) => Math.abs(g - want) > 1.5)) {
+      fail(`the hour marks are ${gaps.map((g) => g.toFixed(1)).join("/")} apart where three hours is ${want.toFixed(1)}`);
+    }
+  }
   //     **F · strain is judged per bucket, and only where being full is
   //     a fault.** 内存 wears it; CPU does not, because a busy machine
   //     is a machine working (see `shadeOf`). The fixture puts one
@@ -2603,19 +2715,14 @@ try {
   if ((strain.vram ?? []).some((v) => v === "strain")) {
     fail("a 显存 bucket drew in the strain colour — a full card is the normal state of a box being used");
   }
-  //     And the boundary itself: the fixture's bucket 11 is exactly
-  //     90.0, so a `>` would leave it a step below.
-  //     **The boundary bucket belongs to the top step, whatever the
-  //     top step is numbered.** Written against the highest shade the
-  //     row actually drew rather than a literal: the ladder gained two
-  //     bands and a hard-coded 「4」 started pointing at the middle of
-  //     it while claiming to be about the top.
-  {
-    const drawn = (strain.vram ?? []).filter((v) => v !== null && v !== "strain").map(Number);
-    const top = drawn.length ? Math.max(...drawn) : null;
-    if ((strain.vram ?? [])[11] !== String(top)) {
-      fail(`the bucket at exactly 90.0 drew "${(strain.vram ?? [])[11]}" and the top step is "${top}" — the top step is >= 90, not > 90`);
-    }
+  //     And the boundary itself: the fixture's memory bucket 11 is
+  //     exactly 90.0, so a `>` written for `>=` leaves it a step below
+  //     the top and drops out of the list above. Pinned on a row that
+  //     *wears* strain because that is where the top step has a name of
+  //     its own — no literal band number to go stale when the ramp
+  //     gains a cut.
+  if ((strain.mem ?? [])[11] !== "strain") {
+    fail(`the memory bucket at exactly 90.0 drew "${(strain.mem ?? [])[11]}" — the top step is >= 90, not > 90`);
   }
 
   //     **One row per series that has a reading, and the all-hole one
@@ -2638,7 +2745,7 @@ try {
     if (r.bars !== 288 - dayGaps) fail(`${r.name}: ${r.bars} bars for ${288 - dayGaps} readings`);
     //   And each row says how high it got: a shape alone answers 什么
     //   时候 and never 多高.
-    if (!/\d+%/.test(r.peak)) fail(`${r.name}: the row draws a shape but never says its peak ("${r.peak}")`);
+    if (!/^\d+$/.test(r.peak)) fail(`${r.name}: the row draws a shape but never says its peak ("${r.peak}")`);
   }
   if (busy.why !== 0) fail("the peer answered and the card still prints a refusal");
   await open("devices");

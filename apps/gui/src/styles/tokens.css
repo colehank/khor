@@ -659,6 +659,22 @@
   --cw-gpu: 46px;
   --cw-vram: 74px;
   --cw-mem: 66px;
+  /* **A ceiling for the command line, not its width.** It used to be
+   * `1fr`, so it swallowed every pixel the fixed columns did not want
+   * — on a wide card that is most of the table, and the quantities it
+   * pushed rightwards are the reason anybody scans this table (user,
+   * 2026-09-04:「命令行这一列占用的宽度」).
+   *
+   * A ceiling is the right shape rather than a smaller fraction,
+   * because the column already has a way to say 「there is more」 — the
+   * bordered mark, which opens the whole line in place. So the wide
+   * case is not a loss of information, it is a fold; and the width it
+   * gives back goes to the quantities, which have no fold.
+   *
+   * In `ch` and not `em`: this column is a path, so what matters is how
+   * many characters fit, and `ch` is that unit. Read against
+   * `--text-sm`, the table's own size. */
+  --cw-cmd: 32ch;
   --part-name: 220px;
   --part-num: 172px;
   --top-h: 232px;
