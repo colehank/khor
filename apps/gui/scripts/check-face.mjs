@@ -2598,6 +2598,89 @@ try {
     console.log(`bandwidth 390→1200 by 10: ${bad.length} widths flagged (sideways overflow or a cell on two lines)`);
   }
 
+  //     ── the column heads do not go with the rows ─────────────────
+  //
+  //     2026-09-04:「拖动进程列表的时候,表头要悬浮,不要被拖走,这种基础
+  //     的都搞错」. The process window is a fixed box that scrolls, and
+  //     a head that leaves with the rows takes with it the only thing
+  //     saying which column a number is in — **and the control that
+  //     re-orders them**.
+  //
+  //     ⚠️ **Measured on the head's own box, and the reason is the bug
+  //     it replaced.** `[data-top-heads]` wore `sticky top-0 bg-card`
+  //     for as long as this table has existed and it was inert:
+  //     `display: contents` gives that element **no box at all**, so it
+  //     cannot be positioned and cannot paint a ground. Reading the
+  //     class off the markup would have said 「sticky」; the head went
+  //     from 737 to −2675.
+  //
+  //     Three things after the scroll, because the shallow version of
+  //     this passes on a head that is pinned and useless: it is still
+  //     **where it was**, it still **covers** the rows going under it
+  //     (a transparent head is a head with rows written through it),
+  //     and it still **sorts**.
+  {
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    await wait(300);
+    const before = await page.evaluate(() => {
+      const box = document.querySelector("[data-machine-card] [data-load-top-box]");
+      const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
+      if (!box || !head) return null;
+      return {
+        scrollable: box.scrollHeight - box.clientHeight,
+        top: +head.getBoundingClientRect().top.toFixed(1),
+        firstRow: +document.querySelector("[data-machine-card] [data-top-row] > *").getBoundingClientRect().top.toFixed(1),
+        opaque: getComputedStyle(head).backgroundColor,
+      };
+    });
+    if (!before) {
+      fail("probe dead: no process window or no column heads, so 「the heads stay」 measured nothing");
+    } else if (before.scrollable < 40) {
+      fail(`probe dead: the process window scrolls ${before.scrollable}px, so scrolling it proves nothing about the heads`);
+    } else {
+      const after = await page.evaluate(async () => {
+        const box = document.querySelector("[data-machine-card] [data-load-top-box]");
+        box.scrollTop = box.scrollHeight;
+        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
+        return {
+          top: +head.getBoundingClientRect().top.toFixed(1),
+          firstRow: +document.querySelector("[data-machine-card] [data-top-row] > *").getBoundingClientRect().top.toFixed(1),
+          moved: box.scrollTop,
+        };
+      });
+      if (Math.abs(after.top - before.top) > 1) {
+        fail(`the column heads went from ${before.top} to ${after.top} while the rows were scrolled — they were dragged away with them`);
+      }
+      //   Probe alive: the rows really did move.
+      if (Math.abs(after.firstRow - before.firstRow) < 40) {
+        fail(`probe dead: the first row moved ${(after.firstRow - before.firstRow).toFixed(1)}px, so 「the heads stayed」 was true of a table nothing scrolled`);
+      }
+      const bg = before.opaque;
+      if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") {
+        fail(`the column heads have no ground of their own (${bg}) — the rows sliding under them are written through the words`);
+      }
+      //   And it still sorts, which is the half a pinned-but-dead head
+      //   would pass without.
+      const col = await page.evaluate(() => document.querySelector("[data-machine-card] [data-top-heads] > [data-top-head]")?.dataset.topHead);
+      const rowsBefore = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
+      );
+      await page.locator(`[data-machine-card] [data-top-head="${col}"] button`).click();
+      await wait(900);
+      const rowsAfter = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
+      );
+      if (rowsAfter === rowsBefore) {
+        fail(`pressing 「${col}」 after scrolling changed nothing — the head is pinned and no longer a control`);
+      }
+      console.log(
+        `sticky heads: window scrolls ${before.scrollable}, heads ${before.top}→${after.top}, ` +
+          `first row ${before.firstRow}→${after.firstRow}, ground ${bg}, still sorts`,
+      );
+    }
+  }
+
   //     ── the table reaches the edge its neighbours reach ──────────
   //
   //     2026-09-04:「表那应该表根据屏幕铺开。现在全挤在左边了」— the

@@ -569,6 +569,30 @@ input[type="search"]::-webkit-search-decoration {
   display: contents;
 }
 
+/* **The column heads stay at the top of the window while the rows go
+   past them.** 2026-09-04:「拖动进程列表的时候,表头要悬浮,不要被拖走,
+   这种基础的都搞错」.
+
+   ⚠️ **The class was there and did nothing, and the reason is worth
+   keeping.** `[data-top-heads]` carried `sticky top-0 bg-card` — but it
+   is `display: contents`, so **it has no box**, and an element with no
+   box cannot be positioned, cannot be a containing block, and cannot
+   paint a background. Measured before this rule: `position` computed
+   `static` and scrolling the window to its end took the heads from 737
+   to **−2675**. A utility that reads correctly and is inert is worse
+   than a missing one.
+
+   So the stickiness goes on the **cells**, which are the real boxes —
+   they are the grid's first row, and each sticks to the scroll port's
+   top on its own. The ground comes with them, or the rows would slide
+   through the words. */
+[data-load-top] [data-top-heads] > * {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+}
+
 /* **Nothing in this table wraps.** 2026-09-04:「表的内容,比如"内存"是不
    允许换行的」. A cell that runs out of room truncates and puts up the
    bordered mark; it does not become two lines.
