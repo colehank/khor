@@ -2689,6 +2689,45 @@ try {
       fail(`the hour marks are ${gaps.map((g) => g.toFixed(1)).join("/")} apart where three hours is ${want.toFixed(1)}`);
     }
   }
+  //     ── nothing in the drawing sticks out of its own box ────────
+  //
+  //     **The viewBox is the drawing's edge, and anything past it is
+  //     simply gone** — no overflow, no error, no sign on the page that
+  //     a number was ever drawn. Measured on the real face at 390: a
+  //     guard meant to keep a bucket at least a pixel wide put the
+  //     right gutter *outside* a 332-wide box, and all five rows' peak
+  //     numbers were clipped away silently. The sideways-overflow scan
+  //     cannot see this: the SVG element itself fits, it is its own
+  //     contents that do not.
+  //
+  //     Checked at both stops, because the geometry is different at
+  //     each and it was the narrow one that broke.
+  {
+    const wide = page.viewportSize();
+    const fits = async (where) => {
+      const box = await page.evaluate(() => {
+        const svg = document.querySelector("[data-machine-card] [data-day-band]");
+        if (!svg) return null;
+        const vb = svg.viewBox.baseVal;
+        const b = svg.getBBox();
+        return { vbW: vb.width, vbH: vb.height, x: b.x, y: b.y, right: b.x + b.width, bottom: b.y + b.height };
+      });
+      if (!box) return fail(`probe dead: no day band at ${where}, so nothing was checked for clipping`);
+      if (box.right > box.vbW + 0.5 || box.x < -0.5 || box.bottom > box.vbH + 0.5 || box.y < -0.5) {
+        fail(
+          `at ${where} the 24-hour drawing runs to ${box.right.toFixed(1)}×${box.bottom.toFixed(1)} in a ` +
+            `${box.vbW}×${box.vbH} box (from ${box.x.toFixed(1)},${box.y.toFixed(1)}) — whatever is past the edge is clipped away with no sign of it`,
+        );
+      }
+    };
+    await fits(`${wide.width}`);
+    await page.setViewportSize({ width: 390, height: wide.height });
+    await new Promise((r) => setTimeout(r, 400));
+    await fits("390");
+    await page.setViewportSize(wide);
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
   //     **F · strain is judged per bucket, and only where being full is
   //     a fault.** 内存 wears it; CPU does not, because a busy machine
   //     is a machine working (see `shadeOf`). The fixture puts one

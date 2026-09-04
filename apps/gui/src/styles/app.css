@@ -481,37 +481,45 @@ input[type="search"]::-webkit-search-decoration {
 /* The process table: one grid, so every column edge is one line down
    the whole list. Rows join it with `display: contents` — a row that is
    its own box is a row whose columns start wherever that box does. */
-/* **The command line has a ceiling and the quantities take the slack.**
-   The `1fr` used to sit on the command line, so every pixel the fixed
-   columns did not want went to it. Now the first quantity's track is
-   the flexible one, which puts the whole block of numbers against the
-   right edge instead of wherever one machine's longest argument left
-   them — and keeps them together, which is the half the earlier
-   「让名字列吃余量」 attempt got wrong (it opened 799px between a
-   process's name and its CPU). */
+/* **Every track has a ceiling and none of them is `1fr`.** The `1fr`
+   used to sit on the command line, so every pixel the fixed columns did
+   not want went to it — on a wide card that is most of the table, while
+   the process names beside it were still clipping at thirteen
+   characters.
+
+   The slack goes to the right of the last column rather than into any
+   of them. **Putting it inside a track is the mistake with a history
+   here**: on the command line it makes one column most of the table; on
+   the name it opened 799px between a process's name and its CPU; and
+   moving it onto the first quantity — the shape this replaced, on the
+   real face for one deploy — opens the same hole one column further
+   along (measured at a 1100 window: the 时长 track held 123px for a
+   column whose content wants 78). A table narrower than its pane reads
+   as a table; a table with a canyon down the middle reads as broken. */
 [data-load-top] {
   display: grid;
   column-gap: var(--gap-in);
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-run), 1fr)
-    var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
+    var(--cw-pid) fit-content(var(--cw-name-max)) minmax(0, var(--cw-cmd))
+    var(--cw-run) var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
 }
 /* **A column the machine cannot fill does not exist**, and the track
    goes with it: a machine with no card would otherwise carry two empty
    columns, which reads as "khor looked and found nothing". */
 [data-load-top][data-nogpu] {
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-run), 1fr)
-    var(--cw-cpu) var(--cw-mem);
+    var(--cw-pid) fit-content(var(--cw-name-max)) minmax(0, var(--cw-cmd))
+    var(--cw-run) var(--cw-cpu) var(--cw-mem);
 }
 [data-load-top][data-norun] {
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-cpu), 1fr)
-    var(--cw-gpu) var(--cw-vram) var(--cw-mem);
+    var(--cw-pid) fit-content(var(--cw-name-max)) minmax(0, var(--cw-cmd))
+    var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
 }
 [data-load-top][data-nogpu][data-norun] {
   grid-template-columns:
-    var(--cw-pid) var(--cw-name) minmax(0, var(--cw-cmd)) minmax(var(--cw-cpu), 1fr) var(--cw-mem);
+    var(--cw-pid) fit-content(var(--cw-name-max)) minmax(0, var(--cw-cmd))
+    var(--cw-cpu) var(--cw-mem);
 }
 [data-load-top] [data-top-row],
 [data-load-top] [data-top-heads] {

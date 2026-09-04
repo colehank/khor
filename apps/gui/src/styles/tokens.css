@@ -653,7 +653,21 @@
   --top-h-tight: 344px;
   --hair: 1px;
   --cw-pid: 7ch;
-  --cw-name: 13ch;
+  /* How wide the process-name column may get — read through
+   * `fit-content()`, so the column takes **what that machine's names
+   * actually need**, up to here. It replaces a flat `13ch`, at which
+   * the real names clip on every machine to hand (`khor-2077930-6a…`,
+   * `kworker/u266:3…`) while the command line beside them took the
+   * whole rest of the table. This is where the width that column gives
+   * back goes first: measured 2026-09-04 at a 1100 window, the name
+   * column went 102 → 139 on turing and 102 → 189 on this Mac, and the
+   * command line 524 → 252.
+   *
+   * **Not `minmax(floor, ceiling)`** — a track written that way is not
+   * content-sized at all: it takes the ceiling whenever there is room,
+   * so hinton, whose names are short, held 183px of nothing and
+   * squeezed the command line to 80 (measured before this shape). */
+  --cw-name-max: 24ch;
   --cw-run: 78px;
   --cw-cpu: 52px;
   --cw-gpu: 46px;
@@ -668,8 +682,9 @@
    * A ceiling is the right shape rather than a smaller fraction,
    * because the column already has a way to say 「there is more」 — the
    * bordered mark, which opens the whole line in place. So the wide
-   * case is not a loss of information, it is a fold; and the width it
-   * gives back goes to the quantities, which have no fold.
+   * case is not a loss of information, it is a fold — and the process
+   * names beside it, which have no fold, get the width first
+   * (`--cw-name-max`).
    *
    * In `ch` and not `em`: this column is a path, so what matters is how
    * many characters fit, and `ch` is that unit. Read against

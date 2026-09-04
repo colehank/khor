@@ -2046,7 +2046,13 @@ function Heat({
   const g = narrow ? HEAT.narrow : HEAT.wide;
   const n = Math.max(1, tracks[0]?.v.length ?? 1);
   const X0 = g.GL;
-  const X1 = Math.max(X0 + n, W - g.GR);
+  // **The right edge is the gutter, not `X0 + one pixel a bucket`.** A
+  // floor of `X0 + n` looks like a guard against a sub-pixel bucket and
+  // is really a guard against the viewBox: at 390 it put `X1` at 334 in
+  // a 332-wide box and every peak number off the right of the drawing
+  // (measured on the real face). Sub-pixel buckets are handled where
+  // they arise — `Math.max(1, …)` on each segment's width.
+  const X1 = Math.max(X0 + 1, W - g.GR);
   const slot = (X1 - X0) / n;
   const H = g.TOP + tracks.length * g.ROW + g.AXIS;
   const yb = g.TOP + tracks.length * g.ROW + 1;
@@ -2239,7 +2245,7 @@ function Ridge({
   const TOP = 8;
   const AXIS = 16;
   const X0 = GL;
-  const X1 = Math.max(X0 + N, W - GR);
+  const X1 = Math.max(X0 + 1, W - GR);
   const slot = (X1 - X0) / N;
   const rowOf = (k: number) => n - 1 - k;
   const baseY = (r: number) => TOP + AMP + r * SP;
@@ -2573,6 +2579,39 @@ function Para({
           </g>
         );
       })}
+      {/* Which thread is now. The newest moment is already drawn in full
+          ink at twice the weight; this says what that weight means.
+          **Not the prototype's 「现在（也是今天最高）」 when the label
+          collides with the peak's**: two labels landing near each other
+          means their *values* are near each other, which is not the
+          same claim as 「now is the highest」 — turing's video memory
+          ends at 89.6 with its peak of 89.6 at 03:16, and that sentence
+          would name the wrong moment. It moves out of the way and says
+          only what it knows. */}
+      {last >= 0 &&
+        (() => {
+          const lv = tracks[n - 1].v[last];
+          if (lv === null || lv === undefined) return null;
+          const y = mapY(lv);
+          const pk = peakOf(tracks[n - 1]);
+          const clash = pk !== null && Math.abs(mapY(pk.v) - y) < 13;
+          return (
+            <text
+              data-day-now
+              x={AX[n - 1] + (n > 1 ? -8 : 8)}
+              y={clash ? y + 14 : y - 8}
+              fontSize={8.5}
+              fontWeight={800}
+              textAnchor={n > 1 ? "end" : "start"}
+              className="day-ink"
+              stroke="var(--card)"
+              strokeWidth={3.4}
+              style={{ paintOrder: "stroke" }}
+            >
+              {cli.day_now}
+            </text>
+          );
+        })()}
       {/* **The cursor survives the switch of reading**, and here it is
           the only thing that can carry it: this drawing has spent the
           time axis, so there is nothing to slide along. The moment
