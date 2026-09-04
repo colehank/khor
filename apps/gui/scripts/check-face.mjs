@@ -2267,6 +2267,137 @@ try {
     console.log("bandwidth 390→1200 by 10: page, drawer and process table all clean");
   }
 
+  //     ── the table reaches the edge its neighbours reach ──────────
+  //
+  //     2026-09-04:「表那应该表根据屏幕铺开。现在全挤在左边了」— the
+  //     table's columns summed to 692 in a 1378 box while the day
+  //     chart, the drawer's bars and the scatter above it all ran the
+  //     full width. A card whose four blocks stop at four different
+  //     places reads as one of them having failed to load.
+  //
+  //     **Two assertions, and they are the two halves of the history
+  //     here.** Width has to go somewhere, and every previous answer
+  //     put it in the wrong place:
+  //
+  //       - inside the *name* track → 799px between a process's name
+  //         and its CPU;
+  //       - inside the first *quantity* track → the same hole one
+  //         column along (时长 holding 123 for content wanting 78);
+  //       - to the right of the last column → this complaint.
+  //
+  //     So: the last column must reach the box's edge (**it spreads**),
+  //     and every gap *between* tracks must stay the one gap
+  //     (**and not by opening a canyon**). The slack goes to 「命令」,
+  //     the one column whose content is unbounded.
+  //
+  //     ⚠️ **What this does not buy, measured and not waved past:** on a
+  //     row whose command is short the width still ends up as blank —
+  //     it is simply blank *inside* one column rather than between two.
+  //     Measured on turing at 1500: the widest row's ink uses 789 of
+  //     the column's 959, and the median row's uses 124. The claim
+  //     these two assertions support is 「the table ends where the card
+  //     ends and no two columns drifted apart」, which is what was
+  //     asked for — **not** 「there is no white space」.
+  {
+    const wide = { width: 1500, height: 1000 };
+    await page.setViewportSize(wide);
+    await wait(300);
+    const spread = await page.evaluate(() => {
+      const t = document.querySelector("[data-machine-card] [data-load-top]");
+      if (!t) return null;
+      const heads = [...document.querySelectorAll("[data-machine-card] [data-top-heads] > *")];
+      if (heads.length < 4) return { heads: heads.length };
+      const box = t.getBoundingClientRect();
+      const rects = heads.map((h) => h.getBoundingClientRect());
+      const gaps = rects.slice(1).map((r, i) => +(r.left - rects[i].right).toFixed(1));
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;width:var(--gap-in)";
+      t.appendChild(probe);
+      const gap = probe.getBoundingClientRect().width;
+      probe.remove();
+      //   **How much room each track holds beyond the ink in it.** A
+      //   `1fr` on a quantity column does not widen the gap *between*
+      //   columns — the numbers are right-aligned, so the space opens
+      //   **inside** the track, on its left. That is precisely the
+      //   123-for-78 hole this section is about, and a gap-based probe
+      //   is blind to it: measured, with `1fr` moved onto 时长, the
+      //   gaps all still read 8 while that track held 591px for
+      //   content wanting 78.
+      const ink = (n) => {
+        const r = document.createRange();
+        r.selectNodeContents(n);
+        const w = r.getBoundingClientRect().width;
+        return Number.isFinite(w) ? w : 0;
+      };
+      const slackIn = {};
+      for (let i = 0; i < heads.length; i += 1) {
+        const key = heads[i].dataset.topHead ?? heads[i].dataset.c;
+        const cells = [...document.querySelectorAll(`[data-machine-card] [data-top-row] [data-c="${key}"]`)];
+        //   ⚠️ **The head's ink is inside its button, not its box.** A
+        //   head carries a `w-full` button so the whole column head is
+        //   pressable, so ranging over the `<th>` returns the *track's*
+        //   width — and the difference below is then always ~0. Written
+        //   that way first: with `1fr` moved onto 时长 the probe
+        //   reported 24px of room in a track holding 592 for content
+        //   wanting 102, and the assertion stayed green.
+        const btn = heads[i].querySelector("button") ?? heads[i];
+        const widest = Math.max(ink(btn), ...cells.map((c) => ink(c)), 0);
+        slackIn[key] = +(rects[i].width - widest).toFixed(1);
+      }
+      return {
+        heads: heads.length,
+        boxW: +box.width.toFixed(1),
+        slack: +(box.right - rects[rects.length - 1].right).toFixed(1),
+        gaps,
+        gap: +gap.toFixed(1),
+        slackIn,
+        cols: heads.map((h, i) => `${h.dataset.topHead ?? h.dataset.c}:${rects[i].width.toFixed(0)}`).join(" "),
+      };
+    });
+    if (!spread || spread.heads < 4) {
+      fail(`probe dead: the table shows ${spread ? spread.heads : 0} heads at 1500, so 「it spreads」 measured nothing`);
+    } else {
+      //   One character of tolerance, and no more: the point of the
+      //   assertion is that the leftover is not parked here.
+      if (spread.slack > 8) {
+        fail(
+          `at 1500 the table stops ${spread.slack}px short of its box (${spread.cols}) — ` +
+            `the card's other blocks reach the edge and this one does not, which reads as a block that failed`,
+        );
+      }
+      const canyon = spread.gaps.filter((g) => g > spread.gap + 1);
+      if (canyon.length) {
+        fail(
+          `at 1500 ${canyon.length} of ${spread.gaps.length} column gaps are wider than the table's own gap ` +
+            `(${spread.gaps.join("/")} against ${spread.gap}) — the slack went between two columns`,
+        );
+      }
+      //   **And no track but 「命令」 holds room it has no ink for.**
+      //   That is where the slack is allowed to be: the one column
+      //   whose content has no bound. A quantity track wider than its
+      //   widest number is the 799px hole, and it does not show up as a
+      //   gap — see the probe.
+      //
+      //   60px of tolerance for the heads' own padding (`px-row` on the
+      //   right-aligned ones) and the chevron beside the sorted word;
+      //   the hole this catches is measured in hundreds.
+      const fat = Object.entries(spread.slackIn).filter(([k, v]) => k !== "cmd" && v > 60);
+      if (fat.length) {
+        fail(
+          `at 1500 ${fat.map(([k, v]) => `${k} holds ${v}px it has no ink for`).join(", ")} — ` +
+            `the slack went inside a quantity column, which opens a hole to the left of its numbers ` +
+            `(the gaps stay ${spread.gap} the whole time, so this is not visible as a gap)`,
+        );
+      }
+      console.log(
+        `table at 1500: box ${spread.boxW}, slack ${spread.slack}, gaps ${spread.gaps.join("/")} (gap ${spread.gap}), ` +
+          `room beyond ink ${Object.entries(spread.slackIn).map(([k, v]) => `${k}:${v}`).join(" ")}`,
+      );
+    }
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    await wait(200);
+  }
+
   //     ── the dial is a 210° face, and the rim carries the parts ───
   //
   //     **This is the assertion D lives or dies by.** The dial exists

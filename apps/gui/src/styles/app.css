@@ -500,7 +500,7 @@ input[type="search"]::-webkit-search-decoration {
   display: grid;
   column-gap: var(--gap-in);
   grid-template-columns:
-    var(--cw-pid) minmax(0, var(--cw-cmd))
+    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
     var(--cw-run) var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
 }
 /* **A column the machine cannot fill does not exist**, and the track
@@ -508,17 +508,17 @@ input[type="search"]::-webkit-search-decoration {
    columns, which reads as "khor looked and found nothing". */
 [data-load-top][data-nogpu] {
   grid-template-columns:
-    var(--cw-pid) minmax(0, var(--cw-cmd))
+    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
     var(--cw-run) var(--cw-cpu) var(--cw-mem);
 }
 [data-load-top][data-norun] {
   grid-template-columns:
-    var(--cw-pid) minmax(0, var(--cw-cmd))
+    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
     var(--cw-cpu) var(--cw-gpu) var(--cw-vram) var(--cw-mem);
 }
 [data-load-top][data-nogpu][data-norun] {
   grid-template-columns:
-    var(--cw-pid) minmax(0, var(--cw-cmd))
+    var(--cw-pid) minmax(var(--cw-cmd), 1fr)
     var(--cw-cpu) var(--cw-mem);
 }
 [data-load-top] [data-top-row],

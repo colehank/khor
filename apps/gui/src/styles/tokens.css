@@ -685,27 +685,36 @@
   --cw-gpu: 46px;
   --cw-vram: 74px;
   --cw-mem: 66px;
-  /* **A ceiling for the 「命令」 column, not its width.** It used to be
-   * `1fr`, so it swallowed every pixel the fixed columns did not want
-   * — on a wide card that is most of the table, and the quantities it
-   * pushed rightwards are the reason anybody scans this table (user,
-   * 2026-09-04:「命令行这一列占用的宽度」).
+  /* **A floor under the 「命令」 column, and the column takes the rest
+   * of the table.** 2026-09-04:「表那应该表根据屏幕铺开。现在全挤在
+   * 左边了」— the table was 690 wide in a 1378 box, with the whole
+   * right half of the pane empty.
    *
-   * A ceiling is the right shape rather than a smaller fraction,
-   * because the column already has a way to say 「there is more」 — the
-   * bordered mark, which opens the whole line in place. So the wide
-   * case is not a loss of information, it is a fold.
+   * **Where the slack goes is a question with a history, and every
+   * other answer here was tried and was wrong.** On the process name it
+   * opened 799px between a name and its CPU. On the first quantity it
+   * opened the same hole one column further along (measured at a 1100
+   * window: the 时长 track held 123px for content wanting 78). So it
+   * was put to the *right of the last column*, which is what「挤在左边」
+   * is describing.
    *
-   * **Raised 32 → 56ch when the two columns became one** (2026-09-04):
-   * the cell now holds the short name *and* the identifying word, so a
-   * ceiling written for the word alone would clip nearly every row. It
-   * is the two floors (8ch + 6ch) plus the name's own ceiling (24ch)
-   * with room for a word beside it.
+   * The merge is what makes an answer possible: **「命令」 is the only
+   * column whose content is genuinely unbounded**, so width given to it
+   * lands on that content rather than between two numbers. A wide card
+   * simply folds fewer command lines.
+   *
+   * `1fr` and not a ceiling, because the ceiling is already there and
+   * is not made of pixels: the bordered mark, which opens the whole
+   * line in place. The floor is what stops the track vanishing if the
+   * quantity columns ever grow — deliberately under the narrowest the
+   * track is actually asked for (measured 210.9px at the tightest width
+   * where the table is still a grid), so it can never be the thing that
+   * pushes the table over its box.
    *
    * In `ch` and not `em`: this column is a name and a path, so what
-   * matters is how many characters fit, and `ch` is that unit. Read
-   * against `--text-sm`, the table's own size. */
-  --cw-cmd: 56ch;
+   * matters is how many characters fit, read against `--text-sm`, the
+   * table's own size. */
+  --cw-cmd: 20ch;
   --part-name: 220px;
   --part-num: 172px;
   --top-h: 232px;
