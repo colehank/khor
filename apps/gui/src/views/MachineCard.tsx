@@ -1279,22 +1279,27 @@ function Top({
       >
         <div data-top-heads className="sticky top-0 bg-card text-aux text-muted-foreground">
           {/* **The order the user named**: what you type, what it is,
-              what it was started as, then the quantities with the two
-              GPU ones beside the CPU rather than after the memory that
-              has nothing to do with them. */}
+              then the quantities with the two GPU ones beside the CPU
+              rather than after the memory that has nothing to do with
+              them. */}
           <Column col="pid" sort={sort} asking={asking} onPress={press} align="right">
             {cli.top_pid}
           </Column>
-          <Column col="name" sort={sort} asking={asking} onPress={press} align="left">
-            {cli.top_name}
-          </Column>
-          {/* **The command line is a column, and it does not sort.**
-              Sorting by it would need a word on the wire that older
-              nodes refuse (`khor_core::TopBy`), and nobody asks 「order
+          {/* **One column, 「命令」** (2026-09-04:「表的进程和命令合并
+              为一列,就叫命令」). It was two — the short name, then the
+              identifying word beside it — and they are one thing said
+              in two places: the word only ever means anything *next to*
+              the name it disambiguates (three rows called `python3`,
+              one of them `api_server`). Two columns put a gap between
+              them and made the second one look like a separate fact.
+
+              **It sorts, and it sorts by the name** — see `head` on
+              `Column`. What it cannot sort by is the word: that would
+              need a `TopBy` older nodes refuse, and nobody asks 「order
               these by their arguments」. */}
-          <span data-c="cmd" className="font-body">
+          <Column col="name" head="cmd" sort={sort} asking={asking} onPress={press} align="left">
             {cli.top_cmd}
-          </span>
+          </Column>
           {onAges && (
             <Column col="time" sort={sort} asking={asking} onPress={press} align="right">
               {cli.top_time}
@@ -1338,10 +1343,7 @@ function Top({
               <span data-c="pid" className="whitespace-nowrap text-left text-muted-foreground">
                 {r.pid}
               </span>
-              <span data-c="name" className="min-w-0 truncate">
-                {r.name}
-              </span>
-              <Cut text={r.arg} />
+              <Cut name={r.name} arg={r.arg} />
               {onAges && (
                 <span data-c="time" data-top-time className="whitespace-nowrap text-right">
                   {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
@@ -1537,7 +1539,33 @@ function Scatter({ rows }: { rows: Load["top"] }) {
 }
 
 /**
- * The command line's cell: the text, and **a mark when it did not fit**.
+ * The 「命令」 cell: **a process's short name and the one word that
+ * identifies it**, together, with a mark when they did not fit.
+ *
+ * # Why the two are one cell
+ *
+ * 2026-09-04:「表的进程和命令合并为一列,就叫命令」. They were two
+ * columns, and they are one thing said in two places — the word only
+ * means something *beside* the name it disambiguates. Three rows called
+ * `python3` are told apart by `api_server`, `train.py`, `worker`; with a
+ * column boundary between them the second reads as a separate fact
+ * about the process rather than as the rest of its name.
+ *
+ * # What may not be squeezed out
+ *
+ * The name has a floor and the word has a floor (`--cw-cmd-name-min`,
+ * `--cw-cmd-arg-min`), so neither can be reduced to nothing by the
+ * other. **And the pid is a track of its own and is never dropped**: on
+ * turing the two vLLM workers carry the same name *and* the same
+ * identifying word — `argv[0]` is `VLLM::EngineCore` for both — so the
+ * only things that tell those two rows apart are the pid and the card
+ * memory. A layout that saves room by dropping either drops the answer.
+ *
+ * **When the word repeats the name it is not drawn twice.** That is the
+ * vLLM case above, and printing `VLLM::EngineCore VLLM::EngineCore`
+ * would spend a column's width saying one thing and read as a rendering
+ * fault. The row is still distinguishable — by the two things that
+ * actually differ.
  *
  * # Why a mark and not an ellipsis
  *
@@ -1557,34 +1585,36 @@ function Scatter({ rows }: { rows: Load["top"] }) {
  *
  * # The mark is measured, never guessed
  *
- * `scrollWidth` against `clientWidth`, watched with a `ResizeObserver`.
- * A mark decided by counting characters would appear on cells that fit
- * (decoration) and miss cells that do not (a silent truncation), and
- * both errors look fine on the machine of whoever wrote the guess.
+ * `scrollWidth` against `clientWidth` on **both** halves, watched with a
+ * `ResizeObserver`. A mark decided by counting characters would appear
+ * on cells that fit (decoration) and miss cells that do not (a silent
+ * truncation), and both errors look fine on the machine of whoever
+ * wrote the guess.
  */
-function Cut({ text }: { text: string | null }) {
-  const ref = useRef<HTMLSpanElement>(null);
+function Cut({ name, arg }: { name: string; arg: string | null }) {
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const argRef = useRef<HTMLSpanElement>(null);
   const [over, setOver] = useState(false);
   const [open, setOpen] = useState(false);
+  // **Not drawn twice** — see the head of this component.
+  const word = arg && arg !== name ? arg : null;
   useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
     // Only while closed: open, the text wraps and nothing overflows, so
     // measuring then would retract the mark and take the way back with
     // it.
     if (open) return;
-    const measure = () => setOver(node.scrollWidth - node.clientWidth > 1);
+    const nodes = [nameRef.current, argRef.current].filter((n): n is HTMLSpanElement => n !== null);
+    if (nodes.length === 0) return;
+    // **Either half short of room puts the mark up.** Measuring only
+    // the word would leave a clipped name with no way to see the rest
+    // of it, which is the silent truncation this whole component is
+    // against.
+    const measure = () => setOver(nodes.some((n) => n.scrollWidth - n.clientWidth > 1));
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(node);
+    nodes.forEach((n) => ro.observe(n));
     return () => ro.disconnect();
-  }, [text, open]);
-  if (!text) {
-    // **Nothing at all, not an empty cell.** A kernel thread has no
-    // command line; an element that exists but is empty would make
-    // 「count the ones that are missing」 impossible to ask.
-    return <span data-c="cmd" />;
-  }
+  }, [name, word, open]);
   const cut = over;
   return (
     <span
@@ -1612,11 +1642,16 @@ function Cut({ text }: { text: string | null }) {
       //     screenshot; the assertion that the cell grew and shrank was
       //     perfectly happy, because it was true). The row grows in
       //     height instead, and the columns stay where they are.
-      className={cn("flex min-w-0 items-baseline gap-in text-muted-foreground", cut && "cursor-pointer")}
+      className={cn("flex min-w-0 items-baseline gap-in", open && "flex-wrap", cut && "cursor-pointer")}
     >
-      <span ref={ref} className={cn("min-w-0", open ? "break-all" : "truncate")}>
-        {text}
+      <span ref={nameRef} data-cmd-name className={cn("min-w-0", open ? "break-all" : "truncate")}>
+        {name}
       </span>
+      {word && (
+        <span ref={argRef} data-cmd-arg className={cn("min-w-0 text-muted-foreground", open ? "break-all" : "truncate")}>
+          {word}
+        </span>
+      )}
       {cut && !open && (
         <span
           data-cut-mark
@@ -1637,6 +1672,7 @@ function Column({
   asking,
   onPress,
   align,
+  head,
   grow,
   children,
 }: {
@@ -1646,6 +1682,14 @@ function Column({
   asking: SortCol | null;
   onPress: (col: SortCol) => void;
   align: "left" | "right";
+  /** What this head is called **in the DOM**, when that is not the
+      wire word it sorts by. One column only: 「命令」 carries a
+      process's short name and its identifying word together, and it
+      orders by the name — which is the text that column starts with,
+      so 「order this column」 and 「order by the name」 are the same
+      request. The head is `cmd` because the column is, and the sort is
+      `name` because that is the word `khor_core::TopBy` knows. */
+  head?: string;
   /** The one column that takes the leftover width, where there is any
       to take — narrow only, and see `Top` for why. */
   grow?: boolean;
@@ -1660,7 +1704,7 @@ function Column({
   const waiting = asking === col;
   return (
     <th
-      data-top-head={col}
+      data-top-head={head ?? col}
       data-asking={waiting ? "" : undefined}
       aria-sort={on ? (sort.dir === "up" ? "ascending" : "descending") : "none"}
       aria-busy={waiting || undefined}

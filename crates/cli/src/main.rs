@@ -326,10 +326,26 @@ fn top(rest: &[String]) -> Result<(), String> {
         cli::TOP_USER,
         cli::VITALS_NAME_CPU,
         cli::VITALS_NAME_MEM,
-        cli::TOP_NAME
+        cli::TOP_CMD
     );
     for r in &load.top {
-        println!("{}\t{}\t{:.0}%\t{}\t{}", r.pid, r.user, r.cpu_pct, bytes(r.mem), r.name);
+        // **The name and its identifying word, as one field** — the
+        // card merged those two columns into 「命令」 on 2026-09-04
+        // (「表的进程和命令合并为一列,就叫命令」), and docs/KHOR.md says
+        // the terminal prints what the card draws. It also gains
+        // something here: this listing used to print the name alone, so
+        // three rows of `python3` arrived indistinguishable in a
+        // terminal even though the word had crossed the wire.
+        //
+        // **Not printed twice when it repeats the name** — turing's two
+        // vLLM workers have `argv[0] == name`, and `VLLM::EngineCore
+        // VLLM::EngineCore` reads as a bug. What tells those two apart
+        // is the pid in the first column.
+        let cmd = match r.arg.as_deref() {
+            Some(a) if a != r.name => format!("{} {}", r.name, a),
+            _ => r.name.clone(),
+        };
+        println!("{}\t{}\t{:.0}%\t{}\t{}", r.pid, r.user, r.cpu_pct, bytes(r.mem), cmd);
     }
     println!("{}\t{}", cli::TOP_DAY, day_line(&load.cpu_day));
     Ok(())

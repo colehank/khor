@@ -1892,19 +1892,29 @@ try {
   //     narrow because every row of one person's own machine says the
   //     same word; the word off the command line is dropped by the same
   //     reflex and must not be, because it is different on every row —
-  //     which is the entire reason the column exists. Measured
+  //     which is the entire reason it is carried at all. Measured
   //     2026-09-04: a 390 card showed three rows all reading `python3`.
-  const withArg = load.top.filter((r) => r.arg !== null).length;
-  //     Counted on the cell that carries it. It rode behind the
-  //     process name once and is a column of its own now; what is
-  //     asserted did not change — **the word that tells two identical
-  //     rows apart is on screen at 390 too**, which is where the rows
-  //     are hardest to read and where it was dropped before.
+  //
+  //     ⚠️ **Expected count, not 「every row that has an `arg`」.** Since
+  //     the two columns became one cell (2026-09-04) a word identical
+  //     to the name it sits beside is not drawn twice — that is the two
+  //     vLLM workers on turing, whose `argv[0]` *is* their name. So the
+  //     rows this asks about are the ones where the word says something
+  //     the name did not.
+  const withArg = load.top.filter((r) => r.arg !== null && r.arg !== r.name).length;
+  //     ⚠️ **Counted on ink, not on text.** The obvious probe is
+  //     `textContent.trim().length > 0`, and it is blind to the way
+  //     this cell actually fails: the word lives in a flex item beside
+  //     the name, and a name with no ceiling squeezes it to **zero
+  //     width** — present in the DOM, its text intact, and nothing on
+  //     screen. Same shape as the 「undefined」 sweep that could not see
+  //     an empty `<text>`: measure the thing the reader has, which is
+  //     width.
   const argsAt = async () =>
     page.evaluate(
       () =>
-        [...document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="cmd"]')].filter(
-          (c) => c.textContent.trim().length > 0,
+        [...document.querySelectorAll("[data-machine-card] [data-top-row] [data-cmd-arg]")].filter(
+          (c) => c.textContent.trim().length > 0 && c.getBoundingClientRect().width >= 1,
         ).length,
     );
   const wideArgs = await argsAt();
@@ -1917,8 +1927,168 @@ try {
   if (narrowArgs !== withArg) {
     fail(
       `the narrow card draws ${narrowArgs} identifying words for ${withArg} rows that carry one — ` +
-        `on 390 the rows collapse to their short names, which is the case this column exists for`,
+        `on 390 the rows collapse to their short names, which is the case this word exists for`,
     );
+  }
+  //     ── 「命令」 is one cell, and neither half may vanish ──────────
+  //
+  //     **The name and the word share a cell now**, so they compete for
+  //     the same width — a competition neither of them had while they
+  //     were two grid tracks. Two ways to lose it, and each loses
+  //     something real: a name squeezed to two characters is not a
+  //     name, and a word squeezed to nothing is the disambiguation
+  //     gone. Both halves carry a floor (`--cw-cmd-name-min`,
+  //     `--cw-cmd-arg-min`); this measures that the floors hold.
+  //
+  //     ⚠️ **Measured where the cell is actually under pressure, which
+  //     is not the width this gate otherwise runs at.** Written first
+  //     at 1120, it passed with the floors *deleted* — at that width
+  //     the track is roomy and no floor binds, so both arms of the
+  //     control were the same and it could not have failed. The
+  //     pressure is at the narrowest width where the table is still a
+  //     grid: one step wider and there is slack, one step narrower and
+  //     the row restacks and the cell gets a line to itself. So the
+  //     probe walks down to that edge and measures there.
+  {
+    const tightAt = async (w) => {
+      await page.setViewportSize({ width: w, height: 1000 });
+      await new Promise((r) => setTimeout(r, 120));
+      return page.evaluate(() => document.querySelector("[data-machine-card] [data-load-top-box]")?.dataset.tight !== undefined);
+    };
+    let edge = null;
+    for (let w = 1120; w >= 400; w -= 20) {
+      if (await tightAt(w)) break;
+      edge = w;
+    }
+    if (edge === null) {
+      fail("probe dead: the table is stacked at every width down to 400, so the grid's tightest stop was never reached");
+    } else {
+      await page.setViewportSize({ width: edge, height: 1000 });
+      await new Promise((r) => setTimeout(r, 200));
+      const halves = await page.evaluate(() => {
+        //   **What the floors are worth in pixels, in this cell's own
+        //   font.** They are written in `ch`, so a number typed here
+        //   would be a second copy of them that drifts. The probe puts
+        //   a span of exactly that width inside a real cell and
+        //   measures it.
+        //
+        //   ⚠️ **Read off the tokens, never off the element.** Asking
+        //   the half for its own `min-width` and then checking it is at
+        //   least that is an assertion that cannot fail: delete the
+        //   rule and the answer becomes 0, which every width clears.
+        const anyCell = document.querySelector("[data-machine-card] [data-top-row] [data-c='cmd']");
+        if (!anyCell) return null;
+        const px = (token) => {
+          const probe = document.createElement("span");
+          probe.style.cssText = `position:absolute;visibility:hidden;width:var(${token})`;
+          anyCell.appendChild(probe);
+          const w = probe.getBoundingClientRect().width;
+          probe.remove();
+          return w;
+        };
+        const floor = px("--cw-cmd-arg-min");
+        const out = [];
+        for (const cell of document.querySelectorAll("[data-machine-card] [data-top-row] [data-c='cmd']")) {
+          const n = cell.querySelector("[data-cmd-name]");
+          const a = cell.querySelector("[data-cmd-arg]");
+          if (!n) continue;
+          out.push({
+            name: n.textContent.trim().slice(0, 24),
+            nameW: n.getBoundingClientRect().width,
+            //   **How much empty room the name half is holding.** A
+            //   box wider than the text in it means something padded
+            //   it — which pushes the word away from the name it
+            //   qualifies and re-draws the column boundary this merge
+            //   removed.
+            //
+            //   ⚠️ **Measured with a `Range`, not with `scrollWidth`.**
+            //   `scrollWidth` is never smaller than `clientWidth`, so
+            //   on a box wider than its text the two are equal and the
+            //   difference is always 0 — an assertion that cannot see
+            //   the thing it is named after. (Written that way first;
+            //   the `min-width` that caused the bug was put back and
+            //   the gate stayed green.) A range over the text nodes
+            //   reports what the glyphs actually occupy.
+            namePad: (() => {
+              const r = document.createRange();
+              r.selectNodeContents(n);
+              return n.getBoundingClientRect().width - r.getBoundingClientRect().width;
+            })(),
+            argW: a ? a.getBoundingClientRect().width : null,
+            //   Whether each half had to give something up.
+            nameCut: n.scrollWidth - n.clientWidth > 1,
+            cellW: cell.getBoundingClientRect().width,
+          });
+        }
+        return { floor, out };
+      });
+      const withWord = halves ? halves.out.filter((h) => h.argW !== null) : [];
+      if (!halves || halves.out.length === 0 || withWord.length === 0) {
+        fail(`probe dead: at ${edge} the table has ${halves ? halves.out.length : 0} 「命令」 cells and ${withWord.length} with a word, so the two floors were not measured`);
+      } else if (!(halves.floor > 1)) {
+        fail(
+          `probe dead: the word's floor reads ${halves.floor}px — the token 「命令」 is measured against is gone, ` +
+            `so every width below clears a floor of nothing`,
+        );
+      } else {
+        //   Half a pixel of slack, for sub-pixel layout only.
+        const tiny = withWord.filter((h) => h.argW < halves.floor - 0.5);
+        if (tiny.length) {
+          const w = tiny[0];
+          fail(
+            `at ${edge} — the grid's tightest stop — ${tiny.length} of ${withWord.length} 「命令」 cells squeezed the word below its floor ` +
+              `(「${w.name}」 word ${w.argW.toFixed(1)} of ${halves.floor.toFixed(1)}, cell ${w.cellW.toFixed(1)}) — ` +
+              `the word that tells this row from the next`,
+          );
+        }
+        //   **And the name half holds no empty room.** The other way to
+        //   break this cell is to pad the name — a floor on it does
+        //   that — and then the word starts at a fixed indent no matter
+        //   how short the name is, which puts a gap in the middle of
+        //   one cell and re-draws the column boundary the merge
+        //   removed. Measured 2026-09-04 in a screenshot before this
+        //   assertion existed: `khor` and its `serve` a third of an
+        //   inch apart, with every number and every position on this
+        //   table correct.
+        const padded = halves.out.filter((h) => h.namePad > 1);
+        if (padded.length) {
+          const w = padded[0];
+          fail(
+            `${padded.length} of ${halves.out.length} 「命令」 cells hold a name half wider than its name ` +
+              `(「${w.name}」 has ${w.namePad.toFixed(1)}px of empty room) — the word is pushed to a fixed indent, ` +
+              `which is the column boundary this cell exists to remove`,
+          );
+        }
+        //   **And the order the two give way in.** The word stops at
+        //   its floor and the name takes what is left over — never the
+        //   other way round, because four letters saying what a process
+        //   is are worth more than four more characters of a path that
+        //   has a fold of its own. So: a clipped name is only allowed
+        //   beside a word that has already stopped.
+        //
+        //   ⚠️ This is the assertion the two `flex-shrink` values are
+        //   for. With the factors equal it reds on the row whose word
+        //   is a long path — which is what a screenshot showed before
+        //   it existed (「n…」 for `node`).
+        const early = halves.out.filter((h) => h.nameCut && (h.argW === null || h.argW > halves.floor + 1));
+        if (early.length) {
+          const w = early[0];
+          fail(
+            `${early.length} of ${halves.out.length} 「命令」 cells clipped the name while the word still had room ` +
+              `(「${w.name}」 name clipped, word ${w.argW === null ? "—" : w.argW.toFixed(1)} against a floor of ${halves.floor.toFixed(1)}) — ` +
+              `the squeeze is landing on the half that says what the process is`,
+          );
+        }
+        console.log(
+          `命令 at ${edge} (the grid's tightest): ${halves.out.length} cells, ` +
+            `narrowest word ${Math.min(...withWord.map((h) => h.argW)).toFixed(1)} (floor ${halves.floor.toFixed(1)}), ` +
+            `widest name padding ${Math.max(...halves.out.map((h) => h.namePad)).toFixed(1)}px, ` +
+            `${halves.out.filter((h) => h.nameCut).length} names clipped`,
+        );
+      }
+    }
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   //     ── while an answer is out, nothing on the table moves ────────
@@ -1997,8 +2167,13 @@ try {
     );
   {
     const first = await colsNow();
-    if (first.split(",").length < 6) fail(`probe dead: the table shows only [${first}], so pressing its heads proves nothing`);
-    for (const col of first.split(",").filter((c) => c !== "cmd")) {
+    if (first.split(",").length < 5) fail(`probe dead: the table shows only [${first}], so pressing its heads proves nothing`);
+    //   **Every head, `cmd` included.** It used to be excused here
+    //   because the command line was a column that did not sort; since
+    //   the merge (2026-09-04) 「命令」 is a head like the others and
+    //   orders by the name, so the one head that was never pressed is
+    //   now pressed too.
+    for (const col of first.split(",")) {
       await page.locator(`[data-machine-card] [data-top-head="${col}"] button`).click();
       // Let the ask land — the rows are redrawn from the answer, and it
       // is the redraw that used to take the column with it.
@@ -2533,8 +2708,15 @@ try {
     for (const c of document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="cmd"]')) {
       if (!c.firstElementChild || c.dataset.open !== undefined) continue;
       cells += 1;
-      const inner = c.firstElementChild;
-      const over = inner.scrollWidth - inner.clientWidth > 1;
+      //   ⚠️ **Both halves, because the cell itself never overflows.**
+      //   Since 「命令」 became one cell (2026-09-04) the name and the
+      //   word are two flex items that clip inside their own boxes, so
+      //   the outer cell always fits and `c.firstElementChild` alone
+      //   answers only for the name. Asking the wrong element made a
+      //   correctly-marked row report a decorative mark — an assertion
+      //   pointed one level up from where the truncation happens.
+      const halves = [...c.querySelectorAll("[data-cmd-name],[data-cmd-arg]")];
+      const over = halves.some((n) => n.scrollWidth - n.clientWidth > 1);
       const has = c.dataset.cut !== undefined;
       if (has) marked += 1;
       if (has && !over) decorative += 1;

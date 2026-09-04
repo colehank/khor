@@ -653,27 +653,39 @@
   --top-h-tight: 344px;
   --hair: 1px;
   --cw-pid: 7ch;
-  /* How wide the process-name column may get — read through
-   * `fit-content()`, so the column takes **what that machine's names
-   * actually need**, up to here. It replaces a flat `13ch`, at which
-   * the real names clip on every machine to hand (`khor-2077930-6a…`,
-   * `kworker/u266:3…`) while the command line beside them took the
-   * whole rest of the table. This is where the width that column gives
-   * back goes first: measured 2026-09-04 at a 1100 window, the name
-   * column went 102 → 139 on turing and 102 → 189 on this Mac, and the
-   * command line 524 → 252.
+  /* How wide a process's **short name** may get inside the 「命令」
+   * cell. It was a column of its own until 2026-09-04 (「表的进程和
+   * 命令合并为一列,就叫命令」) and is now the first half of one cell,
+   * but the number's job did not change: it stops the runaway case, so
+   * one 40-character name cannot take the whole cell and leave no room
+   * for the word that tells this row from the next.
    *
-   * **Not `minmax(floor, ceiling)`** — a track written that way is not
-   * content-sized at all: it takes the ceiling whenever there is room,
-   * so hinton, whose names are short, held 183px of nothing and
-   * squeezed the command line to 80 (measured before this shape). */
+   * It replaced a flat `13ch`, at which the real names clip on every
+   * machine to hand (`khor-2077930-6a…`, `kworker/u266:3…`). */
   --cw-name-max: 24ch;
+  /* **The word in 「命令」 may not be squeezed to nothing**, because a
+   * word reduced to nothing is the disambiguation gone — the one thing
+   * that half of the cell exists to carry (three rows all reading
+   * `python3`). Under pressure the name gives way instead; it can be
+   * read back by opening the cell, and the word cannot be read back at
+   * all if it is not drawn.
+   *
+   * **There is deliberately no matching floor on the name.** A floor is
+   * also a width, so one there padded every short name out to it and
+   * pushed the word away — a gap in the middle of a cell, reading as
+   * the two columns this merge just undid (2026-09-04, seen in a
+   * screenshot). The name is held up by this floor being small and by
+   * its own ceiling, `--cw-name-max`.
+   *
+   * In `ch` because what is protected is a number of characters, read
+   * against `--text-sm`, the table's own size. */
+  --cw-cmd-arg-min: 6ch;
   --cw-run: 78px;
   --cw-cpu: 52px;
   --cw-gpu: 46px;
   --cw-vram: 74px;
   --cw-mem: 66px;
-  /* **A ceiling for the command line, not its width.** It used to be
+  /* **A ceiling for the 「命令」 column, not its width.** It used to be
    * `1fr`, so it swallowed every pixel the fixed columns did not want
    * — on a wide card that is most of the table, and the quantities it
    * pushed rightwards are the reason anybody scans this table (user,
@@ -682,14 +694,18 @@
    * A ceiling is the right shape rather than a smaller fraction,
    * because the column already has a way to say 「there is more」 — the
    * bordered mark, which opens the whole line in place. So the wide
-   * case is not a loss of information, it is a fold — and the process
-   * names beside it, which have no fold, get the width first
-   * (`--cw-name-max`).
+   * case is not a loss of information, it is a fold.
    *
-   * In `ch` and not `em`: this column is a path, so what matters is how
-   * many characters fit, and `ch` is that unit. Read against
-   * `--text-sm`, the table's own size. */
-  --cw-cmd: 32ch;
+   * **Raised 32 → 56ch when the two columns became one** (2026-09-04):
+   * the cell now holds the short name *and* the identifying word, so a
+   * ceiling written for the word alone would clip nearly every row. It
+   * is the two floors (8ch + 6ch) plus the name's own ceiling (24ch)
+   * with room for a word beside it.
+   *
+   * In `ch` and not `em`: this column is a name and a path, so what
+   * matters is how many characters fit, and `ch` is that unit. Read
+   * against `--text-sm`, the table's own size. */
+  --cw-cmd: 56ch;
   --part-name: 220px;
   --part-num: 172px;
   --top-h: 232px;
