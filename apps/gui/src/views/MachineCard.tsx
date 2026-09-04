@@ -967,15 +967,23 @@ function Occupant({ row, share, value }: { row: Load["top"][number]; share: numb
 /** One part's share, on the track every other part shares. `null` draws
     the track alone — a reading that could not be taken is not a zero. */
 function Bar({ pct, strain }: { pct: number | null; strain: Strain | null }) {
+  // **Two elements, and the outer one is the cell.** The row gives
+  // every direct child the row's height so the three columns line up;
+  // a bar that *is* that child inherits 27 and draws as a fat pill
+  // (seen on the real face before this — the track swallowed the row
+  // and the bars overlapped each other). So the cell is a full-height
+  // box and the track is a hairline centred inside it.
   return (
-    <span data-part-bar className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-      {pct !== null && (
-        <span
-          data-part-ink
-          className="block h-full rounded-full"
-          style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(strain) }}
-        />
-      )}
+    <span className="flex w-full items-center">
+      <span data-part-bar className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+        {pct !== null && (
+          <span
+            data-part-ink
+            className="block h-full rounded-full"
+            style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(strain) }}
+          />
+        )}
+      </span>
     </span>
   );
 }
