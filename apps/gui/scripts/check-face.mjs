@@ -289,6 +289,53 @@ try {
       { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: 5, gpu_mem: 2_000_000_000, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so" },
       // prettier-ignore
       { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null },
+      // **Twenty rows lifted from a real machine's distribution**
+      // (turing, 2026-09-04, `dist-turing.json`): the median process
+      // uses a fifth of one percent of a core while the busiest uses
+      // forty-three. Three hand-made rows cannot say whether an axis
+      // spreads a table out, and the crowding check simply declines to
+      // run below eight points — a fixture that makes an assertion
+      // unevaluable is a fixture that makes it useless.
+      // prettier-ignore
+      { pid: 900000, name: "python3", user: "gate", cpu_pct: 42.9910, mem: 8708096, gpu_pct: null, gpu_mem: null, run_secs: 11, arg: "tail/0.py" },
+      // prettier-ignore
+      { pid: 900001, name: "khor-2077930-6", user: "gate", cpu_pct: 41.9717, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 148, arg: "tail/1.py" },
+      // prettier-ignore
+      { pid: 900002, name: "netdata", user: "gate", cpu_pct: 32.0176, mem: 4024270848, gpu_pct: null, gpu_mem: null, run_secs: 285, arg: "tail/2.py" },
+      // prettier-ignore
+      { pid: 900003, name: "apps.plugin", user: "gate", cpu_pct: 13.5588, mem: 109076480, gpu_pct: null, gpu_mem: null, run_secs: 422, arg: "tail/3.py" },
+      // prettier-ignore
+      { pid: 900004, name: "fetch", user: "gate", cpu_pct: 7.9261, mem: 46661632, gpu_pct: null, gpu_mem: null, run_secs: 559, arg: "tail/4.py" },
+      // prettier-ignore
+      { pid: 900005, name: "tokio-rt-worke", user: "gate", cpu_pct: 5.4203, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 696, arg: "tail/5.py" },
+      // prettier-ignore
+      { pid: 900006, name: "tokio-rt-worke", user: "gate", cpu_pct: 3.8330, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 833, arg: "tail/6.py" },
+      // prettier-ignore
+      { pid: 900007, name: "spyder", user: "gate", cpu_pct: 2.2191, mem: 472055808, gpu_pct: null, gpu_mem: null, run_secs: 970, arg: "tail/7.py" },
+      // prettier-ignore
+      { pid: 900008, name: "top", user: "gate", cpu_pct: 1.6829, mem: 8065024, gpu_pct: null, gpu_mem: null, run_secs: 1107, arg: "tail/8.py" },
+      // prettier-ignore
+      { pid: 900009, name: "tokio-runtime-", user: "gate", cpu_pct: 0.5521, mem: 46661632, gpu_pct: null, gpu_mem: null, run_secs: 1244, arg: "tail/9.py" },
+      // prettier-ignore
+      { pid: 900010, name: "prometheus", user: "gate", cpu_pct: 0.3185, mem: 166809600, gpu_pct: null, gpu_mem: null, run_secs: 1381, arg: "tail/10.py" },
+      // prettier-ignore
+      { pid: 900011, name: "containerd", user: "gate", cpu_pct: 0.2230, mem: 24326144, gpu_pct: null, gpu_mem: null, run_secs: 1518, arg: "tail/11.py" },
+      // prettier-ignore
+      { pid: 900012, name: "UV_WORKER[201]", user: "gate", cpu_pct: 0.1911, mem: 4024270848, gpu_pct: null, gpu_mem: null, run_secs: 1655, arg: "tail/12.py" },
+      // prettier-ignore
+      { pid: 900013, name: "VLLM::EngineCo", user: "gate", cpu_pct: 0.1274, mem: 1630076928, gpu_pct: null, gpu_mem: null, run_secs: 1792, arg: "tail/13.py" },
+      // prettier-ignore
+      { pid: 900014, name: "python", user: "gate", cpu_pct: 0.1062, mem: 3850240, gpu_pct: null, gpu_mem: null, run_secs: 1929, arg: "tail/14.py" },
+      // prettier-ignore
+      { pid: 900015, name: "go.d.plugin", user: "gate", cpu_pct: 0.0903, mem: 73875456, gpu_pct: null, gpu_mem: null, run_secs: 2066, arg: "tail/15.py" },
+      // prettier-ignore
+      { pid: 900016, name: "kworker/5:2-ev", user: "gate", cpu_pct: 0.0796, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2203, arg: "tail/16.py" },
+      // prettier-ignore
+      { pid: 900017, name: "kworker/4:1-ev", user: "gate", cpu_pct: 0.0743, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2340, arg: "tail/17.py" },
+      // prettier-ignore
+      { pid: 900018, name: "kworker/u257:0", user: "gate", cpu_pct: 0.0690, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2477, arg: "tail/18.py" },
+      // prettier-ignore
+      { pid: 900019, name: "go.d.plugin", user: "gate", cpu_pct: 0.0637, mem: 73875456, gpu_pct: null, gpu_mem: null, run_secs: 2614, arg: "tail/19.py" },
     ],
     cpu_day: {
       bucket_ms: 300_000,
@@ -2112,6 +2159,46 @@ try {
     //   **Area, not radius.** Two readings a factor of four apart must
     //   come out a factor of two apart in radius; a chart that scaled
     //   the radius directly would show four.
+    //   **The points are actually separated.** A linear axis on these
+    //   readings puts almost everything in one corner — measured on the
+    //   live fleet, the median process is at 0.0% / 0.2% / 1.3% of a
+    //   core against maxima of 18 / 43 / 89 — so 「how many pairs sit
+    //   on top of each other」 is the thing the scale has to move.
+    //
+    //   ⚠️ **A picture with a handful of points passes this no matter
+    //   what**, which is the assertion-that-cannot-fail again. Under
+    //   eight points it is not evaluated and says so out loud rather
+    //   than reporting a pass it did not earn.
+    //
+    //   **The threshold is half the points, measured here rather than
+    //   carried over.** On this fixture at this width the root scale
+    //   gives 8 crowded pairs and a linear one gives **57** — that 7×
+    //   is the signal, and any line drawn between them catches the
+    //   regression. The spec's own figure (a quarter of the points)
+    //   came from a different plot width and a different set of rows,
+    //   and on these it fails a scale that is working; **a number
+    //   measured on one tree is not a number about another** — the
+    //   same lesson the drawer's track width taught.
+    const near = await page.evaluate(() => {
+      const pts = [...document.querySelectorAll("[data-machine-card] [data-plot-point]")].map((g) => ({
+        x: Number(g.dataset.plotX),
+        y: Number(g.dataset.plotY),
+      }));
+      let close = 0;
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          if (Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) < 6) close += 1;
+        }
+      }
+      return { n: pts.length, close };
+    });
+    if (near.n < 8) {
+      console.log(`scatter: ${near.n} points — too few to judge crowding, that check was not evaluated`);
+    } else if (near.close > near.n / 2) {
+      fail(`${near.close} point pairs sit within 6px of each other on ${near.n} points — the axes are not spreading them`);
+    } else {
+      console.log(`scatter: ${near.close} crowded pairs on ${near.n} points (allowed ${Math.floor(near.n / 2)}; linear measures 57)`);
+    }
     if (plot.halos.length > 1) {
       const sorted = [...plot.halos].sort((a, b) => b - a);
       const ratio = sorted[0] / sorted[sorted.length - 1];

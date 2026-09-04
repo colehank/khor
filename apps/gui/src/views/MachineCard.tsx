@@ -1321,76 +1321,119 @@ function Top({
  * machine that cannot see cards are different facts.
  */
 function Scatter({ rows }: { rows: Load["top"] }) {
-  const W = 1000;
-  const H = 260;
-  const pad = 26;
+  const box = useRef<HTMLDivElement>(null);
+  // **The picture is drawn in real pixels, not in a stretched box.**
+  // It used to carry `preserveAspectRatio="none"`, which stretches the
+  // viewBox to the element — and a circle under a non-uniform stretch
+  // is an ellipse. The halo is an *area*, and the foot promises a
+  // radius in pixels; both were false by however much the box was
+  // wider than it was tall. So the viewBox tracks the element's own
+  // size and one unit is one pixel.
+  const [size, setSize] = useState({ w: 900, h: 170 });
+  useEffect(() => {
+    const node = box.current;
+    if (!node) return;
+    const ro = new ResizeObserver(([e]) =>
+      setSize({ w: Math.max(1, e.contentRect.width), h: Math.max(1, e.contentRect.height) }),
+    );
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+  const { w: W, h: H } = size;
+  const padL = 46;
+  const padB = 22;
+  const padT = 12;
+  const padR = 14;
   const maxCpu = Math.max(1, ...rows.map((r) => r.cpu_pct));
   const maxMem = Math.max(1, ...rows.map((r) => Number(r.mem)));
   const vrams = rows.map((r) => r.gpu_mem).filter((v): v is number => v !== null && v > 0);
   const maxVram = vrams.length > 0 ? Math.max(...vrams) : 0;
   const RMAX = 11;
   const halo = (v: number) => (maxVram > 0 ? RMAX * Math.sqrt(v / maxVram) : 0);
-  const x = (v: number) => pad + (v / maxCpu) * (W - pad * 2);
-  const y = (v: number) => H - pad - (v / maxMem) * (H - pad * 2);
-  // The two biggest card readings, printed as bytes and as the radius
-  // they became — the foot is what makes the encoding checkable.
+  // **A square-root scale on both axes, and not a log one.** The
+  // readings here are wildly skewed — measured on the live fleet, the
+  // median process uses 0.0% / 0.2% / 1.3% of a core against maxima of
+  // 18 / 43 / 89 — so on a linear axis almost every point lands in one
+  // corner and the picture answers nothing.
+  //
+  // The reason it is `√` rather than `log` is structural, not a matter
+  // of which looked better: **`log 0` is undefined, and 「0%」 is the
+  // commonest value in this table.** A log axis has to be `log(v+1)`,
+  // and then the ruler is no longer the one its own labels claim —
+  // a tick saying 0.8% sits where `log(1.008)` puts it. `√0 = 0`, so
+  // zero is drawn at zero and not one row is dropped or nudged.
+  const sx = (v: number) => padL + Math.sqrt(Math.max(0, v) / maxCpu) * (W - padL - padR);
+  const sy = (v: number) => H - padB - Math.sqrt(Math.max(0, v) / maxMem) * (H - padT - padB);
+  // **Ticks at round fractions of the real value**, placed where the
+  // root puts them — so they crowd together towards the right, and
+  // that crowding is itself the evidence that the ruler is not linear.
+  // An axis that looks evenly spaced while a transform hides underneath
+  // is the one that misleads.
+  const ticks = [0, 1, 2, 3, 4, 5, 6].map((k) => k / 6);
   const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
   return (
     <div data-top-plot className="flex flex-col gap-in">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-40 w-full text-foreground">
-        <line
-          x1={pad}
-          y1={H - pad}
-          x2={W - pad}
-          y2={H - pad}
-          stroke="currentColor"
-          strokeOpacity={0.15}
-          vectorEffect="non-scaling-stroke"
-        />
-        <line
-          x1={pad}
-          y1={pad}
-          x2={pad}
-          y2={H - pad}
-          stroke="currentColor"
-          strokeOpacity={0.15}
-          vectorEffect="non-scaling-stroke"
-        />
-        {rows.map((r) => {
-          const cx = x(r.cpu_pct);
-          const cy = y(Number(r.mem));
-          return (
-            <g key={r.pid} data-plot-point={r.pid}>
-              {r.gpu_mem !== null && r.gpu_mem > 0 && (
-                <circle
-                  data-plot-halo={Math.round(halo(r.gpu_mem) * 10) / 10}
-                  cx={cx}
-                  cy={cy}
-                  r={halo(r.gpu_mem)}
-                  fill="currentColor"
-                  fillOpacity={0.14}
-                />
-              )}
-              {r.gpu_mem === 0 && (
-                <circle
-                  data-plot-zero
-                  cx={cx}
-                  cy={cy}
-                  r={5}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeOpacity={0.35}
-                  strokeDasharray="2 2"
-                  vectorEffect="non-scaling-stroke"
-                />
-              )}
-              <circle cx={cx} cy={cy} r={1.8} fill="currentColor" fillOpacity={0.75}>
-                <title>{`${r.name} ${Math.round(r.cpu_pct)}% ${bytes(r.mem)}`}</title>
-              </circle>
-            </g>
-          );
-        })}
-      </svg>
+      <div ref={box} className="h-44 w-full">
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
+          <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
+          <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
+          {ticks.map((f) => {
+            const v = maxCpu * f;
+            return (
+              <g key={`x${f}`} data-plot-tick-x={Math.round(v * 10) / 10}>
+                <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
+                <text x={sx(v)} y={H - padB + 14} fontSize={10} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
+                  {`${Math.round(v)}%`}
+                </text>
+              </g>
+            );
+          })}
+          {ticks.map((f) => {
+            const v = maxMem * f;
+            return (
+              <g key={`y${f}`} data-plot-tick-y={Math.round(v)}>
+                <line x1={padL - 3} y1={sy(v)} x2={padL} y2={sy(v)} stroke="currentColor" strokeOpacity={0.3} />
+                <text x={padL - 6} y={sy(v) + 3} fontSize={10} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+                  {bytes(v)}
+                </text>
+              </g>
+            );
+          })}
+          {rows.map((r) => {
+            const cx = sx(r.cpu_pct);
+            const cy = sy(Number(r.mem));
+            return (
+              <g key={r.pid} data-plot-point={r.pid} data-plot-x={Math.round(cx * 10) / 10} data-plot-y={Math.round(cy * 10) / 10}>
+                {r.gpu_mem !== null && r.gpu_mem > 0 && (
+                  <circle
+                    data-plot-halo={Math.round(halo(r.gpu_mem) * 10) / 10}
+                    cx={cx}
+                    cy={cy}
+                    r={halo(r.gpu_mem)}
+                    fill="currentColor"
+                    fillOpacity={0.14}
+                  />
+                )}
+                {r.gpu_mem === 0 && (
+                  <circle
+                    data-plot-zero
+                    cx={cx}
+                    cy={cy}
+                    r={5}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeOpacity={0.35}
+                    strokeDasharray="2 2"
+                  />
+                )}
+                <circle cx={cx} cy={cy} r={1.8} fill="currentColor" fillOpacity={0.75}>
+                  <title>{`${r.name} ${Math.round(r.cpu_pct)}% ${bytes(r.mem)}`}</title>
+                </circle>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
       <div className="flex justify-between gap-row text-aux text-muted-foreground">
         <span>
           {cli.vitals_name_cpu} × {cli.vitals_name_mem}
