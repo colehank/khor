@@ -297,6 +297,15 @@ day-trend = "24 小时趋势"
 # day's high-water mark, because a row that only draws a shape does not
 # answer 「多高」.
 day-row-peak = "峰值 {0}"
+# 三种**读法**,不是三个视图:同一份数据、同一个游标、同一组峰值,换的只是怎么看。
+# 所以切换控件是三个词,不是 tab——无边框、无底色、无胶囊:tab 说的是「三个地方」,
+# 而这里自始至终是一个地方。
+day-view-heat = "热力带"
+day-view-ridge = "山脊"
+day-view-para = "叠放"
+# 游标读数条:那一刻,和那一刻每个读数是多少。**换读法不许丢掉它**——丢了就说明
+# 三种读法各自记着自己的状态,那它们就不是同一份数据的三种看法了。
+day-at = "{0} · {1}"
 cores-sub = "{0} 核"
 gpu-sub-nomem = "{0} 卡"
 # The disk dial's whole, said as **how big and how many** rather than

@@ -2027,6 +2027,55 @@ try {
     else if (dial.gpu.arc !== 1) fail(`the GPU dial draws ${dial.gpu.arc} summary arcs`);
   }
 
+  //     ── three readings of one day, and one cursor across them ────
+  //
+  //     **The moment survives the switch.** Three readings of the same
+  //     numbers is the claim; three components each remembering their
+  //     own state is what it would be instead, and the difference shows
+  //     exactly here — put the cursor somewhere, change the reading,
+  //     and the readout must say the same thing word for word.
+  const readings = await page.evaluate(async () => {
+    const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+    const band = () => document.querySelector("[data-machine-card] [data-day-band]");
+    const readout = () => document.querySelector("[data-machine-card] [data-day-at]")?.innerText.trim() ?? null;
+    const words = [...document.querySelectorAll("[data-machine-card] [data-day-view-pick]")].map(
+      (b) => b.dataset.dayViewPick,
+    );
+    if (words.length !== 3) return { words };
+    // Park the cursor a third of the way along the first band.
+    const b = band().getBoundingClientRect();
+    const put = () =>
+      band().dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: b.left + b.width / 3,
+          clientY: b.top + b.height / 2,
+        }),
+      );
+    put();
+    await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    const onHeat = readout();
+    pick("ridge").click();
+    await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    const onRidge = readout();
+    const ridgeViews = [...document.querySelectorAll("[data-machine-card] [data-day-view]")].map(
+      (n) => n.dataset.dayView,
+    );
+    pick("heat").click();
+    await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    return { words, onHeat, onRidge, ridgeViews };
+  });
+  if (readings.words.length !== 3) fail(`the day offers ${readings.words.length} readings, not three`);
+  else if (!readings.onHeat) fail("the cursor drew no readout — 「which moment」 is what the switch has to carry");
+  else {
+    if (readings.onHeat !== readings.onRidge) {
+      fail(`the moment did not survive the switch: "${readings.onHeat}" became "${readings.onRidge}"`);
+    }
+    if (readings.ridgeViews.some((v) => v !== "ridge")) {
+      fail(`picking 山脊 left bands reading ${[...new Set(readings.ridgeViews)].join(",")}`);
+    }
+  }
+
   //     ── the scatter: one pair of axes, and three states kept apart
   //
   //     **Card memory is an area, and the two biggest must be told

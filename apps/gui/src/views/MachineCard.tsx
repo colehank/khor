@@ -1685,6 +1685,14 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
  * hairline baselines keep their weight through `non-scaling-stroke`.
  */
 function DayChart({ day }: { day: Load["cpu_day"] }) {
+  // **One reading, one cursor, one set of peaks — held here.** The
+  // three readings are three ways of looking at the same numbers, so
+  // the state that says 「which moment」 belongs to the chart and not to
+  // any one of them: keep it inside a row and switching readings drops
+  // the moment somebody was looking at, which would make them three
+  // charts wearing one heading.
+  const [view, setView] = useState<"heat" | "ridge" | "para">("heat");
+  const [at, setAt] = useState<number | null>(null);
   const rows = [
     { key: "cpu", word: cli.vitals_name_cpu, series: day.buckets },
     { key: "gpu", word: cli.vitals_name_gpu, series: day.gpu },
@@ -1715,9 +1723,139 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
           {sameDay ? clock(startMs) : cli.yesterday_at(clock(startMs))} → {clock(day.now_ms)}
         </span>
       </div>
-      {rows.map((r) => (
-        <DayRow key={r.key} name={r.key} word={r.word} series={r.series} />
-      ))}
+      {view === "para" ? (
+        // **All of them in one frame, on one baseline.** This is the
+        // arrangement the stacked rows were chosen over — four lines
+        // cross, and every crossing is a place where two numbers become
+        // one shape — and that is exactly why it is worth having as a
+        // reading somebody asks for rather than as the one they get: to
+        // read a crossing you have to want to.
+        <Overlay rows={rows} at={at} onAt={setAt} />
+      ) : (
+        rows.map((r) => (
+          <DayRow key={r.key} name={r.key} word={r.word} series={r.series} view={view} at={at} onAt={setAt} />
+        ))
+      )}
+      <div className="flex items-center justify-between gap-row text-aux text-muted-foreground">
+        {/* The reading, as three words. **Not tabs**: a tab says 「three
+            places」, and this is one place the whole time. */}
+        <span data-day-views className="flex items-center gap-row">
+          {(
+            [
+              ["heat", cli.day_view_heat],
+              ["ridge", cli.day_view_ridge],
+              ["para", cli.day_view_para],
+            ] as const
+          ).map(([key, word]) => (
+            <button
+              key={key}
+              type="button"
+              data-day-view-pick={key}
+              data-on={view === key}
+              aria-pressed={view === key}
+              onClick={() => setView(key)}
+              // **Wears the touch floor rather than waiving it.** These
+              // three sit on a line of their own with nothing to take
+              // room from — the floor is a floor under things free to
+              // grow, and these are free. (The truncation mark in the
+              // table is the case where it is not, and that one is
+              // waived by name with what the waiver costs.)
+              className="inline-flex min-h-touch min-w-touch items-center justify-center rounded-md px-in data-[on=true]:font-label data-[on=true]:text-foreground"
+            >
+              {word}
+            </button>
+          ))}
+        </span>
+        {/* What the shapes cannot say: the moment under the cursor, and
+            every reading at it. Absent until there is one — a readout
+            of nothing would be a row of dashes pretending to be data. */}
+        {at !== null && (
+          <span data-day-at className="tabular-nums">
+            {cli.day_at(
+              clock(startMs + at * day.bucket_ms),
+              rows
+                .map((r) => `${r.word} ${r.series[at] === null ? "—" : `${Math.round(r.series[at] as number)}%`}`)
+                .join("  "),
+            )}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Every reading in one frame, as lines over a shared baseline — the
+    「叠放」 reading. One path per unbroken run, so a gap stays a gap
+    rather than a bridge between two moments that were never measured. */
+function Overlay({
+  rows,
+  at,
+  onAt,
+}: {
+  rows: { key: string; word: string; series: (number | null)[] }[];
+  at: number | null;
+  onAt: (i: number | null) => void;
+}) {
+  const n = Math.max(1, rows[0]?.series.length ?? 1);
+  const W = 1000;
+  const H = 100;
+  const w = W / n;
+  const y = (pct: number) => H - (Math.max(0, Math.min(100, pct)) / 100) * H;
+  return (
+    <div data-day-row="all" className="flex items-center gap-row">
+      <span className="w-8 flex-none text-aux text-muted-foreground" />
+      <svg
+        data-day-band
+        data-day-view="para"
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="h-24 min-w-0 flex-1 text-foreground"
+        onPointerMove={(e) => {
+          const box = e.currentTarget.getBoundingClientRect();
+          onAt(Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - box.left) / box.width) * n))));
+        }}
+        onPointerLeave={() => onAt(null)}
+      >
+        <line x1={0} y1={H} x2={W} y2={H} stroke="currentColor" strokeOpacity={0.15} vectorEffect="non-scaling-stroke" />
+        {rows.map((r, k) => {
+          const runs: string[] = [];
+          let run: string[] = [];
+          r.series.forEach((v, i) => {
+            if (v === null) {
+              if (run.length > 1) runs.push(run.join(" "));
+              run = [];
+              return;
+            }
+            run.push(`${run.length === 0 ? "M" : "L"}${(i * w + w / 2).toFixed(1)},${y(v).toFixed(1)}`);
+          });
+          if (run.length > 1) runs.push(run.join(" "));
+          return runs.map((d, j) => (
+            <path
+              key={`${r.key}-${j}`}
+              data-day-line={r.key}
+              d={d}
+              fill="none"
+              stroke="currentColor"
+              strokeOpacity={0.35 + k * 0.14}
+              strokeWidth={1.2}
+              vectorEffect="non-scaling-stroke"
+            />
+          ));
+        })}
+        {at !== null && (
+          <line
+            data-day-cursor
+            x1={at * w + w / 2}
+            y1={0}
+            x2={at * w + w / 2}
+            y2={H}
+            stroke="currentColor"
+            strokeOpacity={0.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+      </svg>
+      <span className="w-16 flex-none" />
     </div>
   );
 }
@@ -1765,7 +1903,23 @@ function shadeOf(pct: number, row: string): { key: string; opacity: number; stra
   return { key: "0", opacity: 0.1, strain: false };
 }
 
-function DayRow({ name, word, series }: { name: string; word: string; series: (number | null)[] }) {
+function DayRow({
+  name,
+  word,
+  series,
+  view,
+  at,
+  onAt,
+}: {
+  name: string;
+  word: string;
+  series: (number | null)[];
+  /** Which reading: the ink carries the value, or the height does. */
+  view: "heat" | "ridge";
+  /** The moment under the cursor, shared by every row — see `DayChart`. */
+  at: number | null;
+  onAt: (i: number | null) => void;
+}) {
   const n = Math.max(1, series.length);
   const W = 1000;
   const H = 100;
@@ -1777,7 +1931,7 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
       <span className="w-8 flex-none text-aux text-muted-foreground">{word}</span>
       <svg
         data-day-band
-        data-day-view="heat"
+        data-day-view={view}
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
         // **`h-6`, not `h-8`.** Five readings at the old height would
@@ -1787,6 +1941,11 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
         // lets the same 0–100 box stretch into whatever height it is.
         className="h-6 min-w-0 flex-1 text-foreground"
         aria-hidden="true"
+        onPointerMove={(e) => {
+          const box = e.currentTarget.getBoundingClientRect();
+          onAt(Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - box.left) / box.width) * n))));
+        }}
+        onPointerLeave={() => onAt(null)}
       >
         <line
           x1={0}
@@ -1812,11 +1971,15 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
                   // comparison this block exists for is vertical —
                   // 「CPU 冲高的时候显存也满了吗」 — which wants one
                   // column of one colour per moment.
-                  y={0}
+                  // **Heat puts the value in the ink; ridge puts it in
+                  //     the height.** Same numbers, two readings — and
+                  //     the ridge is the one that answers 「how much」
+                  //     at a glance while the heat answers 「when」.
+                  y={view === "ridge" ? H - (Math.max(0, Math.min(100, b)) / 100) * H : 0}
                   width={w + 0.6}
-                  height={H}
+                  height={view === "ridge" ? (Math.max(0, Math.min(100, b)) / 100) * H : H}
                   fill={step.strain ? "var(--strain)" : "currentColor"}
-                  fillOpacity={step.opacity}
+                  fillOpacity={view === "ridge" ? (step.strain ? 1 : 0.5) : step.opacity}
                 >
                   <title>{`${Math.round(b)}%`}</title>
                 </rect>
@@ -1829,6 +1992,18 @@ function DayRow({ name, word, series }: { name: string; word: string; series: (n
             hour is a unit somebody can count. 288 five-minute buckets
             at three pixels each cannot be counted, so a tick per bucket
             was a decoration claiming to be a scale. */}
+        {at !== null && (
+          <line
+            data-day-cursor
+            x1={at * w + w / 2}
+            y1={0}
+            x2={at * w + w / 2}
+            y2={H}
+            stroke="currentColor"
+            strokeOpacity={0.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         {/* The marks *between* the hours, so the last one does not land
             on the band's own right edge where it is a border rather
             than a scale: 24 hours have 23 boundaries inside them. */}
