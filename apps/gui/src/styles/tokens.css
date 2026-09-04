@@ -1266,6 +1266,21 @@
   --text-title: 17px;
   --text-fact: 14px;
   --text-aux: 12.5px;
+  /* **The 24-hour block's own furniture**, and the one place the three
+   * sizes above do not reach. That drawing writes its row names at 8.5
+   * and its footnotes at 7, and the two lines of HTML that belong to it
+   * — the cursor's readout and the three reading words — sit directly
+   * against it. At `--text-aux` they are louder than the figure they
+   * annotate; this is the prototype's size, which is the definition
+   * that block is being held to (`card-whole.html`, `.dayblk .ro` and
+   * `.sw`).
+   *
+   * **Not a fourth size for the app.** It is scoped to
+   * `[data-day-band-axis]` and is the SVG's own scale continued into
+   * the two lines that frame it — deliberately outside the `--text-*`
+   * family so tailwind mints no `text-day` utility to be mistaken for a
+   * colour (`lib/utils.ts`, and the type gate that guards it). */
+  --day-size: 10px;
 
   --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 

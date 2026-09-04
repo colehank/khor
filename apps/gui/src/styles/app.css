@@ -734,6 +734,7 @@ input[type="search"]::-webkit-search-decoration {
    words: it was that all of them were one weight and one grey, so the
    line read as a sentence instead of as a row of readings. */
 [data-day-band-axis] [data-day-at] {
+  font-size: var(--day-size);
   color: var(--day-lab);
 }
 [data-day-band-axis] [data-day-at] b {
@@ -750,6 +751,7 @@ input[type="search"]::-webkit-search-decoration {
 /* The three readings, as three words. Unpressed they wear the footnote
    ink, pressed they wear full ink at the title weight — the prototype's `.sw i`, whose 700 this scale stops one step short of. */
 [data-day-band-axis] [data-day-view-pick] {
+  font-size: var(--day-size);
   color: var(--day-fnt);
 }
 [data-day-band-axis] [data-day-view-pick][data-on="true"] {
