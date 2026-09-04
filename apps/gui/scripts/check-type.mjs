@@ -26,6 +26,13 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const ALLOW = [
   /^src\/styles\/tokens\.css$/,
   /^src\/components\/ui\//,
+  // `src/day/` is the 24-hour panel and its stylesheet, moved across
+  // whole from the prototype that is its definition — vendored in the
+  // same sense `ui/` is. **The numbers in there are the design.**
+  // Re-expressing them as tokens is the re-implementation the
+  // transplant exists to undo, and this repo has already paid for that
+  // once (2026-09-04).
+  /^src\/day\//,
   /^src\/gen\//,
 ];
 

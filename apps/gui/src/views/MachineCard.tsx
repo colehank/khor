@@ -9,6 +9,9 @@ import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { mount as mountDay } from "@/day/day-core.js";
+import type { DayPanel, DayWords } from "@/day/day-core.js";
+import "@/day/day.css";
 import { useHiddenRows, useTight } from "@/hooks/use-tight";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
@@ -680,19 +683,22 @@ function Readings({
         top={top}
         open={open}
         heads={{
-          cpu: { word: cli.vitals_name_cpu, count: cli.procs_sub, fraction: v.cpu_pct / 100 },
+          cpu: { kind: "occupants", word: cli.vitals_name_cpu, count: cli.procs_sub, fraction: v.cpu_pct / 100 },
           gpu: {
+            kind: "parts",
             word: cli.vitals_name_gpu,
             count: cli.gpu_sub_nomem,
             fraction: gpuMean !== null ? gpuMean / 100 : v.gpu ? v.gpu.util_pct / 100 : null,
           },
           mem: {
+            kind: "occupants",
             word: cli.vitals_name_mem,
             count: cli.procs_sub,
             fraction: v.mem.total > 0 ? v.mem.used / v.mem.total : null,
             strain: row.vitals.mem_strain,
           },
           disk: {
+            kind: "parts",
             word: cli.vitals_name_disk,
             count: cli.vols_sub,
             fraction: disk && disk.total > 0 ? disk.used / disk.total : null,
@@ -744,8 +750,28 @@ function Drawers({
       component actually renders, so the number and the list cannot
       disagree. A machine whose node reports 「4 cards」 while sending no
       per-card list would otherwise print 「4 卡」 over an empty drawer,
-      which is a heading lying about the thing directly under it. */
-  heads: Record<string, { word: string; fraction: number | null; strain?: Strain | null; count: (n: number) => string }>;
+      which is a heading lying about the thing directly under it.
+
+      `kind` is **what the rows under it are**, and it is the one place
+      that fact is written down. A card and a volume are *parts* of the
+      ring above — their readings add up to it. A process is only an
+      *occupant*, and the few listed here do not add up to anything;
+      there are several thousand more. Six of either draws identically,
+      so the difference has to be said, and it is said **in the count's
+      own grammar**: `parts` wear a bare count (「3 卷」), `occupants`
+      wear a qualifier in front of the number (「占用最多的 6 个进程」).
+
+      That used to be a footnote under the drawer instead
+      (`top-share-note`, 「占用最多的几个,加起来不等于上面那个环」).
+      2026-09-04:「也不要,很蠢」. What went is the apology, not the
+      fact — a line that explains the block above it after the fact
+      costs a row and is read last, while the heading is read first and
+      is where somebody is already looking for what these rows are.
+      `check-face` measures the grammar, on both arms. */
+  heads: Record<
+    string,
+    { kind: "parts" | "occupants"; word: string; fraction: number | null; strain?: Strain | null; count: (n: number) => string }
+  >;
 }) {
   if (!row.vitals) return null;
   const { vitals: v, volume_strains } = row.vitals;
@@ -833,18 +859,33 @@ function Drawers({
         className="mt-row flex max-h-drawer-h min-h-drawer-h flex-col border-t pt-row text-sm tabular-nums"
       >
         {heads[open] && (
-          <div data-drawer-head className="mb-in flex items-center gap-in text-aux text-muted-foreground">
+          <div
+            data-drawer-head
+            data-drawer-kind={heads[open].kind}
+            className="mb-in flex items-center gap-in text-aux text-muted-foreground"
+          >
             <Glyph fraction={heads[open].fraction} strain={heads[open].strain} />
             <span>{heads[open].word}</span>
             <span aria-hidden="true">·</span>
             <span data-drawer-count={drawn[open]} className="tabular-nums">
               {heads[open].count(drawn[open])}
             </span>
-            {hidden > 0 && (
-              <span data-drawer-more={hidden} className="tabular-nums">
-                · {cli.drawer_more(hidden)}
-              </span>
-            )}
+            {/* **The number is on the element, not in the sentence.**
+                It used to be read out — 「还有 3 个在下面,拖一下」 —
+                and 2026-09-04 the answer to that was 「你不觉得这个画很
+                蠢吗,不要这个。下滑查看更多」. Nobody acts on the
+                three: seeing that there is more is what makes somebody
+                scroll, and whether it is three or seven changes
+                nothing they do next.
+
+                **What did not change is when it appears.** It is still
+                counted off the rows the bottom edge actually clips, so
+                it is absent when everything fits and goes the moment
+                somebody reaches the end — a hint that is always there
+                is not a hint, it is part of the heading. `check-face`
+                reads the count off `data-drawer-more`, which is why
+                the words could go and the state could stay. */}
+            {hidden > 0 && <span data-drawer-more={hidden}>· {cli.drawer_more}</span>}
           </div>
         )}
         {/* **The rows scroll, the heading does not.** A heading that
@@ -951,20 +992,18 @@ function Drawers({
         </div>
         </div>
       </div>
-      {/* **Outside the drawer, and that is not a detail.** Inside the
-          scrolling box it made a four-row panel scroll, and then 「just
-          fits」 and 「just does not」 look the same on screen.
+      {/* **Nothing under the drawer.** A sentence used to sit here
+          saying that the rows above do not add up to the ring
+          (`top-share-note`); 2026-09-04:「也不要,很蠢」.
 
-          And it is not optional on these two: six occupants and six
-          parts draw identically, while a part's readings add up to the
-          ring above and an occupant's do not — there are several
-          thousand more. Without the sentence the two blocks say
-          different things in the same shape. */}
-      {(open === "cpu" || open === "mem") && (
-        <p data-drawer-note className="mt-in text-aux text-muted-foreground">
-          {cli.top_share_note}
-        </p>
-      )}
+          The fact it was defending is real and is still said — it
+          moved **into the heading's grammar**, where `kind` explains
+          it: `occupants` count themselves with a qualifier in front of
+          the number, `parts` with a bare count. That is better than
+          the footnote was, and not only shorter: the footnote sat
+          *after* the block it was about, so it could only correct a
+          reading somebody had already taken, while the heading is
+          above the rows and is read on the way in. */}
     </>
   );
 }
@@ -1795,978 +1834,82 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
 }
 
 /**
- * The machine's last day, one reading to a row (2026-09-03:「GPU、CPU、
- * Mem、Disk 都绘制」).
+ * The machine's last day — **the prototype's panel, mounted, not
+ * re-drawn.**
  *
- * # Ported, not re-implemented
+ * Everything inside the box below is built by `day/day-core.js`, which
+ * is `card-whole.html`'s `KhorDay` moved across whole. This component
+ * owns the box, the heading, and the one call that hands the module a
+ * new answer. It owns no geometry, no scale, no colour and no cursor —
+ * those are the module's, and that is the point: there is no second
+ * implementation to keep in step.
  *
- * The geometry below is `card-whole.html`'s `day-core.js` moved across
- * — the same gutters, the same band height, the same row pitch, the
- * same axis, the same eight-step ramp. **It used to be a React drawing
- * written from the spec's description**, and the difference showed on
- * screen: the user's word for it was 「降级版」. Two faults did most of
- * the damage and both came from the same decision —
- * `preserveAspectRatio="none"` over a `0 0 1000 100` box, one box per
- * row:
+ * **The thing this replaced was a React re-implementation written from
+ * the spec's description of the same drawing**, and everything that was
+ * wrong with it came out of that gap — the ridge drawn with the
+ * vertical-hair fill the design had measured and thrown away, the
+ * parallel coordinates with no axes, sizes and weights off by whatever
+ * the prose did not pin. 「artifacts 已经写好代码画了,为什么还要自己画
+ * 一遍」.
  *
- *   - **the resolution.** A viewBox stretched to the element means one
- *     user unit is not one pixel, and every hairline, every gap between
- *     buckets and every glyph was scaled by however wide the card
- *     happened to be. Here the viewBox *is* the element's pixel box —
- *     measured, like the scatter's — so a 0.7 stroke is 0.7 pixels.
- *   - **the coarseness.** Buckets were `1000/288 = 3.47` units wide and
- *     landed on fractional device pixels, so adjacent buckets of the
- *     same shade were separated by an antialiased seam and the row read
- *     as a comb. Each bucket's edges are now rounded to whole pixels
- *     (`px` below), so neighbours share one edge exactly.
- *
- * **Still 288 cells, one per bucket.** The prototype merges runs of
- * equal shade into one rect; the merge is invisible once the edges are
- * integers, and the count is what the gate reads — so this keeps the
- * cells and takes the pixel snapping, which is the half that was doing
- * the work.
- *
- * # Why rows and not four lines in one frame
- *
- * Four series over one baseline cross, and every crossing is a place
- * where two numbers become one shape — the reader has to pick them
- * apart by colour or dash, which is a second vocabulary to learn before
- * the chart says anything. Small multiples on a **shared time axis**
- * cost vertical room and give back the two things that matter: each row
- * is read on its own, and a spike at 14:20 lines up vertically across
- * all four. That is the comparison somebody opens this chart for —
- * 「CPU 冲高的时候显存也满了吗」.
- *
- * Each row carries its own name and its own high-water mark, because a
- * shape without a number answers 什么时候 and never 多高.
- *
- * # A gap is a gap
- *
- * A bucket nobody sampled is a `data-day-cell` with nothing in it: the
- * recorder was not running, and the chart says so by drawing nothing
- * rather than a zero or a bridge. **A series the recorder never knew is
- * not a row at all** — an older node sends two series, not four flat
- * lines claiming its cards were idle all day.
+ * The heading stays here because it is the card's, not the figure's:
+ * the two ends of the window are the same fact the dials above are read
+ * against.
  */
-
-/** One reading's day: its key on the wire, its word, its buckets. */
-type Track = { key: string; word: string; v: (number | null)[] };
-
-/**
- * How dark one bucket is drawn.
- *
- * # Eight bands, and the two ends they were cut for
- *
- * The four bands started at 20, and **a machine that idles does not
- * reach it**. Measured on the live fleet 2026-09-04: turing drew 564
- * buckets across CPU, GPU, memory and disk and **every single one
- * landed in the bottom band** — one shade for a whole day, on four rows
- * out of five. So two cuts go in below 20 (`3` and `8`).
- *
- * **And one at the top, which the quiet-machine fixture could not have
- * found.** turing's video memory spends the day between **74.6 and
- * 89.6%** — fifteen points of range, every one of them inside the old
- * 70–90 band. No number of cuts at the bottom moves that row: it was a
- * flat slab for the same reason, at the other end of the scale. `80`
- * splits it. (Measured on the same day's real series, not on a
- * constructed one — a constructed idle day is what hid it the first
- * time round.)
- *
- * **Adding a boundary can only split a band, never merge two**, so no
- * row can lose a shade by this: measured across all three machines,
- * the number of rows using fewer shades than before is zero.
- *
- * The existing four are untouched — the top of the scale is where
- * 「full」 is decided, and moving it would change what 90 means.
- *
- * **Not per-row auto-scaling**, either: the same shade would then mean
- * different things on different machines, which is the silent change of
- * axis this whole card keeps refusing — and 90 would stop being a
- * boundary at all.
- */
-const BANDS = [3, 8, 20, 45, 70, 80, 90];
-
-function bandOf(pct: number): number {
-  const v = Math.max(0, Math.min(100, pct));
-  let k = 0;
-  while (k < BANDS.length && v >= BANDS[k]) k += 1;
-  return k;
-}
-
-/**
- * Which rows may wear the strain colour, and why not the others.
- *
- * Only 内存 and 磁盘. Those are the two readings where being full is a
- * thing going wrong: a filesystem at 95 starts failing writes.
- *
- * **A busy CPU is not a warning, and neither is a busy card.** A
- * machine at 95% CPU is a machine doing its job, and this repo's own
- * ruling is that a badge which is never zero is not a badge.
- *
- * **显存 is not on this list, and that is a 2026-09-04 reversal.** It
- * used to be — 「显存满等于训练 OOM，和磁盘满同一类后果」 — and that
- * reason is half right: the consequence is the same kind, **the unit is
- * not**. 90% of a 24G card leaves 2.4G and 90% of an 80G card leaves
- * 8G; one cannot hold another model and the other can. What the strain
- * colour answers is 「现在还塞不塞得下」, and that is a question about
- * bytes. This band has percentages and no bytes, so the signal does not
- * hold here at all — it holds where the bytes are (the part rows'
- * `21.7G / 24.0G`).
- */
-const DAY_STRAIN: Record<string, boolean> = { mem: true, disk: true };
-
-/** The band's key for a bucket, as the gate reads it: the step number,
-    or `strain` where the top step is also a warning. */
-function shadeKey(name: string, pct: number): string {
-  const k = bandOf(pct);
-  return k === BANDS.length && DAY_STRAIN[name] ? "strain" : String(k);
-}
-
-/** Runs of buckets for which `has` holds. **A gap is never bridged** —
-    two runs with a hole between them are two runs, which is what makes
-    「不知道」 structural here rather than something to remember. */
-function segsBy(n: number, has: (i: number) => boolean): [number, number][] {
-  const out: [number, number][] = [];
-  let s = -1;
-  for (let i = 0; i <= n; i += 1) {
-    const ok = i < n && has(i);
-    if (ok && s < 0) s = i;
-    if (!ok && s >= 0) {
-      out.push([s, i]);
-      s = -1;
-    }
-  }
-  return out;
-}
-const dataSegs = (t: Track) => segsBy(t.v.length, (i) => t.v[i] !== null);
-const gapSegs = (t: Track) => segsBy(t.v.length, (i) => t.v[i] === null);
-
-function peakOf(t: Track): { i: number; v: number } | null {
-  let pi = -1;
-  let pv = -1;
-  t.v.forEach((v, i) => {
-    if (v !== null && v > pv) {
-      pv = v;
-      pi = i;
-    }
-  });
-  return pi < 0 ? null : { i: pi, v: pv };
-}
-
-/** The prototype's geometry, wide and narrow, for the heat reading. */
-const HEAT = {
-  wide: { GL: 56, GR: 58, ROW: 14, CH: 11, TOP: 5, AXIS: 31, LAB: 8.5, PK: 10.5, PKX: 20, TICK: 7.5, CLEAR: 30 },
-  narrow: { GL: 46, GR: 42, ROW: 17, CH: 13, TOP: 5, AXIS: 18, LAB: 8, PK: 10, PKX: 19, TICK: 7, CLEAR: 36 },
-};
-
-/** The hours to mark, from the window's real clock — every third one
-    wide, every sixth narrow. The prototype's fixture had 「now」 pinned
-    at 20:00 and could list its ticks as constants; a real window starts
-    wherever the machine was last heard from, so the hours are found
-    rather than written down. */
-function hoursOf(startMs: number, bucketMs: number, n: number, step: number) {
-  const out: { i: number; label: string }[] = [];
-  const d = new Date(startMs);
-  d.setMinutes(0, 0, 0);
-  for (let guard = 0; guard < 64; guard += 1) {
-    const t = d.getTime();
-    if (t >= startMs) {
-      const i = Math.round((t - startMs) / bucketMs);
-      if (i >= n) break;
-      if (d.getHours() % step === 0) out.push({ i, label: `${String(d.getHours()).padStart(2, "0")}:00` });
-    }
-    d.setHours(d.getHours() + 1);
-  }
-  return out;
-}
-
-/** The shared foot of the two time readings: the hours, and the word
-    for the right-hand end. */
-function TimeAxis({
-  X0,
-  X1,
-  slot,
-  yb,
-  size,
-  clear,
-  hours,
-}: {
-  X0: number;
-  X1: number;
-  slot: number;
-  yb: number;
-  size: number;
-  clear: number;
-  hours: { i: number; label: string }[];
-}) {
-  return (
-    <>
-      {hours.map(({ i, label }) => {
-        const x = X0 + i * slot;
-        // Never under 「现在」: two words on one baseline read as one.
-        if (x > X1 - clear) return null;
-        return (
-          <g key={i} data-day-hour>
-            <line x1={x} y1={yb} x2={x} y2={yb + 4} strokeWidth={0.7} className="day-hair" />
-            <text x={x} y={yb + 13} fontSize={size} fontWeight={600} textAnchor="middle" className="day-fnt">
-              {label}
-            </text>
-          </g>
-        );
-      })}
-      <text x={X1} y={yb + 13} fontSize={size} fontWeight={700} textAnchor="end" className="day-lab">
-        {cli.day_now}
-      </text>
-    </>
-  );
-}
-
-/**
- * 读法一 · 热力带 — the default.
- *
- * Ink is the value, a row is a reading, a column is a moment. **One
- * upright column reads all five readings at once**, which is the
- * comparison the block exists for.
- */
-function Heat({
-  tracks,
-  W,
-  narrow,
-  hours,
-  at,
-  onAt,
-}: {
-  tracks: Track[];
-  W: number;
-  narrow: boolean;
-  hours: { i: number; label: string }[];
-  at: number | null;
-  onAt: (i: number | null) => void;
-}) {
-  const g = narrow ? HEAT.narrow : HEAT.wide;
-  const n = Math.max(1, tracks[0]?.v.length ?? 1);
-  const X0 = g.GL;
-  // **The right edge is the gutter, not `X0 + one pixel a bucket`.** A
-  // floor of `X0 + n` looks like a guard against a sub-pixel bucket and
-  // is really a guard against the viewBox: at 390 it put `X1` at 334 in
-  // a 332-wide box and every peak number off the right of the drawing
-  // (measured on the real face). Sub-pixel buckets are handled where
-  // they arise — `Math.max(1, …)` on each segment's width.
-  const X1 = Math.max(X0 + 1, W - g.GR);
-  const slot = (X1 - X0) / n;
-  const H = g.TOP + tracks.length * g.ROW + g.AXIS;
-  const yb = g.TOP + tracks.length * g.ROW + 1;
-  // **A segment's edges are whole pixels, and neighbours share one.**
-  // Off the integer grid every edge is antialiased, which eats the
-  // band's own ink unevenly and turns a row of equal shades into a
-  // comb — that is the 「粗糙」 the user was looking at.
-  const px = (i: number) => Math.round(X0 + i * slot);
-  const ly = yb + 22;
-  let lx = X0;
-  const legend = BANDS.map((b, k) => ({
-    cls: `day-r${k}`,
-    word: k === 0 ? `<${b}` : `${BANDS[k - 1]}–${b}`,
-  })).concat([{ cls: `day-r${BANDS.length}`, word: `${BANDS[BANDS.length - 1]}+` }]);
-  return (
-    <svg
-      data-day-band
-      data-day-view="heat"
-      viewBox={`0 0 ${W} ${H}`}
-      height={H}
-      preserveAspectRatio="xMinYMin meet"
-      className="block w-full"
-      onPointerMove={(e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        const x = ((e.clientX - r.left) / r.width) * W;
-        onAt(Math.max(0, Math.min(n - 1, Math.floor((x - X0) / slot))));
-      }}
-      onPointerLeave={() => onAt(null)}
-    >
-      {tracks.map((t, r) => {
-        const y = g.TOP + r * g.ROW;
-        const pk = peakOf(t);
-        const strained = pk !== null && DAY_STRAIN[t.key] === true && pk.v >= BANDS[BANDS.length - 1];
-        return (
-          <g key={t.key} data-day-row={t.key}>
-            <text x={X0 - 8} y={y + g.CH / 2 + 3} fontSize={g.LAB} fontWeight={700} textAnchor="end" className="day-lab">
-              {t.word}
-            </text>
-            {t.v.map((b, i) => (
-              // eslint-disable-next-line react/no-array-index-key
-              <g key={i} data-day-cell data-gap={b === null ? "" : undefined}>
-                {b !== null && (
-                  <rect
-                    data-day-shade={shadeKey(t.key, b)}
-                    className={shadeKey(t.key, b) === "strain" ? "day-strain" : `day-r${bandOf(b)}`}
-                    x={px(i)}
-                    y={y}
-                    // **A bucket the ruler has no room for is drawn
-                    // zero wide, not one wide.** At 390 the plot is 244
-                    // pixels for 288 buckets, so `px(i)` and `px(i+1)`
-                    // land on the same integer for most of them — and a
-                    // floor of 1 there makes each of those overlap its
-                    // neighbour by a whole pixel. The fill is
-                    // semi-transparent, so an overlap paints *twice*:
-                    // the row came out combed with darker stripes at
-                    // the beat frequency between 0.847 and 1 (seen on
-                    // the real face at 390). Tiling exactly means some
-                    // buckets have no pixel of their own, which is what
-                    // 244 pixels for 288 buckets actually means.
-                    width={Math.max(0, px(i + 1) - px(i))}
-                    height={g.CH}
-                  >
-                    <title>{`${Math.round(b)}%`}</title>
-                  </rect>
-                )}
-              </g>
-            ))}
-            {gapSegs(t).map(([a, b]) =>
-              b - a < 3 ? null : (
-                <g key={`gap${a}`}>
-                  <rect
-                    x={px(a)}
-                    y={y}
-                    width={Math.max(1, px(b) - px(a))}
-                    height={g.CH}
-                    fill="none"
-                    strokeWidth={0.8}
-                    strokeDasharray="2 2.5"
-                    className="day-hair"
-                  />
-                  {b - a >= 22 && !narrow && (
-                    <text
-                      x={(px(a) + px(b)) / 2}
-                      y={y + g.CH / 2 + 2.5}
-                      fontSize={6.5}
-                      fontWeight={600}
-                      textAnchor="middle"
-                      className="day-fnt"
-                    >
-                      {cli.day_gap}
-                    </text>
-                  )}
-                </g>
-              ),
-            )}
-            {pk !== null && (
-              <>
-                {/* The day's high-water mark, ringed where it happened
-                    — the row's number on the right answers 多高 and
-                    this answers 什么时候. */}
-                <rect
-                  x={X0 + pk.i * slot - (Math.max(2.4, slot) - slot) / 2}
-                  y={y - 2}
-                  width={Math.max(2.4, slot)}
-                  height={g.CH + 4}
-                  rx={1.5}
-                  fill="none"
-                  strokeWidth={1}
-                  strokeDasharray="2 2"
-                  className="day-inkline"
-                />
-                <text
-                  data-day-peak
-                  x={X1 + 8}
-                  y={y + g.CH / 2 + 4}
-                  fontSize={g.PK}
-                  fontWeight={800}
-                  className={strained ? "day-sf" : "day-ink"}
-                >
-                  {Math.round(pk.v)}
-                </text>
-                <text x={X1 + 8 + g.PKX} y={y + g.CH / 2 + 4} fontSize={7} fontWeight={600} className="day-fnt">
-                  %
-                </text>
-              </>
-            )}
-          </g>
-        );
-      })}
-      <TimeAxis X0={X0} X1={X1} slot={slot} yb={yb} size={g.TICK} clear={g.CLEAR} hours={hours} />
-      {/* The ramp itself, named. **明度即数据** is the whole reading,
-          and a ramp with no key is a scale somebody has to guess. */}
-      {!narrow && (
-        <g data-day-legend>
-          <text x={X0 - 8} y={ly + 7} fontSize={7} fontWeight={600} textAnchor="end" className="day-fnt">
-            {cli.day_shade}
-          </text>
-          {legend.map(({ cls, word }) => {
-            const x = lx;
-            lx += 10 + word.length * 4.8 + 13;
-            return (
-              <g key={word}>
-                <rect x={x} y={ly} width={7} height={7} rx={1.5} className={cls} />
-                <text x={x + 10} y={ly + 7} fontSize={7} fontWeight={600} className="day-fnt">
-                  {word}
-                </text>
-              </g>
-            );
-          })}
-          <rect x={lx} y={ly} width={7} height={7} rx={1.5} className="day-strain" />
-          <text x={lx + 10} y={ly + 7} fontSize={7} fontWeight={600} className="day-fnt">
-            {cli.day_strain_legend(BANDS[BANDS.length - 1])}
-          </text>
-        </g>
-      )}
-      {at !== null && (
-        <line
-          data-day-cursor
-          x1={X0 + (at + 0.5) * slot}
-          y1={g.TOP - 3}
-          x2={X0 + (at + 0.5) * slot}
-          y2={yb}
-          strokeWidth={1}
-          className="day-inkline"
-          pointerEvents="none"
-        />
-      )}
-    </svg>
-  );
-}
-
-/**
- * 读法二 · 山脊 — the same numbers with the value in the height.
- *
- * **The area is solid**, not one hair per bucket: measured, the hair
- * drawing's per-column ink varies 12.5–21.5% over 288 buckets at
- * fractional bucket widths while the data itself varies 3.6% — it
- * invents four to six times the flicker the numbers have, worst at
- * `dpr=2`.
- */
-function Ridge({
-  tracks,
-  W,
-  narrow,
-  hours,
-  at,
-  onAt,
-}: {
-  tracks: Track[];
-  W: number;
-  narrow: boolean;
-  hours: { i: number; label: string }[];
-  at: number | null;
-  onAt: (i: number | null) => void;
-}) {
-  const n = tracks.length;
-  const N = Math.max(1, tracks[0]?.v.length ?? 1);
-  const GL = narrow ? 42 : 48;
-  const GR = narrow ? 34 : 38;
-  const SP = narrow ? 22 : 20;
-  const AMP = narrow ? 26 : 24;
-  const TOP = 8;
-  const AXIS = 16;
-  const X0 = GL;
-  const X1 = Math.max(X0 + 1, W - GR);
-  const slot = (X1 - X0) / N;
-  const rowOf = (k: number) => n - 1 - k;
-  const baseY = (r: number) => TOP + AMP + r * SP;
-  const bot = baseY(Math.max(0, n - 1));
-  const H = bot + AXIS;
-  const X = (i: number) => X0 + i * slot;
-  const mapH = (v: number) => (v / 100) * AMP;
-  /** A bucket is a five-minute plateau, not a point between which one
-      may interpolate — so the profile is a staircase, and 「a gap is
-      never bridged」 falls out of the shape rather than out of care. */
-  const stepPath = (t: Track, a: number, b: number, y0: number, close: boolean) => {
-    let d = close ? `M${X(a).toFixed(2)} ${y0.toFixed(2)}` : "";
-    for (let i = a; i < b; i += 1) {
-      const y = (y0 - mapH(t.v[i] as number)).toFixed(2);
-      d += `${d === "" ? "M" : " L"}${X(i).toFixed(2)} ${y} L${X(i + 1).toFixed(2)} ${y}`;
-    }
-    return close ? `${d} L${X(b).toFixed(2)} ${y0.toFixed(2)} Z` : d;
-  };
-  // Back rows first: the row in front paints paper under itself and so
-  // occludes the one behind — L19's own trick, and the reason the
-  // order here is by row and not by track.
-  const order = tracks.map((t, k) => ({ t, k, r: rowOf(k) })).sort((a, b) => a.r - b.r);
-  return (
-    <svg
-      data-day-band
-      data-day-view="ridge"
-      viewBox={`0 0 ${W} ${H}`}
-      height={H}
-      preserveAspectRatio="xMinYMin meet"
-      className="block w-full"
-      onPointerMove={(e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        const x = ((e.clientX - r.left) / r.width) * W;
-        onAt(Math.max(0, Math.min(N - 1, Math.floor((x - X0) / slot))));
-      }}
-      onPointerLeave={() => onAt(null)}
-    >
-      {order.map(({ t, r }) => {
-        const y0 = baseY(r);
-        return (
-          <g key={`f${t.key}`}>
-            {dataSegs(t).map(([a, b]) => (
-              <g key={a}>
-                <path d={stepPath(t, a, b, y0, true)} fill="var(--card)" />
-                <path d={stepPath(t, a, b, y0, true)} className="day-area" />
-                <line x1={X(a)} y1={y0} x2={X(b)} y2={y0} strokeWidth={0.7} className="day-hair" />
-              </g>
-            ))}
-            {/* Twenty-four marks, one an hour — **a unit somebody can
-                count.** The texture they replaced was one hair per
-                bucket: 288 of them at three pixels apiece cannot be
-                counted, so it was decoration claiming to be a scale. */}
-            {Array.from({ length: Math.ceil(N / 12) }, (_, k) => k * 12).map((i) =>
-              t.v[i] === null || t.v[i] === undefined ? null : (
-                <line key={`h${i}`} x1={X(i)} y1={y0} x2={X(i)} y2={y0 - 3.5} strokeWidth={0.6} className="day-hair" />
-              ),
-            )}
-            {gapSegs(t).map(([a, b]) =>
-              b - a < 3 ? null : (
-                <line
-                  key={`g${a}`}
-                  x1={X(a)}
-                  y1={y0}
-                  x2={X(b)}
-                  y2={y0}
-                  strokeWidth={0.7}
-                  strokeDasharray="1.5 3"
-                  className="day-hair"
-                />
-              ),
-            )}
-            <text x={X0 - 7} y={y0 - 2} fontSize={narrow ? 8 : 8.5} fontWeight={700} textAnchor="end" className="day-lab">
-              {t.word}
-            </text>
-          </g>
-        );
-      })}
-      {/* The ridges again on top, so a row occluded by the one in front
-          is still readable. **Only the back rows get a paper halo** —
-          giving the front one 1.8px of paper would eat its own edge. */}
-      {order.map(({ t, k, r }) => {
-        const y0 = baseY(r);
-        const pk = peakOf(t);
-        const strained = pk !== null && DAY_STRAIN[t.key] === true && pk.v >= BANDS[BANDS.length - 1];
-        return (
-          <g key={`k${t.key}`} data-day-row={t.key}>
-            {dataSegs(t).map(([a, b]) => (
-              <g key={a}>
-                {r < n - 1 && (
-                  <path
-                    d={stepPath(t, a, b, y0, false)}
-                    fill="none"
-                    strokeWidth={1.8}
-                    opacity={0.9}
-                    className="day-halo"
-                  />
-                )}
-                <path
-                  d={stepPath(t, a, b, y0, false)}
-                  fill="none"
-                  strokeWidth={r === n - 1 ? 1.1 : 0.9}
-                  className={`day-k${Math.min(k, 4) + 1}`}
-                />
-                {DAY_STRAIN[t.key] === true &&
-                  segsBy(N, (i) => {
-                    const v = t.v[i];
-                    return v !== null && v >= BANDS[BANDS.length - 1];
-                  })
-                    .filter(([p, q]) => p >= a && q <= b)
-                    .map(([p, q]) => (
-                      <path
-                        key={`s${p}`}
-                        d={stepPath(t, p, q, y0, false)}
-                        fill="none"
-                        strokeWidth={1.9}
-                        strokeLinecap="round"
-                        className="day-sk"
-                      />
-                    ))}
-              </g>
-            ))}
-            {pk !== null && (
-              <>
-                <circle
-                  cx={X(pk.i) + slot / 2}
-                  cy={y0 - mapH(pk.v)}
-                  r={2.4}
-                  className={strained ? "day-sf" : `day-f${Math.min(k, 4) + 1}`}
-                />
-                <text
-                  data-day-peak
-                  x={X(pk.i) + slot / 2 < X1 - 44 ? X(pk.i) + slot / 2 + 6 : X(pk.i) + slot / 2 - 6}
-                  y={y0 - mapH(pk.v) + 2.5}
-                  fontSize={narrow ? 8.5 : 9}
-                  fontWeight={800}
-                  textAnchor={X(pk.i) + slot / 2 < X1 - 44 ? "start" : "end"}
-                  className={strained ? "day-sf" : "day-ink"}
-                  stroke="var(--card)"
-                  strokeWidth={3.4}
-                  style={{ paintOrder: "stroke" }}
-                >
-                  {`${Math.round(pk.v)}%`}
-                </text>
-              </>
-            )}
-          </g>
-        );
-      })}
-      <TimeAxis X0={X0} X1={X1} slot={slot} yb={bot} size={narrow ? 7 : 7.5} clear={narrow ? 36 : 30} hours={hours} />
-      <line x1={X0 - 4} y1={baseY(n - 1) - AMP} x2={X0} y2={baseY(n - 1) - AMP} strokeWidth={0.8} className="day-hair" />
-      {at !== null && (
-        <>
-          <line
-            data-day-cursor
-            x1={X(at) + slot / 2}
-            y1={TOP - 4}
-            x2={X(at) + slot / 2}
-            y2={bot}
-            strokeWidth={1}
-            className="day-inkline"
-            pointerEvents="none"
-          />
-          {tracks.map((t, k) => {
-            const v = t.v[at];
-            if (v === null || v === undefined) return null;
-            return (
-              <circle
-                key={t.key}
-                cx={X(at) + slot / 2}
-                cy={baseY(rowOf(k)) - mapH(v)}
-                r={2.6}
-                className="day-ink"
-                pointerEvents="none"
-              />
-            );
-          })}
-        </>
-      )}
-    </svg>
-  );
-}
-
-/**
- * 读法三 · 叠放 — parallel coordinates.
- *
- * One hair is one five-minute moment and one upright is one reading.
- * **Time is spent to buy the cross-reading relationship**: a hair that
- * runs high on CPU and low on GPU is one shape, and the bundle's shape
- * is what 「编译时显卡是空的」 looks like. This is the arrangement the
- * stacked rows were chosen over, which is exactly why it is worth
- * having as a reading somebody asks for rather than as the one they
- * get: to read a crossing you have to want to.
- */
-function Para({
-  tracks,
-  W,
-  narrow,
-  at,
-  hhmm,
-}: {
-  tracks: Track[];
-  W: number;
-  narrow: boolean;
-  at: number | null;
-  hhmm: (i: number) => string;
-}) {
-  const n = tracks.length;
-  const N = Math.max(1, tracks[0]?.v.length ?? 1);
-  const PAD = narrow ? 26 : 44;
-  const TOP = 14;
-  const BOT = narrow ? 122 : 116;
-  const H = BOT + 37;
-  const AX = tracks.map((_, k) => (n === 1 ? W / 2 : PAD + (k * (W - 2 * PAD)) / (n - 1)));
-  const mapY = (v: number) => BOT - (v / 100) * (BOT - TOP);
-  const top = BANDS[BANDS.length - 1];
-  const paths: { i: number; d: string; fresh: number }[] = [];
-  for (let i = 0; i < N; i += 1) {
-    const ys = tracks.map((t) => (t.v[i] === null || t.v[i] === undefined ? null : mapY(t.v[i] as number)));
-    if (ys.every((y) => y === null)) continue;
-    let d = "";
-    let open = false;
-    for (let k = 0; k < n; k += 1) {
-      const y = ys[k];
-      if (y === null) {
-        open = false;
-        continue;
-      }
-      if (!open) {
-        d += ` M${AX[k]} ${y.toFixed(2)}`;
-        open = true;
-        continue;
-      }
-      const mx = (AX[k - 1] + AX[k]) / 2;
-      d += ` C${mx} ${(ys[k - 1] as number).toFixed(2)} ${mx} ${y.toFixed(2)} ${AX[k]} ${y.toFixed(2)}`;
-    }
-    paths.push({ i, d, fresh: i / N });
-  }
-  let last = N - 1;
-  while (last >= 0 && tracks.every((t) => t.v[last] === null || t.v[last] === undefined)) last -= 1;
-  return (
-    <svg
-      data-day-band
-      data-day-view="para"
-      viewBox={`0 0 ${W} ${H}`}
-      height={H}
-      preserveAspectRatio="xMinYMin meet"
-      className="block w-full"
-    >
-      {/* The edge, drawn once across every upright: 90 is where this
-          card decides 「full」, and a reading has to be read against it
-          rather than against its own maximum. */}
-      <line
-        x1={AX[0]}
-        y1={mapY(top)}
-        x2={AX[n - 1]}
-        y2={mapY(top)}
-        strokeWidth={0.8}
-        strokeDasharray="3 3"
-        opacity={0.7}
-        className="day-sk"
-      />
-      <text x={AX[0] - 6} y={mapY(top) + 3} fontSize={7} fontWeight={700} textAnchor="end" className="day-sf">
-        {top}
-      </text>
-      {tracks.map((t, k) => {
-        const x = AX[k];
-        const got = t.v.filter((v) => v !== null).length;
-        return (
-          <g key={`ax${t.key}`}>
-            <line x1={x} y1={TOP - 6} x2={x} y2={BOT + 6} strokeWidth={1} className="day-hair" />
-            {[TOP - 6, BOT + 6].map((yy) => (
-              <line key={yy} x1={x - 4} y1={yy} x2={x + 4} y2={yy} strokeWidth={1} className="day-hair" />
-            ))}
-            {[0, 50].map((gv) => (
-              <g key={gv}>
-                <line x1={x - 3} y1={mapY(gv)} x2={x + 3} y2={mapY(gv)} strokeWidth={0.7} className="day-hair" />
-                <text x={x - 6} y={mapY(gv) + 3} fontSize={6.5} fontWeight={600} textAnchor="end" className="day-fnt">
-                  {gv}
-                </text>
-              </g>
-            ))}
-            <text x={x} y={BOT + 21} fontSize={narrow ? 8 : 8.5} fontWeight={800} textAnchor="middle" className="day-lab">
-              {t.word}
-            </text>
-            {/* How many of the day's buckets this reading actually has.
-                **A reading with a third of its day missing draws a
-                thinner bundle**, and without this number that reads as
-                a machine that was quiet rather than as one nobody was
-                watching. */}
-            <text x={x} y={BOT + 30} fontSize={6.5} fontWeight={600} textAnchor="middle" className="day-fnt">
-              {`${got}/${N}`}
-            </text>
-          </g>
-        );
-      })}
-      <g>
-        {paths.map(({ i, d, fresh }) => (
-          <path
-            key={i}
-            data-day-line={i}
-            d={d}
-            fill="none"
-            strokeWidth={i === last ? 2 : 0.6}
-            opacity={i === last ? 1 : Number((0.14 + fresh * 0.28).toFixed(3))}
-            className={i === last ? "day-inkline" : fresh > 0.875 ? "day-rec" : "day-thr"}
-          />
-        ))}
-      </g>
-      {tracks.map((t, k) => {
-        const pk = peakOf(t);
-        if (pk === null) return null;
-        const strained = DAY_STRAIN[t.key] === true && pk.v >= top;
-        const left = k >= n - 1 && n > 1;
-        return (
-          <g key={`pk${t.key}`} data-day-row={t.key}>
-            <circle cx={AX[k]} cy={mapY(pk.v)} r={2.8} className={strained ? "day-sf" : "day-ink"} />
-            <text
-              data-day-peak
-              x={AX[k] + (left ? -8 : 8)}
-              y={mapY(pk.v) + 3.5}
-              fontSize={narrow ? 8.5 : 9}
-              fontWeight={800}
-              textAnchor={left ? "end" : "start"}
-              className={strained ? "day-sf" : "day-ink"}
-              stroke="var(--card)"
-              strokeWidth={3.4}
-              style={{ paintOrder: "stroke" }}
-            >
-              {`${cli.day_row_peak(`${Math.round(pk.v)}%`)} · ${hhmm(pk.i)}`}
-            </text>
-          </g>
-        );
-      })}
-      {/* Which thread is now. The newest moment is already drawn in full
-          ink at twice the weight; this says what that weight means.
-          **Not the prototype's 「现在（也是今天最高）」 when the label
-          collides with the peak's**: two labels landing near each other
-          means their *values* are near each other, which is not the
-          same claim as 「now is the highest」 — turing's video memory
-          ends at 89.6 with its peak of 89.6 at 03:16, and that sentence
-          would name the wrong moment. It moves out of the way and says
-          only what it knows. */}
-      {last >= 0 &&
-        (() => {
-          const lv = tracks[n - 1].v[last];
-          if (lv === null || lv === undefined) return null;
-          const y = mapY(lv);
-          const pk = peakOf(tracks[n - 1]);
-          const clash = pk !== null && Math.abs(mapY(pk.v) - y) < 13;
-          return (
-            <text
-              data-day-now
-              x={AX[n - 1] + (n > 1 ? -8 : 8)}
-              y={clash ? y + 14 : y - 8}
-              fontSize={8.5}
-              fontWeight={800}
-              textAnchor={n > 1 ? "end" : "start"}
-              className="day-ink"
-              stroke="var(--card)"
-              strokeWidth={3.4}
-              style={{ paintOrder: "stroke" }}
-            >
-              {cli.day_now}
-            </text>
-          );
-        })()}
-      {/* **The cursor survives the switch of reading**, and here it is
-          the only thing that can carry it: this drawing has spent the
-          time axis, so there is nothing to slide along. The moment
-          somebody left on the heat band lights up as its own thread. */}
-      {at !== null && paths.some((p) => p.i === at) && (
-        <path
-          data-day-cursor
-          d={paths.find((p) => p.i === at)?.d}
-          fill="none"
-          strokeWidth={1.6}
-          className="day-inkline"
-          pointerEvents="none"
-        />
-      )}
-    </svg>
-  );
-}
-
 function DayChart({ day }: { day: Load["cpu_day"] }) {
-  // **One reading, one cursor, one set of peaks — held here.** The
-  // three readings are three ways of looking at the same numbers, so
-  // the state that says 「which moment」 belongs to the chart and not to
-  // any one of them: keep it inside a row and switching readings drops
-  // the moment somebody was looking at, which would make them three
-  // charts wearing one heading.
-  const [view, setView] = useState<"heat" | "ridge" | "para">("heat");
-  const [at, setAt] = useState<number | null>(null);
-  // **The viewBox is the element's pixel box**, measured — the same
-  // arrangement the scatter arrived at, and for the same reason: one
-  // user unit has to be one pixel or every hairline and every glyph is
-  // scaled by however wide the card happens to be.
   const box = useRef<HTMLDivElement>(null);
-  const [W, setW] = useState(0);
+  const panel = useRef<DayPanel | null>(null);
+  // **Every word the drawing says, from the catalog.** The module holds
+  // no Chinese; this is where the two meet.
+  const words: DayWords = {
+    cpu: cli.vitals_name_cpu,
+    gpu: cli.vitals_name_gpu,
+    mem: cli.vitals_name_mem,
+    disk: cli.vitals_name_disk,
+    vram: cli.vitals_name_vram,
+    heat: cli.day_view_heat,
+    ridge: cli.day_view_ridge,
+    para: cli.day_view_para,
+    gap: cli.day_gap,
+    now: cli.day_now,
+    shade: cli.day_shade,
+    strainLegend: cli.day_strain_legend(90),
+    peakAt: (pct, at) => cli.day_peak_at(pct, at),
+    brushHead: (what, n, hours) => cli.day_brush_head(what, n, hours),
+    brushMedian: (name, pct) => cli.day_brush_median(name, pct),
+    brushNone: (name) => cli.day_brush_none(name),
+    brushEmpty: (name, band) => cli.day_brush_empty(name, band),
+  };
   useEffect(() => {
     const node = box.current;
     if (!node) return;
-    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
-    ro.observe(node);
-    return () => ro.disconnect();
+    panel.current = mountDay(node);
+    return () => {
+      panel.current?.destroy();
+      panel.current = null;
+    };
   }, []);
-  const tracks: Track[] = [
-    { key: "cpu", word: cli.vitals_name_cpu, v: day.buckets },
-    { key: "gpu", word: cli.vitals_name_gpu, v: day.gpu },
-    { key: "mem", word: cli.vitals_name_mem, v: day.mem },
-    { key: "disk", word: cli.vitals_name_disk, v: day.disk },
-    // **The cards' memory, and only where a machine has such a thing.**
-    // On unified memory it is empty by construction, because those
-    // bytes are already the 内存 row — see `khor_core::CpuDay::vram`.
-    // So an NVIDIA box draws five rows and this Mac draws four, from
-    // one code path and no branch about which machine it is.
-    { key: "vram", word: cli.vitals_name_vram, v: day.vram },
-    // A series nobody recorded is not drawn. `some` rather than
-    // `length`: a node can send 288 holes, and a row of holes with a
-    // name over it reads as a reading that is missing rather than as
-    // one this machine never takes.
-  ].filter((t) => t.v.some((v) => v !== null));
+  // **A new answer redraws; it does not remount.** The reading somebody
+  // picked and the moment they left the cursor on live inside the
+  // module, and tearing it down every five seconds would take both.
+  useEffect(() => {
+    panel.current?.update(day, words);
+  });
   const n = Math.max(1, day.buckets.length);
   const startMs = day.now_ms - day.bucket_ms * n;
   const sameDay = new Date(startMs).toDateString() === new Date(day.now_ms).toDateString();
-  const narrow = W > 0 && W < 520;
-  const hours = hoursOf(startMs, day.bucket_ms, n, narrow ? 6 : 3);
-  const hhmm = (i: number) => clock(startMs + i * day.bucket_ms);
   return (
     <div data-day-band-axis className="flex flex-col gap-in">
       <div className="flex items-center justify-between gap-row text-aux text-muted-foreground">
         <span>{cli.day_trend}</span>
         {/* The two ends of the window, and nothing between them: the
             rows below share this axis, so naming it once is naming it
-            for all four. */}
+            for all of them. */}
         <span className="tabular-nums">
           {sameDay ? clock(startMs) : cli.yesterday_at(clock(startMs))} → {clock(day.now_ms)}
         </span>
       </div>
-      <div ref={box} className="w-full">
-        {W > 0 && tracks.length > 0 && view === "heat" && (
-          <Heat tracks={tracks} W={W} narrow={narrow} hours={hours} at={at} onAt={setAt} />
-        )}
-        {W > 0 && tracks.length > 0 && view === "ridge" && (
-          <Ridge tracks={tracks} W={W} narrow={narrow} hours={hours} at={at} onAt={setAt} />
-        )}
-        {W > 0 && tracks.length > 0 && view === "para" && (
-          <Para tracks={tracks} W={W} narrow={narrow} at={at} hhmm={hhmm} />
-        )}
-      </div>
-      <div className="flex items-center justify-between gap-row text-aux">
-        {/* The reading, as three words. **Not tabs**: a tab says 「three
-            places」, and this is one place the whole time. */}
-        <span data-day-views className="flex items-center gap-row">
-          {(
-            [
-              ["heat", cli.day_view_heat],
-              ["ridge", cli.day_view_ridge],
-              ["para", cli.day_view_para],
-            ] as const
-          ).map(([key, word]) => (
-            <button
-              key={key}
-              type="button"
-              data-day-view-pick={key}
-              data-on={view === key}
-              aria-pressed={view === key}
-              onClick={() => setView(key)}
-              // **Wears the touch floor rather than waiving it.** These
-              // three sit on a line of their own with nothing to take
-              // room from — the floor is a floor under things free to
-              // grow, and these are free. (The truncation mark in the
-              // table is the case where it is not, and that one is
-              // waived by name with what the waiver costs.)
-              className="inline-flex min-h-touch min-w-touch items-center justify-center rounded-md px-in"
-            >
-              {word}
-            </button>
-          ))}
-        </span>
-        {/* What the shapes cannot say: the moment under the cursor, and
-            every reading at it. Absent until there is one — a readout
-            of nothing would be a row of dashes pretending to be data. */}
-        {at !== null && (
-          <span data-day-at className="tabular-nums">
-            <b>{hhmm(at)}</b>{" "}
-            {tracks.map((t) => {
-              const v = t.v[at];
-              if (v === null || v === undefined)
-                return (
-                  <span key={t.key} data-gone>
-                    {`${t.word} ${cli.day_gap}`}{" "}
-                  </span>
-                );
-              const strained = DAY_STRAIN[t.key] === true && v >= BANDS[BANDS.length - 1];
-              return (
-                <span key={t.key}>
-                  {t.word}{" "}
-                  {strained ? (
-                    <span data-strained>{`${Math.round(v)}%`}</span>
-                  ) : (
-                    <b>{`${Math.round(v)}%`}</b>
-                  )}{" "}
-                </span>
-              );
-            })}
-          </span>
-        )}
-      </div>
+      <div ref={box} className="w-full" />
     </div>
   );
 }

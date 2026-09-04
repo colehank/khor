@@ -1,0 +1,278 @@
+/**
+ * The 24-hour block's stylesheet — **`card-whole.html`'s `.dayblk`
+ * block, moved across with the drawing it belongs to.**
+ *
+ * It is vendored, like `components/ui/`: the numbers in here are the
+ * design, not a copy of it, and re-expressing them as tokens is the
+ * re-implementation this whole transplant exists to undo. `check-px`
+ * and `check-type` allow `src/day/` for that reason and no other.
+ *
+ * Two things changed on the way in, both about scope and neither about
+ * how anything looks:
+ *
+ *   - **`--fg` and `--bg` are aliased to khor's ink.** The original
+ *     inherited them from the gallery page. `--card` and `--strain` are
+ *     khor's already and are left alone — the prototype had deleted its
+ *     own copies of those three exactly so that the two blocks would
+ *     share one ink.
+ *   - **Every selector is scoped.** The original wrote
+ *     `.dayblk .r1 {…} .r2{…}` — one scoped selector and then a global
+ *     one. On a gallery page that is harmless; in an app it puts a class
+ *     called `.ink` on whatever else happens to wear it.
+ *
+ * And one block did not come across: a `[data-theme=dark] .dayblk`
+ * override carrying a **five**-step ramp, left from before the eight.
+ * This app has no `data-theme` attribute — it reads the system setting —
+ * so the block was unreachable here *and* contradicted the ramp above
+ * it.
+ */
+.dayblk {
+  /* 8 档 ramp,边界 3 / 8 / 20 / 45 / 70 / 80 / 90(90 = 产品的压力阈值)。
+     **khor 那支墨的 alpha 阶**,不是第二套灰阶 —— 一张卡片上两套灰阶,
+     是「同一份交付只用一种色彩系统」那条直接禁的东西。这一支的职责是
+     **编码数值**,那是一支灰阶在这儿唯一被允许的用处。
+     alpha 是按 ΔL* 大致均匀反解出来的,不是等差:alpha 对覆盖是线性的,
+     明度不是,等差的阶会挤中间、浪费两头。产品里实测(纸 L* 98.91):
+     90.94 / 85.41 / 79.72 / 72.69 / 63.81 / 52.46 / 37.80 / 15.72,
+     相邻最小 5.53,最低一档离纸 7.97。 */
+  --fg: var(--foreground);
+  --bg: var(--background);
+  --r1: rgba(26, 26, 20, 0.101);
+  --r2: rgba(26, 26, 20, 0.17);
+  --r3: rgba(26, 26, 20, 0.24);
+  --r4: rgba(26, 26, 20, 0.325);
+  --r5: rgba(26, 26, 20, 0.43);
+  --r6: rgba(26, 26, 20, 0.56);
+  --r7: rgba(26, 26, 20, 0.72);
+  --r8: rgba(26, 26, 20, 0.94);
+  --s1: rgba(26, 26, 20, 0.94);
+  --s2: rgba(26, 26, 20, 0.76);
+  --s3: rgba(26, 26, 20, 0.58);
+  --s4: rgba(26, 26, 20, 0.4);
+  --s5: rgba(26, 26, 20, 0.26);
+  --mass: rgba(26, 26, 20, 0.34);
+  --massLo: rgba(26, 26, 20, 0.16);
+  --thread: rgba(26, 26, 20, 0.42);
+  --recent: rgba(26, 26, 20, 0.64);
+  --mut: rgba(26, 26, 20, 0.62);
+  --fnt: rgba(26, 26, 20, 0.4);
+  --hair: rgba(26, 26, 20, 0.14);
+}
+@media (prefers-color-scheme: dark) {
+  .dayblk {
+    --mut: rgba(238, 238, 231, 0.6);
+    --fnt: rgba(238, 238, 231, 0.38);
+    --hair: rgba(238, 238, 231, 0.14);
+    --r1: rgba(238, 238, 231, 0.11);
+    --r2: rgba(238, 238, 231, 0.18);
+    --r3: rgba(238, 238, 231, 0.25);
+    --r4: rgba(238, 238, 231, 0.34);
+    --r5: rgba(238, 238, 231, 0.45);
+    --r6: rgba(238, 238, 231, 0.58);
+    --r7: rgba(238, 238, 231, 0.74);
+    --r8: rgba(238, 238, 231, 0.96);
+    --s1: rgba(238, 238, 231, 0.96);
+    --s2: rgba(238, 238, 231, 0.78);
+    --s3: rgba(238, 238, 231, 0.58);
+    --s4: rgba(238, 238, 231, 0.4);
+    --s5: rgba(238, 238, 231, 0.26);
+    --mass: rgba(238, 238, 231, 0.34);
+    --massLo: rgba(238, 238, 231, 0.16);
+    --thread: rgba(238, 238, 231, 0.42);
+    --recent: rgba(238, 238, 231, 0.66);
+  }
+}
+
+/* 三个读法的切换。**不做成 tab** —— 没有边框、没有底色、没有胶囊,就是三个
+   10px 的词,只有当前那个上墨:tab 说的是「三个地方」,而这里自始至终是一个
+   地方。原型用的是 `<i>` 加一个代理点击;这里是 button,因为这张脸对每一个
+   控件只有一条硬要求 —— 手指够得着,而量它的守门看的是**挂着按压的那个元素**。 */
+.dayblk .sw {
+  font-size: 10px;
+  color: var(--fnt);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
+.dayblk .sw button {
+  font-style: normal;
+  cursor: pointer;
+  padding: 0 5px;
+  min-height: var(--touch);
+  min-width: var(--touch);
+}
+.dayblk .sw button:hover {
+  color: var(--mut);
+}
+.dayblk .sw button[data-on="true"] {
+  color: var(--fg);
+  font-weight: 700;
+}
+.dayblk .sw s {
+  text-decoration: none;
+  color: var(--hair);
+}
+
+.dayblk .ch svg {
+  display: block;
+  width: 100%;
+}
+.dayblk .ro {
+  font-size: 10px;
+  color: var(--mut);
+  margin-top: 6px;
+  min-height: 14px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.dayblk .ro b {
+  font-weight: 700;
+  color: var(--fg);
+}
+.dayblk .ro .gone {
+  color: var(--fnt);
+}
+.dayblk .ro .sp {
+  color: var(--strain);
+  font-weight: 700;
+}
+
+.dayblk .r1 {
+  fill: var(--r1);
+}
+.dayblk .r2 {
+  fill: var(--r2);
+}
+.dayblk .r3 {
+  fill: var(--r3);
+}
+.dayblk .r4 {
+  fill: var(--r4);
+}
+.dayblk .r5 {
+  fill: var(--r5);
+}
+.dayblk .r6 {
+  fill: var(--r6);
+}
+.dayblk .r7 {
+  fill: var(--r7);
+}
+.dayblk .r8 {
+  fill: var(--r8);
+}
+.dayblk .st {
+  fill: var(--strain);
+}
+.dayblk .k1 {
+  stroke: var(--s1);
+}
+.dayblk .k2 {
+  stroke: var(--s2);
+}
+.dayblk .k3 {
+  stroke: var(--s3);
+}
+.dayblk .k4 {
+  stroke: var(--s4);
+}
+.dayblk .k5 {
+  stroke: var(--s5);
+}
+.dayblk .f1 {
+  fill: var(--s1);
+}
+.dayblk .f2 {
+  fill: var(--s2);
+}
+.dayblk .f3 {
+  fill: var(--s3);
+}
+.dayblk .f4 {
+  fill: var(--s4);
+}
+.dayblk .f5 {
+  fill: var(--s5);
+}
+.dayblk .area {
+  fill: var(--mass);
+}
+.dayblk .areaLo {
+  fill: var(--massLo);
+}
+.dayblk .thr {
+  stroke: var(--thread);
+}
+.dayblk .rec {
+  stroke: var(--recent);
+}
+.dayblk .sk {
+  stroke: var(--strain);
+}
+.dayblk .sf {
+  fill: var(--strain);
+}
+.dayblk .lab {
+  fill: var(--mut);
+}
+.dayblk .fnt {
+  fill: var(--fnt);
+}
+.dayblk .ink {
+  fill: var(--fg);
+}
+.dayblk .hair {
+  stroke: var(--hair);
+}
+.dayblk .inkline {
+  stroke: var(--fg);
+}
+.dayblk .halo {
+  stroke: var(--card);
+}
+.dayblk svg text {
+  font-family: system-ui, -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+}
+
+.dayblk .wipe {
+  animation: dayblk-wipe 0.85s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+@keyframes dayblk-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.dayblk .fade {
+  animation: dayblk-fade 0.7s ease both;
+}
+@keyframes dayblk-fade {
+  from {
+    opacity: 0;
+  }
+}
+.dayblk .draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: dayblk-draw 0.85s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+@keyframes dayblk-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dayblk .wipe,
+  .dayblk .fade {
+    animation: none;
+  }
+  .dayblk .draw {
+    animation: none;
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+  }
+}

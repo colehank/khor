@@ -1846,14 +1846,25 @@ try {
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-top]").count()) === 1);
   const busy = await page.evaluate(() => ({
     rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
-    dayRows: [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((r) => ({
-      name: r.getAttribute("data-day-row"),
-      cells: r.querySelectorAll("[data-day-cell]").length,
-      gaps: r.querySelectorAll("[data-day-cell][data-gap]").length,
-      barsInGaps: r.querySelectorAll("[data-day-cell][data-gap] > *").length,
-      bars: r.querySelectorAll("[data-day-cell]:not([data-gap]) > *").length,
-      peak: r.querySelector("[data-day-peak]")?.textContent?.trim() ?? "",
-    })),
+    dayRows: [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((r) => {
+      const segs = [...r.querySelectorAll("[data-day-cell]")];
+      return {
+        name: r.getAttribute("data-day-row"),
+        cells: segs.length,
+        //   **What the cells cover, not how many there are.** Buckets of
+        //   the same step are drawn as one rect, so a count is a fact
+        //   about the data's shape; what has to hold is that the ink
+        //   covers every measured bucket and no unmeasured one.
+        covered: segs.reduce((n, c) => n + (Number(c.dataset.dayTo) - Number(c.dataset.dayFrom)), 0),
+        //   **The mark is not inside the row's group** — the drawing
+        //   hangs it on the figure, past the plot's right edge — so it
+        //   is found by the row it names rather than by descent.
+        peak:
+          document
+            .querySelector(`[data-machine-card] [data-day-peak="${r.getAttribute("data-day-row")}"]`)
+            ?.textContent?.trim() ?? "",
+      };
+    }),
     why: document.querySelectorAll("[data-machine-card] [data-load-why]").length,
     //   The age column, cell by cell. **The row the fixture gave no age
     //   must be empty** — a `0 秒` there would be this table naming the
@@ -2154,11 +2165,14 @@ try {
   //     rows to a `y`-based grouping and report each half flat — two
   //     false reds, on a chart that is fine.
   const flat = await page.evaluate(() => {
-    return [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((row) => ({
-      name: row.dataset.dayRow,
-      shades: [...new Set([...row.querySelectorAll("[data-day-shade]")].map((n) => n.dataset.dayShade))],
-      drawn: row.querySelectorAll("[data-day-shade]").length,
-    }));
+    return [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((row) => {
+      const segs = [...row.querySelectorAll("[data-day-cell]")];
+      return {
+        name: row.dataset.dayRow,
+        shades: [...new Set(segs.map((n) => n.dataset.dayShade))],
+        drawn: segs.reduce((n, c) => n + (Number(c.dataset.dayTo) - Number(c.dataset.dayFrom)), 0),
+      };
+    });
   });
   {
     const series = { cpu: dayBuckets, gpu: gpuBuckets, mem: memBuckets, disk: diskBuckets, vram: vramBuckets };
@@ -2222,14 +2236,21 @@ try {
     if (words.length !== 3) return { words };
     // Park the cursor a third of the way along the first band.
     const b = band().getBoundingClientRect();
-    const put = () =>
-      band().dispatchEvent(
-        new PointerEvent("pointermove", {
+    //   **The drawing's own hit area, and the event it listens for.**
+    //   The panel puts a transparent rect over the plot and reads
+    //   `mousemove` on it; a synthetic `pointermove` at the `<svg>`
+    //   reaches no listener and the readout stays empty — which looks
+    //   exactly like a cursor that does not work.
+    const put = () => {
+      const hit = document.querySelector("[data-machine-card] [data-day-hit]");
+      (hit ?? band()).dispatchEvent(
+        new MouseEvent("mousemove", {
           bubbles: true,
           clientX: b.left + b.width / 3,
           clientY: b.top + b.height / 2,
         }),
       );
+    };
     put();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const onHeat = readout();
@@ -2459,6 +2480,10 @@ try {
   //     a page that was correct; a red from a broken setup and a red
   //     from a real bug read exactly the same.
   const drawerHeights = [];
+  //   Each drawer's heading, and how it counts what is under it. Read
+  //   in the loop below, judged after it — the claim is about the two
+  //   kinds being told apart, and one drawer alone cannot carry it.
+  const grammar = [];
   for (const key of ["cpu", "gpu", "mem", "disk"]) {
     const dial = page.locator(`[data-machine-card] [data-dial="${key}"]`);
     if ((await dial.count()) === 0) continue;
@@ -2472,9 +2497,14 @@ try {
         h: Math.round(drawer.getBoundingClientRect().height),
         says: Number(head?.dataset.drawerCount ?? -1),
         rows: open ? open.querySelectorAll("[data-part]").length : -1,
+        //   What the rows under this heading are, and how the heading
+        //   counts them — see the section below.
+        kind: drawer.querySelector("[data-drawer-head]")?.dataset.drawerKind ?? null,
+        counts: head?.textContent?.trim() ?? "",
       };
     });
     drawerHeights.push(`${key}:${seen.h}`);
+    grammar.push({ key, kind: seen.kind, counts: seen.counts });
     //   **Every group, not just whichever is open at the end.** The
     //   first version read only the last one the loop left showing, so
     //   a heading lying on one of the other three was never looked at —
@@ -2500,13 +2530,45 @@ try {
         if (cell && cell.getBoundingClientRect().bottom > bottom + 1) below += 1;
       }
       const note = drawer.querySelector("[data-drawer-more]");
-      return { below, says: note ? Number(note.dataset.drawerMore) : 0, overflows: scroller.scrollHeight - scroller.clientHeight > 1 };
+      return {
+        below,
+        says: note ? Number(note.dataset.drawerMore) : 0,
+        //   **Whether it is on screen at all**, separately from what it
+        //   says — see below.
+        shown: !!note,
+        words: note?.textContent?.trim() ?? "",
+        overflows: scroller.scrollHeight - scroller.clientHeight > 1,
+      };
     });
     if (more.says !== more.below) {
       fail(`the ${key} drawer says ${more.says} more below and ${more.below} rows are out of sight`);
     }
     if (!more.overflows && more.says !== 0) {
       fail(`the ${key} drawer fits entirely and still offers to be dragged`);
+    }
+    //   **The hint is there or it is not, and that is now the whole
+    //   signal.** It used to read out the number — 「还有 3 个在下面,
+    //   拖一下」 — and 2026-09-04 the words became 「下滑查看更多」
+    //   (「你不觉得这个画很蠢吗,不要这个」). The number stayed, on
+    //   `data-drawer-more`, which is what the two assertions above
+    //   read.
+    //
+    //   ⚠️ **Those two do not cover this one, and did not cover it
+    //   before either.** Both are about the number: a hint rendered
+    //   unconditionally with `data-drawer-more={0}` satisfies each of
+    //   them — `says === below === 0`, and `says !== 0` is false — and
+    //   sits on screen under every drawer that fits. While the number
+    //   was in the sentence that was at least visibly wrong (「还有 0
+    //   个在下面」); with the words no longer counting anything, a
+    //   permanent hint is indistinguishable from a correct one to
+    //   everything above, and 「一句常驻的提示等于没有提示」 is exactly
+    //   what it would become. So: presence against the fact.
+    if (more.shown !== more.below > 0) {
+      fail(
+        more.shown
+          ? `the ${key} drawer offers 「${more.words}」 with nothing out of sight — a hint that is always there is part of the heading, not a state`
+          : `the ${key} drawer hides ${more.below} rows and says nothing about them`,
+      );
     }
     if (seen.says !== seen.rows) {
       fail(`the ${key} drawer's heading says ${seen.says} but draws ${seen.rows} rows — the count is about something else`);
@@ -2516,6 +2578,63 @@ try {
     const hs = new Set(drawerHeights.map((x) => x.split(":")[1]));
     if (drawerHeights.length < 2) fail(`probe dead: only ${drawerHeights.length} drawers could be opened`);
     else if (hs.size !== 1) fail(`the drawers are ${drawerHeights.join(" ")} — pressing around makes the card jump`);
+  }
+  //     ── a drawer of occupants says so in its heading ─────────────
+  //
+  //     **Six occupants and six parts draw identically.** A card and a
+  //     volume are parts of the ring above and their readings add up to
+  //     it; a process is only an occupant, and the handful listed do
+  //     not add up to anything — there are several thousand more. Two
+  //     blocks that say different things must not look the same.
+  //
+  //     ⚠️ **This replaced a footnote**, not a hole. The sentence
+  //     「占用最多的几个,加起来不等于上面那个环」 used to sit under
+  //     these two drawers (`top-share-note`); 2026-09-04 it was struck
+  //     (「也不要,很蠢」) and the fact moved into the heading. Nothing
+  //     guarded the footnote — deleting it would have reddened nothing,
+  //     which is exactly why the replacement needs a gate.
+  //
+  //     **What is measured is the count's grammar, not its words.** A
+  //     parts heading counts bare — 「3 卷」, the number first, and when
+  //     you have counted them the ring is accounted for. An occupants
+  //     heading carries a qualifier ahead of the number — 「占用最多的
+  //     6 个进程」 — which says on its face that these are the top few
+  //     out of more. So: does the count begin with its number.
+  //
+  //     **Both arms, because one arm proves nothing.** Asking only that
+  //     the occupants' heading be qualified passes for a build that
+  //     qualified all four, and that build has erased the very
+  //     distinction this section is about while reading as a pass. The
+  //     two arms have to come out *different*, and the gate says which
+  //     way round.
+  {
+    const digit = (s) => /^[\d０-９]/.test(s);
+    const occ = grammar.filter((g) => g.kind === "occupants");
+    const part = grammar.filter((g) => g.kind === "parts");
+    if (occ.length === 0 || part.length === 0) {
+      fail(
+        `probe dead: the drawers report kinds ${JSON.stringify(grammar.map((g) => `${g.key}=${g.kind}`))} — ` +
+          `with only one kind on screen, 「the two are told apart」 measured nothing`,
+      );
+    } else {
+      for (const g of occ) {
+        if (digit(g.counts)) {
+          fail(
+            `the ${g.key} drawer holds occupants and counts them bare ("${g.counts}") — ` +
+              `six processes then read as the six things the ring is made of, and they are not: ` +
+              `there are thousands more and these few do not add up to it`,
+          );
+        }
+      }
+      for (const g of part) {
+        if (!digit(g.counts)) {
+          fail(
+            `the ${g.key} drawer holds parts and qualifies its count ("${g.counts}") — ` +
+              `if both kinds hedge, neither says anything, and the one distinction this heading carries is gone`,
+          );
+        }
+      }
+    }
   }
   //     **The heading names the reading and counts what is in the
   //     drawer.** Without it a block of six rows under four dials does
@@ -2634,36 +2753,50 @@ try {
   //     satisfy.
   const shades = await page.evaluate(() => {
     const row = document.querySelector('[data-machine-card] [data-day-row="cpu"]');
-    const cells = [...row.querySelectorAll("[data-day-cell]")];
-    const at = (i) => cells[i]?.querySelector("[data-day-shade]")?.dataset.dayShade ?? null;
-    const rects = [...row.querySelectorAll("[data-day-shade]")];
-    //   **The band is one drawing now, not one per row**, so the
-    //   reading's name and the hour marks belong to the figure and are
-    //   read from it. Asked of the row they come back empty, and an
-    //   empty answer reads like 「it is not there」 — the same trap as a
-    //   renamed selector.
+    if (!row) return null;
+    //   **A cell is a run of buckets, not a bucket.** The drawing merges
+    //   neighbours that land on the same step into one rect — the
+    //   prototype's own arrangement, kept because it is the drawing that
+    //   was moved across. So a cell carries the half-open range it
+    //   covers, and 「what shade is bucket 58」 is a lookup, not an index.
+    const segs = [...row.querySelectorAll("[data-day-cell]")].map((r) => ({
+      from: Number(r.dataset.dayFrom),
+      to: Number(r.dataset.dayTo),
+      x: Number(r.getAttribute("x")),
+      w: Number(r.getAttribute("width")),
+      h: Number(r.getAttribute("height")),
+      key: r.dataset.dayShade,
+    }));
+    const at = (i) => segs.find((sg) => i >= sg.from && i < sg.to)?.key ?? null;
+    //   **The band is one drawing**, so the reading's name and the hour
+    //   marks belong to the figure and are read from it. Asked of a row
+    //   they come back empty, and an empty answer reads like 「it is not
+    //   there」 — the same trap as a renamed selector.
     const band = document.querySelector("[data-machine-card] [data-day-band]");
     return {
       // the fixture's cpu series is 5 + (i % 60), so bucket 0 is 5 and
       // bucket 58 is 63 — a low one and a high one, by construction.
       low: at(0),
       high: at(58),
-      heights: [...new Set(rects.map((r) => r.getAttribute("height")))],
+      segs,
+      covered: segs.reduce((n, sg) => n + (sg.to - sg.from), 0),
+      heights: [...new Set(segs.map((sg) => sg.h))],
       views: [band.dataset.dayView],
       //   The hour marks' own x, so the claim can be about spacing
       //   rather than about a count that only holds for one clock.
-      hourX: [...band.querySelectorAll("[data-day-hour] line")].map((l) => Number(l.getAttribute("x1"))),
-      //   The plot's two edges, from the first and last bucket drawn —
-      //   **not from one cell's width**, which is rounded to a whole
-      //   pixel and so multiplies its rounding by 36.
-      plot:
-        rects.length > 1
-          ? Number(rects[rects.length - 1].getAttribute("x")) +
-            Number(rects[rects.length - 1].getAttribute("width")) -
-            Number(rects[0].getAttribute("x"))
-          : 0,
+      //   Sorted: the drawing lists its hours in the order the clock
+      //   reaches them, which is not left-to-right for a window that
+      //   crosses midnight.
+      hourX: [...band.querySelectorAll("[data-day-hour]")]
+        .map((l) => Number(l.getAttribute("x1")))
+        .sort((a, b) => a - b),
+      x0: segs.length ? segs[0].x : 0,
+      x1: segs.length ? segs[segs.length - 1].x + segs[segs.length - 1].w : 0,
     };
   });
+  if (!shades || shades.segs.length === 0) {
+    fail("probe dead: the cpu row has no cells to read, so nothing below was measured");
+  } else {
   if (shades.low === null || shades.high === null) {
     fail(`probe dead: the cpu row has no shaded cells to read (low=${shades.low} high=${shades.high})`);
   } else if (shades.low === shades.high) {
@@ -2676,18 +2809,77 @@ try {
     fail(`the cells draw ${shades.heights.length} different heights (${shades.heights.join(",")}) — a heat band has one`);
   }
   if (shades.views.join(",") !== "heat") fail(`the band does not say which reading it is (${shades.views.join(",")})`);
+  //     ── the ruler is the day, not the pixels it got ──────────────
+  //
+  //     **This replaced 「288 cells to a row」**, which the drawing
+  //     stopped satisfying the moment it started merging neighbours of
+  //     the same step into one rect. Counting elements was only ever a
+  //     proxy; what it was really guarding is that **every bucket has
+  //     its own place on the ruler** — and that is checkable directly,
+  //     on segments or on cells, whichever the drawing makes:
+  //
+  //       - the segments **tile**: each one's right edge is the next
+  //         one's left edge, with nothing between and nothing over;
+  //       - every edge is a **whole pixel** (off the integer grid the
+  //         antialiasing eats the ink unevenly and a row of one shade
+  //         comes out combed);
+  //       - the ranges **cover the day**: `Σ(to-from)` plus the holes is
+  //         288, so no bucket was dropped;
+  //       - and the **narrowest one-bucket run is `round(slot)`** —
+  //         which is what a drawing that thinned the day to fit its
+  //         pixels could not produce.
+  //
+  //     Together those block both ways of coarsening: rounding to the
+  //     width available, and drawing every second bucket.
+  {
+    const segs = shades.segs;
+    const slot = (shades.x1 - shades.x0) / 288;
+    let broke = null;
+    for (let i = 1; i < segs.length && !broke; i += 1) {
+      if (segs[i - 1].to === segs[i].from && Math.abs(segs[i - 1].x + segs[i - 1].w - segs[i].x) > 0.01) {
+        broke = `segment ${i - 1} ends at ${(segs[i - 1].x + segs[i - 1].w).toFixed(2)} and ${i} starts at ${segs[i].x.toFixed(2)}`;
+      }
+    }
+    if (broke) fail(`the buckets do not tile: ${broke} — a seam or an overlap, and the ink stops meaning the value`);
+    const ragged = segs.filter((sg) => !Number.isInteger(sg.x) || !Number.isInteger(sg.x + sg.w));
+    if (ragged.length) {
+      fail(`${ragged.length} of ${segs.length} cell edges are off the pixel grid (first at x=${ragged[0].x}) — antialiasing then combs the row`);
+    }
+    if (shades.covered !== 288 - dayGaps) {
+      fail(`the cpu row's cells cover ${shades.covered} buckets where the fixture measured ${288 - dayGaps} — a day thinned to fit its pixels, or a gap bridged`);
+    }
+    const ones = segs.filter((sg) => sg.to - sg.from === 1);
+    if (ones.length === 0) {
+      fail("probe dead: no single-bucket run in the cpu row, so 「one bucket is one slot wide」 measured nothing");
+    } else {
+      const minW = Math.min(...ones.map((sg) => sg.w));
+      if (minW !== Math.round(slot)) {
+        fail(`a one-bucket cell is ${minW}px where the day's own slot is ${slot.toFixed(4)} (round ${Math.round(slot)}) — the ruler is the pixels, not the day`);
+      }
+    }
+  }
   //     **The hours are three apart, and that is checked as a spacing
-  //     rather than as a count.** A count only holds for the clock the
-  //     window happened to start on; the spacing holds for every one.
-  //     36 buckets is three hours at five minutes a bucket.
+  //     rather than as a count.**
+  //
+  //     ⚠️ It used to demand **23**, one an hour between the ends. That
+  //     number is gone on purpose and is not a deletion to restore: the
+  //     drawing marks every third hour (`TICKS_W`, eight of them; four
+  //     at narrow, `TICKS_N`). The reasoning is the day chart's own,
+  //     one step further — a hair per bucket was dropped because 「288
+  //     five-minute buckets at three pixels cannot be counted, so that
+  //     row of hairs was decoration claiming to be a scale」, and
+  //     twenty-three hour marks across a card are the mild case of the
+  //     same complaint. A spacing holds for every clock; a count only
+  //     holds for the one the window happened to start on.
   {
     const gaps = shades.hourX.slice(1).map((x, i) => x - shades.hourX[i]);
-    const want = (shades.plot * 36) / 288;
+    const want = ((shades.x1 - shades.x0) * 36) / 288;
     if (shades.hourX.length < 6) {
       fail(`${shades.hourX.length} hour marks on a 288-bucket day — every third hour is seven or eight of them`);
     } else if (gaps.some((g) => Math.abs(g - want) > 1.5)) {
       fail(`the hour marks are ${gaps.map((g) => g.toFixed(1)).join("/")} apart where three hours is ${want.toFixed(1)}`);
     }
+  }
   }
   //     ── nothing in the drawing sticks out of its own box ────────
   //
@@ -2709,8 +2901,21 @@ try {
         const svg = document.querySelector("[data-machine-card] [data-day-band]");
         if (!svg) return null;
         const vb = svg.viewBox.baseVal;
-        const b = svg.getBBox();
-        return { vbW: vb.width, vbH: vb.height, x: b.x, y: b.y, right: b.x + b.width, bottom: b.y + b.height };
+        //   **Only what is painted.** The cursor's dots are parked at
+        //   the origin at `opacity:0` until somebody moves over the
+        //   figure, and `svg.getBBox()` counts them — a probe that
+        //   reported the drawing as sticking out by 2.6px on a chart
+        //   nothing was wrong with.
+        let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity;
+        for (const n of svg.querySelectorAll("*")) {
+          if (!n.getBBox || n.getAttribute("opacity") === "0") continue;
+          const b = n.getBBox();
+          if (b.width === 0 && b.height === 0) continue;
+          x = Math.min(x, b.x); y = Math.min(y, b.y);
+          right = Math.max(right, b.x + b.width); bottom = Math.max(bottom, b.y + b.height);
+        }
+        if (!Number.isFinite(x)) return null;
+        return { vbW: vb.width, vbH: vb.height, x, y, right, bottom };
       });
       if (!box) return fail(`probe dead: no day band at ${where}, so nothing was checked for clipping`);
       if (box.right > box.vbW + 0.5 || box.x < -0.5 || box.bottom > box.vbH + 0.5 || box.y < -0.5) {
@@ -2763,13 +2968,16 @@ try {
   //     is a machine working (see `shadeOf`). The fixture puts one
   //     bucket at exactly 90.0 in the vram series to pin `>=`.
   const strain = await page.evaluate(() => {
+    //   Buckets of the same step share a rect, so a row's 288 answers
+    //   are read back out of the runs rather than off 288 elements.
     const of = (name) => {
       const row = document.querySelector(`[data-machine-card] [data-day-row="${name}"]`);
       if (!row) return null;
-      return [...row.querySelectorAll("[data-day-cell]")].map((c) => {
-        const r = c.querySelector("[data-day-shade]");
-        return r ? r.dataset.dayShade : null;
-      });
+      const out = new Array(288).fill(null);
+      for (const c of row.querySelectorAll("[data-day-cell]")) {
+        for (let i = Number(c.dataset.dayFrom); i < Number(c.dataset.dayTo); i += 1) out[i] = c.dataset.dayShade;
+      }
+      return out;
     };
     return { mem: of("mem"), cpu: of("cpu"), vram: of("vram") };
   });
@@ -2808,10 +3016,14 @@ try {
   }
   if (busy.dayRows.some((r) => r.name === "disk")) fail("a series with no reading in it still got a row");
   for (const r of busy.dayRows) {
-    if (r.cells !== 288) fail(`the ${r.name} row draws ${r.cells} cells for a day of 288 buckets`);
-    if (r.gaps !== dayGaps) fail(`${r.name}: ${r.gaps} gaps where the fixture left ${dayGaps} unmeasured`);
-    if (r.barsInGaps !== 0) fail(`${r.name}: ${r.barsInGaps} gap cells draw a bar — absence painted as a reading`);
-    if (r.bars !== 288 - dayGaps) fail(`${r.name}: ${r.bars} bars for ${288 - dayGaps} readings`);
+    //   **A hole is a hole**: the ink covers exactly the measured
+    //   buckets, and the fixture leaves `dayGaps` of them unmeasured. A
+    //   drawing that bridged a gap would cover 288 here; one that
+    //   thinned the day would cover fewer than the readings it has.
+    if (r.covered !== 288 - dayGaps) {
+      fail(`the ${r.name} row's ink covers ${r.covered} buckets where the fixture measured ${288 - dayGaps} — a gap was bridged, or the day was thinned`);
+    }
+    if (r.cells === 0) fail(`the ${r.name} row drew no cells at all`);
     //   And each row says how high it got: a shape alone answers 什么
     //   时候 and never 多高.
     if (!/^\d+$/.test(r.peak)) fail(`${r.name}: the row draws a shape but never says its peak ("${r.peak}")`);
