@@ -2311,6 +2311,81 @@ try {
     // exactly 380 wide sitting one pixel in — no drawer or part row
     // among them), which is a shell question and not this batch's.
     // Printed below rather than dropped.
+    //   **One detector, used by the check and by the proof that the
+    //   check works.** Reports every cell or head whose ink is taller
+    //   than one line of it, skipping the cell that is open — unfolding
+    //   is what its mark promised. Measured as ink with a `Range` and
+    //   not as a box: a cell's box is stretched by the tallest thing in
+    //   its row, so comparing boxes says nothing about which cell
+    //   wrapped.
+    const wrapsNow = () =>
+      page.evaluate(() => {
+        const one = (n) => {
+          const st = getComputedStyle(n);
+          const v = parseFloat(st.lineHeight);
+          return Number.isFinite(v) ? v : parseFloat(st.fontSize) * 1.6;
+        };
+        const out = [];
+        const nodes = [
+          ...document.querySelectorAll("[data-machine-card] [data-top-heads] > *"),
+          ...document.querySelectorAll("[data-machine-card] [data-top-row] > *"),
+        ];
+        for (const n of nodes) {
+          if (n.dataset.open !== undefined) continue;
+          const target = n.querySelector("button") ?? n;
+          const r = document.createRange();
+          r.selectNodeContents(target);
+          const ink = r.getBoundingClientRect().height;
+          if (ink > one(target) + 2) {
+            out.push(`${n.dataset.topHead ?? n.dataset.c ?? "?"}:${ink.toFixed(0)}/${one(target).toFixed(0)}`);
+            if (out.length > 2) break;
+          }
+        }
+        return out;
+      });
+    //   **Before asserting that nothing wraps, prove that detector can
+    //   see a wrap.** This is a negative claim about every cell at
+    //   every width, and today nothing violates it: the cells wear
+    //   `whitespace-nowrap` and `truncate` of their own, and the
+    //   table-wide rule added for it (`app.css`, 「Nothing in this table
+    //   wraps」) is a guarantee for the *next* cell somebody writes
+    //   rather than a fix for a current one. **Deleting that rule reds
+    //   nothing** — measured — so the assertion below would pass just
+    //   as happily on a detector that had stopped working.
+    //
+    //   ⚠️ It has to be **this** detector. The first version of this
+    //   proof carried its own copy of the ink-against-a-line test, so
+    //   blinding the one in the loop left the proof green — two arms
+    //   built to agree, which is the shape of a control with no
+    //   discriminating power.
+    {
+      const bend = (on) =>
+        page.evaluate((on) => {
+          const cell = document.querySelector('[data-machine-card] [data-top-row] [data-c="time"]');
+          if (!cell) return false;
+          if (on) {
+            cell.dataset.wrapProbe = cell.textContent;
+            cell.style.whiteSpace = "normal";
+            cell.textContent = "一 二 三 四 五 六 七 八 九 十 十一 十二 十三 十四";
+          } else {
+            cell.textContent = cell.dataset.wrapProbe ?? "";
+            cell.style.removeProperty("white-space");
+            delete cell.dataset.wrapProbe;
+          }
+          return true;
+        }, on);
+      if (!(await bend(true))) {
+        fail("probe dead: no 时长 cell to bend, so 「nothing wraps」 was never shown to be checkable");
+      } else {
+        const caught = await wrapsNow();
+        await bend(false);
+        if (caught.length === 0) {
+          fail("probe dead: a cell forced onto several lines was not reported — the wrap check below cannot fail");
+        } else if ((await wrapsNow()).length !== 0) {
+          fail("the wrap probe did not put the cell back, so every width below is measuring the probe's own damage");
+        }
+      }
+    }
     for (let w = 390; w <= 1200; w += 10) {
       await page.setViewportSize({ width: w, height: 800 });
       // **Settled, and settled on purpose.** The drawer decides its own
@@ -2350,16 +2425,23 @@ try {
       over.table = Math.min(first.table, over.table);
       if (over.doc > 0) bad.push(`${w}:page+${over.doc}`);
       if (over.drawer > 0) bad.push(`${w}:drawer+${over.drawer}`);
-
+      //   **And nothing in the table became two lines.** 2026-09-04:
+      //   「表的内容,比如"内存"是不允许换行的」. A wrapped cell moves
+      //   every value in its row off the line its neighbours are on,
+      //   and a table is read by scanning down a column.
+      const wrapped = await wrapsNow();
+      if (wrapped.length) bad.push(`${w}:wrapped[${wrapped.join(",")}]`);
     }
     await page.setViewportSize(wide);
     await wait(200);
-    if (bad.length) fail(`sideways overflow at ${bad.length} widths: ${bad.slice(0, 8).join(" ")}`);
+    //   One message for both kinds of finding: they are found on the
+    //   same walk, and a width that does one often does the other.
+    if (bad.length) fail(`${bad.length} widths are not clean: ${bad.slice(0, 8).join(" ")}`);
     await page.setViewportSize({ width: 380, height: 800 });
     await wait(120);
     const at380 = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     if (at380 > 0) console.log(`note: at 380 the shell is ${at380}px over — below the 390 this face is drawn for`);
-    console.log("bandwidth 390→1200 by 10: page, drawer and process table all clean");
+    console.log(`bandwidth 390→1200 by 10: ${bad.length} widths flagged (sideways overflow or a cell on two lines)`);
   }
 
   //     ── the table reaches the edge its neighbours reach ──────────

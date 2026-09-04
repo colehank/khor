@@ -526,6 +526,36 @@ input[type="search"]::-webkit-search-decoration {
   display: contents;
 }
 
+/* **Nothing in this table wraps.** 2026-09-04:「表的内容,比如"内存"是不
+   允许换行的」. A cell that runs out of room truncates and puts up the
+   bordered mark; it does not become two lines.
+
+   Wrapping is worse here than a fold, and not by taste: **a table is
+   read by scanning down a column**, and one cell taller than the rest
+   moves every value in that row off the line its neighbours are on. It
+   also breaks the one number this window is sized by — nine rows in a
+   fixed box (`--top-h`), which is what makes 「who is eating this
+   machine」 answerable at a glance.
+
+   Written on the cells and the heads rather than left to whichever
+   utility each of them happens to wear. Most of them do carry
+   `whitespace-nowrap` or `truncate` today; **that is the incidental
+   version of this rule, and the next cell somebody adds will not have
+   it.** `check-face` walks 390→1200 and measures every cell's ink
+   against one line.
+
+   **The one exception is the cell that exists to unfold.** 「命令」
+   opens in place, and open it wraps — that is the whole affordance,
+   and it is exactly what the mark promised. */
+[data-load-top] [data-top-heads] > *,
+[data-load-top] [data-top-row] > * {
+  white-space: nowrap;
+}
+[data-load-top] [data-c="cmd"][data-open],
+[data-load-top] [data-c="cmd"][data-open] > * {
+  white-space: normal;
+}
+
 /* **The two halves of 「命令」: a ceiling on the name, a floor under the
    word.** The cell is a short name and the one word that tells this row
    from the next (2026-09-04:「表的进程和命令合并为一列,就叫命令」).
