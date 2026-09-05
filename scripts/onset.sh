@@ -184,6 +184,37 @@ REMOTE
 cat >> "$STAGE/on.sh" <<'REMOTE'
 mkdir -p "$HOME/.local/bin"
 chmod +x "$src"
+
+# ⚠️ **Asked of the staged file, before anything is replaced.**
+#
+# The gate itself is the keeper's (`keeper.rs`: a new generation must
+# answer `version` before it is allowed to serve — a 0-byte file wearing
+# the binary's name took two machines down on 2026-08-19). An install
+# has the same question and did not ask it: the binary was moved into
+# place, the resident was started, `kill -0` found a pid for a moment,
+# and the script said 「serve is up」.
+#
+# **And the order matters more than the check.** On a shared home
+# `~/.local/bin/khor` is *one file for every machine on the mount* — so
+# an install onto a box that cannot run this build used to overwrite the
+# binary three healthy machines were running, and only then discover it
+# does not work. Measured 2026-09-06 on fodor (Ubuntu 18.04, glibc
+# 2.27, against a glibc 2.31 build): four `GLIBC_2.2x not found` lines,
+# and by then the file was already swapped.
+#
+# `if !` because `set -e` would take the shell down before the message
+# could be printed, and a bare exit code is the thing being replaced.
+if ! ver=$("$src" version 2>"$src.err"); then
+    echo "onset: khor does not run on $(hostname) — it never got as far as saying its version." >&2
+    echo "onset: what the machine said:" >&2
+    sed 's/^/onset:   /' "$src.err" >&2
+    echo "onset: nothing was replaced and nothing was started." >&2
+    rm -f "$src" "$src.err"
+    exit 1
+fi
+rm -f "$src.err"
+echo "onset: khor $ver runs here"
+
 # rename, not copy: upgrading over a *running* khor works because Linux
 # keeps the open inode, and the next start picks up the new file.
 mv -f "$src" "$HOME/.local/bin/khor"
@@ -234,14 +265,40 @@ if ! khor_stop_serve "$pidf"; then
 fi
 # setsid: the resident must outlive this ssh session, and be nobody's
 # child so a logout cannot take it along.
+# **Where the log ends before this start**, so what is read back
+# afterwards is this run's own words and not last week's. A `tail -5`
+# of a shared log is how an old error gets reported as a new one, and
+# how a new one gets scrolled off by a healthy start.
+was=0
+[ -f "$root/.khor/serve.log" ] && was=$(wc -c < "$root/.khor/serve.log")
 KHOR_HOME="$root" setsid nohup "$HOME/.local/bin/khor" serve >> "$root/.khor/serve.log" 2>&1 &
 echo $! > "$pidf"
-sleep 2
-if kill -0 "$(cat "$pidf")" 2>/dev/null; then
+# **Alive twice, seconds apart, not once at two seconds.** A serve that
+# dies at load is a pid for a moment — long enough for one `kill -0` to
+# find it, which is the whole reason this check was worth nothing.
+alive=no
+i=0
+while [ "$i" -lt 8 ]; do
+    sleep 1
+    i=$((i + 1))
+    if kill -0 "$(cat "$pidf")" 2>/dev/null; then
+        [ "$i" -ge 4 ] && alive=yes && break
+    else
+        alive=no
+        break
+    fi
+done
+said=$(tail -c "+$((was + 1))" "$root/.khor/serve.log" 2>/dev/null || true)
+if [ "$alive" = yes ]; then
     echo "onset: serve is up (pid $(cat "$pidf"), store $root)"
+    [ -n "$said" ] && printf '%s\n' "$said" | sed 's/^/onset:   /'
 else
-    echo "onset: serve died on start — tail of $root/.khor/serve.log:" >&2
-    tail -5 "$root/.khor/serve.log" >&2
+    echo "onset: serve did not stay up on $(hostname). What it wrote this time:" >&2
+    if [ -n "$said" ]; then
+        printf '%s\n' "$said" | sed 's/^/onset:   /' >&2
+    else
+        echo "onset:   (nothing — it did not get far enough to write a line)" >&2
+    fi
     exit 1
 fi
 REMOTE
