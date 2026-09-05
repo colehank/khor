@@ -456,6 +456,9 @@ mod tests {
                 run_secs: Some(86_400),
                 arg: Some("serve".into()),
                 ppid: None,
+                status: Some("run".into()),
+                cpu_ms: Some(1_500),
+                io_bytes: Some(4_096),
             }],
             cpu_day: khor_core::CpuDay {
                 bucket_ms: 300_000,
@@ -608,6 +611,9 @@ mod tests {
             run_secs: None,
             arg: None,
             ppid: None,
+            status: None,
+            cpu_ms: None,
+            io_bytes: None,
         })
         .unwrap();
         assert!(old.len() < fresh.len(), "the old row really is shorter: it lacks the GPU columns");
@@ -713,9 +719,12 @@ mod tests {
             run_secs: Some(3),
             arg: Some("vllm.entrypoints".into()),
             ppid: None,
+            status: Some("sleep".into()),
+            cpu_ms: Some(90_000),
+            io_bytes: Some(1_048_576),
         })
         .unwrap();
-        assert_eq!(fresh[0], 0x9a, "and today's is ten — the new ones are really on the wire");
+        assert_eq!(fresh[0], 0x9d, "and today's is thirteen — the new ones are really on the wire");
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
         assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
         assert_eq!(r.gpu_mem, Some(21_700_000_000), "including the last one before the new tail");
@@ -775,13 +784,92 @@ mod tests {
             run_secs: Some(79_200),
             arg: Some("serve".into()),
             ppid: Some(2_661_640),
+            status: Some("sleep".into()),
+            cpu_ms: Some(3_600_000),
+            io_bytes: None,
         })
         .unwrap();
-        assert_eq!(fresh[0], 0x9a, "and today's is ten");
+        assert_eq!(fresh[0], 0x9d, "and today's is thirteen");
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
         assert_eq!(r.pid, 2_661_641, "the fields that were always there survive the tail-append");
         assert_eq!(r.arg.as_deref(), Some("serve"), "including the last one before the new tail");
         assert_eq!(r.ppid, None, "a parent nobody sent is absent — 0 is somebody's real parent");
+    }
+
+    /// A process row from before **状态 / CPU时间 / 读写** decodes with
+    /// all three absent (2026-09-05:「列太少了,不饱满」).
+    ///
+    /// Three appends in one round because the fleet pays **once** for a
+    /// round of them: a tail-appended field costs an old node nothing,
+    /// but the `TopBy` words that sort these columns are a break, so
+    /// the two remote machines get reinstalled either way — and one
+    /// reinstall for three columns is the whole reason they landed
+    /// together.
+    ///
+    /// Same shape as the tests above: the element count is asserted on
+    /// both sides, because that is the closest msgpack comes to saying
+    /// 「this key is not in the bytes」. Without it this compares
+    /// today's row against itself and passes on a build that appended
+    /// nothing.
+    ///
+    /// **The third assertion is the one with a fact behind it.**
+    /// `io_bytes` absent must not decode to `0`: zero is what the
+    /// *library* hands back for a process khor is not allowed to read
+    /// (`top::io_readable`), so a default of zero here would mean the
+    /// same cell says 「没读到」 and 「一个字节都没动」 with the same
+    /// bytes on the wire.
+    #[test]
+    fn a_process_row_from_before_the_status_and_the_two_totals_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct RowBeforeStatus {
+            pid: u32,
+            name: String,
+            user: String,
+            cpu_pct: f32,
+            mem: u64,
+            gpu_pct: Option<f32>,
+            gpu_mem: Option<u64>,
+            run_secs: Option<u64>,
+            arg: Option<String>,
+            ppid: Option<u32>,
+        }
+        let old = rmp_serde::to_vec(&RowBeforeStatus {
+            pid: 73_443,
+            name: "khor".into(),
+            user: "zgh".into(),
+            cpu_pct: 1.5,
+            mem: 41_000_000,
+            gpu_pct: None,
+            gpu_mem: None,
+            run_secs: Some(3_600),
+            arg: Some("serve".into()),
+            ppid: Some(1),
+        })
+        .unwrap();
+        assert_eq!(old[0], 0x9a, "the row a node sent before these three is ten fields");
+        let fresh = rmp_serde::to_vec(&khor_core::TopRow {
+            pid: 73_443,
+            name: "khor".into(),
+            user: "zgh".into(),
+            cpu_pct: 1.5,
+            mem: 41_000_000,
+            gpu_pct: None,
+            gpu_mem: None,
+            run_secs: Some(3_600),
+            arg: Some("serve".into()),
+            ppid: Some(1),
+            status: Some("run".into()),
+            cpu_ms: Some(54_000),
+            io_bytes: Some(8_388_608),
+        })
+        .unwrap();
+        assert_eq!(fresh[0], 0x9d, "and today's is thirteen — the three are really on the wire");
+        let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(r.pid, 73_443, "the fields that were always there survive the tail-append");
+        assert_eq!(r.ppid, Some(1), "including the last one before the new tail");
+        assert_eq!(r.status, None, "a status nobody sent is absent — never the word 运行");
+        assert_eq!(r.cpu_ms, None, "an accumulated time nobody sent is absent, not 「烧了 0 毫秒」");
+        assert_eq!(r.io_bytes, None, "and an unsent disk total is absent, not 「一个字节都没动」");
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and

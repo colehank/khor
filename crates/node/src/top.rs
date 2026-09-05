@@ -54,9 +54,25 @@ fn refresh(sys: &mut sysinfo::System) {
         // today. The nine that survive the cut are the only ones whose
         // command line anybody reads, so the ask moved after the cut
         // (`fill_args`).
+        // **`with_disk_usage` is here and not after the cut**, unlike
+        // the command line above it, and the reason is the ranking:
+        // 「按读写排的前 200」 has to compare rows that have not been cut
+        // yet, so a figure only the survivors carry would rank a column
+        // nobody had read.
+        //
+        // What it costs, measured 2026-09-05 on this Mac (640
+        // processes, best of three, whole `sample_top`): **7.05ms
+        // without, 7.60ms with** — under a millisecond, so the ask
+        // stays where the ranking needs it.
+        //
+        // **Not measured on Linux**, where it is an extra open-and-read
+        // of `/proc/[pid]/io` per process and turing runs 2173 of them.
+        // If that ever shows, the shape of the fix is the one above:
+        // rank on something else and read this after the cut.
         sysinfo::ProcessRefreshKind::nothing()
             .with_cpu()
             .with_memory()
+            .with_disk_usage()
             .with_user(sysinfo::UpdateKind::OnlyIfNotSet),
     );
 }
@@ -110,6 +126,16 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
         .unwrap_or_else(|p| p.into_inner());
     let (sys, users) = &mut *held;
     refresh(sys);
+    // **Whose khor this is**, read once, so every row's disk figure can
+    // be answered before it is read rather than after it comes back a
+    // zero that means nothing (`io_readable`). The account is spelled
+    // the way sysinfo spells it — a number on unix — because the only
+    // thing done with it is comparison.
+    let mine: Option<String> = sysinfo::get_current_pid()
+        .ok()
+        .and_then(|p| sys.process(p))
+        .and_then(|p| p.user_id())
+        .map(|u| u.to_string());
     // What the cards say about each pid, asked once for the whole
     // table: NVML is a driver conversation, and one per row would be
     // hundreds of them for one screen.
@@ -138,6 +164,23 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 // nothing extra: it is already in the process record
                 // this loop is walking.
                 ppid: p.parent().map(|x| x.as_u32()),
+                // **The platform is a parameter, not a `cfg`** — see
+                // `status_token`, where the two disagreements that
+                // matter are written down.
+                status: Some(status_token(p.status(), cfg!(target_os = "macos"), mac_running(pid))),
+                // CPU-milliseconds since the process started. Comes
+                // with `with_cpu()`, which this refresh already asks
+                // for, so it costs nothing beyond the read.
+                cpu_ms: Some(p.accumulated_cpu_time()),
+                // **Asked only of processes we are allowed to read**:
+                // the library answers an unreadable one with a zero,
+                // and a zero here is a claim about the process rather
+                // than about the permission (`io_readable`).
+                io_bytes: io_readable(mine.as_deref(), p.user_id().map(|u| u.to_string()).as_deref())
+                    .then(|| {
+                        let io = p.disk_usage();
+                        io.total_read_bytes.saturating_add(io.total_written_bytes)
+                    }),
             }
         })
         .collect();
@@ -145,6 +188,157 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
     rows.truncate(n);
     fill_args(sys, &mut rows);
     rows
+}
+
+/// **One vocabulary for three platforms' words**, and the platform is a
+/// parameter so both branches can be read — and tested — from either
+/// machine.
+///
+/// The token that comes out of here is what crosses the wire; the face
+/// looks up a Chinese word for it (`zh.toml` `top-status-*`) and prints
+/// the token itself when it has none. **Nothing falls through to
+/// 「运行」.**
+///
+/// # The two the variant names get wrong
+///
+/// Read from sysinfo 0.39's own per-platform sources, not from the
+/// variant names, because the names are what mislead:
+///
+/// - **`Idle`** is `'I'` on Linux — *an idle kernel thread* — and
+///   `SIDL` on macOS, which is **a process being created by fork**.
+///   Nothing about those two is the same fact, so they do not share a
+///   word.
+/// - **`Dead`** is `'X'`/`'x'` on Linux, a process that really is
+///   finished. On macOS it is what sysinfo hands back for
+///   `ThreadStatus::Uninterruptible` — a thread stuck in an
+///   uninterruptible wait, which is *Linux's `'D'`*. So macOS's `Dead`
+///   and Linux's `UninterruptibleDiskSleep` are the same fact under
+///   different names, and macOS's `Dead` is emphatically **not** Linux's.
+///
+/// # What holds this together over time
+///
+/// The match is **exhaustive on purpose**. `sysinfo::ProcessStatus` is
+/// not `#[non_exhaustive]`, so the day the library grows a variant this
+/// file **stops compiling** rather than quietly sorting the new state
+/// into whichever arm a wildcard led to. That compiler error is the
+/// guarantee that 「映射不到的不许吞成运行」 is kept by something other
+/// than somebody remembering it.
+///
+/// `Unknown(n)` is the one status with no name, and it keeps its number
+/// — `unknown-13` on a screen is a thing somebody can look up, where a
+/// bare 「未知」 is a dead end.
+pub(crate) fn status_token(s: sysinfo::ProcessStatus, mac: bool, running: Option<bool>) -> String {
+    use sysinfo::ProcessStatus as S;
+    match (s, mac) {
+        // **macOS's SRUN does not mean running**, and the library's own
+        // repair for it does not fire — see `mac_running`, which is
+        // where the second opinion comes from.
+        (S::Run, true) => match running {
+            Some(true) => "run",
+            Some(false) => "sleep",
+            None => "unclear",
+        },
+        (S::Run, false) => "run",
+        (S::Sleep, _) => "sleep",
+        (S::Stop, _) => "stopped",
+        (S::Zombie, _) => "zombie",
+        (S::Tracing, _) => "tracing",
+        (S::Parked, _) => "parked",
+        (S::Wakekill, _) => "wakekill",
+        (S::Waking, _) => "waking",
+        (S::Suspended, _) => "suspended",
+        (S::LockBlocked, _) => "lockblocked",
+        (S::UninterruptibleDiskSleep, _) => "diskwait",
+        // The two above are the platform's, not the name's.
+        (S::Idle, false) => "idle",
+        (S::Idle, true) => "spawning",
+        (S::Dead, false) => "dead",
+        (S::Dead, true) => "diskwait",
+        (S::Unknown(n), _) => return format!("unknown-{n}"),
+    }
+    .to_owned()
+}
+
+/// **A second opinion on 「is this process actually running」, asked of
+/// macOS only** — because on macOS the first opinion is wrong four
+/// times out of five.
+///
+/// Measured 2026-09-05 on this Mac, against `ps` on the *same* 195
+/// pids in the same second:
+///
+/// | khor said | `ps` said | rows |
+/// |---|---|---|
+/// | `run` | `S` (sleeping) | **156** |
+/// | `sleep` | `S` | 39 |
+/// | `run` | `R` | **0** |
+///
+/// Not one row agreed. The chain: BSD's `p_stat` is `SRUN` for a
+/// process that merely *has* a thread able to run, so sysinfo reads
+/// `Run` for most of the machine. sysinfo knows this — its comment says
+/// 「if the status is `Run`, then it's very likely wrong」 — and repairs
+/// it from the thread status. **The repair does not fire**: it asks
+/// `proc_pidinfo(PROC_PIDTHREADINFO, arg = 0)`, and that call wants a
+/// thread handle, so it fails, and the failure branch **fabricates
+/// `ThreadStatus::Running`** for any process that is alive. The wrong
+/// answer arrives through the code that exists to prevent it.
+///
+/// So this asks the task instead: `pti_numrunning` is how many of the
+/// process's threads are on a core right now, which is the same thing
+/// `ps` prints `R` for.
+///
+/// `None` means the machine would not say — another account's process,
+/// or one that died between the listing and this call — and it stays
+/// `None` rather than becoming either word. That is the whole point:
+/// **a status nobody could read must not arrive as 「运行」**, which is
+/// exactly the trip the library takes.
+#[cfg(target_os = "macos")]
+fn mac_running(pid: u32) -> Option<bool> {
+    let mut ti: libc::proc_taskinfo = unsafe { std::mem::zeroed() };
+    let want = std::mem::size_of::<libc::proc_taskinfo>() as i32;
+    // SAFETY: `ti` is a zeroed struct of exactly the size handed to the
+    // call, and the kernel writes at most that many bytes into it. A
+    // short write is refused below rather than read.
+    let got = unsafe {
+        libc::proc_pidinfo(pid as i32, libc::PROC_PIDTASKINFO, 0, (&mut ti as *mut libc::proc_taskinfo).cast(), want)
+    };
+    (got == want).then(|| ti.pti_numrunning > 0)
+}
+
+/// Not a question anywhere else: Linux's `/proc/[pid]/stat` state char
+/// is the very thing `ps` prints, so `status_token` takes it as it
+/// comes.
+#[cfg(not(target_os = "macos"))]
+fn mac_running(_pid: u32) -> Option<bool> {
+    None
+}
+
+/// **Whether a disk figure for this process would be a reading or a
+/// zero**, decided before the read rather than after it.
+///
+/// `/proc/<pid>/io` is `0400` and macOS's `proc_pid_rusage` refuses
+/// another account's process — and in both cases sysinfo returns
+/// **zero**, not an error. A zero that means 「不许看」 sitting in a
+/// column that otherwise means 「读了这么多字节」 is the
+/// neighbouring-value mistake in its most convincing dress: it is not
+/// even a wrong number, it is a *plausible* one.
+///
+/// So: our own processes, or every process when khor runs as root.
+/// Anything else is absent, and absent is what the face draws as an
+/// empty cell and what `rank` sinks in both directions.
+///
+/// Spelled in the account's own string rather than a number because
+/// that is the only spelling every platform shares — the comparison is
+/// all this does with it. `"0"` is root on both of khor's, and on a
+/// platform where accounts are not numbers it is simply an id nobody
+/// has, which fails safe.
+fn io_readable(mine: Option<&str>, theirs: Option<&str>) -> bool {
+    match mine {
+        // Root reads everybody's, which is the whole difference.
+        Some("0") => true,
+        Some(m) => theirs == Some(m),
+        // Not knowing which account we are is not permission to guess.
+        None => false,
+    }
 }
 
 /// How long a process has been up, or `None` when the machine cannot
@@ -268,6 +462,11 @@ pub(crate) fn rank(rows: &mut [TopRow], by: khor_core::TopBy, desc: bool) {
             // A process whose age the machine will not say sinks both
             // ways, like the card columns: unknown is not 「刚起的」.
             TopBy::Time => r.run_secs.map(|v| v as f64),
+            TopBy::CpuTime => r.cpu_ms.map(|v| v as f64),
+            // On a shared box this is absent for most rows, because
+            // khor may not read another account's — so this column
+            // ranks what it may read and sinks the rest, both ways.
+            TopBy::Io => r.io_bytes.map(|v| v as f64),
             _ => None,
         }
     };
@@ -283,6 +482,10 @@ pub(crate) fn rank(rows: &mut [TopRow], by: khor_core::TopBy, desc: bool) {
             TopBy::Pid => a.pid.cmp(&b.pid),
             TopBy::Name => a.name.cmp(&b.name),
             TopBy::User => a.user.cmp(&b.user),
+            // **Grouping, not ranking** — see the variant. The token is
+            // what sorts, not the word the face prints, so a clump
+            // never splits along a translation.
+            TopBy::Status => a.status.cmp(&b.status),
             _ => match (num(a), num(b)) {
                 (Some(x), Some(y)) => x.total_cmp(&y),
                 (None, None) => std::cmp::Ordering::Equal,
@@ -313,7 +516,130 @@ mod tests {
             run_secs: None,
             arg: None,
             ppid: None,
+            status: None,
+            cpu_ms: None,
+            io_bytes: None,
         }
+    }
+
+    /// **The two statuses whose meaning changes with the platform**,
+    /// pinned in both directions.
+    ///
+    /// This is the test the mapping exists for. The other eleven arms
+    /// are the same word on both machines and a table could carry them;
+    /// these two are where reading the variant name instead of the
+    /// platform's source produces a **wrong word on screen, with
+    /// nothing red anywhere** — macOS rows in the middle of being
+    /// forked labelled 「闲置」, and macOS rows stuck in an
+    /// uninterruptible wait labelled 「已退出」 while they are very much
+    /// running.
+    ///
+    /// **Both arms of each pair are asserted, not just the interesting
+    /// one.** An implementation that answered `spawning` on both
+    /// platforms would be exactly as wrong, and half a test would pass
+    /// it.
+    #[test]
+    fn the_two_statuses_that_do_not_mean_the_same_thing_on_both_machines() {
+        use sysinfo::ProcessStatus as S;
+        // Linux `'I'`: an idle kernel thread. macOS `SIDL`: a process
+        // being created by fork. Not the same fact, not the same word.
+        assert_eq!(status_token(S::Idle, false, None), "idle", "Linux's I is an idle kernel thread");
+        assert_eq!(status_token(S::Idle, true, None), "spawning", "macOS's SIDL is a process being forked");
+        // Linux `'X'`: finished. macOS: what sysinfo returns for a
+        // thread in uninterruptible wait — which is Linux's `'D'`.
+        assert_eq!(status_token(S::Dead, false, None), "dead", "Linux's X really is finished");
+        assert_eq!(
+            status_token(S::Dead, true, None),
+            status_token(S::UninterruptibleDiskSleep, false, None),
+            "macOS's Dead is a thread stuck in an uninterruptible wait — Linux calls that D"
+        );
+        // And the one they do agree on, so the pairs above are read as
+        // a difference rather than as this function answering by
+        // platform for everything.
+        assert_eq!(status_token(S::Run, true, Some(true)), status_token(S::Run, false, None), "running is running");
+    }
+
+    /// **The second opinion can tell the two apart**, which is the
+    /// only thing that makes it worth asking.
+    ///
+    /// `status_token`'s macOS arm is a fork on this function's answer,
+    /// so an implementation that answered `Some(false)` for everything
+    /// would turn every macOS row 「休眠」 — and against a machine where
+    /// `ps` says 755 of 762 are sleeping, **that build looks right**.
+    /// It would also be the same shape of wrong as the library's
+    /// always-`Running`, just pointed the other way.
+    ///
+    /// So both directions are pinned, and each arm is a fact rather
+    /// than a hope:
+    ///
+    /// - **this test's own process is running** — it is executing this
+    ///   line — so `Some(true)` is the only honest answer, and an
+    ///   always-`false` or always-`None` build fails here;
+    /// - **a pid nobody has is `None`**, so an always-`Some` build
+    ///   fails there. Absence has to survive, because it is what keeps
+    ///   another account's process from arriving as a word.
+    ///
+    /// The live control that produced the numbers in `mac_running`'s
+    /// head is not in here: it burned a core for fifteen seconds to
+    /// make one row say `run`, and a test that needs a spinning CPU to
+    /// pass is a test that will fail on a busy machine for a reason
+    /// that has nothing to do with the code.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_second_opinion_answers_both_ways() {
+        assert_eq!(
+            mac_running(std::process::id()),
+            Some(true),
+            "this very process is on a core — an always-sleeping reading would be indistinguishable from a machine at rest"
+        );
+        assert_eq!(
+            mac_running(4_000_000_000),
+            None,
+            "and a pid nobody has cannot come back as a word — absence is what protects another account's rows"
+        );
+    }
+
+    /// **A status with no name keeps its number**, and never borrows a
+    /// neighbour's word.
+    ///
+    /// 「映射不到的不许吞成运行」 has two halves and only one of them is
+    /// testable here: that an unknown status comes out as itself. The
+    /// other half — that a *new* sysinfo variant cannot silently join
+    /// an existing arm — is held by the match being exhaustive over a
+    /// non-`non_exhaustive` enum, so it is a **compile** error and not
+    /// a test at all. If a wildcard arm ever appears in `status_token`,
+    /// that guarantee is gone and this comment is the only thing that
+    /// will say so.
+    #[test]
+    fn a_status_with_no_name_says_so_and_keeps_its_number() {
+        use sysinfo::ProcessStatus as S;
+        assert_eq!(status_token(S::Unknown(13), false, None), "unknown-13");
+        assert_eq!(status_token(S::Unknown(13), true, None), "unknown-13");
+        // The point of keeping the number: two unknowns are two
+        // different states, and one word for both would hide that.
+        assert_ne!(status_token(S::Unknown(13), false, None), status_token(S::Unknown(7), false, None));
+    }
+
+    /// **A disk figure khor is not allowed to read is absent, not
+    /// zero** — the decision made before the read, because after it the
+    /// two are the same bytes.
+    ///
+    /// The case that matters is the shared box: khor runs as one
+    /// account and most of the two hundred rows belong to others.
+    /// Without this, every one of those rows would print 「0 B」, which
+    /// is a claim about the process (它不碰盘) standing in for a fact
+    /// about the permission (我看不到).
+    #[test]
+    fn a_process_khor_may_not_read_has_no_disk_figure_rather_than_a_zero() {
+        assert!(io_readable(Some("501"), Some("501")), "our own process is readable");
+        assert!(!io_readable(Some("501"), Some("0")), "root's is not, and a zero would be a lie");
+        assert!(!io_readable(Some("501"), Some("502")), "nor another account's");
+        assert!(io_readable(Some("0"), Some("502")), "root reads everybody's — that is the difference");
+        assert!(!io_readable(None, Some("501")), "not knowing who we are is not permission to guess");
+        // A process whose account the machine will not name is not
+        // ours by default — the same absent-is-not-a-match rule the
+        // rest of these rows follow.
+        assert!(!io_readable(Some("501"), None), "and a process with no account named is not ours");
     }
 
     /// **The clock is not an age**, and this is the reading that proved
@@ -497,6 +823,53 @@ mod tests {
         assert_eq!(ranked(TopBy::Name, false), vec![1, 2, 3], "A to Z: big-mem, busy, mid");
     }
 
+    /// The three columns of 2026-09-05 rank by themselves too — and
+    /// each is given a shape the *other two* cannot produce, so a
+    /// column wired to its neighbour is caught rather than accidentally
+    /// right.
+    ///
+    /// **The pids are laid out so no two of the three answer alike.**
+    /// A test where 状态 / CPU时间 / 读写 happened to want the same
+    /// order would pass for a `rank` that read any one of them — the
+    /// commonest way a new-column test says nothing.
+    ///
+    /// The 读写 arm carries the extra claim: **a row khor may not read
+    /// sinks in both directions.** On a shared box that is most rows,
+    /// and a reversal that floated them would answer 「谁读写最少」 with
+    /// 「我看不到的那些」.
+    #[test]
+    fn the_status_the_cpu_time_and_the_disk_total_each_rank_by_themselves() {
+        use khor_core::TopBy;
+        let mut base =
+            vec![row(1, "a", 1.0, 1, None), row(2, "b", 1.0, 1, None), row(3, "c", 1.0, 1, None)];
+        // zombie < run < sleep alphabetically, so the words group in an
+        // order none of the numbers below would give.
+        base[0].status = Some("sleep".into());
+        base[1].status = Some("zombie".into());
+        base[2].status = Some("run".into());
+        base[0].cpu_ms = Some(50);
+        base[1].cpu_ms = Some(10);
+        base[2].cpu_ms = Some(90);
+        base[0].io_bytes = Some(7);
+        base[1].io_bytes = None; // another account's — unreadable, not zero
+        base[2].io_bytes = Some(3);
+        let ranked = |by: TopBy, desc: bool| {
+            let mut r = base.clone();
+            rank(&mut r, by, desc);
+            r.iter().map(|x| x.pid).collect::<Vec<_>>()
+        };
+        assert_eq!(ranked(TopBy::Status, false), vec![3, 1, 2], "A to Z on the token: run, sleep, zombie");
+        assert_eq!(ranked(TopBy::Status, true), vec![2, 1, 3], "and the reader flips which clump is on top");
+        assert_eq!(ranked(TopBy::CpuTime, true), vec![3, 1, 2], "most CPU burned first");
+        assert_eq!(ranked(TopBy::CpuTime, false), vec![2, 1, 3], "least first");
+        assert_eq!(ranked(TopBy::Io, true), vec![1, 3, 2], "most bytes first, the unreadable one last");
+        assert_eq!(
+            ranked(TopBy::Io, false),
+            vec![3, 1, 2],
+            "and least first STILL leaves it last — 读不到 is not 最少的"
+        );
+    }
+
     /// The reading is of a real machine, so the assertions are the ones
     /// that hold on every machine (`vitals`' rule) — and the positive
     /// half is this very test's own spin: a thread this process pins
@@ -571,3 +944,4 @@ mod tests {
         }
     }
 }
+

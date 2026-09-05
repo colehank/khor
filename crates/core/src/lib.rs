@@ -899,6 +899,76 @@ pub struct TopRow {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub ppid: Option<u32>,
+    /// **What the machine says this process is doing right now**, as a
+    /// stable token the face turns into a word (`zh.toml`
+    /// `top-status-*`).
+    ///
+    /// **A token, not a Chinese word and not an enum.** Chinese belongs
+    /// in the catalog. An *enum* would be the [`TopBy`] break in
+    /// reverse: this rides **inside** a row, so a variant a peer had
+    /// never heard of would refuse the whole frame rather than blank
+    /// one cell — a machine's entire table lost to a status nobody has
+    /// seen before. A string cannot do that, and a token the face has
+    /// no word for is printed as it stands: honest, and diagnosable
+    /// from the screen.
+    ///
+    /// **The platforms disagree about what their own words mean**, so
+    /// the mapping lives in one place (`khor_node::top::status_token`)
+    /// with the platform as a *parameter* rather than a `cfg`, which is
+    /// what lets both branches be tested from either machine. Two of
+    /// the disagreements are not guessable from the variant name:
+    /// sysinfo's `Idle` is an idle kernel thread on Linux and **a
+    /// process being forked** on macOS, and its `Dead` is a really-dead
+    /// process on Linux but a thread in **uninterruptible wait** on
+    /// macOS.
+    ///
+    /// `None` means only 「an older node did not send it」. A node that
+    /// collects this has a token for **every** row, `unknown-<n>`
+    /// included — **nothing falls through to 运行**, because a row
+    /// wrongly called running is the neighbouring-value trap landing on
+    /// the one column whose whole job is to say something is wrong.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// **CPU-milliseconds this process has burned since it started** —
+    /// 累计, next to `cpu_pct`'s 现在.
+    ///
+    /// The two answer different questions and neither stands in for the
+    /// other: a compile at 300% for eight seconds and a daemon at 0.1%
+    /// for three weeks read the same on `cpu_pct` if you look at the
+    /// wrong moment. This is the column that separates 「刚开始烧」 from
+    /// 「烧了一整天」.
+    ///
+    /// **CPU-milliseconds, not wall milliseconds**: a process on four
+    /// cores accumulates four seconds per second, the way `cpu_pct`
+    /// reads 400. So it can and does exceed `run_secs` — which is why
+    /// the face must not draw the two in the same shape.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub cpu_ms: Option<u64>,
+    /// **Bytes this process has read and written since it started**,
+    /// the two summed.
+    ///
+    /// **Since it started, not since the last look.** The deltas
+    /// sysinfo also offers are measured over 「however long it was since
+    /// whoever asked last asked」 — 5 seconds for this machine's card,
+    /// 20 for a far one's, one `MINIMUM_CPU_UPDATE_INTERVAL` for a
+    /// one-shot CLI. **A byte count over an unnamed window is not a
+    /// fact**; a total from a stated origin is, and the 时长 column
+    /// beside it is the divisor for anybody who wants a rate.
+    ///
+    /// **`None` where khor may not read it** — which is most of a
+    /// shared box. `/proc/<pid>/io` is owner-only and macOS's
+    /// `proc_pid_rusage` refuses another user's process, and in **both**
+    /// cases the library hands back **zero** rather than an error
+    /// (measured in sysinfo 0.39's own source: the Linux reader
+    /// `return`s on a failed open and leaves the field at 0). A zero
+    /// there reads as 「这个进程不碰盘」 on rows that may be hammering
+    /// it, so the node decides by ownership *before* it reads
+    /// (`khor_node::top::io_readable`): our own processes, or anything
+    /// at all when we are root; everything else is absent.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub io_bytes: Option<u64>,
 }
 
 /// How much of that one word crosses the wire, characters.
@@ -956,6 +1026,31 @@ pub enum TopBy {
     /// unlike a new *field* on [`TopRow`], which an old node simply
     /// does not send.
     Time,
+    /// The word under 状态 ([`TopRow::status`]).
+    ///
+    /// **This one groups; it does not rank.** There is no order in
+    /// which 僵尸 is greater than 休眠 that is not somebody's opinion,
+    /// and a made-up severity would be a judgement dressed as a
+    /// reading. What a person actually wants from pressing this head is
+    /// 「把不正常的那几行凑到一块」, and sorting the token alphabetically
+    /// delivers exactly that — the same word lands together, and which
+    /// clump is on top is the reader's to flip.
+    ///
+    /// **The token is what sorts, not the Chinese word**, because the
+    /// node does not have the Chinese: it lives in the face's catalog.
+    /// So the grouping is stable across languages, and no clump ever
+    /// splits in two.
+    Status,
+    /// Accumulated CPU time ([`TopRow::cpu_ms`]).
+    CpuTime,
+    /// Bytes read and written ([`TopRow::io_bytes`]).
+    ///
+    /// **Absent sinks, and here absent is the common case**: on a
+    /// shared box khor cannot read another account's figures at all, so
+    /// this column ranks the rows it may read and leaves the rest at
+    /// the bottom **both ways** — 「读不到」 must never surface as
+    /// 「最少的那个」.
+    Io,
 }
 
 /// The last day of a machine's CPU, five minutes at a stride — what the

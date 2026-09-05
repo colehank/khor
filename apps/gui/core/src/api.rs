@@ -104,6 +104,14 @@ pub fn answer(
                 Some("gpu") => khor_core::TopBy::Gpu,
                 Some("vram") => khor_core::TopBy::Vram,
                 Some("time") => khor_core::TopBy::Time,
+                Some("status") => khor_core::TopBy::Status,
+                // Two words for two different times, and the pair is
+                // the reason both are spelled out: `time` is the wall
+                // clock a process has been up, `cputime` is the CPU it
+                // has burned. A machine on four cores can have burned
+                // four times the first.
+                Some("cputime") => khor_core::TopBy::CpuTime,
+                Some("io") => khor_core::TopBy::Io,
                 Some(other) => return Err(format!("no such column: {other}")),
             };
             let desc = args.get("desc").and_then(|v| v.as_bool()).unwrap_or(true);
