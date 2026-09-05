@@ -795,6 +795,12 @@
    * matters is how many characters fit, read against `--text-sm`, the
    * table's own size. */
   --cw-cmd: 10ch;
+  /* How wide the 「命令」 hover may get. **A ceiling, not a width**: the
+   * tooltip is `w-fit`, so a short command stays short and only a path
+   * reaches this. `80vw` keeps it on the card at any window; the 640
+   * stops it running the width of a wide screen, where a line that long
+   * is harder to read than the wrap it replaces. */
+  --tip-cmd-max: min(80vw, 640px);
   --part-name: 220px;
   --part-num: 172px;
   --top-h: 232px;

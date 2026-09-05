@@ -3157,8 +3157,23 @@ try {
       //   (a process with no age, a card figure khor may not read), and
       //   what is not legitimate is a column that is never filled by
       //   anybody.
+      //   Each track's width divided by the share it was given. With
+      //   every floor satisfied these are one number; a column that
+      //   swallowed the leftover shows up as its own.
+      const frs = Object.fromEntries(
+        (t.dataset.topFrs ?? "").split(" ").filter(Boolean).map((p) => {
+          const [k, v] = p.split(":");
+          return [k === "name" ? "cmd" : k, Number(v)];
+        }),
+      );
+      const share = {};
+      for (let i = 0; i < trackEls.length && i < heads.length; i += 1) {
+        const key = heads[i].dataset.topHead ?? heads[i].dataset.c;
+        if (frs[key]) share[key] = rects[i].width / frs[key];
+      }
       return {
         heads: heads.length,
+        share,
         //   The used value, so this counts what the browser resolved
         //   rather than what anybody wrote.
         tracks: getComputedStyle(t).gridTemplateColumns.trim().split(/\s+/).length,
@@ -3205,22 +3220,48 @@ try {
             `(${spread.gaps.join("/")} against ${spread.gap}) — the slack went between two columns`,
         );
       }
-      //   **And no track but 「命令」 holds room it has no ink for.**
-      //   That is where the slack is allowed to be: the one column
-      //   whose content has no bound. A quantity track wider than its
-      //   widest number is the 799px hole, and it does not show up as a
-      //   gap — see the probe.
+      //   **⚠️ Tombstone: 「no track but 「命令」 may hold room it has no
+      //   ink for」 is gone, and its replacement asserts the opposite
+      //   arrangement.**
       //
-      //   60px of tolerance for the heads' own padding (`px-row` on the
-      //   right-aligned ones) and the chevron beside the sorted word;
-      //   the hole this catches is measured in hundreds.
-      const fat = Object.entries(spread.slackIn).filter(([k, v]) => k !== "cmd" && v > 60);
-      if (fat.length) {
-        fail(
-          `at 1500 ${fat.map(([k, v]) => `${k} holds ${v}px it has no ink for`).join(", ")} — ` +
-            `the slack went inside a quantity column, which opens a hole to the left of its numbers ` +
-            `(the gaps stay ${spread.gap} the whole time, so this is not visible as a gap)`,
-        );
+      //   That rule came from the 799px hole — slack parked inside a
+      //   quantity column opens a gap to the *left* of its numbers, and
+      //   the gaps between columns stay 8 the whole time, so it is
+      //   invisible to a gap-based probe. It was true, and it drove the
+      //   design to 「every column at its floor, the whole remainder to
+      //   the last column」 — which is the shape the person using this
+      //   then rejected on a wide card (2026-09-05:「我们要不按页面宽度
+      //   均分列宽。或稍微微调一些,大致是均分」). One column holding
+      //   hundreds of pixels of blank is the same hole, just moved to
+      //   the end of the row.
+      //
+      //   So the assertion is now **that the division happened**: every
+      //   track is `minmax(floor, share fr)`, and where the floors are
+      //   all satisfied the grid's own arithmetic makes `width / share`
+      //   identical across the table. Any build that hands the leftover
+      //   to one column breaks that equality by hundreds.
+      //
+      //   The shares are read off the table (`data-top-frs`) rather
+      //   than repeated here: a gate carrying its own copy of the
+      //   weights is the two-lists shape this file has been bitten by.
+      //
+      //   **Bounded to the wide stop on purpose.** A narrow table has
+      //   tracks pinned at their floors, and a floor above a column's
+      //   share is legitimate — there the equality does not hold and
+      //   must not be asserted.
+      const per = Object.entries(spread.share);
+      if (per.length < 4) {
+        fail(`probe dead: only ${per.length} tracks carried a share, so 「the width was divided」 measured nothing`);
+      } else {
+        const lo = Math.min(...per.map(([, v]) => v));
+        const hi = Math.max(...per.map(([, v]) => v));
+        if (hi - lo > 2) {
+          fail(
+            `at 1500 the width is not divided: per-share widths run ${lo.toFixed(1)}→${hi.toFixed(1)}px ` +
+              `(${per.map(([k, v]) => `${k}:${v.toFixed(1)}`).join(" ")}) — ` +
+              `one column is taking the leftover instead of every column taking its share`,
+          );
+        }
       }
       //   **No column's name is cut.** See the probe for what this is
       //   kept apart from and why.
@@ -3236,6 +3277,7 @@ try {
         `table at 1500: holder ${spread.boxW}, grid ${spread.gridW}, last track ${spread.slack} short of it, ` +
           `gaps ${spread.gaps.join("/")} (gap ${spread.gap}), ` +
           `head over ${Object.entries(spread.headRoom).map(([k, v]) => `${k}:${v}`).join(" ")}, ` +
+          `per-share ${Object.entries(spread.share).map(([k, v]) => `${k}:${v.toFixed(1)}`).join(" ")}, ` +
           `room beyond ink ${Object.entries(spread.slackIn).map(([k, v]) => `${k}:${v}`).join(" ")}`,
       );
     }
@@ -4062,6 +4104,91 @@ try {
   if (marks.decorative !== 0) fail(`${marks.decorative} cells that fit carry a truncation mark — the mark is decoration`);
   if (marks.silent !== 0) fail(`${marks.silent} cells overflow with no mark — a value ended early and nothing said so`);
   console.log(`command line: ${marks.marked}/${marks.cells} cells marked, ${marks.decorative} decorative, ${marks.silent} silent`);
+  //     **⚠️ The mark is an ellipsis, and there is no square anywhere.**
+  //     A 10px bordered box used to sit at the end of a cut cell;
+  //     2026-09-05 the person using this said what it actually looked
+  //     like — 「关键是它看着就是字体缺字呀」 — and it went. The
+  //     replacement needed no code: the line already wears `truncate`,
+  //     so the browser was drawing the ellipsis behind the square the
+  //     whole time.
+  //
+  //     Two claims, because either alone lets it back: **the square is
+  //     nowhere on the page** (a stylesheet or a component can bring it
+  //     back without touching the words that argue against it), and
+  //     **the line is still set to elide** — `text-overflow: ellipsis`
+  //     with `overflow: hidden`, which is what makes the 「…」 appear at
+  //     all. The second cannot be read off `textContent`: the DOM holds
+  //     the whole string either way, and the ellipsis is painted, not
+  //     stored.
+  const elide = await page.evaluate(() => {
+    const cut = document.querySelector('[data-machine-card] [data-c="cmd"][data-cut] [data-cmd-line]');
+    const fits = [...document.querySelectorAll('[data-machine-card] [data-c="cmd"]:not([data-cut]) [data-cmd-line]')][0];
+    const of = (n) => (n ? (({ textOverflow, overflow, whiteSpace }) => ({ textOverflow, overflow, whiteSpace }))(getComputedStyle(n)) : null);
+    return { squares: document.querySelectorAll("[data-cut-mark]").length, cut: of(cut), fits: of(fits) };
+  });
+  if (elide.squares > 0) {
+    fail(`${elide.squares} truncation squares are still drawn — the mark that reads as a missing glyph is back`);
+  }
+  if (!elide.cut) {
+    fail("probe dead: no cut cell to read, so 「the ellipsis is what marks it」 measured nothing");
+  } else if (elide.cut.textOverflow !== "ellipsis" || elide.cut.overflow !== "hidden") {
+    fail(
+      `a cut line is ${JSON.stringify(elide.cut)} — with no ellipsis and no clip the value simply stops, ` +
+        `and nothing on screen says it was cut`,
+    );
+  }
+
+  //     **The hover says the part that is missing, and it is not the
+  //     only way to it.** 2026-09-05:「命令这种显示不全的,鼠标悬浮后
+  //     显示」. Three things, and the first is what makes the other two
+  //     mean anything.
+  if (marks.marked > 0) {
+    const hoverText = async (how) => {
+      const before = await page.locator("[data-cmd-full]").count();
+      const cell = page.locator('[data-machine-card] [data-c="cmd"][data-cut]').first();
+      if (how === "hover") await cell.hover();
+      else await cell.evaluate((n) => n.focus());
+      await wait(300);
+      const got = await page.locator("[data-cmd-full]").allTextContents();
+      //   Put the pointer somewhere with nothing under it, so the next
+      //   arm starts from closed.
+      await page.mouse.move(2, 2);
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await wait(250);
+      return { before, got };
+    };
+    //   ⚠️ **The probe has to be dead before it is alive.** A tooltip
+    //   already on the page would let 「hovering shows the command」
+    //   pass without a hover happening — the shape of false green this
+    //   file keeps finding. So the count before the pointer moves is
+    //   asserted to be zero.
+    const byHover = await hoverText("hover");
+    const line = await page
+      .locator('[data-machine-card] [data-c="cmd"][data-cut] [data-cmd-line]')
+      .first()
+      .textContent();
+    if (byHover.before !== 0) {
+      fail(`${byHover.before} tooltips were already open before anything was hovered — the probe cannot tell`);
+    } else if (byHover.got.length !== 1) {
+      fail(`hovering a cut command opened ${byHover.got.length} tooltips, not one`);
+    } else if (byHover.got[0].trim() !== line.trim()) {
+      //   Verbatim, because 「it showed something」 is satisfied by a
+      //   tooltip repeating the visible half.
+      fail(
+        `the hover says ${JSON.stringify(byHover.got[0].trim().slice(0, 60))}… while the row holds ` +
+          `${JSON.stringify(line.trim().slice(0, 60))}… — it is not the same command`,
+      );
+    }
+    //   **Focus opens it too**, because the narrow card has no pointer
+    //   and a keyboard has no hover. The press stays the way in there —
+    //   asserted below — and this is the second one, not a replacement.
+    const byFocus = await hoverText("focus");
+    if (byFocus.got.length !== 1) {
+      fail(`focusing a cut command opened ${byFocus.got.length} tooltips — a keyboard cannot reach the hover`);
+    }
+    console.log(`cut command: ellipsis, no squares, hover and focus both say ${line.trim().length} chars`);
+  }
+
   //     **A mark can be opened, by pointer and by keyboard.** The
   //     narrow card has no hover at all, and narrow is where cells run
   //     out of room first.

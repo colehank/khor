@@ -7,6 +7,7 @@ import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { mount as mountDay } from "@/day/day-core.js";
@@ -1141,18 +1142,22 @@ type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram" | "time"
  * width without opening a canyon between two numbers.
  */
 const COLS = {
-  pid: { head: () => cli.top_pid, w: "var(--cw-pid)", align: "left" },
-  status: { head: () => cli.top_status, w: "var(--cw-status)", align: "left" },
-  user: { head: () => cli.top_user, w: "var(--cw-user)", align: "left" },
-  time: { head: () => cli.top_time, w: "var(--cw-run)", align: "right" },
-  cputime: { head: () => cli.top_cputime, w: "var(--cw-cputime)", align: "right" },
-  cpu: { head: () => cli.vitals_name_cpu, w: "var(--cw-cpu)", align: "right" },
-  gpu: { head: () => cli.vitals_name_gpu, w: "var(--cw-gpu)", align: "right" },
-  mem: { head: () => cli.vitals_name_mem, w: "var(--cw-mem)", align: "right" },
-  vram: { head: () => cli.vitals_name_vram, w: "var(--cw-vram)", align: "right" },
-  io: { head: () => cli.top_io, w: "var(--cw-io)", align: "right" },
-  name: { head: () => cli.top_cmd, w: "minmax(var(--cw-cmd), 1fr)", align: "left" },
-} as const satisfies Record<SortCol, { head: () => string; w: string; align: "left" | "right" }>;
+  pid: { head: () => cli.top_pid, w: "var(--cw-pid)", fr: 1, align: "left" },
+  status: { head: () => cli.top_status, w: "var(--cw-status)", fr: 1, align: "left" },
+  user: { head: () => cli.top_user, w: "var(--cw-user)", fr: 1, align: "left" },
+  time: { head: () => cli.top_time, w: "var(--cw-run)", fr: 1, align: "right" },
+  cputime: { head: () => cli.top_cputime, w: "var(--cw-cputime)", fr: 1, align: "right" },
+  cpu: { head: () => cli.vitals_name_cpu, w: "var(--cw-cpu)", fr: 1, align: "right" },
+  gpu: { head: () => cli.vitals_name_gpu, w: "var(--cw-gpu)", fr: 1, align: "right" },
+  mem: { head: () => cli.vitals_name_mem, w: "var(--cw-mem)", fr: 1, align: "right" },
+  vram: { head: () => cli.vitals_name_vram, w: "var(--cw-vram)", fr: 1, align: "right" },
+  io: { head: () => cli.top_io, w: "var(--cw-io)", fr: 1, align: "right" },
+  // **The one nudge away from even**, and it is the column the person
+  // asking for even shares also called out as the one whose content
+  // 「有长有短」. Half again, not four times: at four the table is the
+  // old shape wearing a new formula.
+  name: { head: () => cli.top_cmd, w: "var(--cw-cmd)", fr: 1.5, align: "left" },
+} as const satisfies Record<SortCol, { head: () => string; w: string; fr: number; align: "left" | "right" }>;
 const COL_ORDER = ["pid", "status", "user", "time", "cputime", "cpu", "gpu", "mem", "vram", "io", "name"] as const;
 
 
@@ -1454,9 +1459,23 @@ function Top({
   };
   const cells = shown.length;
   // **The tracks, in the order the cells are written below** — the same
-  // list, so they cannot disagree. Only the order is here; every width
-  // is a token.
-  const tracks = shown.map((k) => COLS[k].w).join(" ");
+  // list, so they cannot disagree. Only the order and the share are
+  // here; every floor is a token.
+  //
+  // **`minmax(floor, share fr)`, not `floor` with the leftover dumped
+  // on the last column** (2026-09-05:「我们要不按页面宽度均分列宽。或
+  // 稍微微调一些,大致是均分」). The old arrangement gave every column
+  // exactly its floor and handed the whole remainder to 「命令」, which
+  // on a wide card left that one column holding hundreds of pixels of
+  // blank while the numbers were crammed at the left.
+  //
+  // Each track keeps its floor — the head's own word plus the sort
+  // chevron, and the widest reading that column has actually shown — and
+  // the free space above the floors is shared. **The floors are what
+  // stop 「even」 from becoming 「too narrow to read」**: a share smaller
+  // than a column's floor simply does not apply, and a table narrower
+  // than the floors added up stops being a grid at all (`useOverflows`).
+  const tracks = shown.map((k) => `minmax(${COLS[k].w}, ${COLS[k].fr}fr)`).join(" ");
   return (
     <div
       ref={box}
@@ -1465,7 +1484,9 @@ function Top({
       className="max-h-top-h overflow-y-auto"
     >
       {/* `data-top-cols` is **which columns this table actually has, in
-          order** — one attribute rather than a flag per absent column.
+          order**, and `data-top-frs` the share each was given — so a
+          gate can check the division without keeping its own copy of
+          the weights. — one attribute rather than a flag per absent column.
           The three it replaces (`data-nogpu` / `data-novram` /
           `data-norun`) were left over from the four hand-written grid
           variants that a generated track list retired; nothing read
@@ -1476,6 +1497,7 @@ function Top({
         data-load-top
         data-panel
         data-top-cols={shown.join(" ")}
+        data-top-frs={shown.map((k) => `${k}:${COLS[k].fr}`).join(" ")}
         style={{ gridTemplateColumns: tracks }}
         className="text-sm tabular-nums"
       >
@@ -2154,21 +2176,49 @@ function AxisPick({
  * vLLM case above, and printing `VLLM::EngineCore VLLM::EngineCore`
  * would spend a column's width saying one thing.
  *
- * # Why a mark and not an ellipsis
+ * # ⚠️ Tombstone: the bordered square is gone, and the argument for it
+ * was wrong in a way the argument could not see
  *
- * An ellipsis reads as 「the value ends about here」 — it is punctuation
- * inside the text. What has to be said is 「there is more of this, and
- * you can have it」, which is a statement about the cell, not about the
- * string. So it is a small bordered square outside the words.
+ * There used to be a 10px bordered square at the end of a cut cell, and
+ * a section here headed 「Why a mark and not an ellipsis」 arguing for
+ * it: an ellipsis is punctuation *inside the text* saying 「the value
+ * ends about here」, while what has to be said is 「there is more of
+ * this, and you can have it」 — a statement about the cell. That
+ * reasoning is sound and it is beside the point.
  *
- * # Why a press and not a hover
+ * 2026-09-05, from the person using this, looking at a real screen:
+ * **「关键是它看着就是字体缺字呀。用户看着很难受」**. An empty box
+ * immediately after text is what a missing glyph looks like — tofu — and
+ * a screen that looks like a font failed to load says 「this software is
+ * broken」, not 「there is more here」. **The mark was not overruled by a
+ * preference; it was overruled by what it actually looked like.** It
+ * meant to say one thing and delivered another, which no amount of
+ * correctness about cells and strings can fix.
  *
- * The narrow card has no hover at all, and narrow is exactly where the
- * cell runs out of room first — a tooltip would put the answer where
- * the people who need it cannot reach. A press opens it in place;
- * keyboard reaches it the same way (`role`, `tabindex`, Enter and
- * Space), because a control only a pointer can work is a control half
- * the ways in cannot.
+ * The replacement needed inventing nothing: the line already wears
+ * Tailwind's `truncate` (`overflow:hidden; text-overflow:ellipsis`), so
+ * the ellipsis was **already being drawn** — measured on a real card,
+ * the cell read `…Stable-a44adf7f…` **and then the square**. Deleting
+ * the square was the whole change.
+ *
+ * # Why a press, and a hover as well
+ *
+ * **The press is the one that must not be lost.** The narrow card has
+ * no hover at all, and narrow is exactly where the cell runs out of room
+ * first — an answer that lives only in a tooltip is missing where it is
+ * needed most. So a press opens the line in place, and the keyboard
+ * reaches it the same way (`role`, `tabindex`, Enter and Space).
+ *
+ * The hover is **added** on top of that (2026-09-05:「命令这种显示不全
+ * 的,鼠标悬浮后显示」), for the pointer case where opening the row in
+ * place is more disruption than the question deserves. Radix's tooltip
+ * because it is the app's existing one: it opens on **focus** as well as
+ * hover, and it portals out of the table's scroll box, which an
+ * absolutely-positioned panel inside `overflow: auto` cannot do without
+ * being clipped.
+ *
+ * **Only on cells that are actually cut**, so a tooltip never repeats a
+ * line the reader can already see in full.
  *
  * # The mark is measured, never guessed
  *
@@ -2191,14 +2241,27 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
     // measuring then would retract the mark and take the way back with
     // it.
     if (open) return;
-    const measure = () => setOver(node.scrollWidth - node.clientWidth > 1);
+    // ⚠️ **A box with no width is not a reading.** When the mark
+    // appears the cell gains a tooltip trigger around it, which
+    // unmounts this line and mounts a new one — and the observer, still
+    // holding the detached node, fires 0×0. Read as a measurement that
+    // is 「it fits」, and the mark retracts on a cell that visibly does
+    // not fit. Absent is not zero here either.
+    const measure = () => {
+      if (node.clientWidth === 0) return;
+      setOver(node.scrollWidth - node.clientWidth > 1);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(node);
     return () => ro.disconnect();
-  }, [name, word, open]);
+    // `over` is a dependency **because the answer changes the tree**:
+    // the trigger wraps this line only when it is cut, so the node this
+    // effect measured is not the node on screen a render later. Without
+    // it the observer is left on the old one for good.
+  }, [name, word, open, over]);
   const cut = over;
-  return (
+  const cell = (
     <span
       data-c="cmd"
       data-cut={cut ? "" : undefined}
@@ -2240,14 +2303,46 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
           </>
         )}
       </span>
-      {cut && !open && (
-        <span
-          data-cut-mark
-          aria-hidden="true"
-          className="size-2.5 flex-none rounded-xs border border-muted-foreground/60"
-        />
-      )}
     </span>
+  );
+  // **A cell that fits is not a trigger.** Wrapping every one of them
+  // would hand two hundred rows Radix's pointer handlers on elements
+  // that say they are not targets — which the face gate reads, rightly,
+  // as a press with no way in for a keyboard.
+  //
+  // ⚠️ **And the wrap is downstream of a measurement, which is why the
+  // two guards above exist.** The first version had this conditional
+  // and nothing else: the moment `over` flipped true the line was
+  // unmounted and remounted inside the trigger, the `ResizeObserver`
+  // was left holding the detached node, it fired 0×0, `over` flipped
+  // back — and the effect never re-ran, because none of its
+  // dependencies had changed. Stuck false, on a cell that visibly did
+  // not fit. Measured: **0 of 23 marked, 1 silent**, on a build whose
+  // marking logic was untouched.
+  //
+  // **Opening does not unwrap it either**, and that is the same lesson
+  // one step along: the first fix dropped the trigger while the line
+  // was open, so the press replaced the element under the reader's
+  // pointer and the gate measuring 「it opened」 was left holding a
+  // removed node (`18 → 0 → 0`). The wrapper survives the press; only
+  // the tooltip's *content* goes, because a tooltip repeating a line
+  // that is already showing in full is noise.
+  if (!cut) return cell;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{cell}</TooltipTrigger>
+      {/* **Only where there is something the reader cannot already
+          see.** A tooltip that repeats a line showing in full is noise
+          on two hundred rows. Wide enough to be worth opening and
+          narrow enough to stay on the card; `break-all` because what
+          overflows here is a path, and a path has no spaces to break
+          at. */}
+      {!open && (
+        <TooltipContent side="top" className="max-w-[var(--tip-cmd-max)] break-all whitespace-normal text-left">
+          <span data-cmd-full>{word ? `${name} ${word}` : name}</span>
+        </TooltipContent>
+      )}
+    </Tooltip>
   );
 }
 
