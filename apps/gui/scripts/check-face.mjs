@@ -301,11 +301,11 @@ try {
       // it the newest process on the box. The kernel row carries no
       // command line either, for the same reason: absent is not empty.
       // prettier-ignore
-      { pid: 101, name: "khor", user: "gate", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, arg: "serve" },
+      { pid: 101, name: "khor", user: "zgh", cpu_pct: 240.5, mem: 512_000_000, gpu_pct: 44, gpu_mem: 8_000_000_000, run_secs: 90_061, arg: "serve", status: "run", cpu_ms: 7200000, io_bytes: 4294967296, ppid: 1 },
       // prettier-ignore
-      { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: 5, gpu_mem: 2_000_000_000, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so" },
+      { pid: 202, name: "node", user: "root", cpu_pct: 12, mem: 128_000_000, gpu_pct: 5, gpu_mem: 2_000_000_000, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so", status: "sleep", cpu_ms: 61000, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null },
+      { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null, status: "diskwait", cpu_ms: 512000, io_bytes: 1048576, ppid: 1 },
       // **Twenty rows lifted from a real machine's distribution**
       // (turing, 2026-09-04, `dist-turing.json`): the median process
       // uses a fifth of one percent of a core while the busiest uses
@@ -314,45 +314,45 @@ try {
       // run below eight points — a fixture that makes an assertion
       // unevaluable is a fixture that makes it useless.
       // prettier-ignore
-      { pid: 900000, name: "python3", user: "gate", cpu_pct: 42.9910, mem: 8708096, gpu_pct: null, gpu_mem: null, run_secs: 11, arg: "tail/0.py" },
+      { pid: 900000, name: "python3", user: "gate", cpu_pct: 42.9910, mem: 8708096, gpu_pct: null, gpu_mem: null, run_secs: 11, arg: "tail/0.py", status: "zombie", cpu_ms: 3600000, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900001, name: "khor-2077930-6", user: "gate", cpu_pct: 41.9717, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 148, arg: "tail/1.py" },
+      { pid: 900001, name: "khor-2077930-6", user: "zgh", cpu_pct: 41.9717, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 148, arg: "tail/1.py", status: "stopped", cpu_ms: 900, io_bytes: 33554432, ppid: 1 },
       // prettier-ignore
-      { pid: 900002, name: "netdata", user: "gate", cpu_pct: 32.0176, mem: 4024270848, gpu_pct: null, gpu_mem: null, run_secs: 285, arg: "tail/2.py" },
+      { pid: 900002, name: "netdata", user: "_windowserver", cpu_pct: 32.0176, mem: 4024270848, gpu_pct: null, gpu_mem: null, run_secs: 285, arg: "tail/2.py", status: "sleep", cpu_ms: 45000, io_bytes: 8388608, ppid: 1 },
       // prettier-ignore
-      { pid: 900003, name: "apps.plugin", user: "gate", cpu_pct: 13.5588, mem: 109076480, gpu_pct: null, gpu_mem: null, run_secs: 422, arg: "tail/3.py" },
+      { pid: 900003, name: "apps.plugin", user: "gate", cpu_pct: 13.5588, mem: 109076480, gpu_pct: null, gpu_mem: null, run_secs: 422, arg: "tail/3.py", status: "idle", cpu_ms: 128000, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900004, name: "fetch", user: "gate", cpu_pct: 7.9261, mem: 46661632, gpu_pct: null, gpu_mem: null, run_secs: 559, arg: "tail/4.py" },
+      { pid: 900004, name: "fetch", user: "root", cpu_pct: 7.9261, mem: 46661632, gpu_pct: null, gpu_mem: null, run_secs: 559, arg: "tail/4.py", status: "unknown-13", cpu_ms: 9600000, io_bytes: 2147483648, ppid: 1 },
       // prettier-ignore
-      { pid: 900005, name: "tokio-rt-worke", user: "gate", cpu_pct: 5.4203, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 696, arg: "tail/5.py" },
+      { pid: 900005, name: "tokio-rt-worke", user: "zgh", cpu_pct: 5.4203, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 696, arg: "tail/5.py", status: "sleep", cpu_ms: 33000, io_bytes: 524288, ppid: 1 },
       // prettier-ignore
-      { pid: 900006, name: "tokio-rt-worke", user: "gate", cpu_pct: 3.8330, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 833, arg: "tail/6.py" },
+      { pid: 900006, name: "tokio-rt-worke", user: "gate", cpu_pct: 3.8330, mem: 155160576, gpu_pct: null, gpu_mem: null, run_secs: 833, arg: "tail/6.py", status: "run", cpu_ms: 7100, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900007, name: "spyder", user: "gate", cpu_pct: 2.2191, mem: 472055808, gpu_pct: null, gpu_mem: null, run_secs: 970, arg: "tail/7.py" },
+      { pid: 900007, name: "spyder", user: "root", cpu_pct: 2.2191, mem: 472055808, gpu_pct: null, gpu_mem: null, run_secs: 970, arg: "tail/7.py", status: "sleep", cpu_ms: 480000, io_bytes: 65536, ppid: 1 },
       // prettier-ignore
-      { pid: 900008, name: "top", user: "gate", cpu_pct: 1.6829, mem: 8065024, gpu_pct: null, gpu_mem: null, run_secs: 1107, arg: "tail/8.py" },
+      { pid: 900008, name: "top", user: "zgh", cpu_pct: 1.6829, mem: 8065024, gpu_pct: null, gpu_mem: null, run_secs: 1107, arg: "tail/8.py", status: "tracing", cpu_ms: 2400000, io_bytes: 134217728, ppid: 1 },
       // prettier-ignore
-      { pid: 900009, name: "tokio-runtime-", user: "gate", cpu_pct: 0.5521, mem: 46661632, gpu_pct: null, gpu_mem: null, run_secs: 1244, arg: "tail/9.py" },
+      { pid: 900009, name: "tokio-runtime-", user: "gate", cpu_pct: 0.5521, mem: 46661632, gpu_pct: null, gpu_mem: null, run_secs: 1244, arg: "tail/9.py", status: "sleep", cpu_ms: 61500, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900010, name: "prometheus", user: "gate", cpu_pct: 0.3185, mem: 166809600, gpu_pct: null, gpu_mem: null, run_secs: 1381, arg: "tail/10.py" },
+      { pid: 900010, name: "prometheus", user: "root", cpu_pct: 0.3185, mem: 166809600, gpu_pct: null, gpu_mem: null, run_secs: 1381, arg: "tail/10.py", status: "parked", cpu_ms: 800, io_bytes: 16777216, ppid: 1 },
       // prettier-ignore
-      { pid: 900011, name: "containerd", user: "gate", cpu_pct: 0.2230, mem: 24326144, gpu_pct: null, gpu_mem: null, run_secs: 1518, arg: "tail/11.py" },
+      { pid: 900011, name: "containerd", user: "zgh", cpu_pct: 0.2230, mem: 24326144, gpu_pct: null, gpu_mem: null, run_secs: 1518, arg: "tail/11.py", status: "sleep", cpu_ms: 155000, io_bytes: 268435456, ppid: 1 },
       // prettier-ignore
-      { pid: 900012, name: "UV_WORKER[201]", user: "gate", cpu_pct: 0.1911, mem: 4024270848, gpu_pct: null, gpu_mem: null, run_secs: 1655, arg: "tail/12.py" },
+      { pid: 900012, name: "UV_WORKER[201]", user: "gate", cpu_pct: 0.1911, mem: 4024270848, gpu_pct: null, gpu_mem: null, run_secs: 1655, arg: "tail/12.py", status: "run", cpu_ms: 12000, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900013, name: "VLLM::EngineCo", user: "gate", cpu_pct: 0.1274, mem: 1630076928, gpu_pct: null, gpu_mem: null, run_secs: 1792, arg: "tail/13.py" },
+      { pid: 900013, name: "VLLM::EngineCo", user: "root", cpu_pct: 0.1274, mem: 1630076928, gpu_pct: null, gpu_mem: null, run_secs: 1792, arg: "tail/13.py", status: "sleep", cpu_ms: 3300, io_bytes: 4096, ppid: 1 },
       // prettier-ignore
-      { pid: 900014, name: "python", user: "gate", cpu_pct: 0.1062, mem: 3850240, gpu_pct: null, gpu_mem: null, run_secs: 1929, arg: "tail/14.py" },
+      { pid: 900014, name: "python", user: "zgh", cpu_pct: 0.1062, mem: 3850240, gpu_pct: null, gpu_mem: null, run_secs: 1929, arg: "tail/14.py", status: "dead", cpu_ms: 640000, io_bytes: 1073741824, ppid: 1 },
       // prettier-ignore
-      { pid: 900015, name: "go.d.plugin", user: "gate", cpu_pct: 0.0903, mem: 73875456, gpu_pct: null, gpu_mem: null, run_secs: 2066, arg: "tail/15.py" },
+      { pid: 900015, name: "go.d.plugin", user: "gate", cpu_pct: 0.0903, mem: 73875456, gpu_pct: null, gpu_mem: null, run_secs: 2066, arg: "tail/15.py", status: "sleep", cpu_ms: 91000, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900016, name: "kworker/5:2-ev", user: "gate", cpu_pct: 0.0796, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2203, arg: "tail/16.py" },
+      { pid: 900016, name: "kworker/5:2-ev", user: "root", cpu_pct: 0.0796, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2203, arg: "tail/16.py", status: "sleep", cpu_ms: 1900, io_bytes: 786432, ppid: 1 },
       // prettier-ignore
-      { pid: 900017, name: "kworker/4:1-ev", user: "gate", cpu_pct: 0.0743, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2340, arg: "tail/17.py" },
+      { pid: 900017, name: "kworker/4:1-ev", user: "zgh", cpu_pct: 0.0743, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2340, arg: "tail/17.py", status: "run", cpu_ms: 27000, io_bytes: 209715200, ppid: 1 },
       // prettier-ignore
-      { pid: 900018, name: "kworker/u257:0", user: "gate", cpu_pct: 0.0690, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2477, arg: "tail/18.py" },
+      { pid: 900018, name: "kworker/u257:0", user: "gate", cpu_pct: 0.0690, mem: 0, gpu_pct: null, gpu_mem: null, run_secs: 2477, arg: "tail/18.py", status: "sleep", cpu_ms: 5400, io_bytes: null, ppid: 1 },
       // prettier-ignore
-      { pid: 900019, name: "go.d.plugin", user: "gate", cpu_pct: 0.0637, mem: 73875456, gpu_pct: null, gpu_mem: null, run_secs: 2614, arg: "tail/19.py" },
+      { pid: 900019, name: "go.d.plugin", user: "root", cpu_pct: 0.0637, mem: 73875456, gpu_pct: null, gpu_mem: null, run_secs: 2614, arg: "tail/19.py", status: "unclear", cpu_ms: 71000, io_bytes: 51200, ppid: 1 },
     ],
     cpu_day: {
       bucket_ms: 300_000,
@@ -2212,6 +2212,47 @@ try {
     await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-heads] > *").count()) > 3);
     await wait(500);
     const withReadings = { cols: await cols(), n: await readings() };
+    //   **Every column the table draws has ink in it somewhere**, and
+    //   this is the one stop where the claim is fair: the rows routed
+    //   here are the full fixture, so a blank column is the table's
+    //   fault rather than the page's. (Below, the same section
+    //   deliberately routes rows with nothing in the card columns —
+    //   which is what the latch is for, and what makes 「no ink」 the
+    //   expected answer there.)
+    //
+    //   The column set is latched off 「has any row ever filled this」,
+    //   and that question is asked of the **wire fields** — so a
+    //   fixture that has drifted from the Rust struct answers 「yes」
+    //   with `undefined`, which is neither `null` nor a reading.
+    //   Measured 2026-09-05: 状态 / USER / CPU时间 / 读写 appeared, were
+    //   sized, took width from the table, and drew **nothing**, and
+    //   every other assertion about them passed.
+    const ink = await page.evaluate(() => {
+      const out = {};
+      for (const h of document.querySelectorAll("[data-machine-card] [data-top-heads] > *")) {
+        const key = h.dataset.topHead ?? h.dataset.c;
+        const cells = [...document.querySelectorAll(`[data-machine-card] [data-top-row] [data-c="${key}"]`)];
+        out[key] = {
+          filled: cells.filter((c) => c.textContent.trim() !== "").length,
+          of: cells.length,
+          first: cells.slice(0, 3).map((c) => c.textContent),
+        };
+      }
+      return out;
+    });
+    const blank = Object.entries(ink).filter(([, v]) => v.of > 0 && v.filled === 0);
+    if (!Object.keys(ink).length) {
+      fail("probe dead: no column heads, so 「every column has ink」 measured nothing");
+    } else if (blank.length) {
+      fail(
+        `the columns ${blank.map(([k]) => k).join(", ")} are drawn and no row fills them ` +
+          `(${blank.map(([k, v]) => `${k}: ${v.of} cells, first three ${JSON.stringify(v.first)}`).join("; ")}) — ` +
+          `a column the table shows and never fills takes width from the ones that speak, ` +
+          `and it usually means the stand-in rows have drifted from the wire struct`,
+      );
+    } else {
+      console.log(`column ink: ${Object.entries(ink).map(([k, v]) => `${k} ${v.filled}/${v.of}`).join(" ")}`);
+    }
     if (!/\bvram\b/.test(withReadings.cols) && !/\bgpu\b/.test(withReadings.cols)) {
       fail(
         `probe dead: the card opened with columns [${withReadings.cols}] and no card column among them, ` +
@@ -2504,7 +2545,16 @@ try {
     } else {
       let moved = 0;
       let kept = true;
+      const still = [];
       for (const h of heads) {
+        //   **Pressed twice, and the two orders compared** — not 「did
+        //   the rows change from whatever they were」. A head the table
+        //   already happens to be sorted by moves nothing on the first
+        //   press, and reads as a head that does not work: measured
+        //   2026-09-05 on PID, which the section above leaves the table
+        //   ordered by. Ascending against descending is a question
+        //   about the column itself and does not depend on where the
+        //   table started.
         const before = await page.evaluate(() => {
           const cell = document.querySelector("[data-machine-card] [data-day-cell]");
           if (cell) cell.setAttribute("data-probe-tag", "1");
@@ -2538,10 +2588,30 @@ try {
           fail(`pressing 「${h}」 changed the dials — they are drawn from the machine's vitals, which an ordering does not touch`);
           break;
         }
-        if (after.rows !== before.rows) moved += 1;
+        await page.locator(`[data-machine-card] [data-top-head="${h}"] button`).click();
+        await wait(900);
+        const flipped = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
+        );
+        if (flipped !== after.rows) moved += 1;
+        else still.push(h);
       }
-      if (moved === 0) {
-        fail(`probe dead: ${heads.length} presses and the rows never changed, so 「and nothing else moved」 measured a table that ignores its heads`);
+      //   **Every head, not 「at least one」.** The old form asked only
+      //   that some press moved the rows, and it stayed green through
+      //   2026-09-05's four new columns while three of the eleven heads
+      //   did nothing — the fixture gave every row the same account and
+      //   no status at all, so 状态 and USER had nothing to order by and
+      //   the presses were no-ops that looked like ties.
+      //
+      //   The fixture now gives each column an order of its own (see
+      //   the rows), so a head that does not move them is a head that
+      //   does not sort. **Which head** is named, because 「8 of 11」
+      //   sends somebody to look at all eleven.
+      if (moved !== heads.length) {
+        fail(
+          `${heads.length - moved} of ${heads.length} column heads read the same both ways ` +
+            `(${still.join(", ")}) — a head that cannot re-order is a control that does nothing`,
+        );
       }
       //   Reports what it saw; it does not state the finding. The
       //   first draft ended 「untouched by all of them」 and printed
@@ -2741,6 +2811,8 @@ try {
       const cell = cells[0];
       const pick = document.querySelector("[data-machine-card] [data-plot-pick]");
       const seam = document.querySelector("[data-machine-card] [data-top-seam]");
+      const table = document.querySelector("[data-machine-card] [data-load-top-box]");
+      const plot = document.querySelector("[data-machine-card] [data-top-plot]");
       if (!head || !cell) return null;
       const cs = (n) => getComputedStyle(n);
       const lum = (c) => {
@@ -2767,9 +2839,21 @@ try {
         //   How far the table's head sits from the figure's foot,
         //   against how far two rows sit from each other. A break has
         //   to be bigger than the rhythm it is breaking.
-        pickToHead:
+        //   **Which comes first on the glass** (2026-09-05:「列表和
+        //   散点图换个位置」). Read as coordinates rather than as DOM
+        //   order on purpose: a stylesheet can reorder a grid, and
+        //   what the complaint was about is what the eye meets first.
+        tableToPlot:
+          table && plot
+            ? +(plot.getBoundingClientRect().top - table.getBoundingClientRect().bottom).toFixed(1)
+            : null,
+        //   And the axis words are **below** the table now, so the two
+        //   rows of small text that used to be mistaken for each other
+        //   are a screen apart. Negative here would mean the swap came
+        //   undone.
+        headToPick:
           pick && head
-            ? +(head.getBoundingClientRect().top - pick.getBoundingClientRect().bottom).toFixed(1)
+            ? +(pick.getBoundingClientRect().top - head.getBoundingClientRect().bottom).toFixed(1)
             : null,
         rowPitch: (() => {
           const rows = [...document.querySelectorAll("[data-machine-card] [data-top-row]")].slice(0, 2);
@@ -2815,21 +2899,35 @@ try {
       }
       if (!(look.seamRule > 0)) {
         fail(
-          `the table is not separated from the figure above it (seam rule ${look.seamRule}) — ` +
-            `the scatter's axis words and the table's head are two rows of small text with nothing between them, ` +
-            `and they get read as one`,
+          `the table is not separated from the figure below it (seam rule ${look.seamRule}) — ` +
+            `they are two blocks about the same two hundred processes and nothing says where one ends`,
         );
       }
-      if (look.pickToHead !== null && look.rowPitch !== null && look.pickToHead < look.rowPitch * 1.5) {
+      //   **The table is the first thing in the panel** (2026-09-05:
+      //   「列表和散点图换个位置」). The old assertion here measured the
+      //   *gap* between the figure's axis words and the table's head,
+      //   because they sat next to each other and read as one row of
+      //   small text. That gap is not the fix any more — the swap is —
+      //   so this measures the swap: the table ends before the figure
+      //   begins, and the axis words are below the head rather than
+      //   above it.
+      if (look.tableToPlot !== null && !(look.tableToPlot > 0)) {
         fail(
-          `the figure's axis words sit ${look.pickToHead}px above the table's head where a row is ${look.rowPitch}px tall — ` +
+          `the figure starts ${look.tableToPlot}px after the table ends — the two are back in the old order, ` +
+            `where 「横 CPU 内存 显存 时长」 sits directly above the column heads and gets read as them`,
+        );
+      }
+      if (look.headToPick !== null && look.rowPitch !== null && look.headToPick < look.rowPitch * 1.5) {
+        fail(
+          `the figure's axis words sit ${look.headToPick}px below the table's head where a row is ${look.rowPitch}px tall — ` +
             `a break has to be bigger than the rhythm it breaks`,
         );
       }
       console.log(
         `heads: weight ${look.cellWeights.join("/")}→${look.headWeight}, ink ${look.cellInks.join("/")}→${look.headInk}, ` +
           `rule under them ${look.headRule !== "none"}, seam ${look.seamRule}px, ` +
-          `axis words ${look.pickToHead}px above the head against a ${look.rowPitch}px row`,
+          `table ends ${look.tableToPlot}px before the figure, axis words ${look.headToPick}px below the head ` +
+          `against a ${look.rowPitch}px row`,
       );
     }
   }
@@ -3011,6 +3109,11 @@ try {
         const widest = Math.max(ink(btn), ...cells.map((c) => ink(c)), 0);
         slackIn[key] = +(rects[i].width - widest).toFixed(1);
       }
+      //   Whether anything at all is written in each column, anywhere
+      //   on the page. Not 「every row」: absence is legitimate per row
+      //   (a process with no age, a card figure khor may not read), and
+      //   what is not legitimate is a column that is never filled by
+      //   anybody.
       return {
         heads: heads.length,
         //   The used value, so this counts what the browser resolved
@@ -3544,7 +3647,17 @@ try {
           })(),
         };
       });
+    //   **The label has to be opened before a word can be pressed**
+    //   (2026-09-05:「通过点击label,去切换X或y的值」). Collapsed, the
+    //   axis carries one word — the quantity it is drawn with — and the
+    //   four candidates are one press away. Opening it when it is
+    //   already open would close it again, so the count decides.
     const pick = async (which, key) => {
+      const words = page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis]`);
+      if ((await words.count()) === 0) {
+        await page.locator(`[data-machine-card] [data-plot-label="${which}"]`).click();
+        await wait(120);
+      }
       await page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${key}"]`).click();
       await wait(300);
     };
@@ -3629,18 +3742,123 @@ try {
           yTicks: [...plot.querySelectorAll("[data-plot-tick-y] text")].map((t) => t.textContent).join(","),
           points: plot.querySelectorAll("[data-plot-point]").length,
           xs: [...plot.querySelectorAll("[data-plot-point]")].map((g) => g.dataset.plotX).join(","),
-          chosen: [...plot.querySelectorAll('[data-plot-axis][data-on="true"]')].map((b) => b.dataset.plotAxis).join(","),
+          //   **Which pair the figure is drawn with, read off the
+          //   figure** — not off the picker's buttons, which are not
+          //   there when the label is closed (2026-09-05: the picker
+          //   collapses after a choice, and reading the buttons made
+          //   this report an empty pair for a plot that had just
+          //   switched correctly). `data-plot-axes` is written by the
+          //   thing that does the drawing, which is the honest place
+          //   to ask.
+          chosen: (plot.dataset.plotAxes ?? "").split("x").join(","),
           off: plot.querySelector("[data-plot-off]")?.dataset.plotOff ?? null,
           words: [...plot.querySelectorAll("[data-plot-pick] [data-plot-axis]")].length,
+          //   Collapsed, each axis carries one word — and it has to be
+          //   the quantity that axis is *drawn with*, not a fixed
+          //   caption. A label reading 「横」 would pass a check that
+          //   only counted two of them.
+          labels: [...plot.querySelectorAll("[data-plot-label]")]
+            .map((b) => `${b.dataset.plotLabel}:${b.textContent.trim()}`)
+            .join(","),
+          //   Where the drawing starts. **Opening a picker must not
+          //   move it** — that is the whole 「同一位置、同一高度」 rule,
+          //   and a build that pushed the figure down on every press
+          //   would still switch axes correctly.
+          //   ⚠️ **`[data-plot-svg]`, not `svg`.** The axis labels carry
+          //   chevrons, so 「the first svg in the block」 is a 12px icon —
+          //   measured, and it reported the drawing as 12 pixels tall
+          //   and 「the picker pushed the figure down by 36」 on a build
+          //   where nothing moved at all.
+          svgTop: (() => {
+            const el = plot.querySelector("[data-plot-svg]");
+            return el ? Math.round(el.getBoundingClientRect().top) : null;
+          })(),
+          svgHeight: (() => {
+            const el = plot.querySelector("[data-plot-svg]");
+            return el ? Math.round(el.getBoundingClientRect().height) : null;
+          })(),
+          //   The whole block, because the two labels sit on opposite
+          //   sides of the drawing: opening the one *below* it cannot
+          //   move the drawing's top however tall it grows, so a check
+          //   that watched only that would pass a build where the
+          //   horizontal picker pushed everything under it down.
+          plotHeight: Math.round(plot.getBoundingClientRect().height),
         };
       });
+    //   **The label has to be opened before a word can be pressed**
+    //   (2026-09-05:「通过点击label,去切换X或y的值」). Collapsed, the
+    //   axis carries one word — the quantity it is drawn with — and the
+    //   four candidates are one press away. Opening it when it is
+    //   already open would close it again, so the count decides.
     const pick = async (which, key) => {
+      const words = page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis]`);
+      if ((await words.count()) === 0) {
+        await page.locator(`[data-machine-card] [data-plot-label="${which}"]`).click();
+        await wait(120);
+      }
       await page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${key}"]`).click();
       await wait(250);
     };
     const start = await read();
-    if (!start || start.words !== 8) {
-      fail(`probe dead: the plot offers ${start ? start.words : 0} axis words, not two sets of four`);
+    //   **Two labels, closed, each naming its own axis's quantity**
+    //   (2026-09-05:「散点图搞成带X和Y label的」). Before the swap the
+    //   two axes had no name at all — only ticks and a ruler mark — so
+    //   「这根轴是什么」 was answered by counting which of eight words in
+    //   the foot was bold.
+    if (!start) {
+      fail("probe dead: no plot, so nothing about its axis labels was measured");
+    } else if (start.labels !== "y:内存,x:CPU") {
+      fail(`the axes are labelled ${JSON.stringify(start.labels)} — each axis has to say the quantity it is drawn with`);
+    } else if (start.words !== 0) {
+      fail(`${start.words} axis words are showing before anything was pressed — the label is supposed to be one word`);
+    }
+    //   **Opening one must not move the drawing.** Measured rather than
+    //   reasoned: four buttons where one was is a real layout change,
+    //   and the reason it does not push is that both states are a row
+    //   of `min-h-touch` buttons — which is a fact about the
+    //   stylesheet, not about the markup, so only the glass can say it.
+    for (const which of start ? ["y", "x"] : []) {
+      //   **Read the closed state again here, not once at the top.**
+      //   The figure sizes itself from its box through a
+      //   `ResizeObserver`, so a reading taken in the frame after a
+      //   layout change catches an svg 12px tall — measured, and it
+      //   reported a 36px 「the picker pushed the figure down」 that was
+      //   the drawing arriving rather than anything moving.
+      await wait(400);
+      const shut = await read();
+      await page.locator(`[data-machine-card] [data-plot-label="${which}"]`).click();
+      await wait(400);
+      const open = await read();
+      if (open.words !== 4) {
+        fail(`pressing the ${which} label opened ${open.words} words, not the four candidates`);
+      }
+      //   **Both measurements, because the labels sit on opposite
+      //   sides.** The vertical one is above the drawing, so growing
+      //   it moves the drawing's top; the horizontal one is below, so
+      //   growing it moves nothing above it and only the block's own
+      //   height shows it.
+      if (open.svgTop !== shut.svgTop || open.svgHeight !== shut.svgHeight || open.plotHeight !== shut.plotHeight) {
+        fail(
+          `opening the ${which} axis label moved the figure (top ${shut.svgTop}→${open.svgTop}, ` +
+            `svg ${shut.svgHeight}→${open.svgHeight}, block ${shut.plotHeight}→${open.plotHeight}) — ` +
+            `the picker has to open in place`,
+        );
+      }
+      //   And the other axis stays shut, so 「one place, contents
+      //   swapped」 is true of each axis separately.
+      const other = which === "x" ? "y" : "x";
+      if (!new RegExp(`${other}:`).test(open.labels)) {
+        fail(`opening the ${which} label also opened the ${other} one (labels ${JSON.stringify(open.labels)})`);
+      }
+      //   Put it back the way it was, by choosing what was already
+      //   chosen — the rest of this section starts from cpu×mem.
+      await page
+        .locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${which === "x" ? "cpu" : "mem"}"]`)
+        .click();
+      await wait(150);
+    }
+    if (!start) {
+      // already failed above
     } else {
       if (start.pair !== "cpuxmem") fail(`the plot opens on ${start.pair} — the pair every machine can be read against is cpu×mem`);
       await pick("y", "time");

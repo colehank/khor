@@ -695,11 +695,52 @@
    * The cell is one flowing line now with one truncation at its end
    * (`Cut`, and the tombstone in app.css). Nothing in it has a width of
    * its own, so there is nothing here to name. */
-  --cw-run: 78px;
-  --cw-cpu: 52px;
-  --cw-gpu: 46px;
-  --cw-vram: 74px;
-  --cw-mem: 66px;
+  --cw-run: 56px;
+  /* ⚠️ **The whole `--cw-*` set was re-measured on 2026-09-05**, when
+   * the table went from seven columns to eleven. Every one of them is
+   * now close to the ink it holds rather than comfortable over it —
+   * `check-face`'s 「room beyond ink」 line prints the margin for each,
+   * and the two that read *negative* are the two that truncate on
+   * purpose (用户, and 状态 when it is printing a token it has no word
+   * for).
+   *
+   * What that buys: eleven columns fit a 679px table, which is a 1100
+   * window with the list pane open. What it costs: **a machine whose
+   * numbers run wider than this fixture's will clip**, and the place
+   * that shows is a real card, not this file.
+   *
+   * The four columns of 2026-09-05 (「列太少了,不饱满」).
+   *
+   * **状态 is sized to its longest word, not its commonest.** 「运行」 and
+   * 「休眠」 are two characters and carry 99% of the rows, but 「说不准」
+   * and 「已暂停」 are three — and a column sized to the common case
+   * clips exactly the rows worth reading, which are the uncommon ones.
+   *
+   * **用户 is the one column here that truncates**, and that is a
+   * decision rather than an oversight: account names have no bound
+   * (`_windowserver`, `zzl-zgh`), and giving them room for the longest
+   * would spend on a column whose rows are usually identical — on one
+   * person's own machine every row says the same word. Truncation with
+   * the first characters kept is what tells 「谁的」 apart, which is all
+   * this column is asked.
+   *
+   * **CPU时间 is a clock, so it is sized in digits**: `999:59:59` is
+   * the widest a long-lived daemon reaches, and the shape is what keeps
+   * it from being read as the 时长 beside it — a duration in words
+   * (「3天」) next to a stopwatch (「72:14:03」) cannot be confused, two
+   * durations in the same words can.
+   *
+   * **读写 is 内存's width** because it prints the same `bytes()` and
+   * the same magnitudes; a second width for the same shape of number
+   * would be two answers to one question. */
+  --cw-status: 44px;
+  --cw-user: 56px;
+  --cw-cputime: 62px;
+  --cw-io: 68px;
+  --cw-cpu: 44px;
+  --cw-gpu: 40px;
+  --cw-vram: 56px;
+  --cw-mem: 52px;
   /* **A floor under the 「命令」 column, and the column takes the rest
    * of the table.** 2026-09-04:「表那应该表根据屏幕铺开。现在全挤在
    * 左边了」— the table was 690 wide in a 1378 box, with the whole
@@ -720,16 +761,26 @@
    *
    * `1fr` and not a ceiling, because the ceiling is already there and
    * is not made of pixels: the bordered mark, which opens the whole
-   * line in place. The floor is what stops the track vanishing if the
-   * quantity columns ever grow — deliberately under the narrowest the
-   * track is actually asked for (measured 210.9px at the tightest width
-   * where the table is still a grid), so it can never be the thing that
-   * pushes the table over its box.
+   * line in place.
+   *
+   * **The floor is what decides where the table stops being a table**,
+   * and 2026-09-05 made that literal: eleven columns instead of seven,
+   * and the sum of the fixed tracks plus this floor is exactly what the
+   * grid asks its box for. Measured that day, this floor at `12ch` came
+   * out **3 pixels** over a 690px box (a 1100 window with the list pane
+   * open) — three pixels that cost the whole card its column heads,
+   * because a table that does not fit falls back to stacked rows and
+   * the heads go with the grid. At `10ch` the eleven fit from a 679px
+   * box up, which is that window and everything above it.
+   *
+   * So it is deliberately mean, and it is a floor rather than a width:
+   * the track is `minmax(this, 1fr)`, so at any comfortable width the
+   * column is hundreds of pixels wide and this number is not in play.
    *
    * In `ch` and not `em`: this column is a name and a path, so what
    * matters is how many characters fit, read against `--text-sm`, the
    * table's own size. */
-  --cw-cmd: 20ch;
+  --cw-cmd: 10ch;
   --part-name: 220px;
   --part-num: 172px;
   --top-h: 232px;

@@ -30,6 +30,83 @@ export function useTight(ref: RefObject<HTMLElement | null>, min: number): boole
 }
 
 /**
+ * Whether a grid's tracks do not fit the box around it — **measured on
+ * the glass rather than computed from a list of widths.**
+ *
+ * `useTight` above answers the same shape of question against a
+ * constant, and that is right where the layout wants a fixed number of
+ * fixed things. It is wrong where **the number of tracks changes**: the
+ * process table has between seven and eleven columns depending on what
+ * the machine can fill, so the width at which it stops fitting is not a
+ * number anybody can write down once.
+ *
+ * It was written down anyway, first, as a table of per-column pixel
+ * costs beside the `--cw-*` tokens they were copied from. Two lists to
+ * keep in agreement, and the estimate was **64px too high** on the
+ * eleven-column set — which stacked the table at a width where it fit
+ * perfectly well, and took the column heads (and with them the sorting)
+ * off a card that had room for them. The browser already knows the
+ * answer; asking it is both shorter and correct.
+ *
+ * # Why it needs to remember
+ *
+ * `scrollWidth` is an honest minimum **only while the grid is laid out
+ * as a grid**. Once the narrow layout has replaced it with stacked
+ * rows there is nothing left to measure, so 「can we go back」 cannot be
+ * asked the same way. It is answered from the box instead: try again
+ * once the box is clear of the width where it stopped fitting.
+ *
+ * **And it remembers by how much**, not by a round number. A constant
+ * was tried first (24px) and was wrong in the expensive direction:
+ * measured 2026-09-05, the table came up 3px short at a box of 690, so
+ * it stacked — and then would not come back at 710, because 710 is not
+ * 690 + 24. A card with room for its eleven columns drew none of its
+ * heads. The shortfall is a number the browser already told us, so the
+ * retry uses it: come back when the box has grown by at least what was
+ * missing.
+ *
+ * **Monotone, so it cannot oscillate**: a retry that overflows again
+ * records the new width and the new shortfall, so each attempt raises
+ * the bar rather than bouncing off it.
+ */
+export function useOverflows(
+  box: RefObject<HTMLElement | null>,
+  grid: RefObject<HTMLElement | null>,
+  deps: unknown,
+): boolean {
+  const [stacked, setStacked] = useState<{ at: number; short: number } | null>(null);
+  // A different set of columns is a different question — start over
+  // rather than judge the new set by the old set's width.
+  useEffect(() => setStacked(null), [deps]);
+  useEffect(() => {
+    const b = box.current;
+    if (!b) return;
+    const look = () => {
+      const w = b.clientWidth;
+      const g = grid.current;
+      // One pixel of tolerance: sub-pixel track rounding otherwise
+      // reads as an overflow on a table that fits exactly.
+      const short = g ? g.scrollWidth - w : 0;
+      setStacked((was) => {
+        if (was === null) return short > 1 ? { at: w, short } : null;
+        return w >= was.at + was.short ? null : was;
+      });
+    };
+    look();
+    const ro = new ResizeObserver(look);
+    ro.observe(b);
+    // A frame later too: the first pass can land before the browser has
+    // resolved the tracks, and `scrollWidth` is then the box's own.
+    const raf = requestAnimationFrame(look);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [box, grid, deps]);
+  return stacked !== null;
+}
+
+/**
  * How many rows of a scrolling box are below its bottom edge right now.
  *
  * **Counted, not computed from a total.** 「the list has six and four

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
-import { useHiddenRows, useTight } from "@/hooks/use-tight";
+import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { gaugeColor } from "@/lib/vitals";
 import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
@@ -145,20 +145,7 @@ function Body({
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
-  const { load, why, shown, asking, ages, cardCols } = useLoad(row, sort);
-  // **A column exists when a *row* can fill it, and that is latched.**
-  // It used to be a machine-level bit — 「does this machine report
-  // discrete video memory」 — on the reasoning that NVML is the same
-  // handle behind both, so the machine's answer settles the columns and
-  // no ordering can move them. The second half of that was the point
-  // and it is kept; the first half was measured wrong (2026-09-05):
-  // **turing reports two RTX A5000s and not one of its two hundred
-  // processes carries a per-process figure**, so the card drew two
-  // empty columns and spent 136px of a crowded table on them.
-  //
-  // See `useLoad` for the latch and for why the claim is 「seen」 rather
-  // than 「has」.
-  const cards = cardCols;
+  const { load, why, shown, asking, seen } = useLoad(row, sort);
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
@@ -175,8 +162,7 @@ function Body({
               sort={shown ?? sort}
               asking={asking}
               onSort={setSort}
-              cards={cards}
-              ages={ages}
+              seen={seen}
             />
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
@@ -1132,7 +1118,128 @@ const LOAD_RETRY_MS = 30_000;
  * person opens a machine card to ask. */
 type Sort = { col: SortCol; dir: "up" | "down" };
 const SORT_FIRST: Sort = { col: "cpu", dir: "down" };
-type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram" | "time";
+type SortCol = "pid" | "name" | "user" | "cpu" | "mem" | "gpu" | "vram" | "time" | "status" | "cputime" | "io";
+
+/**
+ * **The table's columns, in the order they are drawn, with everything
+ * that differs between them written once.**
+ *
+ * The head word, the track width and the alignment used to live in
+ * three places — a list of tracks, a run of `<Column>`s, and a run of
+ * cells — and 2026-09-05 the table went from seven columns to eleven.
+ * Three lists of eleven kept in agreement by somebody remembering is
+ * the arrangement that already failed once at seven: a machine with
+ * per-process 显存 and no per-process GPU had six cells meeting five
+ * tracks, and 「命令」 collapsed to 55px. **The gate that catches that
+ * is still there** (`tracks` against heads) — this is what stops it
+ * having to fire.
+ *
+ * The order is the one the user named (2026-09-05): the pid you type
+ * next, then what the process *is* (状态 · 用户), then the two times,
+ * then the quantities, and **「命令」 last** because it is the only
+ * column whose content has no bound, so it is the one that can absorb
+ * width without opening a canyon between two numbers.
+ */
+const COLS = {
+  pid: { head: () => cli.top_pid, w: "var(--cw-pid)", align: "left" },
+  status: { head: () => cli.top_status, w: "var(--cw-status)", align: "left" },
+  user: { head: () => cli.top_user, w: "var(--cw-user)", align: "left" },
+  time: { head: () => cli.top_time, w: "var(--cw-run)", align: "right" },
+  cputime: { head: () => cli.top_cputime, w: "var(--cw-cputime)", align: "right" },
+  cpu: { head: () => cli.vitals_name_cpu, w: "var(--cw-cpu)", align: "right" },
+  gpu: { head: () => cli.vitals_name_gpu, w: "var(--cw-gpu)", align: "right" },
+  mem: { head: () => cli.vitals_name_mem, w: "var(--cw-mem)", align: "right" },
+  vram: { head: () => cli.vitals_name_vram, w: "var(--cw-vram)", align: "right" },
+  io: { head: () => cli.top_io, w: "var(--cw-io)", align: "right" },
+  name: { head: () => cli.top_cmd, w: "minmax(var(--cw-cmd), 1fr)", align: "left" },
+} as const satisfies Record<SortCol, { head: () => string; w: string; align: "left" | "right" }>;
+const COL_ORDER = ["pid", "status", "user", "time", "cputime", "cpu", "gpu", "mem", "vram", "io", "name"] as const;
+
+
+/**
+ * **Which optional columns this machine has ever filled**, one latch
+ * each.
+ *
+ * Four of the seven are 「an older khor over there does not send this
+ * field at all」 and three are 「this machine has nothing to put in
+ * it」, and they behave the same way on screen, so they are one
+ * mechanism.
+ *
+ * **The question is 「can any row fill me」, not 「does this machine
+ * have the hardware」** — turing reports two RTX A5000s and not one of
+ * its two hundred processes carries a per-process figure, so asking
+ * about the cards drew two empty columns and spent 136px on them.
+ *
+ * **And it latches, only ever upward.** Read off the rows in front of
+ * you it is a fact about *this page*: order turing by GPU and the two
+ * hundred rows that come back can be all-`null`, so pressing 「GPU」
+ * deletes the GPU column and the press has no head left to press again
+ * (user, 2026-09-04:「一点整个表就变了」). Cleared only when the machine
+ * changes.
+ */
+type Seen = { status: boolean; user: boolean; time: boolean; cputime: boolean; gpu: boolean; vram: boolean; io: boolean };
+/** What counts as a row filling each of them.
+ *
+ *  **`user` is the odd one**: it is a `String` on the wire and its
+ *  absence is spelled `""`, because a machine that will not name an
+ *  account has no id to send either. So the emptiness has to be read,
+ *  not the null. */
+const FILLS: { [K in keyof Seen]: (r: Load["top"][number]) => boolean } = {
+  status: (r) => r.status !== null,
+  user: (r) => r.user !== "",
+  time: (r) => r.run_secs !== null,
+  cputime: (r) => r.cpu_ms !== null,
+  gpu: (r) => r.gpu_pct !== null,
+  vram: (r) => r.gpu_mem !== null,
+  io: (r) => r.io_bytes !== null,
+};
+const SEEN_KEYS = Object.keys(FILLS) as (keyof Seen)[];
+const SEEN_NONE: Seen = { status: false, user: false, time: false, cputime: false, gpu: false, vram: false, io: false };
+
+/** The word for a status token, or the token itself.
+ *
+ *  **A token with no word is printed as it stands** — `unknown-13` on
+ *  the glass is something a person can look up, and it is the honest
+ *  answer for a status a newer node knows about and this build does
+ *  not. What it must never do is fall through to 「运行」: the node
+ *  goes to some trouble not to say that word wrongly
+ *  (`khor_node::top::status_token`), and a lookup with a default would
+ *  undo all of it here. */
+const STATUS_WORD: Record<string, string> = {
+  run: cli.top_st_run,
+  sleep: cli.top_st_sleep,
+  idle: cli.top_st_idle,
+  spawning: cli.top_st_spawning,
+  diskwait: cli.top_st_diskwait,
+  dead: cli.top_st_dead,
+  zombie: cli.top_st_zombie,
+  stopped: cli.top_st_stopped,
+  tracing: cli.top_st_tracing,
+  parked: cli.top_st_parked,
+  wakekill: cli.top_st_wakekill,
+  waking: cli.top_st_waking,
+  suspended: cli.top_st_suspended,
+  lockblocked: cli.top_st_lockblocked,
+  unclear: cli.top_st_unclear,
+};
+
+/**
+ * Accumulated CPU as a **stopwatch**, where 时长 next to it is a
+ * duration in words.
+ *
+ * The two columns are both times and they are not the same time — one
+ * is the wall clock, the other is core-seconds, and a process on four
+ * cores has burned four times the first. Printed in the same shape they
+ * read as a contradiction (「起了 2 小时,烧了 8 小时」 looks like a bug);
+ * printed as 「2小时」 and 「8:03:41」 they read as two kinds of thing,
+ * which is what they are.
+ */
+const cpuClock = (ms: number) => {
+  const s = Math.round(ms / 1000);
+  const two = (n: number) => String(n).padStart(2, "0");
+  const h = Math.floor(s / 3600);
+  return h > 0 ? `${h}:${two(Math.floor((s % 3600) / 60))}:${two(s % 60)}` : `${Math.floor(s / 60)}:${two(s % 60)}`;
+};
 
 /**
  * What the machine is busy with (2026-09-02:「环下面显示进程 top,最近
@@ -1159,17 +1266,15 @@ function Busy({
   sort,
   asking,
   onSort,
-  cards,
-  ages,
+  seen,
 }: {
   load: Load | null;
   why: string | null;
-  /** Which card columns any row on this machine has ever filled, and
-      whether its khor puts an age on a process. **Both are latched
-      「seen」 facts, not properties of the hardware**, and both decide
-      which columns the table has — see `useLoad` and `Top`. */
-  cards: { gpu: boolean; vram: boolean };
-  ages: boolean;
+  /** Which optional columns any row on this machine has ever filled.
+      **Latched 「seen」 facts, not properties of the hardware or of the
+      far khor's version**, and together they decide which columns the
+      table has — see `Seen`, `useLoad` and `Top`. */
+  seen: Seen;
   /** **The order the rows on screen are in**, not the one just asked
       for — see `useLoad`. */
   sort: Sort;
@@ -1192,7 +1297,7 @@ function Busy({
   if (why) {
     return (
       <Panel>
-        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} cards={cards} ages={ages} />
+        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} seen={seen} />
       </Panel>
     );
   }
@@ -1202,23 +1307,31 @@ function Busy({
   //   read against them. See `Readings`.
   return (
     <Panel>
-      <Scatter rows={load.top} />
-      {/* **A rule between the figure and the table** (2026-09-04:
-          「现在看起来就是上面的散点图的 X 和 y 设置是下面表的表头」).
-          The scatter's foot is a row of small words and so is the
-          table's head; with nothing between them the reader joins them,
-          and 「横 CPU 内存 显存 时长」 reads as the columns below.
+      {/* **The table first, the figure under it** (2026-09-05:「列表和
+          散点图换个位置」). The reader's question when a card opens is
+          「这台机器在忙什么」, and the answer to that is rows; the
+          scatter answers a second question — 「这两个量之间有什么关系」
+          — which is only asked once the first is answered.
 
-          A hairline and `--gap-group` on both sides, not two cards:
-          they are one block — the same two hundred processes, drawn and
-          then listed — and splitting them would say they are two
-          subjects. **`--gap-group` is the token whose whole definition
-          is this case** (「between groups that must not read as one
-          list」); `--gap-row` was tried first and measured 25px against
-          an 18px row, which is a break narrower than twice the rhythm
-          it is breaking. */}
+          It also retires a bug at the root rather than by treatment:
+          the scatter's axis words used to sit directly above the
+          table's column heads, and 「横 CPU 内存 显存 时长」 read as the
+          columns below it (2026-09-04:「上面的散点图的 X 和 y 设置是
+          下面表的表头」). Two rows of small words cannot be mistaken
+          for each other when one of them is a screen away. */}
+      <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} seen={seen} />
+      {/* **A rule between the table and the figure.** They are one
+          block — the same two hundred processes, listed and then drawn
+          — so a hairline and `--gap-group` on both sides rather than
+          two cards; splitting them would say they are two subjects.
+
+          **`--gap-group` is the token whose whole definition is this
+          case** (「between groups that must not read as one list」);
+          `--gap-row` was tried first and measured 25px against an 18px
+          row, which is a break narrower than twice the rhythm it is
+          breaking. */}
       <div data-top-seam className="mt-group border-t pt-group">
-        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} cards={cards} ages={ages} />
+        <Scatter rows={load.top} />
       </div>
     </Panel>
   );
@@ -1263,8 +1376,7 @@ function Top({
   asking,
   onSort,
   why,
-  cards,
-  ages,
+  seen,
 }: {
   rows: Load["top"];
   /** The order these rows are actually in — see `useLoad`. */
@@ -1277,7 +1389,13 @@ function Top({
       and this sentence, and no rows — see `Busy`. */
   why?: string | null;
   /** **Which columns this table has, decided by the machine and not by
-      the rows in front of you.**
+      the rows in front of you** — see `Seen`.
+
+      It used to be two props (`cards` and `ages`) and before that
+      `rows.some(r => r.gpu_pct !== null)` read inline here, which made
+      the column set a function of the current answer.
+
+      The old note, kept because it is what the shape costs:
 
       It used to be `rows.some(r => r.gpu_pct !== null)`, and that made
       the column set a function of the current answer: order turing by
@@ -1287,26 +1405,30 @@ function Top({
       GPU，一点就没有GPU这列了」). A column that appears and disappears
       with the ordering is not a column, it is a reading of the page.
 
-      So both bits come from above: `cards` from this machine's video
-      memory, `ages` from whether its khor has ever put an age on a
-      process — see `Body` and `useLoad`. */
-  cards: { gpu: boolean; vram: boolean };
-  ages: boolean;
+      So it comes from above and it latches — see `useLoad`. */
+  seen: Seen;
 }) {
   // **A column exists when a row on this machine has ever filled it.**
   // A whole column of blanks is worse than no column: it takes width
   // from the ones that speak, and it reads as 「khor looked and found
   // nothing」, which is not the same as 「nothing here runs on a card」.
   // Latched in `useLoad`, so an ordering cannot take a column away.
-  const onGpu = cards.gpu;
-  const onVram = cards.vram;
-  const onAges = ages;
+  //
+  // **One list, and the heads, tracks and cells are all read off it.**
+  // See `COLS` for why that is not tidiness.
+  const shown = COL_ORDER.filter((k) => !(k in FILLS) || seen[k as keyof Seen]);
   const ordered = sortRows(rows, sort);
   const box = useRef<HTMLDivElement>(null);
-  // Eight columns need more room than the card has for most of its
-  // life. What decides is the table's own width, not the window's —
-  // the same lesson the drawer's rows cost (`use-tight.ts`).
-  const tight = useTight(box, 620);
+  const grid = useRef<HTMLDivElement>(null);
+  // **The table stacks when its tracks do not fit, and that is asked
+  // of the browser** rather than of a constant — the column count runs
+  // from seven to eleven, so the width where it stops fitting is not a
+  // number anybody can write down once (`useOverflows` carries what
+  // writing it down cost). It is asked of the table's own box and not
+  // the window's: the card has a rail and a list beside it, and a
+  // window breakpoint once left a 106px overflow band invisible to any
+  // two-point check.
+  const tight = useOverflows(box, grid, shown.join(","));
   const press = (col: SortCol) => {
     // Pressing the column it is already on turns it over. Pressing a
     // new one starts the way that column is read — biggest first for a
@@ -1321,25 +1443,11 @@ function Top({
     // 「哪个刚起」.
     onSort({ col, dir: col === "name" || col === "user" || col === "pid" ? "up" : "down" });
   };
-  const cells = 5 + (onGpu ? 1 : 0) + (onVram ? 1 : 0) + (onAges ? 1 : 0);
-  // **The tracks, in the order the cells are written below.** Built
-  // here rather than in four hand-written stylesheet variants: the
-  // columns are decided by these same three flags, and a track list
-  // kept somewhere else has to be *remembered* into agreement. It was
-  // not — a machine with per-process 显存 and no per-process GPU
-  // (turing) had no variant, so six cells met five tracks and 「命令」
-  // collapsed to 55px. Only the order is here; every width is a token.
-  const tracks = [
-    "var(--cw-pid)",
-    onAges ? "var(--cw-run)" : null,
-    "var(--cw-cpu)",
-    onGpu ? "var(--cw-gpu)" : null,
-    "var(--cw-mem)",
-    onVram ? "var(--cw-vram)" : null,
-    "minmax(var(--cw-cmd), 1fr)",
-  ]
-    .filter((t): t is string => t !== null)
-    .join(" ");
+  const cells = shown.length;
+  // **The tracks, in the order the cells are written below** — the same
+  // list, so they cannot disagree. Only the order is here; every width
+  // is a token.
+  const tracks = shown.map((k) => COLS[k].w).join(" ");
   return (
     <div
       ref={box}
@@ -1347,22 +1455,28 @@ function Top({
       data-tight={tight ? "" : undefined}
       className="max-h-top-h overflow-y-auto"
     >
+      {/* `data-top-cols` is **which columns this table actually has, in
+          order** — one attribute rather than a flag per absent column.
+          The three it replaces (`data-nogpu` / `data-novram` /
+          `data-norun`) were left over from the four hand-written grid
+          variants that a generated track list retired; nothing read
+          them any more, and at eleven columns the flag-per-column shape
+          would have been seven of them. */}
       <div
+        ref={grid}
         data-load-top
         data-panel
-        data-nogpu={onGpu ? undefined : ""}
-        data-novram={onVram ? undefined : ""}
+        data-top-cols={shown.join(" ")}
         style={{ gridTemplateColumns: tracks }}
-        data-norun={onAges ? undefined : ""}
         className="text-sm tabular-nums"
       >
         <div data-top-heads className="bg-card text-aux text-muted-foreground">
-          {/* **The order the user named** (2026-09-04:「表头的顺序是:
-              PID、时长、CPU、GPU、内存、显存,命令这样」): the pid you
-              type next, then how long it has been up, then the
-              quantities — the two GPU ones beside the CPU rather than
-              after the memory that has nothing to do with them — and
-              **「命令」 last**.
+          {/* **The order the user named** (2026-09-05:「PID · 状态 ·
+              USER · 时长 · CPU时间 · CPU · GPU · 内存 · 显存 · 读写 ·
+              命令」): the pid you type next, then what the process *is*,
+              then the two times, then the quantities — the two GPU ones
+              beside the CPU rather than after the memory that has
+              nothing to do with them — and **「命令」 last**.
 
               **Last is what makes the table fill without a canyon.**
               「命令」 is the only column whose content has no bound, so
@@ -1372,46 +1486,27 @@ function Top({
               the same visual event as the 799px hole this card was
               rebuilt to remove. At the end, the same slack lands inside
               it and runs to the table's own right edge, and no two
-              columns are pushed apart at all. */}
-          <Column col="pid" sort={sort} asking={asking} onPress={press} align="right">
-            {cli.top_pid}
-          </Column>
-          {onAges && (
-            <Column col="time" sort={sort} asking={asking} onPress={press} align="right">
-              {cli.top_time}
-            </Column>
-          )}
-          <Column col="cpu" sort={sort} asking={asking} onPress={press} align="right">
-            {cli.vitals_name_cpu}
-          </Column>
-          {onGpu && (
-            <Column col="gpu" sort={sort} asking={asking} onPress={press} align="right">
-              {cli.vitals_name_gpu}
-            </Column>
-          )}
-          <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
-            {cli.vitals_name_mem}
-          </Column>
-          {onVram && (
-            <Column col="vram" sort={sort} asking={asking} onPress={press} align="right">
-              {cli.vitals_name_vram}
-            </Column>
-          )}
-          {/* **One column, 「命令」** (2026-09-04:「表的进程和命令合并
-              为一列,就叫命令」). It was two — the short name, then the
-              identifying word beside it — and they are one thing said
-              in two places: the word only ever means anything *next to*
-              the name it disambiguates (three rows called `python3`,
-              one of them `api_server`). Two columns put a gap between
-              them and made the second one look like a separate fact.
+              columns are pushed apart at all.
 
-              **It sorts, and it sorts by the name** — see `head` on
-              `Column`. What it cannot sort by is the word: that would
-              need a `TopBy` older nodes refuse, and nobody asks 「order
-              these by their arguments」. */}
-          <Column col="name" head="cmd" sort={sort} asking={asking} onPress={press} align="left">
-            {cli.top_cmd}
-          </Column>
+              **One column sorts by a word that is not its own**:
+              「命令」 carries a process's short name and its identifying
+              word together and orders by the name, which is the text
+              the column starts with. Its head is `cmd` in the DOM
+              because the column is; the sort is `name` because that is
+              what `khor_core::TopBy` knows. */}
+          {shown.map((k) => (
+            <Column
+              key={k}
+              col={k}
+              head={k === "name" ? "cmd" : undefined}
+              sort={sort}
+              asking={asking}
+              onPress={press}
+              align={COLS[k].align}
+            >
+              {COLS[k].head()}
+            </Column>
+          ))}
         </div>
         {why ? (
           <div data-load-why className="py-row text-sm text-muted-foreground" style={{ gridColumn: `span ${cells}` }}>
@@ -1420,50 +1515,92 @@ function Top({
         ) : (
           ordered.map((r) => (
             <div key={r.pid} data-top-row={r.pid}>
-              {/* **The pid is first and flush left, at every width.** On
-                  turing the two vLLM workers carry the same name *and*
-                  the same command line — the only things that tell them
-                  apart are this number and their card memory. A layout
-                  that drops it to save room drops the answer. */}
-              {/* **Flush left, not right-aligned.** A pid is an
-                  identifier, not a quantity — nobody compares their
-                  magnitudes, and right-aligning them in a seven-column
-                  track pushes the first thing read away from the edge
-                  (measured here: 31.6px in). That is the same move that
-                  put the pid 229px into the panel once. */}
-              <span data-c="pid" className="whitespace-nowrap text-left text-muted-foreground">
-                {r.pid}
-              </span>
-              {onAges && (
-                <span data-c="time" data-top-time className="whitespace-nowrap text-right">
-                  {r.run_secs == null ? "" : lasting(r.run_secs * 1000)}
-                </span>
+              {shown.map((k) =>
+                k === "name" ? (
+                  /* Last, and it takes the table's leftover width —
+                     see the head. */
+                  <Cut key={k} name={r.name} arg={r.arg} />
+                ) : (
+                  <span
+                    key={k}
+                    data-c={k}
+                    {...{ [`data-top-${k}`]: "" }}
+                    // **The one cell that can say more than it shows.**
+                    // A status this build has no word for prints its
+                    // token, and a token is longer than the column
+                    // (`unknown-13` against 「休眠」) — the number in it
+                    // is the whole reason it was kept, so it must be
+                    // readable somewhere even when the cell clips.
+                    title={k === "status" && r.status !== null ? r.status : undefined}
+                    className={cn(
+                      "whitespace-nowrap",
+                      COLS[k].align === "right" ? "text-right" : "text-left",
+                      // **The pid is muted, and it is the only cell
+                      // that is.** It is an identifier rather than a
+                      // reading — nobody compares the magnitudes of two
+                      // pids — so it stands back from the numbers that
+                      // are being compared. (It is also what the head's
+                      // 「heavier than every cell」 gate measures
+                      // against, which is why that gate had to stop
+                      // sampling 「the first cell」 and start sampling
+                      // the loudest one.)
+                      k === "pid" && "text-muted-foreground",
+                      // The one column whose content has no bound and
+                      // no room: an account name runs off the end, so
+                      // it is cut rather than allowed to push the
+                      // numbers over.
+                      (k === "user" || k === "status") && "overflow-hidden text-ellipsis",
+                    )}
+                  >
+                    {cellOf(k, r)}
+                  </span>
+                ),
               )}
-              <span data-c="cpu" className="whitespace-nowrap text-right">
-                {Math.round(r.cpu_pct)}%
-              </span>
-              {onGpu && (
-                <span data-c="gpu" data-top-gpu className="whitespace-nowrap text-right">
-                  {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
-                </span>
-              )}
-              <span data-c="mem" className="whitespace-nowrap text-right">
-                {bytes(r.mem)}
-              </span>
-              {onVram && (
-                <span data-c="vram" data-top-vram className="whitespace-nowrap text-right">
-                  {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
-                </span>
-              )}
-              {/* Last, and it takes the table's leftover width — see
-                  the head. */}
-              <Cut name={r.name} arg={r.arg} />
             </div>
           ))
         )}
       </div>
     </div>
   );
+}
+
+/**
+ * What one cell says, for every column but 「命令」 (which is a run of
+ * text with its own truncation — see `Cut`).
+ *
+ * **An empty string is 「读不到」 and it is deliberate.** Every one of
+ * these that can be absent prints nothing rather than a zero: a `0%`
+ * where the machine never looked is the neighbouring-value mistake, and
+ * on this table it would be sorted, compared and believed.
+ */
+function cellOf(k: Exclude<SortCol, "name">, r: Load["top"][number]): string {
+  switch (k) {
+    case "pid":
+      return String(r.pid);
+    // A token this build has no word for prints as the token — never
+    // as a neighbour's word. See `STATUS_WORD`.
+    case "status":
+      return r.status === null ? "" : (STATUS_WORD[r.status] ?? r.status);
+    case "user":
+      return r.user;
+    case "time":
+      return r.run_secs === null ? "" : lasting(r.run_secs * 1000);
+    case "cputime":
+      return r.cpu_ms === null ? "" : cpuClock(r.cpu_ms);
+    case "cpu":
+      return `${Math.round(r.cpu_pct)}%`;
+    case "gpu":
+      return r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`;
+    case "mem":
+      return bytes(r.mem);
+    case "vram":
+      return r.gpu_mem === null ? "" : bytes(r.gpu_mem);
+    // Absent on most rows of a shared box, because khor may not read
+    // another account's — and absent is not zero
+    // (`khor_node::top::io_readable`).
+    case "io":
+      return r.io_bytes === null ? "" : bytes(r.io_bytes);
+  }
 }
 
 /**
@@ -1740,8 +1877,20 @@ function Scatter({ rows }: { rows: Load["top"] }) {
       data-plot-scale-y={ry.kind}
       className="flex flex-col gap-in"
     >
+      {/* **The vertical axis says what it is, at the top of itself.**
+          Written across, not turned ninety degrees: rotated Latin is
+          read by tilting the head, and rotated 中文 is a different
+          writing mode with its own rules — neither is worth making a
+          reader do for two characters. */}
+      <AxisPick which="y" chosen={axes.y} onPick={(k) => axesStore.set({ ...axes, y: k })} align="left" />
       <div ref={box} className="h-44 w-full">
-        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
+        {/* **Named**, because it is no longer the only `<svg>` in this
+            block: the axis labels carry chevrons, and a probe reaching
+            for 「the figure」 with `querySelector("svg")` picked a 12px
+            chevron and reported the drawing as 12 pixels tall
+            (2026-09-05, measured — the assertion was about the picker
+            opening in place, and it was reading an icon). */}
+        <svg data-plot-svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
           <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           {/* **Which ruler each axis is on, written on the axis.**
@@ -1839,11 +1988,11 @@ function Scatter({ rows }: { rows: Load["top"] }) {
           })}
         </svg>
       </div>
+      {/* And the horizontal one under itself, centred on the axis it
+          names. */}
+      <AxisPick which="x" chosen={axes.x} onPick={(k) => axesStore.set({ ...axes, x: k })} align="center" />
       <div className="flex flex-wrap items-baseline justify-between gap-row text-aux text-muted-foreground">
         <span className="flex flex-wrap items-baseline gap-in">
-          <AxisPick which="x" label={cli.top_plot_x} chosen={axes.x} onPick={(k) => axesStore.set({ ...axes, x: k })} />
-          <span aria-hidden="true">·</span>
-          <AxisPick which="y" label={cli.top_plot_y} chosen={axes.y} onPick={(k) => axesStore.set({ ...axes, y: k })} />
           {/* **Not optional.** See the head: a picture that quietly
               dropped two thirds of its rows draws the same as an idle
               machine. */}
@@ -1864,57 +2013,102 @@ function Scatter({ rows }: { rows: Load["top"] }) {
   );
 }
 
-/** One axis's four candidates, as four words.
+/** **One axis's label, which is also the control that changes it**
+ * (2026-09-05:「散点图搞成带X和Y label的。通过点击label,去切换X或y的值」).
  *
- * **Weight and ink, and nothing else** — no ground, no border, no
- * capsule. The same writing as the 24-hour block's three reading words,
- * for the same reason: these are not three places, they are one place
- * looked at differently, and a control drawn as a tab says the first of
- * those. */
+ * # Why it is a label and not a row of four words
+ *
+ * It used to be four words per axis, all eight sitting in the figure's
+ * foot under a 「横」/「纵」. Two things were wrong with that and only one
+ * of them was the position: **an axis with four quantities beside it
+ * does not say what it is.** A reader glancing at the vertical ruler
+ * saw four candidates and had to work out which one the picture was
+ * drawn with; now the axis carries one word, and it is the right one.
+ *
+ * # Why it can be pressed, without a ground or a border
+ *
+ * The chevron. **Not a new mark** — it is the same one the column heads
+ * next door wear to say 「this word is the control」, so the card is not
+ * being taught a second vocabulary for the same idea. A capsule or a
+ * bordered box would say 「button」 louder and would also be the first
+ * such box on this card, which is the wrong thing to be first at.
+ *
+ * # Why the height cannot move
+ *
+ * Collapsed it is one button, open it is four, and **both are a row of
+ * `min-h-touch` buttons** — so opening the picker cannot push the
+ * figure down or squeeze it. That is the same rule the 24-hour block's
+ * three reading words and the drawer's ⊙ title follow: one place, the
+ * contents swapped, the height fixed.
+ *
+ * The floor is on the hit area rather than on the word: each of these
+ * is 44 tall and 44 wide to a finger while the ink stays the
+ * footnote's size (`day.css`'s `.sw button`, the same arrangement) —
+ * which is also why the gap between the four is zero. At the floor's
+ * width they are already far enough apart.
+ */
 function AxisPick({
   which,
-  label,
   chosen,
   onPick,
+  align,
 }: {
   which: "x" | "y";
-  label: string;
   chosen: AxisKey;
   onPick: (k: AxisKey) => void;
+  /** Where the label sits under the axis it names: the horizontal one
+      is centred on its axis, the vertical one starts at the top of
+      its own. */
+  align: "left" | "center";
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <span data-plot-pick={which} className="flex items-baseline gap-in">
-      <span>{label}</span>
-      {/* **The floor is on the hit area, not on the word.** Each of
-          these is 44 tall and 44 wide to a finger while the ink stays
-          the footnote's size — the same arrangement as the 24-hour
-          block's three reading words (`day.css`, `.sw button`), and
-          the reason the gap between them is zero: at the floor's width
-          they are already far enough apart, and a gap on top of it
-          would spread eight words across half the card. */}
-      <span className="flex items-baseline gap-0">
-        {AXIS_KEYS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            data-plot-axis={k}
-            data-on={k === chosen ? "true" : "false"}
-            aria-pressed={k === chosen}
-            onClick={() => onPick(k)}
-            className={cn(
-              "inline-flex min-h-touch min-w-touch items-center justify-center px-in hover:text-foreground",
-              k === chosen ? "font-title text-foreground" : "text-muted-foreground",
-            )}
-          >
-            {AXES[k].word()}
-          </button>
-        ))}
-      </span>
+    <span
+      data-plot-pick={which}
+      data-open={open ? "" : undefined}
+      className={cn(
+        "flex items-baseline gap-0 text-aux",
+        align === "center" ? "justify-center" : "justify-start",
+      )}
+    >
+      {open
+        ? AXIS_KEYS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              data-plot-axis={k}
+              data-on={k === chosen ? "true" : "false"}
+              aria-pressed={k === chosen}
+              onClick={() => {
+                onPick(k);
+                setOpen(false);
+              }}
+              className={cn(
+                "inline-flex min-h-touch min-w-touch items-center justify-center px-in hover:text-foreground",
+                k === chosen ? "font-title text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {AXES[k].word()}
+            </button>
+          ))
+        : (
+            <button
+              type="button"
+              data-plot-label={which}
+              aria-expanded={false}
+              onClick={() => setOpen(true)}
+              className="inline-flex min-h-touch min-w-touch items-center justify-center gap-in px-in font-title text-foreground hover:text-foreground"
+            >
+              {AXES[chosen].word()}
+              <IconChevronDown className="size-3" />
+            </button>
+          )}
     </span>
   );
 }
 
 /**
+ * The 「命令」 cell: **a process's short name and the one word that/**
  * The 「命令」 cell: **a process's short name and the one word that
  * identifies it, as one run of text**, with a mark when it did not fit.
  *
@@ -2136,6 +2330,19 @@ function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
   const dir = sort.dir === "up" ? 1 : -1;
   const num = (r: Load["top"][number]): number | null => {
     switch (sort.col) {
+      //   **The pid is a number here too**, and leaving it out was a
+      //   bug rather than an omission: every column that falls through
+      //   to `null` ends at the tiebreak, and **the tiebreak is not
+      //   turned over by the direction** — so pressing PID a second
+      //   time drew the arrow the other way and left the rows in
+      //   ascending order. It was invisible against a real node, which
+      //   re-ranks and sends the rows back already reversed; it is what
+      //   the reader sees in the second between the press and that
+      //   answer, and it is what a stand-in that ignores the ask shows
+      //   the whole time. Found 2026-09-05 by asking every head to read
+      //   differently both ways.
+      case "pid":
+        return r.pid;
       case "cpu":
         return r.cpu_pct;
       case "mem":
@@ -2146,13 +2353,24 @@ function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
         return r.gpu_mem;
       case "time":
         return r.run_secs;
+      case "cputime":
+        return r.cpu_ms;
+      case "io":
+        return r.io_bytes;
       default:
         return null;
     }
   };
-  const text = (r: Load["top"][number]) => (sort.col === "user" ? r.user : r.name);
+  // **状态 groups; it does not rank** — there is no order in which 僵尸
+  // is greater than 休眠 that is not somebody's opinion. What a press
+  // is for is 「把不正常的那几行凑到一块」, and it sorts on the **token**
+  // rather than the word so a clump cannot split along a translation —
+  // the same key `khor_core::TopBy::Status` uses on the machine, so the
+  // order here and the order there are one order.
+  const text = (r: Load["top"][number]) =>
+    sort.col === "user" ? r.user : sort.col === "status" ? (r.status ?? "") : r.name;
   return [...rows].sort((a, b) => {
-    if (sort.col === "name" || sort.col === "user") {
+    if (sort.col === "name" || sort.col === "user" || sort.col === "status") {
       return dir * text(a).localeCompare(text(b)) || a.pid - b.pid;
     }
     const [x, y] = [num(a), num(b)];
@@ -2180,38 +2398,31 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   //
   // Read off the rows it is a fact about *this page*, and the page is
   // whatever the current ordering cut: press a column and the answer
-  // can come back without a single filled age in it, and the column
-  // vanishes under the finger that just pressed it. That is the shape
-  // the GPU pair was fixed in, and this one has no field on the wire to
-  // ask instead — so it latches: once a machine has shown one age, it
-  // can report them, and no later ordering unsays it. It only ever goes
-  // up, and only once, and `id` below clears it when the machine
-  // changes.
-  const [ages, setAges] = useState(false);
-  // **Whether any process on this machine has ever shown a card
-  // reading**, one latch per column, and the same shape as `ages`
-  // directly above for the same reason.
+  // can come back without a single filled reading in it, and the column
+  // vanishes under the finger that just pressed it — the bug the person
+  // using this named as 「一点就没有 GPU 这列了」. So it latches: once a
+  // machine has shown one, it can report them, and no later ordering
+  // unsays it. It only ever goes up, and `id` below clears it when the
+  // machine changes.
   //
   // 2026-09-05:「A column the machine cannot fill does not exist」 was
-  // being asked of the *machine* — 「does it report video memory」 — and
+  // once asked of the *machine* — 「does it report video memory」 — and
   // that is the wrong level. turing reports two RTX A5000s and **not
   // one of its two hundred processes carries a per-process figure**, so
   // it drew two empty columns and spent 136px on them. The question a
   // column has to answer is 「can any row fill me」.
   //
-  // **Latched, because the honest answer to that changes with the
-  // page.** Ordering by pid returns the boot daemons, none of them on a
-  // card, and a column set computed from *these* rows would vanish
-  // under the finger that just pressed a head — the bug the person
-  // using this named as 「一点就没有 GPU 这列了」. So it only ever goes
-  // up, only once, and `id` clears it when the machine changes.
+  // **What this reports is 「seen」, not a property of the hardware or
+  // of the far khor's version.** A machine whose only card process
+  // starts after the card is opened gains the columns then and keeps
+  // them; one that never runs anything on its cards never grows them.
+  // That is a weaker claim than the old one and it is the true one.
   //
-  // **What this reports is 「seen」, not a property of the hardware.** A
-  // machine whose only card process starts after the card is opened
-  // gains the columns then and keeps them; one that never runs anything
-  // on its cards never grows them. That is a weaker claim than the old
-  // one and it is the true one.
-  const [cardCols, setCardCols] = useState({ gpu: false, vram: false });
+  // **One object rather than one state per column**, since 2026-09-05
+  // took it from three to seven: seven `useState`s, seven resets and
+  // seven merge lines is seven chances for the reset and the merge to
+  // disagree about which columns exist.
+  const [seen, setSeen] = useState<Seen>(SEEN_NONE);
   // **Which order the rows on screen are actually in.**
   //
   // Not the same thing as the order somebody just asked for, and the
@@ -2243,8 +2454,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
     setLoad(null);
     setWhy(null);
     setShown(null);
-    setAges(false);
-    setCardCols({ gpu: false, vram: false });
+    setSeen(SEEN_NONE);
   }, [id]);
   useEffect(() => {
     if (id === null) return;
@@ -2296,15 +2506,25 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
         setLoad((was) => (reorder && was ? { ...l, cpu_day: was.cpu_day } : l));
         setShown({ col: sort.col, dir: sort.dir });
         setWhy(null);
-        if (l.top.some((r) => r.run_secs != null)) setAges(true);
-        // Per column, because they are two different readings: a
+        // **Per column, never as a group**: they are separate
+        // readings and a machine answers some and not others — a
         // process can hold card memory with no utilisation figure and
-        // the other way round.
-        const sawGpu = l.top.some((r) => r.gpu_pct !== null);
-        const sawVram = l.top.some((r) => r.gpu_mem !== null);
-        if (sawGpu || sawVram) {
-          setCardCols((was) => (was.gpu === (was.gpu || sawGpu) && was.vram === (was.vram || sawVram) ? was : { gpu: was.gpu || sawGpu, vram: was.vram || sawVram }));
-        }
+        // the other way round, and an older khor sends four of these
+        // seven and nothing else.
+        //
+        // The same object comes back when nothing was learned, so a
+        // beat that teaches this nothing does not re-render the table.
+        setSeen((was) => {
+          const next = { ...was };
+          let grew = false;
+          for (const k of SEEN_KEYS) {
+            if (!next[k] && l.top.some(FILLS[k])) {
+              next[k] = true;
+              grew = true;
+            }
+          }
+          return grew ? next : was;
+        });
       } catch (e: unknown) {
         if (stopped) return;
         setWhy(String((e as { message?: string })?.message ?? e));
@@ -2321,7 +2541,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   // `asking` is the column somebody pressed whose answer has not landed
   // yet — the head wears it, and nothing else moves until the rows do.
   const asking = shown === null || shown.col !== sort.col || shown.dir !== sort.dir ? sort.col : null;
-  return { load, why, shown, asking, ages, cardCols };
+  return { load, why, shown, asking, seen };
 }
 
 /**
