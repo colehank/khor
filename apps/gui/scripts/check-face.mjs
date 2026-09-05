@@ -2839,21 +2839,24 @@ try {
         //   How far the table's head sits from the figure's foot,
         //   against how far two rows sit from each other. A break has
         //   to be bigger than the rhythm it is breaking.
-        //   **Which comes first on the glass** (2026-09-05:「列表和
-        //   散点图换个位置」). Read as coordinates rather than as DOM
-        //   order on purpose: a stylesheet can reorder a grid, and
-        //   what the complaint was about is what the eye meets first.
-        tableToPlot:
+        //   **Which comes first on the glass** (2026-09-05:「先把散点
+        //   和表再交换下位置」 — the second swap of this pair; the
+        //   figure is on top again). Read as coordinates rather than as
+        //   DOM order on purpose: a stylesheet can reorder a grid, and
+        //   what a reader meets first is a fact about the glass.
+        plotToTable:
           table && plot
-            ? +(plot.getBoundingClientRect().top - table.getBoundingClientRect().bottom).toFixed(1)
+            ? +(table.getBoundingClientRect().top - plot.getBoundingClientRect().bottom).toFixed(1)
             : null,
-        //   And the axis words are **below** the table now, so the two
-        //   rows of small text that used to be mistaken for each other
-        //   are a screen apart. Negative here would mean the swap came
-        //   undone.
-        headToPick:
+        //   **And how far the table's head sits below the figure's axis
+        //   words** — the distance the first swap was made to open.
+        //   Adjacency is safe again *only because the two rows of eight
+        //   axis words are gone*: one word per axis now, opening in
+        //   place. What is left directly above the head is the figure's
+        //   foot, a sentence.
+        pickToHead:
           pick && head
-            ? +(pick.getBoundingClientRect().top - head.getBoundingClientRect().bottom).toFixed(1)
+            ? +(head.getBoundingClientRect().top - pick.getBoundingClientRect().bottom).toFixed(1)
             : null,
         rowPitch: (() => {
           const rows = [...document.querySelectorAll("[data-machine-card] [data-top-row]")].slice(0, 2);
@@ -2899,34 +2902,34 @@ try {
       }
       if (!(look.seamRule > 0)) {
         fail(
-          `the table is not separated from the figure below it (seam rule ${look.seamRule}) — ` +
+          `the table is not separated from the figure above it (seam rule ${look.seamRule}) — ` +
             `they are two blocks about the same two hundred processes and nothing says where one ends`,
         );
       }
-      //   **The table is the first thing in the panel** (2026-09-05:
-      //   「列表和散点图换个位置」). The old assertion here measured the
-      //   *gap* between the figure's axis words and the table's head,
-      //   because they sat next to each other and read as one row of
-      //   small text. That gap is not the fix any more — the swap is —
-      //   so this measures the swap: the table ends before the figure
-      //   begins, and the axis words are below the head rather than
-      //   above it.
-      if (look.tableToPlot !== null && !(look.tableToPlot > 0)) {
-        fail(
-          `the figure starts ${look.tableToPlot}px after the table ends — the two are back in the old order, ` +
-            `where 「横 CPU 内存 显存 时长」 sits directly above the column heads and gets read as them`,
-        );
+      //   **The figure is the first thing in the panel** (2026-09-05:
+      //   「先把散点和表再交换下位置」).
+      //
+      //   ⚠️ This assertion has now pointed both ways, and it is not a
+      //   preference either time: what it pins is that the order on the
+      //   glass is the one that was asked for, so a stylesheet or a
+      //   refactor cannot quietly turn it over.
+      if (look.plotToTable !== null && !(look.plotToTable > 0)) {
+        fail(`the table starts ${look.plotToTable}px after the figure ends — the two are back in the other order`);
       }
-      if (look.headToPick !== null && look.rowPitch !== null && look.headToPick < look.rowPitch * 1.5) {
+      //   And they are still two blocks rather than one — the reason
+      //   the first swap happened at all. If anything above the head
+      //   ever grows back into a row of headings, this distance is what
+      //   stops it being read as the table's own.
+      if (look.pickToHead !== null && look.rowPitch !== null && look.pickToHead < look.rowPitch * 1.5) {
         fail(
-          `the figure's axis words sit ${look.headToPick}px below the table's head where a row is ${look.rowPitch}px tall — ` +
+          `the table's head sits ${look.pickToHead}px below the figure's axis words where a row is ${look.rowPitch}px tall — ` +
             `a break has to be bigger than the rhythm it breaks`,
         );
       }
       console.log(
         `heads: weight ${look.cellWeights.join("/")}→${look.headWeight}, ink ${look.cellInks.join("/")}→${look.headInk}, ` +
           `rule under them ${look.headRule !== "none"}, seam ${look.seamRule}px, ` +
-          `table ends ${look.tableToPlot}px before the figure, axis words ${look.headToPick}px below the head ` +
+          `figure ends ${look.plotToTable}px before the table, head ${look.pickToHead}px below the axis words ` +
           `against a ${look.rowPitch}px row`,
       );
     }

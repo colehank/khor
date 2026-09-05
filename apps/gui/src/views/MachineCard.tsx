@@ -1321,21 +1321,28 @@ function Busy({
   //   read against them. See `Readings`.
   return (
     <Panel>
-      {/* **The table first, the figure under it** (2026-09-05:「列表和
-          散点图换个位置」). The reader's question when a card opens is
-          「这台机器在忙什么」, and the answer to that is rows; the
-          scatter answers a second question — 「这两个量之间有什么关系」
-          — which is only asked once the first is answered.
+      {/* **The figure first, the table under it** (2026-09-05:「先把
+          散点和表再交换下位置」).
 
-          It also retires a bug at the root rather than by treatment:
-          the scatter's axis words used to sit directly above the
-          table's column heads, and 「横 CPU 内存 显存 时长」 read as the
-          columns below it (2026-09-04:「上面的散点图的 X 和 y 设置是
-          下面表的表头」). Two rows of small words cannot be mistaken
-          for each other when one of them is a screen away. */}
-      <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} seen={seen} />
-      {/* **A rule between the table and the figure.** They are one
-          block — the same two hundred processes, listed and then drawn
+          ⚠️ **This is the second time this pair has swapped, and the
+          first swap's reason has not gone away — it was solved
+          elsewhere.** The figure sat on top originally; it was moved
+          below because its two rows of axis words (「横 CPU 内存 显存
+          时长 · 纵 …」) sat directly over the table's column heads and
+          were read as them (2026-09-04:「上面的散点图的 X 和 y 设置是
+          下面表的表头」). **Those two rows no longer exist**: the axis
+          words became one word printed on each axis, and the picker
+          opens in place (`AxisPick`). What is above the table's head
+          now is the figure's foot — a sentence, not a row of
+          column-shaped words.
+
+          So the order is the reader's to choose again, and they chose
+          this one. **If a third swap is ever proposed, the thing to
+          check is not the order but whether anything above the table's
+          head has gone back to looking like a row of headings.** */}
+      <Scatter rows={load.top} />
+      {/* **A rule between the figure and the table.** They are one
+          block — the same two hundred processes, drawn and then listed
           — so a hairline and `--gap-group` on both sides rather than
           two cards; splitting them would say they are two subjects.
 
@@ -1345,7 +1352,7 @@ function Busy({
           row, which is a break narrower than twice the rhythm it is
           breaking. */}
       <div data-top-seam className="mt-group border-t pt-group">
-        <Scatter rows={load.top} />
+        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} seen={seen} />
       </div>
     </Panel>
   );
