@@ -60,15 +60,32 @@ fn refresh(sys: &mut sysinfo::System) {
         // yet, so a figure only the survivors carry would rank a column
         // nobody had read.
         //
-        // What it costs, measured 2026-09-05 on this Mac (640
-        // processes, best of three, whole `sample_top`): **7.05ms
-        // without, 7.60ms with** — under a millisecond, so the ask
-        // stays where the ranking needs it.
+        // What it costs, measured 2026-09-05, both ends of the fleet:
         //
-        // **Not measured on Linux**, where it is an extra open-and-read
-        // of `/proc/[pid]/io` per process and turing runs 2173 of them.
-        // If that ever shows, the shape of the fix is the one above:
-        // rank on something else and read this after the cut.
+        // - **this Mac, 640 processes** (best of three, whole
+        //   `sample_top`): 7.05ms without, **7.60ms with** — +0.55ms;
+        // - **turing, 12170 processes** (medians of twelve, the two
+        //   arms interleaved rather than run in two blocks, because a
+        //   shared box drifts underneath a benchmark and two blocks
+        //   report the drift as the difference): 188.0ms without,
+        //   **228.4ms with** — **+40.4ms, +21%**, reproduced at +42.3ms
+        //   on a second run.
+        //
+        // **Those two numbers are the reason the ask stays here, not a
+        // regret about it.** The saving on offer is real — read the
+        // figures after the cut, and pay the full-table price only when
+        // somebody sorts by 读写 — and it was declined on purpose: it
+        // couples 「which column is sorting」 to 「which data was
+        // collected」, and the day that branch is wrong, ordering by
+        // 读写 ranks a set that was cut by something else. **The order
+        // would be wrong and the screen would look exactly the same.**
+        // 40ms that nobody can feel, against a mistake nobody can see.
+        //
+        // Scale, so the trade can be re-judged rather than
+        // re-remembered: 40ms lands only while a card is open, at that
+        // card's poll — on a 128-core box, under 0.2% of one core.
+        // **The judgement changes when those numbers change**: a denser
+        // poll, or another order of magnitude of processes.
         sysinfo::ProcessRefreshKind::nothing()
             .with_cpu()
             .with_memory()
