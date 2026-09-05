@@ -45,57 +45,134 @@ struct Verb {
     word: &'static str,
     /// Everything after the word.
     run: fn(&[String]) -> Result<(), String>,
+    /// How far it reaches, and therefore what an agent owes a person
+    /// before typing it.
+    reach: Reach,
+}
+
+/// What typing this word can cost, in the terms `docs/AGENT.md` uses to
+/// decide what an agent may do unasked: 看 is free, 动作 is not.
+///
+/// # Why this is a field and not a list somewhere else
+///
+/// A list can be missing a row. A field cannot: a `Verb` is a struct
+/// literal, and a struct literal short one field does not compile — so
+/// the person adding a verb answers this at the moment they are already
+/// looking at this line, and a verb that never decided cannot ship.
+/// That matters more here than it looks, because of the shape this repo
+/// keeps paying for: **a rung that cannot be reached does not become
+/// "no value", it becomes the rung beside it.** A lookup that returns
+/// "absent" for an unclassified verb would have to answer something,
+/// and either answer is wrong — 免批 hands an agent a verb nobody
+/// cleared, 待批 asks a person about a verb nobody meant to gate.
+///
+/// # The rule for `Read`, and it is strict on purpose
+///
+/// **A word is `Read` only when *every* spelling of it observes.** Five
+/// verbs read one way and write another — `face` restyles when handed
+/// flags, `agents`/`accounts`/`hooks` write on their `add`/`rm`/
+/// `install` subwords, and `web` prints a link **with the key in it**,
+/// which is the whole network in one line of stdout. All five are
+/// `Act`. A finer rule (「read unless the first argument is one of
+/// these」) would let three of them stay free, and it can be wrong in
+/// the direction that costs: **one flag missing from that list is one
+/// write that never gets asked about**. This one can only be wrong by
+/// asking too often.
+///
+/// # What it does not catch
+///
+/// **That a `Read` verb stayed a read.** The compiler forces the
+/// answer, not its truth: give `top` a `--kill` tomorrow and this field
+/// still says `Read` while the gate above it waves the command through.
+/// Nothing here can see that; the guard is that the rule above is
+/// short enough to hold in your head while you edit a verb.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Reach {
+    /// Observes and prints. Free under every mode (`docs/AGENT.md`:
+    /// 看（设备状态、session 列表与内容、事件流）一律免批).
+    Read,
+    /// Changes something — this machine, another machine, the network,
+    /// or a file. Goes through whatever mode the task is running under.
+    Act,
+    /// A calling convention, not a word anybody types. An agent that
+    /// reaches for one of these has misread the CLI as its API; the
+    /// verbs it wants are the ones the usage lists.
+    Inner,
+}
+
+impl Reach {
+    /// The spelling a gate outside this process matches on. Lowercase
+    /// and one word, because the thing reading it is a `case` in
+    /// somebody else's language, not a person.
+    fn word(self) -> &'static str {
+        match self {
+            Reach::Read => "read",
+            Reach::Act => "act",
+            Reach::Inner => "inner",
+        }
+    }
 }
 
 /// Every verb khor answers, in the order the usage text lists them.
 const VERBS: &[Verb] = &[
-    Verb { word: "id", run: id },
-    Verb { word: "face", run: face },
-    Verb { word: "devices", run: devices },
-    Verb { word: "top", run: top },
-    Verb { word: "ls", run: ls },
-    Verb { word: "pull", run: pull },
-    Verb { word: "borrow", run: borrow },
-    Verb { word: "usage", run: usage },
-    Verb { word: "sessions", run: sessions },
-    Verb { word: "tell", run: tell },
-    Verb { word: "send", run: send },
-    Verb { word: "accept", run: accept },
-    Verb { word: "log", run: log },
-    Verb { word: "run", run: run },
-    Verb { word: "open", run: open },
-    Verb { word: "attach", run: attach },
-    Verb { word: "takeover", run: takeover },
-    Verb { word: "agents", run: agents },
-    Verb { word: "accounts", run: accounts },
-    Verb { word: "quota", run: quota },
-    Verb { word: "state", run: state },
-    Verb { word: "seen", run: seen },
-    Verb { word: "rename", run: rename },
-    Verb { word: "pin", run: pin },
-    Verb { word: "unpin", run: unpin },
-    Verb { word: "close", run: close },
-    Verb { word: "serve", run: serve },
-    Verb { word: "web", run: web },
-    Verb { word: "gui", run: gui },
-    Verb { word: "quit", run: quit },
-    Verb { word: "hooks", run: hooks },
-    Verb { word: "invite", run: invite },
-    Verb { word: "pair", run: pair },
-    Verb { word: "adopt", run: adopt },
-    Verb { word: "sync", run: sync },
-    Verb { word: "mcp", run: mcp },
-    Verb { word: "version", run: version },
-    Verb { word: "forget", run: forget },
-    Verb { word: "--version", run: version },
-    Verb { word: "-V", run: version },
-    Verb { word: "_host", run: host },
-    Verb { word: "_ghost", run: ghost },
-    Verb { word: "_cagent", run: cagent },
-    Verb { word: "_codexagent", run: codexagent },
-    Verb { word: "help", run: help },
-    Verb { word: "--help", run: help },
-    Verb { word: "-h", run: help },
+    Verb { word: "id", run: id, reach: Reach::Read },
+    // Reads with no arguments and restyles with any, so it is an act:
+    // the rule is per word, not per invocation.
+    Verb { word: "face", run: face, reach: Reach::Act },
+    Verb { word: "devices", run: devices, reach: Reach::Read },
+    Verb { word: "top", run: top, reach: Reach::Read },
+    Verb { word: "ls", run: ls, reach: Reach::Read },
+    // Lands a file on this machine's disk.
+    Verb { word: "pull", run: pull, reach: Reach::Act },
+    Verb { word: "borrow", run: borrow, reach: Reach::Act },
+    Verb { word: "usage", run: usage, reach: Reach::Read },
+    Verb { word: "sessions", run: sessions, reach: Reach::Read },
+    Verb { word: "tell", run: tell, reach: Reach::Act },
+    Verb { word: "send", run: send, reach: Reach::Act },
+    Verb { word: "accept", run: accept, reach: Reach::Act },
+    Verb { word: "log", run: log, reach: Reach::Read },
+    Verb { word: "run", run: run, reach: Reach::Act },
+    Verb { word: "open", run: open, reach: Reach::Act },
+    // Attaching is a keyboard on somebody's session, not a look at it.
+    Verb { word: "attach", run: attach, reach: Reach::Act },
+    Verb { word: "takeover", run: takeover, reach: Reach::Act },
+    // `known`/`sessions` observe; `add`/`rm` write the registry.
+    Verb { word: "agents", run: agents, reach: Reach::Act },
+    // Listing observes; `add` is handed an API key.
+    Verb { word: "accounts", run: accounts, reach: Reach::Act },
+    Verb { word: "quota", run: quota, reach: Reach::Read },
+    Verb { word: "state", run: state, reach: Reach::Act },
+    Verb { word: "seen", run: seen, reach: Reach::Act },
+    Verb { word: "rename", run: rename, reach: Reach::Act },
+    Verb { word: "pin", run: pin, reach: Reach::Act },
+    Verb { word: "unpin", run: unpin, reach: Reach::Act },
+    Verb { word: "close", run: close, reach: Reach::Act },
+    Verb { word: "serve", run: serve, reach: Reach::Act },
+    // Prints a link with the key in it. Reading it aloud is handing
+    // over the whole network, which is why printing is not a read.
+    Verb { word: "web", run: web, reach: Reach::Act },
+    Verb { word: "gui", run: gui, reach: Reach::Act },
+    Verb { word: "quit", run: quit, reach: Reach::Act },
+    // Status observes; `install`/`uninstall` write the rc files.
+    Verb { word: "hooks", run: hooks, reach: Reach::Act },
+    // Mints a pairing ticket: this one hands out network access.
+    Verb { word: "invite", run: invite, reach: Reach::Act },
+    Verb { word: "pair", run: pair, reach: Reach::Act },
+    Verb { word: "adopt", run: adopt, reach: Reach::Act },
+    Verb { word: "sync", run: sync, reach: Reach::Act },
+    Verb { word: "mcp", run: mcp, reach: Reach::Act },
+    Verb { word: "version", run: version, reach: Reach::Read },
+    Verb { word: "forget", run: forget, reach: Reach::Act },
+    Verb { word: "--version", run: version, reach: Reach::Read },
+    Verb { word: "-V", run: version, reach: Reach::Read },
+    Verb { word: "_host", run: host, reach: Reach::Inner },
+    Verb { word: "_ghost", run: ghost, reach: Reach::Inner },
+    Verb { word: "_cagent", run: cagent, reach: Reach::Inner },
+    Verb { word: "_codexagent", run: codexagent, reach: Reach::Inner },
+    Verb { word: "_verbs", run: verbs, reach: Reach::Inner },
+    Verb { word: "help", run: help, reach: Reach::Read },
+    Verb { word: "--help", run: help, reach: Reach::Read },
+    Verb { word: "-h", run: help, reach: Reach::Read },
 ];
 
 /// The verbs deliberately absent from the usage text, and why each stays
@@ -116,6 +193,7 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     ("_ghost", "internal: the GUI-session host `open --gui` spawns; same convention, ACP instead of a PTY"),
     ("_cagent", "internal: khor's own claude ACP shim; the agent a claude GUI session runs (`cagent` module head)"),
     ("_codexagent", "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)"),
+    ("_verbs", "internal: the verb table as JSON, for the gate that decides what an agent may type (`verbs`)"),
     ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
@@ -140,6 +218,40 @@ fn dispatch(args: &[String]) -> Result<(), String> {
 fn id(_rest: &[String]) -> Result<(), String> {
     let n = node()?;
     println!("{}  {}", n.device_str(), n.name());
+    Ok(())
+}
+
+/// The verb table, for whatever is about to gate an agent that types
+/// khor commands (`docs/AGENT.md` 权限). One JSON object per verb: the
+/// word, and how far it reaches.
+///
+/// # Why khor prints this rather than the gate keeping its own copy
+///
+/// The gate for the in-app agent runs **outside this process** — it
+/// decides whether a command may run before any code in here is
+/// reached — so it needs the split in a form it can read. A list
+/// compiled into that gate would be a second place to forget a verb,
+/// and this repo has paid for that shape twice already: the usage text
+/// needed a gate of its own to stay honest, and `mcp.rs` hand-picks six
+/// tools out of thirty verbs, so an agent on that path cannot see `top`
+/// or `usage` at all. Asking the binary it is about to drive means a
+/// verb added to `VERBS` is gated correctly the next time the agent
+/// starts, with nothing else edited anywhere.
+///
+/// **`Inner` rows are printed too, and on purpose.** A gate that never
+/// hears about `_host` has to decide what an unknown word is, and the
+/// answer it would need is the one this file exists to avoid guessing.
+///
+/// The JSON is written out rather than serialized because the only
+/// values in it are the words from `VERBS`; a test holds those to
+/// characters JSON does not escape, which is what makes that safe
+/// rather than lucky.
+fn verbs(_rest: &[String]) -> Result<(), String> {
+    let rows: Vec<String> = VERBS
+        .iter()
+        .map(|v| format!("{{\"word\":\"{}\",\"reach\":\"{}\"}}", v.word, v.reach.word()))
+        .collect();
+    println!("[{}]", rows.join(","));
     Ok(())
 }
 
@@ -2131,7 +2243,7 @@ fn render(m: &khor_node::Message) -> String {
 /// keeps `VERBS` the only place a verb is declared.
 #[cfg(test)]
 mod gate {
-    use super::{NOTHING_TYPED, NOT_IN_USAGE, VERBS};
+    use super::{Reach, NOTHING_TYPED, NOT_IN_USAGE, VERBS};
     use khor_catalog::cli::USAGE;
 
     /// The words the usage promises, read back out of the text a person
@@ -2207,6 +2319,42 @@ mod gate {
             assert!(
                 !VERBS[..i].iter().any(|e| e.word == v.word),
                 "`{}` is claimed twice; the second row is unreachable",
+                v.word
+            );
+        }
+    }
+
+    /// `Inner` and the `_` prefix are two spellings of one decision, and
+    /// they are written in different places — the row says `Inner`, the
+    /// word says `_`. Either can be edited without the other, and both
+    /// mistakes are quiet: a public verb marked `Inner` is one an agent
+    /// is refused for no stated reason, and an `_` word marked `Act` is
+    /// a calling convention offered to an agent as if it were a verb.
+    #[test]
+    fn inner_is_exactly_the_underscored_verbs() {
+        for v in VERBS {
+            assert_eq!(
+                v.reach == Reach::Inner,
+                v.word.starts_with('_'),
+                "`{}` is {:?} and {} underscored; those must agree",
+                v.word,
+                v.reach,
+                if v.word.starts_with('_') { "is" } else { "is not" }
+            );
+        }
+    }
+
+    /// `verbs` writes its JSON by hand, which is safe exactly as long as
+    /// no word needs escaping. That is true today and nothing enforces
+    /// it, so this does — a verb spelled with a quote would otherwise
+    /// ship JSON that the gate reading it cannot parse, and the failure
+    /// would land over there, in a language away from the cause.
+    #[test]
+    fn every_verb_can_be_written_into_json_unescaped() {
+        for v in VERBS {
+            assert!(
+                !v.word.contains('"') && !v.word.contains('\\') && !v.word.contains(|c: char| c.is_control()),
+                "`{}` needs escaping, and `verbs` does not escape",
                 v.word
             );
         }
