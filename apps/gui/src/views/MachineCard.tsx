@@ -1301,17 +1301,7 @@ function Top({
   const onGpu = cards.gpu;
   const onVram = cards.vram;
   const onAges = ages;
-  // **Fold first, then order.** Ordering the members and folding after
-  // would rank a pool by whichever member the sort happened to put
-  // first; folding first makes the pool one thing with one set of
-  // numbers, and the ordering ranks *that*.
-  const lines = fold(rows);
-  const ordered = sortRows(lines.map((l) => l.row), sort);
-  const bag = new Map(lines.map((l) => [l.row.pid, l]));
-  // Which pools are open. Pressing a folded line lists its members;
-  // pressing it again folds them back. Cleared when the machine or the
-  // ordering changes, because a pid means nothing across either.
-  const [open, setOpen] = useState<number | null>(null);
+  const ordered = sortRows(rows, sort);
   const box = useRef<HTMLDivElement>(null);
   // Eight columns need more room than the card has for most of its
   // life. What decides is the table's own width, not the window's —
@@ -1428,22 +1418,8 @@ function Top({
             {why}
           </div>
         ) : (
-          ordered.flatMap((r) => {
-            const line = bag.get(r.pid);
-            const many = line && line.members.length > 1 ? line.members.length : 0;
-            const shown = open === r.pid && line ? line.members : [];
-            return [
-            <div
-              key={r.pid}
-              data-top-row={r.pid}
-              data-top-fold={many || undefined}
-              // **Whose children this line stands for**, so a gate can
-              // recompute the group from the routed rows and catch a
-              // key that joined two pools. The count alone cannot: an
-              // over-merging key keeps 「lines + hidden = routed」 true
-              // while making one line out of two answers.
-              data-top-parent={many ? (r.ppid ?? undefined) : undefined}
-            >
+          ordered.map((r) => (
+            <div key={r.pid} data-top-row={r.pid}>
               {/* **The pid is first and flush left, at every width.** On
                   turing the two vLLM workers carry the same name *and*
                   the same command line — the only things that tell them
@@ -1455,15 +1431,8 @@ function Top({
                   track pushes the first thing read away from the edge
                   (measured here: 31.6px in). That is the same move that
                   put the pid 229px into the panel once. */}
-              {/* **A fold has no pid, because a group is not a
-                  process.** Printing the first member's would put the
-                  same number on two lines the moment somebody opens
-                  the pool — measured, and it read as a duplicate row
-                  rather than as a summary. The count says what the
-                  line is instead, and every member's pid is one press
-                  away. */}
               <span data-c="pid" className="whitespace-nowrap text-left text-muted-foreground">
-                {many ? "" : r.pid}
+                {r.pid}
               </span>
               {onAges && (
                 <span data-c="time" data-top-time className="whitespace-nowrap text-right">
@@ -1488,44 +1457,9 @@ function Top({
               )}
               {/* Last, and it takes the table's leftover width — see
                   the head. */}
-              <Cut name={r.name} arg={r.arg} count={many} open={open === r.pid} onPress={many ? () => setOpen((was) => (was === r.pid ? null : r.pid)) : undefined} />
-            </div>,
-            //   **The members, when somebody asks for them.** They are
-            //   the rows the fold stood for, drawn the way any row is
-            //   drawn and marked as belonging to the line above — so
-            //   nothing the fold hid is unreachable, and the默认 view
-            //   still spends one line on one thing.
-            ...shown.map((m) => (
-              <div key={`${r.pid}:${m.pid}`} data-top-row={m.pid} data-top-member={r.pid}>
-                <span data-c="pid" className="whitespace-nowrap text-left text-muted-foreground">
-                  {m.pid}
-                </span>
-                {onAges && (
-                  <span data-c="time" data-top-time className="whitespace-nowrap text-right">
-                    {m.run_secs == null ? "" : lasting(m.run_secs * 1000)}
-                  </span>
-                )}
-                <span data-c="cpu" className="whitespace-nowrap text-right">
-                  {Math.round(m.cpu_pct)}%
-                </span>
-                {onGpu && (
-                  <span data-c="gpu" data-top-gpu className="whitespace-nowrap text-right">
-                    {m.gpu_pct === null ? "" : `${Math.round(m.gpu_pct)}%`}
-                  </span>
-                )}
-                <span data-c="mem" className="whitespace-nowrap text-right">
-                  {bytes(m.mem)}
-                </span>
-                {onVram && (
-                  <span data-c="vram" data-top-vram className="whitespace-nowrap text-right">
-                    {m.gpu_mem === null ? "" : bytes(m.gpu_mem)}
-                  </span>
-                )}
-                <Cut name={m.name} arg={m.arg} />
-              </div>
-            )),
-            ];
-          })
+              <Cut name={r.name} arg={r.arg} />
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -2041,24 +1975,7 @@ function AxisPick({
  * silent truncation), and both errors look fine on the machine of
  * whoever wrote the guess.
  */
-function Cut({
-  name,
-  arg,
-  count = 0,
-  open: opened = false,
-  onPress,
-}: {
-  name: string;
-  arg: string | null;
-  /** How many processes this one line stands for, when it stands for
-      more than one — see `fold`. Zero on an ordinary row, and then
-      nothing is drawn. */
-  count?: number;
-  /** Whether that pool's members are listed under it. */
-  open?: boolean;
-  /** Press to list them, press again to fold them back. */
-  onPress?: () => void;
-}) {
+function Cut({ name, arg }: { name: string; arg: string | null }) {
   const line = useRef<HTMLSpanElement>(null);
   const [over, setOver] = useState(false);
   const [open, setOpen] = useState(false);
@@ -2126,31 +2043,6 @@ function Cut({
           aria-hidden="true"
           className="size-2.5 flex-none rounded-xs border border-muted-foreground/60"
         />
-      )}
-      {/* **How many this line stands for, and the way to see them.**
-          A count with no way to open it would be a number telling the
-          reader something is missing and nothing to do about it; the
-          press is what makes the fold a fold rather than a loss.
-
-          It is its own button and not the cell's press, because the
-          cell already has one (the truncation mark opens the text in
-          place) and one element cannot mean two things. */}
-      {count > 1 && (
-        <button
-          type="button"
-          data-top-count={count}
-          aria-expanded={opened}
-          onClick={(e) => {
-            e.stopPropagation();
-            onPress?.();
-          }}
-          className={cn(
-            "flex-none tabular-nums hover:text-foreground",
-            opened ? "font-title text-foreground" : "text-muted-foreground",
-          )}
-        >
-          {cli.top_fold(count)}
-        </button>
       )}
     </span>
   );
@@ -2230,113 +2122,6 @@ function Column({
       </button>
     </th>
   );
-}
-
-/** One line of the table: either a process, or a fold of several that
-    are the same thing. `members` is empty for a single row. */
-type Line = { key: string; row: Load["top"][number]; members: Load["top"][number][] };
-
-/**
- * **Ten rows saying one thing become one row saying it once.**
- *
- * 2026-09-05: turing's table spent ten of its lines on
- * `tokio-rt-worker serve` — same name, same identifying word, same
- * user, same parent, ten pids. The most expensive thing on that table
- * was one thing said ten times, and the width the reader wanted back
- * was mostly that.
- *
- * # The key, and why the parent is in it
- *
- * `(name, arg, user, ppid)`. Name and argument alone are **not** a key:
- * two unrelated `python3 main.py` under two different parents are two
- * answers, and joining them would invent a group that does not exist.
- * The parent is what makes the key mean 「siblings」 — which for
- * identical names is a pool.
- *
- * **A row whose parent the machine would not say is never folded.** An
- * older khor sends no parent at all (`ppid: null`), and treating those
- * as children of a common nobody would fold a whole process table into
- * one line. Absent is not zero, and here it is not a key either.
- *
- * # How the numbers merge, and the one that does not
- *
- * **CPU is summed**: each member burns its own, and 「this pool is
- * eating 76%」 is the true sentence.
- *
- * **Memory is summed unless the members report it byte-identically**,
- * and that rule is measured rather than assumed. The wire cannot say
- * whether members share their pages, so the numbers have to.
- *
- * Both cases live on this fleet:
- *
- *   - **Separate sets.** All thirteen folded groups on this Mac come
- *     back with *different* memory — `Chrome Helper (Renderer) ×29`
- *     spans 63M to 475M (max/min 15.5), and the closest pair of all,
- *     `zsh ×3`, still differs (1.04). Every one of them is a real
- *     process with a resident set of its own, and the sum is the true
- *     sentence.
- *   - **One shared set.** A Linux thread pool reports the *process's*
- *     RSS for every task (`/proc/<tid>/statm`), so ten
- *     `tokio-rt-worker serve` come back **byte-identical**. Adding
- *     those reports 1.7G for something holding 171M — and a memory
- *     ordering would then put an invented hog at the top of the table.
- *
- * Exact equality is the signature, not a tolerance: the nearest
- * false positive measured is 1.04, and a shared set is 1.00 by
- * construction. Card memory takes the same ruling for the same reason.
- * **Card utilisation is summed**, like CPU. The age is the oldest
- * member's — that is the pool's age.
- *
- * # What it costs
- *
- * The members are one press away (`Top`), so nothing is hidden, only
- * folded. And a fold of one is not a fold: a single row is drawn
- * exactly as it always was, with no count beside it.
- */
-function fold(rows: Load["top"]): Line[] {
-  const out: Line[] = [];
-  const at = new Map<string, number>();
-  for (const r of rows) {
-    // Never folded: see the head.
-    if (r.ppid === null) {
-      out.push({ key: `p${r.pid}`, row: r, members: [] });
-      continue;
-    }
-    const key = `${r.ppid}\u0000${r.user}\u0000${r.name}\u0000${r.arg ?? ""}`;
-    const seen = at.get(key);
-    if (seen === undefined) {
-      at.set(key, out.length);
-      out.push({ key, row: r, members: [r] });
-      continue;
-    }
-    out[seen].members.push(r);
-  }
-  for (const line of out) {
-    // A group of one is not a group: it is drawn exactly as it always
-    // was, and `members` empty is what says so.
-    if (line.members.length < 2) {
-      line.members = [];
-      continue;
-    }
-    const ms = line.members;
-    const shared = (pick: (r: Load["top"][number]) => number | null) => {
-      const vs = ms.map(pick);
-      if (vs.every((v) => v === null)) return null;
-      const ns = vs.map((v) => Number(v ?? 0));
-      // Byte-identical across every member is the shared-set signature
-      // — see the head. Anything else is that many resident sets.
-      return new Set(ns).size === 1 ? ns[0] : ns.reduce((a, b) => a + b, 0);
-    };
-    line.row = {
-      ...ms[0],
-      cpu_pct: ms.reduce((a, r) => a + r.cpu_pct, 0),
-      mem: shared((r) => Number(r.mem)) ?? 0,
-      gpu_pct: ms.every((r) => r.gpu_pct === null) ? null : ms.reduce((a, r) => a + (r.gpu_pct ?? 0), 0),
-      gpu_mem: shared((r) => r.gpu_mem),
-      run_secs: ms.every((r) => r.run_secs === null) ? null : Math.max(...ms.map((r) => r.run_secs ?? 0)),
-    };
-  }
-  return out;
 }
 
 /** The order a column press asks for.

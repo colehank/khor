@@ -306,26 +306,6 @@ try {
       { pid: 202, name: "node", user: "gate", cpu_pct: 12, mem: 128_000_000, gpu_pct: 5, gpu_mem: 2_000_000_000, run_secs: 45, arg: "scripts/check-face.mjs --with-a-very-long-tail-so-this-cell-cannot-possibly-fit-in-its-column-and-must-say-so" },
       // prettier-ignore
       { pid: 303, name: "kernel_task", user: "root", cpu_pct: 3.2, mem: 2_000_000_000, gpu_pct: null, gpu_mem: null, run_secs: null, arg: null },
-      // **A pool: four rows a real machine would draw four times and
-      // this face draws once** (turing, 2026-09-05, ten
-      // `tokio-rt-worker serve` under one parent). Same name, same
-      // word, same user, same parent, four pids — and **byte-identical
-      // memory**, which is the signature the fold's ruling on memory
-      // rests on: summing them would report 684M for something holding
-      // 171M. Their CPU differs, so a summed CPU is checkable too.
-      // prettier-ignore
-      { pid: 7001, name: "tokio-rt-worker", user: "gate", cpu_pct: 8, mem: 171_100_000, gpu_pct: null, gpu_mem: null, run_secs: 79_200, arg: "serve", ppid: 7000 },
-      // prettier-ignore
-      { pid: 7002, name: "tokio-rt-worker", user: "gate", cpu_pct: 7, mem: 171_100_000, gpu_pct: null, gpu_mem: null, run_secs: 79_100, arg: "serve", ppid: 7000 },
-      // prettier-ignore
-      { pid: 7003, name: "tokio-rt-worker", user: "gate", cpu_pct: 6, mem: 171_100_000, gpu_pct: null, gpu_mem: null, run_secs: 79_000, arg: "serve", ppid: 7000 },
-      // prettier-ignore
-      { pid: 7004, name: "tokio-rt-worker", user: "gate", cpu_pct: 5, mem: 171_100_000, gpu_pct: null, gpu_mem: null, run_secs: 78_900, arg: "serve", ppid: 7000 },
-      // **And one that must NOT join them**: same name, same word, same
-      // user — **a different parent**. Two unrelated pools are two
-      // answers, and a fold keyed on the name alone would make them one.
-      // prettier-ignore
-      { pid: 7101, name: "tokio-rt-worker", user: "gate", cpu_pct: 4, mem: 90_000_000, gpu_pct: null, gpu_mem: null, run_secs: 60_000, arg: "serve", ppid: 7100 },
       // **Twenty rows lifted from a real machine's distribution**
       // (turing, 2026-09-04, `dist-turing.json`): the median process
       // uses a fifth of one percent of a core while the busiest uses
@@ -1156,22 +1136,6 @@ try {
   // problem here」, and the next person to meet the control believes it.
   // So each entry says what a waiver does not buy.
   const UNDER_FLOOR = {
-    "data-top-count": [
-      "src/views/MachineCard.tsx",
-      "the count on a folded line (`× 4`), and it sits on a row that is 18 tall " +
-        "because nine rows in a fixed window is what this table is for — the same " +
-        "height the truncation mark beside it is waived under, and for the same " +
-        "reason: growing this to 44 grows the row, and the window then holds four " +
-        "rows instead of nine. It is also **not the way to the thing it counts**: " +
-        "the members it stands for are all still routed and all still in the " +
-        "answer, and the ordering that put this line where it is put them there " +
-        "too — folding is a way of *drawing* them, not a gate in front of them. " +
-        "**What it does not buy:** on a touch screen the one gesture that lists a " +
-        "pool's members is a 19×18 target, which is hard, and there is no second " +
-        "way in. That is a real hole. The answer is a row that opens on a press " +
-        "anywhere along it — the same answer the truncation mark's waiver is " +
-        "waiting on, and the same change. **It is not「no problem」.**",
-    ],
     "data-list-seam": [
       "src/App.tsx",
       "the floor is a floor under things whose size is free to grow, and this " +
@@ -1899,20 +1863,6 @@ try {
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-top]").count()) === 1);
   const busy = await page.evaluate(() => ({
     rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
-    //   **How many processes the folded lines stand for**, so 「every
-    //   routed row is on the table」 can still be asked of a table that
-    //   draws one line for ten of them (2026-09-05). The line itself is
-    //   one of them, so each fold hides `count - 1`.
-    foldedAway: [...document.querySelectorAll("[data-machine-card] [data-top-row][data-top-fold]")].reduce(
-      (n, r) => n + (Number(r.dataset.topFold) - 1),
-      0,
-    ),
-    //   The lines whose identifying word says something the name did
-    //   not — the fold collapses members, so this is a count of lines,
-    //   not of processes.
-    words: [...document.querySelectorAll("[data-machine-card] [data-top-row] [data-cmd-arg]")].filter(
-      (n) => n.textContent.trim() && n.getBoundingClientRect().width >= 1,
-    ).length,
     dayRows: [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((r) => {
       const segs = [...r.querySelectorAll("[data-day-cell]")];
       return {
@@ -1940,88 +1890,16 @@ try {
       td.textContent.trim(),
     ),
   }));
-  //     **Every routed process is on the table — drawn, or folded into
-  //     a line that says how many it stands for.** The table stopped
-  //     being one line per process on 2026-09-05, and the honest form
-  //     of the old claim is this one: a fold may hide members, it may
-  //     not lose them. It also catches the fold going the other way —
-  //     a key that joined two unrelated pools would leave the sum
-  //     right and the *line* count too low, which the second assertion
-  //     below is for.
-  if (busy.rows + busy.foldedAway !== load.top.length) {
-    fail(
-      `the peer's top draws ${busy.rows} lines standing for ${busy.rows + busy.foldedAway} processes, ` +
-        `and ${load.top.length} were routed — a fold may hide a row, not lose it`,
-    );
-  }
-  //     **And it really folded something.** The fixture carries a pool
-  //     of four siblings; a build that folded nothing would satisfy the
-  //     sum above by drawing every row, which is the state this whole
-  //     section replaced.
-  if (busy.foldedAway < 1) {
-    fail(`probe dead: nothing on this table is folded, so 「a fold may not lose a row」 was true of a table with no folds`);
-  }
-  //     **And each fold is exactly its own siblings.** The sum above
-  //     cannot see this: a key that joined two unrelated pools makes
-  //     one line out of two answers and 「lines + hidden = routed」
-  //     stays true the whole time — measured, by dropping the parent
-  //     from the key and watching every assertion stay green.
-  //
-  //     So the group is recomputed from the routed rows on the key the
-  //     fold claims to use, and compared with what the line says it
-  //     stands for. The fixture carries two pools of
-  //     `tokio-rt-worker serve` under two different parents for
-  //     exactly this.
-  {
-    const claimed = await page.evaluate(() =>
-      [...document.querySelectorAll("[data-machine-card] [data-top-row][data-top-fold]")].map((r) => ({
-        pid: Number(r.dataset.topRow),
-        parent: r.dataset.topParent === undefined ? null : Number(r.dataset.topParent),
-        count: Number(r.dataset.topFold),
-      })),
-    );
-    for (const c of claimed) {
-      const head = load.top.find((r) => r.pid === c.pid);
-      if (!head) {
-        fail(`a folded line says it is pid ${c.pid}, which is not among the routed rows`);
-        break;
-      }
-      const siblings = load.top.filter(
-        (r) => r.ppid !== null && r.ppid === head.ppid && r.user === head.user && r.name === head.name && r.arg === head.arg,
-      ).length;
-      if (c.parent !== head.ppid) {
-        fail(`a folded line claims parent ${c.parent} for a row whose parent is ${head.ppid}`);
-        break;
-      }
-      if (c.count !== siblings) {
-        fail(
-          `a line says it stands for ${c.count} but 「${head.name} ${head.arg}」 under parent ${head.ppid} is ${siblings} rows — ` +
-            `the key is joining things that are not siblings`,
-        );
-        break;
-      }
-    }
-    console.log(`fold: ${busy.rows} lines for ${busy.rows + busy.foldedAway} processes, ${claimed.map((c) => `×${c.count}`).join(" ")}`);
-  }
+  if (busy.rows !== load.top.length) fail(`the peer's top draws ${busy.rows} rows for ${load.top.length} routed`);
   //     Written against the fixture rather than as literals, so a
   //     changed fixture cannot leave this asserting yesterday's numbers.
   const withAge = load.top.filter((r) => r.run_secs !== null).length;
   const drawn = busy.ages.filter((t) => t !== "").length;
-  if (busy.ages.length !== busy.rows) {
-    fail(`the age column has ${busy.ages.length} cells for ${busy.rows} lines`);
+  if (busy.ages.length !== load.top.length) {
+    fail(`the age column has ${busy.ages.length} cells for ${load.top.length} rows`);
   }
-  //   ⚠️ **Against the lines, not the routed rows** — same reason as
-  //   the identifying word below: a pool's four members are one line
-  //   with one age (the oldest of them), so counting members reds on a
-  //   table that is right.
-  const wantAges = busy.rows - busy.ages.filter((t) => t === "").length;
-  if (drawn !== wantAges) {
-    fail(`${drawn} ages drawn for ${wantAges} lines that carry one — an absent age must draw nothing, not 0`);
-  }
-  //   Probe alive: the fixture really does have a line with no age, so
-  //   「an absent age draws nothing」 is being asked of something.
-  if (wantAges === busy.rows) {
-    fail(`probe dead: every one of the ${busy.rows} lines carries an age, so 「absent draws nothing」 was never tested`);
+  if (drawn !== withAge) {
+    fail(`${drawn} ages drawn for ${withAge} rows that carry one — an absent age must draw nothing, not 0`);
   }
   if (busy.ages.some((t) => /^0\s/.test(t))) {
     fail(`an age drew as a zero (${JSON.stringify(busy.ages)}) — 「没说」 became 「刚起的」`);
@@ -2056,21 +1934,16 @@ try {
           (c) => c.textContent.trim().length > 0 && c.getBoundingClientRect().width >= 1,
         ).length,
     );
-  //   ⚠️ **Against the lines, not against the routed rows.** Since the
-  //   fold (2026-09-05) a pool's four members are one line with one
-  //   word; comparing with `load.top` counts the members and reds on a
-  //   table that is correct.
-  const wantArgs = busy.words;
   const wideArgs = await argsAt();
   await page.setViewportSize({ width: 390, height: 844 });
   await new Promise((r) => setTimeout(r, 400));
   const narrowArgs = await argsAt();
   await page.setViewportSize({ width: 1120, height: 1000 });
   await new Promise((r) => setTimeout(r, 400));
-  if (wideArgs !== wantArgs) fail(`the wide card draws  identifying words for  lines that carry one`);
-  if (narrowArgs !== wantArgs) {
+  if (wideArgs !== withArg) fail(`the wide card draws ${wideArgs} identifying words for ${withArg} rows that carry one`);
+  if (narrowArgs !== withArg) {
     fail(
-      `the narrow card draws  identifying words for  lines that carry one — ` +
+      `the narrow card draws ${narrowArgs} identifying words for ${withArg} rows that carry one — ` +
         `on 390 the rows collapse to their short names, which is the case this word exists for`,
     );
   }
@@ -3942,50 +3815,23 @@ try {
     //   below it with them — the whole table came apart, while the
     //   assertion above (「it grew, then it shrank」) stayed true. So:
     //   open one, and check the columns still line up.
-    //   ⚠️ **At a width where there is a grid to come apart.** This
-    //   ran at whatever width the section before it left behind, and
-    //   the fixture's table is *stacked* there — rows are flex boxes,
-    //   there are no tracks, and `[data-c]:empty` hides a cell that has
-    //   nothing in it (which a folded line's pid now does, because a
-    //   group is not a process). The probe then read two left edges and
-    //   called a correct stacked table 「the grid came apart」. Same
-    //   lesson as the drawer's shared-grid section directly above:
-    //   widen first, then refuse to conclude if it is still tight.
-    await page.setViewportSize({ width: 1120, height: 1000 });
-    await wait(250);
-    if (await page.evaluate(() => document.querySelector("[data-machine-card] [data-load-top-box]")?.dataset.tight !== undefined)) {
-      fail("probe dead: the table is stacked at 1120, so 「the grid came apart」 had no grid to look at");
-    }
     const whileOpen = await page.evaluate(async () => {
       const c = document.querySelector('[data-machine-card] [data-c="cmd"][data-cut]');
-      if (!c) return null;
       c.click();
       await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-      const cells = [...document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="pid"]')];
-      const lefts = [...new Set(cells.map((n) => +n.getBoundingClientRect().left.toFixed(1)))];
-      window.__pidOdd = cells
-        .filter((n) => n.getBoundingClientRect().left !== lefts[0])
-        .slice(0, 2)
-        .map((n) => ({
-          row: n.parentElement.dataset.topRow,
-          fold: n.parentElement.dataset.topFold ?? null,
-          display: getComputedStyle(n).display,
-          parentDisplay: getComputedStyle(n.parentElement).display,
-          text: n.textContent,
-          w: +n.getBoundingClientRect().width.toFixed(1),
-        }));
+      const lefts = [
+        ...new Set(
+          [...document.querySelectorAll('[data-machine-card] [data-top-row] [data-c="pid"]')].map(
+            (n) => +n.getBoundingClientRect().left.toFixed(1),
+          ),
+        ),
+      ];
       c.click();
       await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
       return lefts;
     });
-    if (whileOpen === null) {
-      fail("probe dead: no truncated cell to open at 1120, so 「the grid stays put while one is open」 measured nothing");
-    } else if (whileOpen.length !== 1) {
-      const odd = await page.evaluate(() => window.__pidOdd);
-      fail(
-        `with a cell open the PID column has ${whileOpen.length} left edges (${whileOpen.slice(0, 4).join(",")}) — ` +
-          `the grid came apart: ${JSON.stringify(odd)}`,
-      );
+    if (whileOpen.length !== 1) {
+      fail(`with a cell open the PID column has ${whileOpen.length} left edges (${whileOpen.slice(0, 4).join(",")}) — the grid came apart`);
     }
   }
 
