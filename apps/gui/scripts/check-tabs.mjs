@@ -707,11 +707,28 @@ try {
     await until("the rail to settle", 10_000, async () =>
       (await rail("browser").count()) + (await page.locator("[data-rail-more]").count()) > 0,
     );
-    if ((await rail("browser").count()) === 0) {
-      await page.locator("[data-rail-more]").click();
-      await page.locator('[data-more-landing="browser"]').click();
-    } else {
-      await rail("browser").click();
+    //   ⚠️ **Decide and press in one attempt, and retry the whole
+    //   attempt.** The wait above is satisfied by *either* shape, so on
+    //   a viewport change it can pass while the wide rail is still on
+    //   screen — and then the branch presses a button the narrow
+    //   re-render is about to remove. Measured 2026-09-06 at the
+    //   390-wide stop: `element was detached from the DOM` on a rail
+    //   button playwright had just resolved, and on later runs the
+    //   locator never resolving at all. **It reproduces at
+    //   `853447b` too**, so it is this walk's race and not the card's.
+    for (let i = 0; ; i += 1) {
+      try {
+        if ((await rail("browser").count()) === 0) {
+          await page.locator("[data-rail-more]").click({ timeout: 4_000 });
+          await page.locator('[data-more-landing="browser"]').click({ timeout: 4_000 });
+        } else {
+          await rail("browser").click({ timeout: 4_000 });
+        }
+        break;
+      } catch (e) {
+        if (i >= 4) throw e;
+        await new Promise((r) => setTimeout(r, 400));
+      }
     }
     await until("the browser landing", 10_000, async () =>
       (await page.locator('[data-browse-landing="page"]').count()) === 1,

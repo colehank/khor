@@ -2090,18 +2090,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                 onClick={() => onPoint(r.pid)}
                 className="cursor-pointer"
               >
-                {/* **The target, and it is not the dot.** The drawn
-                    circle is 1.8px because that is what keeps two
-                    hundred of them readable; the thing a pointer has to
-                    hit is this transparent one. It is still far under
-                    the finger's floor and is waived by name in the face
-                    gate — a scatter point cannot be 44px without
-                    becoming the plot, and **what the waiver does not
-                    buy** is a keyboard: a point cannot be tabbed to.
-                    The rows it points at are the table directly below,
-                    which is the canonical list and is reachable
-                    without this. */}
-                <circle cx={cx} cy={cy} r={7} fill="transparent" />
+
                 {r.gpu_mem !== null && r.gpu_mem > 0 && (
                   <circle
                     data-plot-halo={Math.round(halo(r.gpu_mem) * 10) / 10}
@@ -2124,7 +2113,30 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                     strokeDasharray="2 2"
                   />
                 )}
-                <circle cx={cx} cy={cy} r={1.8} fill="currentColor" fillOpacity={0.75}>
+                {/* **The target is wider than the dot, and it is the
+                    same circle.** The drawn radius is 1.8 because that
+                    is what keeps two hundred of them readable; the
+                    pointer gets a transparent stroke around it rather
+                    than a second element — two hundred extra nodes on a
+                    card that re-lays-out on every viewport change is a
+                    cost with nothing to show for it.
+
+                    Still far under the finger's floor, and waived by
+                    name in the face gate: a scatter point cannot be
+                    44px without becoming the plot. **What the waiver
+                    does not buy** is a keyboard — a point cannot be
+                    tabbed to — and the rows it points at are the table
+                    directly below, which is the canonical list and is
+                    reachable without any of this. */}
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={1.8}
+                  fill="currentColor"
+                  fillOpacity={0.75}
+                  stroke="transparent"
+                  strokeWidth={11}
+                >
                   {/* **First line is the command, verbatim what the
                       table's cell says** (`cmdText`) — 2026-09-06:
                       「悬浮散点要显示命令名」. The two readings go under
