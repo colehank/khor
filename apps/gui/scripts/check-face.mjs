@@ -2656,16 +2656,37 @@ try {
     await wait(300);
     const look = await page.evaluate(() => {
       const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
-      const cell = document.querySelector("[data-machine-card] [data-top-row] > *");
+      //   ⚠️ **Every cell of a row, not its first.** The first child is
+      //   the pid, and the pid is the one cell drawn in the muted ink —
+      //   so comparing the head with it reported 「0.62 → 0.94」 and
+      //   passed while the head and **every other cell on the table**
+      //   were the same 0.94. An assertion aimed at the one atypical
+      //   member of a set is an assertion about nothing.
+      const row = document.querySelector("[data-machine-card] [data-top-row]");
+      const cells = row ? [...row.children] : [];
+      const cell = cells[0];
       const pick = document.querySelector("[data-machine-card] [data-plot-pick]");
       const seam = document.querySelector("[data-machine-card] [data-top-seam]");
       if (!head || !cell) return null;
       const cs = (n) => getComputedStyle(n);
+      const lum = (c) => {
+        const m = /rgba?\(([^)]+)\)/.exec(c);
+        if (!m) return 0;
+        const [r, g, b, a = "1"] = m[1].split(",").map((x) => parseFloat(x));
+        //   How much ink actually lands, against the paper: the alpha
+        //   is the channel this palette uses for its ink steps.
+        return +(parseFloat(a) * (1 - (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255)).toFixed(3);
+      };
       return {
         headWeight: +cs(head).fontWeight,
         rowWeight: +cs(cell).fontWeight,
         headColor: cs(head).color,
         rowColor: cs(cell).color,
+        //   The whole row, so the claim is about the table and not
+        //   about whichever cell happened to come first.
+        cellWeights: [...new Set(cells.map((c) => +cs(c).fontWeight))],
+        cellInks: [...new Set(cells.map((c) => lum(cs(c).color)))],
+        headInk: lum(cs(head).color),
         //   The rule under the heads, and the one above the table.
         headRule: cs(head).boxShadow,
         seamRule: seam ? +parseFloat(cs(seam).borderTopWidth || "0") : null,
@@ -2688,13 +2709,32 @@ try {
     if (!look) {
       fail("probe dead: no column head or no row, so 「the heads read as heads」 measured nothing");
     } else {
-      //   **Heavier, darker, or both — and something must differ.** A
-      //   head set exactly like the rows is the thing complained about.
-      if (look.headWeight <= look.rowWeight && look.headColor === look.rowColor) {
-        fail(
-          `the column heads are set like the rows (weight ${look.headWeight} vs ${look.rowWeight}, ` +
-            `ink ${look.headColor}) — nothing on screen says which line is the head`,
-        );
+      //   **Heavier than every cell, and no lighter than any of them.**
+      //
+      //   Not 「darker」: the table's numbers are already at full ink
+      //   (measured, every cell but the pid: alpha .94), so a head
+      //   cannot be darker than its body without dimming the data,
+      //   which is the wrong thing to trade. Weight is the channel
+      //   that is left, and the rule under the heads is the other
+      //   half — see the stylesheet, where it is also made to run
+      //   unbroken across the gaps.
+      if (!look.cellWeights.length) {
+        fail("probe dead: the row has no cells, so 「the head is set apart」 measured nothing");
+      } else {
+        const heaviestCell = Math.max(...look.cellWeights);
+        if (look.headWeight <= heaviestCell) {
+          fail(
+            `the column heads weigh ${look.headWeight} against ${look.cellWeights.join("/")} in the row — ` +
+              `nothing on screen says which line is the head`,
+          );
+        }
+        const darkestCell = Math.max(...look.cellInks);
+        if (look.headInk < darkestCell - 0.02) {
+          fail(
+            `the column heads are lighter than the rows (ink ${look.headInk} against ${look.cellInks.join("/")}) — ` +
+              `a head has to be at least as present as what is under it`,
+          );
+        }
       }
       if (!look.headRule || look.headRule === "none") {
         fail("the column heads carry no rule under them — the line that says 「rows start here」 is missing");
@@ -2713,7 +2753,7 @@ try {
         );
       }
       console.log(
-        `heads: weight ${look.rowWeight}→${look.headWeight}, ink ${look.rowColor}→${look.headColor}, ` +
+        `heads: weight ${look.cellWeights.join("/")}→${look.headWeight}, ink ${look.cellInks.join("/")}→${look.headInk}, ` +
           `rule under them ${look.headRule !== "none"}, seam ${look.seamRule}px, ` +
           `axis words ${look.pickToHead}px above the head against a ${look.rowPitch}px row`,
       );
@@ -2843,8 +2883,25 @@ try {
       if (!t) return null;
       const heads = [...document.querySelectorAll("[data-machine-card] [data-top-heads] > *")];
       if (heads.length < 4) return { heads: heads.length };
-      const box = t.getBoundingClientRect();
-      const rects = heads.map((h) => h.getBoundingClientRect());
+      //   ⚠️ **The container's right edge, not the grid's own.** This
+      //   read `t.getBoundingClientRect()` — the grid itself — and
+      //   compared it with the grid's own last track. A grid is exactly
+      //   as wide as its tracks unless something stretches it, so that
+      //   difference is **0 whatever the table does**: a table sized to
+      //   its content passes identically. The number it printed was
+      //   right and could not have been wrong, which is the same fault
+      //   as reading a floor off the element it is meant to constrain.
+      const holder = t.parentElement;
+      const box = holder.getBoundingClientRect();
+      //   ⚠️ **Track geometry off the row cells, not the heads.** Each
+      //   head but the last is widened by one gap and padded back by it
+      //   so the rule under them runs unbroken; measured on the heads,
+      //   every track then reads a gap wider than it is and every gap
+      //   reads zero. The row cells are the tracks without that
+      //   compensation.
+      const firstRow = document.querySelector("[data-machine-card] [data-top-row]");
+      const trackEls = firstRow ? [...firstRow.children] : heads;
+      const rects = trackEls.map((h) => h.getBoundingClientRect());
       const gaps = rects.slice(1).map((r, i) => +(r.left - rects[i].right).toFixed(1));
       const probe = document.createElement("span");
       probe.style.cssText = "position:absolute;visibility:hidden;width:var(--gap-in)";
@@ -2866,7 +2923,7 @@ try {
         return Number.isFinite(w) ? w : 0;
       };
       const slackIn = {};
-      for (let i = 0; i < heads.length; i += 1) {
+      for (let i = 0; i < trackEls.length && i < heads.length; i += 1) {
         const key = heads[i].dataset.topHead ?? heads[i].dataset.c;
         const cells = [...document.querySelectorAll(`[data-machine-card] [data-top-row] [data-c="${key}"]`)];
         //   ⚠️ **The head's ink is inside its button, not its box.** A
@@ -2883,6 +2940,7 @@ try {
       return {
         heads: heads.length,
         boxW: +box.width.toFixed(1),
+        gridW: +t.getBoundingClientRect().width.toFixed(1),
         slack: +(box.right - rects[rects.length - 1].right).toFixed(1),
         gaps,
         gap: +gap.toFixed(1),
@@ -2926,7 +2984,8 @@ try {
         );
       }
       console.log(
-        `table at 1500: box ${spread.boxW}, slack ${spread.slack}, gaps ${spread.gaps.join("/")} (gap ${spread.gap}), ` +
+        `table at 1500: holder ${spread.boxW}, grid ${spread.gridW}, last track ${spread.slack} short of it, ` +
+          `gaps ${spread.gaps.join("/")} (gap ${spread.gap}), ` +
           `room beyond ink ${Object.entries(spread.slackIn).map(([k, v]) => `${k}:${v}`).join(" ")}`,
       );
     }

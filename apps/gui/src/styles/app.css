@@ -638,6 +638,20 @@ input[type="search"]::-webkit-search-decoration {
   font-weight: var(--font-weight-title);
   box-shadow: inset 0 calc(-1 * var(--hair)) 0 0 var(--border);
 }
+/* ⚠️ **The rule has to be continuous, and per-cell it was not.** The
+   heads are grid items with `--gap-in` between them, and a shadow drawn
+   inside each one stops at each gap: on screen it reads as a row of
+   dashes rather than as the line a table's head sits on. Seen at 3× in
+   a screenshot after the measurements said the head was 600 against the
+   body's 400 and「明显」 was still not what a reader saw.
+
+   Each head but the last is widened by exactly the gap and padded back
+   by it, so the boxes touch and the shadow runs across, while every
+   word stays on the pixel it was on. */
+[data-load-top] [data-top-heads] > *:not(:last-child) {
+  margin-inline-end: calc(-1 * var(--gap-in));
+  padding-inline-end: var(--gap-in);
+}
 
 /* **Nothing in this table wraps.** 2026-09-04:「表的内容,比如"内存"是不
    允许换行的」. A cell that runs out of room truncates and puts up the
