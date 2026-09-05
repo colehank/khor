@@ -1136,6 +1136,24 @@ try {
   // problem here」, and the next person to meet the control believes it.
   // So each entry says what a waiver does not buy.
   const UNDER_FLOOR = {
+    "data-plot-point": [
+      "src/views/MachineCard.tsx",
+      "a point on the scatter, and the floor is the wrong criterion because a " +
+        "44px point is not a small point — it is the plot. Two hundred of them " +
+        "at that size would tile the whole drawing and there would be nothing " +
+        "left to read; the *drawn* dot is 1.8px for exactly that reason, and " +
+        "the target is already a transparent circle four times its radius. " +
+        "This is WCAG 2.5.5's Essential carve-out in its literal form: the " +
+        "size is determined by the information being presented. **What it " +
+        "does not buy:** a keyboard, and a finger. A point cannot be tabbed " +
+        "to and cannot be reliably hit on a touch screen — and what a point " +
+        "*does* is jump to a row of the table directly under it, which is the " +
+        "canonical list, is fully reachable by keyboard, and is where that " +
+        "reader was going anyway. So the affordance is additive: nothing is " +
+        "only available through it. **It is not「no problem」** — a touch user " +
+        "on a dense plot will miss, and the answer to that is a bigger idea " +
+        "(brush, or a nearest-point hit test), not a bigger dot.",
+    ],
     "data-list-seam": [
       "src/App.tsx",
       "the floor is a floor under things whose size is free to grow, and this " +
@@ -2813,6 +2831,7 @@ try {
       const seam = document.querySelector("[data-machine-card] [data-top-seam]");
       const table = document.querySelector("[data-machine-card] [data-load-top-box]");
       const plot = document.querySelector("[data-machine-card] [data-top-plot]");
+      const svg = document.querySelector("[data-machine-card] [data-plot-svg]");
       if (!head || !cell) return null;
       const cs = (n) => getComputedStyle(n);
       const lum = (c) => {
@@ -2858,6 +2877,58 @@ try {
           pick && head
             ? +(head.getBoundingClientRect().top - pick.getBoundingClientRect().bottom).toFixed(1)
             : null,
+        //   **Are the axis labels inside the drawing?** (2026-09-06:
+        //   「以合适的方式显示x和y label,比如贴在坐标轴内侧。不要占用
+        //   与下方的间隔空间」.) Asked as containment rather than as a
+        //   gap, because containment is what was asked for *and*
+        //   implies the rest: a label inside the drawing occupies no
+        //   row in the flow, so it cannot be the space between the
+        //   figure and the table.
+        //   ⚠️ **The ink, not the element.** The label's hit area is
+        //   44px tall on purpose and the strip it sits in is a third of
+        //   that, so the *box* hangs out of the drawing by design —
+        //   asked that way this reported both labels outside on a build
+        //   where both words were plainly inside. What has to be in the
+        //   drawing is what a reader can see.
+        labels: svg
+          ? [...document.querySelectorAll("[data-machine-card] [data-plot-pick]")].map((n) => {
+              //   Over the **text nodes**: a range that contains an
+              //   element takes that element's border box, and the
+              //   button here is 44px tall — which is the same wrong
+              //   answer one level down.
+              let top = Infinity;
+              let bottom = -Infinity;
+              let left = Infinity;
+              let right = -Infinity;
+              const walk = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+              for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+                if (!t.textContent.trim()) continue;
+                const g = document.createRange();
+                g.selectNodeContents(t);
+                const b = g.getBoundingClientRect();
+                if (!b.width && !b.height) continue;
+                top = Math.min(top, b.top);
+                bottom = Math.max(bottom, b.bottom);
+                left = Math.min(left, b.left);
+                right = Math.max(right, b.right);
+              }
+              const r = { top, bottom, left, right };
+              const v = svg.getBoundingClientRect();
+              return {
+                which: n.dataset.plotPick,
+                inside:
+                  Number.isFinite(r.top) &&
+                  r.top >= v.top - 1 &&
+                  r.bottom <= v.bottom + 1 &&
+                  r.left >= v.left - 1 &&
+                  r.right <= v.right + 1,
+              };
+            })
+          : [],
+        //   And what is left between the last of the drawing and the
+        //   first of the table, for the record.
+        figureToHead:
+          svg && head ? +(head.getBoundingClientRect().top - svg.getBoundingClientRect().bottom).toFixed(1) : null,
         rowPitch: (() => {
           const rows = [...document.querySelectorAll("[data-machine-card] [data-top-row]")].slice(0, 2);
           if (rows.length < 2) return null;
@@ -2916,6 +2987,19 @@ try {
       if (look.plotToTable !== null && !(look.plotToTable > 0)) {
         fail(`the table starts ${look.plotToTable}px after the figure ends — the two are back in the other order`);
       }
+      //   **Both axis labels sit inside the drawing.** Red arm: put
+      //   one back in the flow and its box leaves the svg's.
+      if (look.labels.length !== 2) {
+        fail(`probe dead: ${look.labels.length} axis labels found, not two — 「tucked inside」 measured nothing`);
+      } else {
+        const out = look.labels.filter((l) => !l.inside).map((l) => l.which);
+        if (out.length) {
+          fail(
+            `the ${out.join(" and ")} axis label sits outside the drawing — a label in the flow spends a row of ` +
+              `the card on one word, and the lower one spends it between the figure and the table`,
+          );
+        }
+      }
       //   And they are still two blocks rather than one — the reason
       //   the first swap happened at all. If anything above the head
       //   ever grows back into a row of headings, this distance is what
@@ -2929,8 +3013,9 @@ try {
       console.log(
         `heads: weight ${look.cellWeights.join("/")}→${look.headWeight}, ink ${look.cellInks.join("/")}→${look.headInk}, ` +
           `rule under them ${look.headRule !== "none"}, seam ${look.seamRule}px, ` +
-          `figure ends ${look.plotToTable}px before the table, head ${look.pickToHead}px below the axis words ` +
-          `against a ${look.rowPitch}px row`,
+          `figure ends ${look.plotToTable}px before the table, drawing to head ${look.figureToHead}px, ` +
+          `labels inside ${look.labels.map((l) => `${l.which}:${l.inside}`).join(" ")}, ` +
+          `head ${look.pickToHead}px below the axis words against a ${look.rowPitch}px row`,
       );
     }
   }
@@ -4028,6 +4113,141 @@ try {
         `plot axes: cpu×mem ${start.points} points → cpu×时长 ruler ${onTime.yTicks.slice(0, 24)}… → ` +
           `显存×时长 ${onVram.points} points with ${onVram.off} said to be off; after leaving the pane ${elsewhere ? elsewhere.chosen : "no plot"}`,
       );
+    }
+  }
+
+  //     ── a point says what it is, and takes you to its row ────────
+  //
+  //     2026-09-06:「悬浮散点要显示命令名。点击散点要定位到表格的行,
+  //     并高亮一瞬」. Two claims, and the expensive half of each is not
+  //     「did something happen」 but 「did the right thing happen」.
+  {
+    //   **Same string, character for character, as the table's cell.**
+    //   Two places assembling their own version of 「what this process
+    //   is」 drift, and the day one row reads `python3` on the dot and
+    //   `python3 train.py` in the table, no gate here would say a word
+    //   — a reader would spot it at once. So this compares the two
+    //   *rendered* strings rather than checking that both call the
+    //   same helper: the helper is the fix, this is the evidence.
+    const say = await page.evaluate(() => {
+      const pts = [...document.querySelectorAll("[data-machine-card] [data-plot-point]")];
+      const out = [];
+      for (const g of pts.slice(0, 40)) {
+        const pid = g.dataset.plotPoint;
+        const t = g.querySelector("title");
+        const cell = document.querySelector(`[data-machine-card] [data-top-row="${pid}"] [data-cmd-line]`);
+        if (!t || !cell) continue;
+        out.push({ pid, said: t.textContent.split("\n")[0].trim(), cell: cell.textContent.trim() });
+      }
+      return out;
+    });
+    if (say.length < 5) {
+      fail(`probe dead: ${say.length} points could be paired with a row, so 「the dot says what the table says」 measured nothing`);
+    } else {
+      const off = say.filter((x) => x.said !== x.cell);
+      if (off.length) {
+        fail(
+          `${off.length} of ${say.length} points name their process differently from the table ` +
+            `(pid ${off[0].pid}: dot ${JSON.stringify(off[0].said)} vs table ${JSON.stringify(off[0].cell)}) — ` +
+            `two places assembling the same string is two places to drift`,
+        );
+      } else {
+        console.log(`plot hover: ${say.length} points say exactly what their row says`);
+      }
+    }
+
+    //   **A press on a point lands on that row, below the head.**
+    //
+    //   ⚠️ The row is chosen as **the last one that also has a point**,
+    //   so the table has to actually scroll to reach it. On a table
+    //   short enough to fit, every arrangement passes — including the
+    //   one that scrolls the row under the sticky head, which is the
+    //   bug this is here for.
+    //   Wide enough that the table is a grid with sticky heads — the
+    //   stacked layout has no heads at all, and 「below the head」 there
+    //   is a question about an element that is `display: none`.
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await wait(400);
+    const want = await page.evaluate(() => {
+      const pts = new Set([...document.querySelectorAll("[data-machine-card] [data-plot-point]")].map((g) => g.dataset.plotPoint));
+      const rows = [...document.querySelectorAll("[data-machine-card] [data-top-row]")];
+      const box = document.querySelector("[data-machine-card] [data-load-top-box]");
+      const floor = box.getBoundingClientRect().bottom;
+      //   ⚠️ **The first row that is out of sight below the window —
+      //   not the last row.** Scrolling to the last one runs the box to
+      //   its maximum, and a maximum is the same wherever you asked to
+      //   go: measured, the arm that removed the sticky head's height
+      //   from the scroll **stayed green** against the last row,
+      //   because the clamp put it in the right place anyway. A row
+      //   just past the fold needs an exact scroll, and an exact scroll
+      //   is the only kind that can be wrong by the height of a head.
+      const hit = rows.find(
+        (r) => pts.has(r.dataset.topRow) && r.firstElementChild.getBoundingClientRect().top > floor,
+      );
+      return {
+        pid: hit ? hit.dataset.topRow : null,
+        rows: rows.length,
+        hot: document.querySelectorAll("[data-machine-card] [data-top-row][data-hot]").length,
+        scrollTop: box ? Math.round(box.scrollTop) : null,
+        scrollable: box ? box.scrollHeight - box.clientHeight : null,
+      };
+    });
+    if (!want.pid) {
+      fail("probe dead: no point shares a pid with a row, so 「a press goes to its row」 had nothing to press");
+    } else if (want.hot !== 0) {
+      //   The aliveness half: if a row were already marked, 「it is
+      //   marked after the press」 would pass without a press.
+      fail(`${want.hot} rows were already highlighted before anything was pressed — the probe cannot tell`);
+    } else {
+      await page.locator(`[data-machine-card] [data-plot-point="${want.pid}"]`).click();
+      await wait(400);
+      const got = await page.evaluate(() => {
+        const hot = [...document.querySelectorAll("[data-machine-card] [data-top-row][data-hot]")];
+        const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
+        const box = document.querySelector("[data-machine-card] [data-load-top-box]");
+        const cell = hot[0]?.firstElementChild;
+        const c = cell?.getBoundingClientRect();
+        const h = head?.getBoundingClientRect();
+        const b = box?.getBoundingClientRect();
+        return {
+          n: hot.length,
+          pid: hot[0]?.dataset.topRow ?? null,
+          //   ⚠️ **Two edges, not one.** 「below the head」 alone is
+          //   satisfied by a row that never came into view at all —
+          //   measured: the first version of this reported a row
+          //   **767px** below the head and passed. Visible means below
+          //   the head *and* above the box's own bottom.
+          under: c && h ? +(c.top - h.bottom).toFixed(1) : null,
+          within: c && b ? +(b.bottom - c.bottom).toFixed(1) : null,
+          scrollTop: box ? Math.round(box.scrollTop) : null,
+          tint: cell ? getComputedStyle(cell).backgroundColor : null,
+        };
+      });
+      if (got.n !== 1) fail(`pressing a point highlighted ${got.n} rows, not one`);
+      else if (got.pid !== want.pid) fail(`pressing the point for pid ${want.pid} highlighted pid ${got.pid} instead`);
+      else if (!(got.under >= -1)) {
+        fail(
+          `the row a point asked for sits ${got.under}px above the sticky head's bottom — it scrolled *behind* the ` +
+            `heads, which is the way this lands on a table long enough to scroll`,
+        );
+      } else if (!(got.within >= -1)) {
+        fail(
+          `the row a point asked for is ${got.within}px past the bottom of the table's window — it was marked ` +
+            `but never brought into view, and 「below the head」 alone cannot tell those apart`,
+        );
+      } else if (want.scrollable > 0 && got.scrollTop === want.scrollTop) {
+        fail(
+          `the table did not scroll (${got.scrollTop} either side, ${want.scrollable}px of scroll available) — ` +
+            `the row was reachable only because it already happened to be on screen`,
+        );
+      } else if (!got.tint || /rgba?\(0, 0, 0, 0\)|transparent/.test(got.tint)) {
+        fail(`the highlighted row's cells have no tint (${got.tint}) — the row is marked in the DOM and not on the glass`);
+      } else {
+        console.log(
+          `plot press: pid ${got.pid} of ${want.rows} rows, scroll ${want.scrollTop}→${got.scrollTop} of ${want.scrollable}, ` +
+            `${got.under}px below the head and ${got.within}px above the window's floor, tint ${got.tint}`,
+        );
+      }
     }
   }
 

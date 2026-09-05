@@ -667,6 +667,33 @@ input[type="search"]::-webkit-search-decoration {
    opens in place, and open it wraps — that is the whole affordance,
    and it is exactly what the mark promised. */
 [data-load-top] [data-top-heads] > *,
+/* **The row a scatter point asked for, marked for a moment**
+   (2026-09-06:「点击散点要定位到表格的行,并高亮一瞬」).
+
+   ⚠️ **On the cells, not the row.** A row is `display: contents` and
+   has no box, so a background on it paints nothing — the same trap the
+   sticky heads fell into a few rules above, and it is silent: the rule
+   is there, it is valid, and the screen never changes.
+
+   `--accent` is the token whose whole definition is 「a tint to lie
+   behind something」, so no new colour is invented for one moment of
+   one row.
+
+   **Reduced motion keeps the mark and drops the fade.** The component
+   holds it longer in that case (see `Top`): what the setting asks to
+   remove is the movement, not the answer. */
+[data-load-top] [data-top-row] > * {
+  transition: background-color var(--dur-420) var(--ease-out);
+}
+[data-load-top] [data-top-row][data-hot] > * {
+  background-color: var(--accent);
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-load-top] [data-top-row] > * {
+    transition: none;
+  }
+}
 [data-load-top] [data-top-row] > * {
   white-space: nowrap;
 }

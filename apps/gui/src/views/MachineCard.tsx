@@ -1296,6 +1296,9 @@ function Busy({
   asking: SortCol | null;
   onSort: (s: Sort) => void;
 }) {
+  /** Which row a scatter point last asked for, and how many times it
+      has asked. See where it is set. */
+  const [hot, setHot] = useState<{ pid: number; n: number } | null>(null);
   // **A refusal keeps the column heads and loses the rows.** It used to
   // replace the whole table, heads included, and that made an ordinary
   // mistake unrecoverable: ordering a remote by PID is refused by a khor
@@ -1311,7 +1314,7 @@ function Busy({
   if (why) {
     return (
       <Panel>
-        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} seen={seen} />
+        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} seen={seen} hot={null} />
       </Panel>
     );
   }
@@ -1340,7 +1343,22 @@ function Busy({
           this one. **If a third swap is ever proposed, the thing to
           check is not the order but whether anything above the table's
           head has gone back to looking like a row of headings.** */}
-      <Scatter rows={load.top} />
+      {/* **A point knows which row it is** (2026-09-06:「点击散点要定位
+          到表格的行,并高亮一瞬」). What travels is the **pid**, never a
+          row index: the table's order changes under the reader's hand,
+          and an index is an address that goes stale between the press
+          and the scroll.
+
+          **The two cannot disagree about which rows exist**: both are
+          `load.top`, the same two hundred. The figure draws a subset of
+          them (a row missing either reading is not placed — see
+          `Scatter`), so it can only ever ask for a row the table has.
+          That is why there is no 「not found」 branch here: it is not a
+          case being ignored, it is a case the shared source rules out.
+
+          A counter rides with the pid so pressing the same point twice
+          is two answers rather than one. */}
+      <Scatter rows={load.top} onPoint={(pid) => setHot({ pid, n: (hot?.n ?? 0) + 1 })} />
       {/* **A rule between the figure and the table.** They are one
           block — the same two hundred processes, drawn and then listed
           — so a hairline and `--gap-group` on both sides rather than
@@ -1352,7 +1370,7 @@ function Busy({
           row, which is a break narrower than twice the rhythm it is
           breaking. */}
       <div data-top-seam className="mt-group border-t pt-group">
-        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} seen={seen} />
+        <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} seen={seen} hot={hot} />
       </div>
     </Panel>
   );
@@ -1398,6 +1416,7 @@ function Top({
   onSort,
   why,
   seen,
+  hot,
 }: {
   rows: Load["top"];
   /** The order these rows are actually in — see `useLoad`. */
@@ -1428,6 +1447,10 @@ function Top({
 
       So it comes from above and it latches — see `useLoad`. */
   seen: Seen;
+  /** The row a scatter point asked for, with a counter so the same
+      point pressed twice arrives twice. `null` while no point has been
+      pressed, and on the surface that has no figure. */
+  hot: { pid: number; n: number } | null;
 }) {
   // **A column exists when a row on this machine has ever filled it.**
   // A whole column of blanks is worse than no column: it takes width
@@ -1450,6 +1473,39 @@ function Top({
   // window breakpoint once left a 106px overflow band invisible to any
   // two-point check.
   const tight = useOverflows(box, grid, shown.join(","));
+  // **Go to the row a point asked for, and say which one it was.**
+  //
+  // ⚠️ **Scrolled by the cell, not the row.** A row here joins the grid
+  // with `display: contents` and therefore has no box at all —
+  // `getBoundingClientRect()` on one returns zeros, and a scroll
+  // computed from that goes to the top of the table every time. The
+  // first cell is a real box.
+  //
+  // ⚠️ **And it stops below the head, not under it.** The heads are
+  // sticky, so a row scrolled to the top of the scroll port lands
+  // *behind* them — the classic version of this bug, and one that never
+  // shows on a table short enough not to scroll.
+  useEffect(() => {
+    if (!hot) return;
+    const b = box.current;
+    const row = b?.querySelector(`[data-top-row="${hot.pid}"]`);
+    const cell = row?.firstElementChild;
+    const head = b?.querySelector("[data-top-heads] > *");
+    if (!b || !row || !cell) return;
+    const headH = head ? head.getBoundingClientRect().height : 0;
+    b.scrollTop += cell.getBoundingClientRect().top - b.getBoundingClientRect().top - headH - 4;
+    row.setAttribute("data-hot", "");
+    // **Reduced motion gets a longer, still highlight, not nothing.**
+    // The stylesheet drops the fade; if the mark also vanished at the
+    // same instant, the one reader who most needs a static cue would
+    // get no cue at all.
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const t = window.setTimeout(() => row.removeAttribute("data-hot"), still ? 2400 : 1200);
+    return () => {
+      window.clearTimeout(t);
+      row.removeAttribute("data-hot");
+    };
+  }, [hot]);
   const press = (col: SortCol) => {
     // Pressing the column it is already on turns it over. Pressing a
     // new one starts the way that column is read — biggest first for a
@@ -1600,6 +1656,22 @@ function Top({
       </div>
     </div>
   );
+}
+
+/**
+ * **The 「命令」 text, in one place**, because two places drift.
+ *
+ * The table's cell and the scatter's hover both say what a process is,
+ * and if each assembled its own string the day would come when one row
+ * reads `python3` on the dot and `python3 train.py` in the table — an
+ * inconsistency no gate would catch and a reader would spot at once.
+ *
+ * **The word is not drawn twice**: `arg` repeats `name` for the vLLM
+ * workers (`argv[0]` is `VLLM::EngineCore` for both), and printing it
+ * twice would spend a column saying one thing.
+ */
+function cmdText(r: Load["top"][number]): string {
+  return r.arg && r.arg !== r.name ? `${r.name} ${r.arg}` : r.name;
 }
 
 /**
@@ -1859,7 +1931,7 @@ function useAxes() {
  * middle one is why they cannot be merged — a card that is idle and a
  * machine that cannot see cards are different facts.
  */
-function Scatter({ rows }: { rows: Load["top"] }) {
+function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const axes = useAxes();
   // **The picture is drawn in real pixels, not in a stretched box.**
@@ -1881,8 +1953,19 @@ function Scatter({ rows }: { rows: Load["top"] }) {
   }, []);
   const { w: W, h: H } = size;
   const padL = 46;
-  const padB = 22;
-  const padT = 12;
+  // **The two label strips are paid for here.** Tucking the axis labels
+  // inside the drawing put them, at first, exactly where the tick
+  // numbers live — 「内存」 straight through 「3.8G」 and 「CPU」 across
+  // 「38%」 (seen on turing, and the reason this is not four numbers it
+  // used to be). A corner inside the *data* area was the other option
+  // and it trades one collision for a worse one: points can be
+  // anywhere, tick numbers cannot. So each axis gets a thin strip of
+  // its own, outside the plotting area and outside the tick gutters —
+  // 10px at the top for the vertical label, 12 at the bottom for the
+  // horizontal one. That is 22px of the drawing's 176, against the
+  // 104px those two words cost as rows in the flow.
+  const padB = 34;
+  const padT = 22;
   const padR = 14;
   const ax = AXES[axes.x];
   const ay = AXES[axes.y];
@@ -1915,13 +1998,53 @@ function Scatter({ rows }: { rows: Load["top"] }) {
       data-plot-scale-y={ry.kind}
       className="flex flex-col gap-in"
     >
-      {/* **The vertical axis says what it is, at the top of itself.**
-          Written across, not turned ninety degrees: rotated Latin is
-          read by tilting the head, and rotated 中文 is a different
-          writing mode with its own rules — neither is worth making a
-          reader do for two characters. */}
-      <AxisPick which="y" chosen={axes.y} onPick={(k) => axesStore.set({ ...axes, y: k })} align="left" />
-      <div ref={box} className="h-44 w-full">
+      {/* **Both labels are tucked inside the axes** (2026-09-06:「X轴
+          label太占空间了。以合适的方式显示x和y label,比如贴在坐标轴内侧。
+          不要占用与下方的间隔空间」).
+
+          They used to be two rows in the flow, one above the drawing
+          and one below it, each a `min-h-touch` row — **88px of the
+          card spent on two words**, and the lower one sat between the
+          figure and the table and read as the gap between them. Out of
+          the flow they cost nothing, and the space really is given
+          back: the block is shorter by exactly those two rows.
+
+          **The corners are chosen, not convenient.** Top-left is min-x
+          max-y and bottom-right is max-x min-y — the two places a
+          scatter is least likely to put a point, and the two the ruler
+          marks already occupied for the same reason. **Written across,
+          not turned ninety degrees**: rotated Latin is read by tilting
+          the head, and rotated 中文 is a different writing mode with its
+          own rules.
+
+          What they cost: a 44px hit area in each of those two corners
+          swallows a press meant for a point that lands there. The
+          corners are where points are rarest, and the alternative —
+          shrinking the target — is the floor this card does not break. */}
+      <div ref={box} className="relative h-44 w-full">
+        <span className="pointer-events-none absolute inset-0">
+          {/* The hit area is 44 tall and the strip is not, so each
+              label is centred on its strip and overflows it invisibly.
+              What has to land in the strip is the **ink**. */}
+          <span className="pointer-events-auto absolute" style={{ left: padL, top: (padT - 44) / 2 }}>
+            <AxisPick
+              which="y"
+              chosen={axes.y}
+              ruler={ry.kind}
+              onPick={(k) => axesStore.set({ ...axes, y: k })}
+              align="left"
+            />
+          </span>
+          <span className="pointer-events-auto absolute" style={{ right: padR, bottom: (12 - 44) / 2 }}>
+            <AxisPick
+              which="x"
+              chosen={axes.x}
+              ruler={rx.kind}
+              onPick={(k) => axesStore.set({ ...axes, x: k })}
+              align="right"
+            />
+          </span>
+        </span>
         {/* **Named**, because it is no longer the only `<svg>` in this
             block: the axis labels carry chevrons, and a probe reaching
             for 「the figure」 with `querySelector("svg")` picked a 12px
@@ -1931,44 +2054,6 @@ function Scatter({ rows }: { rows: Load["top"] }) {
         <svg data-plot-svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
           <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
-          {/* **Which ruler each axis is on, written on the axis.**
-              Whether a reading needs the log one is decided from that
-              machine's own numbers (see `ruler`), so the same pair can
-              be two different rulers on two machines — and then 「the
-              same position」 means two different things. This is the
-              only honest way out of that: say it, on the axis, where
-              somebody reading a position is already looking.
-
-              **Both of them, not only the one that changed.** Marking
-              only the exception asks the reader to know that no mark
-              means a square root, which is a rule nobody taught them. */}
-          {/* Inside the plot and just off each axis's far end, because
-              outside it the tick labels are already there: the x mark
-              landed on the last percentage and the y mark on the top
-              byte figure (measured, and visible in a screenshot as
-              「5|3%」 and a ruler word through 「606.8M」). */}
-          <text
-            data-plot-ruler="x"
-            x={W - padR}
-            y={H - padB - 5}
-            fontSize={9}
-            textAnchor="end"
-            fill="currentColor"
-            fillOpacity={0.4}
-          >
-            {rx.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-          </text>
-          <text
-            data-plot-ruler="y"
-            x={padL + 4}
-            y={padT + 7}
-            fontSize={9}
-            textAnchor="start"
-            fill="currentColor"
-            fillOpacity={0.4}
-          >
-            {ry.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-          </text>
           {steps.map((f) => {
             const v = rx.tick(f);
             return (
@@ -1995,7 +2080,28 @@ function Scatter({ rows }: { rows: Load["top"] }) {
             const cx = sx(x);
             const cy = sy(y);
             return (
-              <g key={r.pid} data-plot-point={r.pid} data-plot-x={Math.round(cx * 10) / 10} data-plot-y={Math.round(cy * 10) / 10}>
+              <g
+                key={r.pid}
+                data-plot-point={r.pid}
+                data-plot-x={Math.round(cx * 10) / 10}
+                data-plot-y={Math.round(cy * 10) / 10}
+                role="button"
+                aria-label={cmdText(r)}
+                onClick={() => onPoint(r.pid)}
+                className="cursor-pointer"
+              >
+                {/* **The target, and it is not the dot.** The drawn
+                    circle is 1.8px because that is what keeps two
+                    hundred of them readable; the thing a pointer has to
+                    hit is this transparent one. It is still far under
+                    the finger's floor and is waived by name in the face
+                    gate — a scatter point cannot be 44px without
+                    becoming the plot, and **what the waiver does not
+                    buy** is a keyboard: a point cannot be tabbed to.
+                    The rows it points at are the table directly below,
+                    which is the canonical list and is reachable
+                    without this. */}
+                <circle cx={cx} cy={cy} r={7} fill="transparent" />
                 {r.gpu_mem !== null && r.gpu_mem > 0 && (
                   <circle
                     data-plot-halo={Math.round(halo(r.gpu_mem) * 10) / 10}
@@ -2019,16 +2125,24 @@ function Scatter({ rows }: { rows: Load["top"] }) {
                   />
                 )}
                 <circle cx={cx} cy={cy} r={1.8} fill="currentColor" fillOpacity={0.75}>
-                  <title>{`${r.name} ${ax.tick(x)} ${ay.tick(y)}`}</title>
+                  {/* **First line is the command, verbatim what the
+                      table's cell says** (`cmdText`) — 2026-09-06:
+                      「悬浮散点要显示命令名」. The two readings go under
+                      it rather than beside it, so the first line can be
+                      compared with the table character for character.
+
+                      A native `<title>` and not a floating panel: it
+                      belongs to **this circle**, so on a crowded plot
+                      it answers 「指到哪个点就说哪个点」 by construction,
+                      where a proximity panel would answer 「附近有个
+                      点」. */}
+                  <title>{`${cmdText(r)}\n${ax.tick(x)} · ${ay.tick(y)}`}</title>
                 </circle>
               </g>
             );
           })}
         </svg>
       </div>
-      {/* And the horizontal one under itself, centred on the axis it
-          names. */}
-      <AxisPick which="x" chosen={axes.x} onPick={(k) => axesStore.set({ ...axes, x: k })} align="center" />
       <div className="flex flex-wrap items-baseline justify-between gap-row text-aux text-muted-foreground">
         <span className="flex flex-wrap items-baseline gap-in">
           {/* **Not optional.** See the head: a picture that quietly
@@ -2088,16 +2202,34 @@ function Scatter({ rows }: { rows: Load["top"] }) {
 function AxisPick({
   which,
   chosen,
+  ruler,
   onPick,
   align,
 }: {
   which: "x" | "y";
   chosen: AxisKey;
+  /** Which ruler this axis is on, printed **beside** the label rather
+      than somewhere else on the axis.
+
+      It used to be its own `<text>` inside the drawing, at the far end
+      of each axis. With the label moved into the same corner the two
+      would have sat on top of each other, so they are read as one
+      thing: 「内存 (log)」. **This is not the mark going back where it
+      came from** — it was moved off the tick numbers for a measured
+      reason (a ruler word through 「606.8M」) and it is still inside the
+      plot, on its own axis.
+
+      **Outside the button on purpose.** The button's contents are
+      replaced by the four candidates while the picker is open; a ruler
+      mark inside it would blink out exactly while somebody is choosing
+      which ruler they are about to read. */
+  ruler: "sqrt" | "log";
   onPick: (k: AxisKey) => void;
-  /** Where the label sits under the axis it names: the horizontal one
-      is centred on its axis, the vertical one starts at the top of
-      its own. */
-  align: "left" | "center";
+  /** Which corner it is tucked into — the vertical label opens
+      rightwards from the top-left, the horizontal one leftwards from
+      the bottom-right, so neither set of four words can run off the
+      drawing. */
+  align: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -2106,9 +2238,16 @@ function AxisPick({
       data-open={open ? "" : undefined}
       className={cn(
         "flex items-baseline gap-0 text-aux",
-        align === "center" ? "justify-center" : "justify-start",
+        align === "right" ? "flex-row-reverse" : "flex-row",
       )}
     >
+      <span
+        data-plot-ruler={which}
+        aria-hidden="true"
+        className="px-in text-muted-foreground/70"
+      >
+        {ruler === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
+      </span>
       {open
         ? AXIS_KEYS.map((k) => (
             <button
@@ -2236,6 +2375,8 @@ function AxisPick({
  * whoever wrote the guess.
  */
 function Cut({ name, arg }: { name: string; arg: string | null }) {
+  // The same string the scatter's hover says — see `cmdText`.
+  const full = cmdText({ name, arg } as Load["top"][number]);
   const line = useRef<HTMLSpanElement>(null);
   const [over, setOver] = useState(false);
   const [open, setOpen] = useState(false);
@@ -2346,7 +2487,7 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
           at. */}
       {!open && (
         <TooltipContent side="top" className="max-w-[var(--tip-cmd-max)] break-all whitespace-normal text-left">
-          <span data-cmd-full>{word ? `${name} ${word}` : name}</span>
+          <span data-cmd-full>{full}</span>
         </TooltipContent>
       )}
     </Tooltip>
