@@ -131,6 +131,13 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 run_secs: age_of(p),
                 // Filled after the cut — see `fill_args`.
                 arg: None,
+                // **Whose child this is**, so the face can tell a pool
+                // of ten identical workers from ten unrelated
+                // processes that happen to share a name. `sysinfo`
+                // answers this on all three platforms and costs
+                // nothing extra: it is already in the process record
+                // this loop is walking.
+                ppid: p.parent().map(|x| x.as_u32()),
             }
         })
         .collect();
@@ -305,6 +312,7 @@ mod tests {
             gpu_mem: gpu.map(|_| 1),
             run_secs: None,
             arg: None,
+            ppid: None,
         }
     }
 

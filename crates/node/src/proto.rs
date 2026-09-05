@@ -455,6 +455,7 @@ mod tests {
                 gpu_mem: Some(1_073_741_824),
                 run_secs: Some(86_400),
                 arg: Some("serve".into()),
+                ppid: None,
             }],
             cpu_day: khor_core::CpuDay {
                 bucket_ms: 300_000,
@@ -606,6 +607,7 @@ mod tests {
             gpu_mem: None,
             run_secs: None,
             arg: None,
+            ppid: None,
         })
         .unwrap();
         assert!(old.len() < fresh.len(), "the old row really is shorter: it lacks the GPU columns");
@@ -710,14 +712,76 @@ mod tests {
             gpu_mem: Some(21_700_000_000),
             run_secs: Some(3),
             arg: Some("vllm.entrypoints".into()),
+            ppid: None,
         })
         .unwrap();
-        assert_eq!(fresh[0], 0x99, "and today's is nine — the two new ones are really on the wire");
+        assert_eq!(fresh[0], 0x9a, "and today's is ten — the new ones are really on the wire");
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
         assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
         assert_eq!(r.gpu_mem, Some(21_700_000_000), "including the last one before the new tail");
         assert_eq!(r.run_secs, None, "an age nobody sent is absent — a zero would read as 刚起的");
         assert_eq!(r.arg, None, "and an identifying word nobody sent is absent, not an empty name");
+    }
+
+    /// A process row from before **the parent pid** decodes with it
+    /// absent — and absent has to stay absent, because **pid 0 is a
+    /// real parent** on every platform khor runs on.
+    ///
+    /// The face folds ten `tokio-rt-worker serve` rows into one on the
+    /// strength of them being siblings (2026-09-05); a row from an
+    /// older node has no parent to compare, and the fold must leave
+    /// those rows alone rather than treat them all as children of 0 and
+    /// join a machine's whole process table into one line.
+    ///
+    /// Same shape as the two tests above it: the array's element count
+    /// is asserted on both sides, because that is the closest msgpack
+    /// comes to saying 「this key is not in the bytes」 — without it
+    /// this would be today's row compared against itself.
+    #[test]
+    fn a_process_row_from_before_the_parent_pid_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct RowBeforeParent {
+            pid: u32,
+            name: String,
+            user: String,
+            cpu_pct: f32,
+            mem: u64,
+            gpu_pct: Option<f32>,
+            gpu_mem: Option<u64>,
+            run_secs: Option<u64>,
+            arg: Option<String>,
+        }
+        let old = rmp_serde::to_vec(&RowBeforeParent {
+            pid: 2_661_641,
+            name: "tokio-rt-worker".into(),
+            user: "zgh".into(),
+            cpu_pct: 21.0,
+            mem: 171_100_000,
+            gpu_pct: None,
+            gpu_mem: None,
+            run_secs: Some(79_200),
+            arg: Some("serve".into()),
+        })
+        .unwrap();
+        assert_eq!(old[0], 0x99, "the row a node sent before the parent is nine fields");
+        let fresh = rmp_serde::to_vec(&khor_core::TopRow {
+            pid: 2_661_641,
+            name: "tokio-rt-worker".into(),
+            user: "zgh".into(),
+            cpu_pct: 21.0,
+            mem: 171_100_000,
+            gpu_pct: None,
+            gpu_mem: None,
+            run_secs: Some(79_200),
+            arg: Some("serve".into()),
+            ppid: Some(2_661_640),
+        })
+        .unwrap();
+        assert_eq!(fresh[0], 0x9a, "and today's is ten");
+        let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(r.pid, 2_661_641, "the fields that were always there survive the tail-append");
+        assert_eq!(r.arg.as_deref(), Some("serve"), "including the last one before the new tail");
+        assert_eq!(r.ppid, None, "a parent nobody sent is absent — 0 is somebody's real parent");
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and

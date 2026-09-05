@@ -879,6 +879,26 @@ pub struct TopRow {
     /// none.
     #[serde(default)]
     pub arg: Option<String>,
+    /// The process that started this one, when the machine will say.
+    ///
+    /// **It is here so the face can fold**: ten rows reading
+    /// `tokio-rt-worker serve` are ten members of one pool, and a table
+    /// that spends ten lines on them is spending its width on one
+    /// thing said ten times. Folding needs a key that cannot join two
+    /// *different* things, and name-plus-argument is not that key on
+    /// its own — two unrelated `python3 main.py` under two different
+    /// parents are two answers. The parent is what makes the key mean
+    /// 「siblings」.
+    ///
+    /// `None` where the machine will not say, and **absent is not
+    /// zero**: pid 0 is a real parent on every platform khor runs on,
+    /// so a row that could not be asked must not claim it.
+    ///
+    /// Appended at the tail with a `serde default`, like everything
+    /// above it — see the round-trip test in `khor_node::proto`.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub ppid: Option<u32>,
 }
 
 /// How much of that one word crosses the wire, characters.
