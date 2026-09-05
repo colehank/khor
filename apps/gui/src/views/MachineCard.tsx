@@ -1238,7 +1238,16 @@ const cpuClock = (ms: number) => {
   const s = Math.round(ms / 1000);
   const two = (n: number) => String(n).padStart(2, "0");
   const h = Math.floor(s / 3600);
-  return h > 0 ? `${h}:${two(Math.floor((s % 3600) / 60))}:${two(s % 60)}` : `${Math.floor(s / 60)}:${two(s % 60)}`;
+  const m = two(Math.floor((s % 3600) / 60));
+  // **Past a hundred hours the seconds go.** hinton's `go.d.plugin`
+  // came back at `1374:35:10` — ten characters, wider than the column,
+  // and it spilled into the gap beside it (seen on a real card). The
+  // seconds on a figure that size are not a reading anybody uses; the
+  // magnitude is. Under a hundred hours they stay, because there they
+  // are the difference between a process that just started burning and
+  // one that has been at it a while.
+  if (h >= 100) return `${h}:${m}`;
+  return h > 0 ? `${h}:${m}:${two(s % 60)}` : `${Math.floor(s / 60)}:${two(s % 60)}`;
 };
 
 /**
@@ -2289,7 +2298,13 @@ function Column({
       aria-busy={waiting || undefined}
       className={cn(
         "font-body",
-        align === "right" ? "text-right px-row" : "text-left",
+        // **No padding of its own.** It carried `px-row` on the
+        // right-aligned heads, which inset the word 8px from the edge
+        // its own numbers are flush against — the head and its column
+        // did not line up, and the 8px was also what pushed 「CPU」 out
+        // of a 48px track (it rendered 「CPL」). Alignment and room, one
+        // deletion.
+        align === "right" ? "text-right" : "text-left",
         grow && "w-full",
         // Not a new visual language — the head simply goes quiet while
         // its answer is out. What this looks like finally is the design

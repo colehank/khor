@@ -3095,6 +3095,7 @@ try {
         return Number.isFinite(w) ? w : 0;
       };
       const slackIn = {};
+      const headRoom = {};
       for (let i = 0; i < trackEls.length && i < heads.length; i += 1) {
         const key = heads[i].dataset.topHead ?? heads[i].dataset.c;
         const cells = [...document.querySelectorAll(`[data-machine-card] [data-top-row] [data-c="${key}"]`)];
@@ -3108,6 +3109,48 @@ try {
         const btn = heads[i].querySelector("button") ?? heads[i];
         const widest = Math.max(ink(btn), ...cells.map((c) => ink(c)), 0);
         slackIn[key] = +(rects[i].width - widest).toFixed(1);
+        //   **The head on its own**, kept apart from the cells because
+        //   the two have different rights. A *cell* may overrun its
+        //   track — 用户 truncates by design, and so does 状态 when it
+        //   is printing a token this build has no word for. A **head**
+        //   may not: it is the column's name, it is the same three
+        //   characters on every machine, and a track too narrow for it
+        //   silently amputates the word rather than eliding it.
+        //   Measured 2026-09-05 on all three machines: 「CPU」 plus its
+        //   sort chevron in a 44px track rendered 「CPL」, and every
+        //   assertion in this section passed — they were all about
+        //   tracks and gaps, and none about whether a word survived.
+        //   ⚠️ **Measured as「does anything stick out of the track」,
+        //   not as「how wide is the text」.** A `Range` over the
+        //   button's contents returns the *text*, and the chevron is an
+        //   `<svg>` the range does not account for — written that way
+        //   first, and it reported 21px of room in the very track that
+        //   was rendering 「CPL」. So every child is asked for its own
+        //   box and the union is compared with the track's edges.
+        let l = Infinity;
+        let r = -Infinity;
+        for (const c of btn.childNodes) {
+          let box2 = null;
+          if (c.nodeType === 3) {
+            const rg = document.createRange();
+            rg.selectNodeContents(c);
+            box2 = rg.getBoundingClientRect();
+          } else if (c.getBoundingClientRect) {
+            box2 = c.getBoundingClientRect();
+          }
+          if (!box2 || (box2.width === 0 && box2.height === 0)) continue;
+          l = Math.min(l, box2.left);
+          r = Math.max(r, box2.right);
+        }
+        //   ⚠️ **How far it sticks out, not how much room is left on
+        //   the nearer side.** Written as `min(rightRoom, leftRoom)`
+        //   first, and the head's content is packed against one edge —
+        //   so the other room was always exactly 0 and the minimum was
+        //   0 for all eleven columns, on a build that fitted and on a
+        //   build that did not. A number that is 0 whatever happens is
+        //   a check that cannot fail.
+        headRoom[key] =
+          r === -Infinity ? null : +Math.max(0, rects[i].left - l, r - rects[i].right).toFixed(1);
       }
       //   Whether anything at all is written in each column, anywhere
       //   on the page. Not 「every row」: absence is legitimate per row
@@ -3120,6 +3163,7 @@ try {
         //   rather than what anybody wrote.
         tracks: getComputedStyle(t).gridTemplateColumns.trim().split(/\s+/).length,
         trackList: getComputedStyle(t).gridTemplateColumns.trim(),
+        headRoom,
         boxW: +box.width.toFixed(1),
         gridW: +t.getBoundingClientRect().width.toFixed(1),
         slack: +(box.right - rects[rects.length - 1].right).toFixed(1),
@@ -3178,9 +3222,20 @@ try {
             `(the gaps stay ${spread.gap} the whole time, so this is not visible as a gap)`,
         );
       }
+      //   **No column's name is cut.** See the probe for what this is
+      //   kept apart from and why.
+      const cut = Object.entries(spread.headRoom).filter(([, v]) => v !== null && v > 0.5);
+      if (cut.length) {
+        fail(
+          `the heads ${cut.map(([k, v]) => `${k} (${v}px over)`).join(", ")} do not fit their own tracks — ` +
+            `a column head that does not fit is not elided, it is amputated: 「CPU」 becomes 「CPL」 and reads ` +
+            `like a word nobody chose`,
+        );
+      }
       console.log(
         `table at 1500: holder ${spread.boxW}, grid ${spread.gridW}, last track ${spread.slack} short of it, ` +
           `gaps ${spread.gaps.join("/")} (gap ${spread.gap}), ` +
+          `head over ${Object.entries(spread.headRoom).map(([k, v]) => `${k}:${v}`).join(" ")}, ` +
           `room beyond ink ${Object.entries(spread.slackIn).map(([k, v]) => `${k}:${v}`).join(" ")}`,
       );
     }

@@ -724,8 +724,13 @@
    * the first characters kept is what tells 「谁的」 apart, which is all
    * this column is asked.
    *
-   * **CPU时间 is a clock, so it is sized in digits**: `999:59:59` is
-   * the widest a long-lived daemon reaches, and the shape is what keeps
+   * **CPU时间 is a clock, so it is sized in digits** — and the digits
+   * were counted wrong the first time: `999:59:59` looked like the
+   * ceiling, and hinton's `go.d.plugin` came back at **`1374:35:10`**,
+   * ten characters, which spilled into the gap beside it (seen on a
+   * real card, not here). A process that has been up 98 days on a
+   * many-core box passes four figures of hours without being unusual.
+   * The shape is what keeps
    * it from being read as the 时长 beside it — a duration in words
    * (「3天」) next to a stopwatch (「72:14:03」) cannot be confused, two
    * durations in the same words can.
@@ -733,13 +738,22 @@
    * **读写 is 内存's width** because it prints the same `bytes()` and
    * the same magnitudes; a second width for the same shape of number
    * would be two answers to one question. */
-  --cw-status: 44px;
-  --cw-user: 56px;
-  --cw-cputime: 62px;
-  --cw-io: 68px;
-  --cw-cpu: 44px;
-  --cw-gpu: 40px;
-  --cw-vram: 56px;
+  /* ⚠️ **Every one of these has to hold its own head, chevron and
+   * all** — and the head is usually the widest thing in a numeric
+   * column, not the numbers. At 44px 「CPU」 plus the sort chevron
+   * rendered as 「CPL」 on all three machines (seen in the screenshots;
+   * no gate caught it, because every gate here measures tracks and
+   * gaps rather than whether a word survived). The arithmetic per
+   * column: the word, plus `--gap-in`, plus a 12px chevron — and the
+   * chevron is on whichever column is sorted, which is every column in
+   * turn. */
+  --cw-status: 48px;
+  --cw-user: 52px;
+  --cw-cputime: 72px;
+  --cw-io: 56px;
+  --cw-cpu: 48px;
+  --cw-gpu: 46px;
+  --cw-vram: 50px;
   --cw-mem: 52px;
   /* **A floor under the 「命令」 column, and the column takes the rest
    * of the table.** 2026-09-04:「表那应该表根据屏幕铺开。现在全挤在
