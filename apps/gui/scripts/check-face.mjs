@@ -2170,6 +2170,80 @@ try {
       }
     }
   }
+  //     ── a card column, once filled, is not taken back ────────────
+  //
+  //     2026-09-05: 「A column the machine cannot fill does not exist」
+  //     used to be asked of the *machine* — 「does it report video
+  //     memory」 — and that is the wrong level: turing reports two
+  //     RTX A5000s and not one of its two hundred processes carries a
+  //     per-process figure, so the table drew two empty columns and
+  //     spent 136px on them. The question is 「can any row fill me」.
+  //
+  //     **Asked of the rows, the answer changes with the page** — the
+  //     pid ordering returns boot daemons, none of them on a card — so
+  //     it is latched: seen once on this machine, kept until the
+  //     machine changes. The section above already refuses a column set
+  //     that moves under a press; this one refuses the other half, the
+  //     one a latch is *for*: a page with no readings in it must not
+  //     retract what an earlier page showed.
+  //
+  //     The fixture's pid route is exactly that page — it nulls
+  //     `gpu_pct`, `gpu_mem` and `run_secs` on every row — so the walk
+  //     is: land on the busiest ordering (readings present), press pid
+  //     (none present), and require the columns to be the same set.
+  {
+    const cols = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll("[data-machine-card] [data-top-heads] > *")]
+          .map((n) => n.dataset.topHead ?? n.dataset.c ?? "?")
+          .join(","),
+      );
+    const readings = () =>
+      page.evaluate(() => ({
+        gpu: [...document.querySelectorAll("[data-machine-card] [data-top-row] [data-c='gpu']")].filter(
+          (n) => n.textContent.trim(),
+        ).length,
+        vram: [...document.querySelectorAll("[data-machine-card] [data-top-row] [data-c='vram']")].filter(
+          (n) => n.textContent.trim(),
+        ).length,
+      }));
+    await open("devices");
+    await pressNth("[data-list] [data-row-open]", 1);
+    await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-heads] > *").count()) > 3);
+    await wait(500);
+    const withReadings = { cols: await cols(), n: await readings() };
+    if (!/\bvram\b/.test(withReadings.cols) && !/\bgpu\b/.test(withReadings.cols)) {
+      fail(
+        `probe dead: the card opened with columns [${withReadings.cols}] and no card column among them, ` +
+          `so 「a filled column is not taken back」 has nothing to take back`,
+      );
+    } else if (withReadings.n.gpu + withReadings.n.vram === 0) {
+      fail(
+        `probe dead: the card columns are drawn but ${withReadings.n.gpu}+${withReadings.n.vram} rows fill them — ` +
+          `the latch was never set by a real reading, so what follows tests nothing`,
+      );
+    } else {
+      await page.locator('[data-machine-card] [data-top-head="pid"] button').click();
+      await wait(900);
+      const after = { cols: await cols(), n: await readings() };
+      if (after.n.gpu + after.n.vram !== 0) {
+        fail(
+          `probe dead: the pid ordering still fills ${after.n.gpu}+${after.n.vram} card cells, ` +
+            `so 「a page with no readings」 never happened and the latch was not tested`,
+        );
+      }
+      if (after.cols !== withReadings.cols) {
+        fail(
+          `a page with no card readings took the columns away: [${withReadings.cols}] → [${after.cols}] — ` +
+            `the latch is meant to stop exactly this (「一点就没有 GPU 这列了」)`,
+        );
+      }
+      console.log(
+        `card columns: [${withReadings.cols}] with ${withReadings.n.gpu}+${withReadings.n.vram} filled cells, ` +
+          `still [${after.cols}] on a page with ${after.n.gpu}+${after.n.vram}`,
+      );
+    }
+  }
   //     ── one slot: the rings, the day, and no jump ────────────────
   //
   //     2026-09-04:「上环下趋势,合成一个模块」、「点一个环,下面换成那个
@@ -2939,6 +3013,10 @@ try {
       }
       return {
         heads: heads.length,
+        //   The used value, so this counts what the browser resolved
+        //   rather than what anybody wrote.
+        tracks: getComputedStyle(t).gridTemplateColumns.trim().split(/\s+/).length,
+        trackList: getComputedStyle(t).gridTemplateColumns.trim(),
         boxW: +box.width.toFixed(1),
         gridW: +t.getBoundingClientRect().width.toFixed(1),
         slack: +(box.right - rects[rects.length - 1].right).toFixed(1),
@@ -2957,6 +3035,20 @@ try {
         fail(
           `at 1500 the table stops ${spread.slack}px short of its box (${spread.cols}) — ` +
             `the card's other blocks reach the edge and this one does not, which reads as a block that failed`,
+        );
+      }
+      //   **As many tracks as there are heads.** This is the invariant
+      //   the four hand-written stylesheet variants could not keep: on
+      //   2026-09-05 the two card columns became two independent
+      //   latches, no variant covered 「显存 but no GPU」 (turing), and
+      //   six cells met five declared tracks — the sixth fell into an
+      //   implicit column and the 「命令」 track collapsed to 55px.
+      //   Every other assertion in this section passed, because the
+      //   fixture only ever has the one combination.
+      if (spread.tracks !== spread.heads) {
+        fail(
+          `the table declares ${spread.tracks} tracks for ${spread.heads} columns (${spread.trackList}) — ` +
+            `the extra cells fall into implicit tracks and the widths stop meaning anything`,
         );
       }
       const canyon = spread.gaps.filter((g) => g > spread.gap + 1);

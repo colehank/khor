@@ -567,30 +567,22 @@ input[type="search"]::-webkit-search-decoration {
    along (measured at a 1100 window: the 时长 track held 123px for a
    column whose content wants 78). A table narrower than its pane reads
    as a table; a table with a canyon down the middle reads as broken. */
+/* ⚠️ **The track list is built where the columns are built, not here.**
+   There were four hand-written variants — the full set, `data-nogpu`,
+   `data-norun`, and both — and they were a combinatorial claim that the
+   markup had to keep agreeing with. On 2026-09-05 it stopped agreeing:
+   the two card columns became two independent latches (a machine can
+   have per-process 显存 and no per-process GPU, which is exactly
+   turing), and there is no variant here for that pair. The row then had
+   six cells against five declared tracks, the sixth fell into an
+   implicit auto column, and **the 「命令」 track collapsed to 55px**.
+
+   `Top` composes the list from the same flags that decide which heads
+   and cells it renders, so the two cannot drift. Every value in it is
+   a `--cw-*` token; nothing but the *order* lives in the component. */
 [data-load-top] {
   display: grid;
   column-gap: var(--gap-in);
-  grid-template-columns:
-    var(--cw-pid) var(--cw-run) var(--cw-cpu) var(--cw-gpu) var(--cw-mem) var(--cw-vram)
-    minmax(var(--cw-cmd), 1fr);
-}
-/* **A column the machine cannot fill does not exist**, and the track
-   goes with it: a machine with no card would otherwise carry two empty
-   columns, which reads as "khor looked and found nothing". */
-[data-load-top][data-nogpu] {
-  grid-template-columns:
-    var(--cw-pid) var(--cw-run) var(--cw-cpu) var(--cw-mem)
-    minmax(var(--cw-cmd), 1fr);
-}
-[data-load-top][data-norun] {
-  grid-template-columns:
-    var(--cw-pid) var(--cw-cpu) var(--cw-gpu) var(--cw-mem) var(--cw-vram)
-    minmax(var(--cw-cmd), 1fr);
-}
-[data-load-top][data-nogpu][data-norun] {
-  grid-template-columns:
-    var(--cw-pid) var(--cw-cpu) var(--cw-mem)
-    minmax(var(--cw-cmd), 1fr);
 }
 [data-load-top] [data-top-row],
 [data-load-top] [data-top-heads] {

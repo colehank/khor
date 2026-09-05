@@ -145,15 +145,20 @@ function Body({
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
-  const { load, why, shown, asking, ages } = useLoad(row, sort);
-  // **「这台机器有没有卡」是机器的属性，不是这 200 行的属性.** Discrete
-  // video memory is exactly the condition under which a process's card
-  // use can be read at all: `khor_node::top::gpu::by_pid` goes through
-  // NVML, and NVML is the same handle that fills `Gpu::mem` — which is
-  // `None` on unified memory, where those bytes are already the 内存
-  // reading. So one machine-level bit decides both columns, and no
-  // ordering can change it.
-  const cards = row.vitals?.vitals.gpu?.mem != null;
+  const { load, why, shown, asking, ages, cardCols } = useLoad(row, sort);
+  // **A column exists when a *row* can fill it, and that is latched.**
+  // It used to be a machine-level bit — 「does this machine report
+  // discrete video memory」 — on the reasoning that NVML is the same
+  // handle behind both, so the machine's answer settles the columns and
+  // no ordering can move them. The second half of that was the point
+  // and it is kept; the first half was measured wrong (2026-09-05):
+  // **turing reports two RTX A5000s and not one of its two hundred
+  // processes carries a per-process figure**, so the card drew two
+  // empty columns and spent 136px of a crowded table on them.
+  //
+  // See `useLoad` for the latch and for why the claim is 「seen」 rather
+  // than 「has」.
+  const cards = cardCols;
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
@@ -1159,11 +1164,11 @@ function Busy({
 }: {
   load: Load | null;
   why: string | null;
-  /** Whether this machine has cards khor can read per process, and
-      whether its khor puts an age on a process. **Both are facts about
-      the machine**, and both decide which columns the table has — see
-      `Top`. */
-  cards: boolean;
+  /** Which card columns any row on this machine has ever filled, and
+      whether its khor puts an age on a process. **Both are latched
+      「seen」 facts, not properties of the hardware**, and both decide
+      which columns the table has — see `useLoad` and `Top`. */
+  cards: { gpu: boolean; vram: boolean };
   ages: boolean;
   /** **The order the rows on screen are in**, not the one just asked
       for — see `useLoad`. */
@@ -1285,14 +1290,16 @@ function Top({
       So both bits come from above: `cards` from this machine's video
       memory, `ages` from whether its khor has ever put an age on a
       process — see `Body` and `useLoad`. */
-  cards: boolean;
+  cards: { gpu: boolean; vram: boolean };
   ages: boolean;
 }) {
-  // **A column exists when the machine can fill it.** Two blank columns
-  // read as 「khor looked and found nothing」, which is the opposite of
-  // 「this machine has no cards」; and a whole column of blanks is worse
-  // than no column, because it takes width from the ones that speak.
-  const onCards = cards;
+  // **A column exists when a row on this machine has ever filled it.**
+  // A whole column of blanks is worse than no column: it takes width
+  // from the ones that speak, and it reads as 「khor looked and found
+  // nothing」, which is not the same as 「nothing here runs on a card」.
+  // Latched in `useLoad`, so an ordering cannot take a column away.
+  const onGpu = cards.gpu;
+  const onVram = cards.vram;
   const onAges = ages;
   const ordered = sortRows(rows, sort);
   const box = useRef<HTMLDivElement>(null);
@@ -1314,7 +1321,25 @@ function Top({
     // 「哪个刚起」.
     onSort({ col, dir: col === "name" || col === "user" || col === "pid" ? "up" : "down" });
   };
-  const cells = 5 + (onCards ? 2 : 0) + (onAges ? 1 : 0);
+  const cells = 5 + (onGpu ? 1 : 0) + (onVram ? 1 : 0) + (onAges ? 1 : 0);
+  // **The tracks, in the order the cells are written below.** Built
+  // here rather than in four hand-written stylesheet variants: the
+  // columns are decided by these same three flags, and a track list
+  // kept somewhere else has to be *remembered* into agreement. It was
+  // not — a machine with per-process 显存 and no per-process GPU
+  // (turing) had no variant, so six cells met five tracks and 「命令」
+  // collapsed to 55px. Only the order is here; every width is a token.
+  const tracks = [
+    "var(--cw-pid)",
+    onAges ? "var(--cw-run)" : null,
+    "var(--cw-cpu)",
+    onGpu ? "var(--cw-gpu)" : null,
+    "var(--cw-mem)",
+    onVram ? "var(--cw-vram)" : null,
+    "minmax(var(--cw-cmd), 1fr)",
+  ]
+    .filter((t): t is string => t !== null)
+    .join(" ");
   return (
     <div
       ref={box}
@@ -1325,7 +1350,9 @@ function Top({
       <div
         data-load-top
         data-panel
-        data-nogpu={onCards ? undefined : ""}
+        data-nogpu={onGpu ? undefined : ""}
+        data-novram={onVram ? undefined : ""}
+        style={{ gridTemplateColumns: tracks }}
         data-norun={onAges ? undefined : ""}
         className="text-sm tabular-nums"
       >
@@ -1357,7 +1384,7 @@ function Top({
           <Column col="cpu" sort={sort} asking={asking} onPress={press} align="right">
             {cli.vitals_name_cpu}
           </Column>
-          {onCards && (
+          {onGpu && (
             <Column col="gpu" sort={sort} asking={asking} onPress={press} align="right">
               {cli.vitals_name_gpu}
             </Column>
@@ -1365,7 +1392,7 @@ function Top({
           <Column col="mem" sort={sort} asking={asking} onPress={press} align="right">
             {cli.vitals_name_mem}
           </Column>
-          {onCards && (
+          {onVram && (
             <Column col="vram" sort={sort} asking={asking} onPress={press} align="right">
               {cli.vitals_name_vram}
             </Column>
@@ -1415,7 +1442,7 @@ function Top({
               <span data-c="cpu" className="whitespace-nowrap text-right">
                 {Math.round(r.cpu_pct)}%
               </span>
-              {onCards && (
+              {onGpu && (
                 <span data-c="gpu" data-top-gpu className="whitespace-nowrap text-right">
                   {r.gpu_pct === null ? "" : `${Math.round(r.gpu_pct)}%`}
                 </span>
@@ -1423,7 +1450,7 @@ function Top({
               <span data-c="mem" className="whitespace-nowrap text-right">
                 {bytes(r.mem)}
               </span>
-              {onCards && (
+              {onVram && (
                 <span data-c="vram" data-top-vram className="whitespace-nowrap text-right">
                   {r.gpu_mem === null ? "" : bytes(r.gpu_mem)}
                 </span>
@@ -2161,6 +2188,30 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   // up, and only once, and `id` below clears it when the machine
   // changes.
   const [ages, setAges] = useState(false);
+  // **Whether any process on this machine has ever shown a card
+  // reading**, one latch per column, and the same shape as `ages`
+  // directly above for the same reason.
+  //
+  // 2026-09-05:「A column the machine cannot fill does not exist」 was
+  // being asked of the *machine* — 「does it report video memory」 — and
+  // that is the wrong level. turing reports two RTX A5000s and **not
+  // one of its two hundred processes carries a per-process figure**, so
+  // it drew two empty columns and spent 136px on them. The question a
+  // column has to answer is 「can any row fill me」.
+  //
+  // **Latched, because the honest answer to that changes with the
+  // page.** Ordering by pid returns the boot daemons, none of them on a
+  // card, and a column set computed from *these* rows would vanish
+  // under the finger that just pressed a head — the bug the person
+  // using this named as 「一点就没有 GPU 这列了」. So it only ever goes
+  // up, only once, and `id` clears it when the machine changes.
+  //
+  // **What this reports is 「seen」, not a property of the hardware.** A
+  // machine whose only card process starts after the card is opened
+  // gains the columns then and keeps them; one that never runs anything
+  // on its cards never grows them. That is a weaker claim than the old
+  // one and it is the true one.
+  const [cardCols, setCardCols] = useState({ gpu: false, vram: false });
   // **Which order the rows on screen are actually in.**
   //
   // Not the same thing as the order somebody just asked for, and the
@@ -2193,6 +2244,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
     setWhy(null);
     setShown(null);
     setAges(false);
+    setCardCols({ gpu: false, vram: false });
   }, [id]);
   useEffect(() => {
     if (id === null) return;
@@ -2245,6 +2297,14 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
         setShown({ col: sort.col, dir: sort.dir });
         setWhy(null);
         if (l.top.some((r) => r.run_secs != null)) setAges(true);
+        // Per column, because they are two different readings: a
+        // process can hold card memory with no utilisation figure and
+        // the other way round.
+        const sawGpu = l.top.some((r) => r.gpu_pct !== null);
+        const sawVram = l.top.some((r) => r.gpu_mem !== null);
+        if (sawGpu || sawVram) {
+          setCardCols((was) => (was.gpu === (was.gpu || sawGpu) && was.vram === (was.vram || sawVram) ? was : { gpu: was.gpu || sawGpu, vram: was.vram || sawVram }));
+        }
       } catch (e: unknown) {
         if (stopped) return;
         setWhy(String((e as { message?: string })?.message ?? e));
@@ -2261,7 +2321,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   // `asking` is the column somebody pressed whose answer has not landed
   // yet — the head wears it, and nothing else moves until the rows do.
   const asking = shown === null || shown.col !== sort.col || shown.dir !== sort.dir ? sort.col : null;
-  return { load, why, shown, asking, ages };
+  return { load, why, shown, asking, ages, cardCols };
 }
 
 /**
