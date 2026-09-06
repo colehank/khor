@@ -1521,12 +1521,23 @@ function CardHead({ row }: { row: Row }) {
  *
  * **The box is never filled in, on any machine.** It does not echo the
  * stored key and it does not say whether one exists. Two reasons, and
- * the second is the one that makes it not a matter of taste: a key
- * echoed to a screen has left the machine it was promised to (a
- * screenshot, a share, somebody behind you) — and **from another
- * machine there is nothing truthful to echo anyway**, since the secret
- * is not here. A field that showed 「••••」 there would be showing a
- * thing that is not on this disk.
+ * **the one that cannot be argued with goes first**:
+ *
+ * 1. **It cannot be done.** From any machine but the account's home the
+ *    secret is not on this disk. There is nothing to echo, and a field
+ *    showing 「••••」 there would be drawing a thing that is not here —
+ *    a mask over nothing reads exactly like a mask over a key.
+ * 2. **It should not be done.** A key echoed to a screen has left the
+ *    machine it was promised to: a screenshot, a shared window,
+ *    somebody standing behind you.
+ *
+ * The order is deliberate. **「should not」 is what the next person
+ * overturns** when they arrive with a reason that feels good enough
+ * (「just show the last four」, 「just a ✓ so they know one is set」);
+ * 「cannot」 is still true when they get here. The existence tick is
+ * refused by the same pair — it is a question about a secret answered
+ * by a screen, and from a peer it would be answering about a file this
+ * machine cannot see.
  */
 function EditDialog({
   row,
