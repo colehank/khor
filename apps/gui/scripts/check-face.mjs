@@ -4006,6 +4006,16 @@ try {
           boxH: Number(box.getAttribute("height")),
           labelOnBar: hit(labelBox, barBox),
           labelOnFrame: hit(labelBox, frameBox),
+          //   How far the label's bottom clears the top of whatever
+          //   mark is drawn — the framed box, or the bar alone.
+          //   Positive is clear. **Measured vertically alone**, because
+          //   the intersection above is blind on this fixture: every
+          //   label sits beside its axis, so the two boxes only ever
+          //   meet by the bar's last three tenths of a pixel, and no
+          //   series here peaks where it sits. The rule the drawing
+          //   follows is one-sided anyway — the label rises until it
+          //   is above the mark — so that is what is read.
+          labelClear: labelBox ? +(((frameBox ?? barBox)?.t ?? Infinity) - labelBox.b).toFixed(2) : null,
           labelBox,
         };
       }
@@ -4049,6 +4059,8 @@ try {
           fail(`the ${k} axis has no peak label to keep off its box — the probe cannot tell whether one covers the other`);
         } else if (m.labelOnBar || m.labelOnFrame) {
           fail(`the ${k} axis's peak label sits on its quartile mark (on the bar: ${m.labelOnBar}, on the box: ${m.labelOnFrame}; label ${JSON.stringify(m.labelBox)})`);
+        } else if (!(m.labelClear >= -0.6)) {
+          fail(`the ${k} axis's peak label ends ${(-m.labelClear).toFixed(1)}px below the top of its quartile mark — it is meant to rise clear of the mark, never to hang over it`);
         }
       }
       const fills = new Set(keys.map((k) => marks.marks[k]?.fill).filter(Boolean));
