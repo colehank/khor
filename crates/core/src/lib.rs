@@ -1372,6 +1372,16 @@ pub struct AccountReading {
     /// machine's clock.
     #[ts(type = "number")]
     pub at_ms: i64,
+    /// What is left, in `currency`, where the provider reports a balance
+    /// rather than a spend: a prepaid wallet (DeepSeek, Moonshot), a
+    /// capped OpenRouter key. Never derived from `spent` and `limit`
+    /// here — a screen can subtract; what it cannot know is which kind
+    /// of number the provider gave, and a balance written into `spent`
+    /// would read as the opposite of the truth. Tail field, defaulted:
+    /// an older reader drops it and keeps the rest.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub remaining: Option<f64>,
 }
 
 /// What khor can say about the subscription right now.

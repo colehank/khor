@@ -74,6 +74,11 @@ pub mod trouble {
     pub const NO_READING: &str = "no-reading";
     /// A new-api too old to have `/api/usage/token/` (before v0.9.0).
     pub const GATEWAY_TOO_OLD: &str = "gateway-too-old";
+    /// A provider word from a newer khor (`Provider::Other`): carried
+    /// and shown, but this build has no reader for it. Only the home
+    /// machine reads, so this is the home machine having been
+    /// downgraded past its own registration.
+    pub const UNKNOWN_PROVIDER: &str = "unknown-provider";
 }
 
 /// One reading as kept on disk: the reading and, when the last attempt
@@ -135,7 +140,7 @@ impl Node {
         if key.is_empty() {
             return Err(msg::ACCOUNT_KEY_BLANK.into());
         }
-        let base_url = match (provider, base_url.map(str::trim).filter(|u| !u.is_empty())) {
+        let base_url = match (&provider, base_url.map(str::trim).filter(|u| !u.is_empty())) {
             (Provider::Newapi, None) => return Err(msg::ACCOUNT_NEEDS_ADDRESS.into()),
             (Provider::Newapi, Some(u)) => {
                 if !(u.starts_with("http://") || u.starts_with("https://")) {
@@ -143,8 +148,8 @@ impl Node {
                 }
                 Some(u.trim_end_matches('/').to_owned())
             }
-            // The two vendors have one address each; a registered one
-            // would be a second opinion about where Anthropic is.
+            // The vendors have one address each; a registered one would
+            // be a second opinion about where Anthropic is.
             (_, _) => None,
         };
         if let Some(b) = budget
@@ -327,6 +332,7 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         resets_at: None,
         trouble: trouble.map(str::to_owned),
         at_ms: now,
+        remaining: None,
     }
 }
 
@@ -343,10 +349,143 @@ fn against_budget(mut r: AccountReading, spent: f64, budget: Option<f64>, curren
 }
 
 async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading, &'static str> {
-    match account.provider {
+    match &account.provider {
         Provider::Newapi => fetch_newapi(account, key, now).await,
         Provider::Claude => fetch_claude(account, key, now).await,
         Provider::Openai => fetch_openai(account, key, now).await,
+        Provider::Deepseek => {
+            let j = get_json(client().get("https://api.deepseek.com/user/balance").bearer_auth(key))
+                .await?
+                .map_err(|_| trouble::UNREACHABLE)?;
+            read_deepseek(account, &j, now)
+        }
+        Provider::Moonshot => {
+            let j = get_json(client().get("https://api.moonshot.ai/v1/users/me/balance").bearer_auth(key))
+                .await?
+                .map_err(|_| trouble::UNREACHABLE)?;
+            read_moonshot(account, &j, now, "USD")
+        }
+        Provider::MoonshotCn => {
+            let j = get_json(client().get("https://api.moonshot.cn/v1/users/me/balance").bearer_auth(key))
+                .await?
+                .map_err(|_| trouble::UNREACHABLE)?;
+            read_moonshot(account, &j, now, "CNY")
+        }
+        Provider::Openrouter => {
+            let j = get_json(client().get("https://openrouter.ai/api/v1/key").bearer_auth(key))
+                .await?
+                .map_err(|_| trouble::UNREACHABLE)?;
+            read_openrouter(account, &j, now)
+        }
+        Provider::Other(_) => Err(trouble::UNKNOWN_PROVIDER),
+    }
+}
+
+/// A number the provider may spell as a number or as a decimal string
+/// (DeepSeek spells balances as strings).
+fn decimal(v: Option<&serde_json::Value>) -> Option<f64> {
+    let v = v?;
+    v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())).filter(|n| n.is_finite())
+}
+
+/// DeepSeek: the key's own prepaid balance (`GET /user/balance`,
+/// Bearer) — one `balance_infos` row per currency, amounts as decimal
+/// strings. A balance is what is *left*, so it lands in `remaining`
+/// and never in `spent`. The two currencies are two wallets, not one
+/// number: the first with money in it is shown, USD before CNY, and an
+/// empty account shows USD at zero. No spend, so no fraction and no
+/// budget — there is nothing for a budget to be a fraction of.
+/// Endpoint and shape as `pi-usage` and `pi-deepseek-usage` read them.
+fn read_deepseek(
+    account: &Account,
+    j: &serde_json::Value,
+    now: i64,
+) -> Result<AccountReading, &'static str> {
+    let rows = j.get("balance_infos").and_then(serde_json::Value::as_array).ok_or(trouble::UNREADABLE)?;
+    let wallet = |currency: &str| {
+        rows.iter()
+            .find(|r| r.get("currency").and_then(serde_json::Value::as_str) == Some(currency))
+            .and_then(|r| decimal(r.get("total_balance")))
+    };
+    let usd = wallet("USD");
+    let cny = wallet("CNY");
+    let (left, currency) = match (usd, cny) {
+        (Some(u), _) if u > 0.0 => (u, "USD"),
+        (_, Some(c)) if c > 0.0 => (c, "CNY"),
+        (Some(u), _) => (u, "USD"),
+        (None, Some(c)) => (c, "CNY"),
+        (None, None) => return Err(trouble::UNREADABLE),
+    };
+    let mut r = bare(account, None, now);
+    r.remaining = Some(left);
+    r.currency = Some(currency.to_owned());
+    Ok(r)
+}
+
+/// Moonshot: `GET /v1/users/me/balance` (Bearer) answers `code: 0`,
+/// `status: true` and `data.available_balance` — cash plus vouchers,
+/// the figure that gates requests (`cash_balance` alone can be
+/// negative on credit). The site decides the currency (.ai in USD, .cn
+/// in CNY), which is why the caller names it and not the answer.
+fn read_moonshot(
+    account: &Account,
+    j: &serde_json::Value,
+    now: i64,
+    currency: &str,
+) -> Result<AccountReading, &'static str> {
+    let ok = j.get("code").and_then(serde_json::Value::as_i64) == Some(0)
+        && j.get("status").and_then(serde_json::Value::as_bool) == Some(true);
+    if !ok {
+        return Err(trouble::UNREADABLE);
+    }
+    let left = decimal(j.pointer("/data/available_balance")).ok_or(trouble::UNREADABLE)?;
+    let mut r = bare(account, None, now);
+    r.remaining = Some(left);
+    r.currency = Some(currency.to_owned());
+    Ok(r)
+}
+
+/// OpenRouter: `GET /api/v1/key` (Bearer) describes the key itself —
+/// `data.limit` (its spend cap in USD; `null` is no cap),
+/// `data.limit_remaining`, `data.usage` (all-time) and
+/// `data.usage_monthly` where the key reports one. A capped key fills
+/// against its cap, the cap outranking any budget because it is what
+/// actually stops requests. An uncapped key is 不限量 at the key and
+/// fills against the registered budget with **this month's** usage;
+/// with only the all-time figure to hand, that number is said and no
+/// fraction is drawn — a lifetime spend over a monthly budget would
+/// be a fraction of two different things.
+fn read_openrouter(
+    account: &Account,
+    j: &serde_json::Value,
+    now: i64,
+) -> Result<AccountReading, &'static str> {
+    let d = j.get("data").ok_or(trouble::UNREADABLE)?;
+    let all_time = decimal(d.get("usage"));
+    let monthly = decimal(d.get("usage_monthly"));
+    let mut r = bare(account, None, now);
+    r.currency = Some("USD".to_owned());
+    match decimal(d.get("limit")) {
+        Some(cap) => {
+            let left = decimal(d.get("limit_remaining"))
+                .unwrap_or_else(|| (cap - all_time.unwrap_or(0.0)).max(0.0))
+                .clamp(0.0, cap.max(0.0));
+            r.limit = Some(cap);
+            r.remaining = Some(left);
+            r.spent = Some(cap - left);
+            r.fill = Some(if cap > 0.0 { ((cap - left) / cap).clamp(0.0, 1.0) as f32 } else { 0.0 });
+            Ok(r)
+        }
+        None => {
+            r.unlimited = true;
+            match monthly {
+                Some(m) => Ok(against_budget(r, m, account.budget, "USD")),
+                None => {
+                    r.spent = Some(all_time.ok_or(trouble::UNREADABLE)?);
+                    Ok(r)
+                }
+            }
+        }
     }
 }
 
@@ -563,6 +702,87 @@ mod tests {
         assert_eq!(got[0].fill, Some(0.45), "control: a good reading on record stands too");
         assert_eq!(got[0].trouble, None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn wallet(provider: Provider, budget: Option<f64>) -> Account {
+        Account { id: "a".into(), name: "n".into(), provider, base_url: None, budget, home: "h".into() }
+    }
+
+    /// **A balance is what is left, and it is never written into
+    /// `spent`.** DeepSeek's shape (decimal strings, a row per
+    /// currency): the wallet with money in it is the one shown, USD
+    /// before CNY; an empty account still reads, at zero; a body with
+    /// no rows is unreadable rather than zero.
+    #[test]
+    fn a_deepseek_balance_lands_in_remaining_and_picks_the_wallet_with_money() {
+        let acc = wallet(Provider::Deepseek, None);
+        let both = serde_json::json!({"is_available": true, "balance_infos": [
+            {"currency": "CNY", "total_balance": "12.50", "granted_balance": "0.00", "topped_up_balance": "12.50"},
+            {"currency": "USD", "total_balance": "17.35", "granted_balance": "0.00", "topped_up_balance": "17.35"}]});
+        let r = read_deepseek(&acc, &both, 0).unwrap();
+        assert_eq!((r.remaining, r.currency.as_deref(), r.spent, r.fill), (Some(17.35), Some("USD"), None, None));
+
+        let cny_only_has_money = serde_json::json!({"is_available": true, "balance_infos": [
+            {"currency": "USD", "total_balance": "0.00"}, {"currency": "CNY", "total_balance": "3.00"}]});
+        let r = read_deepseek(&acc, &cny_only_has_money, 0).unwrap();
+        assert_eq!((r.remaining, r.currency.as_deref()), (Some(3.0), Some("CNY")));
+
+        let empty = serde_json::json!({"is_available": false, "balance_infos": [
+            {"currency": "USD", "total_balance": "0.00"}, {"currency": "CNY", "total_balance": "0.00"}]});
+        let r = read_deepseek(&acc, &empty, 0).unwrap();
+        assert_eq!((r.remaining, r.currency.as_deref()), (Some(0.0), Some("USD")), "empty is a reading");
+
+        let none = serde_json::json!({"is_available": true, "balance_infos": []});
+        assert_eq!(read_deepseek(&acc, &none, 0).unwrap_err(), trouble::UNREADABLE);
+    }
+
+    /// Moonshot answers `code`/`status` around the figure; a refusal
+    /// dressed as 200 (`code != 0`) is unreadable, not zero.
+    #[test]
+    fn a_moonshot_balance_is_read_in_the_sites_currency() {
+        let acc = wallet(Provider::MoonshotCn, None);
+        let j = serde_json::json!({"code": 0, "status": true, "scode": "0x0",
+            "data": {"available_balance": 49.58, "voucher_balance": 40.0, "cash_balance": 9.58}});
+        let r = read_moonshot(&acc, &j, 0, "CNY").unwrap();
+        assert_eq!((r.remaining, r.currency.as_deref(), r.spent), (Some(49.58), Some("CNY"), None));
+        let refused = serde_json::json!({"code": 1, "status": false, "data": {"available_balance": 49.58}});
+        assert_eq!(read_moonshot(&acc, &refused, 0, "CNY").unwrap_err(), trouble::UNREADABLE);
+    }
+
+    /// A capped OpenRouter key fills against its cap and the cap
+    /// outranks a budget; an uncapped one is 不限量 and fills against
+    /// the budget with the month's usage — and with only an all-time
+    /// figure, says the number and draws no fraction.
+    #[test]
+    fn an_openrouter_key_fills_against_its_cap_or_the_budget_never_against_all_time() {
+        let capped = serde_json::json!({"data": {"label": "k", "limit": 20.0, "limit_remaining": 5.0,
+            "usage": 115.0, "usage_monthly": 15.0, "is_free_tier": false}});
+        let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &capped, 0).unwrap();
+        assert_eq!((r.limit, r.remaining, r.spent), (Some(20.0), Some(5.0), Some(15.0)));
+        assert_eq!(r.fill, Some(0.75));
+        assert!(!r.unlimited);
+
+        let uncapped = serde_json::json!({"data": {"limit": null, "limit_remaining": null,
+            "usage": 115.0, "usage_monthly": 15.0}});
+        let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &uncapped, 0).unwrap();
+        assert!(r.unlimited);
+        assert_eq!((r.spent, r.limit, r.fill), (Some(15.0), Some(100.0), Some(0.15)));
+
+        let all_time_only = serde_json::json!({"data": {"limit": null, "usage": 115.0}});
+        let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &all_time_only, 0).unwrap();
+        assert_eq!((r.spent, r.limit, r.fill), (Some(115.0), None, None), "no fraction of two different things");
+    }
+
+    /// The sentence that refuses a provider word, and the usage text,
+    /// must name every word `parse` accepts — two lists a person reads
+    /// to learn what exists, kept honest against the one that decides.
+    #[test]
+    fn every_provider_word_is_named_where_a_person_would_look() {
+        let refusal = msg::no_such_provider("x");
+        for w in Provider::WORDS {
+            assert!(refusal.contains(w), "no-such-provider does not name {w}: {refusal}");
+            assert!(khor_catalog::cli::USAGE.contains(w), "the usage text does not name {w}");
+        }
     }
 
     /// The month window starts at the first instant of the month, UTC.

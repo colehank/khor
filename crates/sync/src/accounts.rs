@@ -30,8 +30,19 @@ const ACCOUNTS: &str = "accounts";
 /// Who answers for this account's usage. Spelled as the words a person
 /// registers with (`khor accounts add --provider newapi`), and carried
 /// on the wire as those words.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+///
+/// **A word this build has never heard of still comes through**, as
+/// [`Provider::Other`], carrying the word. [`AccountDoc::get`] reads
+/// each account with `.ok()`, so a variant this build could not decode
+/// would not be an error — it would be a registration that is silently
+/// not there, on exactly the machines least able to know why. An
+/// account registered by a newer khor shows on an older one with its
+/// word as itself, its home's reading carried like any other; only
+/// *reading the provider* is beyond that build, and it says so
+/// (`khor_node::accounts::trouble::UNKNOWN_PROVIDER`). `Other` is never
+/// registered — [`Provider::parse`] refuses an unknown word by name —
+/// it only ever arrives.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Provider {
     /// A new-api gateway (github.com/QuantumNous/new-api): the token's
     /// own key reads its own quota.
@@ -41,24 +52,64 @@ pub enum Provider {
     Claude,
     /// OpenAI's API, likewise through an admin key.
     Openai,
+    /// DeepSeek's platform: the key's own prepaid balance.
+    Deepseek,
+    /// Moonshot AI's global site (api.moonshot.ai, billed in USD).
+    Moonshot,
+    /// Moonshot AI's China site (api.moonshot.cn, billed in CNY). Two
+    /// words rather than one with an address: the site decides the
+    /// currency, and a currency guessed from a URL is a guess.
+    MoonshotCn,
+    /// OpenRouter: the key's own spend cap and usage.
+    Openrouter,
+    /// A word from a newer khor: carried and shown, never read here.
+    Other(String),
 }
 
 impl Provider {
+    /// The words `parse` accepts, spelled as `word` spells them — for
+    /// the sentence that refuses one it does not, and for the usage
+    /// text, so neither can list fewer than exist.
+    pub const WORDS: [&'static str; 7] =
+        ["newapi", "claude", "openai", "deepseek", "moonshot", "moonshot-cn", "openrouter"];
+
     pub fn parse(word: &str) -> Option<Provider> {
         match word.trim().to_ascii_lowercase().as_str() {
             "newapi" | "new-api" => Some(Provider::Newapi),
             "claude" | "anthropic" => Some(Provider::Claude),
             "openai" => Some(Provider::Openai),
+            "deepseek" => Some(Provider::Deepseek),
+            "moonshot" | "moonshotai" => Some(Provider::Moonshot),
+            "moonshot-cn" | "moonshotai-cn" => Some(Provider::MoonshotCn),
+            "openrouter" => Some(Provider::Openrouter),
             _ => None,
         }
     }
 
-    pub fn word(self) -> &'static str {
+    pub fn word(&self) -> &str {
         match self {
             Provider::Newapi => "newapi",
             Provider::Claude => "claude",
             Provider::Openai => "openai",
+            Provider::Deepseek => "deepseek",
+            Provider::Moonshot => "moonshot",
+            Provider::MoonshotCn => "moonshot-cn",
+            Provider::Openrouter => "openrouter",
+            Provider::Other(word) => word,
         }
+    }
+}
+
+impl Serialize for Provider {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.word())
+    }
+}
+
+impl<'de> Deserialize<'de> for Provider {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let word = String::deserialize(d)?;
+        Ok(Provider::parse(&word).unwrap_or(Provider::Other(word)))
     }
 }
 
@@ -193,9 +244,35 @@ mod tests {
     fn a_provider_is_spelled_the_way_it_is_registered() {
         assert_eq!(Provider::parse("new-api"), Some(Provider::Newapi));
         assert_eq!(Provider::parse("Anthropic"), Some(Provider::Claude));
-        assert_eq!(Provider::parse("openai").map(Provider::word), Some("openai"));
+        assert_eq!(Provider::parse("openai").as_ref().map(Provider::word), Some("openai"));
+        assert_eq!(Provider::parse("moonshotai-cn"), Some(Provider::MoonshotCn));
         assert_eq!(Provider::parse("azure"), None);
         let json = serde_json::to_string(&one("k", "n")).unwrap();
         assert!(json.contains("\"provider\":\"newapi\""), "{json}");
+        for w in Provider::WORDS {
+            assert_eq!(Provider::parse(w).as_ref().map(Provider::word), Some(w), "{w} round-trips");
+        }
+    }
+
+    /// **A word from a newer khor comes through, and goes back out
+    /// unchanged.** The doc reads each account with `.ok()`, so a
+    /// variant this build could not decode would not be an error — it
+    /// would be a registration silently not there. An unknown word
+    /// therefore decodes to `Other`, is spelled as itself, re-serialises
+    /// to the same bytes, and sits in the doc's list like any other. The
+    /// last line is the control: the same word is refused at
+    /// registration, so `Other` can only ever arrive.
+    #[test]
+    fn a_provider_word_from_the_future_is_carried_not_dropped() {
+        let json = r#"{"id":"k","name":"n","provider":"quantum-llm","home":"aa"}"#;
+        let a: Account = serde_json::from_str(json).unwrap();
+        assert_eq!(a.provider, Provider::Other("quantum-llm".into()));
+        assert_eq!(a.provider.word(), "quantum-llm");
+        let back = serde_json::to_string(&a).unwrap();
+        assert!(back.contains("\"provider\":\"quantum-llm\""), "{back}");
+        let d = AccountDoc::new(1).unwrap();
+        d.set(&a).unwrap();
+        assert_eq!(d.all(), vec![a], "listed, not dropped");
+        assert_eq!(Provider::parse("quantum-llm"), None, "control: never registered here");
     }
 }

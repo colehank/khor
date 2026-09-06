@@ -49,8 +49,21 @@ import { lasting, until } from "@/words";
     which a fresh reading from another machine reaches this screen. */
 const POLL_MS = 10_000;
 
-const PROVIDERS = ["newapi", "claude", "openai"] as const;
+/** The words `khor_sync::accounts::Provider::parse` accepts, in the
+    order the form offers them. A reading can carry a word that is not
+    here — an account registered by a newer khor — and shows it as
+    itself (`providerWord`'s default); the form only offers what this
+    build can register. */
+const PROVIDERS = ["newapi", "claude", "openai", "deepseek", "moonshot", "moonshot-cn", "openrouter"] as const;
 type Provider = (typeof PROVIDERS)[number];
+
+/** Which providers a registered budget means anything for: those that
+    report a spend (the vendors' cost reports, OpenRouter's monthly
+    usage). A prepaid wallet reports what is left, and a budget over a
+    balance would be a fraction of two different things. */
+const BUDGETED: readonly string[] = ["claude", "openai", "openrouter"];
+/** Both vendors' usage reports are organisation-level admin calls. */
+const NEEDS_ADMIN: readonly string[] = ["claude", "openai"];
 
 function providerWord(p: string): string {
   switch (p) {
@@ -60,6 +73,14 @@ function providerWord(p: string): string {
       return gui.accounts_provider_claude;
     case "openai":
       return gui.accounts_provider_openai;
+    case "deepseek":
+      return gui.accounts_provider_deepseek;
+    case "moonshot":
+      return gui.accounts_provider_moonshot;
+    case "moonshot-cn":
+      return gui.accounts_provider_moonshot_cn;
+    case "openrouter":
+      return gui.accounts_provider_openrouter;
     default:
       return p;
   }
@@ -84,6 +105,8 @@ function troubleWord(key: string): string {
       return gui.accounts_trouble_no_reading;
     case "gateway-too-old":
       return gui.accounts_trouble_gateway_too_old;
+    case "unknown-provider":
+      return gui.accounts_trouble_unknown_provider;
     default:
       return key;
   }
@@ -95,12 +118,14 @@ function money(n: number, currency: string | null): string {
 }
 
 /** What sits in the ring's centre: the share when there is one, the
-    spend when there is a number but no denominator, nothing else. */
+    spend when there is a number but no denominator, what is left when
+    the provider reports a wallet rather than a spend, nothing else. */
 function centre(r: AccountRing): string {
   const { reading } = r;
   if (reading.trouble) return "";
   if (reading.fill != null) return `${Math.round(reading.fill * 100)}%`;
   if (reading.spent != null) return money(reading.spent, null);
+  if (reading.remaining != null) return money(reading.remaining, null);
   return "";
 }
 
@@ -228,12 +253,22 @@ export function QuotaLanding({
                 </dd>
               </>
             )}
-            {current.reading.limit == null && !current.reading.unlimited && (
+            {current.reading.remaining != null && (
               <>
-                <dt className="text-muted-foreground">{gui.accounts_budget}</dt>
-                <dd className="text-muted-foreground">{gui.accounts_no_budget}</dd>
+                <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>
+                <dd data-quota-remaining className="tabular-nums">
+                  {money(current.reading.remaining, current.reading.currency)}
+                </dd>
               </>
             )}
+            {BUDGETED.includes(current.reading.provider) &&
+              current.reading.limit == null &&
+              !current.reading.unlimited && (
+                <>
+                  <dt className="text-muted-foreground">{gui.accounts_budget}</dt>
+                  <dd className="text-muted-foreground">{gui.accounts_no_budget}</dd>
+                </>
+              )}
             {current.reading.resets_at != null && (
               <>
                 <dt className="text-muted-foreground">{gui.accounts_resets}</dt>
@@ -437,10 +472,10 @@ function RegisterDialog({
                 secret: where it goes, and which kind of key can read
                 usage at all. */}
             <span className="text-xs text-muted-foreground">
-              {provider === "newapi" ? gui.accounts_key_stays : `${gui.accounts_key_stays} ${gui.accounts_needs_admin}`}
+              {NEEDS_ADMIN.includes(provider) ? `${gui.accounts_key_stays} ${gui.accounts_needs_admin}` : gui.accounts_key_stays}
             </span>
           </label>
-          {provider !== "newapi" && (
+          {BUDGETED.includes(provider) && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">{gui.accounts_budget}</span>
               <Input

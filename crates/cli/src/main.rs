@@ -1672,12 +1672,15 @@ fn quota(rest: &[String]) -> Result<(), String> {
     }
     for (r, age_ms) in board {
         let home = names.get(&r.home).cloned().unwrap_or_else(|| r.home.clone());
-        let figure = match (&r.trouble, r.spent, r.limit) {
-            (Some(t), _, _) => cli::quota_trouble(t),
-            (None, Some(s), Some(l)) => format!("{s:.2}/{l:.2} {}", r.currency.clone().unwrap_or_default()),
-            (None, Some(s), None) if r.unlimited => format!("{s:.2} {} {}", r.currency.clone().unwrap_or_default(), cli::QUOTA_UNLIMITED),
-            (None, Some(s), None) => format!("{s:.2} {}", r.currency.clone().unwrap_or_default()),
-            (None, None, _) => cli::QUOTA_NO_NUMBER.to_owned(),
+        let currency = r.currency.clone().unwrap_or_default();
+        let figure = match (&r.trouble, r.spent, r.limit, r.remaining) {
+            (Some(t), _, _, _) => cli::quota_trouble(t),
+            (None, Some(s), Some(l), _) => format!("{s:.2}/{l:.2} {currency}"),
+            (None, Some(s), None, _) if r.unlimited => format!("{s:.2} {currency} {}", cli::QUOTA_UNLIMITED),
+            (None, Some(s), None, _) => format!("{s:.2} {currency}"),
+            // A wallet says what is left and nothing about what went.
+            (None, None, _, Some(left)) => cli::quota_remaining(format_args!("{left:.2} {currency}")),
+            (None, None, _, None) => cli::QUOTA_NO_NUMBER.to_owned(),
         };
         let share = r.fill.map(|f| format!("{:.0}%", f * 100.0)).unwrap_or_default();
         println!("{}	{}	{}	{}	{}	{}s", r.name, r.provider, home, figure, share, age_ms / 1000);

@@ -22,6 +22,9 @@ test("khor's account words map onto pi-ai provider ids", () => {
   assert.equal(providerIdFor("Anthropic"), "anthropic");
   assert.equal(providerIdFor("new-api"), GATEWAY);
   assert.equal(providerIdFor("deepseek"), "deepseek");
+  assert.equal(providerIdFor("moonshot"), "moonshotai");
+  assert.equal(providerIdFor("moonshot-cn"), "moonshotai-cn");
+  assert.equal(providerIdFor("openrouter"), "openrouter");
 });
 
 test("an unknown provider word is refused, naming what is known", () => {

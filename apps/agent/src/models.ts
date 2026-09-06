@@ -54,13 +54,17 @@ export interface Seated {
 }
 
 export function knownProviders(): string[] {
-  return [GATEWAY, "claude", ...BUILTIN];
+  return [GATEWAY, "claude", "moonshot", "moonshot-cn", ...BUILTIN];
 }
 
+/** khor's account words (`khor_sync::accounts::Provider::WORDS`) onto
+ * pi-ai's ids; a word that is already a pi-ai id passes through. */
 export function providerIdFor(word: string): string {
   const w = word.trim().toLowerCase();
   if (w === "claude") return "anthropic";
   if (w === "newapi" || w === "new-api") return GATEWAY;
+  if (w === "moonshot") return "moonshotai";
+  if (w === "moonshot-cn") return "moonshotai-cn";
   if (BUILTIN.has(w)) return w;
   throw new Error(`\`${word}\` is not a provider this agent knows. Known: ${knownProviders().join(", ")}`);
 }

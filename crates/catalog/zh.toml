@@ -134,9 +134,10 @@ usage = """
                         --on 在别的机器上开,不给命令就用那台自己的 shell;
                         --gui/--agent 配 --on 在那台机器上起它自己的 agent,
                         不接命令,也不接 --resume)
-  accounts              登记过的 API 账号;add <名字> --provider newapi|claude|openai
-                        [--base-url 地址] [--budget 数] --key 钥匙|--key-stdin 登记
-                        (钥匙只留在这台机器上);rm <id|名字> 撤掉
+  accounts              登记过的 API 账号;add <名字> --provider newapi|claude|openai|
+                        deepseek|moonshot|moonshot-cn|openrouter [--base-url 地址]
+                        [--budget 数] --key 钥匙|--key-stdin 登记(钥匙只留在这台
+                        机器上);rm <id|名字> 撤掉
   quota                 每个账号用了多少:本机的现读,别的机器的按上次带回来的
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
@@ -670,6 +671,8 @@ account-name-ambiguous = "有不止一个账号叫 {0},用 id 指"
 quota-trouble = "问不出来({0})"
 quota-unlimited = "不限量"
 quota-no-number = "没有数"
+# A prepaid wallet reports what is left, not what was spent.
+quota-remaining = "剩 {0}"
 # `--resume` given without `--agent`. **不猜**:一个光秃秃的 id 说不出
 # 该由谁去起,拿默认的去开会开出一段新对话然后管它叫那段旧的。
 resume-needs-agent = "--resume 要和 --agent 一起用:光有 id 说不出该由哪个 agent 去续"
@@ -1198,7 +1201,7 @@ account-needs-address = "new-api 每个站地址不同,得给它的地址"
 account-address-bad = "地址要以 http:// 或 https:// 开头: {0}"
 account-budget-bad = "预算得是个正数"
 no-such-account = "没登记过这个账号: {0}"
-no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai"
+no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai、deepseek、moonshot、moonshot-cn、openrouter"
 cant-make-keys-dir = "建不了钥匙目录: {0}"
 # Resuming a vendor session that another process is running right now
 # (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
@@ -1331,6 +1334,10 @@ accounts-provider = "哪家"
 accounts-provider-newapi = "new-api 站"
 accounts-provider-claude = "Claude API"
 accounts-provider-openai = "OpenAI API"
+accounts-provider-deepseek = "DeepSeek"
+accounts-provider-moonshot = "Moonshot 国际站"
+accounts-provider-moonshot-cn = "Moonshot 国内站"
+accounts-provider-openrouter = "OpenRouter"
 accounts-name = "叫什么"
 accounts-address = "地址"
 accounts-key = "钥匙"
@@ -1346,6 +1353,9 @@ accounts-state = "怎么了"
 accounts-spent = "已用"
 accounts-of = "{0} / {1}"
 accounts-unlimited = "不限量"
+# A prepaid wallet (DeepSeek, Moonshot) or a capped key (OpenRouter)
+# reports what is left; the row is its own, apart from 已用.
+accounts-remaining = "剩余"
 accounts-resets = "重置"
 accounts-read-by = "读数"
 accounts-read-here = "这台机器刚读的"
@@ -1359,6 +1369,7 @@ accounts-trouble-cooling = "刚失败过,歇一会再问"
 accounts-trouble-no-key = "那台机器上没有这个账号的钥匙"
 accounts-trouble-no-reading = "那台机器还没答过"
 accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
+accounts-trouble-unknown-provider = "这台 khor 不认识这家,升级它才读得到"
 # 额度页脚下那条带的题头:本机 Claude Code 登录的两窗。2026-08-28「额度都是
 # 机器卡里的」曾把它们钉在两张机器卡上;2026-09-02「机器页面不需要有 token
 # usage 的环」撤了卡上那份——这条带从此是它们唯一的家。
