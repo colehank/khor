@@ -3985,23 +3985,38 @@ try {
           said: [...plot.querySelectorAll("[data-plot-ruler]")].map((t) => `${t.dataset.plotRuler}:${t.textContent}`).join(" "),
           n: pts.length,
           close,
-          //   Where the x axis's zero tick sits, and where the leftmost
-          //   point sits. On a ruler that put zero anywhere else the
-          //   two would not meet.
-          zeroTickX: (() => {
-            const g = [...plot.querySelectorAll("[data-plot-tick-x]")].find((n) => Number(n.dataset.plotTickX) === 0);
-            return g ? +(+g.querySelector("line").getAttribute("x1")).toFixed(2) : null;
+          //   The two ends the drawing says its x axis runs between,
+          //   and the first tick — its value and where it is drawn.
+          //   2026-09-06 the axis stopped starting at zero (「根据数据
+          //   的最大最小值自适应调整 x 和 y 的范围」), so the claim is no
+          //   longer 「zero is at zero」 but 「the smallest reading is the
+          //   first tick, drawn where the smallest point is」.
+          xLo: Number(plot.dataset.plotXLo),
+          xHi: Number(plot.dataset.plotXHi),
+          yLo: Number(plot.dataset.plotYLo),
+          yHi: Number(plot.dataset.plotYHi),
+          firstTick: (() => {
+            const gs = [...plot.querySelectorAll("[data-plot-tick-x]")];
+            if (!gs.length) return null;
+            const g = gs.reduce((a, b) => (Number(b.dataset.plotTickX) < Number(a.dataset.plotTickX) ? b : a));
+            return { v: Number(g.dataset.plotTickX), x: +(+g.querySelector("line").getAttribute("x1")).toFixed(2) };
           })(),
           minPointX: pts.length ? Math.min(...pts.map((p) => p.x)) : null,
+          maxPointX: pts.length ? Math.max(...pts.map((p) => p.x)) : null,
           //   Where the axis itself starts — the vertical rule at the
-          //   plot's left edge. `at(0)` has to land exactly there, and
-          //   comparing the zero tick with the *points* would not show
-          //   it: both come from the same transform, so a ruler shifted
-          //   off its origin moves them together.
+          //   plot's left edge — and where the drawing ends on the
+          //   right. Comparing the first tick with the *points* alone
+          //   would not show a ruler shifted off its origin: both come
+          //   from the same transform and move together.
           axisX: (() => {
             const lines = [...plot.querySelectorAll("svg > line")];
             const v = lines.find((l) => l.getAttribute("x1") === l.getAttribute("x2"));
             return v ? +(+v.getAttribute("x1")).toFixed(2) : null;
+          })(),
+          axisRight: (() => {
+            const lines = [...plot.querySelectorAll("svg > line")];
+            const h = lines.find((l) => l.getAttribute("y1") === l.getAttribute("y2"));
+            return h ? +(+h.getAttribute("x2")).toFixed(2) : null;
           })(),
         };
       });
@@ -4043,20 +4058,55 @@ try {
             `「it is chosen by measurement」 was not tested, only 「it is always this one」`,
         );
       }
-      //   **Zero at zero.** The `0` tick and the leftmost point have to
-      //   agree; a `log(v+1)` ruler puts the tick where `log 1` is and
-      //   the point somewhere else.
-      if (now.zeroTickX === null || now.axisX === null) {
-        fail(`probe dead: no zero tick (${now.zeroTickX}) or no axis line (${now.axisX}), so 「zero is at zero」 measured nothing`);
+      //   **The axis is the data's own span, and the first tick is the
+      //   smallest reading, drawn where the smallest point is.**
+      //   2026-09-06:「散点图 x 轴 0% 右侧空了一大截,应该根据数据的最大
+      //   最小值自适应调整 x 和 y 的范围」. Three parts, each one of the
+      //   ways this is done wrong:
+      //
+      //     - the two ends the drawing claims are the fixture's own
+      //       minimum and maximum on that axis — computed here from
+      //       the rows, so an axis pinned back to zero (the old
+      //       picture) reads a different `lo` and goes red;
+      //     - the lowest tick's *label* is that minimum, and its *line*
+      //       is at the leftmost point's x — a `log(v+1)`-style ruler
+      //       that cannot put its origin where its own label says
+      //       lands the tick and the point apart;
+      //     - the leftmost point sits a few pixels inside the axis
+      //       line, not on it, and the rightmost the same distance
+      //       inside the frame's right end: a dot on the frame is half
+      //       a dot, and the room is the same on both sides.
+      //
+      //   `now` is CPU × 内存, and `x` is CPU on every fixture row, so
+      //   the expected ends are read straight off `load.top`.
+      const cpuVals = load.top.map((r) => r.cpu_pct);
+      const expectLo = Math.min(...cpuVals);
+      const expectHi = Math.max(...cpuVals);
+      if (now.firstTick === null || now.axisX === null || now.axisRight === null || now.minPointX === null) {
+        fail(`probe dead: no first tick / axis / points (${JSON.stringify([now.firstTick, now.axisX, now.axisRight, now.minPointX])}), so the axis range measured nothing`);
       } else {
-        if (Math.abs(now.zeroTickX - now.axisX) > 0.6) {
+        if (Math.abs(now.xLo - expectLo) > 1e-6 || Math.abs(now.xHi - expectHi) > 1e-6) {
           fail(
-            `the reading 0 is drawn at x=${now.zeroTickX} while the axis begins at ${now.axisX} — ` +
-              `a ruler that cannot put zero at its own origin (log(v+1) is the usual way in) has labels that lie about where they sit`,
+            `the x axis says it runs ${now.xLo}–${now.xHi} while the rows run ${expectLo}–${expectHi} — ` +
+              `an axis that starts anywhere but the smallest reading spends its width on a stretch no point can be in`,
           );
         }
-        if (now.minPointX !== null && now.minPointX < now.axisX - 0.6) {
-          fail(`a point sits at x=${now.minPointX}, left of the axis at ${now.axisX}`);
+        if (Math.abs(now.firstTick.v - Math.round(expectLo * 10) / 10) > 0.051) {
+          fail(`the lowest x tick reads ${now.firstTick.v}, not the smallest reading ${expectLo}`);
+        }
+        if (Math.abs(now.firstTick.x - now.minPointX) > 0.6) {
+          fail(
+            `the lowest tick is drawn at x=${now.firstTick.x} while the leftmost point is at ${now.minPointX} — ` +
+              `a ruler that cannot put its origin where its own label says has labels that lie about where they sit`,
+          );
+        }
+        const left = now.minPointX - now.axisX;
+        const right = now.axisRight - now.maxPointX;
+        if (!(left >= 4 && left <= 12)) {
+          fail(`the leftmost point sits ${left.toFixed(1)}px from the axis line — it is meant to be just inside it, not on it and not adrift`);
+        }
+        if (Math.abs(left - right) > 0.6) {
+          fail(`the room inside the frame is ${left.toFixed(1)}px on the left and ${right.toFixed(1)}px on the right — the two ends are the same reading's margin`);
         }
       }
       console.log(`plot rulers: ${Object.entries(crowd).map(([k, v]) => `${k} ${v} crowded`).join(", ")}, said 「${now.said}」`);

@@ -1796,23 +1796,61 @@ const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
  * Either way **a tick's label is a real reading**, never a transformed
  * number.
  */
-function ruler(vals: number[]): { kind: "sqrt" | "log"; at: (v: number) => number; tick: (f: number) => number } {
-  const max = Math.max(1e-9, ...vals);
+function ruler(vals: number[]): {
+  kind: "sqrt" | "log";
+  /** The data's two ends — the first and last tick, and the two
+      readings a point can sit exactly on. */
+  lo: number;
+  hi: number;
+  at: (v: number) => number;
+  tick: (f: number) => number;
+} {
+  // **The axis runs from the smallest reading to the largest, not from
+  // zero** (2026-09-06:「散点图 x 轴 0% 右侧空了一大截,应该根据数据的最大
+  // 最小值自适应调整 x 和 y 的范围」). On a log ruler the stretch between
+  // 0 and the first reading is where nothing can ever be — every point
+  // is at or above the minimum by definition — and on turing it was a
+  // third of the axis. So `lo` is the minimum and every position below
+  // is measured from it: `at(lo) = 0`. The choice of ruler is untouched
+  // — `max / median` on the raw readings, exactly as before — because
+  // that is a fact about the spread, not about where the axis starts.
+  //
+  // **A table where every reading is the same has no spread to draw**,
+  // and an axis from `v` to `v` would put every tick on one label; it
+  // falls back to `[0, v]` (or `[0, 1]` for all-zero), which is the old
+  // picture and an honest one for that table.
+  const max = Math.max(...vals, -Infinity);
+  const min = Math.min(...vals, Infinity);
+  const same = !(max > min);
+  const hi = same ? Math.max(1e-9, max) : max;
+  const lo = same ? 0 : min;
   const sorted = [...vals].sort((a, b) => a - b);
   const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-  const wide = !(med > 0) || max / med > 44;
+  const wide = !(med > 0) || hi / med > 44;
   if (!wide) {
-    return { kind: "sqrt", at: (v) => Math.sqrt(Math.max(0, v) / max), tick: (f) => max * f };
+    return {
+      kind: "sqrt",
+      lo,
+      hi,
+      at: (v) => Math.sqrt(Math.max(0, v - lo) / (hi - lo)),
+      tick: (f) => lo + (hi - lo) * f,
+    };
   }
-  const pos = vals.filter((v) => v > 0);
-  const s = Math.max(pos.length ? Math.min(...pos) : max / 1e6, max / 1e6);
-  const span = Math.log1p(max / s);
+  // `s` is the data's own resolution **above the minimum** — the
+  // smallest step any reading takes from `lo` — so the log has
+  // something to compress from the very first reading, not from an
+  // absolute zero the axis no longer starts at.
+  const above = vals.map((v) => v - lo).filter((v) => v > 0);
+  const s = Math.max(above.length ? Math.min(...above) : (hi - lo) / 1e6, (hi - lo) / 1e6);
+  const span = Math.log1p((hi - lo) / s);
   return {
     kind: "log",
-    at: (v) => Math.log1p(Math.max(0, v) / s) / span,
+    lo,
+    hi,
+    at: (v) => Math.log1p(Math.max(0, v - lo) / s) / span,
     // The value whose position is `f` — so the label is a real reading
     // and the tick is where that reading belongs.
-    tick: (f) => (Math.exp(f * span) - 1) * s,
+    tick: (f) => lo + (Math.exp(f * span) - 1) * s,
   };
 }
 
@@ -1981,8 +2019,19 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   const maxVram = vrams.length > 0 ? Math.max(...vrams) : 0;
   const RMAX = 11;
   const halo = (v: number) => (maxVram > 0 ? RMAX * Math.sqrt(v / maxVram) : 0);
-  const sx = (v: number) => padL + rx.at(v) * (W - padL - padR);
-  const sy = (v: number) => H - padB - ry.at(v) * (H - padT - padB);
+  // **A margin at both ends of each axis**, in pixels rather than as a
+  // fraction of the ruler: the two extreme readings sit *exactly* on
+  // `at = 0` and `at = 1` now that the axis is the data's own span, and
+  // a dot drawn on the frame line is half a dot. Eight pixels clears
+  // the dot and its press target (radius 1.8 + a stroke of 11 / 2); the
+  // largest halo (`RMAX`, 11) can still cross the frame by three, and
+  // that is a halo — an area around a point — not the point. The ticks
+  // share the margin (they are readings too), which is what keeps the
+  // first tick under the leftmost point instead of eight pixels to its
+  // left.
+  const inset = 8;
+  const sx = (v: number) => padL + inset + rx.at(v) * (W - padL - padR - 2 * inset);
+  const sy = (v: number) => H - padB - inset - ry.at(v) * (H - padT - padB - 2 * inset);
   // **Ticks at round fractions of the real value**, placed where the
   // root puts them — so they crowd together towards the right, and
   // that crowding is itself the evidence that the ruler is not linear.
@@ -1996,6 +2045,12 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
       data-plot-axes={`${axes.x}x${axes.y}`}
       data-plot-scale-x={rx.kind}
       data-plot-scale-y={ry.kind}
+      // The two ends of each axis, as the readings they are — what the
+      // gate compares against the data's own minimum and maximum.
+      data-plot-x-lo={rx.lo}
+      data-plot-x-hi={rx.hi}
+      data-plot-y-lo={ry.lo}
+      data-plot-y-hi={ry.hi}
       className="flex flex-col gap-in"
     >
       {/* **Both labels are tucked inside the axes** (2026-09-06:「X轴
