@@ -149,7 +149,12 @@ fn the_page_takes_a_key_once_and_remembers_the_browser() {
     // Keyless: the door is shut with a sentence, not a blank app.
     let (code, body) = request(addr, "/", &[]);
     assert_eq!(code, 403, "a keyless page visit must be refused");
-    assert!(body.contains("钥匙"), "…with words a person can act on: {body:.120}");
+    // 「密钥」 since 2026-09-06 — the catalog's term for a secret key,
+    // renamed from 「钥匙」 in one pass. This assertion is the one thing
+    // outside `zh.toml` that reads that word, and it is here rather
+    // than checking for「a 403 body」 because a refusal with no words a
+    // person can act on is the failure it was written for.
+    assert!(body.contains("密钥"), "…with words a person can act on: {body:.120}");
 
     // The printed link: page served, credential planted.
     let (code, head, body) = request_full(addr, &format!("/?k={key}"), &[]);

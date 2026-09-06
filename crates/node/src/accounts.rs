@@ -233,7 +233,7 @@ impl Node {
         // Cooling: the last reading stands — a number, or the trouble
         // that started the cooldown. **The trouble is kept, not
         // replaced by「cooling」**: the first cut of this swapped it on
-        // the second read, so a refused key read as 钥匙被拒 for one
+        // the second read, so a refused key read as 密钥被拒 for one
         // beat and 歇一会 for the next ten minutes, and the screen lost
         // the one word a person could act on (found by the smoke).
         if let Some(failed) = cached.as_ref().and_then(|c| c.failed_at_ms)

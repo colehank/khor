@@ -201,9 +201,17 @@ function fromWord(from: string): string {
  * sentence — that is the endpoint talking, not khor claiming.
  */
 function windowWord(w: QuotaWindow): string {
-  if (w.scope) return w.scope;
-  if (typeof w.span !== "string") return w.span.other;
-  return w.span === "five_hour" ? gui.quota_five_hour : gui.quota_seven_day;
+  const span = typeof w.span !== "string"
+    ? w.span.other
+    : w.span === "five_hour"
+      ? gui.quota_five_hour
+      : gui.quota_seven_day;
+  // **Both halves, joined by a separator that is not copy.** 「名字从
+  // payload 来」 (2026-09-06) forbids khor spelling the *model*; it does
+  // not say to throw the length away, and 「Fable」 alone leaves a
+  // reader with no idea what period they are 35% through. The `·` is
+  // punctuation, not a word, so it stays out of `zh.toml`.
+  return w.scope ? `${span} · ${w.scope}` : span;
 }
 
 /**
@@ -247,6 +255,31 @@ function centre(r: AccountRing): string {
   if (reading.spent != null) return money(reading.spent, null);
   if (reading.remaining != null) return money(reading.remaining, null);
   return "";
+}
+
+/**
+ * How much arc to draw for an account.
+ *
+ * **A ring with no ceiling is a full ring, not an empty one**
+ * (2026-09-06 user ruling). An 不限量 plan and a prepaid wallet both
+ * have a reading and no denominator, and the old code drew them as bare
+ * track — which is the picture of *nothing used*, the opposite of what
+ * is true. There is nothing to be a fraction *of*, so the honest arc is
+ * the whole circle in neutral ink: the ring says「this is fine」and the
+ * centre says the number.
+ *
+ * **Only 问不出来 leaves track showing**, and that is the point of the
+ * distinction: an empty ring now means one thing — khor could not get
+ * an answer — instead of meaning that *or* an unlimited plan.
+ *
+ * **This is a drawing rule and it lives here**, in the face. The node's
+ * `fill` stays `None`: it is the honest answer to「what fraction」, and
+ * turning it into 1.0 up there would put a number on the wire that the
+ * provider never reported.
+ */
+function arcOf(reading: AccountRing["reading"]): number | null {
+  if (reading.trouble) return null;
+  return reading.fill ?? 1;
 }
 
 /** The id the subscription row wears. Not an account id and cannot
@@ -293,19 +326,28 @@ function valueWord(axis: string, value: string): string {
 
 /** The axis's own name, for the heading over its ticks and over its
     group. */
-/** The line under a row's name, and the same line under the detail's
-    title. **One function, because they are one sentence** — the row and
-    its detail disagreeing about what a row *is* was the shape this page
-    kept drifting into. The plan sits second where there is one: it
-    qualifies 「订阅」, and reads as part of it. */
+/**
+ * The one line under a row's name — **one thing, not four.**
+ *
+ * It used to read 「类型 · 提供商 · 来源」, and with the plan added it
+ * became 「订阅 · Max 20x · Claud…」: 288 pixels of list column, and the
+ * 来源 axis truncated off the end of its own row. 2026-09-06 the user
+ * cut the line rather than the column —「用户知道从哪点进来的,list 上
+ * 有」「new-api 站、计费也不用写,用户自己设置的自己知道」.
+ *
+ * So: the subscription wears its plan, an account wears its provider,
+ * and neither wears 类型 or 来源. **Those two did not become
+ * invisible** — 来源 is a group heading and both are ticks in the
+ * filter, which is where a thing you sort by belongs; what left is the
+ * copy repeating on every row what the person already chose.
+ */
 function subLine(r: Row): string {
-  return [kindWord(r.kind), r.plan, providerWord(r.provider), fromWord(r.from)]
-    .filter(Boolean)
-    .join(" · ");
+  return r.kind === "sub" ? (r.plan ?? "") : providerWord(r.provider);
 }
 
-/** The `disabled_reason` key's sentence. A key this build never heard
-    of is shown as itself — same bargain `troubleWord` makes. */
+/** The `disabled_reason` key as a status word — never a sentence
+    (2026-09-06: 「只留数,不留句子」). A key this build never heard of
+    is shown as itself, the same bargain `troubleWord` makes. */
 function creditWord(key: string): string {
   return key === "out_of_credits" ? gui.quota_credits_out : key;
 }
@@ -622,13 +664,7 @@ export function QuotaLanding({
               </NestedRing>
             ) : (
               <Ring
-                fraction={
-                  r.account
-                    ? r.account.reading.trouble
-                      ? null
-                      : r.account.reading.fill
-                    : (bad?.used_pct ?? 0) / 100
-                }
+                fraction={r.account ? arcOf(r.account.reading) : (bad?.used_pct ?? 0) / 100}
                 color={gaugeColor(r.account?.strain ?? null)}
                 size={RING_SIZE_ROW}
               />
@@ -691,9 +727,23 @@ export function QuotaLanding({
   const acc = current?.account ?? null;
   const subDetail = current && current.account === null && (
     <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
-      <div className="flex min-w-0 flex-col">
+      {/* **Name and plan, and nothing else** (2026-09-06: 「卡头不再写
+          类型 · 厂商 · 来源 · 密钥在哪台」). Every one of those four was
+          something the person had just chosen on the way in — the list
+          row they pressed, the account they registered — so the card
+          was spending its first line telling them what they already
+          knew. The plan is the exception because nobody chose it: it
+          comes off the login. */}
+      <div className="flex min-w-0 flex-wrap items-baseline gap-2">
         <span className="text-title">{current.name}</span>
-        <span className="text-sm text-muted-foreground">{subLine(current)}</span>
+        {current.plan && (
+          <span
+            data-quota-plan
+            className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+          >
+            {current.plan}
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap gap-6">
         {current.windows.map((w) => (
@@ -702,7 +752,11 @@ export function QuotaLanding({
               {`${Math.round(w.used_pct)}%`}
             </Ring>
             <span className="flex min-w-0 flex-col">
-              <span className="text-fact">{windowWord(w)}</span>
+              {/* Named, so a gate can read the window's *name* rather
+                  than the block's text — that block also holds the
+                  ring's percentage and the reset line, and a measure
+                  that splits those apart on whitespace reads 「39%7」. */}
+              <span data-quota-window-name className="text-fact">{windowWord(w)}</span>
               {w.resets_at !== null && (
                 <span className="text-aux text-muted-foreground">
                   {gui.quota_resets(until(w.resets_at * 1000))}
@@ -773,20 +827,14 @@ export function QuotaLanding({
   const detail = acc && (
     <div data-quota-detail={acc.reading.account} className="flex flex-col gap-4 p-4">
       <div className="flex items-center gap-4">
-        <Ring
-          fraction={acc.reading.trouble ? null : acc.reading.fill}
-          color={gaugeColor(acc.strain)}
-          size={RING_SIZE}
-        >
+        <Ring fraction={arcOf(acc.reading)} color={gaugeColor(acc.strain)} size={RING_SIZE}>
           {centre(acc)}
         </Ring>
-        <div className="flex min-w-0 flex-col">
-          <span className="text-title">{acc.reading.name}</span>
-          <span className="text-sm text-muted-foreground">
-            {providerWord(acc.reading.provider)}
-            {acc.base_url ? ` · ${acc.base_url}` : ""}
-          </span>
-        </div>
+        {/* The account's own head, cut by the same ruling: the
+            provider and the base URL are what the person typed into the
+            registration form, and the row they pressed says the
+            provider anyway. */}
+        <span className="min-w-0 text-title">{acc.reading.name}</span>
       </div>
       <dl data-quota-figures className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         {acc.reading.trouble ? (

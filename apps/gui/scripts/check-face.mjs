@@ -1920,12 +1920,27 @@ try {
     //   here — which is the whole bug of 2026-09-06, in one string.
     const scoped = quotaWindows.find((w) => w.scope !== null);
     const scopedSaid = await page
-      .locator(`[data-quota-detail] [data-quota-window="seven_day:${scoped.scope}"]`)
+      .locator(`[data-quota-detail] [data-quota-window="seven_day:${scoped.scope}"] [data-quota-window-name]`)
       .textContent()
       .catch(() => null);
+    //   **Both halves.** 「名字从 payload 来」 forbids khor spelling the
+    //   model; it does not license dropping the length, and 「Fable」
+    //   with no period beside it leaves a reader 35% through nothing in
+    //   particular. So: the endpoint's word **and** the catalog's.
+    //   The unscoped week's own *name* — read off the label rather
+    //   than the block, which also holds the ring's percentage and the
+    //   reset line (measuring the block and splitting on whitespace
+    //   reads 「39%7」, which is how this was first written).
+    const spanWord = (
+      await page.locator('[data-quota-window="seven_day"] [data-quota-window-name]').textContent()
+    )?.trim() ?? "";
     if (!scopedSaid?.includes(scoped.scope)) {
       fail(
         `the per-model window does not wear the endpoint's own name ${JSON.stringify(scoped.scope)} — got ${JSON.stringify(scopedSaid)}`,
+      );
+    } else if (!spanWord || !scopedSaid.includes(spanWord)) {
+      fail(
+        `the per-model window says ${JSON.stringify(scopedSaid)} without the length ${JSON.stringify(spanWord)} the unscoped week wears`,
       );
     }
 
@@ -1933,10 +1948,26 @@ try {
     //   are one sentence assembled once: a page that showed it in only
     //   one place would be the row and its detail disagreeing about
     //   what the row is.
-    const planOnRow = await page.locator('[data-quota-row][data-quota-kind="sub"] [data-quota-sub-line]').textContent();
+    //   The row's line is the plan and **only** the plan now
+    //   (2026-09-06:「卡头不再写类型 · 厂商 · 来源」). Equality, not
+    //   `includes`: the whole point of that ruling is what is *not*
+    //   there, and a substring check passes on the line it replaced.
+    const planOnRow = (
+      await page.locator('[data-quota-row][data-quota-kind="sub"] [data-quota-sub-line]').textContent()
+    )?.trim();
+    const chip = (await page.locator("[data-quota-detail] [data-quota-plan]").textContent().catch(() => null))?.trim();
     const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
-    if (!planOnRow?.includes(quotaPlan)) {
-      fail(`the subscription row does not name its plan ${JSON.stringify(quotaPlan)} — got ${JSON.stringify(planOnRow)}`);
+    if (planOnRow !== quotaPlan) {
+      fail(`the subscription row's line is ${JSON.stringify(planOnRow)}, not its plan ${JSON.stringify(quotaPlan)} alone`);
+    }
+    if (chip !== quotaPlan) {
+      fail(`the card head's plan chip is ${JSON.stringify(chip)}, not ${JSON.stringify(quotaPlan)}`);
+    }
+    //   …and an account's line is its provider, with no 类型 and no
+    //   来源 — the half of the ruling the subscription row cannot show.
+    const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
+    if (!billLine || billLine.includes("·")) {
+      fail(`an account row's line is ${JSON.stringify(billLine)} — one word, the provider, was expected`);
     }
 
     //   **The credits: shown, and not shown as a window.** Three
@@ -1970,6 +2001,36 @@ try {
       if (summary?.includes("9.21")) {
         fail(`the subscription row's summary names the credits (${JSON.stringify(summary)}) — money is not a window`);
       }
+    }
+
+    //   **A ring with no ceiling is a full ring** (2026-09-06 user
+    //   ruling). Read off `stroke-dasharray`, which is the arc itself
+    //   rather than a class that might mean it: the first number over
+    //   the circumference *is* the fraction drawn.
+    //
+    //   Three rows, three answers, and **all three are needed**: an
+    //   implementation that draws everything full passes on `acc-number`
+    //   alone, and one that draws nothing full passes on `acc-trouble`
+    //   alone. The fixture has a fraction (0.45), a reading with no
+    //   denominator (a spend, no limit) and a refusal, so each wrong
+    //   rule is caught by one of the other two.
+    const arcs = await page.locator("[data-quota-row]").evaluateAll((rows) =>
+      rows.map((row) => {
+        const arc = row.querySelector("[data-ring-fill]");
+        const track = row.querySelector("circle");
+        if (!arc || !track) return { id: row.getAttribute("data-quota-row"), drawn: null };
+        const [ink, whole] = (arc.getAttribute("stroke-dasharray") ?? "").split(" ").map(Number);
+        return {
+          id: row.getAttribute("data-quota-row"),
+          drawn: whole ? Number((ink / whole).toFixed(2)) : null,
+        };
+      }),
+    );
+    const arcOf = (id) => arcs.find((a) => a.id === id)?.drawn ?? null;
+    if (arcOf("acc-fill") !== 0.45 || arcOf("acc-number") !== 1 || arcOf("acc-trouble") !== null) {
+      fail(
+        `the arcs read ${JSON.stringify(arcs)} — a fraction draws itself (0.45), a reading with no ceiling draws a whole ring (1), and only 问不出来 leaves bare track (null)`,
+      );
     }
   }
 

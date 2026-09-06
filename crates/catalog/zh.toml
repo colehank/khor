@@ -136,7 +136,7 @@ usage = """
                         不接命令,也不接 --resume)
   accounts              登记过的 API 账号;add <名字> --provider newapi|claude|openai|
                         deepseek|moonshot|moonshot-cn|openrouter [--base-url 地址]
-                        [--budget 数] --key 钥匙|--key-stdin 登记(钥匙只留在这台
+                        [--budget 数] --key 密钥|--key-stdin 登记(密钥只留在这台
                         机器上);rm <id|名字> 撤掉
   quota                 每个账号用了多少:本机的现读,别的机器的按上次带回来的
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
@@ -164,7 +164,7 @@ usage = """
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
                         (顺带把网页脸也开在局域网上,见 web)
   web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
-                        脸是 serve 开的,这条只发钥匙;链接里带钥匙,别贴进
+                        脸是 serve 开的,这条只发密钥;链接里带密钥,别贴进
                         会同步的文档。--new 换一把,之前发出去的链接全作废
   gui                   开桌面 app 的窗口(桌面 app 是装在 khor 旁边的
                         khor-gui;没装它会告诉你去哪儿拿)
@@ -1220,13 +1220,13 @@ agent-not-on-a-satellite = "{0} 是附属机器,上面没有 khor,起不了 agen
 # Registering an API account (`Node::register_account`). 拒的都拒在名字
 # 上:少了什么就说少了什么,不替人猜。
 account-name-blank = "得给这个账号起个名字"
-account-key-blank = "钥匙是空的"
+account-key-blank = "密钥是空的"
 account-needs-address = "new-api 每个站地址不同,得给它的地址"
 account-address-bad = "地址要以 http:// 或 https:// 开头: {0}"
 account-budget-bad = "预算得是个正数"
 no-such-account = "没登记过这个账号: {0}"
 no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai、deepseek、moonshot、moonshot-cn、openrouter"
-cant-make-keys-dir = "建不了钥匙目录: {0}"
+cant-make-keys-dir = "建不了密钥目录: {0}"
 # Resuming a vendor session that another process is running right now
 # (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
 # refuses is a second agent on the same transcript, and a row whose
@@ -1250,10 +1250,10 @@ web-cant-listen = "网页脸起不来,{0} 口占着了: {1}。换一个口:设 K
 web-no-such-page = "网页脸没有这一页: {0}"
 web-bad-host = "网页脸只认地址,不认名字,而这个请求报的是「{0}」。\n  用 khor web 打印的那个链接;要是你自己搭了反向代理,那条路这一版不支持"
 web-bad-origin = "这个请求是另一个页面({0})发的,网页脸只答自己那一张"
-web-no-key = "这个链接没带钥匙。在那台机器上跑 khor web,用它打印的链接打开"
-web-wrong-key = "钥匙不对。多半是那台机器换过钥匙了——旧链接就此作废,跑一次 khor web 拿新的"
-web-no-key-yet = "这台机器还没有网页脸的钥匙(serve 没起来过?)。先 khor serve,再 khor web"
-web-key-empty = "网页脸的钥匙文件是空的: {0}。删掉它,重启 serve 会重新发一把"
+web-no-key = "这个链接没带密钥。在那台机器上跑 khor web,用它打印的链接打开"
+web-wrong-key = "密钥不对。多半是那台机器换过密钥了——旧链接就此作废,跑一次 khor web 拿新的"
+web-no-key-yet = "这台机器还没有网页脸的密钥(serve 没起来过?)。先 khor serve,再 khor web"
+web-key-empty = "网页脸的密钥文件是空的: {0}。删掉它,重启 serve 会重新发一把"
 # The upload cap's refusal ({0} is the cap in MB). It names the limit
 # and the way around it — bigger things ride `khor send` with a real
 # path on the machine that has them, not a browser upload.
@@ -1265,7 +1265,7 @@ upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两�
 # sits behind the key now). It names the way in AND the promise — open
 # the printed link once, this browser is remembered from then on — so
 # the long ?k= reads as a one-time step, not a toll.
-web-door-shut = "这个地址要钥匙。在那台机器上跑 khor web,用它打印的链接打开一次,这个浏览器之后就记住了"
+web-door-shut = "这个地址要密钥。在那台机器上跑 khor web,用它打印的链接打开一次,这个浏览器之后就记住了"
 # ── satellites (附属机器批) ──
 # ssh itself would not start — an environment problem, not the host's.
 ssh-wont-run = "跑不了 ssh: {0}"
@@ -1277,7 +1277,7 @@ sat-cant-reach = "ssh 够不着 {0}(要求免密):{1}"
 # The identity rule: khor reads known_hosts, never keyscans — only the
 # trust the user already extended counts, so the fix is theirs to do
 # once by hand.
-sat-not-in-known-hosts = "known_hosts 里没有 {0} 的钥匙。先自己 ssh 连它一次(把指纹认下来),再回来领"
+sat-not-in-known-hosts = "known_hosts 里没有 {0} 的公钥。先自己 ssh 连它一次(把指纹认下来),再回来领"
 # The sponsor gate on relayed readings: one row, one speaker — a second
 # machine answering for somebody else's satellite would be a staler
 # second voice on the same row.
@@ -1295,11 +1295,11 @@ sat-send-elsewhere = "{0} 是经 {1} 说话的卫星;发文件要在 {1} 那台�
 # What moved, plainly — no offer, no 待批: the far side has no khor to
 # ask, so the bytes just went (to its home directory).
 sat-sent = "送到了 {0} 的主目录,{1} 字节"
-web-key-too-open = "网页脸的钥匙权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
+web-key-too-open = "网页脸的密钥权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
 web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
-web-face-key-note = "链接里带着钥匙,别往同步的文档里贴。换一把:khor web --new"
-web-face-rotated = "换了一把新钥匙,之前发出去的链接全都作废了。"
+web-face-key-note = "链接里带着密钥,别往同步的文档里贴。换一把:khor web --new"
+web-face-rotated = "换了一把新密钥,之前发出去的链接全都作废了。"
 # 借网在网页脸上做不到,而它做不到的方式很坑:借到的是 khor 那台机器上的
 # 一个本地代理口,只有把浏览器整个指过去才用得上——桌面 app 能给窗口设代理,
 # 一张网页给不了自己设。所以这里必须是一句拒绝,不能是「开了但什么也没发生」
@@ -1364,12 +1364,12 @@ accounts-provider-moonshot-cn = "Moonshot 国内站"
 accounts-provider-openrouter = "OpenRouter"
 accounts-name = "叫什么"
 accounts-address = "地址"
-accounts-key = "钥匙"
+accounts-key = "密钥"
 # Said under the key box before a secret is pasted: where it goes.
-accounts-key-stays = "钥匙只留在这台机器上,别的机器读这台读到的数。"
+accounts-key-stays = "密钥只留在这台机器上,别的机器读这台读到的数。"
 # …and which key can read usage at all: both vendors' usage reports are
 # organisation-level admin calls; a plain API key cannot read them.
-accounts-needs-admin = "这家读用量要 admin 钥匙,普通 API 钥匙读不到。"
+accounts-needs-admin = "这家读用量要 admin 密钥,普通 API 密钥读不到。"
 accounts-budget = "每月预算"
 accounts-budget-hint = "不填就只记数,不画环"
 accounts-no-budget = "没定预算,只记数"
@@ -1386,11 +1386,11 @@ accounts-read-here = "这台机器刚读的"
 accounts-read-from = "{0} 读的,{1} 前"
 accounts-remove = "撤掉"
 # The trouble keys (`khor_node::accounts::trouble`), one sentence each.
-accounts-trouble-key-refused = "钥匙被拒了"
+accounts-trouble-key-refused = "密钥被拒了"
 accounts-trouble-unreachable = "连不上"
 accounts-trouble-unreadable = "读不懂它的回答"
 accounts-trouble-cooling = "刚失败过,歇一会再问"
-accounts-trouble-no-key = "那台机器上没有这个账号的钥匙"
+accounts-trouble-no-key = "那台机器上没有这个账号的密钥"
 accounts-trouble-no-reading = "那台机器还没答过"
 accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
 accounts-trouble-unknown-provider = "这台 khor 不认识这家,升级它才读得到"
@@ -1415,7 +1415,7 @@ quota-kind-bill = "计费"
 quota-by = "提供商"
 # 来源 = **这一行的读数从哪来**,每行只有一个值:
 # 订阅行是那台机器的名字(今天只有本机,将来别的机器的 Claude Code 登录跨帧
-# 过来也各归各的机器);账户行是「khor 登记」——**不是钥匙所在的机器**,
+# 过来也各归各的机器);账户行是「khor 登记」——**不是密钥所在的机器**,
 # 那是这条账户的一个属性,写在详情里。
 #
 # 一行一个值,所以轴内 OR 选不出重叠的集合,按来源分组时一行只进一个组。
@@ -1434,13 +1434,16 @@ quota-from-khor = "khor 登记"
 # 信用额(Anthropic 的 usage credits):套餐窗口用满之后按 API 价从预充值里扣。
 # **它不是窗口**——窗口是一段时间的比例、会自己回满,这是钱、不会回满、也没有
 # 重置时刻。所以它只进详情,不上环、不进列表右边那个汇总。
-quota-credits = "信用额"
-quota-credits-on = "开着"
-quota-credits-off = "关着"
+# **这四个是英文,而且是故意的**(2026-09-06 用户裁):「关着」不是常见的中文
+# app 说法,该英文的地方就英文。这块只留数和状态词,一句解释都没有——
+# 「套餐用满后按 API 价从这里扣」这类话删掉了,它解释的是实现。
+quota-credits = "Credits"
+quota-credits-on = "available"
+quota-credits-off = "unavailable"
 quota-credits-monthly = "每月上限"
-# `disabled_reason` 的词,和 `accounts-trouble-*` 一个套路:认得的翻,
-# 认不得的原样画出来——一个人能对着读得懂的键做点什么,对着被吞掉的不能。
-quota-credits-out = "余额用完了"
+# `disabled_reason` 的词。认得的映成一个英文状态词,认不得的**原样画出来**
+# ——一个人能对着读得懂的键做点什么,对着被吞掉的不能。
+quota-credits-out = "out of credits"
 # 按哪条轴分组。**和会话那边的「排布」是两件事,所以不共用那个词**:
 # 会话的排布问节点要一个新顺序(`Arrange`,组头是节点给的);这里一行都不
 # 重排,只在同一条列表上换一处切口。一个词同时解释两件事,正是这仓里
