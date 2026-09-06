@@ -1402,6 +1402,17 @@ quota-from-khor = "khor 登记"
 # 那条读数(2026-09-02:「本机不用写一个括号在机器名旁边。连接方式就是本机」)。
 # [cli] 的 this-machine 是括号后缀,还给终端列表和向导用;别混。
 machine-here = "本机"
+# The machine card's head, right side (2026-09-06:「右上角的『khor xxx N 秒前
+# 的读数』,改为『Khor xxx N 秒前』」). **Two keys of the card's own**, not the
+# CLI's `vitals-version` / `vitals-taken`, which `khor devices` prints and
+# which the mesh map and the mark's place still read: on a terminal line
+# 「的读数」 says what the age is an age *of*, among other columns; on the
+# card the readings are the four dials directly under this line, so the
+# word is said by position and saying it again is the same fact twice.
+# The capital K is the user's — the product's name on a card's masthead,
+# not the command's spelling.
+card-version = "Khor {0}"
+card-age = "{0}前"
 new-session-dir = "目录"
 # **The wizard's first question, answered before it is asked.** A
 # person walks into a directory and then starts something there — so

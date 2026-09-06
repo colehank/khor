@@ -281,10 +281,20 @@ function Head({
             {/* The version is one of `khor devices`' sentences and keeps
                 its unit; the freshness is the age sentence for a machine
                 reached over the wire (its own unit, counted with the
-                readings) and the present's clock for this one. */}
-            {v.vitals.version && <span data-vitals-unit="version">{cli.vitals_version(v.vitals.version)}</span>}
+                readings) and the present's clock for this one.
+
+                **The words are the card's, the units are the CLI's**
+                (2026-09-06:「Khor xxx N 秒前」): `card-version` and
+                `card-age` say the same two facts `khor devices` prints
+                as `vitals-version` and `vitals-taken`, shorter, because
+                on this card the dials under this line already say what
+                the age is an age of. The unit marks stay, so the smoke's
+                count of readings against the terminal still holds. A
+                middle dot between the two, and only when both are there. */}
+            {v.vitals.version && <span data-vitals-unit="version">{gui.card_version(v.vitals.version)}</span>}
+            {v.vitals.version && v.age_ms > 0 && <span aria-hidden="true">·</span>}
             {v.age_ms > 0 ? (
-              <span data-vitals-age>{cli.vitals_taken(ago(Date.now() - v.age_ms))}</span>
+              <span data-vitals-age>{gui.card_age(ago(Date.now() - v.age_ms))}</span>
             ) : (
               <span data-updated>{cli.updated_at(clock(Date.now()))}</span>
             )}
