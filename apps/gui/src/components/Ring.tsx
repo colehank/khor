@@ -137,10 +137,21 @@ function Arc({
  * One measure, drawn as one ring, with whatever the caller puts in the
  * middle.
  *
- * **A number in the middle means one track.** The stacked half of the
- * vocabulary (`NestedRing`, concentric tracks) left with the machine
- * rows' reading stack on 2026-09-02 (「这个环很抽象,看不明白。取消」)
- * — every ring this app draws now is one measure with its own centre.
+ * ⚠️ **Tombstone: 「every ring this app draws now is one measure with
+ * its own centre」 is no longer true, and the sentence it replaces was
+ * right about the case it came from.**
+ *
+ * Concentric tracks (`NestedRing`) left with the machine rows' reading
+ * stack on 2026-09-02 —「这个环很抽象,看不明白。取消」— and the reason
+ * was not that they were concentric. Those four arcs were **CPU, GPU,
+ * memory and disk**: four unrelated quantities, so 「the outer one is
+ * fuller」 meant nothing, nothing said which arc was which, and the
+ * centre had to pick one of four numbers with no rule for picking.
+ *
+ * `NestedRing` is back below for the 额度 rows on 2026-09-06, under a
+ * rule that names exactly what was missing — see its own head. The
+ * single-track `Ring` is still what everything else draws, and still
+ * the right default.
  */
 export function Ring({
   fraction,
@@ -200,10 +211,99 @@ export function Ring({
   );
 }
 
+/**
+ * Several readings of **one quantity**, as concentric arcs.
+ *
+ * # What has to be true before this shape is readable at all
+ *
+ * The version of this that was removed (see `Ring`'s head) failed on
+ * three counts, and a caller may only use this one if it can answer all
+ * three:
+ *
+ * 1. **Every track is the same quantity on the same scale.** Then
+ *    「the outer arc is fuller than the inner」 is a true and useful
+ *    sentence. Four unrelated readings stacked make that sentence
+ *    meaningless, which is what 「看不明白」 was describing.
+ * 2. **The order outward is a rule that fits in one sentence**, and the
+ *    caller states it. A stack with no order is a pile.
+ * 3. **The centre is chosen by a rule, not picked**, and something on
+ *    screen says *which* track it came from — colour alone is a puzzle,
+ *    a word is an answer.
+ *
+ * # What this file provides, and what it refuses
+ *
+ * Geometry only: one colour, one arc per track, each ring inside the
+ * last by exactly one stroke plus a hair. **One colour with an opacity
+ * step per layer, never a second hue** — the layers are the same
+ * quantity, and a second colour would say they are different kinds of
+ * thing. (It is also why no strain scale reaches here: a quota arc at
+ * 80% is a fact, not a warning — `QuotaRings`' rule.)
+ *
+ * Ordering, which tracks exist, and what the centre says are the
+ * caller's, because they are the three things above and no component
+ * can answer them for it.
+ */
+export function NestedRing({
+  tracks,
+  color,
+  size = RING_SIZE_ROW,
+  stroke = STROKE,
+  centerClass = "text-aux",
+  children,
+}: {
+  /** Outermost first — the caller's stated order, drawn as given. */
+  tracks: { id: string; fraction: number | null }[];
+  color: string;
+  size?: number;
+  stroke?: number;
+  centerClass?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <span
+      data-nested-ring={tracks.length}
+      className="relative inline-grid place-items-center"
+      style={{ width: size, height: size }}
+    >
+      <svg width={size} height={size} aria-hidden="true" className="col-start-1 row-start-1">
+        {tracks.map((t, i) => (
+          // **The step is opacity, not hue.** Outermost at full ink,
+          // each one inside it a step lighter — so 「further in」 is
+          // legible without a legend, and the legend that does exist
+          // says a word rather than repeating the colour.
+          <g key={t.id} data-nested-track={t.id} opacity={1 - i * LAYER_STEP}>
+            <Arc
+              cx={size / 2}
+              r={(size - stroke) / 2 - i * (stroke + LAYER_GAP)}
+              stroke={stroke}
+              color={color}
+              fraction={t.fraction}
+            />
+          </g>
+        ))}
+      </svg>
+      {children != null && (
+        <span
+          data-ring-center
+          className={cn("col-start-1 row-start-1 font-title tabular-nums", centerClass)}
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** How much ink each layer gives up to the one outside it. Enough that
+    two layers are told apart at a glance, not so much that the inner
+    one reads as absent. */
+const LAYER_STEP = 0.4;
+/** The hair between two tracks, so they are two arcs and not one thick
+    one. */
+const LAYER_GAP = 1.5;
+
 /** One measure of a set: its own share, its own colour — the shape
     `vitalsTracks` hands the mark's node card, which draws each as its
-    own `Ring`. (It fed a concentric `NestedRing` stack on the machine
-    rows until 2026-09-02 —「这个环很抽象,看不明白」— and the stack
-    went with that judgment; a set is several rings now, never one
-    ring of several tracks.) */
+    own `Ring`. (A set is several rings; `NestedRing` above is for the
+    other case, several readings of *one* quantity.) */
 export type Track = { id: string; fraction: number | null; color: string };
