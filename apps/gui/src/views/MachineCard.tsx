@@ -1819,8 +1819,8 @@ function ruler(vals: number[]): {
   // zero** (2026-09-06:「散点图 x 轴 0% 右侧空了一大截,应该根据数据的最大
   // 最小值自适应调整 x 和 y 的范围」). On a log ruler the stretch between
   // 0 and the first reading is where nothing can ever be — every point
-  // is at or above the minimum by definition — and on turing it was a
-  // third of the axis. So `lo` is the minimum and every position below
+  // is at or above the minimum by definition — and that stretch was
+  // the user's 「空了一大截」. So `lo` is the minimum and every position below
   // is measured from it: `at(lo) = 0`. The choice of ruler is untouched
   // — `max / median` on the raw readings, exactly as before — because
   // that is a fact about the spread, not about where the axis starts.
