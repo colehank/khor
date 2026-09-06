@@ -1,7 +1,6 @@
 import type { DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconPin } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { connectionWord } from "@/words";
@@ -16,9 +15,10 @@ export function visibleDevices(rows: DeviceRow[], query: string) {
 }
 
 /**
- * The machine list. Three panes draw it today — devices, files and
- * browser — because "which machine" is the first step of all three, and
- * each of the latter two grows its own content in its own batch.
+ * The machine list. Three panes drew it once — devices, files and
+ * browser — because "which machine" is the first step of all three;
+ * the latter two grew their own starting points and only the devices
+ * pane draws this now.
  *
  * # Whether a row goes anywhere is the caller's to say
  *
@@ -27,10 +27,8 @@ export function visibleDevices(rows: DeviceRow[], query: string) {
  * one that answers nothing teaches people to stop trying the ones that
  * do. What changed is the input — the devices pane now opens a machine
  * card, so on that pane the row is a button, lights under the pointer
- * and is reachable by keyboard. The files pane opens the disk and the
- * browser pane borrows the network, so all three now hand an `onOpen`
- * over; a pane without a second step would pass none and its rows would
- * stay inert.
+ * and is reachable by keyboard. A pane without a second step would pass
+ * no `onOpen` and its rows would stay inert.
  *
  * That is why this is a prop and not a flag read from a landing name:
  * the thing that decides is "is there somewhere to go", and the only
@@ -38,29 +36,51 @@ export function visibleDevices(rows: DeviceRow[], query: string) {
  * grows a destination turns its rows into buttons by handing one over,
  * and there is no way to get the button without it.
  *
- * The pin was never a counter-example. It is a control that does the
- * whole of what it promises the moment it is pressed; what was refused
- * was an affordance suggesting a *destination*. So the pin sat on the
- * row through the batch where the row was inert, and it sits on the same
- * strip now that the row opens.
+ * # The row's actions are its menu, not a button on it
+ *
+ * The pin sat on the row's right end as its own button until 2026-09-06
+ * (「机器左侧 list,与 session 一样,是右键,置顶或删除,取消现在的置顶
+ * icon」). It is the session row's `RowMenu` now — right-click, a long
+ * press, the keyboard's Menu key — for the reason that file gives: a
+ * control that lives on the row is one a phone has no room for, and a
+ * menu is one gesture for one job on both lists. What the pin's shape
+ * used to say about the row's state, the menu's first item says at the
+ * moment somebody asks: it reads 置顶 or 取消置顶. The list still floats
+ * a pinned machine to the top, which is the node's own order and not
+ * this file's.
+ *
+ * The second item is `khor forget` — the machine leaves the network,
+ * for everyone (`Node::forget_device`). Two presses, and the sentence
+ * between them is the catalog's; the refusal, when there is one, is the
+ * node's own and stays on the menu where the press was made.
  */
 export function DevicesList({
   rows,
   query,
   onPin,
+  onForget,
   onOpen,
   selected,
   pinFailed,
+  forgetRefused,
 }: {
   rows: DeviceRow[];
   query: string;
-  onPin: (row: DeviceRow) => void;
-  /** Where a row goes, when it goes anywhere. Absent on the panes that
-      have no second step yet — see above. */
+  /** Resolves when the pin took and rejects when it did not — the menu
+      reads which to decide between closing and staying open (`RowMenu`). */
+  onPin: (row: DeviceRow) => Promise<void>;
+  /** Shows the machine the door. Same contract as `onPin`: a rejection
+      is how the menu learns the machine is still here. */
+  onForget: (row: DeviceRow) => Promise<void>;
+  /** Where a row goes, when it goes anywhere. Absent on a pane that
+      has no second step — see above. */
   onOpen?: (row: DeviceRow) => void;
   selected?: string | null;
   /** Rows whose last pin attempt did not take — see `App`. */
   pinFailed: Set<string>;
+  /** The node's sentence for a forget it refused, by row — cleared the
+      moment a later attempt on that row gets anywhere (`App`). */
+  forgetRefused: Map<string, string>;
 }) {
   const shown = visibleDevices(rows, query);
   // An empty device table cannot happen — this machine is always in it —
@@ -73,6 +93,40 @@ export function DevicesList({
       </div>
     );
   }
+  const actions = (d: DeviceRow): RowAction[] => [
+    {
+      key: "pin",
+      // The word is what pressing it *does*, so it is the opposite of
+      // the row's current state — which is also what makes this item
+      // say what the state is. When the last attempt did not take, the
+      // word becomes the one for what failed, said on the very thing
+      // that was pressed (docs/UX.md 做了但没变化 / 失败).
+      label: pinFailed.has(d.id)
+        ? d.pinned
+          ? gui.unpin_failed
+          : gui.pin_failed
+        : d.pinned
+          ? gui.unpin
+          : gui.pin,
+      failed: pinFailed.has(d.id),
+      run: () => onPin(d),
+    },
+    // **Not on this machine's own row.** `Node::forget_device` refuses
+    // it by name — a table cannot be left from the inside — so the
+    // item would exist only to be refused, an offer whose one answer
+    // is no.
+    ...(d.me
+      ? []
+      : [
+          {
+            key: "forget",
+            label: gui.forget_machine,
+            confirm: gui.forget_machine_confirm,
+            note: forgetRefused.get(d.id),
+            run: () => onForget(d),
+          },
+        ]),
+  ];
   return (
     <div>
       {shown.map((d) => (
@@ -82,58 +136,42 @@ export function DevicesList({
           data-row={d.id}
           data-pinned={d.pinned}
           className={cn(
-            "flex items-center pr-2",
+            "flex items-center",
             // Only a row that opens something reacts to the pointer.
             onOpen && "hover:bg-secondary",
             onOpen && d.id === selected && "bg-accent hover:bg-accent",
           )}
         >
-          {/* A strip holding the identity and the pin, exactly as a
-              session row does — the pin cannot be nested inside the
-              button that opens the row, because a button inside a button
-              is not a thing the DOM has. Whether the identity half is a
-              button or an inert span is the only difference between the
-              panes, and it is one element deep. */}
+          {/* **The menu's trigger is the button, not the strip around
+              it** — the session row's arrangement, for its reason: the
+              trigger carries an `onPointerDown` (that is the long
+              press), and a press handler on a bare `<div>` is a target
+              only a pointer can find (`check-face`'s section 4). On the
+              button it sits on something the DOM already admits is a
+              target: focus reaches it, and a keyboard's Menu key fires
+              `contextmenu` on the focused element.
+
+              The inert branch offers no menu, and that is not an
+              oversight: a span is not a target either, and a pane with
+              nowhere to send a row is a pane that has not earned
+              actions on it (the rule at the head). No pane draws that
+              branch today. */}
           {onOpen ? (
-            <button
-              type="button"
-              data-row-open
-              onClick={() => onOpen(d)}
-              className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4 text-left"
-            >
-              <Identity row={d} />
-            </button>
+            <RowMenu items={actions(d)}>
+              <button
+                type="button"
+                data-row-open
+                onClick={() => onOpen(d)}
+                className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4 text-left"
+              >
+                <Identity row={d} />
+              </button>
+            </RowMenu>
           ) : (
-            <span className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4">
+            <span className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4">
               <Identity row={d} />
             </span>
           )}
-          {/* Same failure face as a session row, for the same reason
-              and by the same rule — see `SessionsList`. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            data-row-pin
-            data-on={d.pinned}
-            data-pin-failed={pinFailed.has(d.id)}
-            aria-label={
-              pinFailed.has(d.id)
-                ? d.pinned
-                  ? gui.unpin_failed
-                  : gui.pin_failed
-                : d.pinned
-                  ? gui.unpin
-                  : gui.pin
-            }
-            onClick={() => onPin(d)}
-            // Including the finger floor (`min-h-touch min-w-touch`,
-            // tokens.css `--touch`) — same control, same reason, and the
-            // whole point of "same face as a session row" is that this
-            // does not get to be the one that is 30 wide.
-            className="min-h-touch min-w-touch flex-none text-muted-foreground data-[on=true]:text-foreground data-[pin-failed=true]:text-state-failed"
-          >
-            <IconPin pinned={d.pinned} />
-          </Button>
         </div>
       ))}
     </div>

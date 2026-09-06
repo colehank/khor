@@ -1654,6 +1654,20 @@ collapse-old = "收起旧会话"
 # be a whole surface built for the least common thing that happens here.
 pin-failed = "钉不上"
 unpin-failed = "取消不了"
+# The machine row's second menu item (2026-09-06:「机器左侧 list,与 session
+# 一样,是右键,置顶或删除,取消现在的置顶 icon」); the first is 置顶/取消置顶
+# above, the session row's own two words. **「删除」, not 「请出网」**: the
+# CLI's `forget` line explains what the act does, a menu item says what
+# the person is doing, and the cost goes in the sentence between the two
+# presses — the same split `close` and its confirm make. Absent on this
+# machine's own row: `Node::forget_device` refuses that by name, so the
+# item would exist only to be refused.
+forget-machine = "删除"
+# Said between the two presses. The whole cost in one clause, from the
+# CLI's own line for `forget` (docs/NET.md): it is the network's
+# decision, not this screen's, so every other machine stops knowing it
+# too — and it stops seeing any of them.
+forget-machine-confirm = "全网都不再认它,它也不再看得见网"
 # The machine card's verbs, each the GUI face of a call that machine
 # already answers for the CLI (docs/KHOR.md — the faces are equivalent
 # because they are one call): 开终端 is `open --on`, 文件 is the files

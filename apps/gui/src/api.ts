@@ -351,6 +351,11 @@ export const takeover = (id: string) => call<null>("takeover", { id });
 // another device would flip the wrong way.
 export const pinSession = (id: string, on: boolean) => call<null>("pin_session", { id, on });
 export const pinDevice = (machine: string, on: boolean) => call<null>("pin_device", { machine, on });
+/** `khor forget` — shows a machine the door for the whole network
+    (`Node::forget_device` has why leaving travels the way joining does,
+    and why this machine refuses to forget itself). Answers the name of
+    the machine that left. */
+export const forgetDevice = (machine: string) => call<string>("forget_device", { machine });
 /** What this machine wears and every option painted as it would look —
     derived by the node, one call for the whole screen. */
 export const fetchFaceChoices = () => call<FaceChoices>("face_choices");

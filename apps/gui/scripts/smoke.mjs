@@ -1978,48 +1978,43 @@ for line in sys.stdin:
     1_000,
   );
 
-  //     f. machines pin too, and the same way: the table sorts, the app
-  //     paints. gamma is last by name, so its arrival at the top is not
-  //     something the previous order could have produced.
+  //     f. machines pin too, and the same way — through the same menu
+  //     (2026-09-06:「机器左侧 list,与 session 一样,是右键,置顶或删除,
+  //     取消现在的置顶 icon」). The row carries no pin of its own any
+  //     more; the menu's first item says 置顶 or 取消置顶, the table
+  //     sorts, the app paints. gamma is last by name, so its arrival at
+  //     the top is not something the previous order could have
+  //     produced.
   await openLanding("devices");
   await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) === 3);
   const deviceNames = () =>
     page.locator("[data-device]").evaluateAll((els) => els.map((e) => e.dataset.device));
   if ((await deviceNames())[0] === "gamma") throw new Error("gamma already leads — the control is void");
-  await page.locator('[data-device="gamma"] [data-row-pin]').click();
+  //     Asserted after a) walked the session rows' menus, which is the
+  //     proof the selector is alive: a "there is no pin" read off a
+  //     list that never drew is the same string as a passing test.
+  if ((await page.locator("[data-device] [data-row-pin]").count()) !== 0) {
+    throw new Error("a machine row still carries its own pin button beside the menu");
+  }
+  const gammaRow = await page.locator('[data-device="gamma"]').getAttribute("data-row");
+  await openRowMenu(gammaRow);
+  const gammaResting = await menuItemWord("pin");
+  await page.locator('[data-menu-item="pin"]').click();
   await until("gamma to lead beta's machine list", 10_000, async () => (await deviceNames())[0] === "gamma");
   await until("beta's CLI to lead with gamma", 10_000, () =>
     cli(envB, "devices").split("\n")[0]?.startsWith("gamma"),
   );
-  //     …and **the glyph half of c) lives here**, because this is where
-  //     a glyph still is. The two states are two shapes, not one shape
-  //     in two colours: a painter that only swapped a colour would pass
-  //     every other assertion in this item. Both `transform` and the
-  //     standalone `rotate` are read — tailwind v4 compiles `-rotate-45`
-  //     to the latter, and reading only the former answers "none" for a
-  //     rotation that is plainly there.
-  const pinShape = (name) =>
-    page.locator(`[data-device="${name}"] [data-row-pin] svg`).evaluate((el) => {
-      const s = getComputedStyle(el);
-      return `${s.transform}|${s.rotate}|${s.transformOrigin}`;
-    });
-  const gammaPinned = await pinShape("gamma");
-  const otherResting = await pinShape(
-    (await deviceNames()).find((n) => n !== "gamma") ?? "alpha",
-  );
-  if (gammaPinned === otherResting) {
-    throw new Error(`pinned and unpinned draw the same shape: ${gammaPinned}`);
+  //     …and **the state half of c) lives here too**: the item's word
+  //     is the opposite of the row's state, so a pinned row's menu
+  //     wears a different word from the resting one. Compared against
+  //     the word this same item wore a moment ago rather than spelled
+  //     here, because the words belong to the catalog.
+  await openRowMenu(gammaRow);
+  const gammaPinnedWord = await menuItemWord("pin");
+  if (!gammaPinnedWord || gammaPinnedWord === gammaResting) {
+    throw new Error(`pinned and unpinned read the same on the menu: ${JSON.stringify(gammaPinnedWord)}`);
   }
-  if (/\|none\|/.test(gammaPinned)) {
-    throw new Error(`the pinned state is not a rotation at all: ${gammaPinned}`);
-  }
-  //     …and the rotation happens around the middle. An SVG element's
-  //     transform-origin defaults to (0, 0), which would swing the pin
-  //     out of its own box — visibly wrong, and nothing else here looks.
-  if (/^0px 0px/.test(gammaPinned.split("|")[2])) {
-    throw new Error(`the pin rotates around its corner, not its centre: ${gammaPinned}`);
-  }
-  await page.locator('[data-device="gamma"] [data-row-pin]').click();
+  await page.locator('[data-menu-item="pin"]').click();
   await until("gamma to go back", 10_000, async () => (await deviceNames())[0] !== "gamma");
 
   // 16) arranging the list: four modes, and the order is always the
@@ -2426,16 +2421,16 @@ for line in sys.stdin:
   if (!(pressScale > 0 && pressScale < 1)) {
     throw new Error(`--press is not a give: ${pressScale}`);
   }
-  //      **Measured on the device list's pin**, because that is where
-  //      this control still is. The session row's pin moved into a menu
-  //      (§15), and a menu item is not this component — it is not a
-  //      `Button`, so the give this item asserts does not apply to it
-  //      and asserting it there would be inventing a rule. Same
-  //      component, same claim, a list over.
+  //      **Measured on the pane's 「+」**, because that is the `Button`
+  //      this landing has left: the session row's pin moved into a menu
+  //      (§15) and the machine row's followed it on 2026-09-06, and a
+  //      menu item is not this component — it is not a `Button`, so the
+  //      give this item asserts does not apply to it and asserting it
+  //      there would be inventing a rule. Same component, same claim,
+  //      a control over.
   await openLanding("devices");
   await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) > 0);
-  const pin = page.locator("[data-device] [data-row-pin]").first();
-  const pinnedBefore = await page.locator("[data-device][data-pinned=true]").count();
+  const pin = page.locator("[data-pane-new]");
   const press = await pressing(pin);
   if (press.resting.scale !== 1) {
     throw new Error(`probe dead: the control is already scaled at rest: ${press.resting.transform}`);
@@ -2451,8 +2446,9 @@ for line in sys.stdin:
         `${press.resting.opacity} -> ${press.held.opacity}`,
     );
   }
-  if ((await page.locator("[data-device][data-pinned=true]").count()) !== pinnedBefore) {
-    throw new Error("the press probe pressed something for real");
+  //      Released off the control, so the menu behind it never opened.
+  if ((await page.locator("[data-new-item]").count()) !== 0) {
+    throw new Error("the press probe pressed something for real — the 「+」 menu is open");
   }
   //      A row answers a press too — it is the most-pressed thing here —
   //      with the dim and **without** the give: a full-width strip
@@ -6363,6 +6359,49 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     throw new Error("a failed close must not leave its confirm standing");
   }
   await closeRowMenu();
+
+  // 30) a machine leaves the network from its row's menu — `khor forget`
+  //     (2026-09-06:「机器左侧 list…右键,置顶或删除」). Two presses, and
+  //     the first is the control arm: it arms the sentence and moves
+  //     nothing, on both faces — a menu that forgot on one press would
+  //     empty the row here and the assertions after it would still
+  //     pass. Then the second, and gamma is gone from beta's list **and
+  //     from beta's own CLI**: the tombstone travels
+  //     (`DeviceDoc::set_gone`), so this is one fact read off both
+  //     faces. This machine's own row offers no such item at all —
+  //     `Node::forget_device` refuses it by name, and an item whose one
+  //     answer is no is not offered. **Last, because nothing after it
+  //     may need gamma.**
+  await openLanding("devices");
+  await until("gamma on the device list", 10_000, async () =>
+    (await page.locator('[data-device="gamma"]').count()) === 1,
+  );
+  const listsGamma = () => cli(envB, "devices").split("\n").some((l) => l.startsWith("gamma\t"));
+  if (!listsGamma()) throw new Error("probe dead: beta's CLI does not list gamma before anything was forgotten");
+  const ownRow = await page.locator('[data-device="beta"]').getAttribute("data-row");
+  await openRowMenu(ownRow);
+  if ((await page.locator('[data-menu-item="forget"]').count()) !== 0) {
+    throw new Error("this machine's own row offers to forget itself — the one press the node always refuses");
+  }
+  await closeRowMenu();
+  const goneRow = await page.locator('[data-device="gamma"]').getAttribute("data-row");
+  await openRowMenu(goneRow);
+  if ((await page.locator('[data-menu-item="forget"]').count()) !== 1) {
+    throw new Error("gamma's row offers no way to forget it");
+  }
+  await page.locator('[data-menu-item="forget"]').click();
+  await until("the sentence between the two presses", 5_000, async () =>
+    (await page.locator('[data-menu-confirm="forget"]').count()) === 1,
+  );
+  await settle();
+  if ((await page.locator('[data-device="gamma"]').count()) !== 1 || !listsGamma()) {
+    throw new Error("one press forgot the machine — nothing stood between the press and the act");
+  }
+  await page.locator('[data-menu-item="forget"]').click();
+  await until("gamma to leave beta's machine list", 20_000, async () =>
+    (await page.locator('[data-device="gamma"]').count()) === 0,
+  );
+  await until("beta's CLI to stop listing gamma", 20_000, () => !listsGamma(), 1_000);
 
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);

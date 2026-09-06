@@ -8,6 +8,7 @@ import {
   openTermOn,
   installHooks,
   closeSession,
+  forgetDevice,
   markSeen,
   pinDevice,
   pinSession,
@@ -654,17 +655,58 @@ export default function App() {
     [refresh],
   );
 
+  // The session pin's shape, now that a machine row's pin is a menu
+  // item too (2026-09-06): the promise says whether it took, the
+  // rejection rethrows so the menu stays open on the row where the
+  // press was made, and the refresh is not in the chain.
   const onPinDevice = useCallback(
-    (row: DeviceRow) => {
+    (row: DeviceRow) =>
       pinDevice(row.name, !row.pinned).then(
         () => {
           markPin(row.id, false);
           refresh().catch(() => {});
         },
-        () => markPin(row.id, true),
+        (e) => {
+          markPin(row.id, true);
+          throw e;
+        },
+      ),
+    [refresh, markPin],
+  );
+
+  /**
+   * Showing a machine the door from its row's menu — `khor forget`.
+   *
+   * The refusal is `Node::forget_device`'s, in its own sentence (this
+   * machine cannot forget itself; a name the table does not hold), and
+   * it is kept by row the way `closeRefused` is: the menu prints it
+   * under the item, and it is cleared the moment a later attempt on
+   * that row gets anywhere. Nothing to paint on success — the row
+   * leaves the list on the next poll, and if its card was open,
+   * `openDevice` falls to null with it and the landing shows the map.
+   */
+  const [forgetRefused, setForgetRefused] = useState<Map<string, string>>(() => new Map());
+  const onForgetDevice = useCallback(
+    (row: DeviceRow) => {
+      setForgetRefused((was) => {
+        if (!was.has(row.id)) return was;
+        const next = new Map(was);
+        next.delete(row.id);
+        return next;
+      });
+      return forgetDevice(row.name).then(
+        () => {
+          refresh().catch(() => {});
+        },
+        (e) => {
+          setForgetRefused((was) =>
+            new Map(was).set(row.id, String(e instanceof Error ? e.message : e)),
+          );
+          throw e;
+        },
       );
     },
-    [refresh, markPin],
+    [refresh],
   );
 
   // What is happening that nobody is watching — see the hook for the
@@ -1155,6 +1197,8 @@ export default function App() {
             rows={devices}
             query={queries[landing]}
             onPin={onPinDevice}
+            onForget={onForgetDevice}
+            forgetRefused={forgetRefused}
             // One question left: the devices pane opens a machine's
             // card. Files and browser were the other two, and each
             // stopped being one when it stopped having a machine list

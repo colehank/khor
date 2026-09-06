@@ -768,6 +768,14 @@ pub fn pin_device(root: &Path, machine: &str, on: bool) -> Result<(), String> {
     open(root)?.pin_device(machine, on)
 }
 
+/// Shows a machine the door — the call `khor forget <machine>` makes,
+/// from the machine row's menu. The judgment is `Node::forget_device`'s
+/// (a network-wide tombstone, and this machine refusing to forget
+/// itself); this answers the name of the machine that left.
+pub fn forget_device(root: &Path, machine: &str) -> Result<String, String> {
+    open(root)?.forget_device(machine)
+}
+
 /// Every known machine's face, keyed the way the device table keys
 /// machines. The judgment behind each one — its own reported palette,
 /// seeded by its id — belongs to the node; this only indexes them.

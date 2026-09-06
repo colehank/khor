@@ -146,6 +146,11 @@ fn pin_device(machine: String, on: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn forget_device(machine: String) -> Result<String, String> {
+    khor_gui_core::forget_device(&Node::root_from_env(), &machine)
+}
+
+#[tauri::command]
 fn face_choices() -> Result<FaceChoices, String> {
     khor_gui_core::face_choices(&Node::root_from_env())
 }
@@ -603,6 +608,7 @@ pub fn run() {
             tell,
             pin_session,
             pin_device,
+            forget_device,
             face_choices,
             restyle,
             hooks_state,

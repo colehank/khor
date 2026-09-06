@@ -175,6 +175,7 @@ pub fn answer(
             crate::pin_device(root, &arg("machine")?, flag("on")?)?;
             Ok("null".to_owned())
         }
+        "forget_device" => to_json(&crate::forget_device(root, &arg("machine")?)?),
         "face_choices" => to_json(&crate::face_choices(root)?),
         "restyle" => {
             crate::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;
