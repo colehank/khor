@@ -8,23 +8,22 @@
  * Env:
  *   KHOR_BIN             which binary to drive (default: `khor` on PATH)
  *   KHOR_AGENT_MODE      manual (default) | bypass
- *   KHOR_AGENT_PROVIDER  anthropic (default) | newapi
- *   KHOR_AGENT_MODEL     model id (default: claude-sonnet-4-6)
- *
- * anthropic:  ANTHROPIC_API_KEY carries the key.
- * newapi:     KHOR_AGENT_BASE_URL names the gateway (…/v1 is added),
- *             KHOR_AGENT_KEY_FILE names a file holding the key —
- *             point it at the account's file under ~/.khor/keys/.
- *             Reading the accounts table itself belongs to the serve
- *             host, not here.
+ *   KHOR_AGENT_PROVIDER  a khor account word (newapi / claude / openai)
+ *                        or any pi-ai provider id (default: anthropic)
+ *   KHOR_AGENT_BASE_URL  the gateway's address; for a vendor, an
+ *                        optional endpoint override
+ *   KHOR_AGENT_KEY_FILE  a file holding the key — point it at the
+ *                        account's file under ~/.khor/keys/.  Without
+ *                        it, the provider's own env var answers.
+ *                        Reading the accounts table itself belongs to
+ *                        the serve host, not here.
+ *   KHOR_AGENT_MODEL     model id.  Omit it to see the list and stop.
  */
 import { readFileSync } from "node:fs";
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { createModels, createProvider, type Model } from "@earendil-works/pi-ai";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { createKhorAgent } from "./session.ts";
+import { listModels, openModels, pickModel } from "./models.ts";
 import type { Approver } from "./tools.ts";
 import type { Mode } from "./gate.ts";
 
@@ -47,60 +46,6 @@ function terminalApprover(rl: readline.Interface): Approver {
   };
 }
 
-function pickModel(): { model: Model<any>; models: ReturnType<typeof createModels> } {
-  const models = createModels();
-  const provider = process.env.KHOR_AGENT_PROVIDER ?? "anthropic";
-
-  if (provider === "anthropic") {
-    models.setProvider(anthropicProvider());
-    const id = process.env.KHOR_AGENT_MODEL ?? "claude-sonnet-4-6";
-    const model = models.getModel("anthropic", id);
-    if (!model) {
-      console.error(`pi-ai knows no model \`anthropic/${id}\``);
-      process.exit(2);
-    }
-    return { model, models };
-  }
-
-  if (provider === "newapi") {
-    const base = process.env.KHOR_AGENT_BASE_URL;
-    const keyFile = process.env.KHOR_AGENT_KEY_FILE;
-    const id = process.env.KHOR_AGENT_MODEL;
-    if (!base || !keyFile || !id) {
-      console.error("newapi needs KHOR_AGENT_BASE_URL, KHOR_AGENT_KEY_FILE and KHOR_AGENT_MODEL");
-      process.exit(2);
-    }
-    const key = readFileSync(keyFile, "utf8").trim();
-    const baseUrl = base.replace(/\/$/, "") + "/v1";
-    const model: Model<"openai-completions"> = {
-      id,
-      name: id,
-      api: "openai-completions",
-      provider: "newapi",
-      baseUrl,
-      reasoning: false,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128_000,
-      maxTokens: 8_192,
-    };
-    models.setProvider(
-      createProvider({
-        id: "newapi",
-        name: "newapi",
-        baseUrl,
-        auth: { apiKey: { name: "newapi key", resolve: async () => ({ auth: { apiKey: key } }) } },
-        models: [model],
-        api: openAICompletionsApi(),
-      }),
-    );
-    return { model, models };
-  }
-
-  console.error(`KHOR_AGENT_PROVIDER must be anthropic or newapi, not \`${provider}\``);
-  process.exit(2);
-}
-
 const bin = process.env.KHOR_BIN ?? "khor";
 const mode = process.env.KHOR_AGENT_MODE ?? "manual";
 if (mode !== "manual" && mode !== "bypass") {
@@ -108,14 +53,40 @@ if (mode !== "manual" && mode !== "bypass") {
   process.exit(2);
 }
 
-const { model, models } = pickModel();
+const keyFile = process.env.KHOR_AGENT_KEY_FILE;
+const seated = openModels({
+  provider: process.env.KHOR_AGENT_PROVIDER ?? "anthropic",
+  baseUrl: process.env.KHOR_AGENT_BASE_URL,
+  key: keyFile ? readFileSync(keyFile, "utf8").trim() : undefined,
+});
+
+const listing = await listModels(seated);
+const wanted = process.env.KHOR_AGENT_MODEL;
+if (!wanted) {
+  console.log(`${seated.providerId}: ${listing.models.length} model(s)`);
+  for (const m of listing.models) {
+    console.log(`  ${m.id}\t${m.contextWindow} ctx\t${m.reasoning ? "reasoning" : ""}`);
+  }
+  if (listing.trouble) console.log(`list is short: ${listing.trouble.message}`);
+  console.log("set KHOR_AGENT_MODEL to one of these (or to an id you know) to start");
+  process.exit(2);
+}
+const pick = pickModel(seated, wanted);
+if (!pick.listed) {
+  console.log(
+    `note: \`${wanted}\` is not in ${seated.providerId}'s list` +
+      (listing.trouble ? ` (${listing.trouble.message})` : "") +
+      "; using it anyway on the same endpoint",
+  );
+}
+
 const rl = readline.createInterface({ input: stdin, output: stdout });
 const { agent, table } = await createKhorAgent({
   khorBin: bin,
   mode: mode as Mode,
   approver: terminalApprover(rl),
-  model,
-  streamFn: models.streamSimple.bind(models),
+  model: pick.model,
+  streamFn: seated.models.streamSimple.bind(seated.models),
 });
 
 agent.subscribe(async (event) => {
@@ -127,9 +98,11 @@ agent.subscribe(async (event) => {
   }
 });
 
-console.log(`khor agent (dev) — ${table.size} verbs learned from \`${bin}\`, mode ${mode}, model ${model.provider}/${model.id}`);
-if ((process.env.KHOR_AGENT_PROVIDER ?? "anthropic") === "anthropic" && !process.env.ANTHROPIC_API_KEY) {
-  console.log("note: ANTHROPIC_API_KEY is not set; the first prompt will fail until it is");
+console.log(
+  `khor agent (dev) — ${table.size} verbs learned from \`${bin}\`, mode ${mode}, model ${pick.model.provider}/${pick.model.id}`,
+);
+if (!(await seated.models.getAuth(seated.providerId))) {
+  console.log(`note: no key for ${seated.providerId}; the first prompt will fail until KHOR_AGENT_KEY_FILE names one`);
 }
 
 for (;;) {
