@@ -1952,22 +1952,49 @@ try {
     //   (2026-09-06:「卡头不再写类型 · 厂商 · 来源」). Equality, not
     //   `includes`: the whole point of that ruling is what is *not*
     //   there, and a substring check passes on the line it replaced.
-    const planOnRow = (
-      await page.locator('[data-quota-row][data-quota-kind="sub"] [data-quota-sub-line]').textContent()
-    )?.trim();
-    const chip = (await page.locator("[data-quota-detail] [data-quota-plan]").textContent().catch(() => null))?.trim();
+    //   **The plan is a chip on the name's line, and the sub-line's
+    //   three segments survive at this column's width.** Read as ink,
+    //   not as text: the failure this is written for is a sub-line that
+    //   *says* the right three words while the last one is drawn as
+    //   「Claud…」, and `textContent` cannot see an ellipsis — the
+    //   browser truncates in layout, not in the DOM.
+    const rowPlan = await page.evaluate(() => {
+      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
+      const chip = row?.querySelector("[data-quota-plan]");
+      const line = row?.querySelector("[data-quota-sub-line]");
+      const box = row?.getBoundingClientRect();
+      const chipBox = chip?.getBoundingClientRect();
+      return {
+        chip: chip?.textContent?.trim() ?? null,
+        line: line?.textContent?.trim() ?? null,
+        // The mark of a truncated line: more text than there is room
+        // for. One pixel of slack for sub-pixel layout.
+        cut: line ? line.scrollWidth > line.clientWidth + 1 : null,
+        // The whole chip, not most of it.
+        chipWhole:
+          chipBox && box ? chipBox.left >= box.left - 0.5 && chipBox.right <= box.right + 0.5 : null,
+        chipWidth: chipBox ? Math.round(chipBox.width) : 0,
+      };
+    });
+    const headChip = (await page.locator("[data-quota-detail] [data-quota-plan]").textContent().catch(() => null))?.trim();
     const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
-    if (planOnRow !== quotaPlan) {
-      fail(`the subscription row's line is ${JSON.stringify(planOnRow)}, not its plan ${JSON.stringify(quotaPlan)} alone`);
+    if (rowPlan.chip !== quotaPlan || headChip !== quotaPlan) {
+      fail(
+        `the plan chip reads ${JSON.stringify(rowPlan.chip)} on the row and ${JSON.stringify(headChip)} on the card head, not ${JSON.stringify(quotaPlan)}`,
+      );
     }
-    if (chip !== quotaPlan) {
-      fail(`the card head's plan chip is ${JSON.stringify(chip)}, not ${JSON.stringify(quotaPlan)}`);
+    if (rowPlan.cut !== false || rowPlan.chipWhole !== true || rowPlan.chipWidth < 8) {
+      fail(
+        `at this column's width the sub-line is cut=${rowPlan.cut} (${JSON.stringify(rowPlan.line)}) and the chip is ${rowPlan.chipWidth}px, whole=${rowPlan.chipWhole} — the line's three segments and the whole chip both have to fit`,
+      );
     }
-    //   …and an account's line is its provider, with no 类型 and no
-    //   来源 — the half of the ruling the subscription row cannot show.
+    //   …and the sub-line is the three axes, on every row: the
+    //   subscription's and an account's alike.
     const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
-    if (!billLine || billLine.includes("·")) {
-      fail(`an account row's line is ${JSON.stringify(billLine)} — one word, the provider, was expected`);
+    if ((rowPlan.line?.split("·").length ?? 0) !== 3 || (billLine?.split("·").length ?? 0) !== 3) {
+      fail(
+        `the sub-lines are ${JSON.stringify(rowPlan.line)} and ${JSON.stringify(billLine)} — 类型 · 提供商 · 来源 on both`,
+      );
     }
 
     //   **The credits: shown, and not shown as a window.** Three

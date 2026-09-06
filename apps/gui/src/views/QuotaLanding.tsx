@@ -327,22 +327,19 @@ function valueWord(axis: string, value: string): string {
 /** The axis's own name, for the heading over its ticks and over its
     group. */
 /**
- * The one line under a row's name — **one thing, not four.**
+ * The line under a row's name — the three axes, and **only** the three.
  *
- * It used to read 「类型 · 提供商 · 来源」, and with the plan added it
- * became 「订阅 · Max 20x · Claud…」: 288 pixels of list column, and the
- * 来源 axis truncated off the end of its own row. 2026-09-06 the user
- * cut the line rather than the column —「用户知道从哪点进来的,list 上
- * 有」「new-api 站、计费也不用写,用户自己设置的自己知道」.
+ * The plan briefly sat here as a fourth segment and the result was
+ * 「订阅 · Max 20x · Claud…」 in a 288-wide column: 来源 truncated off
+ * the end of its own row, an axis you can tick and cannot see. The plan
+ * moved up to the name's line instead of this line getting longer.
  *
- * So: the subscription wears its plan, an account wears its provider,
- * and neither wears 类型 or 来源. **Those two did not become
- * invisible** — 来源 is a group heading and both are ticks in the
- * filter, which is where a thing you sort by belongs; what left is the
- * copy repeating on every row what the person already chose.
+ * **Why these three and not fewer**: each is an axis the bar filters
+ * and groups by, and each is what makes 「search reads the words on the
+ * row」 true rather than a search over hidden fields.
  */
 function subLine(r: Row): string {
-  return r.kind === "sub" ? (r.plan ?? "") : providerWord(r.provider);
+  return [kindWord(r.kind), providerWord(r.provider), fromWord(r.from)].join(" · ");
 }
 
 /** The `disabled_reason` key as a status word — never a sentence
@@ -670,7 +667,35 @@ export function QuotaLanding({
               />
             )}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-fact">{r.name}</span>
+              {/* **The plan rides the name's line, not the one under
+                  it** (2026-09-06). Put into the sub-line it made
+                  「订阅 · Max 20x · Claud…」 at this column's 288 —
+                  and what fell off the end was 来源, one of the three
+                  axes this page filters and groups by. An axis you can
+                  tick but cannot see is the shape this repo keeps being
+                  bitten by, so the fourth thing left the line rather
+                  than the line getting longer.
+                  **When it is genuinely tight the name gives way**: the
+                  name truncates, the chip does not shrink, and the
+                  sub-line's three segments stay whole. */}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-fact">{r.name}</span>
+                {r.plan && (
+                  <span
+                    data-quota-plan
+                    // **Bordered, not tinted.** The mock fills this chip
+                    // with `--accent`, and `--accent` is also what paints
+                    // the *selected* row — the subscription row is
+                    // selected by default, so a tinted chip would sit on
+                    // its own colour and read as nothing. Same shape as
+                    // the chip on the card head, so the two are one
+                    // thing seen twice rather than two chips.
+                    className="flex-none rounded-full border px-1.5 py-px text-[11px] leading-tight text-muted-foreground"
+                  >
+                    {r.plan}
+                  </span>
+                )}
+              </span>
               {/* **Three segments, and the middle one is why.** 提供商
                   is one of the three axes this page filters and groups
                   by; an axis you can tick but cannot see is the shape
