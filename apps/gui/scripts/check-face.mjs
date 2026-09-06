@@ -4400,9 +4400,19 @@ try {
         fail(`probe dead: the ${page} page draws ${got?.x.length ?? 0}×${got?.y.length ?? 0} tick labels, so 「each tick has its own label」 measured nothing`);
         return;
       }
-      for (const [axis, ls] of [["x", got.x], ["y", got.y]]) {
+      const [xk, yk] = (got.pair ?? "x").split("x");
+      for (const [axis, ls, key] of [["x", got.x, xk], ["y", got.y, yk]]) {
         const dup = ls.filter((l, i) => ls.indexOf(l) !== i);
         if (dup.length) fail(`the ${page} page's ${axis} axis prints the same label twice: ${dup.map((d) => `「${d}」`).join(" ")} (all: ${ls.join(", ")})`);
+        //   **All seven, on an axis whose labels take decimals.** A
+        //   tick quietly dropped is how a broken formatter would pass
+        //   the line above — measured: with the fold applied to every
+        //   axis, one decimal for all reduced the crowded page to five
+        //   ticks and the duplicate arm never fired. 时长 alone may
+        //   fold (its unit ladder has no decimals to add).
+        if (key !== "time" && ls.length !== 7) {
+          fail(`the ${page} page's ${axis} axis (${key}) draws ${ls.length} ticks, not seven — a tick was dropped rather than labelled apart (${ls.join(", ")})`);
+        }
       }
       const zeros = got.x.filter((l) => parseFloat(l) === 0);
       const allowed = got.xLo === 0 ? 1 : 0;

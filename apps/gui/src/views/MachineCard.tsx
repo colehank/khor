@@ -1731,6 +1731,11 @@ const AXES = {
   //   时长 ignores `d`: its words are a ladder of units (秒/分钟/小时/天)
   //   with no decimals to add, so two ticks inside one rung print the
   //   same word — and `tickSet` drops the second rather than draw it.
+  //   **Only there** (`fold`): on an axis whose formatter takes
+  //   decimals, two ticks with one label is a broken formatter, and
+  //   folding them would hide it behind a missing tick (measured
+  //   2026-09-06 — the gate's duplicate arm could not fire while the
+  //   fold applied everywhere).
   cpu: {
     word: () => cli.vitals_name_cpu,
     of: (r: Load["top"][number]) => r.cpu_pct,
@@ -1738,7 +1743,7 @@ const AXES = {
   },
   mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number, d: number) => bytes(v, d) },
   vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number, d: number) => bytes(v, d) },
-  time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000) },
+  time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000), fold: true },
 } as const;
 
 /**
@@ -1750,7 +1755,11 @@ const AXES = {
  * told apart at all (时长's unit ladder) become one — the second is
  * dropped, never drawn twice.
  */
-function tickSet(r: { tick: (f: number) => number }, a: { tick: (v: number, d: number) => string }, fractions: number[]) {
+function tickSet(
+  r: { tick: (f: number) => number },
+  a: { tick: (v: number, d: number) => string; fold?: boolean },
+  fractions: number[],
+) {
   const vs = fractions.map((f) => r.tick(f));
   const at = (i: number, d: number) => a.tick(vs[i], d);
   const set = vs.map((v, i) => {
@@ -1764,7 +1773,7 @@ function tickSet(r: { tick: (f: number) => number }, a: { tick: (v: number, d: n
     while (d < 6 && clashes()) d += 1;
     return { v, label: at(i, d) };
   });
-  return set.filter((t, i) => set.findIndex((o) => o.label === t.label) === i);
+  return a.fold ? set.filter((t, i) => set.findIndex((o) => o.label === t.label) === i) : set;
 }
 type AxisKey = keyof typeof AXES;
 const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
