@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use khor_core::{Quota, QuotaTrouble, QuotaWindow, QuotaWindowKind};
+use khor_core::{Quota, QuotaTrouble, QuotaWindow, QuotaWindowSpan};
 use serde_json::Value;
 
 const ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -309,47 +309,149 @@ fn unix_seconds(v: &Value) -> Option<i64> {
     }
 }
 
-/// The windows out of either source's JSON.
+/// A reading that has rolled over is empty now, and its reset time is in
+/// the past and says nothing about the next one.
+fn settle(used_pct: f32, resets_at: Option<i64>, now: i64) -> (f32, Option<i64>) {
+    match resets_at {
+        Some(at) if at < now => (0.0, None),
+        other => (used_pct, other),
+    }
+}
+
+/// The `limits[]` array: **every entry says what it is.**
 ///
-/// **Every step here is allowed to give up on one window without losing
-/// the others**, which is the whole posture toward an endpoint that owes
-/// khor nothing: a renamed field costs that row, not the panel.
-fn parse_windows(v: &Value) -> Option<Vec<QuotaWindow>> {
-    const KEYS: &[(&str, QuotaWindowKind)] = &[
-        ("five_hour", QuotaWindowKind::FiveHour),
-        ("seven_day", QuotaWindowKind::SevenDay),
-        ("seven_day_sonnet", QuotaWindowKind::SevenDaySonnet),
-        ("seven_day_opus", QuotaWindowKind::SevenDayOpus),
+/// This is the shape the endpoint grew, and it is why this file stopped
+/// dropping windows it does not recognise. Each entry carries its own
+/// `percent`, `resets_at`, `group` (how long) and `scope` (what it is
+/// limited to), so a limit khor has never seen is still a fully
+/// described number rather than a bare one — see [`QuotaWindowSpan`].
+///
+/// **`kind` is deliberately not read.** It is `session` / `weekly_all` /
+/// `weekly_scoped`, which fuses length and limit back together — the
+/// exact fusion this change took apart. `group` and `scope` answer the
+/// two questions separately, and reading `kind` as well would be a third
+/// opinion that can disagree with them.
+fn from_limits(v: &Value, now: i64) -> Vec<QuotaWindow> {
+    let Some(limits) = v.get("limits").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for limit in limits {
+        // One entry that cannot be read costs that entry, never the
+        // array — the same posture the key path has always had.
+        let Some(group) = limit.get("group").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(used_pct) = ["percent", "utilization", "used_percentage", "used_pct"]
+            .iter()
+            .find_map(|f| limit.get(*f).and_then(percent))
+        else {
+            continue;
+        };
+        let span = match group {
+            "session" => QuotaWindowSpan::FiveHour,
+            "weekly" => QuotaWindowSpan::SevenDay,
+            other => QuotaWindowSpan::Other(other.to_owned()),
+        };
+        // The model's own display name, and only that: `scope.model.id`
+        // was null on every entry seen, and a scope with no model
+        // (`surface`, one day) has no name to draw, so it is not a
+        // scoped window this build can label.
+        let scope = limit
+            .get("scope")
+            .and_then(|s| s.get("model"))
+            .and_then(|m| m.get("display_name"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let (used_pct, resets_at) = settle(used_pct, limit.get("resets_at").and_then(unix_seconds), now);
+        out.push(QuotaWindow {
+            span,
+            scope,
+            used_pct,
+            resets_at,
+            active: limit.get("is_active").and_then(Value::as_bool),
+            severity: limit.get("severity").and_then(Value::as_str).map(str::to_owned),
+        });
+    }
+    out
+}
+
+/// The four top-level keys, which are all an older payload (and the
+/// statusline hook's file) has.
+///
+/// **The two model names here are the endpoint's own key words**, read
+/// off `seven_day_opus` rather than chosen by khor; the capital is
+/// typesetting. On a payload that has `limits[]` these lose to it, where
+/// the name arrives as `display_name` already spelled.
+fn from_top_keys(v: &Value, now: i64) -> Vec<QuotaWindow> {
+    const KEYS: &[(&str, QuotaWindowSpan, Option<&str>)] = &[
+        ("five_hour", QuotaWindowSpan::FiveHour, None),
+        ("seven_day", QuotaWindowSpan::SevenDay, None),
+        ("seven_day_sonnet", QuotaWindowSpan::SevenDay, Some("Sonnet")),
+        ("seven_day_opus", QuotaWindowSpan::SevenDay, Some("Opus")),
     ];
-    let now = jiff::Timestamp::now().as_second();
-    let mut windows = Vec::new();
-    for (key, kind) in KEYS {
+    let mut out = Vec::new();
+    for (key, span, scope) in KEYS {
         let Some(window) = v.get(key).filter(|w| !w.is_null()) else {
             continue;
         };
         // Three names for one number have been seen in the wild; a
         // fourth costs this row and nothing else.
-        let Some(mut used_pct) = ["utilization", "used_percentage", "used_pct"]
+        let Some(used_pct) = ["utilization", "used_percentage", "used_pct"]
             .iter()
             .find_map(|f| window.get(*f).and_then(percent))
         else {
             continue;
         };
-        let mut resets_at = window.get("resets_at").and_then(unix_seconds);
-        // The window already rolled over: it is empty now, and the reset
-        // time is in the past and says nothing about the next one.
-        if let Some(at) = resets_at
-            && at < now
-        {
-            used_pct = 0.0;
-            resets_at = None;
-        }
-        windows.push(QuotaWindow {
-            kind: *kind,
+        let (used_pct, resets_at) = settle(used_pct, window.get("resets_at").and_then(unix_seconds), now);
+        out.push(QuotaWindow {
+            span: span.clone(),
+            scope: scope.map(str::to_owned),
             used_pct,
             resets_at,
+            active: None,
+            severity: None,
         });
     }
+    out
+}
+
+/// Where a window sits in the order [`Quota::windows`] promises:
+/// shortest first, and the whole plan before one model's share of it.
+fn seat(w: &QuotaWindow) -> (u8, bool, String) {
+    let length = match w.span {
+        QuotaWindowSpan::FiveHour => 0,
+        QuotaWindowSpan::SevenDay => 1,
+        // A length khor cannot order goes last, for the same reason it
+        // does not go on the ring: there is no order to put it in.
+        QuotaWindowSpan::Other(_) => 2,
+    };
+    (length, w.scope.is_some(), w.scope.clone().unwrap_or_default())
+}
+
+/// The windows out of either source's JSON.
+///
+/// **Every step here is allowed to give up on one window without losing
+/// the others**, which is the whole posture toward an endpoint that owes
+/// khor nothing: a renamed field costs that row, not the panel.
+///
+/// **Both sources, `limits[]` first, merged on identity.** A payload
+/// that has both says the same thing twice — the top-level `seven_day`
+/// and `limits[]`'s `weekly_all` are one window — and the merge is a key
+/// comparison (`span` + `scope`), not a name match, which is the whole
+/// reason those two fields were split apart. `limits[]` wins a tie
+/// because it is the entry that says what it is; a top-level key with no
+/// entry beside it (an older payload, the statusline file) is still
+/// carried.
+fn parse_windows(v: &Value) -> Option<Vec<QuotaWindow>> {
+    let now = jiff::Timestamp::now().as_second();
+    let mut windows = from_limits(v, now);
+    for w in from_top_keys(v, now) {
+        if !windows.iter().any(|had| had.span == w.span && had.scope == w.scope) {
+            windows.push(w);
+        }
+    }
+    windows.sort_by_key(seat);
     (!windows.is_empty()).then_some(windows)
 }
 
@@ -366,9 +468,12 @@ mod tests {
     fn quota_at(used: f32) -> Quota {
         Quota {
             windows: vec![QuotaWindow {
-                kind: QuotaWindowKind::FiveHour,
+                span: QuotaWindowSpan::FiveHour,
+                scope: None,
                 used_pct: used,
                 resets_at: None,
+                active: None,
+                severity: None,
             }],
             as_of: None,
         }
@@ -410,7 +515,7 @@ mod tests {
         });
         let windows = parse_windows(&body).expect("two readable windows");
         assert_eq!(windows.len(), 2);
-        assert_eq!(windows[0].kind, QuotaWindowKind::FiveHour);
+        assert_eq!(windows[0].span, QuotaWindowSpan::FiveHour);
         assert!((windows[0].used_pct - 34.0).abs() < 1e-6);
     }
 
@@ -458,6 +563,170 @@ mod tests {
 
     /// Percentages arrive as numbers and as strings, and out-of-range is
     /// a misread rather than a fuller-than-full window.
+    /// **The real thing, byte for byte** — one capture of
+    /// `api.anthropic.com/api/oauth/usage`, 2026-09-06, the day it
+    /// started reporting a per-model week. It carries no token and no
+    /// account: percentages, reset times, and the endpoint's own code
+    /// names.
+    ///
+    /// It is here rather than hand-shaped because the hand-shaped
+    /// version is the thing that drifts, and because two of the
+    /// assertions below are about parts nobody would think to invent —
+    /// the ten code-name buckets, and a `nimbus_quill` that is *not*
+    /// null and still must not become a window.
+    const REAL: &str = include_str!("../tests/fixtures/oauth-usage-2026-09-06.json");
+
+    /// A fixed instant an hour before that capture's earliest reset, so
+    /// these tests say the same thing next year rather than starting to
+    /// read the payload as rolled over.
+    ///
+    /// ⚠️ **An hour, not a second.** This was first written as
+    /// `1_788_706_800` under a comment claiming 14:00Z; that number is
+    /// 15:00Z — the five-hour window's reset instant exactly. Every
+    /// test still passed, because [`settle`] zeroes on `at < now` and
+    /// not on `at == now`: the fixture was sitting **on** the boundary
+    /// it was supposed to be an hour away from, and one second's drift
+    /// in either the constant or that comparison would have zeroed a
+    /// window these tests assert is 29% full. A fixture on a boundary
+    /// is the same mistake as a teardown target on one.
+    const BEFORE_RESET: i64 = 1_788_703_200; // 2026-09-06T14:00:00Z
+
+    fn real() -> Value {
+        serde_json::from_str(REAL).expect("the captured payload is JSON")
+    }
+
+    #[test]
+    fn the_endpoint_names_three_windows_and_ten_code_names_that_are_not_windows() {
+        let windows = from_limits(&real(), BEFORE_RESET);
+        assert_eq!(
+            windows
+                .iter()
+                .map(|w| (w.span.clone(), w.scope.clone(), w.used_pct))
+                .collect::<Vec<_>>(),
+            vec![
+                (QuotaWindowSpan::FiveHour, None, 29.0),
+                (QuotaWindowSpan::SevenDay, None, 30.0),
+                (QuotaWindowSpan::SevenDay, Some("Fable".into()), 29.0),
+            ],
+        );
+        // `nimbus_quill` is a top-level bucket with a readable 0% in it,
+        // and it is **not** in `limits[]` — so it is not a window, and
+        // the reason is not that it was unreadable.
+        assert!(percent(&real()["nimbus_quill"]["utilization"]).is_some());
+    }
+
+    /// The whole point of reading `limits[]`: **the name is the
+    /// endpoint's.** A build that spelled 「Fable」 anywhere of its own
+    /// passes the test above and fails this one.
+    #[test]
+    fn a_per_model_window_is_named_by_the_payload_and_not_by_khor() {
+        let renamed: Value = serde_json::from_str(&REAL.replace("Fable", "Zephyr")).unwrap();
+        let scopes: Vec<_> = from_limits(&renamed, BEFORE_RESET)
+            .into_iter()
+            .filter_map(|w| w.scope)
+            .collect();
+        assert_eq!(scopes, vec!["Zephyr".to_owned()]);
+    }
+
+    /// The premise that changed. A limit whose length khor cannot order
+    /// used to be dropped because it was a bare percentage; it now says
+    /// its own group, percent and reset, so it is kept — off the ring
+    /// (no order to put it in) and last in the list.
+    #[test]
+    fn a_length_khor_cannot_order_is_kept_and_wears_the_endpoints_own_word() {
+        let body = serde_json::json!({
+            "limits": [
+                {"group": "weekly", "percent": 30, "resets_at": "2099-01-02T00:00:00Z", "scope": null},
+                {"group": "monthly", "percent": 4, "resets_at": "2099-02-01T00:00:00Z", "scope": null},
+            ]
+        });
+        let windows = parse_windows(&body).expect("both");
+        assert_eq!(windows[0].span, QuotaWindowSpan::SevenDay);
+        assert_eq!(windows[1].span, QuotaWindowSpan::Other("monthly".into()));
+        assert_eq!(windows[1].used_pct, 4.0);
+    }
+
+    /// The regression: a payload from before `limits[]`, and the
+    /// statusline hook's file, still yield the four keys — with the two
+    /// model windows now spelled as a week scoped to a model rather than
+    /// as two more kinds.
+    #[test]
+    fn an_older_payload_with_no_limits_still_yields_its_four_keys() {
+        let body = serde_json::json!({
+            "five_hour": {"utilization": 34.0, "resets_at": "2099-01-01T00:00:00Z"},
+            "seven_day": {"utilization": 61.5, "resets_at": "2099-01-03T00:00:00Z"},
+            "seven_day_sonnet": {"utilization": 12.0, "resets_at": "2099-01-03T00:00:00Z"},
+            "seven_day_opus": {"utilization": 5.0, "resets_at": "2099-01-03T00:00:00Z"}
+        });
+        assert_eq!(
+            parse_windows(&body)
+                .expect("four")
+                .iter()
+                .map(|w| (w.span.clone(), w.scope.clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                (QuotaWindowSpan::FiveHour, None),
+                (QuotaWindowSpan::SevenDay, None),
+                (QuotaWindowSpan::SevenDay, Some("Opus".into())),
+                (QuotaWindowSpan::SevenDay, Some("Sonnet".into())),
+            ],
+        );
+    }
+
+    /// **One window, two names for it, one row.** The top-level
+    /// `seven_day` and `limits[]`'s `weekly_all` are the same window;
+    /// the merge is `(span, scope)` equality, which is the reason those
+    /// two fields were split apart in the first place.
+    #[test]
+    fn a_window_both_sources_report_comes_out_once_and_from_limits() {
+        let windows = parse_windows(&real()).expect("windows");
+        assert_eq!(
+            windows.iter().filter(|w| w.span == QuotaWindowSpan::SevenDay && w.scope.is_none()).count(),
+            1,
+        );
+        // Three, not five: the two sources overlap on the five-hour and
+        // the seven-day windows, and Fable is only in `limits[]`.
+        assert_eq!(windows.len(), 3);
+        // And `limits[]` won the tie — it is the entry carrying the two
+        // extra facts, which the key path cannot supply.
+        assert!(windows.iter().any(|w| w.active == Some(true)));
+    }
+
+    #[test]
+    fn the_windows_come_out_shortest_first_and_the_whole_plan_before_one_models_share() {
+        let windows = parse_windows(&real()).expect("windows");
+        let seats: Vec<_> = windows.iter().map(seat).collect();
+        let mut sorted = seats.clone();
+        sorted.sort();
+        assert_eq!(seats, sorted);
+        assert_eq!(windows[0].span, QuotaWindowSpan::FiveHour);
+        assert_eq!(windows[2].scope, Some("Fable".into()));
+    }
+
+    /// Carried, not painted (see [`QuotaWindow::active`]). The key path
+    /// says neither, and saying `false` there would be inventing an
+    /// answer the endpoint did not give.
+    #[test]
+    fn the_two_extra_facts_come_from_limits_and_are_absent_from_the_key_path() {
+        let from_new = from_limits(&real(), BEFORE_RESET);
+        assert_eq!(from_new[1].active, Some(true));
+        assert_eq!(from_new[1].severity.as_deref(), Some("normal"));
+        let old = serde_json::json!({"five_hour": {"utilization": 1.0}});
+        let from_old = from_top_keys(&old, BEFORE_RESET);
+        assert_eq!(from_old[0].active, None);
+        assert_eq!(from_old[0].severity, None);
+    }
+
+    /// The capture's own reset strings carry a fractional second and a
+    /// `+00:00` offset, which is a shape the previous tests never saw.
+    #[test]
+    fn a_reset_time_with_a_fraction_and_an_offset_reads() {
+        assert_eq!(
+            unix_seconds(&serde_json::json!("2026-09-12T08:00:00.400168+00:00")),
+            Some(1_789_200_000),
+        );
+    }
+
     #[test]
     fn percentages_are_read_leniently_and_clamped() {
         assert_eq!(percent(&serde_json::json!("12.5")), Some(12.5));

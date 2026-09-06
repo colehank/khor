@@ -122,40 +122,47 @@ function money(n: number, currency: string | null): string {
 }
 
 /**
- * How long each subscription window is, and **which ones may go on the
- * ring at all**.
+ * How long each span khor can order is, in minutes — **and the table
+ * having exactly these two entries is the rule about the ring**.
  *
- * ⚠️ **The ring draws one layer per *duration*; a window split by model
- * never goes on it.** `seven_day_sonnet` and `seven_day_opus` are parts
- * of the seven-day window, not another length of time — putting them on
- * would make four concentric arcs, which is precisely the shape that
- * was removed on 2026-09-02 (`Ring`'s tombstone). They live in the
- * detail, where each window is its own single ring and nothing has to
- * be told apart by radius.
+ * ⚠️ **The ring draws one layer per *length*.** A window limited to one
+ * model is a share of a length, not another length, so it never goes on
+ * the ring: three concentric arcs where two of them are the same seven
+ * days is precisely the shape removed on 2026-09-02 (`Ring`'s
+ * tombstone). Those live in the detail, where each window is its own
+ * single ring and nothing has to be told apart by radius.
  *
- * **This is a rule about meaning, not a cap on count.** The day a
- * vendor adds a thirty-day window the ring becomes three layers and is
- * still ordered by length and still readable; the day it splits a
- * window by model again, the ring does not grow at all.
+ * **This used to be a table with `null` in it** — `seven_day_sonnet:
+ * null` meaning「not a length, do not ring it」— which encoded the rule
+ * as an exception list that every new window had to be added to. The
+ * type now says it: a span khor can order is a *string*, and one it
+ * cannot is `{ other }`, so `typeof span === "string"` is the whole
+ * test and a length nobody has seen yet is handled without an entry
+ * here.
  *
- * `null` = a split, detail only. An unknown kind is treated as a split
- * for the same reason: khor does not know its length, so it cannot put
- * it in order, and an arc out of order is an arc that lies.
+ * The day the endpoint reports a thirty-day window, this table grows a
+ * row and the ring becomes three layers, still ordered by length.
  */
-const WINDOW_MINUTES: Record<string, number | null> = {
+const SPAN_MINUTES: Record<string, number> = {
   five_hour: 5 * 60,
   seven_day: 7 * 24 * 60,
-  seven_day_sonnet: null,
-  seven_day_opus: null,
 };
+
+/** One window's identity, for a React key and for the gate's selector:
+    the span, plus the model it is limited to where there is one. The
+    same pair the node merges on (`QuotaWindow::scope`). */
+function windowId(w: QuotaWindow): string {
+  const span = typeof w.span === "string" ? w.span : `other:${w.span.other}`;
+  return w.scope ? `${span}:${w.scope}` : span;
+}
 
 /** The windows that go on the ring, **outermost first — longest
     first**, which is the one-sentence order `NestedRing` requires its
     caller to state: further out is a longer window. */
 function ringWindows(ws: QuotaWindow[]): QuotaWindow[] {
   return ws
-    .filter((w) => WINDOW_MINUTES[w.kind] != null)
-    .sort((a, b) => (WINDOW_MINUTES[b.kind] ?? 0) - (WINDOW_MINUTES[a.kind] ?? 0));
+    .filter((w) => typeof w.span === "string" && w.scope === null && SPAN_MINUTES[w.span] != null)
+    .sort((a, b) => (SPAN_MINUTES[String(b.span)] ?? 0) - (SPAN_MINUTES[String(a.span)] ?? 0));
 }
 
 /** The window a reader is closest to running out of — what the nested
@@ -178,22 +185,24 @@ function fromWord(from: string): string {
   return from === "" ? gui.quota_from_khor : from;
 }
 
-/** A window's name — the catalog's own, the same string on the row and
-    in the detail. No short form: a second spelling of one window is the
-    drift this page's whole vocabulary is built to avoid. */
-function windowWord(kind: string): string {
-  switch (kind) {
-    case "five_hour":
-      return gui.quota_five_hour;
-    case "seven_day":
-      return gui.quota_seven_day;
-    case "seven_day_sonnet":
-      return gui.quota_seven_day_sonnet;
-    case "seven_day_opus":
-      return gui.quota_seven_day_opus;
-    default:
-      return kind;
-  }
+/**
+ * A window's name — the same string on the row and in the detail. No
+ * short form: a second spelling of one window is the drift this page's
+ * whole vocabulary is built to avoid.
+ *
+ * **Three sources, in this order, and only the first is khor's.** A
+ * window limited to a model wears that model's name exactly as the
+ * endpoint spelled it (「Fable」) — khor has no word for a model it may
+ * not have heard of, and inventing one is how a page ends up naming
+ * something the vendor renamed last week. A whole-plan window of a
+ * length khor can order gets the catalog's word. A length khor cannot
+ * order wears the endpoint's own group word, which may not be a human
+ * sentence — that is the endpoint talking, not khor claiming.
+ */
+function windowWord(w: QuotaWindow): string {
+  if (w.scope) return w.scope;
+  if (typeof w.span !== "string") return w.span.other;
+  return w.span === "five_hour" ? gui.quota_five_hour : gui.quota_seven_day;
 }
 
 /**
@@ -577,7 +586,7 @@ export function QuotaLanding({
               // one that will stop you first — named in words on the
               // right, because colour alone is a puzzle.
               <NestedRing
-                tracks={layers.map((w) => ({ id: w.kind, fraction: w.used_pct / 100 }))}
+                tracks={layers.map((w) => ({ id: windowId(w), fraction: w.used_pct / 100 }))}
                 color={gaugeColor(null)}
                 size={RING_SIZE_ROW}
               >
@@ -609,7 +618,7 @@ export function QuotaLanding({
               </span>
             </span>
             <span className="flex-none text-xs tabular-nums text-muted-foreground">
-              {r.account ? centre(r.account) : bad ? `${windowWord(bad.kind)} ${Math.round(bad.used_pct)}%` : ""}
+              {r.account ? centre(r.account) : bad ? `${windowWord(bad)} ${Math.round(bad.used_pct)}%` : ""}
             </span>
           </button>
           </Fragment>
@@ -662,12 +671,12 @@ export function QuotaLanding({
       </div>
       <div className="flex flex-wrap gap-6">
         {current.windows.map((w) => (
-          <div key={w.kind} data-quota-window={w.kind} className="flex items-center gap-row">
+          <div key={windowId(w)} data-quota-window={windowId(w)} className="flex items-center gap-row">
             <Ring fraction={w.used_pct / 100} color={gaugeColor(null)} centerClass="text-lg">
               {`${Math.round(w.used_pct)}%`}
             </Ring>
             <span className="flex min-w-0 flex-col">
-              <span className="text-fact">{windowWord(w.kind)}</span>
+              <span className="text-fact">{windowWord(w)}</span>
               {w.resets_at !== null && (
                 <span className="text-aux text-muted-foreground">
                   {gui.quota_resets(until(w.resets_at * 1000))}

@@ -1221,30 +1221,64 @@ pub struct Usage {
     pub unreadable: u64,
 }
 
-/// Which subscription window a quota reading is about.
+/// **How long** one subscription window is — and nothing else.
 ///
-/// **A key, not a label.** The words live in `crates/catalog` and are
-/// looked up where they are painted, the same rule the six state words
-/// follow — a Rust file that spelled the window's name would be the one
-/// place that wording could not be changed from.
+/// ⚠️ **This used to be `QuotaWindowKind`, and it answered two questions
+/// at once**: how long the window is *and* what it is limited to.
+/// `seven_day_opus` fused them, and that fusion is what dropped Fable's
+/// window on 2026-09-06 — a per-model weekly window the endpoint had
+/// started reporting and this enum had no variant for. The endpoint's
+/// own `limits[]` array had already split the two apart (`group` for the
+/// length, `scope.model` for the limit), so khor follows it: length
+/// here, limit in [`QuotaWindow::scope`].
 ///
-/// The set is open in practice and closed here on purpose: a window this
-/// build has never heard of is dropped by the parser rather than carried
-/// as an unnamed number, because a percentage with no idea what it is a
-/// percentage *of* is worse than no row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+/// **A key, not a label**, for the two khor can order. The words live in
+/// `crates/catalog` and are looked up where they are painted, the same
+/// rule the six state words follow — a Rust file that spelled the
+/// window's name would be the one place that wording could not be
+/// changed from.
+///
+/// **`Other` is the length khor cannot order**, carrying the endpoint's
+/// own group word. It exists because the old parser's posture — drop a
+/// window you have never heard of — was resting on a premise `limits[]`
+/// removed: back then an unknown window was a bare percentage with no
+/// idea what it was a percentage *of*, and dropping it was right. Now
+/// every entry says its own percent, reset and group, so dropping one
+/// would be throwing away the one thing that makes the new shape worth
+/// reading: that the endpoint will grow limits khor has never seen.
+///
+/// **What `Other` does not buy**: a place on the ring. The ring's layers
+/// are ordered by length and an unknown length cannot be put in that
+/// order, so these are detail-only — which is exactly what
+/// `typeof span === "string"` says on the TS side, one condition rather
+/// than a table of exceptions. And its word is the endpoint's, so a
+/// group word that is not human ("juniper_tide") shows up as itself.
+/// **That is the endpoint's word, not a khor sentence** — the same
+/// bargain `providerWord`'s and `troubleWord`'s default branches make.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "snake_case")]
-pub enum QuotaWindowKind {
+pub enum QuotaWindowSpan {
     FiveHour,
     SevenDay,
-    SevenDaySonnet,
-    SevenDayOpus,
+    Other(String),
 }
 
 /// How full one subscription window is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct QuotaWindow {
-    pub kind: QuotaWindowKind,
+    /// How long, and therefore where it sits on the ring.
+    pub span: QuotaWindowSpan,
+    /// What it is limited to. `None` is the whole plan for that length;
+    /// `Some(name)` is one model's share of it, **named by the endpoint
+    /// and never by khor** — the display name out of `limits[]`
+    /// (「Fable」), or, on the old key path that has no `limits[]`, the
+    /// model the endpoint's own key names (`seven_day_opus` → `Opus`).
+    ///
+    /// **Together with `span` this is the window's identity**, which is
+    /// what lets the two sources be merged without a name comparison:
+    /// the top-level `seven_day` and `limits[]`'s `weekly_all` are the
+    /// same `(SevenDay, None)` and come out as one row.
+    pub scope: Option<String>,
     /// 0–100, clamped at the parser. A number outside that range is a
     /// misread rather than a fuller-than-full window.
     pub used_pct: f32,
@@ -1257,6 +1291,24 @@ pub struct QuotaWindow {
     /// does arithmetic on it convert first.
     #[ts(type = "number | null")]
     pub resets_at: Option<i64>,
+    /// The endpoint's own two extra facts about this limit, carried and
+    /// **not painted yet** (`is_active` / `severity` in `limits[]`).
+    ///
+    /// They are here rather than dropped because they are facts the
+    /// endpoint stated, and a parser that discards them makes them
+    /// unavailable to the question they would answer. They are not drawn
+    /// because neither has a decided meaning on this screen yet:
+    /// `is_active` was `false` on the session window that was 29% full
+    /// and `true` on the weekly — so it is not「the one that matters」—
+    /// and `severity` was `normal` on all three, which is a scale nobody
+    /// has seen the other end of. Painting either would be this layer
+    /// deciding a state, which is the one thing it must not do.
+    ///
+    /// `None` on the old key path: those keys say neither.
+    #[serde(default)]
+    pub active: Option<bool>,
+    #[serde(default)]
+    pub severity: Option<String>,
 }
 
 /// What this machine's Claude subscription has left.
@@ -1276,9 +1328,14 @@ pub struct QuotaWindow {
 /// account seen from two machines is one quota, not two.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Quota {
-    /// Windows the endpoint reported, in the order [`QuotaWindowKind`]
-    /// declares them. Empty is a real answer — an account the endpoint
-    /// reports no window limits for is not an error.
+    /// Windows the endpoint reported, **ordered by khor and not by the
+    /// endpoint**: shortest length first, and within a length the whole
+    /// plan before any one model's share of it. The endpoint lists them
+    /// in whatever order it likes and two sources are merged here, so an
+    /// order that came out of either one would be a different list on
+    /// two machines reading the same account. Empty is a real answer —
+    /// an account the endpoint reports no window limits for is not an
+    /// error.
     pub windows: Vec<QuotaWindow>,
     /// When this reading was taken, unix seconds. `None` means "just
     /// now, this call". **Not decoration**: a served cache entry and a

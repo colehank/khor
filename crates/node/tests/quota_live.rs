@@ -50,7 +50,7 @@ async fn the_endpoint_answers_and_leaves_the_machine_a_shared_cache() {
                 assert!(
                     (0.0..=100.0).contains(&w.used_pct),
                     "{:?} came back at {}%, outside a percentage",
-                    w.kind,
+                    w.span,
                     w.used_pct
                 );
             }

@@ -137,6 +137,8 @@ try {
       vitals: null,
       hop: null,
       sponsor: null,
+      watch: [],
+      watched: null,
       // **`{ left, top }`, and they are percentages** — `khor_core::map::Seat`
       // (`CENTRE` is 50/50, the ring sits at 34 out; `ring(1)` puts the
       // one other machine at six o'clock).
@@ -199,6 +201,20 @@ try {
       },
       hop: "direct",
       sponsor: null,
+      // **Three watched directories, one per shape** (2026-09-06 关注目录):
+      // on a listed volume, missing, and on a filesystem khor does not
+      // list. All three, because the reader paints three sentences and
+      // a fixture with only the first would let 「missing」 and
+      // 「unlisted」 quietly become each other.
+      watch: ["/data/models", "/nope", "/proc/1"],
+      watched: {
+        rows: [
+          { path: "/data/models", missing: false, volume: { mount: "/data", fill: fill(46_000_000_000, 50_000_000_000) } },
+          { path: "/nope", missing: true, volume: null },
+          { path: "/proc/1", missing: false, volume: null },
+        ],
+        age_ms: 42_000,
+      },
       // Where `map::ring(1)` actually puts the one other machine: half a
       // step past twelve with a single seat lands it at six o'clock,
       // 34 below the middle. Taken from the formula rather than made up,
@@ -485,17 +501,27 @@ try {
   // 今天 line was its last reader — so a route here would be this gate
   // holding a fixture open for a call that is never made, which is the
   // kind of scaffolding that later reads as evidence the call exists.
+  // **Three windows, two lengths.** The third is a week limited to one
+  // model — the shape the endpoint grew on 2026-09-06 and the parser
+  // was dropping — and it is here because the gap between「three in the
+  // detail」and「two on the ring」is the rule this page draws by: the
+  // ring's layers are lengths, and one model's share of a week is not a
+  // third length. A fixture with two windows cannot tell the two
+  // numbers apart, so it could not have caught the drop.
+  //
+  // `scope` is the model's name **as the endpoint spells it**; nothing
+  // in khor may supply it, which is why the fixture's word is one the
+  // catalog has never heard of.
+  const quotaWindows = [
+    { span: "five_hour", scope: null, used_pct: 4, resets_at: Math.floor(Date.now() / 1000) + 3600, active: false, severity: "normal" },
+    { span: "seven_day", scope: null, used_pct: 39, resets_at: Math.floor(Date.now() / 1000) + 86_400, active: true, severity: "normal" },
+    { span: "seven_day", scope: "Fable", used_pct: 29, resets_at: Math.floor(Date.now() / 1000) + 86_400, active: false, severity: "normal" },
+  ];
   await page.route("**/quota", (r) =>
     r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        quota: {
-          windows: [
-            { kind: "five_hour", used_pct: 4, resets_at: Math.floor(Date.now() / 1000) + 3600 },
-            { kind: "seven_day", used_pct: 39, resets_at: Math.floor(Date.now() / 1000) + 86_400 },
-          ],
-          as_of: Math.floor(Date.now() / 1000) - 120,
-        },
+        quota: { windows: quotaWindows, as_of: Math.floor(Date.now() / 1000) - 120 },
         trouble: null,
       }),
     }),
@@ -1814,16 +1840,42 @@ try {
   } else {
     await subRow.click();
     await wait(250);
-    const windows = await page.locator("[data-quota-detail] [data-quota-window]").count();
-    if (windows !== 2) {
-      fail(`the subscription's detail draws ${windows} windows for a routed two-window quota`);
+    const shownWindows = await page.locator("[data-quota-detail] [data-quota-window]").evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-quota-window")),
+    );
+    if (shownWindows.length !== quotaWindows.length) {
+      fail(
+        `the subscription's detail draws ${JSON.stringify(shownWindows)} for the fixture's ${quotaWindows.length} windows`,
+      );
     }
-    //   And the row itself carries the nested ring — two layers, one
-    //   per window length. A single ring here would mean the row said
-    //   one number for two windows.
-    const layers = await page.locator('[data-quota-row][data-quota-kind="sub"] [data-nested-track]').count();
-    if (layers !== 2) {
-      fail(`the subscription row draws ${layers} ring layers for two windows of different lengths`);
+    //   **The gap between these two numbers is the rule.** The detail
+    //   lists every window; the ring layers only *lengths*, and one
+    //   model's share of a week is not a third length — so three in the
+    //   detail and two on the ring, with the scoped one being exactly
+    //   the difference. Counting only one of them cannot tell「the ring
+    //   dropped a layer」from「the parser dropped a window」.
+    const tracks = await page
+      .locator('[data-quota-row][data-quota-kind="sub"] [data-nested-track]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-nested-track")));
+    const lengths = quotaWindows.filter((w) => w.scope === null);
+    if (tracks.length !== lengths.length || tracks.some((t) => t.includes(":"))) {
+      fail(
+        `the subscription row's ring is ${JSON.stringify(tracks)} — one layer per length was expected (${lengths.length}), and a window limited to a model is not a length`,
+      );
+    }
+    //   **And the model's name is the payload's, not the catalog's.**
+    //   The fixture names a model `zh.toml` has never heard of, so a
+    //   build that spelled window names itself draws something else
+    //   here — which is the whole bug of 2026-09-06, in one string.
+    const scoped = quotaWindows.find((w) => w.scope !== null);
+    const scopedSaid = await page
+      .locator(`[data-quota-detail] [data-quota-window="seven_day:${scoped.scope}"]`)
+      .textContent()
+      .catch(() => null);
+    if (!scopedSaid?.includes(scoped.scope)) {
+      fail(
+        `the per-model window does not wear the endpoint's own name ${JSON.stringify(scoped.scope)} — got ${JSON.stringify(scopedSaid)}`,
+      );
     }
   }
 
@@ -2032,7 +2084,7 @@ try {
       back: await page.locator("[data-back]").count(),
       windows: await page.locator("[data-quota-detail] [data-quota-window]").count(),
     };
-    if (onDetail.detail !== 1 || onDetail.windows !== 2) {
+    if (onDetail.detail !== 1 || onDetail.windows !== quotaWindows.length) {
       fail(`probe dead: pressing a narrow 额度 row drew ${onDetail.detail} details / ${onDetail.windows} windows — nothing below is measuring a detail screen`);
     } else if (onDetail.rows !== 0) {
       fail(`the narrow 额度 detail is on the same screen as ${onDetail.rows} list rows — a phone shows one screen at a time`);
