@@ -1771,12 +1771,39 @@ try {
   if (!readBy?.includes("peer")) {
     fail(`a peer's reading does not name its reader — got ${JSON.stringify(readBy)}`);
   }
-  // The subscription band at the landing's foot — the one surface that
-  // draws these two windows since 2026-09-02, and the positive half
-  // section 7's absences lean on: same selector, same run.
-  const bandWindows = await page.locator("[data-quota-sub] [data-quota-window]").count();
-  if (bandWindows !== 2) {
-    fail(`the \u989d\u5ea6 foot draws ${bandWindows} subscription windows for a routed two-window quota`);
+  // **The subscription's windows, now in its row's detail** — the
+  // positive half section 7's absences lean on: same selector, same
+  // run, moved with the band that carried it.
+  //
+  // ⚠️ **Both halves, because either alone is satisfied by the wrong
+  // thing.** 2026-09-06 folded the foot's band into the list
+  // (「不要有现在下方单独一个订阅的横条」): a gate that only counted
+  // windows would pass with the band still there, and one that only
+  // checked the band was gone would pass on a page that lost the
+  // subscription altogether. So: the band is nowhere, **and** the
+  // subscription is a row, **and** opening it draws its two windows.
+  const band = await page.locator("[data-quota-sub]").count();
+  if (band !== 0) {
+    fail(`the \u989d\u5ea6 foot still draws a subscription band (${band}) — it is a row in the list now`);
+  }
+  const subRow = page.locator('[data-quota-row][data-quota-kind="sub"]').first();
+  const subRows = await page.locator('[data-quota-row][data-quota-kind="sub"]').count();
+  if (subRows !== 1) {
+    fail(`the \u989d\u5ea6 list has ${subRows} subscription rows for a routed quota, not one`);
+  } else {
+    await subRow.click();
+    await wait(250);
+    const windows = await page.locator("[data-quota-detail] [data-quota-window]").count();
+    if (windows !== 2) {
+      fail(`the subscription's detail draws ${windows} windows for a routed two-window quota`);
+    }
+    //   And the row itself carries the nested ring — two layers, one
+    //   per window length. A single ring here would mean the row said
+    //   one number for two windows.
+    const layers = await page.locator('[data-quota-row][data-quota-kind="sub"] [data-nested-track]').count();
+    if (layers !== 2) {
+      fail(`the subscription row draws ${layers} ring layers for two windows of different lengths`);
+    }
   }
 
   // ── 8b) narrow: the open sessions are a count and a switcher ──────
@@ -2411,7 +2438,7 @@ try {
       }
       //   **Every drawer's air, and it has to be shared not parked.**
       //   2026-09-04:「不要满足最高高度,而导致部分图下面空掉了」 was
-      //   said of the three readings; the drawers share that slot and
+      //   said of the day's readings; the drawers share that slot and
       //   had it worse. Measured on the fleet before the fix: the GPU
       //   drawer's last row sat **152px** above the floor on a machine
       //   with one card, 磁盘 121px with two volumes, against 13px for
@@ -3500,13 +3527,18 @@ try {
     }
   }
 
-  //     ── three readings of one day, and one cursor across them ────
+  //     ── two readings of one day, and one cursor across them ──────
   //
-  //     **The moment survives the switch.** Three readings of the same
-  //     numbers is the claim; three components each remembering their
+  //     **The moment survives the switch.** Two readings of the same
+  //     numbers is the claim; two components each remembering their
   //     own state is what it would be instead, and the difference shows
-  //     exactly here — put the cursor somewhere, change the reading,
-  //     and the readout must say the same thing word for word.
+  //     exactly here — put the cursor somewhere, change the reading and
+  //     come back, and the readout must say the same thing word for
+  //     word. (It was measured across three readings until 2026-09-06;
+  //     the one in the middle left, and the parallel figure has no
+  //     time cursor to read out, so the round trip is what is left to
+  //     measure — a panel that reset its cursor on the way out and back
+  //     would come home saying nothing.)
   const readings = await page.evaluate(async () => {
     const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
     const band = () => document.querySelector("[data-machine-card] [data-day-band]");
@@ -3514,7 +3546,7 @@ try {
     const words = [...document.querySelectorAll("[data-machine-card] [data-day-view-pick]")].map(
       (b) => b.dataset.dayViewPick,
     );
-    if (words.length !== 3) return { words };
+    if (words.length !== 2) return { words };
     // Park the cursor a third of the way along the first band.
     const b = band().getBoundingClientRect();
     //   **The drawing's own hit area, and the event it listens for.**
@@ -3535,31 +3567,31 @@ try {
     put();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const onHeat = readout();
-    pick("ridge").click();
+    pick("para").click();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-    const onRidge = readout();
-    const ridgeViews = [...document.querySelectorAll("[data-machine-card] [data-day-view]")].map(
+    const paraViews = [...document.querySelectorAll("[data-machine-card] [data-day-view]")].map(
       (n) => n.dataset.dayView,
     );
     pick("heat").click();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-    return { words, onHeat, onRidge, ridgeViews };
+    const backOnHeat = readout();
+    return { words, onHeat, paraViews, backOnHeat };
   });
-  if (readings.words.length !== 3) fail(`the day offers ${readings.words.length} readings, not three`);
+  if (readings.words.length !== 2) fail(`the day offers ${readings.words.length} readings, not two`);
   else if (!readings.onHeat) fail("the cursor drew no readout — 「which moment」 is what the switch has to carry");
   else {
-    if (readings.onHeat !== readings.onRidge) {
-      fail(`the moment did not survive the switch: "${readings.onHeat}" became "${readings.onRidge}"`);
+    if (readings.onHeat !== readings.backOnHeat) {
+      fail(`the moment did not survive the round trip: "${readings.onHeat}" came back as "${readings.backOnHeat}"`);
     }
-    if (readings.ridgeViews.some((v) => v !== "ridge")) {
-      fail(`picking 山脊 left bands reading ${[...new Set(readings.ridgeViews)].join(",")}`);
+    if (readings.paraViews.some((v) => v !== "para")) {
+      fail(`picking 24h 统计 left bands reading ${[...new Set(readings.paraViews)].join(",")}`);
     }
   }
 
-  //     ── all three readings, and the words each one draws ─────────
+  //     ── both readings, and the words each one draws ──────────────
   //
-  //     **The section above switches between two of the three.** 叠放
-  //     was never opened by anything here, and on 2026-09-04 that is
+  //     **The section above only passes through 叠放.** Before
+  //     2026-09-06 it was never opened by anything here, and on 2026-09-04 that is
   //     where a `TypeError` lived: the drawing's three functions take
   //     the figure's pixel width in a parameter named `W`, and the
   //     module's words were in a global of the same name, so inside
@@ -3573,7 +3605,7 @@ try {
   //     an assertion was wrong: **every one of them measures a number
   //     or a position** — cells, coverage, spacing, heights, the
   //     viewBox, the cursor's moment. None asks whether the figure
-  //     says anything. So this section asks two things, on all three
+  //     says anything. So this section asks two things, on both
   //     readings:
   //
   //       - **no word came out missing**, which on this drawing means
@@ -3586,8 +3618,8 @@ try {
   //         fire on the bug it is named after. (It is kept alongside,
   //         for the ways a word can arrive wrong rather than absent.)
   //       - **叠放 says its peak in words**, which is the one call the
-  //         crash was in. 热力带 and 山脊 print the bare number there
-  //         on purpose (`day-peak-at` is only the parallel figure's,
+  //         crash was in. 热力带 prints the bare number there on
+  //         purpose (`day-peak-at` is only the parallel figure's,
   //         where a hair is a moment and 「什么时候」 has to be
   //         written), so the two arms of this are opposite: bare there,
   //         a moment as well here. A sentence that lost its call comes
@@ -3605,7 +3637,7 @@ try {
     const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
     const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const out = {};
-    for (const view of ["heat", "ridge", "para"]) {
+    for (const view of ["heat", "para"]) {
       pick(view)?.click();
       await frame();
       await new Promise((ok) => setTimeout(ok, 120));
@@ -3622,7 +3654,7 @@ try {
     await frame();
     return out;
   });
-  for (const view of ["heat", "ridge", "para"]) {
+  for (const view of ["heat", "para"]) {
     const seen = spoken[view];
     if (!seen?.drawn) {
       fail(`picking ${view} left no figure at all — nothing below this was measured for it`);
@@ -3651,7 +3683,7 @@ try {
       );
     }
     //   A peak said with its moment: the value and an `hh:mm`, in one
-    //   text element. 热力带/山脊 must not have one; 叠放 must.
+    //   text element. 热力带 must not have one; 叠放 must.
     const withMoment = seen.texts.filter((t) => /\d+\s*%.*\d{2}:\d{2}/.test(t ?? ""));
     if (view === "para" && withMoment.length === 0) {
       fail(
@@ -3674,13 +3706,154 @@ try {
   //   assertions had just failed — a summary that states the finding
   //   rather than the reading will eventually state the wrong one.
   console.log(
-    `day readings: ${["heat", "ridge", "para"]
+    `day readings: ${["heat", "para"]
       .map((v) => {
         const t = spoken[v]?.texts ?? [];
         return `${v} ${t.length} words / ${t.filter((s) => !String(s ?? "").trim()).length} empty`;
       })
       .join(", ")}`,
   );
+
+  //     ── 24h 统计: each axis wears its quartiles, in the right ink order
+  //
+  //     2026-09-06:「叠放图对每类指标新增一个趋势:这一列有一个类似科研
+  //     绘图的区间,中间是均值或中位数,上下是标准差或四分位数」. What is
+  //     drawn is a box from P25 to P75 with the median as a bar across
+  //     it, per axis. Four claims, and the first is the one that keeps
+  //     the other three honest:
+  //
+  //       - **the numbers are the fixture's.** P25, the median and P75
+  //         on the mark are recomputed here from the same buckets, with
+  //         the module's own definition (the median the brush readout
+  //         already uses), so a box drawn from a constant, or from the
+  //         wrong series, goes red on a value rather than on a shape;
+  //       - **the median is inside the box** and **the peak is at or
+  //         above its top** — geometry, read off the elements;
+  //       - **the box is under the hairlines and the median bar over
+  //         them**, by document order — a box painted on top would
+  //         cover the very hairs the figure is made of;
+  //       - **the box wears `--massLo`**, computed, not a new colour —
+  //         the mark is a quantity and wears what the areas wear.
+  {
+    const quartilesOf = (vs) => {
+      const s = vs.filter((v) => v !== null).sort((a, b) => a - b);
+      if (s.length < 4) return null;
+      const at = (q) => s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))];
+      return { q1: at(0.25), med: s[Math.floor(s.length / 2)], q3: at(0.75) };
+    };
+    const expect = {
+      cpu: quartilesOf(dayBuckets),
+      gpu: quartilesOf(gpuBuckets),
+      mem: quartilesOf(memBuckets),
+      disk: quartilesOf(diskBuckets),
+      vram: quartilesOf(vramBuckets),
+    };
+    await page.locator('[data-machine-card] [data-day-view-pick="para"]').click();
+    await wait(400);
+    const marks = await page.evaluate(() => {
+      const band = document.querySelector("[data-machine-card] [data-day-band]");
+      if (!band) return null;
+      const blk = band.closest(".dayblk");
+      const massLo = blk ? getComputedStyle(blk).getPropertyValue("--massLo").trim() : null;
+      const all = [...band.querySelectorAll("*")];
+      const order = (n) => all.indexOf(n);
+      //   The hairlines' group is the one holding the `.draw` paths.
+      const hairs = band.querySelector("path.draw")?.parentElement ?? null;
+      const out = {};
+      for (const box of band.querySelectorAll("[data-day-trend-of]")) {
+        const key = box.dataset.dayTrendOf;
+        const med = band.querySelector(`[data-day-median="${key}"]`);
+        const peak = [...band.querySelectorAll("circle")].find((c) => c.getAttribute("r") === "2.8" && Math.abs(Number(c.getAttribute("cx")) - Number(box.getAttribute("x")) - Number(box.getAttribute("width")) / 2) < 0.6);
+        out[key] = {
+          q1: Number(box.dataset.dayQ1),
+          q3: Number(box.dataset.dayQ3),
+          med: med ? Number(med.dataset.dayMed) : null,
+          top: Number(box.getAttribute("y")),
+          bottom: Number(box.getAttribute("y")) + Number(box.getAttribute("height")),
+          medY: med ? Number(med.getAttribute("y1")) : null,
+          peakY: peak ? Number(peak.getAttribute("cy")) : null,
+          boxBeforeHairs: hairs ? order(box) < order(hairs) : null,
+          medAfterHairs: hairs && med ? order(med) > order(hairs) : null,
+          fill: getComputedStyle(box).fill,
+        };
+      }
+      return { massLo, marks: out, view: band.dataset.dayView };
+    });
+    if (!marks || marks.view !== "para") {
+      fail(`probe dead: 24h 统计 is not showing (${JSON.stringify(marks?.view)}), so its quartile marks were not measured`);
+    } else {
+      const keys = Object.keys(expect).filter((k) => expect[k] !== null);
+      for (const k of keys) {
+        const m = marks.marks[k];
+        if (!m) {
+          fail(`the ${k} axis draws no quartile box — every axis with a day behind it wears one`);
+          continue;
+        }
+        const e = expect[k];
+        if (Math.abs(m.q1 - e.q1) > 0.06 || Math.abs(m.med - e.med) > 0.06 || Math.abs(m.q3 - e.q3) > 0.06) {
+          fail(`the ${k} axis's box says ${m.q1}/${m.med}/${m.q3} where the fixture's buckets give ${e.q1.toFixed(1)}/${e.med.toFixed(1)}/${e.q3.toFixed(1)}`);
+        }
+        if (m.medY === null || m.medY < m.top - 0.6 || m.medY > m.bottom + 0.6) {
+          fail(`the ${k} axis's median bar (y=${m.medY}) is outside its box (${m.top}–${m.bottom})`);
+        }
+        if (m.peakY !== null && m.peakY > m.top + 0.6) {
+          fail(`the ${k} axis's peak (y=${m.peakY}) is below the box's top (${m.top}) — a maximum under the 75th percentile`);
+        }
+        if (m.boxBeforeHairs !== true || m.medAfterHairs !== true) {
+          fail(`the ${k} axis's box/median are painted in the wrong order (box under hairs: ${m.boxBeforeHairs}, median over hairs: ${m.medAfterHairs})`);
+        }
+      }
+      const fills = new Set(keys.map((k) => marks.marks[k]?.fill).filter(Boolean));
+      //   Compared as colours, not strings: the token is written as
+      //   `rgba(26, 26, 20, 0.16)` and `getComputedStyle` reports the
+      //   fill in the same spelling — but a browser is free to
+      //   normalise either, so both go through one canvas to be sure.
+      const same = await page.evaluate(([a, b]) => {
+        const c = document.createElement("canvas").getContext("2d");
+        const norm = (s) => { c.fillStyle = "#000"; c.fillStyle = s; return c.fillStyle; };
+        return norm(a) === norm(b);
+      }, [marks.massLo, [...fills][0] ?? ""]);
+      if (fills.size !== 1 || !same) {
+        fail(`the quartile boxes wear ${[...fills].join(" / ")} — they are to wear --massLo (${marks.massLo}), the areas' own light ink`);
+      }
+      console.log(`day quartiles: ${keys.map((k) => `${k} ${marks.marks[k]?.q1}/${marks.marks[k]?.med}/${marks.marks[k]?.q3}`).join(", ")}`);
+    }
+    await page.locator('[data-machine-card] [data-day-view-pick="heat"]').click();
+    await wait(300);
+  }
+
+  //     ── opening a card draws the day whole, with no entrance ─────
+  //
+  //     2026-09-06:「机器界面选中机器后,不要有图标的动效,现在是热力带的
+  //     动效。直接显示全」. Measured on a fresh mount — the peer's card
+  //     opened again — and on the glass: the block wears `nofx` from
+  //     the first paint, and the computed `animation-name` on every
+  //     element that would wipe, fade or draw is `none`. The class
+  //     alone would pass a stylesheet that stopped honouring it, and
+  //     the computed style alone would pass a card whose figure never
+  //     drew; the band being there is the probe-alive half.
+  {
+    await open("devices");
+    await pressNth("[data-list] [data-row-open]", 1);
+    const drawn = await until(5_000, () =>
+      page.evaluate(() => !!document.querySelector("[data-machine-card] [data-day-band] [data-day-row]")),
+    );
+    const arrival = await page.evaluate(() => {
+      const blk = document.querySelector("[data-machine-card] [data-load-day] .dayblk");
+      if (!blk) return null;
+      const moving = [...blk.querySelectorAll(".wipe, .fade, .draw")];
+      const named = moving.map((n) => getComputedStyle(n).animationName).filter((a) => a && a !== "none");
+      return { nofx: blk.classList.contains("nofx"), moving: moving.length, animated: named.length, names: [...new Set(named)] };
+    });
+    if (!drawn || !arrival || arrival.moving === 0) {
+      fail(`probe dead: the reopened card drew no figure (${JSON.stringify(arrival)}), so 「no entrance」 measured nothing`);
+    } else {
+      if (!arrival.nofx) fail("the day block opens without `nofx` — the figure plays its entrance on every card opened");
+      if (arrival.animated > 0) {
+        fail(`${arrival.animated} of ${arrival.moving} figure elements are animating on arrival (${arrival.names.join(",")}) — the day is to be drawn whole when a machine is picked`);
+      }
+    }
+  }
   await page.setViewportSize({ width: 380, height: 800 });
   await wait(200);
 
@@ -4785,7 +4958,7 @@ try {
     if (!showing || showing.hidden || showing.w < 60) {
       fail(`probe dead: the 24-hour figure is not showing (${JSON.stringify(showing)}), so every reading of it below is stale`);
     }
-    //   ── all three readings end where the slot ends ─────────────
+    //   ── both readings end where the slot ends ──────────────────
     //
     //   2026-09-04:「24小时趋势图,不要满足最高高度,而导致部分图下面空掉
     //   了。可以全部图画到等高。不然视觉一致性很差」. The block has one
@@ -4835,27 +5008,27 @@ try {
           };
         });
       const floors = {};
-      for (const view of ["heat", "ridge", "para"]) {
+      for (const view of ["heat", "para"]) {
         await page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).click();
         await wait(500);
         floors[view] = await floorOf();
       }
       const got = Object.entries(floors).filter(([, v]) => v !== null);
-      if (got.length !== 3) {
-        fail(`probe dead: only ${got.length} of the three readings could be measured (${JSON.stringify(floors)})`);
+      if (got.length !== 2) {
+        fail(`probe dead: only ${got.length} of the two readings could be measured (${JSON.stringify(floors)})`);
       } else {
         const gaps = got.map(([, v]) => v.gap);
         const spread = Math.max(...gaps) - Math.min(...gaps);
         if (spread > 1) {
           fail(
-            `the three readings stop at ${got.map(([k, v]) => `${k} ${v.gap}`).join(", ")} px above the slot's floor ` +
-              `— a spread of ${spread.toFixed(1)}, so switching reading opens a strip of nothing under two of them`,
+            `the two readings stop at ${got.map(([k, v]) => `${k} ${v.gap}`).join(", ")} px above the slot's floor ` +
+              `— a spread of ${spread.toFixed(1)}, so switching reading opens a strip of nothing under one of them`,
           );
         }
         //   ⚠️ **Equal is not enough, and this is the half that was
         //   missing.** Written with only the spread, the section passed
-        //   on a build where all three under-filled by the same 5px —
-        //   three drawings agreeing on where to stop short is still the
+        //   on a build where all three (then) under-filled by the same 5px —
+        //   two drawings agreeing on where to stop short is still the
         //   strip of nothing the reader complained about. So the gap
         //   itself is bounded by the one thing that belongs there.
         const tall = got.filter(([, v]) => v.gap > v.allowed + 1);
@@ -4871,7 +5044,7 @@ try {
       }
     }
 
-    //   **And it fits the slot it shares, in all three readings.** The
+    //   **And it fits the slot it shares, in both readings.** The
     //   slot is one height for the drawings and the drawers both, so
     //   the tallest reading is what sets it — and a reading that
     //   outgrows it is silently clipped at the bottom, where its
@@ -4879,7 +5052,7 @@ try {
     //   sets the height is arrived at by adding up parts, and one of
     //   them (the readout's `margin-top`) is not in any element's
     //   height: 叠放 overflowed by exactly that 6px on the first try.
-    for (const view of ["heat", "ridge", "para"]) {
+    for (const view of ["heat", "para"]) {
       await page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).click();
       await wait(400);
       const over = await page.evaluate(() => {
@@ -4889,7 +5062,7 @@ try {
       });
       if (!over) fail(`probe dead: no day block while showing ${view}`);
       else if (over.over > 0) {
-        fail(`叠放/山脊/热力带 — ${view} is ${over.over}px taller than the slot it shares (${over.parts.join(" ")}) — its foot is clipped`);
+        fail(`叠放/热力带 — ${view} is ${over.over}px taller than the slot it shares (${over.parts.join(" ")}) — its foot is clipped`);
       }
     }
     await page.locator('[data-machine-card] [data-day-view-pick="heat"]').click();

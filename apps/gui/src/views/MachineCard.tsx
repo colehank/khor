@@ -2827,7 +2827,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
  *
  * **The thing this replaced was a React re-implementation written from
  * the spec's description of the same drawing**, and everything that was
- * wrong with it came out of that gap — the ridge drawn with the
+ * wrong with it came out of that gap — a profile drawn with the
  * vertical-hair fill the design had measured and thrown away, the
  * parallel coordinates with no axes, sizes and weights off by whatever
  * the prose did not pin. 「artifacts 已经写好代码画了,为什么还要自己画
@@ -2849,7 +2849,6 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
     disk: cli.vitals_name_disk,
     vram: cli.vitals_name_vram,
     heat: cli.day_view_heat,
-    ridge: cli.day_view_ridge,
     para: cli.day_view_para,
     gap: cli.day_gap,
     now: cli.day_now,

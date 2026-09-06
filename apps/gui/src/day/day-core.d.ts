@@ -12,7 +12,6 @@ export type DayWords = {
   disk: string;
   vram: string;
   heat: string;
-  ridge: string;
   para: string;
   gap: string;
   now: string;

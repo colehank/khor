@@ -8,7 +8,7 @@
  * It is not a picture of a design: it is the design, already running,
  * already argued over. The face used to hold a React re-implementation
  * written from the spec's *description* of it, and every difference
- * between the two came out of that gap — the ridge drawn with the
+ * between the two came out of that gap — a profile drawn with the
  * vertical-hair fill its own author had measured and thrown away, the
  * parallel coordinates with no axes, geometry off by whatever the
  * prose did not pin. 「artifacts 已经写好代码画了,为什么还要自己画一遍」.
@@ -128,6 +128,19 @@ const botOf = (t,i) => t.kind==='range' ? t.lo[i] : t.v[i];
 function peakOf(t){ let pi=-1, pv=-1;
   for(let i=0;i<N;i++){ const v=topOf(t,i); if(v!=null && v>pv){pv=v; pi=i;} }
   return pi<0 ? null : {i:pi, v:pv}; }
+/* Where a track usually sits: its middle half (P25–P75) and its median,
+   over every bucket that has a value. **The median, not the mean** — a
+   day has a few spikes in it and the mean walks off after them, while
+   「平常在哪」 is what this answers; it is the same median the brush
+   readout reports (`med` in `attachBrush`), so the two never disagree.
+   Fewer than four readings is no distribution and draws nothing. */
+function quartiles(t){
+  const vs=[]; for(let i=0;i<N;i++){ const v=topOf(t,i); if(v!=null) vs.push(v); }
+  if(vs.length<4) return null;
+  vs.sort((a,b)=>a-b);
+  const at = q => vs[Math.min(vs.length-1, Math.floor(q*(vs.length-1)))];
+  return { q1:at(.25), med:vs[Math.floor(vs.length/2)], q3:at(.75), n:vs.length };
+}
 const cardCount = s => s.reduce((m,x)=>x.kind==='group'?Math.max(m,x.cards.length):m,1);
 
 /* ══ 通用几何 / SVG ══════════════════════════════════════════════ */
@@ -151,25 +164,12 @@ function segsBy(has){
 const dataSegs = t => segsBy(i=>topOf(t,i)!=null);
 const gapSegs  = t => segsBy(i=>topOf(t,i)==null);
 
-/* 阶梯剖面：一个桶是一个 5 分钟的平台，不是两点之间可以插值的一个点。
-   用阶梯而不是折线，「空缺不桥接」就成了结构性的，不是靠记得断开。 */
-function stepPath(get, a, b, X, y0, mapH, close){
-  let d = close ? 'M'+X(a).toFixed(2)+' '+y0.toFixed(2) : '';
-  for(let i=a;i<b;i++){
-    const y = (y0 - mapH(get(i))).toFixed(2);
-    d += (d===''?'M':' L') + X(i).toFixed(2)+' '+y + ' L'+X(i+1).toFixed(2)+' '+y;
-  }
-  return close ? d+' L'+X(b).toFixed(2)+' '+y0.toFixed(2)+' Z' : d;
-}
-// hi 去、lo 回，围出一条带（多卡折叠时「最忙」和「最闲」之间的那一条）
-function bandPath(t, a, b, X, y0, mapH){
-  let d='';
-  for(let i=a;i<b;i++){ const y=(y0-mapH(t.hi[i])).toFixed(2);
-    d += (d===''?'M':' L')+X(i).toFixed(2)+' '+y+' L'+X(i+1).toFixed(2)+' '+y; }
-  for(let i=b-1;i>=a;i--){ const y=(y0-mapH(t.lo[i])).toFixed(2);
-    d += ' L'+X(i+1).toFixed(2)+' '+y+' L'+X(i).toFixed(2)+' '+y; }
-  return d+' Z';
-}
+/* **`stepPath` and `bandPath` left with the reading that drew them**
+   (2026-09-06, below). They built the stepped profiles — a bucket as a
+   five-minute plateau, never a point to interpolate between, so a gap
+   stayed a gap structurally. Nothing else here draws a profile; the
+   heat band merges runs into rects and the parallel figure draws one
+   hair per moment. */
 
 const BANDS=[3,8,20,45,70,80,90];             // 90 = the product's strain threshold
 const bandOf = v => { let k=0; while(k<BANDS.length && v>=BANDS[k]) k++; return k; };
@@ -193,6 +193,10 @@ function runs(keyAt){
 function drawHeat(svg, T, W, narrow, fill){
   const GL = narrow?46:56, GR = narrow?42:58;
   const CH = narrow?13:11, HB = Math.round(CH*0.64);
+  // AXIS 是**最后一笔墨到图底还剩多少**,两张图的这个数是一组、要一起改:
+  // 热力带 31(时间轴 + 明度图例)、叠放 31(轴名 + 计数)。它们凑在一起是为了
+  // 让两张图**画到同一条底线上** —— 高度一样只是容器一样,墨停在不同的地方,
+  // 读者看到的仍然是一块空地(2026-09-04)。
   const TOP = 5, AXIS = narrow?18:31;
   const X0=GL, X1=W-GR, PW=X1-X0, slot=PW/N;
   // **余量放在行距上,不放在带的厚度上。** `CH` 是那条带的厚度,而带是
@@ -296,118 +300,17 @@ function drawHeat(svg, T, W, narrow, fill){
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   读法二 · 山脊 —— L19 Ridgeline 骨架
-   每条指标一条自己的地板，高度 = 占用率。面积是**实心的**，
-   不是一桶一根竖发丝：实测那种画法在 288 桶 / 非整数桶宽下，
-   逐列墨量的变异系数是 12.5–21.5%，而数据本身只有 3.6% —— 它凭空
-   造出 4.7~6 倍于数据的明暗抖动，dpr=2 时最重。见 README。
+   **The middle reading — L19, one stacked filled profile per metric —
+   left on 2026-09-06** (「取消山脊图」). Its drawing function stood here,
+   between the heat band and the parallel figure; the prototype's measurement
+   behind its solid fill (a vertical-hair fill invents 4.7–6× the data's
+   own shade jitter at 288 buckets) is in its README and stays true, it
+   just has no reader now. The two readings left keep their own words —
+   the band is 「24h 日志」 (a day read left to right) and the parallel
+   figure 「24h 统计」 (a day folded into one column per metric, with
+   its quartiles drawn on the axis) — and `viewsOf` below is the whole
+   list.
    ══════════════════════════════════════════════════════════════════ */
-function drawRidge(svg, T, W, narrow, fill){
-  const n=T.length, dense = n>6;
-  const GL = narrow?42:48, GR = narrow?34:38;
-  const SP0 = dense ? (narrow?16:14) : (narrow?22:20);
-  const AMP = dense ? (narrow?20:18) : (narrow?26:24);
-  // AXIS 是**最后一笔墨到图底还剩多少**,三张图的这个数是一组、要一起改:
-  // 热力带 31(时间轴 + 明度图例)、山脊 15(只有时间轴)、叠放 31(轴名 + 计数)。
-  // 它们凑在一起是为了让三张图**画到同一条底线上** —— 高度一样只是容器一样,
-  // 墨停在不同的地方,读者看到的仍然是一块空地(2026-09-04)。
-  const TOP = 8, AXIS = 15;
-  const X0=GL, X1=W-GR, PW=X1-X0, slot=PW/N;
-  const rowOf = k => (n-1)-k;                 // 最重要的排最前排（最下面）
-  // **余量放在错层间距上,不放在振幅上。** `AMP` 是 100% 对应多少像素——
-  // 撑大它,同一条脊的起伏看起来就更剧烈,那是在改这张图说的话。`SP` 是
-  // 前后两排隔多远,拉开它只是让后排从前排背后多露出来一点。
-  //
-  // **只有一条脊时没有「排与排之间」可分**,那时余量对半放在上下(居中):
-  // 把一条脊拉长只能靠 AMP,而 AMP 不许动。
-  const natBot = TOP + AMP + (n-1)*SP0, nat = natBot + AXIS;
-  const H = fill > nat ? fill : nat;
-  const room = H - AXIS - TOP - AMP;
-  const SP  = n > 1 ? room/(n-1) : SP0;
-  const PADY = n > 1 ? 0 : room/2;
-  const baseY = r => TOP + PADY + AMP + r*SP;
-  const bot = baseY(n-1);
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('height',H);
-  const X = i => X0 + i*slot, mapH = v => v/100*AMP;
-
-  const order = T.map((t,k)=>({t,k,r:rowOf(k)})).sort((a,b)=>a.r-b.r);
-  // 后排先画、前排后画：纸色 slab 压住后排（L19 的遮挡手法）
-  order.forEach(({t,k,r})=>{
-    const y0 = baseY(r);
-    const g = el(svg,'g',{class:'wipe',style:`animation-delay:${r*.06}s`});
-    dataSegs(t).forEach(([a,b])=>{
-      el(g,'path',{d:stepPath(i=>topOf(t,i),a,b,X,y0,mapH,true),fill:'var(--card)'});
-      if(t.kind==='range'){
-        el(g,'path',{d:bandPath(t,a,b,X,y0,mapH),class:'areaLo'});        // 最忙~最闲之间
-        el(g,'path',{d:stepPath(i=>t.lo[i],a,b,X,y0,mapH,true),class:'area'});
-      } else {
-        el(g,'path',{d:stepPath(i=>t.v[i],a,b,X,y0,mapH,true),class:'area'});
-      }
-      el(g,'line',{x1:X(a),y1:y0,x2:X(b),y2:y0,'stroke-width':.7,class:'hair'});
-    });
-    // 纹理换成整点刻度：24 根，一根 = 一小时，是**数得清也说得出**的单位。
-    // 原来那 288 根竖发丝数不清，只会和像素网格打架。
-    if(!dense) for(let i=0;i<N;i+=12){
-      if(topOf(t,i)==null) continue;
-      el(g,'line',{x1:X(i),y1:y0,x2:X(i),y2:y0-3.5,'stroke-width':.6,class:'hair'});
-    }
-    if(GAPMARK) gapSegs(t).forEach(([a,b])=>{
-      if(b-a<3) return;
-      el(g,'line',{x1:X(a),y1:y0,x2:X(b),y2:y0,'stroke-width':.7,class:'hair',
-        'stroke-dasharray':'1.5 3'});
-      if(b-a>=20 && !narrow && !dense)
-        txt(g,{x:(X(a)+X(b))/2,y:y0-3,'font-size':6.5,'font-weight':600,
-          'text-anchor':'middle',class:'fnt'},WORDS.gap);
-    });
-    txt(svg,{x:X0-7,y:y0-2,'font-size':narrow?8:8.5,'font-weight':700,
-      'text-anchor':'end',class:'lab fade',style:`animation-delay:${r*.05}s`,
-      'data-day-row':t.key||t.name}, t.name);
-  });
-
-  // 脊线统一在最上层再描一遍：被前排压住的那条也读得出来。
-  // 只给后排垫纸色描边 —— 给最前排也垫，那 1.8px 纸色会啃掉它自己的面积边缘。
-  order.forEach(({t,k,r})=>{
-    const y0=baseY(r);
-    const g = el(svg,'g',{class:'wipe',style:`animation-delay:${.08+r*.06}s`});
-    dataSegs(t).forEach(([a,b])=>{
-      const d = stepPath(i=>topOf(t,i),a,b,X,y0,mapH,false);
-      if(r<n-1) el(g,'path',{d,fill:'none','stroke-width':1.8,class:'halo',opacity:.9});
-      el(g,'path',{d,fill:'none','stroke-width':r===n-1?1.1:.9,
-        class:'k'+(Math.min(k,4)+1)});
-      if(t.kind==='range')
-        el(g,'path',{d:stepPath(i=>t.lo[i],a,b,X,y0,mapH,false),fill:'none',
-          'stroke-width':.7,class:'k'+(Math.min(k,4)+1),opacity:.55,
-          'stroke-dasharray':'2.5 2'});
-      if(t.strain){
-        segsBy(i=>{const v=topOf(t,i); return v!=null && v>=90;}).forEach(([p,q])=>{
-          if(p<a||q>b) return;
-          el(g,'path',{d:stepPath(i=>topOf(t,i),p,q,X,y0,mapH,false),fill:'none',
-            'stroke-width':1.9,class:'sk','stroke-linecap':'round'});
-        });
-      }
-    });
-    const pk = peakOf(t);
-    if(pk){
-      const x=X(pk.i)+slot/2, y=y0-mapH(pk.v), strained=t.strain&&pk.v>=90;
-      el(svg,'circle',{cx:x,cy:y,r:2.4,class:(strained?'sf':'f'+(Math.min(k,4)+1))+' fade',
-        style:`animation-delay:${.85+r*.04}s`});
-      const right = x < X1-44;
-      txt(svg,{x:right?x+6:x-6,y:y+2.5,'font-size':narrow?8.5:9,'font-weight':800,
-        'text-anchor':right?'start':'end',class:(strained?'sf':'ink')+' fade',
-        style:`paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:${.9+r*.04}s`},
-        Math.round(pk.v)+'%');
-    }
-  });
-
-  timeAxis(svg, X0, X1, slot, bot, narrow);
-  el(svg,'line',{x1:X0-4,y1:baseY(n-1)-AMP,x2:X0,y2:baseY(n-1)-AMP,
-    'stroke-width':.8,class:'hair fade'});
-  return {
-    top: TOP-4, bot, X0, X1, slot,
-    dotAt: (t,i)=>{ const v=topOf(t,i); if(v==null) return null;
-      const k=T.indexOf(t); return {x:X(i)+slot/2, y:baseY(rowOf(k))-mapH(v)}; }
-  };
-}
 
 /* ══════════════════════════════════════════════════════════════════
    读法三 · 平行坐标 —— L20 骨架
@@ -421,8 +324,8 @@ function drawPara(svg, T, W, narrow, fill){
   // 不改变任何一个读数落在轴上的比例——一条 15% 的线在更长的轴上还是
   // 15%,只是分得开一点。这是三张图里最便宜的一处:它本来就是最高的那张,
   // 要补的那点最少。
-  // 31 = 轴名 + 它下面那行计数到图底的距离。**和另外两张图的同一个数是一组**
-  // —— 见 `drawRidge` 里那一段。
+  // 31 = 轴名 + 它下面那行计数到图底的距离。**和热力带的同一个数是一组**
+  // —— 见 `drawHeat` 里 `AXIS` 那一段。
   const FOOT = 31;
   const BOT0 = narrow?122:116, nat = BOT0 + FOOT;
   const H = fill > nat ? fill : nat;
@@ -470,6 +373,35 @@ function drawPara(svg, T, W, narrow, fill){
     }
   });
 
+  /* **Each axis's day in one mark** (2026-09-06:「叠放图对每类指标新增一个
+     趋势…中间是均值或中位数,上下是标准差或四分位数」): the middle half
+     of its readings as a box from P25 to P75, and the median as a bar
+     across it — the box-plot convention, which is what a reader of
+     scientific figures already knows how to read, and the reason the
+     spread is quartiles rather than a standard deviation: a deviation
+     assumes a bell, and a day of CPU is nothing like one.
+
+     **Where it sits in the ink order is the whole of its design.** The
+     box goes down *before* the hairlines, so the hairs stay the figure
+     and the box reads as their ground; it wears `--massLo`, the
+     lightest of the mass inks — lighter than a fresh thread, darker
+     than the axis hair, no new colour (a quantity wears what the areas
+     wear). The median bar goes on *after* the hairlines, where it has
+     to be readable through them, and before the peak — which it can
+     never touch, since the peak is the maximum and the box stops at
+     P75. Neither carries a number: the brush readout already says the
+     median in words, and a figure that printed three more per axis
+     would be a table. */
+  const BOXW = narrow?7:9, MEDW = narrow?11:13;
+  const tb = el(svg,'g',{class:'fade',style:'animation-delay:.3s','data-day-trend':''});
+  T.forEach((t,k)=>{
+    const q=quartiles(t); if(!q) return;
+    const top=mapY(q.q3), bot=mapY(q.q1);
+    el(tb,'rect',{x:AX[k]-BOXW/2,y:top.toFixed(2),width:BOXW,height:Math.max(1,bot-top).toFixed(2),rx:1.5,
+      class:'areaLo','data-day-trend-of':t.key||t.name,
+      'data-day-q1':q.q1.toFixed(1),'data-day-q3':q.q3.toFixed(1),'data-day-n':q.n});
+  });
+
   const lines=[];
   const gl=el(svg,'g',{});
   for(let i=0;i<N;i++){
@@ -488,6 +420,14 @@ function drawPara(svg, T, W, narrow, fill){
       pathLength:1, style:`animation-delay:${(fresh*.45).toFixed(3)}s;animation-duration:.65s`});
     lines.push({i,p,base:{cls:p.getAttribute('class'),op:p.getAttribute('opacity'),w:'0.6'}});
   }
+
+  T.forEach((t,k)=>{
+    const q=quartiles(t); if(!q) return;
+    const y=mapY(q.med).toFixed(2);
+    el(svg,'line',{x1:AX[k]-MEDW/2,y1:y,x2:AX[k]+MEDW/2,y2:y,'stroke-width':1.4,
+      'stroke-linecap':'round',class:'k3 fade',style:'animation-delay:.6s',
+      'data-day-median':t.key||t.name,'data-day-med':q.med.toFixed(1)});
+  });
 
   const peakY={};
   T.forEach((t,k)=>{
@@ -555,8 +495,9 @@ function readout(T, i){
   }).join(' &nbsp; ');
 }
 
-/** The three readings, as the words this face calls them. */
-const viewsOf = () => [['heat', WORDS.heat], ['ridge', WORDS.ridge], ['para', WORDS.para]];
+/** The two readings, as the words this face calls them. (Three until
+    2026-09-06 — the tombstone above `drawPara` has the one that left.) */
+const viewsOf = () => [['heat', WORDS.heat], ['para', WORDS.para]];
 
 /**
  * `CpuDay`'s five series as the tracks the drawing functions eat.
@@ -599,8 +540,16 @@ export function toTracks(day, words) {
  * React's business**, which is the point.
  */
 export function mount(host, opts) {
-  const st = { view: 'heat', cur: null, pin: false, W: 0, H: 0, geo: null, T: [], series: [], first: true };
+  const st = { view: 'heat', cur: null, pin: false, W: 0, H: 0, geo: null, T: [], series: [] };
   host.classList.add('dayblk');
+  // **Drawn whole from the first paint** (2026-09-06:「机器界面选中机器后,
+  // 不要有图标的动效…直接显示全」). This panel is mounted when a machine's
+  // card opens, and the figure is what the person opened it to read —
+  // an entrance there is a delay dressed as a flourish. So `nofx` is on
+  // from the start and every answer keeps it on; the one entrance left
+  // is picking a different reading, in the click handler below, and
+  // the stylesheet's `nofx` block has the rest.
+  host.classList.add('nofx');
   host.innerHTML =
     '<div class="ch"><svg preserveAspectRatio="xMinYMin meet" data-day-band></svg></div>' +
     '<div class="ro" data-day-at></div>' +
@@ -653,7 +602,6 @@ export function mount(host, opts) {
     svg.innerHTML = '';
     st.T = T;
     st.geo = st.view === 'heat' ? drawHeat(svg, T, w, narrow, h)
-           : st.view === 'ridge' ? drawRidge(svg, T, w, narrow, h)
            :                       drawPara(svg, T, w, narrow, h);
     svg.setAttribute('data-day-view', st.view);
     attach(T);
@@ -780,12 +728,13 @@ export function mount(host, opts) {
       T0 = day.now_ms - day.bucket_ms * N;
       st.series = toTracks(day, words);
       if (st.cur !== null && st.cur >= N) st.cur = N - 1;
-      //   **Only the first answer is an arrival.** Every one after it
-      //   is the same figure with a newer number in it, and replaying
-      //   the entrance for those left the drawing fading in more often
-      //   than it stood still — see `nofx` in the stylesheet.
-      if (!st.first) host.classList.add('nofx');
-      st.first = false;
+      //   **No answer is an arrival, the first included** — see the
+      //   mount. Every answer is the same figure with a newer number
+      //   in it, and replaying the entrance for those left the drawing
+      //   fading in more often than it stood still (`nofx` in the
+      //   stylesheet). A reading pick takes the class off; the next
+      //   answer puts it back.
+      host.classList.add('nofx');
       drawSwitch();
       st.W = 0;                                  // force a redraw at the same width
       render();
