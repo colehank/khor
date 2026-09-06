@@ -6324,6 +6324,49 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   if (!board.includes("gw-good") || !board.includes("45%")) {
     throw new Error(`khor quota on beta does not carry alpha's reading: ${board}`);
   }
+  // 25f) 置顶 crosses, and it is **the one claim about the 额度 list
+  //      that only a real run can make.** `check-face` routes
+  //      `quota_board` from a hand-written fixture, so over there the
+  //      order is the fixture's — the gate can prove the flag is sent
+  //      and nothing about what it does to the list. The Rust test
+  //      (`khor-sync`, `a_pinned_account_floats…`) proves the sort;
+  //      what neither can reach is **the whole path**: a press on one
+  //      machine's face, through the replicated doc, out of another
+  //      machine's CLI.
+  //
+  //      **The control arm is in the fixture's names.** The three
+  //      accounts are `gw-bad`, `gw-dead`, `gw-good`, so by name
+  //      `gw-good` is **last** — an implementation that ignores the
+  //      flag leaves it last, and one that pins it puts it first. Had
+  //      the pinned row been first alphabetically, 「pinned」 and
+  //      「did nothing」 would give the same answer and this would be a
+  //      check that cannot fail.
+  const rowOrder = async () =>
+    await page.locator("[data-quota-row]").evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-quota-row")),
+    );
+  const beforePin = await rowOrder();
+  if (beforePin[beforePin.length - 1] !== goodId) {
+    throw new Error(
+      `the pin's control arm is gone: gw-good is not last by name (${JSON.stringify(beforePin)}), so pinning it proves nothing`,
+    );
+  }
+  await page.locator(`[data-quota-row="${goodId}"]`).click({ button: "right" });
+  await until("the account's menu", 5_000, async () =>
+    (await page.locator('[data-row-menu] [data-menu-item="pin"]').count()) === 1,
+  );
+  await page.locator('[data-menu-item="pin"]').click();
+  await until("the pinned account floating to the top of beta's list", 20_000, async () => {
+    const order = await rowOrder();
+    return order[0] === goodId;
+  });
+  // …and it is not a fact about beta's screen: the flag rode the
+  // replicated doc, so **alpha's own CLI** lists it first too. The
+  // first line, not "contains" — the order is the whole claim.
+  await until("alpha's khor quota listing the pinned account first", 90_000, () => {
+    const said = cli(envA, "quota").trim().split("\n");
+    return said.length > 1 && said[0].startsWith("gw-good");
+  });
   // 30) a machine leaves the network from its row's menu — `khor forget`
   //     (2026-09-06:「机器左侧 list…右键,置顶或删除」). Two presses, and
   //     the first is the control arm: it arms the sentence and moves

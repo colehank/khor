@@ -1509,6 +1509,24 @@ function CardHead({ row }: { row: Row }) {
  * somebody who has just pasted a secret and has no reason to doubt it.
  * It also says where a key *can* be replaced, since the node refuses it
  * anywhere but the home machine.
+ *
+ * **And on a machine that does not hold the key, the box is shut.**
+ * The node refuses that edit by name (`account-key-elsewhere`), which
+ * is the correct answer and a late one: a person has already chosen a
+ * key manager, opened it, copied a secret and pasted it before being
+ * told the paste could not land. Whether this machine holds it is
+ * `AccountRing.mine`, already on this row for the reading's own sake —
+ * **the fact was free**, so refusing beforehand costs nothing and the
+ * refusal afterwards stays as the backstop for a race.
+ *
+ * **The box is never filled in, on any machine.** It does not echo the
+ * stored key and it does not say whether one exists. Two reasons, and
+ * the second is the one that makes it not a matter of taste: a key
+ * echoed to a screen has left the machine it was promised to (a
+ * screenshot, a share, somebody behind you) — and **from another
+ * machine there is nothing truthful to echo anyway**, since the secret
+ * is not here. A field that showed 「••••」 there would be showing a
+ * thing that is not on this disk.
  */
 function EditDialog({
   row,
@@ -1588,6 +1606,12 @@ function EditDialog({
               data-quota-edit-key
               type="password"
               autoComplete="off"
+              // **Shut where the key is not**, so a secret is not asked
+              // for and then refused. `mine` is the node's own answer to
+              // 「is this reading mine to take」, and holding the key is
+              // exactly what that means (`quota_board`).
+              disabled={!acc.mine}
+              data-quota-edit-key-shut={!acc.mine}
               value={key}
               onChange={(e) => setKey(e.target.value)}
             />

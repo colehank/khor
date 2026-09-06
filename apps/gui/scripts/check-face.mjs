@@ -2224,6 +2224,62 @@ try {
     }
     await page.keyboard.press("Escape");
     await wait(300);
+
+    //   **编辑's key box: shut where the key is not, open where it is.**
+    //   Two rows, one field, opposite answers — the fixture has
+    //   `acc-fill` read here (`mine: true`) and `acc-trouble` carried
+    //   from a peer (`mine: false`), so an implementation that always
+    //   shuts it fails on the first and one that never shuts it fails
+    //   on the second. **Neither row alone can tell those apart.**
+    //
+    //   And on both: the box is **empty**, and nothing on the dialog
+    //   says whether a key exists. A secret echoed to a screen has left
+    //   the machine it was promised to, and from a peer there is
+    //   nothing truthful to echo — the key is not on this disk.
+    const keyBox = async (row) => {
+      await page.locator(`[data-quota-row="${row}"]`).click({ button: "right" });
+      await wait(400);
+      await page.locator('[data-menu-item="edit"]').click();
+      await wait(400);
+      const seen = await page.evaluate(() => {
+        const box = document.querySelector("[data-quota-edit-key]");
+        const dialog = document.querySelector("[data-quota-edit]");
+        return {
+          drew: box !== null,
+          // ⚠️ **`box.disabled`, not the `data-` marker beside it.**
+          // Measured 2026-09-07: with the assertion reading the marker,
+          // setting `disabled={false}` and leaving the marker alone
+          // **passed** — the gate was checking that the component
+          // describes itself consistently, which it does whether or not
+          // the field is actually shut. The property is the thing; the
+          // marker is a label about the thing.
+          shut: box === null ? null : box.disabled,
+          value: box?.value ?? null,
+          // Anything on this dialog that answers「is there a key」 —
+          // a tick, a mask, the word 已设置. The note under the box is
+          // about what happens if you leave it blank, and says nothing
+          // about what is stored.
+          text: dialog?.textContent ?? "",
+        };
+      });
+      await page.keyboard.press("Escape");
+      await wait(300);
+      return seen;
+    };
+    const here = await keyBox("acc-fill");
+    const peer = await keyBox("acc-trouble");
+    if (!here.drew || !peer.drew) {
+      fail(`probe dead: the edit dialog drew no key box (here=${here.drew} peer=${peer.drew})`);
+    } else if (here.shut !== false || peer.shut !== true) {
+      fail(
+        `the key box is shut=${here.shut} on a key held here and shut=${peer.shut} on one held by a peer — it opens only where the key is`,
+      );
+    } else if (here.value !== "" || peer.value !== "" || /••|已设置|\*\*\*/.test(here.text + peer.text)) {
+      fail(
+        `the edit dialog says something about the stored key (here=${JSON.stringify(here.value)} peer=${JSON.stringify(peer.value)}) — it never echoes one and never says whether one exists`,
+      );
+    }
+
     //   …and the subscription is not a registration: nothing to edit,
     //   nothing to remove, so it is offered no menu at all.
     await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click({ button: "right" });
