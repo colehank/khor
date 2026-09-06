@@ -1530,6 +1530,39 @@ pub struct AccountReading {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub remaining: Option<f64>,
+    /// When this key stops working, unix **seconds**. `None` is 「never,
+    /// or the provider did not say」 — and those two are one answer on
+    /// purpose: neither puts a date on a screen.
+    ///
+    /// ⚠️ **The sentinel is resolved before this field, and it has two
+    /// spellings.** A new-api token stores `-1` for 「never expired」
+    /// (`model/token.go:22`) while the endpoint rewrites that to `0`
+    /// before answering (`controller/token.go:256-259`) — **two
+    /// different numbers for one meaning, with a rewrite between them**.
+    /// Either would draw as 1970-01-01 if it reached a face: not an
+    /// error, not a blank, a **date that looks entirely real**. So the
+    /// parser turns anything `<= 0` into `None` and nothing downstream
+    /// has to know the story.
+    ///
+    /// Tail field, defaulted: an older reader drops it and keeps the rest.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub expires_at: Option<i64>,
+    /// The models this key may use, where the provider limits it.
+    /// **Empty means no limit is in force** — not 「limited to nothing」.
+    ///
+    /// ⚠️ **A new-api token keeps its old list after the limit is
+    /// switched off.** `DisableModelLimits` sets `model_limits_enabled`
+    /// to false and **does not clear** `model_limits`
+    /// (`model/token.go:354-360`), so the endpoint answers a full list
+    /// beside a false flag. Reading the list without the flag draws a
+    /// row of model names that stopped meaning anything — and 「this key
+    /// is limited to these three」 versus 「this key is not limited」 are
+    /// opposite sentences, both made of real model names, with nothing
+    /// on screen or in any gate to tell them apart. The parser applies
+    /// the flag; this field is already the answer.
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 /// What khor can say about the subscription right now.
@@ -2158,6 +2191,50 @@ mod tests {
         assert_eq!(row.category, None, "an older peer said nothing about category");
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
         assert_eq!(row.unread, 3);
+    }
+
+    /// **Over the wire from an older peer**: a khor that predates the
+    /// token's expiry and model list sends thirteen fields, and its
+    /// readings must come back with neither — **not with a date at the
+    /// epoch and not with a phantom model limit**, which are the two
+    /// shapes those fields turn into when they are guessed at.
+    ///
+    /// **The byte assertion is the whole test.** Without it the sample
+    /// could be a fifteen-field frame with the two new fields written
+    /// as their defaults, and this would be checking that serde reads
+    /// its own output — the thing the repo's rule about backward
+    /// compatibility tests exists to forbid. `0x9d` is msgpack's
+    /// fixarray of thirteen; anything else means the sample drifted and
+    /// the test is no longer about an older peer.
+    #[test]
+    fn an_account_reading_from_an_older_peer_has_no_expiry_and_no_models() {
+        let old = (
+            "acc1".to_owned(),
+            "gateway".to_owned(),
+            "newapi".to_owned(),
+            "aa".to_owned(),
+            Some(0.45f32),
+            Some(45.0f64),
+            Some(100.0f64),
+            Some("USD".to_owned()),
+            false,
+            None::<i64>,
+            None::<String>,
+            7i64,
+            None::<f64>,
+        );
+        let bytes = rmp_serde::to_vec(&old).unwrap();
+        assert_eq!(bytes[0], 0x9d, "the sample must be a thirteen-field frame, or it proves nothing");
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("expires"),
+            "and it must not carry the key it predates",
+        );
+
+        let r: AccountReading = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(r.expires_at, None, "an older peer said nothing about expiry");
+        assert!(r.models.is_empty(), "…and nothing about a model limit");
+        assert_eq!(r.fill, Some(0.45), "…while the rest of the reading survived whole");
+        assert_eq!(r.name, "gateway");
     }
 
     /// **Over the wire from an older peer**: a machine whose khor predates

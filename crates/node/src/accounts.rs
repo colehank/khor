@@ -427,6 +427,8 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         trouble: trouble.map(str::to_owned),
         at_ms: now,
         remaining: None,
+        expires_at: None,
+        models: Vec::new(),
     }
 }
 
@@ -587,8 +589,40 @@ fn client() -> reqwest::Client {
     reqwest::Client::builder().timeout(HTTP_TIMEOUT).build().unwrap_or_default()
 }
 
-/// One GET with the provider's headers, sorted into the three troubles
-/// a person can act on differently.
+/// ⚠️ **A 200 is not a yes.**
+///
+/// new-api's whole error convention is `HTTP 200` with the failure in
+/// the body: `ApiError`, `ApiErrorMsg` and `ApiErrorI18n` all answer
+/// `c.JSON(http.StatusOK, {"success": false, "message": …})`
+/// (`common/gin.go:199-229`, read 2026-09-07 at
+/// `0c76e4da`). So 「invalid token」 arrives as a 200, this function used
+/// to hand it back as a success, the reader then found no `data`, and
+/// the screen said 「读不懂它的回答」 — **while the truth was 「你的密钥
+/// 被拒了」**. A reading khor could not take did not become 「no value」;
+/// it became the answer *next to* it, and that answer points at a thing
+/// that is not broken.
+///
+/// **`success: false` is the one spelling checked here, and absence is
+/// not falsehood.** A provider that never uses the key is unaffected;
+/// new-api's *successful* usage road does not carry it either (its top
+/// level is `{"code": true, "message": "ok", "data": …}` — a **bool
+/// named `code`**), which is exactly why a scheme that demanded a
+/// success flag would refuse a good answer. Present-and-false is the
+/// provider saying no about itself; anything else is no opinion.
+///
+/// A provider that spells refusal some other way is judged in its own
+/// reader, where the spelling is known — Moonshot's `code: 0` plus
+/// `status: true` is read in [`read_moonshot`], not here.
+///
+/// **It lands on 「密钥被拒」 rather than a sentence of the gateway's
+/// own.** The gateway's `message` is not carried: `trouble` is a *key*
+/// this side turns into one of four sentences, each naming a different
+/// thing a person can do about it, and a free-text channel beside it
+/// would be a second wire field for a string in whatever language that
+/// gateway runs in. What is lost is the *why* behind a refusal khor
+/// cannot itself distinguish (an invalid token and a database error
+/// both arrive this way); what is gained is that the common case stops
+/// pointing at the wrong thing.
 async fn get_json(
     req: reqwest::RequestBuilder,
 ) -> Result<Result<serde_json::Value, u16>, &'static str> {
@@ -596,9 +630,21 @@ async fn get_json(
     let status = response.status().as_u16();
     match status {
         401 | 403 => Err(trouble::KEY_REFUSED),
-        200..=299 => response.json().await.map(Ok).map_err(|_| trouble::UNREADABLE),
+        200..=299 => {
+            let body: serde_json::Value =
+                response.json().await.map_err(|_| trouble::UNREADABLE)?;
+            if refused_in_body(&body) {
+                return Err(trouble::KEY_REFUSED);
+            }
+            Ok(Ok(body))
+        }
         code => Ok(Err(code)),
     }
+}
+
+/// Whether a 200 body is the provider saying no. See [`get_json`].
+fn refused_in_body(body: &serde_json::Value) -> bool {
+    body.get("success") == Some(&serde_json::Value::Bool(false))
 }
 
 /// new-api: the token's own key reads its own quota
@@ -619,13 +665,15 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
         .filter(|u| *u > 0.0)
         .unwrap_or(500_000.0);
     let answer = get_json(c.get(format!("{base}/api/usage/token/")).bearer_auth(key)).await?;
-    let (used, available, unlimited) = match answer {
+    let (used, available, unlimited, expires_at, models) = match answer {
         Ok(j) => {
             let d = j.get("data").ok_or(trouble::UNREADABLE)?;
             (
                 d.get("total_used").and_then(serde_json::Value::as_f64).unwrap_or(0.0),
                 d.get("total_available").and_then(serde_json::Value::as_f64),
                 d.get("unlimited_quota").and_then(serde_json::Value::as_bool).unwrap_or(false),
+                expiry_of(d),
+                model_limits_of(d),
             )
         }
         Err(404) => return Err(trouble::GATEWAY_TOO_OLD),
@@ -635,12 +683,63 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
     r.currency = Some("USD".to_owned());
     r.spent = Some(used / per_unit);
     r.unlimited = unlimited;
+    r.expires_at = expires_at;
+    r.models = models;
     if !unlimited && let Some(avail) = available {
         let total = used + avail;
         r.limit = Some(total / per_unit);
         r.fill = Some(if total > 0.0 { (used / total).clamp(0.0, 1.0) as f32 } else { 0.0 });
     }
     Ok(r)
+}
+
+/// When a new-api token stops working, or `None` for 「never / not
+/// said」.
+///
+/// ⚠️ **`<= 0` is a sentinel with two spellings, and both would draw as
+/// a real date.** The token stores `-1` for 「never expired」
+/// (`model/token.go:22`) and the handler rewrites that to `0` before
+/// answering (`controller/token.go:256-259`) — so the wire carries `0`
+/// today and `-1` is what anyone reading the schema would expect. Both
+/// are turned away here, and so is any other non-positive number: a
+/// timestamp at or before the epoch is not a fact about when this key
+/// stops working.
+fn expiry_of(d: &serde_json::Value) -> Option<i64> {
+    d.get("expires_at").and_then(serde_json::Value::as_i64).filter(|at| *at > 0)
+}
+
+/// The models a new-api token is limited to, or empty for 「not
+/// limited」.
+///
+/// ⚠️ **The flag decides, not the list.** `DisableModelLimits` switches
+/// `model_limits_enabled` off and **leaves `model_limits` populated**
+/// (`model/token.go:354-360`), so a token that stopped being limited
+/// still answers with its old models. Reading the list without the flag
+/// paints 「limited to these three」 over 「not limited at all」 — two
+/// opposite sentences, both spelled with real model names, and nothing
+/// downstream can tell them apart.
+///
+/// **The shape is a map, not an array**: `GetModelLimitsMap()` answers
+/// `{"gpt-4": true, …}` (`model/token.go:345-352`), so the models are
+/// its *keys*. Sorted, because a JSON object has no order and this list
+/// is drawn on a screen — the same two models must not swap places
+/// between two readings.
+///
+/// **「Which group is this token in」 is not here and cannot be.** The
+/// `Token` row has a `Group` (`model/token.go:29`) and this endpoint
+/// does not answer it; the `group` on each *log* line is which group
+/// that one request went through, which is a different fact. A token's
+/// own group is an admin-key road, and it is not this one.
+fn model_limits_of(d: &serde_json::Value) -> Vec<String> {
+    if d.get("model_limits_enabled").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Vec::new();
+    }
+    let Some(map) = d.get("model_limits").and_then(serde_json::Value::as_object) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = map.keys().cloned().collect();
+    out.sort();
+    out
 }
 
 /// The first instant of this month, UTC, unix seconds — the window the
@@ -742,6 +841,115 @@ async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountR
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A 200 with `success: false` is a refusal, and a 200 without
+    /// the key is not.**
+    ///
+    /// Three arms, and the third is the one a careless fix breaks:
+    /// new-api's *successful* usage road carries no `success` at all
+    /// (`{"code": true, …}`), so a rule that demanded a success flag
+    /// would refuse every good answer this provider gives. The second
+    /// arm is the control for the first — same shape, opposite value —
+    /// and without it 「refuses everything」 passes.
+    #[test]
+    fn a_two_hundred_that_says_no_is_a_refusal_and_a_silent_one_is_not() {
+        let no = serde_json::json!({"success": false, "message": "无效的令牌"});
+        assert!(refused_in_body(&no), "the gateway said no in a 200");
+        let yes = serde_json::json!({"success": true, "message": "", "data": []});
+        assert!(!refused_in_body(&yes), "the same key, the other value");
+        // The shape `GetTokenUsage` actually answers with on success —
+        // a **bool named `code`**, and no `success` anywhere.
+        let usage = serde_json::json!({
+            "code": true, "message": "ok",
+            "data": {"object": "token_usage", "total_used": 450000},
+        });
+        assert!(!refused_in_body(&usage), "absent is not false");
+    }
+
+    /// **The expiry sentinel, both of its spellings, and a real date.**
+    ///
+    /// Four arms. The last one is the control: without a positive value
+    /// that survives, 「turns everything into None」 passes the first
+    /// three — and that implementation loses a real expiry silently,
+    /// which is the failure this pair of fields exists to avoid in the
+    /// other direction.
+    #[test]
+    fn a_never_expiring_token_gets_no_date_whichever_way_it_says_so() {
+        let at = |v: serde_json::Value| expiry_of(&serde_json::json!({"expires_at": v}));
+        assert_eq!(at(serde_json::json!(0)), None, "0 is what the endpoint rewrites -1 into");
+        assert_eq!(at(serde_json::json!(-1)), None, "-1 is what the row itself stores");
+        assert_eq!(expiry_of(&serde_json::json!({})), None, "and a gateway that says nothing");
+        assert_eq!(at(serde_json::json!(1_800_000_000i64)), Some(1_800_000_000), "a real instant survives");
+    }
+
+    /// **A switched-off model limit keeps its old list, and must not be
+    /// drawn.**
+    ///
+    /// The first arm is the trap: `model_limits` is full while
+    /// `model_limits_enabled` is false, which is exactly what a token
+    /// answers after `DisableModelLimits`. The second is the control —
+    /// same list, flag on — so 「always empty」 cannot pass. Sorted,
+    /// because a JSON object has no order and this is drawn on a screen.
+    #[test]
+    fn a_disabled_model_limit_is_not_a_list_of_models() {
+        let full = serde_json::json!({"gpt-5": true, "claude-opus-4-6": true});
+        let off = serde_json::json!({"model_limits_enabled": false, "model_limits": full});
+        assert!(model_limits_of(&off).is_empty(), "the flag is off, so the list means nothing");
+        let on = serde_json::json!({"model_limits_enabled": true, "model_limits": full});
+        assert_eq!(
+            model_limits_of(&on),
+            vec!["claude-opus-4-6".to_owned(), "gpt-5".to_owned()],
+            "the flag is on: the map's keys, sorted",
+        );
+        let silent = serde_json::json!({"total_used": 1});
+        assert!(model_limits_of(&silent).is_empty(), "a gateway that says neither");
+    }
+
+    /// **The refusal check is wired into `get_json`, not merely
+    /// written.**
+    ///
+    /// ⚠️ **This test exists because the one above does not cover it.**
+    /// That one calls `refused_in_body` directly, so it proves the
+    /// judgment is *correct* and says nothing about whether anything
+    /// *asks* it — measured 2026-09-07 by deleting the call from
+    /// `get_json` and leaving the function in place: **every test
+    /// stayed green**. An assertion about a rule and an assertion about
+    /// the rule being applied are two different axes, and the first one
+    /// is the cheaper and more tempting to stop at.
+    ///
+    /// So this one speaks HTTP: a socket that answers a real
+    /// `200 + {"success": false}` — the shape new-api uses for every
+    /// refusal — and the answer has to come back as 密钥被拒 rather than
+    /// as a body for somebody downstream to fail to understand.
+    #[tokio::test]
+    async fn a_gateway_refusing_inside_a_two_hundred_reaches_the_reader_as_refused() {
+        use tokio::io::AsyncWriteExt as _;
+        let serve = |body: &'static str| async move {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = l.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                let (mut sock, _) = l.accept().await.unwrap();
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len(),
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            });
+            port
+        };
+        let no = serve(r#"{"success":false,"message":"invalid token"}"#).await;
+        let said = get_json(client().get(format!("http://127.0.0.1:{no}/"))).await;
+        assert_eq!(said.err(), Some(trouble::KEY_REFUSED), "a 200 that says no is a refusal");
+
+        // The control arm: the same status, the same road, a body that
+        // does not say no — it must come back as an answer, or this
+        // check is 「refuse every 200」 wearing the right words.
+        let ok = serve(r#"{"code":true,"message":"ok","data":{"total_used":1}}"#).await;
+        let said = get_json(client().get(format!("http://127.0.0.1:{ok}/"))).await;
+        assert!(said.is_ok(), "and a 200 with no `success` key is not one");
+    }
 
     /// The fraction and its strain are this side's judgment, on
     /// `Fill`'s own steps: 91% of a budget wears what 91% of a disk

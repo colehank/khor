@@ -6257,6 +6257,14 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/usage/token/":
             auth = self.headers.get("Authorization", "")
             with open("bearers.log", "a") as f: f.write(auth + "\\n")
+            # **The gateway's own error convention: HTTP 200 with the
+            # failure in the body.** new-api answers every refusal this
+            # way (common/gin.go's ApiError / ApiErrorMsg / ApiErrorI18n
+            # all use http.StatusOK), and khor used to read the 200 as a
+            # yes, find no data, and say 读不懂它的回答 — pointing at a
+            # thing that was not broken. This arm is that exact shape.
+            if auth == "Bearer sk-two-hundred-no":
+                return self.send(200, {"success": False, "message": "无效的令牌"})
             if auth != "Bearer sk-good-token":
                 return self.send(401, {"success": False, "message": "无效的令牌"})
             return self.send(200, {"success": True, "data": {"object": "token_usage",
@@ -6278,6 +6286,12 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     "--base-url", `http://127.0.0.1:${gwPort}`, "--key", "sk-good-token").trim();
   cli(envA, "accounts", "add", "gw-bad", "--provider", "newapi",
     "--base-url", `http://127.0.0.1:${gwPort}`, "--key", "sk-wrong");
+  // **The fourth arm, and it is the one no HTTP status can catch**: a
+  // refusal that arrives as 200 (2026-09-07). `gw-bad` above is refused
+  // with a 401 — an implementation that only reads statuses passes that
+  // one and fails this, which is why both are here.
+  cli(envA, "accounts", "add", "gw-200no", "--provider", "newapi",
+    "--base-url", `http://127.0.0.1:${gwPort}`, "--key", "sk-two-hundred-no");
   cli(envB, "accounts", "add", "gw-dead", "--provider", "newapi", "--base-url", "http://127.0.0.1:1", "--key", "sk-x");
   if (!/^[0-9a-f]{32}$/.test(goodId)) throw new Error(`accounts add did not answer an id: ${goodId}`);
   await railItem("quota").click();
@@ -6302,9 +6316,20 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     if ((await row.count()) !== 1) return false;
     return (await row.innerText()).includes("45%");
   });
-  await until("alpha's wrong key carried as 钥匙被拒", 90_000, async () =>
-    (await page.locator('[data-quota-row][data-trouble="key-refused"]').count()) === 1,
+  // Two rows now wear it: the 401 and the 200-that-says-no. **Both, in
+  // one assertion, because they are one claim** — 「refused」 is what a
+  // refusal reads as, whichever way the gateway spelled it. And the
+  // count is exact rather than `>= 1`: the 200 arm going back to
+  // 「读不懂」 would leave the other one standing and a loose count
+  // would not notice.
+  await until("alpha's two refused keys, the 401 and the 200-that-says-no", 90_000, async () =>
+    (await page.locator('[data-quota-row][data-trouble="key-refused"]').count()) === 2,
   );
+  // …and neither of them landed on 读不懂它的回答, which is the answer
+  // next door and the one this fix is about.
+  if ((await page.locator('[data-quota-row][data-trouble="unreadable"]').count()) !== 0) {
+    throw new Error("a refusal is being reported as 读不懂它的回答 — the 200 body's `success: false` is not being read");
+  }
   // The bearer the gateway saw is alpha's registered key, verbatim —
   // the reading came from alpha reading its own key, not from beta.
   const bearers = readFileSync(join(gwDir, "bearers.log"), "utf8");
