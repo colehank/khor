@@ -440,8 +440,14 @@ async fn open_session(
 /// The machine card's 在这台开终端 — `open --on`, through the same
 /// core call the bridge answers with (docs/KHOR.md equivalence).
 #[tauri::command]
-async fn open_on(machine: String) -> Result<String, String> {
-    khor_gui_core::open_term_on(&Node::root_from_env(), &machine).await
+async fn open_on(machine: String, title: Option<String>, cwd: Option<String>) -> Result<String, String> {
+    khor_gui_core::open_term_on(
+        &Node::root_from_env(),
+        &machine,
+        title.as_deref().unwrap_or(""),
+        cwd.as_deref().unwrap_or(""),
+    )
+    .await
 }
 
 /// A machine conversation's readout — `khor log`, shaped for the pane.

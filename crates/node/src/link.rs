@@ -1054,10 +1054,15 @@ impl Node {
                 // Defaults are resolved **here**, on the machine that
                 // will run it: the asker's home and the asker's `$SHELL`
                 // are answers to a question about the wrong computer.
-                let cwd = if cwd.is_empty() {
-                    std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"))
-                } else {
-                    std::path::PathBuf::from(cwd)
+                // **`~` too** (2026-09-06, the wizard's shell kind sends
+                // the directory a person typed): it names this
+                // machine's home, which only this machine knows —
+                // `start_session` keeps the same rule for agents.
+                let home = std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"));
+                let cwd = match cwd.trim() {
+                    "" | "~" => home,
+                    d if d.starts_with("~/") => home.join(&d[2..]),
+                    d => std::path::PathBuf::from(d),
                 };
                 let cmd = if cmd.is_empty() {
                     vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())]

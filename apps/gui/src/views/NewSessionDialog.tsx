@@ -6,6 +6,27 @@
 // vendor's own uuid is its id on the chat form, so hooks and the disk
 // sweep merge into it with no ceremony.
 //
+// # One door, four steps, three kinds (2026-09-06)
+//
+// 「新建 session 不分留言和会话。点击后就是选机器、选类型(这就包括留言、
+// 智能体、shell)、起名字、定目录」. So the steps are 在哪台 → 类型 → 名字
+// → 目录, and 类型 is one of three:
+//
+//   - **留言** — a line left in that machine's window, `khor tell`.
+//     Was its own dialog behind the "+" menu's second item; it is the
+//     first kind here now and that door is gone. A line has no name
+//     and no directory, so those two steps are not drawn for it —
+//     absent, not greyed: a greyed field is a question still being
+//     asked.
+//   - **智能体** — what this dialog always was, with the agent row
+//     directly under the kind (it refines the kind) and, for claude
+//     alone, the 对话/终端 switch (the ruling: three kinds and no
+//     fourth, and claude in a terminal stays reachable — greyed for the
+//     others rather than hidden, the rule two paragraphs down).
+//   - **shell** — that machine's own shell, `open --on`, in the
+//     directory and under the name given. The user's word, not 终端:
+//     a terminal is the window a session appears in.
+//
 // **智能体 is an open position (批⑥):** khor's own two, plus every ACP
 // agent this person registered (`khor agents add`). The registered ones
 // are fetched rather than listed here — the registry is a replicated
@@ -58,8 +79,10 @@ import {
   fetchDevices,
   fetchPlaces,
   openSession,
+  openTermOn,
   registerKnownAgent,
   resumeSession,
+  tell,
   type AgentRow,
   type AgentSaid,
   type DeviceRow,
@@ -78,6 +101,10 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { connectionWord } from "@/words";
 import { cn } from "@/lib/utils";
+
+/** 类型 — the wizard's second step. Three, and no fourth (the ruling):
+    a line left in the machine's window, an agent session, a bare shell. */
+type Kind = "tell" | "agent" | "shell";
 
 export function NewSessionDialog({
   open,
@@ -106,6 +133,11 @@ export function NewSessionDialog({
       is nothing to say about it either way, so nothing is said. */
   const [places, setPlaces] = useState<PlaceRow[]>([]);
   const [title, setTitle] = useState("");
+  /** 类型 — the second step. Opens on 智能体, the kind this dialog was
+      born for; a person who came to leave a line is one press away. */
+  const [kind, setKind] = useState<Kind>("agent");
+  /** The line to leave, for the 留言 kind. */
+  const [text, setText] = useState("");
   const [form, setForm] = useState<"chat" | "term">("chat");
   const [agent, setAgent] = useState("claude");
   const [known, setKnown] = useState<AgentRow[]>([]);
@@ -146,6 +178,8 @@ export function NewSessionDialog({
     setDir("~");
     setPlaces([]);
     setTitle("");
+    setKind("agent");
+    setText("");
     setForm("chat");
     setAgent("claude");
     setKnown([]);
@@ -305,15 +339,33 @@ export function NewSessionDialog({
       .finally(() => setOpening(false));
   };
 
+  /** The machine the act lands on, by name. `machine` empty is this
+      one — the table's own `me` row spells its name, and the two calls
+      that leave this dialog for a shell or a line resolve a name, not
+      a blank. */
+  const target = machine || machines.find((d) => d.me)?.name || "";
+
   const create = () => {
     if (opening) return;
     setOpening(true);
     setError(null);
-    openSession(dir, title, form, agent, machine)
+    (kind === "shell" ? openTermOn(target, title, dir) : openSession(dir, title, form, agent, machine))
       .then((id) => {
         onOpenChange(false);
         onOpened(id);
       })
+      .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+      .finally(() => setOpening(false));
+  };
+
+  /** 留言: the whole of `khor tell`. The message on refusal is the
+      node's, in the catalog's words — this layer has none to add. */
+  const send = () => {
+    if (!text.trim() || opening) return;
+    setOpening(true);
+    setError(null);
+    tell(target, text)
+      .then(() => onOpenChange(false))
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => setOpening(false));
   };
@@ -399,101 +451,54 @@ export function NewSessionDialog({
               </div>
             </div>
           )}
-          {/* The box and its shortcuts, in one column. **Not one
-              `label`**: a `button` inside a `label` is a control inside
-              a control, and every click on a place would also be a
-              click on the field. */}
-          <div className="flex min-w-0 flex-col gap-1">
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">{gui.new_session_dir}</span>
-              <Input
-                data-new-session-dir
-                value={dir}
-                onChange={(e) => setDir(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && create()}
-              />
-            </label>
-            {/* **常去的地方: the first question, answered before it is
-                asked.** A person walks into a directory and then starts
-                something there, so the directories they already work in
-                sit right under the box — picking one is a click instead
-                of a typed path.
-
-                Under the box rather than above it, and the box keeps
-                taking anything: this is a shortcut, not a menu. A place
-                that is not on the list (a directory nobody has opened a
-                conversation in yet) has to stay typeable, and a list
-                that replaced the box would have made those unreachable.
-
-                Nothing is drawn when there is nothing — an empty list
-                is the honest state of a fresh machine, and a heading
-                over no rows is a promise of something missing. */}
-            {places.length > 0 && (
-              <div data-new-session-places className="flex min-w-0 flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {gui.new_session_places}
-                </span>
-                <div className="flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto">
-                  {places.map((p) => {
-                    // **The last component is the name, the rest is
-                    // where it lives** — the same split the 已有的对话
-                    // rows use, and the reason the path is not printed
-                    // whole: the end of a path is what a person
-                    // recognises, and it is the end a narrow dialog
-                    // cuts off.
-                    //
-                    // Cutting from the *left* instead was tried and is
-                    // wrong: `direction: rtl` reorders the neutral
-                    // characters a path is made of, and printed
-                    // `~/Desktop/working/tokens` as
-                    // `Desktop/working/tokens/~`. Splitting says the
-                    // same thing without asking the bidi algorithm
-                    // anything.
-                    const cut = p.shown.lastIndexOf("/");
-                    const name = cut < 0 ? p.shown : p.shown.slice(cut + 1);
-                    const parent = cut <= 0 ? "" : p.shown.slice(0, cut);
-                    return (
-                      <button
-                        key={p.path}
-                        type="button"
-                        data-place={p.path}
-                        data-on={dir === p.path}
-                        // The whole path goes into the box, not the
-                        // shortened one: `~` is how a person reads it
-                        // and `openSession` does expand it, but a place
-                        // is picked by identity and the identity is
-                        // absolute.
-                        onClick={() => setDir(p.path)}
-                        className={cn(
-                          "flex w-full min-w-0 items-baseline gap-2 rounded px-1 text-left text-xs hover:bg-accent",
-                          dir === p.path && "bg-accent",
-                        )}
-                      >
-                        <span className="shrink-0 truncate">{name}</span>
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          {parent}
-                        </span>
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {gui.new_session_places_count(p.sessions)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+          {/* **类型, second** (2026-09-06:「选机器、选类型、起名字、定目录」).
+              Three kinds; which of the steps below are drawn depends on
+              it, and the ones a kind does not ask are absent rather
+              than greyed — a greyed field is a question still being
+              asked, and a line has no name and no directory. */}
+          <div data-new-session-kinds className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{gui.new_session_kind}</span>
+            <div className="flex flex-wrap gap-1">
+              {(
+                [
+                  ["tell", gui.message_text],
+                  ["agent", gui.new_session_agent],
+                  ["shell", gui.new_session_kind_shell],
+                ] as const
+              ).map(([k, word]) => (
+                <Button
+                  key={k}
+                  size="sm"
+                  variant={kind === k ? "secondary" : "ghost"}
+                  data-new-session-kind={k}
+                  data-on={kind === k}
+                  onClick={() => setKind(k)}
+                >
+                  {word}
+                </Button>
+              ))}
+            </div>
           </div>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">{gui.new_session_name}</span>
+          {kind === "tell" && (
+            // 留言's third step is the line itself — the whole of
+            // `khor tell`, which used to be a dialog of its own.
             <Input
-              data-new-session-name
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && create()}
+              data-tell-text
+              aria-label={gui.message_text}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">{gui.new_session_agent}</span>
+          )}
+          {kind === "agent" && (
+            <>
+          {/* The agent row, directly under the kind that chose it — no
+              label of its own: the pressed 智能体 above is the label,
+              and a second 智能体 under it would be the same word twice
+              on one screen (the catalog refuses the spelling; this
+              refuses the layout). `div`, not `label`: nothing here is
+              a field. */}
+          <div data-new-session-agents className="flex flex-col gap-1 text-sm">
             <div className="flex flex-wrap gap-1">
               {/* Vendor names are proper nouns with no catalog entry
                   (words.ts's rule), and a registered agent wears the
@@ -626,7 +631,35 @@ export function NewSessionDialog({
                 {gui.new_session_more_agents}
               </span>
             )}
-          </label>
+          </div>
+              {/* **claude's own two forms**, right under its name and
+                  only alive for it: the ruling keeps claude-in-a-terminal
+                  reachable without making it a fourth kind. Greyed for
+                  the others rather than hidden — a form that exists for
+                  one agent and not another is a fact about the agent,
+                  and a button that vanishes reads as khor having lost
+                  it. */}
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant={form === "chat" ? "secondary" : "ghost"}
+              data-new-session-chat
+              data-on={form === "chat"}
+              onClick={() => setForm("chat")}
+            >
+              {gui.view_chat}
+            </Button>
+            <Button
+              size="sm"
+              variant={form === "term" ? "secondary" : "ghost"}
+              data-new-session-term
+              data-on={form === "term"}
+              disabled={agent !== "claude"}
+              onClick={() => setForm("term")}
+            >
+              {gui.view_terminal}
+            </Button>
+          </div>
           {/* **Only for an agent that was registered.** khor finds
               claude's and codex's conversations by reading their files;
               this section is the *other* discovery path, and pointing
@@ -691,27 +724,105 @@ export function NewSessionDialog({
               )}
             </div>
           )}
-          <div className="flex gap-1">
-            <Button
-              size="sm"
-              variant={form === "chat" ? "secondary" : "ghost"}
-              data-new-session-chat
-              data-on={form === "chat"}
-              onClick={() => setForm("chat")}
-            >
-              {gui.view_chat}
-            </Button>
-            <Button
-              size="sm"
-              variant={form === "term" ? "secondary" : "ghost"}
-              data-new-session-term
-              data-on={form === "term"}
-              disabled={agent !== "claude"}
-              onClick={() => setForm("term")}
-            >
-              {gui.view_terminal}
-            </Button>
+            </>
+          )}
+          {kind !== "tell" && (
+            <>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{gui.new_session_name}</span>
+            <Input
+              data-new-session-name
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && create()}
+            />
+          </label>
+          {/* The box and its shortcuts, in one column. **Not one
+              `label`**: a `button` inside a `label` is a control inside
+              a control, and every click on a place would also be a
+              click on the field. */}
+          <div className="flex min-w-0 flex-col gap-1">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">{gui.new_session_dir}</span>
+              <Input
+                data-new-session-dir
+                value={dir}
+                onChange={(e) => setDir(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+            </label>
+            {/* **常去的地方: the first question, answered before it is
+                asked.** A person walks into a directory and then starts
+                something there, so the directories they already work in
+                sit right under the box — picking one is a click instead
+                of a typed path.
+
+                Under the box rather than above it, and the box keeps
+                taking anything: this is a shortcut, not a menu. A place
+                that is not on the list (a directory nobody has opened a
+                conversation in yet) has to stay typeable, and a list
+                that replaced the box would have made those unreachable.
+
+                Nothing is drawn when there is nothing — an empty list
+                is the honest state of a fresh machine, and a heading
+                over no rows is a promise of something missing. */}
+            {places.length > 0 && (
+              <div data-new-session-places className="flex min-w-0 flex-col gap-1">
+                <span className="text-xs text-muted-foreground">
+                  {gui.new_session_places}
+                </span>
+                <div className="flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto">
+                  {places.map((p) => {
+                    // **The last component is the name, the rest is
+                    // where it lives** — the same split the 已有的对话
+                    // rows use, and the reason the path is not printed
+                    // whole: the end of a path is what a person
+                    // recognises, and it is the end a narrow dialog
+                    // cuts off.
+                    //
+                    // Cutting from the *left* instead was tried and is
+                    // wrong: `direction: rtl` reorders the neutral
+                    // characters a path is made of, and printed
+                    // `~/Desktop/working/tokens` as
+                    // `Desktop/working/tokens/~`. Splitting says the
+                    // same thing without asking the bidi algorithm
+                    // anything.
+                    const cut = p.shown.lastIndexOf("/");
+                    const name = cut < 0 ? p.shown : p.shown.slice(cut + 1);
+                    const parent = cut <= 0 ? "" : p.shown.slice(0, cut);
+                    return (
+                      <button
+                        key={p.path}
+                        type="button"
+                        data-place={p.path}
+                        data-on={dir === p.path}
+                        // The whole path goes into the box, not the
+                        // shortened one: `~` is how a person reads it
+                        // and `openSession` does expand it, but a place
+                        // is picked by identity and the identity is
+                        // absolute.
+                        onClick={() => setDir(p.path)}
+                        className={cn(
+                          "flex w-full min-w-0 items-baseline gap-2 rounded px-1 text-left text-xs hover:bg-accent",
+                          dir === p.path && "bg-accent",
+                        )}
+                      >
+                        <span className="shrink-0 truncate">{name}</span>
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                          {parent}
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {gui.new_session_places_count(p.sessions)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
+            </>
+          )}
           {error && (
             <p data-new-session-error className="text-sm text-destructive">
               {error}
@@ -719,9 +830,15 @@ export function NewSessionDialog({
           )}
         </div>
         <DialogFooter>
-          <Button data-new-session-create disabled={opening} onClick={create}>
-            {gui.create}
-          </Button>
+          {kind === "tell" ? (
+            <Button data-tell-send disabled={!text.trim() || opening} onClick={send}>
+              {gui.send_it}
+            </Button>
+          ) : (
+            <Button data-new-session-create disabled={opening} onClick={create}>
+              {gui.create}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

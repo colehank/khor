@@ -340,10 +340,13 @@ export const openSession = (
   agent: string,
   machine = "",
 ) => call<string>("open_session", { dir, title, form, agent, machine });
-/** The machine card's 在这台开终端 — `open --on` with the far machine's
-    own shell, through the same core call both skins answer with
-    (docs/KHOR.md equivalence). Answers the new row's id. */
-export const openTermOn = (machine: string) => call<string>("open_on", { machine });
+/** The wizard's shell kind — `open --on` with that machine's own shell,
+    through the same core call both skins answer with (docs/KHOR.md
+    equivalence). `machine` empty is this one; `title` empty is named
+    after the shell; `cwd` empty is the home, and `~` is expanded on
+    the machine it names. Answers the new row's id. */
+export const openTermOn = (machine: string, title = "", cwd = "") =>
+  call<string>("open_on", { machine, title, cwd });
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the

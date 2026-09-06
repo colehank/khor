@@ -1085,17 +1085,28 @@ for line in sys.stdin:
   await until("every machine back", 5_000, async () => (await devices.count()) === before);
 
   // 5) leaving a line: from beta's GUI into alpha's window, read back by
-  //    alpha's own CLI. Two machines, two faces, one message.
+  //    alpha's own CLI. Two machines, two faces, one message. **Through
+  //    the wizard** since 2026-09-06 — 留言 is its first kind, and the
+  //    "+" menu's separate door went with the old dialog: pick alpha in
+  //    在哪台, pick 留言 in 类型, and the third step is the line itself.
   await assertUntitled("sessions");
   await page.locator("[data-pane-new]").click();
-  await page.locator('[data-new-item="tell"]').click();
-  await page.locator('[data-machine="alpha"]').click();
+  await page.locator('[data-new-item="new"]').click();
+  await until("the wizard offering alpha", 10_000, async () =>
+    (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
+  );
+  await page.locator('[data-new-session-machine="alpha"]').click();
+  await page.locator('[data-new-session-kind="tell"]').click();
+  //     The kind step is a step: 名字 and 目录 are not asked for a line.
+  if ((await page.locator("[data-new-session-name], [data-new-session-dir]").count()) !== 0) {
+    throw new Error("留言 still asks for a name or a directory — a line has neither");
+  }
   await page.locator("[data-tell-text]").fill(NEEDLE);
   await page.locator("[data-tell-send]").click();
-  await until("the tell dialog to close on success", 20_000, async () => {
-    const err = await page.locator("[data-dialog-error]").count();
-    if (err) throw new Error(await page.locator("[data-dialog-error]").innerText());
-    return (await page.locator("[data-tell-dialog]").count()) === 0;
+  await until("the wizard to close on a sent line", 20_000, async () => {
+    const err = await page.locator("[data-new-session-error]").count();
+    if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
+    return (await page.locator("[data-new-session-dialog]").count()) === 0;
   });
   // Polled at a walking pace: each turn is a whole CLI process opening
   // the node, and the sync pump is on a five-second beat anyway.

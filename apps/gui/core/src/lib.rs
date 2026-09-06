@@ -1203,19 +1203,44 @@ pub async fn accept_transfer(root: &Path, msg: &str) -> Result<Vec<String>, Stri
 /// as the CLI resolves it. The size is a placeholder the terminal pane
 /// corrects on attach (`term_resize`), because no tty exists here to
 /// measure.
-pub async fn open_term_on(root: &Path, machine: &str) -> Result<String, String> {
+///
+/// **The wizard's shell kind arrives here too** (2026-09-06: 新建会话
+/// 分 留言/智能体/shell 三档): `title` and `cwd` are its two answers,
+/// both optional — an empty title is named after the shell, an empty
+/// directory is the home, which is what the bare verb always did. `~`
+/// is spelled out here for this machine and by the far side for that
+/// one (`Request::Open`'s handler), the same rule `start_session` keeps
+/// for agents: a path is expanded on the disk it names. An empty
+/// `machine` is this one, `open_session`'s reading of the same blank.
+pub async fn open_term_on(root: &Path, machine: &str, title: &str, cwd: &str) -> Result<String, String> {
     let n = open(root)?;
-    if machine == n.name() {
+    if machine.is_empty() || machine == n.name() {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        let title = std::path::Path::new(&shell)
+        let shell_name = std::path::Path::new(&shell)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| shell.clone());
-        let id = n.open_persistent(khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
+        let title = if title.trim().is_empty() { shell_name } else { title.trim().to_owned() };
+        let cwd = cwd.trim();
+        if cwd.is_empty() {
+            let id = n.open_persistent(khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
+            return Ok(id.0);
+        }
+        let home = std::env::home_dir();
+        let path = match cwd {
+            "~" => home.ok_or_else(|| khor_catalog::msg::no_such_dir("~"))?,
+            d if d.starts_with("~/") => home.ok_or_else(|| khor_catalog::msg::no_such_dir(d))?.join(&d[2..]),
+            d => std::path::PathBuf::from(d),
+        };
+        if !path.is_dir() {
+            return Err(khor_catalog::msg::no_such_dir(&path.display().to_string()));
+        }
+        let id = n.open_persistent_at(&path, khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
         return Ok(id.0);
     }
+    let title = if title.trim().is_empty() { "shell" } else { title.trim() };
     let id = n
-        .open_on(machine, khor_node::kind::SHELL, "shell", "", &[], (80, 24))
+        .open_on(machine, khor_node::kind::SHELL, title, cwd.trim(), &[], (80, 24))
         .await?;
     Ok(id.0)
 }

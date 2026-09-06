@@ -67,7 +67,6 @@ import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
-import { TellDialog } from "@/views/TellDialog";
 
 /**
  * The four landings, all present from the first day.
@@ -95,8 +94,10 @@ type Landing = "sessions" | "devices" | "files" | "browser" | "quota";
  */
 type Mark = boolean;
 
-/** Which of the "+" dialogs is up, if any. */
-type Sheet = "new" | "tell" | "invite" | "join" | null;
+/** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
+    leaving a line is the wizard's first kind now (`NewSessionDialog`),
+    one door for every kind of session. */
+type Sheet = "new" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
 /** How often the subscription's arcs are re-asked while a surface that
@@ -894,7 +895,6 @@ export default function App() {
     // First, because opening a session is the pane's first act
     // (会话身份批B: 建 session 是第一动作).
     { key: "new", label: gui.new_session, onSelect: () => openNewSession() },
-    { key: "tell", label: gui.tell_machine, onSelect: () => setSheet("tell") },
   ];
   const deviceActions: PaneAction[] = [
     { key: "invite", label: gui.make_a_ticket, onSelect: () => setSheet("invite") },
@@ -1323,11 +1323,6 @@ export default function App() {
           sessionTabs.open(id);
           setScreen("detail");
         }}
-      />
-      <TellDialog
-        open={sheet === "tell"}
-        onOpenChange={(o) => setSheet(o ? "tell" : null)}
-        devices={devices}
       />
       <InviteDialog open={sheet === "invite"} onOpenChange={(o) => setSheet(o ? "invite" : null)} />
       <JoinDialog open={sheet === "join"} onOpenChange={(o) => setSheet(o ? "join" : null)} />

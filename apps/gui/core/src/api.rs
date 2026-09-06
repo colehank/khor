@@ -322,7 +322,12 @@ pub fn answer(
             &opt_str("agent")?.unwrap_or_default(),
             &opt_str("machine")?.unwrap_or_default(),
         ))?),
-        "open_on" => to_json(&rt.block_on(crate::open_term_on(root, &arg("machine")?))?),
+        "open_on" => to_json(&rt.block_on(crate::open_term_on(
+            root,
+            &arg("machine")?,
+            &opt_str("title")?.unwrap_or_default(),
+            &opt_str("cwd")?.unwrap_or_default(),
+        ))?),
         // The path names a file on the machine answering this call —
         // meaningful from the app and the loopback bridge, where that
         // machine is the one the person sits at. The browser upload is

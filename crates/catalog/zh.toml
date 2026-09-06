@@ -1439,6 +1439,19 @@ new-session-places = "常去的地方"
 new-session-places-count = "{0} 个会话"
 new-session-name = "名字"
 new-session-agent = "智能体"
+# The wizard's second step (2026-09-06:「点击后就是选机器、选类型(这就包括留言、
+# 智能体、shell)、起名字、定目录」). Three kinds and no fourth: 留言 wears
+# `message-text`, 智能体 wears `new-session-agent` — one word each, said
+# once — and shell is the user's own word for a bare shell on that
+# machine, not 终端, which is the *window* a session appears in
+# (`view-terminal`, and the 2026-09-03 ruling behind it). claude's own
+# terminal form stays under 智能体 as the 对话/终端 switch.
+# **「哪种」, not 「类型」**: the 额度 page's axis already spells 类型
+# (`quota-kind`), and the catalog refuses one text under two names —
+# rightly, a refusal by name has to be distinct. 哪种 also reads in
+# step with 在哪台 above it: which machine, which kind.
+new-session-kind = "哪种"
+new-session-kind-shell = "shell"
 # Said under the 智能体 buttons **only when nothing is registered and
 # the registry really answered** (批⑥). Without it the open position is
 # invisible to anyone who never opens a terminal: two buttons look like
@@ -1753,8 +1766,10 @@ hooks-buy-you = "装了它,会话答完一轮才会显示「完成」"
 # sentence like that reads as though the risk is live. If remote verbs
 # ever put this control on somebody else's card, what says whose
 # machine is the card it is on, not a line of grey text under it.
-tell-machine = "给机器留言"
-pick-a-machine = "选一台机器"
+# **`tell-machine` and `pick-a-machine` 撤掉了,没有替代键**(2026-09-06:「新建
+# session 不分留言和会话」):留言并进了新建会话对话框,是它「类型」那一步的第一档,
+# 那个对话框自己有标题(新会话)和机器行(在哪台),两句都没了主语。`message-text`
+# 留下——它既是那一档的词,也是留言框的名字,一件事一个词。
 message-text = "留言"
 send-it = "发出"
 make-a-ticket = "出一张配对票"
@@ -2073,8 +2088,21 @@ to-a-terminal = "转成终端"
 # 而字面上分不出哪个是哪个。加上「窗口」,这句就只有一种读法。
 quota-five-hour = "5 小时窗口"
 quota-seven-day = "7 天窗口"
-quota-seven-day-sonnet = "7 天 Sonnet 窗口"
-quota-seven-day-opus = "7 天 Opus 窗口"
+# 墓碑(2026-09-06):这儿原来有 `quota-seven-day-sonnet`「7 天 Sonnet 窗口」
+# 和 `quota-seven-day-opus`「7 天 Opus 窗口」。
+#
+# **撤掉不是因为不画了,是因为这两个名字不该由这份词表来给。** 端点开始在
+# `limits[]` 里自报每一条限额的 `scope.model.display_name`,那天它给的是
+# 「Fable」——一支这份词表里根本没有的模型。写死两条的做法当时就已经在丢
+# 第三条了(那正是 2026-09-06 那次改动要修的 bug),而补上「Fable」只会让
+# 同一个坑在下一支模型上再开一次。
+#
+# 现在按模型限定的窗口一律用端点自己拼的那个名字画,这份词表只留「5 小时
+# 窗口」和「7 天窗口」——**长度是 khor 的话(它决定环怎么排),模型名是
+# 端点的话**。
+#
+# **它挡不住什么**:端点某天把 display_name 换成一句不是人话的东西,屏幕上
+# 就照着写。那是端点的话不是 khor 编的,和 `providerWord` 兜底同一条账。
 # 墓碑(2026-08-28):这儿原来有 `quota-via`(「借你登录的 Claude Code」)。
 #
 # **它当初是这批里唯一「非画不可」的一行**,理由不是排版:那份凭证是为了让
