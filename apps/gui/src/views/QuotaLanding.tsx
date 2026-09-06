@@ -226,6 +226,20 @@ type Row = {
   account: AccountRing | null;
   windows: QuotaWindow[];
   credits: QuotaCredits | null;
+  /**
+   * How old this reading is, in ms, and `null` for 「taken just now」.
+   *
+   * ⚠️ **The subscription had no such field until 2026-09-07, and that
+   * is what 2026-08-28 actually removed.** The tombstone in `zh.toml`
+   * says 「同一刀去掉的还有读数年龄」 and reads as a display that was
+   * dropped; what was dropped was the number ever reaching this file.
+   * `Quota::as_of` has been on the wire the whole time (「`None` means
+   * just now, this call」), and the cache it distinguishes is five
+   * minutes deep — so the screen could be five minutes stale with
+   * nothing on it saying so, which is the sentence that tombstone's own
+   * last paragraph ends on.
+   */
+  age_ms: number | null;
 };
 
 /**
@@ -445,14 +459,50 @@ export function visibleQuota(rows: Row[], query: string, ticked: string[]): Row[
     missing one: three axes and no way back to a flat list would be a
     control you cannot undo. */
 const GROUP_NONE = "none";
-const GROUP_KEY = "khor.quota.group";
+
+/**
+ * **来源 is the default, and that is not a preference about ordering.**
+ *
+ * 2026-09-07 cut the sub-line down to one word — the plan for a
+ * subscription, the provider for an account — because three segments in
+ * a 288-wide column truncate. 来源 was one of the three that left. It is
+ * still an axis you can filter by and still an axis you can group by,
+ * and with neither of those switched on it would be **an axis you can
+ * sieve with and cannot see**: the exact shape this repo keeps being
+ * bitten by (an axis you can tick but cannot read off the row).
+ *
+ * Grouping by it puts it back where it can be read — as the heading over
+ * the rows it describes, which is also where the mock has it. The other
+ * two axes are one press away and neither was ever visible on the row
+ * for free.
+ */
+const GROUP_DEFAULT = "from:";
+
+/**
+ * ⚠️ **A new key, on purpose** (`…group` → `…group.v2`, 2026-09-07).
+ *
+ * The default moved from 「不分组」 to 来源, and the old key holds
+ * literally `"none"` on every machine that has ever opened this page —
+ * including one where nobody chose it, because the old default was
+ * written down the first time the control was touched. Reading it back
+ * would mean the ruling above lands on no screen that has ever seen
+ * this page, which is the same as not making it.
+ *
+ * **The storage cannot tell 「he chose flat」 from 「he never chose」**,
+ * and that is why this is a rename rather than a migration: with one
+ * string there is no answer to distinguish, so the honest move is to
+ * start the question over rather than infer an answer nobody gave.
+ * A person who wants a flat list is one press from it and that press is
+ * remembered.
+ */
+const GROUP_KEY = "khor.quota.group.v2";
 
 function storedGroup(): string {
   try {
     const raw = window.localStorage.getItem(GROUP_KEY);
-    return raw && (raw === GROUP_NONE || QUOTA_AXES.includes(raw as never)) ? raw : GROUP_NONE;
+    return raw && (raw === GROUP_NONE || QUOTA_AXES.includes(raw as never)) ? raw : GROUP_DEFAULT;
   } catch {
-    return GROUP_NONE;
+    return GROUP_DEFAULT;
   }
 }
 
@@ -543,6 +593,11 @@ export function QuotaLanding({
             account: null,
             windows: quota.quota.windows,
             credits: quota.quota.credits,
+            // `as_of` is unix seconds and `null` is 「this call」 — the
+            // node's own words, kept apart from 「zero ms ago」 because
+            // a served cache entry and a fresh fetch look identical
+            // otherwise (`Quota::as_of`).
+            age_ms: quota.quota.as_of === null ? null : Date.now() - quota.quota.as_of * 1000,
           },
         ]
       : []),
@@ -556,6 +611,8 @@ export function QuotaLanding({
       account: a,
       windows: [] as QuotaWindow[],
       credits: null,
+      // The node answers 0 for a reading this machine took itself.
+      age_ms: a.mine ? null : a.age_ms,
     })),
   ];
   const shown = visibleQuota(rows, query, words);
@@ -799,24 +856,7 @@ export function QuotaLanding({
   const lead = fullest(dials);
   const subDetail = current && current.account === null && (
     <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
-      {/* **Name and plan, and nothing else** (2026-09-06: 「卡头不再写
-          类型 · 厂商 · 来源 · 密钥在哪台」). Every one of those four was
-          something the person had just chosen on the way in — the list
-          row they pressed, the account they registered — so the card
-          was spending its first line telling them what they already
-          knew. The plan is the exception because nobody chose it: it
-          comes off the login. */}
-      <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-        <span className="text-title">{current.name}</span>
-        {current.plan && (
-          <span
-            data-quota-plan
-            className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
-          >
-            {current.plan}
-          </span>
-        )}
-      </div>
+      <CardHead row={current} />
       {/* **The dial, and what it is made of beside it.** Every window
           used to be a ring of its own, side by side — which drew the
           same quantity at four radii and left 「哪个最先卡住我」 to be
@@ -840,6 +880,12 @@ export function QuotaLanding({
         >
           {lead ? `${Math.round(lead.pct)}%` : ""}
         </Face>
+        {/* **The right column, and everything in it is a fact about
+            this subscription** — the windows, then the credits. They
+            are one column rather than two blocks stacked under the card
+            because that is the half the dial does not fill
+            (2026-09-07:「表盘 | 事实」). */}
+        <div className="flex min-w-0 flex-col gap-3">
         <dl
           data-quota-parts
           className="grid min-w-0 grid-cols-[auto_1fr_auto] gap-x-6 gap-y-1 text-sm"
@@ -866,7 +912,6 @@ export function QuotaLanding({
             </div>
           ))}
         </dl>
-      </div>
       {/* **The credits' figures, and credits is still not a window.**
           A window is a fraction of a period that refills by itself;
           this is money, it does not refill and it has no reset — which
@@ -926,16 +971,23 @@ export function QuotaLanding({
           )}
         </dl>
       )}
+        </div>
+      </div>
     </div>
   );
 
-  const detail = acc && (
+  const detail = acc && current && (
     <div data-quota-detail={acc.reading.account} className="flex flex-col gap-4 p-4">
-      <div className="flex items-center gap-4">
-        {/* **The same dial the subscription wears**, with no pips: an
-            account is one reading and has no parts. A ring here and a
-            dial one row up would be two vocabularies for one question
-            on one page (2026-09-07:「环全部和机器卡对齐」). */}
+      <CardHead row={current} />
+      {/* **The same two columns the subscription's card has**: the dial
+          on the left, this reading's own figures on the right
+          (2026-09-07:「首节表盘 | 事实两栏,单读数的卡右边不许空」).
+          Stacked, the figures sat under a dial with half a card of white
+          space beside it — and a card whose right half is empty reads as
+          a card that failed to load something.
+          **No pips**: an account is one reading and has no parts, and a
+          rim with no marks is the honest drawing of that. */}
+      <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
         <Face
           size={RING_SIZE_CARD}
           stroke={RING_STROKE_CARD}
@@ -944,13 +996,7 @@ export function QuotaLanding({
         >
           {centre(acc)}
         </Face>
-        {/* The account's own head, cut by the same ruling: the
-            provider and the base URL are what the person typed into the
-            registration form, and the row they pressed says the
-            provider anyway. */}
-        <span className="min-w-0 text-title">{acc.reading.name}</span>
-      </div>
-      <dl data-quota-figures className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
         {acc.reading.trouble ? (
           <>
             <dt className="text-muted-foreground">{gui.accounts_state}</dt>
@@ -996,13 +1042,15 @@ export function QuotaLanding({
             )}
           </>
         )}
-        <dt className="text-muted-foreground">{gui.accounts_read_by}</dt>
-        <dd data-quota-age={acc.age_ms}>
-          {acc.mine
-            ? gui.accounts_read_here
-            : gui.accounts_read_from(acc.home_name, lasting(acc.age_ms))}
-        </dd>
-      </dl>
+        {/* ⚠️ **The reading's age left this list on 2026-09-07** and is
+            on the card's head instead, where the machine card puts the
+            same fact (`card-version` · `card-age`). Two cards, one
+            place. It is not gone — a figure that says nothing about
+            *when* is the thing this page must never draw — and the
+            `accounts-read-by` label went with it, because the head
+            carries no labels. */}
+        </dl>
+      </div>
       <div>
         <Button
           size="sm"
@@ -1119,6 +1167,70 @@ export function QuotaLanding({
         }}
       />
     </section>
+  );
+}
+
+/**
+ * A card's first line: what this is, and **when it was read**.
+ *
+ * # Why the age is back, and why the tombstone that removed it stands
+ *
+ * `zh.toml` carries a tombstone from 2026-08-28: the line naming whose
+ * login the reading came through was taken off, and 「同一刀去掉的还有
+ * 读数年龄」. **That judgment was true of the thing it was about** — a
+ * small grey sentence explaining khor's own plumbing, under a number.
+ *
+ * What changed is not the judgment, it is the **shape around it**: on
+ * 2026-09-06 the machine card grew a head whose right end says
+ * 「Khor 0.1.14 · 12 秒前」 (`card-version` / `card-age`,
+ * `MachineCard`). Once one card in this app says how old its reading is
+ * in that seat, a second card that does not is not restraint — it is
+ * two cards disagreeing about whether age is a fact worth having. So
+ * the age comes back **in that seat**, and the old tombstone is
+ * superseded rather than declared wrong: it recorded a real removal,
+ * and this records why the removal stopped being right.
+ *
+ * The version half is deliberately not copied. 「Khor 0.1.14」 is a fact
+ * about a machine running khor; behind this card there is a *vendor*,
+ * and khor's version says nothing about the reading. **What the two
+ * cards share is the seat and the age, not the pair of keys.**
+ *
+ * The words are the ones the figures list was already using
+ * (`accounts-read-here` / `accounts-read-from`), moved, not rewritten.
+ */
+function CardHead({ row }: { row: Row }) {
+  // Who took it: the machine holding an account's key, or the machine
+  // whose login the subscription was read through.
+  const reader = row.account ? row.account.home_name : fromWord(row.from);
+  return (
+    <div data-quota-head className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+      {/* **Name and plan, and nothing else** (2026-09-06: 「卡头不再写
+          类型 · 厂商 · 来源 · 密钥在哪台」). Every one of those four was
+          something the person had just chosen on the way in — the list
+          row they pressed, the account they registered — so the card
+          was spending its first line telling them what they already
+          knew. The plan is the exception because nobody chose it: it
+          comes off the login. */}
+      <span className="min-w-0 truncate text-title">{row.name}</span>
+      {row.plan && (
+        <span
+          data-quota-plan
+          className="flex-none rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+        >
+          {row.plan}
+        </span>
+      )}
+      {/* Pushed to the far end by the growing gap, not by a second
+          wrapper: one row, two ends. */}
+      <span
+        data-quota-age={row.age_ms ?? 0}
+        className="ml-auto flex-none text-xs text-muted-foreground"
+      >
+        {row.age_ms === null
+          ? gui.accounts_read_here
+          : gui.accounts_read_from(reader, lasting(row.age_ms))}
+      </span>
+    </div>
   );
 }
 

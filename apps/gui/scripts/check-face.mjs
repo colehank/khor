@@ -563,20 +563,58 @@ try {
     currency: "USD",
     ever_enabled: true,
   };
-  await page.route("**/quota", (r) =>
-    r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        quota: {
-          windows: quotaWindows,
-          as_of: Math.floor(Date.now() / 1000) - 120,
-          plan: quotaPlan,
-          credits: quotaCredits,
-        },
-        trouble: null,
+  // **The credits' other arm.** The capture above reports a spend and
+  // no ceiling, so it exercises exactly one half of 「Credits 只有在有
+  // 分母时才是一个环」 — and a control group with one arm proves
+  // nothing: an implementation that never rings credits passes it, and
+  // so does one that rings them always-except-here. This second fixture
+  // is the same money **with** a monthly ceiling, and everything about
+  // it has to change together: a pip appears, a part appears, and the
+  // percentage is `used / monthly_limit`.
+  const quotaCreditsCapped = {
+    ...quotaCredits,
+    enabled: true,
+    disabled_reason: null,
+    monthly_limit: 20,
+    // 9.21 of 20 — **not equal to any window's percent in this
+    // fixture** (4 / 39 / 29), so a pip at 46 cannot be one of theirs
+    // and the mark being counted is the one being asserted.
+    balance: null,
+  };
+  // ⚠️ **The middle arm, and it is the one that makes the other two
+  // mean anything.** The routed fixture is `enabled: false` *and* has
+  // no ceiling; the capped one is `enabled: true` *and* has one. Two
+  // fields moving together is a control group that cannot say which
+  // field did it — measured 2026-09-07 by removing the
+  // 「monthly_limit != null」 test from the product: **the gate stayed
+  // green**, because `enabled: false` was short-circuiting the whole
+  // question. This one is `enabled: true` with **no** ceiling, one
+  // field apart from `quotaCreditsCapped`, and it must draw no pip.
+  const quotaCreditsUncapped = {
+    ...quotaCredits,
+    enabled: true,
+    disabled_reason: null,
+    monthly_limit: null,
+    balance: null,
+  };
+  const routeQuota = async (credits) => {
+    await page.unroute("**/quota");
+    await page.route("**/quota", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          quota: {
+            windows: quotaWindows,
+            as_of: Math.floor(Date.now() / 1000) - 120,
+            plan: quotaPlan,
+            credits,
+          },
+          trouble: null,
+        }),
       }),
-    }),
-  );
+    );
+  };
+  await routeQuota(quotaCredits);
   // A place to have been, so the browsing landings are not measured at
   // their empty state and nothing else. **Without these the walk reaches
   // the files landing and finds one button on it** — the whole of a
@@ -2135,6 +2173,89 @@ try {
         `the arcs read ${JSON.stringify(arcs)} — a fraction draws itself (0.45), a reading with no ceiling draws a whole ring (1), and only 问不出来 leaves bare track (null)`,
       );
     }
+
+    //   ── 8·credits, the other arm ────────────────────────────────
+    //   Everything above measured credits **without** a ceiling: no
+    //   pip, a figure below. That is one arm, and one arm of a control
+    //   group is not a control group — 「rings credits never」 passes it
+    //   just as well as the rule being asserted. So the same money is
+    //   served again **with** a monthly ceiling, and three things have
+    //   to move together: a pip, a part, and the pip's angle.
+    //
+    //   **The count is compared against the fixture, not against the
+    //   pips.** The pips and the parts come off one list in the
+    //   product (see the note further up), so `pips === parts` is true
+    //   of any wrong list; `windows + 1` is the number an outside
+    //   thing says it should be.
+    const goToQuota = async () => {
+      await page.reload({ waitUntil: "load" });
+      await wait(400);
+      await press(rail("quota"));
+      await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+      await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
+      await wait(300);
+    };
+    await routeQuota(quotaCreditsCapped);
+    await goToQuota();
+    const capped = await page.evaluate(() => {
+      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
+      const detail = document.querySelector("[data-quota-detail]");
+      return {
+        pips: [...(row?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
+          word: e.getAttribute("data-dial-pip"),
+          at: Number(e.getAttribute("data-dial-pip-at")),
+        })),
+        parts: [...(detail?.querySelectorAll("[data-quota-part]") ?? [])].map((e) =>
+          e.getAttribute("data-quota-part"),
+        ),
+      };
+    });
+    const want = quotaWindows.length + 1;
+    if (capped.pips.length !== want || capped.parts.length !== want) {
+      fail(
+        `with a monthly ceiling on the credits the rim carries ${capped.pips.length} pips and the panel ${capped.parts.length} parts — the fixture has ${quotaWindows.length} windows and one credits with a denominator, so both are ${want}`,
+      );
+    } else if (!capped.parts.includes("credits")) {
+      fail(`the parts are ${JSON.stringify(capped.parts)} — credits with a ceiling is one of them`);
+    } else {
+      //   9.21 of 20 is 46%, and no window in this fixture is at 46 —
+      //   so this mark cannot be somebody else's.
+      const pct = Math.round((quotaCreditsCapped.used / quotaCreditsCapped.monthly_limit) * 100);
+      if (!capped.pips.some((p) => p.at === pct)) {
+        fail(
+          `the credits' share is ${pct}% and the rim's marks read ${JSON.stringify(capped.pips.map((p) => p.at))}`,
+        );
+      }
+    }
+    //   **The middle arm**: the same money, switched on, with no
+    //   ceiling. One field apart from the fixture above, and the answer
+    //   has to flip back — no pip, no part, and the figures still on
+    //   the glass because the endpoint did report a spend.
+    await routeQuota(quotaCreditsUncapped);
+    await goToQuota();
+    const uncapped = await page.evaluate(() => {
+      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
+      const detail = document.querySelector("[data-quota-detail]");
+      return {
+        pips: (row?.querySelectorAll("[data-dial-pip]") ?? []).length,
+        parts: (detail?.querySelectorAll("[data-quota-part]") ?? []).length,
+        used: detail?.querySelector("[data-quota-credits-used]")?.textContent ?? null,
+      };
+    });
+    if (uncapped.pips !== quotaWindows.length || uncapped.parts !== quotaWindows.length) {
+      fail(
+        `credits switched on with no ceiling draws ${uncapped.pips} pips and ${uncapped.parts} parts — a mark needs an angle and an angle needs a denominator, so both are ${quotaWindows.length}`,
+      );
+    } else if (!uncapped.used?.includes("9.21")) {
+      fail(
+        `probe dead: the uncapped credits' spend reads ${JSON.stringify(uncapped.used)} — if the figures are not on the glass, 「no pip」 is measuring a block that never drew`,
+      );
+    }
+
+    //   …and back to the fixture everything after this was written
+    //   against, so a later section is not silently measuring this one.
+    await routeQuota(quotaCredits);
+    await goToQuota();
   }
 
   // ── 8a) 额度's bar: search, the three axes, the grouping ──────
@@ -2142,6 +2263,10 @@ try {
   // 和搜索」. Every claim below is tied to the fixture: three accounts
   // (来源 =「khor 登记」, providers newapi/claude/openai) and one
   // subscription (来源 = this machine, `gate`).
+  // The axis this page opens on (`QuotaLanding`'s `GROUP_DEFAULT`).
+  // Spelled once here so the two places below that press it cannot
+  // drift apart from each other.
+  const GROUP_DEFAULT = "from:";
   const quotaBar = async () => (await page.locator("[data-quota-row]").count());
   const quotaKinds = async () =>
     (await page.locator("[data-quota-row]").evaluateAll((els) =>
@@ -2221,14 +2346,52 @@ try {
   }
   await press('[data-filter-option="from:gate"]');
 
-  // (iii) **Grouping cuts the same list three ways, and 不分组 draws no
-  // heading at all.** The heading and the tick print one string — the
-  // page's own rule — so the 订阅 heading is compared against the word
-  // read off the tick above rather than against a copy written here.
+  // (iii) **Grouping cuts the same list three ways, it opens on 来源,
+  // and 不分组 draws no heading at all.** The heading and the tick print
+  // one string — the page's own rule — so the 订阅 heading is compared
+  // against the word read off the tick above rather than against a copy
+  // written here.
   const groupKeys = async () =>
     (await page.locator("[data-quota-group]").evaluateAll((els) =>
       els.map((e) => e.getAttribute("data-quota-group")),
     ));
+  //   ⚠️ **This used to open by asserting 不分组 draws nothing, because
+  //   不分组 was the default. It is 来源 now** (2026-09-07), and the
+  //   change is the product's, not the assertion's: the sub-line was cut
+  //   to one word and 来源 was one of the segments that left, so the
+  //   heading is the only place that axis is readable. A default of
+  //   不分组 would leave it something you can sieve with and cannot see.
+  //
+  //   **The default is asserted before anything is pressed**, which is
+  //   the only moment it is observable — every later reading in this
+  //   section is of a grouping somebody chose.
+  //
+  //   **And「default」has to mean default.** The choice is remembered in
+  //   `localStorage`, so a browser carrying a remembered value would let
+  //   this assertion pass on a build whose default is anything at all —
+  //   the reading would be of a memory. The context is fresh per run
+  //   today; this says so out loud instead of relying on it.
+  const remembered = await page.evaluate(() => {
+    try {
+      return window.localStorage.getItem("khor.quota.group.v2");
+    } catch {
+      return "unreadable";
+    }
+  });
+  if (remembered !== null) {
+    fail(
+      `probe void: this browser remembers 分组 = ${JSON.stringify(remembered)}, so what follows is not a reading of the default`,
+    );
+  }
+  const atFirst = await groupKeys();
+  if (atFirst.length !== 2 || !atFirst.includes("from:gate") || !atFirst.includes("from:")) {
+    fail(
+      `额度 opens grouped by ${JSON.stringify(atFirst)} — 来源 is the default now, so this machine and 「khor 登记」 were expected`,
+    );
+  }
+  //   …and 不分组 is still one press away and still draws nothing: a
+  //   default nobody can undo is a different bug from a wrong default.
+  await press('[data-arrange-option="none"]');
   if ((await groupKeys()).length !== 0) {
     fail(`不分组 draws ${JSON.stringify(await groupKeys())} headings`);
   }
@@ -2248,15 +2411,17 @@ try {
   if (byFrom.length !== 2 || !byFrom.includes("from:gate") || !byFrom.includes("from:")) {
     fail(`分组 by 来源 draws ${JSON.stringify(byFrom)} — this machine and 「khor 登记」 were expected`);
   }
-  await press(`[data-arrange-option="none"]`);
+  // **Put the pane back — to the default, not to flat.** The ticks and
+  // the grouping are remembered in localStorage, so anything left on
+  // here follows the run into every later section and into the
+  // screenshots; and since 2026-09-07 「back」 is 来源, because that is
+  // what a person who has touched nothing sees.
+  await press(`[data-arrange-option="${GROUP_DEFAULT}"]`);
   await page.keyboard.press("Escape");
   await wait(300);
-  // **Put the pane back.** The ticks and the grouping are remembered in
-  // localStorage, so anything left on here would follow the run into
-  // every later section and into the screenshots.
-  if ((await quotaBar()) !== listed || (await groupKeys()).length !== 0) {
+  if ((await quotaBar()) !== listed || (await groupKeys()).length !== 2) {
     fail(
-      `the 额度 pane was left filtered: ${await quotaBar()} rows and ${JSON.stringify(await groupKeys())} headings`,
+      `the 额度 pane was left off its default: ${await quotaBar()} rows and ${JSON.stringify(await groupKeys())} headings`,
     );
   }
   // What this section actually read, printed like every other one: a
