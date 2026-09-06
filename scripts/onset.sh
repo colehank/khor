@@ -8,6 +8,25 @@
 # be installed over there to run it.
 #
 #   scripts/onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve]
+#                    [--release[=vX.Y.Z]] [--bin-on-target=PATH] [--dry-run]
+#
+# **Three places the binary can come from, one install after all three.**
+#
+# - Built here with zigbuild (the default, below).
+# - `--release[=tag]`: fetched from the GitHub release (latest, or the
+#   tag named) — the asset the `release` workflow built, checked against
+#   the `.sha256` it published. This machine compiles nothing for Linux
+#   then; cutting a release is what puts a build on the fleet, and the
+#   Mac's disk stops paying for a target dir it does not run. `KHOR_MIRROR`
+#   is honoured the way install.sh honours it. No `--musl` this way: the
+#   release matrix has no static leg.
+# - `--bin-on-target=PATH`: the binary already sits on the target, under
+#   its `~/.local/bin` — put there by `scripts/build-on.sh`, which builds
+#   natively on a Linux box whose glibc *is* the floor. Nothing is sent;
+#   the file is renamed into the staged name and walks the same gate.
+#
+# `--dry-run` stops once the binary is ready and says what would be
+# sent — the way to look at a release before shipping it anywhere.
 #
 # **glibc by default, static only when asked.** A statically linked
 # binary is the tidier idea — it runs on any kernel, no version floor —
@@ -38,17 +57,29 @@ MODE=install
 PURGE=no
 SERVE=yes
 LIBC=gnu
+SOURCE=build
+RELEASE=latest
+ONTARGET=""
+DRY=no
 for arg in "$@"; do
     case "$arg" in
         --uninstall) MODE=uninstall ;;
         --purge) PURGE=yes ;;
         --no-serve) SERVE=no ;;
         --musl) LIBC=musl ;;
+        --release) SOURCE=release ;;
+        --release=*) SOURCE=release; RELEASE="${arg#--release=}" ;;
+        --bin-on-target=*) SOURCE=ontarget; ONTARGET="${arg#--bin-on-target=}" ;;
+        --dry-run) DRY=yes ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
         *) HOST="$arg" ;;
     esac
 done
-[ -n "$HOST" ] || { echo "usage: onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve]" >&2; exit 2; }
+[ -n "$HOST" ] || { echo "usage: onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve] [--release[=tag]] [--bin-on-target=PATH] [--dry-run]" >&2; exit 2; }
+if [ "$SOURCE" = release ] && [ "$LIBC" = musl ]; then
+    echo "onset: the release has no static build (release.yml says why); build --musl here instead" >&2
+    exit 2
+fi
 
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 STAGE="${TMPDIR:-/tmp}/khor-onset.$$"
@@ -139,37 +170,108 @@ if [ "$LIBC" = musl ] && ssh_ 'command -v nvidia-smi >/dev/null 2>&1'; then
     exit 1
 fi
 
-# ── built here, never there ──────────────────────────────
-# Compiling on the target is the thing this script exists to avoid:
-# these boxes are shared (one carries 40 logged-in users), their homes
-# are on NFS, and a toolchain install is a gigabyte of somebody else's
-# disk.
-BIN="$REPO/target/$TARGET/release/khor"
-say "onset: building $ZIGTARGET (this machine)"
-( cd "$REPO" && cargo zigbuild -q -p khor-cli --bin khor --target "$ZIGTARGET" --release )
-[ -f "$BIN" ] || { echo "onset: no binary at $BIN" >&2; exit 1; }
-# The one thing worth checking about the artefact is that it is the
-# *asked-for* one: a stale file from the other libc under a target dir
-# that looks right is exactly the kind of thing that installs fine and
-# then behaves like the build nobody chose.
-case "$LIBC-$(file "$BIN")" in
-    musl-*statically\ linked*) : ;;
-    gnu-*dynamically\ linked*) : ;;
-    *) echo "onset: $BIN is not a $LIBC build" >&2; exit 1 ;;
+# scp does not expand the remote shell's variables, so the home is
+# asked for rather than spelled. Asked once, up here: every source
+# below lands the binary under it.
+ssh_ 'mkdir -p "$HOME/.local/bin"'
+REMOTE_HOME=$(ssh_ 'printf %s "$HOME"' | tr -d '\r')
+[ -n "$REMOTE_HOME" ] || { echo "onset: $HOST did not say where its home is" >&2; exit 1; }
+STAGED="$REMOTE_HOME/.local/bin/.khor.onset$$"
+
+case "$SOURCE" in
+build)
+    # ── built here, never there ──────────────────────────────
+    # Compiling on the target is the thing this mode exists to avoid:
+    # these boxes are shared (one carries 40 logged-in users), their
+    # homes are on NFS, and a toolchain install is a gigabyte of
+    # somebody else's disk. (`build-on.sh` is the deliberate exception,
+    # for a box that already carries a toolchain and *is* the floor.)
+    BIN="$REPO/target/$TARGET/release/khor"
+    say "onset: building $ZIGTARGET (this machine)"
+    ( cd "$REPO" && cargo zigbuild -q -p khor-cli --bin khor --target "$ZIGTARGET" --release )
+    [ -f "$BIN" ] || { echo "onset: no binary at $BIN" >&2; exit 1; }
+    ;;
+release)
+    # ── fetched from the release the workflow built ─────────
+    case "$TARGET" in
+        x86_64-unknown-linux-gnu) ASSET=khor-linux-x86_64 ;;
+        aarch64-unknown-linux-gnu) ASSET=khor-linux-aarch64 ;;
+        *) echo "onset: the release ships no $TARGET" >&2; exit 1 ;;
+    esac
+    GH_REPO="${KHOR_REPO:-colehank/khor}"
+    if [ -n "${KHOR_MIRROR:-}" ]; then
+        # The mirror carries one version, whatever its sync last pulled
+        # (install.sh says the same); a tag asked for here is not on it.
+        [ "$RELEASE" = latest ] || { echo "onset: a mirror has no tags; drop --release=$RELEASE or KHOR_MIRROR" >&2; exit 2; }
+        URL="${KHOR_MIRROR%/}/$ASSET.gz"
+    elif [ "$RELEASE" = latest ]; then
+        URL="https://github.com/$GH_REPO/releases/latest/download/$ASSET.gz"
+    else
+        URL="https://github.com/$GH_REPO/releases/download/$RELEASE/$ASSET.gz"
+    fi
+    say "onset: fetching $ASSET ($RELEASE)"
+    # The archive and the digest the workflow wrote beside it, both, and
+    # the digest checked before the bytes are believed: a download that
+    # came back short or as GitHub's HTML for a tag that is not there
+    # must stop here, not on the target as「khor does not run」.
+    curl -fsSL "$URL" -o "$STAGE/$ASSET.gz" || { echo "onset: could not fetch $URL" >&2; exit 1; }
+    curl -fsSL "$URL.sha256" -o "$STAGE/$ASSET.gz.sha256" || { echo "onset: no digest beside $URL" >&2; exit 1; }
+    ( cd "$STAGE" && { command -v sha256sum >/dev/null 2>&1 && sha256sum -c --quiet "$ASSET.gz.sha256" \
+        || shasum -a 256 -c --quiet "$ASSET.gz.sha256"; } ) \
+        || { echo "onset: $ASSET.gz does not match the digest the release published" >&2; exit 1; }
+    BIN="$STAGE/khor"
+    gzip -dc "$STAGE/$ASSET.gz" > "$BIN" || { echo "onset: $URL is not a gzip (wrong tag?)" >&2; exit 1; }
+    case "$(head -c 4 "$BIN" | od -An -tx1 | tr -d ' \n')" in
+        7f454c46) : ;;
+        *) echo "onset: $URL did not answer with a program (wrong tag?)" >&2; exit 1 ;;
+    esac
+    say "onset: $ASSET verified ($(cut -c1-12 "$STAGE/$ASSET.gz.sha256")…)"
+    ;;
+ontarget)
+    # ── already on the target ────────────────────────────────
+    # Under its `~/.local/bin`, so the rename below is a `rename(2)` on
+    # one filesystem and not a copy across two (the same rule the scp
+    # landing follows, for the same NFS reason).
+    case "$ONTARGET" in
+        "$REMOTE_HOME"/.local/bin/*|'$HOME'/.local/bin/*) : ;;
+        *) echo "onset: --bin-on-target must name a file under $REMOTE_HOME/.local/bin (got $ONTARGET)" >&2; exit 1 ;;
+    esac
+    ONTARGET=$(printf '%s' "$ONTARGET" | sed "s|^\$HOME|$REMOTE_HOME|")
+    BIN=""
+    ;;
 esac
 
-say "onset: sending $(wc -c < "$BIN" | tr -d ' ') bytes"
-# **Landed next to its destination, not in /tmp.** `mv` is only atomic
-# within one filesystem; across two it degrades to copy-then-unlink,
-# which can rewrite the bytes of a binary some other process is running
-# — and on a cluster that other process is a different machine's
-# resident serve, reading the same NFS file. Same directory, real
-# `rename(2)`, old inode left alone for whoever is still running it.
-ssh_ 'mkdir -p "$HOME/.local/bin"'
-# scp does not expand the remote shell's variables, so the home is
-# asked for rather than spelled.
-REMOTE_HOME=$(ssh_ 'printf %s "$HOME"' | tr -d '\r')
-scp_ "$BIN" "$REMOTE_HOME/.local/bin/.khor.onset$$"
+if [ -n "$BIN" ]; then
+    # The one thing worth checking about the artefact is that it is the
+    # *asked-for* one: a stale file from the other libc under a target
+    # dir that looks right is exactly the kind of thing that installs
+    # fine and then behaves like the build nobody chose.
+    case "$LIBC-$(file "$BIN")" in
+        musl-*statically\ linked*) : ;;
+        gnu-*dynamically\ linked*) : ;;
+        *) echo "onset: $BIN is not a $LIBC build" >&2; exit 1 ;;
+    esac
+    if [ "$DRY" = yes ]; then
+        say "onset: dry run — $BIN is ready ($(wc -c < "$BIN" | tr -d ' ') bytes, $(shasum -a 256 "$BIN" | cut -c1-12)…); nothing sent to $HOST"
+        exit 0
+    fi
+    say "onset: sending $(wc -c < "$BIN" | tr -d ' ') bytes"
+    # **Landed next to its destination, not in /tmp.** `mv` is only
+    # atomic within one filesystem; across two it degrades to
+    # copy-then-unlink, which can rewrite the bytes of a binary some
+    # other process is running — and on a cluster that other process is
+    # a different machine's resident serve, reading the same NFS file.
+    # Same directory, real `rename(2)`, old inode left alone for whoever
+    # is still running it.
+    scp_ "$BIN" "$STAGED"
+else
+    if [ "$DRY" = yes ]; then
+        say "onset: dry run — would install $ONTARGET on $HOST; nothing touched"
+        exit 0
+    fi
+    say "onset: taking $ONTARGET as the staged binary"
+    ssh_ "mv -f '$ONTARGET' '$STAGED'"
+fi
 
 # ── install ──────────────────────────────────────────────
 # The store's root is decided **on the target**, because only it knows
@@ -179,7 +281,7 @@ scp_ "$BIN" "$REMOTE_HOME/.local/bin/.khor.onset$$"
 # — this puts one of its own in front of that refusal.
 cat > "$STAGE/on.sh" <<REMOTE
 set -eu
-src="$REMOTE_HOME/.local/bin/.khor.onset$$"
+src="$STAGED"
 REMOTE
 cat >> "$STAGE/on.sh" <<'REMOTE'
 mkdir -p "$HOME/.local/bin"
