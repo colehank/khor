@@ -1430,6 +1430,12 @@ export default function App() {
               ? markPlace
               : quotas
                 ? (
+                    // 额度 is an inbox now, so it takes the inbox
+                    // posture here: the same `screen` pair the sessions
+                    // landing uses, keyed by the box above so its
+                    // entrance plays like every other screen change.
+                    // (It is not `browses` — those have no list screen
+                    // to be the other half of a pair.)
                     <QuotaLanding
                       narrow
                       me={devices.find((d) => d.me)?.name ?? ""}
@@ -1438,6 +1444,9 @@ export default function App() {
                       onQuery={setQuery}
                       words={words.quota}
                       onToggleWord={toggleWord}
+                      screen={screen}
+                      onOpen={() => setScreen("detail")}
+                      onBack={() => setScreen("list")}
                     />
                   )
                 : browses

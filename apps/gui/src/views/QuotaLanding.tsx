@@ -27,6 +27,7 @@ import {
   type QuotaAnswer,
   type QuotaWindow,
 } from "@/api";
+import { IconBack } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { NestedRing, Ring, RING_SIZE, RING_SIZE_ROW } from "@/components/Ring";
@@ -345,6 +346,9 @@ export function QuotaLanding({
   onQuery,
   words,
   onToggleWord,
+  screen = "list",
+  onOpen,
+  onBack,
 }: {
   narrow: boolean;
   /** The bar's search text and its ticked filter keys. **Held by the
@@ -358,6 +362,16 @@ export function QuotaLanding({
   onQuery: (q: string) => void;
   words: string[];
   onToggleWord: (key: string) => void;
+  /** **The narrow face's half of `App`'s one-screen-at-a-time pair**,
+      and it is the shell's state rather than this file's on purpose:
+      the entrance animation is keyed off `screen` up there
+      (`data-screen`), and a second copy down here would be a landing
+      that slides on its own schedule. Wide passes none of the three —
+      there the list never leaves, so there is nothing to go back
+      from, which is the same rule `DetailPane`'s back button follows. */
+  screen?: "list" | "detail";
+  onOpen?: () => void;
+  onBack?: () => void;
   /** This machine's name — the 来源 of its own subscription row. Passed
       in rather than guessed from an account's `home_name`: a machine
       with no registered key still has a subscription, and 「来源」 with
@@ -450,6 +464,15 @@ export function QuotaLanding({
   // no longer offers, with no row lit to say which one it is.
   const current = grouped.find((r) => r.id === picked) ?? grouped[0] ?? null;
 
+  // **A detail screen with nothing to show is a dead end**: narrowing
+  // the list can take the picked row away (search, a tick), and the
+  // shell would still be on the detail half with no row and no way but
+  // the back button. Same shape as `App`'s own rule for a session that
+  // has gone.
+  useEffect(() => {
+    if (screen === "detail" && !current) onBack?.();
+  }, [screen, current, onBack]);
+
   const chooseGroup = (key: string) => {
     setGroupBy(key);
     try {
@@ -537,7 +560,10 @@ export function QuotaLanding({
             data-quota-kind={r.kind}
             data-quota-from={r.from || "khor"}
             data-trouble={r.account?.reading.trouble ?? undefined}
-            onClick={() => setPicked(r.id)}
+            onClick={() => {
+              setPicked(r.id);
+              onOpen?.();
+            }}
             className={cn(
               "flex min-h-touch w-full items-center gap-3 px-3 py-2 text-left hover:bg-secondary",
               on && "bg-accent hover:bg-accent",
@@ -761,16 +787,53 @@ export function QuotaLanding({
         // one thing there is to do is the button in `empty`.
         empty
       ) : narrow ? (
-        // One screen, so the bar is the screen's — the list scrolls
-        // under it and the detail follows below, as it did.
-        <div className="flex min-h-0 flex-1 flex-col">
-          {bar}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {list}
-            {detail}
-            {subDetail}
+        // **One screen at a time, with a way back** — the same pair the
+        // sessions landing draws (2026-09-06: 额度 became an inbox, so
+        // it takes the inbox posture). It was a list and a detail
+        // stacked in one scroller, which reads as「everything at once」
+        // on a phone: no exit, and the thing you pressed opens below
+        // the fold you are already looking at.
+        screen === "detail" && current ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <header
+              data-detail-header
+              className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
+            >
+              {/* **The only exit from this screen**, so it carries the
+                  finger floor outright — the rule `DetailPane`'s back
+                  button was rewritten for. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={gui.back}
+                data-back
+                onClick={onBack}
+                className="min-h-touch min-w-touch"
+              >
+                <IconBack />
+              </Button>
+              {/* **And nothing else — the name is not repeated here.**
+                  It was, for one screenshot: the bar said the row's
+                  name and the body's first line said it again, one
+                  above the other. That is the same duplication
+                  2026-09-02 took out of the session header
+                  (「都和标签内容重复了」), and the answer is the same —
+                  the content titles itself, so the bar is the way out
+                  and only that. `DetailPane` keeps an identity in its
+                  bar for the opposite reason: a terminal body has no
+                  title of its own to read. */}
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {detail}
+              {subDetail}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {bar}
+            <div className="min-h-0 flex-1 overflow-y-auto">{list}</div>
+          </div>
+        )
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* The bar belongs to the list column, not to the landing:

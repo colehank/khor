@@ -2008,6 +2008,51 @@ try {
     }
   }
 
+  // ── 8c) narrow 额度: one screen at a time, with a way back ──────
+  // 2026-09-06: the landing became an inbox, so on a phone it takes the
+  // inbox posture — list screen, detail screen, `data-back`. It used to
+  // be both stacked in one scroller, and **that is what the middle
+  // number below is about**: with the list still on the detail screen a
+  // 「there is a back button」 check passes on the old layout too. The
+  // rows going to zero is the claim; the back button is only the exit
+  // it needs.
+  // (Still at 390 from 8b, and reached as a switch so the list is not
+  // collapsed.)
+  await open("quota");
+  await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+  const narrowList = await page.locator("[data-quota-row]").count();
+  const backOnList = await page.locator("[data-quota-detail]").count();
+  if (narrowList !== listed || backOnList !== 0) {
+    fail(`probe dead: narrow 额度 opened on ${narrowList} rows and ${backOnList} details — the list screen is not what it opened on`);
+  } else {
+    await press('[data-quota-row][data-quota-kind="sub"]');
+    const onDetail = {
+      rows: await page.locator("[data-quota-row]").count(),
+      detail: await page.locator("[data-quota-detail]").count(),
+      back: await page.locator("[data-back]").count(),
+      windows: await page.locator("[data-quota-detail] [data-quota-window]").count(),
+    };
+    if (onDetail.detail !== 1 || onDetail.windows !== 2) {
+      fail(`probe dead: pressing a narrow 额度 row drew ${onDetail.detail} details / ${onDetail.windows} windows — nothing below is measuring a detail screen`);
+    } else if (onDetail.rows !== 0) {
+      fail(`the narrow 额度 detail is on the same screen as ${onDetail.rows} list rows — a phone shows one screen at a time`);
+    } else if (onDetail.back !== 1) {
+      fail(`the narrow 额度 detail draws ${onDetail.back} ways back — it is the only exit from that screen`);
+    } else {
+      await press("[data-back]");
+      const backHome = {
+        rows: await page.locator("[data-quota-row]").count(),
+        detail: await page.locator("[data-quota-detail]").count(),
+      };
+      if (backHome.rows !== listed || backHome.detail !== 0) {
+        fail(`pressing back left ${backHome.rows} rows and ${backHome.detail} details, not the list it came from`);
+      }
+      console.log(
+        `narrow 额度: list ${narrowList} rows → detail ${onDetail.rows} rows + ${onDetail.windows} windows + ${onDetail.back} back → list ${backHome.rows} rows`,
+      );
+    }
+  }
+
   // ── 9) readings per volume and per card, with a whole fallback ────
   // Tied to the fixture: the peer surveys (two cards, two volumes, one
   // minted strain), elder does not (empty lists, aggregate only). An
