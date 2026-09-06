@@ -233,6 +233,22 @@ export const registerAccount = (a: {
   budget?: number;
 }) => call<string>("register_account", a);
 export const removeAccount = (id: string) => call<null>("remove_account", { id });
+/** 置顶 / 取消置顶. The flag rides the replicated doc, so this pins on
+    every machine (`Node::pin_account`). */
+export const pinAccount = (id: string, on: boolean) => call<null>("pin_account", { id, on });
+/** 编辑 (`Node::update_account`): name, address, budget, and optionally a
+    new key. **`key` omitted means「leave the stored one alone」** — an
+    edit of the name must not make somebody paste a secret again — and a
+    key can only be replaced on the machine that holds it, which the node
+    refuses by name rather than dropping. The provider is not editable:
+    it decides how the account is read at all. */
+export const updateAccount = (a: {
+  id: string;
+  name: string;
+  base_url?: string;
+  key?: string;
+  budget?: number;
+}) => call<null>("update_account", a);
 /* **There is no `fetchUsage` any more**, and its absence is the point.
    It asked the node for every day there has ever been — an eighteen
    second first pass on the machine answering (`khor_node::usage`) — for

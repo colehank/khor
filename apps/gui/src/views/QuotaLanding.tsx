@@ -27,8 +27,10 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
+  pinAccount,
   registerAccount,
   removeAccount,
+  updateAccount,
   type AccountRing,
   type QuotaAnswer,
   type QuotaCredits,
@@ -37,6 +39,7 @@ import {
 import { IconBack } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { DIAL_ROW_RATIO, DIAL_ROW_SIZE, DIAL_ROW_STROKE, Face, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { Button } from "@/components/ui/button";
@@ -634,6 +637,17 @@ export function QuotaLanding({
   // single flag would make walking away and back a way of closing it.
   const [spread, setSpread] = useState<Set<string>>(() => new Set());
   const [registering, setRegistering] = useState(false);
+  /** Rows whose last pin attempt did not take — the same shape `App`
+      keeps for the machine list, and for its reason: what failed
+      outlives one opening of a menu. */
+  const [pinFailed, setPinFailed] = useState<Set<string>>(() => new Set());
+  /** The node's own sentence for a removal it refused, by row. Cleared
+      the moment a later attempt on that row gets anywhere. */
+  const [removeRefused, setRemoveRefused] = useState<Map<string, string>>(() => new Map());
+  /** The account being edited, or null. The row, not the id: the dialog
+      fills itself from what the list already knows, so opening it costs
+      no round trip. */
+  const [editing, setEditing] = useState<Row | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hidden = useHidden();
 
@@ -775,14 +789,91 @@ export function QuotaLanding({
     return [...byAxis.values()];
   }, [options]);
 
-  const remove = (id: string) => {
+  /**
+   * The row's own actions — **the same gesture the machine and session
+   * lists answer** (2026-09-07:「右键列表里的条目弹 置顶 / 编辑 / 删除」).
+   *
+   * They were a button on the card until now, which is a control a
+   * phone has no room for and a card has no business carrying: the card
+   * is the reading, the row is the thing. `RowMenu` gives one mechanism
+   * for right-click, long-press and the keyboard's Menu key.
+   *
+   * **Only an account has these.** The subscription row is not a
+   * registration — there is nothing to edit and nothing to remove, and
+   * an item whose one answer is no is not offered (`DevicesList` makes
+   * the same refusal for this machine's own row).
+   *
+   * **Each action rejects when it did not take**, which is how the menu
+   * learns to stay open: `RowMenu` closes on a resolve and keeps the
+   * sentence on screen on a reject, so a failure is reported where the
+   * press was made.
+   */
+  const actionsFor = (r: Row): RowAction[] => {
+    const acc = r.account;
+    if (!acc) return [];
+    const id = acc.reading.account;
+    return [
+      {
+        key: "pin",
+        // The word is what pressing it *does*, so it is the opposite of
+        // the row's state — which is also what makes this item say what
+        // the state is. The failure word rides the item that was
+        // pressed (docs/UX.md 做了但没变化 / 失败).
+        label: pinFailed.has(id)
+          ? acc.pinned
+            ? gui.unpin_failed
+            : gui.pin_failed
+          : acc.pinned
+            ? gui.unpin
+            : gui.pin,
+        failed: pinFailed.has(id),
+        run: () =>
+          pinAccount(id, !acc.pinned)
+            .then(() => {
+              setPinFailed((was) => {
+                const next = new Set(was);
+                next.delete(id);
+                return next;
+              });
+              return fetchQuotaBoard().then(setBoard);
+            })
+            .catch((e) => {
+              setPinFailed((was) => new Set(was).add(id));
+              // Rethrown, not swallowed: the menu reads the rejection
+              // to decide between closing and staying open.
+              throw e;
+            }),
+      },
+      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
+      {
+        key: "remove",
+        label: gui.accounts_remove,
+        confirm: gui.accounts_remove_confirm,
+        note: removeRefused.get(id),
+        run: () => remove(id),
+      },
+    ];
+  };
+
+  const remove = (id: string) =>
     removeAccount(id)
       .then(() => {
         setBoard((was) => (was ? was.filter((r) => r.reading.account !== id) : was));
         if (picked === id) setPicked(null);
+        setRemoveRefused((was) => {
+          const next = new Map(was);
+          next.delete(id);
+          return next;
+        });
       })
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
-  };
+      .catch((e) => {
+        const said = String(e instanceof Error ? e.message : e);
+        // **On the menu, not in the error strip.** The press was made
+        // there; a refusal that appeared at the top of the pane would
+        // leave the person looking at an open menu that said nothing.
+        setRemoveRefused((was) => new Map(was).set(id, said));
+        throw e;
+      });
 
   const list = (
     <div data-quota-list className="flex min-w-0 flex-col">
@@ -803,6 +894,7 @@ export function QuotaLanding({
         // it draws none — no branch of its own.
         const group = groupBy === GROUP_NONE ? null : (answersOf(r)[groupBy] ?? "");
         const opens = group !== null && group !== (i > 0 ? answersOf(grouped[i - 1]!)[groupBy] : undefined);
+        const actions = actionsFor(r);
         return (
           <Fragment key={r.id}>
             {opens && (
@@ -813,6 +905,18 @@ export function QuotaLanding({
                 {valueWord(groupBy, group)}
               </div>
             )}
+          {/* **The trigger is the row's own button.** `RowMenu` renders
+              no element of its own, and the press handler it adds has
+              to land on something the DOM already admits is a target —
+              a handler on a bare wrapper is reachable by pointer alone,
+              which `check-face`'s section 4 asserts against.
+              **The subscription row gets no menu**, and the empty
+              branch is the point: it is not a registration, so 编辑 and
+              删除 have nothing to act on and 置顶 would need a flag no
+              doc holds for it. An item whose one answer is no is not
+              offered (`DevicesList` refuses this machine's own row for
+              the same reason). */}
+          <RowMenuMaybe items={actions}>
           <button
             type="button"
             data-quota-row={r.id}
@@ -820,6 +924,7 @@ export function QuotaLanding({
             data-provider={r.provider}
             data-quota-kind={r.kind}
             data-quota-from={r.from || "khor"}
+            data-quota-pinned={r.account ? r.account.pinned : undefined}
             data-trouble={r.account?.reading.trouble ?? undefined}
             onClick={() => {
               setPicked(r.id);
@@ -868,6 +973,7 @@ export function QuotaLanding({
               {r.account ? centre(r.account) : lead ? `${lead.word} ${Math.round(lead.pct)}%` : ""}
             </span>
           </button>
+          </RowMenuMaybe>
           </Fragment>
         );
       })}
@@ -1173,17 +1279,18 @@ export function QuotaLanding({
             carries no labels. */}
         </dl>
       </div>
-      <div>
-        <Button
-          size="sm"
-          variant="outline"
-          data-quota-remove={acc.reading.account}
-          className="min-h-touch"
-          onClick={() => remove(acc.reading.account)}
-        >
-          {gui.accounts_remove}
-        </Button>
-      </div>
+      {/* ⚠️ **Tombstone: the 撤掉 button left this card on 2026-09-07**
+          (「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹 置顶 /
+          编辑 / 删除」). It is the row's menu now, beside 置顶 and 编辑,
+          which is where the machine list and the session list already
+          put the same three gestures.
+          **It is not that a button is worse than a menu.** It is that
+          the card is the *reading* and the row is the *thing*: an act
+          on the registration belongs on the registration, and a card
+          with a verb on it makes a person aim at the reading to change
+          the account. The phone half decides it outright — a control
+          that only appears beside a card is one a narrow face has no
+          room for. */}
     </div>
   );
 
@@ -1280,6 +1387,14 @@ export function QuotaLanding({
           (`SUB_ID`), its windows are the nested ring on that row, and
           each window is a single ring in its detail. `QuotaRings` had
           no reader left and went with it. */}
+      <EditDialog
+        row={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          fetchQuotaBoard().then(setBoard).catch(() => {});
+        }}
+      />
       <RegisterDialog
         open={registering}
         onOpenChange={setRegistering}
@@ -1290,6 +1405,14 @@ export function QuotaLanding({
       />
     </section>
   );
+}
+
+/** `RowMenu` where there is something to offer, and the row untouched
+    where there is not. **A menu with no items is a menu that opens onto
+    nothing** — worse than no menu, because the gesture answers and the
+    answer is blank. */
+function RowMenuMaybe({ items, children }: { items: RowAction[]; children: React.ReactNode }) {
+  return items.length === 0 ? <>{children}</> : <RowMenu items={items}>{children}</RowMenu>;
 }
 
 /**
@@ -1362,6 +1485,141 @@ function CardHead({ row }: { row: Row }) {
           : gui.accounts_read_from(reader, lasting(row.age_ms))}
       </span>
     </div>
+  );
+}
+
+/**
+ * 编辑 for a registered account.
+ *
+ * **It offers what can be changed and nothing else.** The provider is
+ * absent because changing it is not editing this account — it decides
+ * which endpoint answers and in what shape, so a changed provider is a
+ * different account wearing an old id (`Node::update_account` says the
+ * same from the other side). The home machine is absent for the reason
+ * the whole design exists: the key lives on one disk and does not
+ * travel.
+ *
+ * **The key box is empty and staying empty is an answer.** It does not
+ * show the stored key — there is nothing to show, this machine may not
+ * even have it — and leaving it blank means 「leave it alone」.
+ *
+ * **The line under the box says that outright** (`accounts-key-keep`),
+ * because the other reading of an empty box is 「clear the key」, and
+ * that is the expensive one: it would be read as having worked, by
+ * somebody who has just pasted a secret and has no reason to doubt it.
+ * It also says where a key *can* be replaced, since the node refuses it
+ * anywhere but the home machine.
+ */
+function EditDialog({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: Row | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const acc = row?.account ?? null;
+  const [name, setName] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [key, setKey] = useState("");
+  const [budget, setBudget] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // **Refilled from the row each time it opens**, so a dialog closed on
+  // a mistake does not reopen holding it.
+  useEffect(() => {
+    if (!acc) return;
+    setName(acc.reading.name);
+    setBaseUrl(acc.base_url ?? "");
+    setKey("");
+    setBudget(acc.budget == null ? "" : String(acc.budget));
+    setError(null);
+    setBusy(false);
+  }, [acc]);
+
+  if (!acc) return null;
+  const save = () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const parsed = budget.trim() === "" ? undefined : Number(budget);
+    updateAccount({
+      id: acc.reading.account,
+      name,
+      base_url: acc.reading.provider === "newapi" ? baseUrl : undefined,
+      // **Absent, not empty string.** An empty box means「keep the key」
+      // and the node reads absence for that; sending "" would be a
+      // different sentence.
+      key: key.trim() === "" ? undefined : key,
+      budget: parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined,
+    })
+      .then(onSaved)
+      .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent data-quota-edit={acc.reading.account}>
+        <DialogHeader>
+          <DialogTitle>{gui.accounts_edit}</DialogTitle>
+        </DialogHeader>
+        <div className="flex min-w-0 flex-col gap-3">
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{gui.accounts_name}</span>
+            <Input data-quota-edit-name value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          {acc.reading.provider === "newapi" && (
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">{gui.accounts_address}</span>
+              <Input
+                data-quota-edit-address
+                value={baseUrl}
+                placeholder="https://"
+                onChange={(e) => setBaseUrl(e.target.value)}
+              />
+            </label>
+          )}
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{gui.accounts_key}</span>
+            <Input
+              data-quota-edit-key
+              type="password"
+              autoComplete="off"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
+            <span data-quota-edit-key-note className="text-xs text-muted-foreground">
+              {gui.accounts_key_keep}
+            </span>
+          </label>
+          {BUDGETED.includes(acc.reading.provider) && (
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">{gui.accounts_budget}</span>
+              <Input
+                data-quota-edit-budget
+                inputMode="decimal"
+                value={budget}
+                placeholder={gui.accounts_budget_hint}
+                onChange={(e) => setBudget(e.target.value)}
+              />
+            </label>
+          )}
+          {error && (
+            <p data-quota-edit-error className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button data-quota-save disabled={busy} onClick={save}>
+            {gui.accounts_edit}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

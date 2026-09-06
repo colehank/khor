@@ -164,6 +164,10 @@ impl Node {
             base_url,
             budget,
             home: self.device_str().to_owned(),
+            // Nothing arrives pinned: the top of the list is somebody's
+            // choice, and a new row claiming it would be this code
+            // making that choice for them.
+            pinned: false,
         };
         std::fs::create_dir_all(self.keys_dir()).map_err(msg::cant_make_keys_dir)?;
         link::write_private(&self.keys_dir().join(&account.id), key.as_bytes())?;
@@ -187,6 +191,96 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         let _ = std::fs::remove_file(self.keys_dir().join(id));
+        let _ = std::fs::remove_file(self.quotas_dir().join(format!("{id}.json")));
+        Ok(())
+    }
+
+    /// Floats an account to the top of the 額度 list, or drops it back.
+    ///
+    /// **Everywhere, not here**: the flag rides the replicated doc, so
+    /// pinning on one machine pins on all of them — the same bargain a
+    /// pinned machine makes. Refused by name for an id nobody has, so
+    /// a stale row cannot silently pin nothing.
+    pub fn pin_account(&self, id: &str, on: bool) -> Result<(), String> {
+        let loaded = self.accounts_loaded()?;
+        let mut account = loaded.doc.get(id).ok_or_else(|| msg::no_such_account(id))?;
+        account.pinned = on;
+        loaded.doc.set(&account)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(())
+    }
+
+    /// Edits a registered account: its name, its address, its budget,
+    /// and **optionally its key**.
+    ///
+    /// # What cannot be edited, and why it is not an oversight
+    ///
+    /// **The provider.** It decides how this account is read at all —
+    /// which endpoint, which header, which shape of answer — so
+    /// changing it is not editing this account, it is registering a
+    /// different one under an old id, with the old cached reading still
+    /// on disk beside it.
+    ///
+    /// **The home.** The key lives on one machine and only that machine
+    /// reads the account (the module head). Moving the home would mean
+    /// moving a secret between machines, which is the one thing this
+    /// design does not do.
+    ///
+    /// `key` of `None` leaves the stored key alone — an edit of the
+    /// name is not a reason to make somebody paste a secret again. A
+    /// key is written **only on the machine that holds it**: editing
+    /// from anywhere else is refused by name rather than quietly
+    /// dropping the new key, which would read as having worked.
+    pub fn update_account(
+        &self,
+        id: &str,
+        name: &str,
+        base_url: Option<&str>,
+        key: Option<&str>,
+        budget: Option<f64>,
+    ) -> Result<(), String> {
+        let loaded = self.accounts_loaded()?;
+        let mut account = loaded.doc.get(id).ok_or_else(|| msg::no_such_account(id))?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(msg::ACCOUNT_NAME_BLANK.into());
+        }
+        // The same two checks registration makes, in the same order and
+        // with the same sentences — an edit that accepted an address
+        // registration refuses would be a second opinion about what a
+        // gateway is.
+        let base_url = match (&account.provider, base_url.map(str::trim).filter(|u| !u.is_empty())) {
+            (Provider::Newapi, None) => return Err(msg::ACCOUNT_NEEDS_ADDRESS.into()),
+            (Provider::Newapi, Some(u)) => {
+                if !(u.starts_with("http://") || u.starts_with("https://")) {
+                    return Err(msg::account_address_bad(u));
+                }
+                Some(u.trim_end_matches('/').to_owned())
+            }
+            (_, _) => None,
+        };
+        if let Some(b) = budget
+            && !(b.is_finite() && b > 0.0)
+        {
+            return Err(msg::ACCOUNT_BUDGET_BAD.into());
+        }
+        if let Some(key) = key.map(str::trim).filter(|k| !k.is_empty()) {
+            if account.home != self.device_str() {
+                return Err(msg::account_key_elsewhere(&account.name));
+            }
+            std::fs::create_dir_all(self.keys_dir()).map_err(msg::cant_make_keys_dir)?;
+            link::write_private(&self.keys_dir().join(&account.id), key.as_bytes())?;
+        }
+        account.name = name.to_owned();
+        account.base_url = base_url;
+        account.budget = budget;
+        loaded.doc.set(&account)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        // The reading on disk was taken with the old budget, and the
+        // budget is the denominator — leaving it would draw a fraction
+        // of a ceiling that no longer exists until the cache expires.
         let _ = std::fs::remove_file(self.quotas_dir().join(format!("{id}.json")));
         Ok(())
     }
@@ -661,6 +755,7 @@ mod tests {
             base_url: None,
             budget: Some(100.0),
             home: "h".into(),
+            pinned: false,
         };
         let r = against_budget(bare(&acc, None, 0), 91.0, acc.budget, "USD");
         assert_eq!(r.fill, Some(0.91));
@@ -705,7 +800,15 @@ mod tests {
     }
 
     fn wallet(provider: Provider, budget: Option<f64>) -> Account {
-        Account { id: "a".into(), name: "n".into(), provider, base_url: None, budget, home: "h".into() }
+        Account {
+            id: "a".into(),
+            name: "n".into(),
+            provider,
+            base_url: None,
+            budget,
+            home: "h".into(),
+            pinned: false,
+        }
     }
 
     /// **A balance is what is left, and it is never written into

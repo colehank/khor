@@ -2181,6 +2181,62 @@ try {
       );
     }
 
+    //   ── 8·the row's menu ───────────────────────────────────────
+    //   2026-09-07:「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹
+    //   置顶 / 编辑 / 删除」. Three claims, and the first two are an
+    //   absence and its live control in one run — the shape section 7
+    //   leans on: **the button is nowhere on the card, and the three
+    //   items are there in the menu**. Counting only the absence passes
+    //   on a build that lost the actions altogether.
+    const buttonOnCard = await page.locator("[data-quota-detail] [data-quota-remove]").count();
+    if (buttonOnCard !== 0) {
+      fail(`the card still carries ${buttonOnCard} 撤掉 button(s) — the acts moved to the row's menu`);
+    }
+    await page.locator('[data-quota-row="acc-fill"]').click({ button: "right" });
+    await wait(500);
+    const menu = await page.locator("[data-row-menu] [data-menu-item]").evaluateAll((els) =>
+      els.map((e) => ({ key: e.getAttribute("data-menu-item"), word: e.textContent?.trim() ?? "" })),
+    );
+    const keys = menu.map((m) => m.key);
+    if (keys.length !== 3 || !keys.includes("pin") || !keys.includes("edit") || !keys.includes("remove")) {
+      fail(`an account's menu offers ${JSON.stringify(keys)} — 置顶 / 编辑 / 删除 were expected`);
+    } else if (menu.some((m) => m.word === "")) {
+      fail(`probe void: an item has no word (${JSON.stringify(menu)}), so the words below measure nothing`);
+    } else {
+      //   **删除 takes two presses, and the first one is the control
+      //   arm**: it puts the sentence on screen and moves nothing. A
+      //   menu that removed on one press would empty the row and every
+      //   assertion after it would still pass.
+      await page.locator('[data-menu-item="remove"]').click();
+      await wait(300);
+      const armed = await page.evaluate(() => ({
+        said: document.querySelector('[data-menu-confirm="remove"]')?.textContent?.trim() ?? null,
+        rowStillThere: document.querySelectorAll('[data-quota-row="acc-fill"]').length,
+        // The sentence is the account's own, never the machine's: two
+        // different acts cannot share one clause about their cost.
+        machineWord: document.querySelector('[data-menu-confirm="forget"]') !== null,
+      }));
+      if (!armed.said || armed.rowStillThere !== 1 || armed.machineWord) {
+        fail(
+          `the first 删除 press said ${JSON.stringify(armed.said)} and left ${armed.rowStillThere} row(s) — one press must arm and move nothing`,
+        );
+      }
+    }
+    await page.keyboard.press("Escape");
+    await wait(300);
+    //   …and the subscription is not a registration: nothing to edit,
+    //   nothing to remove, so it is offered no menu at all.
+    await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click({ button: "right" });
+    await wait(500);
+    const onSub = await page.locator("[data-row-menu] [data-menu-item]").count();
+    if (onSub !== 0) {
+      fail(`the subscription row offers ${onSub} menu item(s) — it is not a registration`);
+    }
+    await page.keyboard.press("Escape");
+    await wait(300);
+    await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
+    await wait(300);
+
     //   ── 8·the drawer ───────────────────────────────────────────
     //   「多环要可以展开」(2026-09-07): the panel lists the windows, and
     //   pressing the handle gives each one **its own dial**.

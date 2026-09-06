@@ -132,6 +132,22 @@ pub struct Account {
     pub budget: Option<f64>,
     /// The device (hex id) that holds the key and reads the account.
     pub home: String,
+    /// Floated to the top of the 额度 list, everywhere.
+    ///
+    /// **Tail field, `serde default`, and both halves matter.** This
+    /// doc replicates, so a machine running an older khor decodes an
+    /// account written by a newer one — a required field would make
+    /// that account fail to parse, and [`AccountDoc::get`] reads with
+    /// `.ok()`, so the failure would not be an error: it would be a
+    /// registration that is **silently not there**, on exactly the
+    /// machines least able to work out why. Defaulted, an older build
+    /// reads the account whole and only misses the pin.
+    ///
+    /// **The order lives with the data, not with a screen**, the same
+    /// bargain the device list makes: two faces sorting the same rows
+    /// by their own rules is two answers to 「what is at the top」.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 pub struct AccountDoc {
@@ -168,11 +184,19 @@ impl AccountDoc {
         Ok(())
     }
 
-    /// Every account, by name then id — the order a list shows them in.
+    /// Every account: **pinned first**, then by name, then by id — the
+    /// order a list shows them in.
+    ///
+    /// Id last so the order is total: two accounts can share a name
+    /// (nothing forbids it), and a sort that stopped at the name would
+    /// put them in whatever order the map handed them, which is not the
+    /// same order twice.
     pub fn all(&self) -> Vec<Account> {
         let map = self.inner.get_map(ACCOUNTS);
         let mut out: Vec<Account> = map.keys().filter_map(|k| self.get(&k)).collect();
-        out.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+        out.sort_by(|a, b| {
+            b.pinned.cmp(&a.pinned).then(a.name.cmp(&b.name)).then(a.id.cmp(&b.id))
+        });
         out
     }
 }
@@ -219,7 +243,48 @@ mod tests {
             base_url: Some("https://gw.example".to_owned()),
             budget: None,
             home: "aa".to_owned(),
+            pinned: false,
         }
+    }
+
+    /// **An account written by an older khor still decodes, and it is
+    /// not pinned.**
+    ///
+    /// The bytes are built by hand rather than by serialising a struct
+    /// with the field removed — a struct cannot have the field removed
+    /// without deleting it, so the only way to hold an *old* shape is
+    /// to write one. **First it is asserted that the key really is
+    /// absent from those bytes**: without that line this test would
+    /// pass just as well against a document that has `"pinned": false`
+    /// in it, which is the shape it is meant to exclude, and the whole
+    /// thing would be checking that serde can read its own output.
+    #[test]
+    fn an_account_from_before_the_pin_reads_as_unpinned() {
+        let old = r#"{"id":"k1","name":"gateway","provider":"newapi",
+            "base_url":"https://gw.example","home":"aa"}"#;
+        assert!(!old.contains("pinned"), "the old shape must not carry the key it predates");
+        let account: Account = serde_json::from_str(old).expect("an older khor's account still reads");
+        assert_eq!(account, one("k1", "gateway"), "every other field survives whole");
+        assert!(!account.pinned, "absent is not pinned");
+    }
+
+    /// **Pinned floats, and the order under it is unchanged.**
+    ///
+    /// Three accounts, and the pinned one is the *last* by name — so an
+    /// implementation that ignored the flag would answer them in a
+    /// different order than this asks for, rather than accidentally
+    /// agreeing with it. (Two rows, with the pinned one already first
+    /// alphabetically, is a control group that cannot fail.)
+    #[test]
+    fn a_pinned_account_floats_and_the_rest_keep_their_order() {
+        let doc = AccountDoc::new(1).unwrap();
+        doc.set(&one("k1", "alpha")).unwrap();
+        doc.set(&one("k2", "beta")).unwrap();
+        let mut last = one("k3", "zulu");
+        last.pinned = true;
+        doc.set(&last).unwrap();
+        let names: Vec<String> = doc.all().into_iter().map(|a| a.name).collect();
+        assert_eq!(names, ["zulu", "alpha", "beta"], "pinned first, then by name");
     }
 
     /// The doc carries the description and nothing else: what a merge

@@ -548,6 +548,12 @@ pub struct AccountRing {
     pub base_url: Option<String>,
     #[ts(type = "number | null")]
     pub budget: Option<f64>,
+    /// Floated to the top of the list, on every machine
+    /// (`khor_sync::accounts::Account::pinned`). Carried here rather
+    /// than read a second time by the face: the order is the doc's, and
+    /// a screen sorting by its own copy of the rule is how two faces
+    /// come to disagree about what is at the top.
+    pub pinned: bool,
 }
 
 /// Every registered account's ring (`Node::quota_board`), home machines
@@ -569,6 +575,7 @@ pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
                 strain: khor_node::accounts::strain_of(reading.fill),
                 base_url: account.and_then(|a| a.base_url.clone()),
                 budget: account.and_then(|a| a.budget),
+                pinned: account.is_some_and(|a| a.pinned),
                 age_ms,
                 reading,
             }
@@ -594,6 +601,25 @@ pub fn register_account(
 
 pub fn remove_account(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.remove_account(id)
+}
+
+/// 置顶 / 取消置顶 (`Node::pin_account`). The flag rides the replicated
+/// doc, so this pins on every machine.
+pub fn pin_account(root: &Path, id: &str, on: bool) -> Result<(), String> {
+    open(root)?.pin_account(id, on)
+}
+
+/// 编辑 (`Node::update_account`): name, address, budget, and optionally
+/// a new key. The provider is not editable — see the node's own head.
+pub fn update_account(
+    root: &Path,
+    id: &str,
+    name: &str,
+    base_url: Option<&str>,
+    key: Option<&str>,
+    budget: Option<f64>,
+) -> Result<(), String> {
+    open(root)?.update_account(id, name, base_url, key, budget)
 }
 
 /// 常去的地方, newest first, **on the machine the wizard names**

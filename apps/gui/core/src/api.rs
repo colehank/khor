@@ -142,6 +142,33 @@ pub fn answer(
             crate::remove_account(root, &arg("id")?)?;
             Ok("null".to_owned())
         }
+        // 置顶 / 取消置顶. `flag`, not a defaulting bool: a typo'd
+        // argument name read as `false` would look like the menu
+        // working and doing the opposite — the reason `flag` exists.
+        "pin_account" => {
+            crate::pin_account(root, &arg("id")?, flag("on")?)?;
+            Ok("null".to_owned())
+        }
+        // 编辑. **`key` absent means「leave the stored key alone」**, and
+        // that is why it is `opt_str` rather than `arg`: an edit of the
+        // name must not make somebody paste a secret again. Present and
+        // the wrong shape is still refused — a malformed key read as
+        // absent would report a rotation that never happened.
+        "update_account" => {
+            let budget = match args.get("budget") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(v.as_f64().ok_or_else(|| "arg is not a number: budget".to_owned())?),
+            };
+            crate::update_account(
+                root,
+                &arg("id")?,
+                &arg("name")?,
+                opt_str("base_url")?.as_deref(),
+                opt_str("key")?.as_deref(),
+                budget,
+            )?;
+            Ok("null".to_owned())
+        }
         "usage" => to_json(&crate::usage(root)?),
         // No `root`: a subscription is an account's, not an
         // installation's. And no `?` — every failure here is a reason
