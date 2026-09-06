@@ -1017,66 +1017,24 @@ function Drawers({
           })}
         </div>
         {/* **The watched directories, under the volumes and apart from
-            them** (2026-09-06 关注目录): their own heading and their own
-            grid — the heading above counts volumes, and a directory is
-            not a volume, it is a place on one. Each row is a unit —
-            `khor devices` prints one sentence per row here, from the
-            same answer — its bar the fill of the volume it sits on. The
-            two shapes with no volume carry no bar and say why in the
-            number's column, in the sentence's own words: a missing
-            directory and one on a filesystem khor does not list are
-            different next steps (fix the path / that is not a disk khor
-            can watch), and the third — the root's numbers under
-            `/proc/1` — is the one the wire refuses to produce. The
-            heading is drawn whenever there is a list to show or an
-            editor to fill; a satellite with nothing watched gets
-            neither. */}
-        {(watched.length > 0 || row.sponsor === null) && (
-          <div data-watch-head hidden={open !== "disk"} className="mt-row mb-in text-aux text-muted-foreground">
-            {gui.watch_dirs}
-          </div>
-        )}
-        <div data-parts="watch" hidden={open !== "disk"}>
-          {watched.map((w, i) => {
-            const fill = w.volume?.fill ?? null;
-            const pct = fill && fill.total > 0 ? (fill.used / fill.total) * 100 : null;
-            const sentence = w.volume
-              ? cli.vitals_watch(w.path, volWord(w.volume.mount), bytes(Math.max(0, w.volume.fill.total - w.volume.fill.used)), bytes(w.volume.fill.total))
-              : w.missing
-                ? cli.vitals_watch_missing(w.path)
-                : cli.vitals_watch_unlisted(w.path);
-            return (
-              <div key={`watch${i}`} data-part={i} data-watch-row={w.path} data-watch-shape={w.volume ? "on" : w.missing ? "missing" : "unlisted"}>
-                <span data-part-name data-vitals-unit="watch" className="min-w-0 gap-in">
-                  <span className="min-w-0 truncate">{w.path}</span>
-                  {w.volume && <span className="ml-in flex-none text-muted-foreground">{mountWord(w.volume.mount)}</span>}
-                  <span data-vitals-detail="watch" className="sr-only">
-                    {sentence}
-                  </span>
-                </span>
-                <Bar pct={pct} strain={null} />
-                <span data-part-num className="justify-end text-right text-muted-foreground">
-                  {fill
-                    ? `${bytes(Math.max(0, fill.total - fill.used))} / ${bytes(fill.total)}`
-                    : w.missing
-                      ? cli.vitals_watch_missing("").trim()
-                      : cli.vitals_watch_unlisted("").trim()}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        {/* **The editor, only where a machine can answer for itself.**
-            A satellite's readings are sampled by its sponsor over ssh,
-            and its row has no khor to answer `Watched` — an editor
-            there would save a list nothing reads. Outside every grid:
-            a `[data-parts]` lays its children out as part rows, and an
-            editor is not a part. */}
-        {row.sponsor === null && (
-          <div hidden={open !== "disk"}>
-            <WatchEditor row={row} />
-          </div>
-        )}
+            them, in one column** (2026-09-06 关注目录, and the ruling
+            「一个路径只出现一次」): their own heading and their own grid —
+            the heading above counts volumes, and a directory is not a
+            volume, it is a place on one. What a row is, is the state of
+            its path: the machine answered it (a reading — bar, size or
+            the sentence for a missing / unlisted directory — and a unit,
+            because `khor devices` prints that sentence), it is saved and
+            the machine has not answered yet (还没问到, no unit: the
+            terminal prints nothing for it either), or it is only in the
+            draft here (未保存, no bar, no unit — it is not a reading and
+            neither face may count it). A saved path taken out of the
+            draft keeps its row, greyed and marked 未保存, until the save
+            makes it true. `WatchList` draws the rows and the editor's
+            own line under them; a satellite's rows have no editor (its
+            readings are sampled by its sponsor over ssh, and its row has
+            no khor to answer `Watched` — an editor there would save a
+            list nothing reads). */}
+        <WatchList row={row} watched={watched} open={open === "disk"} />
         </div>
       </div>
       {/* **Nothing under the drawer.** A sentence used to sit here
@@ -1096,43 +1054,53 @@ function Drawers({
 }
 
 /**
- * The disk drawer's editor: the directories this machine is asked to
- * watch, added and removed here and saved whole (2026-09-06:「磁盘点击后,
- * 可以有一个编辑,用户可以在这增删目录,而后更新关注磁盘」).
+ * The disk drawer's watched directories, one column, with the editor's
+ * line under them (2026-09-06:「磁盘点击后,可以有一个编辑,用户可以在这
+ * 增删目录,而后更新关注磁盘」, and the ruling that a path appears once).
  *
  * **Directories, not volumes.** A person names the place they work in
  * — `/data/models`, a scratch dir on a mount they cannot spell — and
  * the machine answers which volume that is and how much it has left
- * (`khor_core::WatchedDir`, the rows above this editor). The list is
- * the setting and rides that machine's row in the device table; the
- * rows are the readings and arrive on the next visit, which is why the
- * save says nothing itself: the row appearing above is the report.
+ * (`khor_core::WatchedDir`). The list is the setting and rides that
+ * machine's row in the device table; the readings arrive on the next
+ * visit, which is why the save says nothing itself: the row turning
+ * from 还没问到 into a size is the report.
  *
  * **A draft, saved whole.** Adding and removing edit a local copy, and
  * 保存 sends the copy — one call, one refusal, rather than a call per
  * keystroke racing the poll. The draft follows the row's list only when
- * that list changes under it (somebody else saved from another
- * machine); a poll that repeats the list it already has does not touch
- * what is being typed. The node validates (absolute, no `..`, no
- * duplicate) and its sentence is printed under the list — the same
- * sentence `khor watch` prints, one voice.
+ * that list changes under it (somebody else saved, or this save came
+ * back through the poll); a poll that repeats the list it already has
+ * does not touch what is being typed. The node validates (absolute, no
+ * `..`, no duplicate) and its sentence is printed under the list — the
+ * same sentence `khor watch` prints, one voice.
+ *
+ * **Every row is the same three cells the volumes use**, so the two
+ * groups line up (`Drawers` has why one grid beats two), grown to the
+ * finger floor because a row here carries a button — `min-height`
+ * beats the grid's fixed `height`, `ui/button.tsx`'s scar.
  */
-function WatchEditor({ row }: { row: DeviceRow }) {
-  const listed = row.watch.join("\n");
-  const [saved, setSaved] = useState(listed);
+function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir[]; open: boolean }) {
+  const savedKey = row.watch.join("\n");
+  const [base, setBase] = useState(savedKey);
   const [draft, setDraft] = useState<string[]>(row.watch);
   const [typed, setTyped] = useState("");
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
-    if (listed === saved) return;
-    setSaved(listed);
-    setDraft(listed === "" ? [] : listed.split("\n"));
-  }, [listed, saved]);
-  const dirty = draft.join("\n") !== saved;
+    if (savedKey === base) return;
+    setBase(savedKey);
+    setDraft(savedKey === "" ? [] : savedKey.split("\n"));
+  }, [savedKey, base]);
+  const saved = base === "" ? [] : base.split("\n");
+  const editable = row.sponsor === null;
+  const dirty = draft.join("\n") !== base;
+  // Saved paths first, in the table's order, then the draft's new ones
+  // in the order they were typed — one row per path, whatever its state.
+  const paths = [...saved, ...draft.filter((p) => !saved.includes(p))];
   const add = () => {
     const p = typed.trim();
-    if (!p) return;
+    if (!p || draft.includes(p)) return;
     setDraft((d) => [...d, p]);
     setTyped("");
   };
@@ -1142,57 +1110,135 @@ function WatchEditor({ row }: { row: DeviceRow }) {
     setFailed(null);
     setWatch(row.name, draft)
       .then((kept) => {
-        setSaved(kept.join("\n"));
+        setBase(kept.join("\n"));
         setDraft(kept);
       })
       .catch((e) => setFailed(String(e instanceof Error ? e.message : e)))
       .finally(() => setSaving(false));
   };
+  if (paths.length === 0 && !editable) return null;
   return (
-    <div data-watch-editor data-dirty={dirty} className="mt-in flex flex-col gap-in text-sm">
-      {draft.map((p, i) => (
-        <div key={`${p}#${i}`} data-watch-draft={p} className="flex min-w-0 items-center gap-in">
-          <span className="min-w-0 flex-1 truncate">{p}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            data-watch-remove={p}
-            className="min-h-touch"
-            onClick={() => setDraft((d) => d.filter((_, j) => j !== i))}
-          >
-            {gui.remove}
-          </Button>
-        </div>
-      ))}
-      <div className="flex min-w-0 items-center gap-in">
-        <Input
-          data-watch-input
-          aria-label={gui.new_session_dir}
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-        />
-        <Button variant="outline" size="sm" data-watch-add className="min-h-touch" disabled={!typed.trim()} onClick={add}>
-          {gui.watch_add}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          data-watch-save
-          data-failed={failed !== null}
-          className="min-h-touch data-[failed=true]:text-state-failed"
-          disabled={saving || !dirty}
-          onClick={save}
-        >
-          {failed !== null ? gui.watch_save_failed : gui.watch_save}
-        </Button>
+    <>
+      <div data-watch-head hidden={!open} className="mt-row mb-in text-aux text-muted-foreground">
+        {gui.watch_dirs}
       </div>
-      {failed !== null && (
-        <div data-watch-error className="text-sm text-destructive">
-          {failed}
+      <div data-parts="watch" hidden={!open}>
+        {paths.map((p, i) => {
+          const reading = watched.find((w) => w.path === p) ?? null;
+          const inSaved = saved.includes(p);
+          const inDraft = draft.includes(p);
+          const pending = inSaved === inDraft ? null : inDraft ? "add" : "remove";
+          const fill = reading?.volume?.fill ?? null;
+          const pct = fill && fill.total > 0 ? (fill.used / fill.total) * 100 : null;
+          const shape = reading
+            ? reading.volume
+              ? "on"
+              : reading.missing
+                ? "missing"
+                : "unlisted"
+            : inSaved
+              ? "asked"
+              : "pending";
+          const sentence = reading
+            ? reading.volume
+              ? cli.vitals_watch(p, volWord(reading.volume.mount), bytes(Math.max(0, reading.volume.fill.total - reading.volume.fill.used)), bytes(reading.volume.fill.total))
+              : reading.missing
+                ? cli.vitals_watch_missing(p)
+                : cli.vitals_watch_unlisted(p)
+            : null;
+          const number = fill
+            ? `${bytes(Math.max(0, fill.total - fill.used))} / ${bytes(fill.total)}`
+            : reading
+              ? reading.missing
+                ? cli.vitals_watch_missing("").trim()
+                : cli.vitals_watch_unlisted("").trim()
+              : inSaved
+                ? cli.vitals_never
+                : "";
+          return (
+            <div
+              key={p}
+              data-part={i}
+              data-watch-row={p}
+              data-watch-shape={shape}
+              data-pending={pending ?? undefined}
+              className={cn(pending === "remove" && "opacity-55")}
+            >
+              {/* **The unit rides only a row the machine answered** —
+                  that is the row `khor devices` prints a sentence for,
+                  and the count on both faces is the count of those. */}
+              <span
+                data-part-name
+                data-vitals-unit={reading ? "watch" : undefined}
+                className="min-h-touch min-w-0 gap-in"
+              >
+                <span className="min-w-0 truncate">{p}</span>
+                {reading?.volume && (
+                  <span className="ml-in flex-none text-muted-foreground">{mountWord(reading.volume.mount)}</span>
+                )}
+                {sentence && (
+                  <span data-vitals-detail="watch" className="sr-only">
+                    {sentence}
+                  </span>
+                )}
+              </span>
+              {reading ? <Bar pct={pct} strain={null} /> : <span data-part-bar className="min-h-touch" />}
+              <span data-part-num className="min-h-touch justify-end gap-in text-right text-muted-foreground">
+                {number && <span>{number}</span>}
+                {pending && (
+                  <span data-watch-unsaved className="text-aux">
+                    {gui.watch_unsaved}
+                  </span>
+                )}
+                {editable && pending !== "remove" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-watch-remove={p}
+                    className="min-h-touch"
+                    onClick={() => setDraft((d) => d.filter((q) => q !== p))}
+                  >
+                    {gui.remove}
+                  </Button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {editable && (
+        <div data-watch-editor data-dirty={dirty} hidden={!open} className="mt-in flex flex-col gap-in text-sm">
+          <div className="flex min-w-0 items-center gap-in">
+            <Input
+              data-watch-input
+              aria-label={gui.new_session_dir}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+            />
+            <Button variant="outline" size="sm" data-watch-add className="min-h-touch" disabled={!typed.trim()} onClick={add}>
+              {gui.watch_add}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-watch-save
+              data-failed={failed !== null}
+              className="min-h-touch data-[failed=true]:text-state-failed"
+              disabled={saving || !dirty}
+              onClick={save}
+            >
+              {failed !== null ? gui.watch_save_failed : gui.watch_save}
+            </Button>
+          </div>
+          {failed !== null && (
+            <div data-watch-error className="text-sm text-destructive">
+              {failed}
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

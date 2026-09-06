@@ -1760,6 +1760,13 @@ watch-dirs = "关注的目录"
 watch-add = "加入"
 watch-save = "保存"
 watch-save-failed = "存不上"
+# The one-column ruling (2026-09-06:「一个路径只出现一次」): a path added
+# but not yet saved, or a saved one taken out but not yet saved, wears
+# this beside its number — the row is the same row, the word is its
+# state. **A saved path the machine has not answered yet is not
+# unsaved**; it wears `vitals-never`'s 还没问到 instead, the same fact
+# (asked, no answer) said once.
+watch-unsaved = "未保存"
 # The machine card's verbs, each the GUI face of a call that machine
 # already answers for the CLI (docs/KHOR.md — the faces are equivalent
 # because they are one call): 开会话 opens the sessions pane's wizard with

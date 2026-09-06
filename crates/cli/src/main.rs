@@ -592,8 +592,15 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
     // here and there stays one count. Nothing is said for a machine
     // that never answered: an older khor refuses the op, and 「no rows」
     // must not read as 「nothing watched」.
+    // **Only the rows still on the list.** The answer is the machine's
+    // last word and the list is the setting as replicated; between a
+    // save that took a path off and the next visit, the answer still
+    // carries it. The card draws its rows from the list and lets the
+    // answer fill them in, so it drops that path at once — and the two
+    // faces are held to one count.
     if let Some((rows, _)) = n.watched_of(device_id) {
-        for r in &rows {
+        let listed = n.watch_of(device_id);
+        for r in rows.iter().filter(|r| listed.contains(&r.path)) {
             parts.push(match (&r.volume, r.missing) {
                 (Some(vol), _) => cli::vitals_watch(
                     &r.path,

@@ -261,8 +261,17 @@ try {
   await page.route("**/sessions", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(rows) }),
   );
+  //   The watch list as last saved through `set_watch`, per machine —
+  //   on a real node the table is written before the call answers and
+  //   the next poll carries it, and a fixture that kept answering the
+  //   old list would reset the editor's draft under the section that
+  //   measures it (2026-09-06).
+  const watchKept = {};
   await page.route("**/devices", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify(devs) }),
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(devs.map((d) => (watchKept[d.name] ? { ...d, watch: watchKept[d.name] } : d))),
+    }),
   );
   // What a machine is busy with (`MachineCard`'s `Busy`): the peer
   // answers a top of three and a day with holes in it; elder refuses,
@@ -454,7 +463,9 @@ try {
     if (bad) {
       return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`关注的目录得是绝对路径: ${bad}`) });
     }
-    return r.fulfill({ contentType: "application/json", body: JSON.stringify(body.paths.map((p) => String(p).trim())) });
+    const kept = body.paths.map((p) => String(p).trim());
+    watchKept[body.machine] = kept;
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(kept) });
   });
   // The shell polls sessions, devices and hooks in one Promise.all —
   // one rejection drops the whole batch, so the third leg answers too.
@@ -3890,12 +3901,17 @@ try {
   //         list. The third must not wear the first's numbers — that is
   //         the path on `/proc` reporting the root — so its number
   //         column is a word, not a size;
-  //       - the editor lists the three, adding a fourth and saving
-  //         sends **the whole list** to `set_watch` for the peer, and
-  //         the draft repaints from the answer with the save at rest;
+  //       - **one column, one row per path** (the ruling): adding a
+  //         fourth path draws a fourth row marked 未保存 with **no
+  //         unit** — it is not a reading, and neither face may count it
+  //         — so the unit count stays three until the machine answers;
+  //         saving sends **the whole list** to `set_watch` for the peer,
+  //         the row turns into a saved-but-unanswered one (还没问到,
+  //         still no unit) and the save comes to rest;
   //       - a relative path is refused **by the node's sentence**, on
   //         screen under the list, with the failure word on the button
-  //         that was pressed — one voice with `khor watch`.
+  //         that was pressed — one voice with `khor watch` — and the
+  //         refused row stays, marked, for fixing.
   {
     await page.locator('[data-machine-card] [data-dial="disk"]').click();
     await wait(400);
@@ -3906,6 +3922,7 @@ try {
       const rows = [...box.querySelectorAll('[data-parts="watch"] [data-watch-row]')].map((r) => ({
         path: r.dataset.watchRow,
         shape: r.dataset.watchShape,
+        pending: r.dataset.pending ?? null,
         unit: r.querySelector('[data-vitals-unit="watch"]') !== null,
         sentence: r.querySelector('[data-vitals-detail="watch"]')?.textContent.trim() ?? "",
         num: r.querySelector("[data-part-num]")?.textContent.trim() ?? "",
@@ -3915,7 +3932,7 @@ try {
         rows,
         vols: parts.querySelectorAll('[data-vitals-unit="vol"]').length,
         editor: !!box.querySelector("[data-watch-editor]"),
-        drafts: [...box.querySelectorAll("[data-watch-draft]")].map((d) => d.dataset.watchDraft),
+        units: box.querySelectorAll('[data-parts="watch"] [data-vitals-unit="watch"]').length,
         saveDisabled: box.querySelector("[data-watch-save]")?.disabled ?? null,
         count: Number(document.querySelector("[data-machine-card] [data-drawer-count]")?.dataset.drawerCount),
       };
@@ -3943,32 +3960,54 @@ try {
       if (drawer.count !== drawer.vols) {
         fail(`the drawer's heading counts ${drawer.count} for ${drawer.vols} volumes — the ${drawer.rows.length} watched rows are not volumes`);
       }
+      if (drawer.rows.some((r) => r.pending !== null)) {
+        fail(`a row is marked unsaved before anything was typed: ${JSON.stringify(drawer.rows)}`);
+      }
       if (!drawer.editor) fail("the disk drawer has no editor for the watched directories");
-      else if (drawer.drafts.join(",") !== "/data/models,/nope,/proc/1") {
-        fail(`the editor lists ${JSON.stringify(drawer.drafts)}, not the row's own three`);
-      } else if (drawer.saveDisabled !== true) {
+      else if (drawer.saveDisabled !== true) {
         fail("the save is live before anything was changed — a control that always offers to save is a control that cannot say whether anything changed");
       } else {
-        //   Add one and save: the whole list crosses, and the draft
-        //   comes back from the answer.
+        //   Add one: a fourth row, marked, and **still three units**.
+        //   Then save: the whole list crosses, the row turns into a
+        //   saved-but-unanswered one, and the unit count is still three
+        //   — the machine has not answered for it, and neither has the
+        //   terminal.
+        const rowsOf = () =>
+          page.evaluate(() => {
+            const box = document.querySelector("[data-machine-card] [data-drawer-scroll]");
+            return {
+              rows: [...box.querySelectorAll('[data-parts="watch"] [data-watch-row]')].map((r) => `${r.dataset.watchRow}:${r.dataset.watchShape}${r.dataset.pending ? "+" + r.dataset.pending : ""}`),
+              units: box.querySelectorAll('[data-parts="watch"] [data-vitals-unit="watch"]').length,
+              saveDisabled: box.querySelector("[data-watch-save]")?.disabled ?? null,
+              error: box.querySelector("[data-watch-error]")?.textContent ?? null,
+            };
+          });
         const sent0 = watchSaves.length;
         await page.locator("[data-machine-card] [data-watch-input]").fill("/scratch/run7");
         await page.locator("[data-machine-card] [data-watch-add]").click();
         await wait(150);
+        const added = await rowsOf();
+        if (added.rows.join(",") !== "/data/models:on,/nope:missing,/proc/1:unlisted,/scratch/run7:pending+add") {
+          fail(`adding a path drew ${JSON.stringify(added.rows)} — one new row, marked unsaved, under the three was owed`);
+        }
+        if (added.units !== 3) {
+          fail(`adding an unsaved path changed the unit count to ${added.units} — a path nobody answered for is not a reading, and \`khor devices\` prints no sentence for it`);
+        }
         await page.locator("[data-machine-card] [data-watch-save]").click();
         const saved = await until(5_000, async () => watchSaves.length > sent0);
-        const after = await page.evaluate(() => ({
-          drafts: [...document.querySelectorAll("[data-machine-card] [data-watch-draft]")].map((d) => d.dataset.watchDraft),
-          saveDisabled: document.querySelector("[data-machine-card] [data-watch-save]")?.disabled ?? null,
-          error: document.querySelector("[data-machine-card] [data-watch-error]")?.textContent ?? null,
-        }));
         if (!saved) fail("pressing 保存 sent nothing to set_watch");
         else {
           const call = watchSaves[watchSaves.length - 1];
           if (call.machine !== "peer" || JSON.stringify(call.paths) !== JSON.stringify(["/data/models", "/nope", "/proc/1", "/scratch/run7"])) {
             fail(`the save sent ${JSON.stringify(call)} — the whole list, for the peer, was owed`);
           }
-          await until(3_000, async () => (await page.locator("[data-machine-card] [data-watch-save]").isDisabled()));
+          const rested = await until(6_000, async () => {
+            const now = await rowsOf();
+            return now.saveDisabled === true && now.rows.join(",") === "/data/models:on,/nope:missing,/proc/1:unlisted,/scratch/run7:asked";
+          });
+          const after = await rowsOf();
+          if (!rested) fail(`after a tidy save the rows read ${JSON.stringify(after.rows)} with the save ${after.saveDisabled ? "at rest" : "live"} — the new path was to become a saved, unanswered row and the save to rest`);
+          if (after.units !== 3) fail(`a saved but unanswered path counts as a unit (${after.units}) — the terminal prints nothing for it yet`);
           if (after.error) fail(`a tidy save printed a refusal: ${after.error}`);
         }
         //   A relative path: the node's sentence, on the button and under
@@ -3982,13 +4021,13 @@ try {
           error: document.querySelector("[data-machine-card] [data-watch-error]")?.textContent ?? "",
           word: document.querySelector("[data-machine-card] [data-watch-save]")?.textContent.trim() ?? "",
           failed: document.querySelector("[data-machine-card] [data-watch-save]")?.dataset.failed ?? null,
-          drafts: [...document.querySelectorAll("[data-machine-card] [data-watch-draft]")].map((d) => d.dataset.watchDraft),
+          rows: [...document.querySelectorAll('[data-machine-card] [data-parts="watch"] [data-watch-row]')].map((r) => `${r.dataset.watchRow}${r.dataset.pending ? "+" + r.dataset.pending : ""}`),
         }));
         if (!refused || !bad.error.includes("models")) fail(`a relative path was not refused in the node's sentence (${JSON.stringify(bad)})`);
         if (bad.failed !== "true" || bad.word === (await page.evaluate(() => document.querySelector("[data-machine-card] [data-watch-add]")?.textContent.trim()))) {
           fail(`the refused save does not wear the failure word on the button pressed (${JSON.stringify(bad)})`);
         }
-        if (!bad.drafts.includes("models")) fail("the refused entry vanished from the draft — the person cannot fix what they cannot see");
+        if (!bad.rows.includes("models+add")) fail(`the refused entry vanished from the list (${JSON.stringify(bad.rows)}) — the person cannot fix what they cannot see`);
         console.log(`watch editor: ${drawer.rows.length} rows [${shapes}], save sent ${JSON.stringify(watchSaves[watchSaves.length - 2]?.paths)}, refusal 「${bad.error}」`);
       }
     }
@@ -4238,6 +4277,16 @@ try {
         const med = band.querySelector(`[data-day-median="${key}"]`);
         const frame = band.querySelector(`[data-day-trend-frame="${key}"]`);
         const label = band.querySelector(`[data-day-peak-label="${key}"]`);
+        //   The bar's halo: the element painted just before the bar, a
+        //   line on the same y in the paper's ink and wider than the bar
+        //   — what keeps the bar readable where the bundle is one solid
+        //   line (磁盘 at 84.2 all day). Read as structure because the
+        //   bar and the bundle share one colour there, and no pixel
+        //   probe can tell a bar on a line from the line.
+        const under = med?.previousElementSibling ?? null;
+        const haloed = !!under && under.tagName === "line" && under.classList.contains("halo") &&
+          under.getAttribute("y1") === med.getAttribute("y1") &&
+          Number(under.getAttribute("stroke-width")) > Number(med.getAttribute("stroke-width"));
         //   Boxes in the drawing's own units (the viewBox is 1:1 with
         //   pixels); the bar is a line, so its box is grown by half
         //   its halo stroke, and the outline by half of its.
@@ -4260,6 +4309,7 @@ try {
           frameAfterHairs: hairs && frame ? order(frame) > order(hairs) : null,
           fill: getComputedStyle(box).fill,
           framed: !!frame,
+          haloed,
           boxH: Number(box.getAttribute("height")),
           labelOnBar: hit(labelBox, barBox),
           labelOnFrame: hit(labelBox, frameBox),
@@ -4291,6 +4341,9 @@ try {
         const e = expect[k];
         if (Math.abs(m.q1 - e.q1) > 0.06 || Math.abs(m.med - e.med) > 0.06 || Math.abs(m.q3 - e.q3) > 0.06) {
           fail(`the ${k} axis's box says ${m.q1}/${m.med}/${m.q3} where the fixture's buckets give ${e.q1.toFixed(1)}/${e.med.toFixed(1)}/${e.q3.toFixed(1)}`);
+        }
+        if (!m.haloed) {
+          fail(`the ${k} axis's median bar has no paper halo under it — on a bundle that is one line all day the bar is invisible without one`);
         }
         if (m.medY === null || m.medY < m.top - 0.6 || m.medY > m.bottom + 0.6) {
           fail(`the ${k} axis's median bar (y=${m.medY}) is outside its box (${m.top}–${m.bottom})`);
