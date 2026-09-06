@@ -37,6 +37,45 @@
 //! sk-key with a sentence that blames the key. Verified 2026-09-02
 //! against the docs and new-api's source (`router/api-router.go`,
 //! `controller/token.go`, `middleware/auth.go`).
+//!
+//! # Where new-api's shapes come from, and how far that goes
+//!
+//! **Every `file.go:NN` below is `QuantumNous/new-api` at
+//! `0c76e4dae77a279e015329b7478e6f02d6b62edd`** (its default branch on
+//! 2026-09-06T14:49:02Z), read on 2026-09-07 over `gh api
+//! repos/QuantumNous/new-api/contents/<path>` — remotely, nothing
+//! cloned. **The revision is the anchor**: a bare line number rots
+//! silently against a moving branch, and the reader of a rotted one
+//! does not get an error, they get a confident pointer to the wrong
+//! line.
+//!
+//! ⚠️ **Source, not a capture. This shape has never been checked
+//! against a running gateway.** Source says what the project *means* to
+//! answer; a real site may run an older build, or a fork. So every
+//! field here is read with `Option` / defaults, and a khor that meets a
+//! disagreeing gateway loses a figure rather than a reading.
+//!
+//! ⚠️ **The project's own OpenAPI document contradicts its code, in
+//! two places**, and both would break an implementation written from
+//! it: `docs/openapi/api.json` gives `/api/log/token` a `key` query
+//! parameter and calls it unauthenticated, while the route is behind
+//! `middleware.TokenAuthReadOnly` and reads the `Authorization` header
+//! only (`router/api-router.go:340`, `middleware/auth.go:288-305`; the
+//! `c.Query("key")` fallback lives in the *other* middleware,
+//! `auth.go:390`). **The code is what runs.**
+//!
+//! # What reading it bought, and why no gate could have
+//!
+//! Two of the shapes below are traps that **cannot go red**:
+//! `expires_at` carries a sentinel with two spellings (`-1` in the
+//! table, rewritten to `0` in the handler), and `model_limits` keeps
+//! its old contents after the limit is switched off. Neither errors,
+//! neither draws a blank — **one paints a real-looking date, the other
+//! a list of real model names.** A gate can only compare what is drawn
+//! against what was routed, and a fixture written by the same person
+//! who misread the source carries the misreading into both halves.
+//! What caught these was reading the source; what keeps them caught is
+//! the citations, which is why they are line-precise and pinned.
 
 use std::path::PathBuf;
 use std::time::Duration;

@@ -1574,7 +1574,10 @@ pub struct AccountReading {
     /// purpose: neither puts a date on a screen.
     ///
     /// ⚠️ **The sentinel is resolved before this field, and it has two
-    /// spellings.** A new-api token stores `-1` for 「never expired」
+    /// spellings.** (Every `file.go:NN` in this struct is new-api at
+    /// the revision `khor_node::accounts`'s head pins — a line number
+    /// with no revision behind it points confidently at the wrong
+    /// line the moment that branch moves.) A new-api token stores `-1` for 「never expired」
     /// (`model/token.go:22`) while the endpoint rewrites that to `0`
     /// before answering (`controller/token.go:256-259`) — **two
     /// different numbers for one meaning, with a rewrite between them**.
