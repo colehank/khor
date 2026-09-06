@@ -5,7 +5,7 @@ import { fetchLoad } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
-import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
+import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cli, gui } from "@/gen/catalog";
@@ -15,7 +15,6 @@ import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { gaugeColor } from "@/lib/vitals";
-import { YIELD_MS } from "@/lib/tempo";
 import { CopyId } from "@/views/DetailPane";
 import { ago, hopWord, lasting } from "@/words";
 
@@ -41,7 +40,7 @@ export function MachineCard({
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
-  onOpenTerm,
+  onNewSession,
   onBrowseFiles,
   onBorrowWeb,
 }: {
@@ -53,8 +52,10 @@ export function MachineCard({
   hooksFailed: boolean;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
-  /** 开会话 — rejects with the refusal, which lands on the button. */
-  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  /** 开会话 — the sessions pane's own wizard, with this machine already
+      picked (2026-09-06:「会话是对应会话页的新建 session」). Opening a
+      dialog cannot fail, so nothing comes back. */
+  onNewSession: (row: DeviceRow) => void;
   onBrowseFiles: (row: DeviceRow) => void;
   /** 借网 — this machine's network, opened from where you stand
       (docs/NET.md 借网). Local navigation, so it cannot fail. */
@@ -114,7 +115,7 @@ export function MachineCard({
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
           onUninstallHooks={onUninstallHooks}
-          onOpenTerm={onOpenTerm}
+          onNewSession={onNewSession}
           onBrowseFiles={onBrowseFiles}
           onBorrowWeb={onBorrowWeb}
         />
@@ -132,7 +133,7 @@ function Body({
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
-  onOpenTerm,
+  onNewSession,
   onBrowseFiles,
   onBorrowWeb,
 }: {
@@ -141,7 +142,7 @@ function Body({
   hooksFailed: boolean;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
-  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onNewSession: (row: DeviceRow) => void;
   onBrowseFiles: (row: DeviceRow) => void;
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
@@ -152,7 +153,7 @@ function Body({
           <div className="flex flex-col gap-row">
             <Head
               row={row}
-              onOpenTerm={onOpenTerm}
+              onNewSession={onNewSession}
               onBrowseFiles={onBrowseFiles}
               onBorrowWeb={onBorrowWeb}
             />
@@ -211,12 +212,12 @@ function Body({
  */
 function Head({
   row,
-  onOpenTerm,
+  onNewSession,
   onBrowseFiles,
   onBorrowWeb,
 }: {
   row: DeviceRow;
-  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onNewSession: (row: DeviceRow) => void;
   onBrowseFiles: (row: DeviceRow) => void;
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
@@ -304,7 +305,7 @@ function Head({
         )}
         <Verbs
           row={row}
-          onOpenTerm={onOpenTerm}
+          onNewSession={onNewSession}
           onBrowseFiles={onBrowseFiles}
           onBorrowWeb={onBorrowWeb}
         />
@@ -326,86 +327,64 @@ function Head({
  * button that fetched a visible string was a control with nothing left
  * to do.
  *
- * 开会话 is the one that can fail — the far machine can be away — and
- * the refusal lands on the button in the failure colour, the pin's
- * rule, then yields the offer back after a beat. While the call is out
- * the button is disabled rather than reworded: a second press would
- * open a second session, and "pressed twice, got two" is the kind of
- * surprise a disable is for.
+ * **Icons, and the rail's own three** (2026-09-06:「开会话、看文件、借网,
+ * 用侧边栏 icon 替代。点击后进入对应的侧边栏内容」). Each verb lands on
+ * one landing — sessions, files, browser — and the glyph the rail wears
+ * for that landing is the one word for it this app already has; a
+ * second vocabulary for the same three places is what the word buttons
+ * were. The word survives as the name a screen reader hears and a
+ * tooltip shows, so nothing is lost to somebody who cannot read a
+ * glyph, and the catalog keeps owning it.
  *
- * **The finger floor is worn here, not fixed in `ui/button.tsx`.** All
- * three are `size="sm"`, which is 24 tall, and this is the screen's
- * main row of actions. Raising the floor inside the `sm` variant would
- * have looked like the smaller edit and been the larger one: `sm` is a
- * *look* for controls that sit inline beside text (the `--ctl-*`
- * family), and tokens.css says in as many words that the touch floor is
- * not a fourth `--ctl-*`. The mechanism is worth knowing before copying
- * it: `min-height` beats `height`, so a caller-side `min-h-touch` lands
- * even though `cn()` cannot take `h-ctl-sm` off (tailwind-merge does not
- * read `ctl-sm` as a height — `ui/button.tsx` has the scar).
+ * **开会话 opens the sessions pane's wizard, with this machine picked**
+ * — it used to open a bare shell over there directly, and could fail
+ * (the far machine away), so it wore a failure word and a disable.
+ * Opening a dialog cannot fail; the refusal, if one comes, lands in the
+ * wizard where the four answers are, which is where a person can
+ * change one. The other two are local navigation and never could fail.
+ *
+ * **The finger floor is worn here, not fixed in `ui/button.tsx`**: an
+ * `icon` button is `--ctl-*` sized, and `min-h-touch min-w-touch` on
+ * the caller is how every icon button on this face reaches the floor
+ * (the rail's, the pane bar's). `min-height` beats `height`, which is
+ * why it lands even though `cn()` cannot take the size class off
+ * (`ui/button.tsx` has the scar).
  */
 function Verbs({
   row,
-  onOpenTerm,
+  onNewSession,
   onBrowseFiles,
   onBorrowWeb,
 }: {
   row: DeviceRow;
-  onOpenTerm: (row: DeviceRow) => Promise<void>;
+  onNewSession: (row: DeviceRow) => void;
   onBrowseFiles: (row: DeviceRow) => void;
   onBorrowWeb: (row: DeviceRow) => void;
 }) {
-  const [opening, setOpening] = useState(false);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (!failed) return;
-    const t = window.setTimeout(() => setFailed(false), YIELD_MS);
-    return () => window.clearTimeout(t);
-  }, [failed]);
+  const verbs = [
+    { key: "new-session-on", word: gui.open_term_on, Icon: IconSessions, go: onNewSession },
+    { key: "browse-files", word: gui.browse_files, Icon: IconFiles, go: onBrowseFiles },
+    { key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb },
+  ] as const;
   return (
     <div data-machine-verbs className="flex flex-wrap items-center justify-end gap-in">
-      <Button
-        variant="outline"
-        size="sm"
-        data-open-term
-        data-failed={failed}
-        disabled={opening}
-        className="min-h-touch data-[failed=true]:text-state-failed"
-        onClick={() => {
-          setOpening(true);
-          onOpenTerm(row).then(
-            () => setOpening(false),
-            () => {
-              setOpening(false);
-              setFailed(true);
-            },
-          );
-        }}
-      >
-        {failed ? gui.open_term_on_failed : gui.open_term_on}
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        data-browse-files
-        className="min-h-touch"
-        onClick={() => onBrowseFiles(row)}
-      >
-        {gui.browse_files}
-      </Button>
-      {/* Outline like its two neighbours (动作排语法批): the verb row is
-          this page's "what you can do here" list, three peer verbs in
-          one dress — bare text among outlined buttons reads as a lower
-          rank, or as a link. */}
-      <Button
-        variant="outline"
-        size="sm"
-        data-borrow-web
-        className="min-h-touch"
-        onClick={() => onBorrowWeb(row)}
-      >
-        {gui.borrow_web}
-      </Button>
+      {verbs.map(({ key, word, Icon, go }) => (
+        <Tooltip key={key}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={word}
+              data-verb={key}
+              className="min-h-touch min-w-touch"
+              onClick={() => go(row)}
+            >
+              <Icon />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{word}</TooltipContent>
+        </Tooltip>
+      ))}
     </div>
   );
 }

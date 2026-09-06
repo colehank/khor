@@ -1693,19 +1693,18 @@ forget-machine = "删除"
 forget-machine-confirm = "全网都不再认它,它也不再看得见网"
 # The machine card's verbs, each the GUI face of a call that machine
 # already answers for the CLI (docs/KHOR.md — the faces are equivalent
-# because they are one call): 开终端 is `open --on`, 文件 is the files
-# landing with this machine picked. The failure word rides the button
-# that was pressed, the pin's rule; the files jump is a local
-# navigation and cannot fail, so it carries none.
-# **Verbs, not places** (2026-09-03「终端改名为 session 或对话」): what
-# khor opens on a machine is a session, and calling it 终端 named the
-# window it happens to appear in. The words stay one step longer than
-# the landings they lead to (会话 / 文件) because the catalog refuses two
-# keys that spell the same string — and the refusal is right here: a
-# button that reads exactly like a rail tab is a button that looks like
-# it goes somewhere rather than does something.
+# because they are one call): 开会话 opens the sessions pane's wizard with
+# this machine picked, 文件 is the files landing with this machine
+# picked. **Since 2026-09-06 the three are icons** — the rail's own three
+# glyphs, one per landing each verb leads to (「用侧边栏 icon 替代」) —
+# and these words are what the icons are *called*: the accessible name
+# and the tooltip. So they are still verbs, not places (2026-09-03
+# 「终端改名为 session 或对话」: what khor opens on a machine is a
+# session, and calling it 终端 named the window it happens to appear in).
+# **`open-term-on-failed` 撤掉了,没有替代键**(2026-09-06):开会话不再直接
+# 在那台机器上起 shell,而是打开新建会话对话框——打开一个对话框失败不了;
+# 那台机器不在的拒句落在对话框里,四个答案都在那儿,人改得了。
 open-term-on = "开会话"
-open-term-on-failed = "开不了"
 browse-files = "看文件"
 # The third verb, the one the browser landing is for (docs/NET.md 借网):
 # this machine's network, borrowed from where you are standing.

@@ -5,7 +5,6 @@ import {
   fetchHooks,
   fetchSessions,
   fetchQuota,
-  openTermOn,
   installHooks,
   closeSession,
   forgetDevice,
@@ -421,6 +420,16 @@ export default function App() {
   const [words, setWords] = useState<Record<Landing, string[]>>(storedWordsAll);
   const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
   const [sheet, setSheet] = useState<Sheet>(null);
+  /** Which machine the wizard opens with picked — the machine card's
+      开会话 names one (2026-09-06); the sessions pane's "+" names none,
+      which the wizard reads as this machine. Set together with the
+      sheet and never on its own, so a card's pick cannot outlive the
+      opening it was made for. */
+  const [newSessionOn, setNewSessionOn] = useState("");
+  const openNewSession = useCallback((machine = "") => {
+    setNewSessionOn(machine);
+    setSheet("new");
+  }, []);
   // Settings sit behind the rail's last glyph, one level down and not on
   // any first screen (docs/UX.md 设置: 升成了也藏深). Its own state
   // rather than another `Sheet`: those three are the "+" menu's, and
@@ -884,7 +893,7 @@ export default function App() {
   const sessionActions: PaneAction[] = [
     // First, because opening a session is the pane's first act
     // (会话身份批B: 建 session 是第一动作).
-    { key: "new", label: gui.new_session, onSelect: () => setSheet("new") },
+    { key: "new", label: gui.new_session, onSelect: () => openNewSession() },
     { key: "tell", label: gui.tell_machine, onSelect: () => setSheet("tell") },
   ];
   const deviceActions: PaneAction[] = [
@@ -1229,7 +1238,7 @@ export default function App() {
       narrow={narrow}
       days={selectedRow ? days[selectedRow.id] : undefined}
       onBack={() => setScreen("list")}
-      onNew={() => setSheet("new")}
+      onNew={() => openNewSession()}
       placeWord={placeWord}
       // The way to the other open tabs on the face that has no strip:
       // the count is the button (`TabCount`), and pressing it swaps
@@ -1253,7 +1262,7 @@ export default function App() {
             setLanding("devices");
             onSelectDevice(d);
           }}
-          onNew={() => setSheet("new")}
+          onNew={() => openNewSession()}
         />
       }
     />
@@ -1268,17 +1277,12 @@ export default function App() {
       hooksFailed={hooksFailed}
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
-      // The fresh terminal is what the person came for: land on its row
-      // the way the wizard does (`NewSessionDialog.onOpened`), trusting
-      // the same guard that keeps a not-yet-polled selection alive. A
-      // refusal is rethrown so the card's button can wear it.
-      onOpenTerm={async (row) => {
-        const id = await openTermOn(row.name);
-        setMark(false);
-        setLanding("sessions");
-        sessionTabs.open(id);
-        setScreen("detail");
-      }}
+      // The sessions pane's own wizard, opened with this machine picked
+      // (2026-09-06:「会话是对应会话页的新建 session」). It used to open
+      // a bare shell over there in one press; the wizard is where the
+      // four answers are, and the landing the fresh row is on is where
+      // `onOpened` takes the person.
+      onNewSession={(row) => openNewSession(row.name)}
       // This machine's disk, in a **new** tab. Not the open one: the
       // request came from somewhere else entirely, so whatever that tab
       // was showing is not part of it — replacing it would throw away a
@@ -1307,8 +1311,18 @@ export default function App() {
       <NewSessionDialog
         open={sheet === "new"}
         onOpenChange={(o) => setSheet(o ? "new" : null)}
-        // The freshly-opened session is what the person came to see.
-        onOpened={(id) => sessionTabs.open(id)}
+        machine={newSessionOn}
+        // The freshly-opened session is what the person came to see —
+        // on the sessions landing, on its row, whichever pane the
+        // wizard was opened from (the machine card opens it too, and
+        // its person wants the same thing). The selection outlives the
+        // poll that has not listed the row yet, by the guard above.
+        onOpened={(id) => {
+          setMark(false);
+          setLanding("sessions");
+          sessionTabs.open(id);
+          setScreen("detail");
+        }}
       />
       <TellDialog
         open={sheet === "tell"}

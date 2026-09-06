@@ -83,11 +83,16 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   onOpened,
+  machine: picked = "",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The freshly-minted session id — the caller may select its row. */
   onOpened: (id: string) => void;
+  /** 在哪台, answered before the dialog opens — the machine card's
+      开会话 names the card's machine (2026-09-06). Empty is the "+"
+      menu's opening and means this machine, as it always has. */
+  machine?: string;
 }) {
   /** 在哪台 — which machine the session is born on. Every paired
       machine is offered; the row is drawn only when there is a choice
@@ -135,7 +140,9 @@ export function NewSessionDialog({
   useEffect(() => {
     if (!open) return;
     setMachines([]);
-    setMachine("");
+    // The card's pick, or this machine. Read at opening: the prop only
+    // ever changes together with `open` (`App.openNewSession`).
+    setMachine(picked);
     setDir("~");
     setPlaces([]);
     setTitle("");
@@ -180,7 +187,7 @@ export function NewSessionDialog({
     return () => {
       live = false;
     };
-  }, [open]);
+  }, [open, picked]);
 
   // **The places follow the machine.** 常去的地方 are read from where
   // the session is about to be born, and a machine change resets the
