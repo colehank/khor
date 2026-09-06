@@ -787,6 +787,38 @@ pub struct Volume {
     pub fill: Fill,
 }
 
+/// One directory a person asked a machine to keep an eye on, and the
+/// volume it sits on — a row of `Response::Watched` (2026-09-06:「用户可能
+/// 有自己想关注的磁盘…增删目录,而后更新关注磁盘」). The list of paths is
+/// a field on the machine's row in the device table (`watch`); the
+/// machine itself answers with these, because only it can say which of
+/// its volumes a path is on.
+///
+/// **Three shapes, kept apart on the wire.** The directory is there and
+/// on a volume khor lists (`volume: Some`); the directory is not there
+/// (`missing`, and no volume — a typo, or a disk that was unplugged);
+/// the directory is there but on a filesystem khor does not list
+/// (`missing: false`, `volume: None` — a pseudo mount like `/proc`, or
+/// one `khor_node::vitals::keeps_volume` refuses). The third is the one
+/// that used to become its neighbour: a path on an unlisted filesystem
+/// has the root as its longest listed prefix, and reporting the root's
+/// numbers under that path is a reading about the wrong disk.
+///
+/// **Not a field on [`Vitals`].** A sixth tail-append there would cost
+/// an older peer the whole reading (`khor_node::proto`'s head measures
+/// why); a new op costs it nothing — it never asks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct WatchedDir {
+    /// The path as the person wrote it, trimmed — the row's identity,
+    /// and what the sentence on screen names.
+    pub path: String,
+    /// Nothing at that path on that machine.
+    pub missing: bool,
+    /// The volume holding it, with the volume's own fill — the same
+    /// numbers the volume's own row prints, so the two cannot disagree.
+    pub volume: Option<Volume>,
+}
+
 /// One row of a machine's process top: what is eating it right now
 /// (`khor_node::top` takes the reading; the machine card and `khor top`
 /// print it).

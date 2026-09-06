@@ -1701,6 +1701,34 @@ impl Node {
         Ok(())
     }
 
+    /// Sets the directories a machine is asked to keep an eye on, for
+    /// everyone (2026-09-06 关注目录) — the list rides that machine's row
+    /// in the device table (`DeviceDoc::set_watch`), and the machine
+    /// itself answers `Request::Watched` with what each is on. Refuses
+    /// here, at the one write entry, so the CLI and the face say the
+    /// same sentence (`tidy_watch`). Answers the list as kept: trimmed,
+    /// deduplicated, in the order given.
+    pub fn set_watch(&self, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
+        let list = tidy_watch(paths)?;
+        let (_, home) = self.resolve(machine)?;
+        let loaded = self.devices_loaded()?;
+        loaded.doc.set_watch(&home.hex(), &list)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(list)
+    }
+
+    /// The directories a machine's row asks it to watch — the setting,
+    /// not the readings. Empty for a machine nobody asked, and for one
+    /// the table does not hold.
+    pub fn watch_of(&self, device_id: &str) -> Vec<String> {
+        self.devices_loaded()
+            .ok()
+            .and_then(|l| l.doc.get(device_id))
+            .map(|d| d.watch)
+            .unwrap_or_default()
+    }
+
     /// Shows a machine the door, for the whole network
     /// (`DeviceDoc::set_gone` has why leaving must travel the way
     /// joining does, and why it is a tombstone rather than a deletion).
@@ -1926,6 +1954,46 @@ impl Node {
         let text = fs::read_to_string(self.vitals_dir().join(device_id)).ok()?;
         let report: VitalsReport = serde_json::from_str(&text).ok()?;
         Some((report.vitals, now_ms().saturating_sub(report.at_ms)))
+    }
+
+    // ── what machines say about their watched directories ─────
+
+    fn watched_dir(&self) -> PathBuf {
+        self.root.join(".khor").join("watched")
+    }
+
+    /// Remembers what a peer answered about its watch list, stamped
+    /// with now. **Its own record, not a field of the vitals one**: the
+    /// two requests fail independently, and one shared timestamp would
+    /// make a stale list look as fresh as the readings beside it
+    /// (`link.rs`'s visit has the same rule for rows and vitals).
+    pub(crate) fn cache_peer_watched(
+        &self,
+        device_id: &str,
+        rows: &[khor_core::WatchedDir],
+    ) -> Result<(), String> {
+        if device_id.len() != 64 || !device_id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
+        }
+        fs::create_dir_all(self.watched_dir()).map_err(msg::cant_make_vitals_dir)?;
+        let report = WatchedReport { at_ms: now_ms(), rows: rows.to_vec() };
+        link::write_private(
+            &self.watched_dir().join(device_id),
+            &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
+        )
+    }
+
+    /// A machine's watched directories and how old the answer is —
+    /// sampled now for this machine, read from the last visit for every
+    /// other. `None` for a peer that never answered (an older khor
+    /// refuses the op, and that reads as no rows, never as empty ones).
+    pub fn watched_of(&self, device_id: &str) -> Option<(Vec<khor_core::WatchedDir>, u64)> {
+        if device_id == self.device_str() {
+            return Some((vitals::watched(&self.watch_of(device_id)), 0));
+        }
+        let text = fs::read_to_string(self.watched_dir().join(device_id)).ok()?;
+        let report: WatchedReport = serde_json::from_str(&text).ok()?;
+        Some((report.rows, now_ms().saturating_sub(report.at_ms)))
     }
 
     // ── what machines have spent (usage) ──────────────────────
@@ -3238,6 +3306,60 @@ struct PeerReport {
 struct VitalsReport {
     at_ms: u64,
     vitals: khor_core::Vitals,
+}
+
+/// One device's last answer about its watched directories, as cached
+/// on disk (`cache_peer_watched`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct WatchedReport {
+    at_ms: u64,
+    rows: Vec<khor_core::WatchedDir>,
+}
+
+/// The watch list as it may be kept (2026-09-06 关注目录): every path
+/// absolute, trimmed, without `..`, without a trailing slash, and no
+/// path twice — refused by name otherwise, in the catalog's words, at
+/// this one place so that `khor watch` and the face's editor say the
+/// same thing. Order is the order given.
+pub fn tidy_watch(paths: &[String]) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in paths {
+        let p = raw.trim();
+        if p.is_empty() {
+            return Err(msg::WATCH_PATH_EMPTY.into());
+        }
+        if !p.starts_with('/') {
+            return Err(msg::watch_path_relative(p));
+        }
+        if Path::new(p).components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(msg::watch_path_dotdot(p));
+        }
+        let p = if p.len() > 1 { p.trim_end_matches('/') } else { p };
+        if out.iter().any(|q| q == p) {
+            return Err(msg::watch_path_twice(p));
+        }
+        out.push(p.to_owned());
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::tidy_watch;
+
+    /// Every refusal by name, and the one tidy that is not a refusal —
+    /// so `khor watch` and the card's editor cannot differ on what a
+    /// list may hold. The positive case runs first: a validator that
+    /// refused everything would pass the four negatives alone.
+    #[test]
+    fn a_watch_list_is_kept_tidy_and_refused_by_name() {
+        let kept = tidy_watch(&[" /data/models/ ".into(), "/".into(), "/scratch".into()]).unwrap();
+        assert_eq!(kept, vec!["/data/models", "/", "/scratch"], "trimmed, and a trailing slash goes — but not the root's");
+        assert!(tidy_watch(&["models".into()]).unwrap_err().contains("绝对路径"));
+        assert!(tidy_watch(&["/data/../etc".into()]).unwrap_err().contains(".."));
+        assert!(tidy_watch(&["  ".into()]).unwrap_err().contains("不能是空的"));
+        assert!(tidy_watch(&["/data".into(), "/data/".into()]).unwrap_err().contains("两遍"));
+    }
 }
 
 /// One device's last day record, as cached on disk (`cache_peer_day`).

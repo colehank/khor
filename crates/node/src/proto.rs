@@ -173,6 +173,14 @@ pub enum Request {
     /// These words only ever go to a sponsor, and a machine that
     /// sponsors anything runs code that knows them.
     SatLs { sat: String, path: String },
+    /// The directories that machine's row asks it to watch, each with
+    /// the volume it is on (2026-09-06 关注目录). **A new op, not a sixth
+    /// field on `Vitals`**: the head of this file measures what a
+    /// tail-append costs an older peer (the whole reading), and an op it
+    /// never heard of costs it nothing — it answers `Refused`, and the
+    /// asker paints no rows. The list itself travels on the device
+    /// table; only the machine named can say which volume a path is on.
+    Watched,
     /// [`Request::FetchPath`], off a satellite: the sponsor stages the
     /// file down over scp on the first slice and serves the rest from
     /// the staging copy — one ssh per pull, not one per slice. Answers
@@ -306,6 +314,10 @@ pub enum Response {
     /// ([`Request::SatVitals`]; 离线轴 — a stale number must look
     /// stale).
     SatVitals { vitals: khor_core::Vitals, age_ms: u64 },
+    /// [`Request::Watched`]'s answer: one row per path on that machine's
+    /// `watch` list, in the list's order, each in one of the three
+    /// shapes `khor_core::WatchedDir` keeps apart.
+    Watched { rows: Vec<khor_core::WatchedDir> },
     /// [`Request::Days`]'s answer: the record exactly as the answering
     /// machine keeps it on disk (`Day::to_wire`), one encoding for the
     /// file and the wire. The receiver rolls it to its own now
@@ -419,6 +431,7 @@ mod tests {
             (Request::Places, &b"Places"[..]),
             (Request::Quotas, &b"Quotas"[..]),
             (Request::Load { top: 8, by: khor_core::TopBy::Busiest, desc: false }, &b"Load"[..]),
+            (Request::Watched, &b"Watched"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(
@@ -435,6 +448,36 @@ mod tests {
         let theirs = encode(&Request::Sessions).unwrap();
         assert!(matches!(decode::<Request>(&theirs), Ok(Request::Sessions)));
         assert!(matches!(decode::<OlderRequest>(&theirs), Ok(OlderRequest::Sessions)));
+    }
+
+    /// The watched answer crosses the wire in all three of its shapes —
+    /// a directory on a listed volume, a missing one, one on a
+    /// filesystem khor does not list — and comes back the same. The
+    /// third shape is the one that matters: `None` with `missing: false`
+    /// is what stops a path on `/proc` wearing the root's numbers, and a
+    /// decoder that flattened it to either neighbour would pass a test
+    /// that only sent the first two.
+    #[test]
+    fn a_watched_answer_keeps_its_three_shapes_on_the_wire() {
+        let rows = vec![
+            khor_core::WatchedDir {
+                path: "/data/models".into(),
+                missing: false,
+                volume: Some(khor_core::Volume {
+                    mount: "/data".into(),
+                    fill: khor_core::Fill { used: 40, total: 100 },
+                }),
+            },
+            khor_core::WatchedDir { path: "/nope".into(), missing: true, volume: None },
+            khor_core::WatchedDir { path: "/proc/1".into(), missing: false, volume: None },
+        ];
+        let bytes = encode(&Response::Watched { rows: rows.clone() }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::Watched { rows: back } => assert_eq!(back, rows),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+        let ask = encode(&Request::Watched).unwrap();
+        assert!(matches!(decode::<Request>(&ask), Ok(Request::Watched)));
     }
 
     /// The load answer crosses the wire with its gaps intact: a bucket

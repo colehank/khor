@@ -358,7 +358,7 @@ try {
     // hung.
     await page.route("**/devices", json([{
       id: "e".repeat(64), name: "gate", me: true, face: null, pinned: false,
-      vitals: null, hop: null, sponsor: null, seat: { left: 50, top: 50 },
+      vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 },
     }]));
     await page.route("**/hooks_state", json({ installed: false }));
     await page.route("**/quota", json({ quota: null, trouble: null }));

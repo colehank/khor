@@ -150,6 +150,15 @@ pub struct SourceTag {
     pub age_ms: u64,
 }
 
+/// A machine's watched directories and how old that answer is — the
+/// two axes `VitalsReading` keeps apart, for the rows of `Request::Watched`.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct WatchedReading {
+    pub rows: Vec<khor_core::WatchedDir>,
+    #[ts(type = "number")]
+    pub age_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct DeviceRow {
     pub id: String,
@@ -183,6 +192,16 @@ pub struct DeviceRow {
     /// road", this answers "whose road": a satellite has none of its
     /// own, so faces print 「经 <sponsor>」 in the road's place.
     pub sponsor: Option<String>,
+    /// The directories this machine is asked to keep an eye on — the
+    /// setting, as kept on its row in the device table (2026-09-06
+    /// 关注目录). What the editor on the card starts from.
+    pub watch: Vec<String>,
+    /// What the machine last said about them, with its own age — a
+    /// record apart from `vitals` because the two requests fail apart
+    /// (`Node::cache_peer_watched`). `None` when it never answered: an
+    /// older khor refuses the op, and no rows is not the same fact as
+    /// no directories.
+    pub watched: Option<WatchedReading>,
     /// Where this machine sits when the network is drawn as a mandala
     /// (`khor_core::map`).
     ///
@@ -713,6 +732,8 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
             vitals: n
                 .vitals_of(&d.id)
                 .map(|(vitals, age_ms)| VitalsReading::of(vitals, age_ms)),
+            watched: n.watched_of(&d.id).map(|(rows, age_ms)| WatchedReading { rows, age_ms }),
+            watch: d.watch,
             id: d.id,
             name: d.name,
         })
@@ -766,6 +787,14 @@ pub fn pin_session(root: &Path, id: &str, on: bool) -> Result<(), String> {
 /// Pins or unpins a machine — the call `khor pin -m <machine>` makes.
 pub fn pin_device(root: &Path, machine: &str, on: bool) -> Result<(), String> {
     open(root)?.pin_device(machine, on)
+}
+
+/// Sets a machine's watch list — the call `khor watch <machine> …`
+/// makes, from the card's editor. The refusals (a relative path, a
+/// `..`, a duplicate) are the node's and come back as its sentence;
+/// answers the list as kept, which the editor repaints from.
+pub fn set_watch(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
+    open(root)?.set_watch(machine, paths)
 }
 
 /// Shows a machine the door — the call `khor forget <machine>` makes,

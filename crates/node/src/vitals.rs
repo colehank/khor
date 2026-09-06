@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use khor_core::{Fill, Vitals, Volume};
+use khor_core::{Fill, Vitals, Volume, WatchedDir};
 
 pub(crate) mod gpu;
 
@@ -78,20 +78,13 @@ static SAMPLER: OnceLock<Mutex<Sampler>> = OnceLock::new();
 /// `home` is khor's root, and it decides only which filesystem gets
 /// reported — see [`disk_under`].
 pub fn sample(home: &Path) -> Vitals {
-    let mut s = SAMPLER
-        .get_or_init(|| {
-            let mut sys = sysinfo::System::new();
-            // The first reading of the pair. Nothing is read out of it;
-            // it exists so the reading below has something to subtract.
-            sys.refresh_cpu_usage();
-            std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-            Mutex::new(Sampler { sys, disks: sysinfo::Disks::new_with_refreshed_list() })
-        })
-        // A panic in another sampler left the numbers, not the lock's
-        // invariant, in doubt: the worst a poisoned `Sampler` holds is a
-        // stale previous reading, which the refresh below replaces.
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    // The first reading of the pair is taken when the sampler is made
+    // (`sampler`): nothing is read out of it, it exists so the reading
+    // below has something to subtract. A panic in another sampler left
+    // the numbers, not the lock's invariant, in doubt: the worst a
+    // poisoned `Sampler` holds is a stale previous reading, which the
+    // refresh below replaces.
+    let mut s = sampler();
 
     s.sys.refresh_cpu_usage();
     s.sys.refresh_memory();
@@ -125,6 +118,74 @@ pub fn sample(home: &Path) -> Vitals {
         volumes,
         uptime_s: sysinfo::System::uptime(),
     }
+}
+
+/// The rows for a machine's watch list (2026-09-06 关注目录): each path
+/// as given, and the listed volume it sits on. **Blocking**, like
+/// [`sample`], and behind the same lock for the same disk list.
+///
+/// Which volume: the mounted disk whose mount point is the longest
+/// prefix of the canonical path — [`disk_under`]'s rule — **and whose
+/// device is the directory's own device.** The second half is what
+/// keeps a path on a filesystem sysinfo does not list (a pseudo mount,
+/// one `keeps_volume` refuses) from wearing the root's numbers: its
+/// longest listed prefix is `/`, and the root's fill under `/proc/1`
+/// is a reading about the wrong disk. Such a path comes back as the
+/// third shape (`missing: false`, no volume) and the faces say so.
+pub fn watched(paths: &[String]) -> Vec<WatchedDir> {
+    let mut s = sampler();
+    s.disks.refresh(true);
+    paths.iter().map(|p| watched_one(&s.disks, p)).collect()
+}
+
+fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
+    let p = Path::new(path);
+    let row = |missing: bool, volume: Option<Volume>| WatchedDir { path: path.to_owned(), missing, volume };
+    let Ok(meta) = std::fs::metadata(p) else {
+        return row(true, None);
+    };
+    let real = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let Some(d) = disks
+        .list()
+        .iter()
+        .filter(|d| real.starts_with(d.mount_point()))
+        .max_by_key(|d| d.mount_point().as_os_str().len())
+    else {
+        return row(false, None);
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(m) = std::fs::metadata(d.mount_point()) {
+            if m.dev() != meta.dev() {
+                return row(false, None);
+            }
+        }
+    }
+    let total = d.total_space();
+    if total == 0 {
+        return row(false, None);
+    }
+    row(
+        false,
+        Some(Volume {
+            mount: d.mount_point().to_string_lossy().into_owned(),
+            fill: Fill { used: total.saturating_sub(d.available_space()), total },
+        }),
+    )
+}
+
+/// The process-wide sampler, made on first use — see [`Sampler`].
+fn sampler() -> std::sync::MutexGuard<'static, Sampler> {
+    SAMPLER
+        .get_or_init(|| {
+            let mut sys = sysinfo::System::new();
+            sys.refresh_cpu_usage();
+            std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+            Mutex::new(Sampler { sys, disks: sysinfo::Disks::new_with_refreshed_list() })
+        })
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 /// The filesystem a path sits on: the mounted disk whose mount point is
@@ -307,6 +368,37 @@ mod tests {
         // Not a prefix of any mount point on any platform: mount points
         // are absolute paths, and this is not one.
         assert_eq!(disk_under(&disks, Path::new("khor-no-such-relative-path")), None);
+    }
+
+    /// A watched directory that is there sits on a volume with a size;
+    /// one that is not there says so and names no volume. **The positive
+    /// half runs first**, `a_path_under_no_mount_point_reports_no_disk`'s
+    /// rule: an answer of 「missing」 for everything would pass the
+    /// negative half alone.
+    #[test]
+    fn a_watched_directory_names_its_volume_and_a_missing_one_says_so() {
+        let here = std::env::current_dir().unwrap().display().to_string();
+        let rows = watched(&[here.clone(), "/khor-no-such-dir-anywhere".into()]);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].path, here);
+        assert!(!rows[0].missing);
+        let vol = rows[0].volume.as_ref().expect("this directory is on a listed volume");
+        assert!(vol.fill.total > 0 && vol.fill.used <= vol.fill.total, "{vol:?}");
+        assert!(rows[1].missing && rows[1].volume.is_none(), "{:?}", rows[1]);
+    }
+
+    /// The third shape, on the one path every Mac has on a filesystem
+    /// sysinfo does not list: `/dev` is devfs. It exists, so it is not
+    /// missing; its longest listed prefix is `/`, so without the device
+    /// check it would come back wearing the root's numbers — which is
+    /// the reading this shape exists to refuse. Measured here only: a
+    /// Linux `/dev` is devtmpfs and may or may not be in the list.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_directory_on_an_unlisted_filesystem_names_no_volume_rather_than_the_root() {
+        let rows = watched(&["/dev".into()]);
+        assert!(!rows[0].missing, "/dev is there");
+        assert!(rows[0].volume.is_none(), "/dev came back on {:?} — the root's numbers under a pseudo mount", rows[0].volume);
     }
 
     /// The predicate keeps what a person means by 「硬盘」 and drops the

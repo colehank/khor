@@ -182,8 +182,13 @@ usage = """
   mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)
   version               本机装的是哪一版(网里各机器的版本看 devices)
   forget <机器>          把一台机器请出网:全网都不再认它,它也不再看得见网。
-                        要回来得重新配对(在还认它的那台上出票)"""
+                        要回来得重新配对(在还认它的那台上出票)
+  watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷(全网同一份,
+                        devices 里那台机器多印每个目录还剩多少);不给目录=清空"""
 this-machine = "(本机)"
+# `khor watch` 的回声:这台机器现在盯着的目录,一行一个;清空了就说清空了。
+watching = "{0} 盯着: {1}"
+watching-none = "{0} 没有盯着的目录"
 # Marks the option a machine is wearing, in a list of options. Without
 # it `khor face` prints a catalogue and answers "what am I" nowhere —
 # and the whole reason to run it with no arguments is that question.
@@ -359,6 +364,12 @@ updated-at = "更新于 {0}"
 # 一个卷一句(khor_core::Volume):磁盘不再只报 khor 家底那一块。名字的短写
 # (Data→/、其余取末段)是画法,CLI 与脸各自拼,bytes() 先例。
 vitals-vol = "{0} {1} / {2}"
+# 一条关注的目录一句(khor_core::WatchedDir,2026-09-06):三种形状三句话——在某个卷上、
+# 没有这个目录、在一个 khor 没列出的卷上。第三句不许并进第一句:那种路径的最长列出
+# 前缀是根盘,并进去就是拿根盘的数说另一块盘的事。数字是它所在那个卷自己的读数。
+vitals-watch = "{0} 在 {1},还剩 {2} / {3}"
+vitals-watch-missing = "{0} 没有这个目录"
+vitals-watch-unlisted = "{0} 不在任何列出的卷上"
 # The GPU memory column's head, and the word an older node's aggregate
 # reading wears under its dial: one fact, one word, both places.
 vitals-name-vram = "显存"
@@ -704,6 +715,16 @@ file-chip = "[文件 {0} {1}B]"
 unknown-body = "[这一版还读不出这条:{0}]"
 
 [msg]
+# ── the watch list (关注目录) ──
+# Refused at the one write entry (`Node::set_watch`), so the CLI and the
+# face say the same sentence. Absolute, because the list is read by the
+# machine named and a relative path is relative to nothing there; no
+# `..`, because a path that walks is a path that names two places.
+watch-path-relative = "关注的目录得是绝对路径: {0}"
+watch-path-dotdot = "关注的目录里不能有 ..: {0}"
+watch-path-empty = "关注的目录不能是空的"
+watch-path-twice = "同一个目录写了两遍: {0}"
+
 # ── cli ──
 runtime-wont-start = "起不了运行时: {0}"
 which-session = "不知道汇报给哪个 session:设 KHOR_SESSION 或用 --session"
@@ -1704,6 +1725,21 @@ forget-machine = "删除"
 # decision, not this screen's, so every other machine stops knowing it
 # too — and it stops seeing any of them.
 forget-machine-confirm = "全网都不再认它,它也不再看得见网"
+# The disk drawer's editor (2026-09-06:「磁盘点击后,可以有一个编辑,用户可以在
+# 这增删目录,而后更新关注磁盘」): a heading over the list, a verb per row,
+# one to add, one to save. **Directories, not volumes** — a person names
+# the place they work in and the machine answers which disk that is.
+# The save's failure word rides the button that was pressed, the pin's
+# rule; the sentence under it is the node's own (a relative path, a
+# `..`, a duplicate — `msg.watch-path-*`), the same one `khor watch`
+# prints. The input's name is `new-session-dir`'s 目录: it is a
+# directory both times, and the row's verb is `remove`'s 去掉: it is
+# the same act on the same kind of thing (the catalog refuses a second
+# key for one text, and here it is right to).
+watch-dirs = "关注的目录"
+watch-add = "加入"
+watch-save = "保存"
+watch-save-failed = "存不上"
 # The machine card's verbs, each the GUI face of a call that machine
 # already answers for the CLI (docs/KHOR.md — the faces are equivalent
 # because they are one call): 开会话 opens the sessions pane's wizard with

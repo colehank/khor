@@ -252,6 +252,8 @@ try {
       },
       hop: "relay",
       sponsor: null,
+      watch: [],
+      watched: null,
       // ring(2)'s other seat: opposite the peer, up top.
       seat: { left: 50, top: 16 },
     },
@@ -438,6 +440,21 @@ try {
       return r.fulfill({ contentType: "application/json", body: JSON.stringify(flipped) });
     }
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(dayNow()) });
+  });
+  // The watch editor's save (`set_watch`): answered the way the node
+  // would — the list as kept for a tidy one, and the node's own
+  // sentence (a relative path) as a refusal. What was sent is kept so
+  // the section can read it back: a save that answered without being
+  // asked would be a control with one arm.
+  const watchSaves = [];
+  await page.route("**/set_watch", (r) => {
+    const body = r.request().postDataJSON();
+    watchSaves.push(body);
+    const bad = (body.paths ?? []).find((p) => !String(p).startsWith("/"));
+    if (bad) {
+      return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`关注的目录得是绝对路径: ${bad}`) });
+    }
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(body.paths.map((p) => String(p).trim())) });
   });
   // The shell polls sessions, devices and hooks in one Promise.all —
   // one rejection drops the whole batch, so the third leg answers too.
@@ -3793,6 +3810,128 @@ try {
     }
   }
 
+  //     ── the disk drawer: the watched directories, and their editor
+  //
+  //     2026-09-06:「磁盘是有多个指标的,但用户可能有自己想关注的磁盘。写在
+  //     磁盘点击后,可以有一个编辑,用户可以在这增删目录,而后更新关注磁盘」.
+  //     Measured on the peer's card, whose fixture watches three
+  //     directories, one per shape:
+  //
+  //       - three rows under the volumes, each a unit (`khor devices`
+  //         prints one sentence per row — the smoke holds the count),
+  //         and the three sentences differ: a directory on a listed
+  //         volume, a missing one, one on a filesystem khor does not
+  //         list. The third must not wear the first's numbers — that is
+  //         the path on `/proc` reporting the root — so its number
+  //         column is a word, not a size;
+  //       - the editor lists the three, adding a fourth and saving
+  //         sends **the whole list** to `set_watch` for the peer, and
+  //         the draft repaints from the answer with the save at rest;
+  //       - a relative path is refused **by the node's sentence**, on
+  //         screen under the list, with the failure word on the button
+  //         that was pressed — one voice with `khor watch`.
+  {
+    await page.locator('[data-machine-card] [data-dial="disk"]').click();
+    await wait(400);
+    const drawer = await page.evaluate(() => {
+      const box = document.querySelector("[data-machine-card] [data-drawer-scroll]");
+      const parts = document.querySelector('[data-machine-card] [data-parts="disk"]');
+      if (!box || !parts || parts.hidden) return null;
+      const rows = [...box.querySelectorAll('[data-parts="watch"] [data-watch-row]')].map((r) => ({
+        path: r.dataset.watchRow,
+        shape: r.dataset.watchShape,
+        unit: r.querySelector('[data-vitals-unit="watch"]') !== null,
+        sentence: r.querySelector('[data-vitals-detail="watch"]')?.textContent.trim() ?? "",
+        num: r.querySelector("[data-part-num]")?.textContent.trim() ?? "",
+        bar: r.querySelector("[data-part-ink]") !== null,
+      }));
+      return {
+        rows,
+        vols: parts.querySelectorAll('[data-vitals-unit="vol"]').length,
+        editor: !!box.querySelector("[data-watch-editor]"),
+        drafts: [...box.querySelectorAll("[data-watch-draft]")].map((d) => d.dataset.watchDraft),
+        saveDisabled: box.querySelector("[data-watch-save]")?.disabled ?? null,
+        count: Number(document.querySelector("[data-machine-card] [data-drawer-count]")?.dataset.drawerCount),
+      };
+    });
+    if (!drawer) {
+      fail("probe dead: the disk drawer did not open, so nothing about the watched directories was measured");
+    } else {
+      const shapes = drawer.rows.map((r) => r.shape).join(",");
+      if (shapes !== "on,missing,unlisted") {
+        fail(`the disk drawer draws watched rows as [${shapes}] for a fixture watching one of each shape`);
+      }
+      if (drawer.rows.some((r) => !r.unit)) fail("a watched row is not a unit — `khor devices` prints one sentence per row and the counts would disagree");
+      const sentences = new Set(drawer.rows.map((r) => r.sentence));
+      if (sentences.size !== drawer.rows.length || drawer.rows.some((r) => !r.sentence)) {
+        fail(`the three watched rows do not say three different things: ${drawer.rows.map((r) => `「${r.sentence}」`).join(" ")}`);
+      }
+      const on = drawer.rows.find((r) => r.shape === "on");
+      const unlisted = drawer.rows.find((r) => r.shape === "unlisted");
+      if (on && !/\d/.test(on.num)) fail(`the row on a listed volume shows no size: 「${on.num}」`);
+      if (unlisted && (/\d/.test(unlisted.num) || unlisted.bar)) {
+        fail(`the row on an unlisted filesystem wears a size or a bar (「${unlisted.num}」, bar ${unlisted.bar}) — the root's numbers under /proc`);
+      }
+      //   The heading counts volumes and only volumes: a directory is
+      //   a place on one, not one more of them.
+      if (drawer.count !== drawer.vols) {
+        fail(`the drawer's heading counts ${drawer.count} for ${drawer.vols} volumes — the ${drawer.rows.length} watched rows are not volumes`);
+      }
+      if (!drawer.editor) fail("the disk drawer has no editor for the watched directories");
+      else if (drawer.drafts.join(",") !== "/data/models,/nope,/proc/1") {
+        fail(`the editor lists ${JSON.stringify(drawer.drafts)}, not the row's own three`);
+      } else if (drawer.saveDisabled !== true) {
+        fail("the save is live before anything was changed — a control that always offers to save is a control that cannot say whether anything changed");
+      } else {
+        //   Add one and save: the whole list crosses, and the draft
+        //   comes back from the answer.
+        const sent0 = watchSaves.length;
+        await page.locator("[data-machine-card] [data-watch-input]").fill("/scratch/run7");
+        await page.locator("[data-machine-card] [data-watch-add]").click();
+        await wait(150);
+        await page.locator("[data-machine-card] [data-watch-save]").click();
+        const saved = await until(5_000, async () => watchSaves.length > sent0);
+        const after = await page.evaluate(() => ({
+          drafts: [...document.querySelectorAll("[data-machine-card] [data-watch-draft]")].map((d) => d.dataset.watchDraft),
+          saveDisabled: document.querySelector("[data-machine-card] [data-watch-save]")?.disabled ?? null,
+          error: document.querySelector("[data-machine-card] [data-watch-error]")?.textContent ?? null,
+        }));
+        if (!saved) fail("pressing 保存 sent nothing to set_watch");
+        else {
+          const call = watchSaves[watchSaves.length - 1];
+          if (call.machine !== "peer" || JSON.stringify(call.paths) !== JSON.stringify(["/data/models", "/nope", "/proc/1", "/scratch/run7"])) {
+            fail(`the save sent ${JSON.stringify(call)} — the whole list, for the peer, was owed`);
+          }
+          await until(3_000, async () => (await page.locator("[data-machine-card] [data-watch-save]").isDisabled()));
+          if (after.error) fail(`a tidy save printed a refusal: ${after.error}`);
+        }
+        //   A relative path: the node's sentence, on the button and under
+        //   the list, and the draft kept for fixing.
+        await page.locator("[data-machine-card] [data-watch-input]").fill("models");
+        await page.locator("[data-machine-card] [data-watch-add]").click();
+        await wait(150);
+        await page.locator("[data-machine-card] [data-watch-save]").click();
+        const refused = await until(5_000, async () => (await page.locator("[data-machine-card] [data-watch-error]").count()) === 1);
+        const bad = await page.evaluate(() => ({
+          error: document.querySelector("[data-machine-card] [data-watch-error]")?.textContent ?? "",
+          word: document.querySelector("[data-machine-card] [data-watch-save]")?.textContent.trim() ?? "",
+          failed: document.querySelector("[data-machine-card] [data-watch-save]")?.dataset.failed ?? null,
+          drafts: [...document.querySelectorAll("[data-machine-card] [data-watch-draft]")].map((d) => d.dataset.watchDraft),
+        }));
+        if (!refused || !bad.error.includes("models")) fail(`a relative path was not refused in the node's sentence (${JSON.stringify(bad)})`);
+        if (bad.failed !== "true" || bad.word === (await page.evaluate(() => document.querySelector("[data-machine-card] [data-watch-add]")?.textContent.trim()))) {
+          fail(`the refused save does not wear the failure word on the button pressed (${JSON.stringify(bad)})`);
+        }
+        if (!bad.drafts.includes("models")) fail("the refused entry vanished from the draft — the person cannot fix what they cannot see");
+        console.log(`watch editor: ${drawer.rows.length} rows [${shapes}], save sent ${JSON.stringify(watchSaves[watchSaves.length - 2]?.paths)}, refusal 「${bad.error}」`);
+      }
+    }
+    //   Back to the day: the sections below read the band, which a
+    //   drawer hides.
+    await page.locator('[data-machine-card] [data-dial="disk"]').click();
+    await wait(300);
+  }
+
   //     ── two readings of one day, and one cursor across them ──────
   //
   //     **The moment survives the switch.** Two readings of the same
@@ -5126,10 +5265,13 @@ try {
     const more = await page.evaluate(() => {
       const drawer = document.querySelector("[data-machine-card] [data-drawer]");
       const scroller = drawer.querySelector("[data-drawer-scroll]");
-      const open = drawer.querySelector("[data-parts]:not([hidden])");
       const bottom = scroller.getBoundingClientRect().bottom;
       let below = 0;
-      for (const row of open.querySelectorAll("[data-part]")) {
+      //   Every visible grid, not the first: the disk drawer holds the
+      //   volumes' grid and, under it, the watched directories' — the
+      //   hook counts rows across both, and a probe that read one grid
+      //   called the hook a liar on the other (2026-09-06).
+      for (const row of scroller.querySelectorAll("[data-parts]:not([hidden]) [data-part]")) {
         const cell = row.firstElementChild;
         // Same rule as the hook: a row clipped by the edge is below.
         // (Writing the assertion with the *other* rule would have

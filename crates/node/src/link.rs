@@ -979,6 +979,21 @@ impl Node {
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Vitals { vitals })
             }
+            Request::Watched => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // The list is this machine's own row in the table — the
+                // asker wrote it there, and it arrived on the sync round
+                // before this request. Sampled here, now, off the
+                // reactor for the `Vitals` arm's reason (the disk list
+                // blocks).
+                let paths = self.watch_of(self.device_str());
+                let rows = tokio::task::spawn_blocking(move || crate::vitals::watched(&paths))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Watched { rows })
+            }
             Request::Usage => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -2623,6 +2638,14 @@ impl Node {
         // that has no such op simply has no reading here.
         if let Ok(Response::Vitals { vitals }) = request(&conn, &Request::Vitals).await {
             let _ = self.cache_peer_vitals(&d.id, &vitals);
+        }
+        // Its watched directories, on the same visit and in a record of
+        // their own (2026-09-06 关注目录): the sync round just above
+        // carried our copy of its `watch` list over, so what comes back
+        // is already about that list. An older khor refuses the op and
+        // simply has no rows here — never empty ones.
+        if let Ok(Response::Watched { rows }) = request(&conn, &Request::Watched).await {
+            let _ = self.cache_peer_watched(&d.id, &rows);
         }
         // Its day, on the same beat as its rows: the strips under a
         // peer's rows are read from this, and a `Refused` from an older

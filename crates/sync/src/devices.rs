@@ -132,6 +132,17 @@ const F_SSH_HOST: &str = "ssh_host";
 /// a bool register but read three-valued: "unprobed" must not read as
 /// "absent".
 const F_SAT_TMUX: &str = "sat_tmux";
+/// The directories this machine is asked to keep an eye on (2026-09-06
+/// 关注目录): one JSON array, whole-value LWW like `addrs`, and anyone
+/// may write it like `pinned` — it is a fact about the machine that the
+/// person looking at it decides. It rides the table for `pinned`'s
+/// reason (the head): one row per machine that everybody replicates
+/// already, and a second table keyed by device id would be the same key
+/// twice. What the whole-value rule costs: two people editing one
+/// machine's list at the same moment, and the later write wins whole —
+/// the trade `addrs` already made. An older khor replicates the register
+/// untouched and never reads it.
+const F_WATCH: &str = "watch";
 
 fn fkey(id: &str, field: &str) -> String {
     let mut k = String::with_capacity(id.len() + 1 + field.len());
@@ -176,6 +187,11 @@ pub struct DeviceInfo {
     /// older khor). Three states on purpose: unprobed must not read as
     /// absent.
     pub sat_tmux: Option<bool>,
+    /// The directories it is asked to watch, in the order they were
+    /// given — empty when nobody asked (`F_WATCH`). The list is the
+    /// setting; the readings for it come from the machine itself
+    /// (`khor_core::WatchedDir`).
+    pub watch: Vec<String>,
 }
 
 pub struct DeviceDoc {
@@ -345,6 +361,24 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// Sets the list of directories a machine is asked to watch. Anyone
+    /// may, for anyone, `set_pinned`'s rule; the caller has already
+    /// tidied the list (`khor_node` refuses a relative path, a `..`, a
+    /// duplicate — one voice for the CLI and the face). Unchanged means
+    /// unwritten, the others' reason.
+    pub fn set_watch(&self, id: &str, paths: &[String]) -> Result<(), String> {
+        let json = serde_json::to_string(paths).map_err(|e| e.to_string())?;
+        if paths.is_empty() && self.field(id, F_WATCH).is_none() {
+            return Ok(());
+        }
+        if self.flat_str(id, F_WATCH).as_deref() == Some(json.as_str()) {
+            return Ok(());
+        }
+        self.write_field(id, F_WATCH, json.as_str())?;
+        self.inner.commit();
+        Ok(())
+    }
+
     /// Marks a row as a satellite: spoken for by `sponsor`, reached over
     /// ssh at `ssh_host`, with tmux present or not as probed
     /// (附属机器批). One call rather than three setters because the
@@ -447,6 +481,10 @@ impl DeviceDoc {
                     Some(LoroValue::Bool(b)) => Some(b),
                     _ => None,
                 },
+                watch: self
+                    .str_field(&id, F_WATCH)
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
                 id,
             })
             .collect();
@@ -503,6 +541,30 @@ fn as_map(v: loro::ValueOrContainer) -> Option<LoroMap> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The watch list travels like a pin, and an upsert leaves it alone:
+    /// pairing writes names and addresses for every peer, and a list
+    /// that a routine upsert could clear is a setting that lasts until
+    /// the next start.
+    #[test]
+    fn a_watch_list_travels_and_an_upsert_does_not_touch_it() {
+        let a = DeviceDoc::new(1).unwrap();
+        let b = DeviceDoc::new(2).unwrap();
+        a.upsert("cc", "turing", &[]).unwrap();
+        a.set_watch("cc", &["/data/models".into(), "/scratch".into()]).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        assert_eq!(b.get("cc").unwrap().watch, vec!["/data/models", "/scratch"]);
+        b.upsert("cc", "turing", &["10.0.0.9:11204".into()]).unwrap();
+        assert_eq!(b.get("cc").unwrap().watch.len(), 2, "an upsert must not clear the list");
+        b.set_watch("cc", &[]).unwrap();
+        a.merge(&b.changes_since(&Default::default()).unwrap()).unwrap();
+        assert!(a.get("cc").unwrap().watch.is_empty(), "clearing travels back");
+        assert_eq!(d_items(&a), 1);
+    }
+
+    fn d_items(d: &DeviceDoc) -> usize {
+        d.items()
+    }
 
     #[test]
     fn a_device_round_trips_with_name_and_addrs() {

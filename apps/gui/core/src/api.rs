@@ -176,6 +176,20 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "forget_device" => to_json(&crate::forget_device(root, &arg("machine")?)?),
+        "set_watch" => {
+            // A list of strings, read by position like `colors`; a
+            // malformed entry is refused by name rather than dropped —
+            // a path that silently vanished from the list would report
+            // a save that took while a directory went unwatched.
+            let paths: Vec<String> = match args.get("paths") {
+                Some(serde_json::Value::Array(items)) => items
+                    .iter()
+                    .map(|p| p.as_str().map(str::to_owned).ok_or_else(|| "a path is not a string".to_owned()))
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => return Err("arg is not a list: paths".to_owned()),
+            };
+            to_json(&crate::set_watch(root, &arg("machine")?, &paths)?)
+        }
         "face_choices" => to_json(&crate::face_choices(root)?),
         "restyle" => {
             crate::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;

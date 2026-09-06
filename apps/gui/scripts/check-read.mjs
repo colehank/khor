@@ -642,6 +642,8 @@ try {
           vitals: null,
           hop: null,
           sponsor: null,
+          watch: [],
+          watched: null,
           seat: { left: 50, top: 50 },
         },
       ]),

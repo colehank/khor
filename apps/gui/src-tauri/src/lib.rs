@@ -151,6 +151,11 @@ fn forget_device(machine: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn set_watch(machine: String, paths: Vec<String>) -> Result<Vec<String>, String> {
+    khor_gui_core::set_watch(&Node::root_from_env(), &machine, &paths)
+}
+
+#[tauri::command]
 fn face_choices() -> Result<FaceChoices, String> {
     khor_gui_core::face_choices(&Node::root_from_env())
 }
@@ -615,6 +620,7 @@ pub fn run() {
             pin_session,
             pin_device,
             forget_device,
+            set_watch,
             face_choices,
             restyle,
             hooks_state,

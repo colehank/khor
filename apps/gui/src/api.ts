@@ -28,6 +28,7 @@ import type { KnownAgent } from "./gen/bindings/KnownAgent";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
 import type { SeenSession } from "./gen/bindings/SeenSession";
 import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
+import type { QuotaCredits } from "./gen/bindings/QuotaCredits";
 import type { QuotaWindow } from "./gen/bindings/QuotaWindow";
 import type { QuotaTrouble } from "./gen/bindings/QuotaTrouble";
 import type { MachineLog } from "./gen/bindings/MachineLog";
@@ -37,6 +38,7 @@ import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
 import type { Load } from "./gen/bindings/Load";
 import type { TopRow } from "./gen/bindings/TopRow";
 import type { CpuDay } from "./gen/bindings/CpuDay";
+import type { WatchedDir } from "./gen/bindings/WatchedDir";
 
 export type {
   AccountRing,
@@ -62,6 +64,7 @@ export type {
   AgentSaid,
   SeenSession,
   QuotaAnswer,
+  QuotaCredits,
   QuotaWindow,
   QuotaTrouble,
   MachineLog,
@@ -70,6 +73,7 @@ export type {
   Load,
   TopRow,
   CpuDay,
+  WatchedDir,
 };
 
 const params = new URLSearchParams(window.location.search);
@@ -359,6 +363,14 @@ export const pinDevice = (machine: string, on: boolean) => call<null>("pin_devic
     and why this machine refuses to forget itself). Answers the name of
     the machine that left. */
 export const forgetDevice = (machine: string) => call<string>("forget_device", { machine });
+/** `khor watch` — the directories a machine is asked to keep an eye on,
+    replaced whole (2026-09-06 关注目录). The list rides that machine's
+    row in the device table; the machine answers with each path's
+    volume on its next visit (`DeviceRow.watched`). The node refuses a
+    relative path, a `..` or a duplicate in its own sentence, and
+    answers the list as kept. */
+export const setWatch = (machine: string, paths: string[]) =>
+  call<string[]>("set_watch", { machine, paths });
 /** What this machine wears and every option painted as it would look —
     derived by the node, one call for the whole screen. */
 export const fetchFaceChoices = () => call<FaceChoices>("face_choices");

@@ -163,6 +163,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "mcp", run: mcp, reach: Reach::Act },
     Verb { word: "version", run: version, reach: Reach::Read },
     Verb { word: "forget", run: forget, reach: Reach::Act },
+    Verb { word: "watch", run: watch, reach: Reach::Act },
     Verb { word: "--version", run: version, reach: Reach::Read },
     Verb { word: "-V", run: version, reach: Reach::Read },
     Verb { word: "_host", run: host, reach: Reach::Inner },
@@ -355,6 +356,24 @@ fn forget(rest: &[String]) -> Result<(), String> {
     };
     let name = node()?.forget_device(machine)?;
     println!("{}", msg::forgot(&name));
+    Ok(())
+}
+
+/// `khor watch <机器> [目录 ...]` — the directories that machine keeps an
+/// eye on, replaced whole; none given clears the list. The CLI twin of
+/// the card's editor (docs/KHOR.md 等价): one node call, one sentence
+/// of refusal for both.
+fn watch(rest: &[String]) -> Result<(), String> {
+    let [machine, paths @ ..] = rest else {
+        return Err(USAGE.into());
+    };
+    let n = node()?;
+    let kept = n.set_watch(machine, paths)?;
+    if kept.is_empty() {
+        println!("{}", cli::watching_none(machine));
+    } else {
+        println!("{}", cli::watching(machine, kept.join(" ")));
+    }
     Ok(())
 }
 
@@ -565,6 +584,27 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
     // say it is behind.
     if let Some(ver) = v.version.as_deref() {
         parts.push(cli::vitals_version(ver));
+    }
+    // The directories it was asked to watch, one sentence each in one
+    // of the three shapes (`khor_core::WatchedDir`), from the answer to
+    // `Request::Watched` — its own record and its own age; the card
+    // draws the same rows under its disk, one unit each, so the count
+    // here and there stays one count. Nothing is said for a machine
+    // that never answered: an older khor refuses the op, and 「no rows」
+    // must not read as 「nothing watched」.
+    if let Some((rows, _)) = n.watched_of(device_id) {
+        for r in &rows {
+            parts.push(match (&r.volume, r.missing) {
+                (Some(vol), _) => cli::vitals_watch(
+                    &r.path,
+                    vol_word(&vol.mount),
+                    bytes(vol.fill.total.saturating_sub(vol.fill.used)),
+                    bytes(vol.fill.total),
+                ),
+                (None, true) => cli::vitals_watch_missing(&r.path),
+                (None, false) => cli::vitals_watch_unlisted(&r.path),
+            });
+        }
     }
     // Said for every reading that was not taken just now — which is every
     // machine but this one, and this one only while it is answering.

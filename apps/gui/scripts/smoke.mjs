@@ -3201,6 +3201,54 @@ for line in sys.stdin:
   }
   await sameNumberOfReadings("alpha", envB);
 
+  //     **A directory watched from here shows up on alpha's card, read
+  //     by alpha** (2026-09-06 关注目录). The list is written into
+  //     alpha's row of the device table from beta's face; it reaches
+  //     alpha on the next sync round, alpha answers `Watched` on beta's
+  //     next visit, and the card grows one row per directory. Two
+  //     directories, two shapes — alpha's own home (on a listed volume)
+  //     and a path that is not there — so 「missing」 is a sentence and
+  //     not a zero. The CLI witness runs again after: `khor devices`
+  //     prints one sentence per row here too, and the count has to
+  //     still hold with the rows in. Then `khor watch alpha` with no
+  //     directories clears the list from the terminal, and the rows go.
+  await page.locator('[data-machine-card] [data-dial="disk"]').click();
+  await until("the disk drawer's editor", 5_000, async () =>
+    (await page.locator("[data-machine-card] [data-watch-editor]").count()) === 1,
+  );
+  if ((await page.locator("[data-machine-card] [data-watch-row]").count()) !== 0) {
+    throw new Error("alpha's card already draws watched rows before anything was asked — the control is void");
+  }
+  for (const p of [A, "/khor-smoke-no-such-dir"]) {
+    await page.locator("[data-machine-card] [data-watch-input]").fill(p);
+    await page.locator("[data-machine-card] [data-watch-add]").click();
+  }
+  await page.locator("[data-machine-card] [data-watch-save]").click();
+  await until("the save to rest", 10_000, async () => {
+    const err = await page.locator("[data-machine-card] [data-watch-error]").count();
+    if (err) throw new Error(await page.locator("[data-machine-card] [data-watch-error]").innerText());
+    return await page.locator("[data-machine-card] [data-watch-save]").isDisabled();
+  });
+  await until("alpha's answer about the two directories to reach this card", 40_000, async () =>
+    (await page.locator('[data-machine-card] [data-watch-row][data-watch-shape="on"]').count()) === 1 &&
+    (await page.locator('[data-machine-card] [data-watch-row][data-watch-shape="missing"]').count()) === 1,
+    1_000,
+  );
+  //     One number on both faces, from one answer: the sentence the row
+  //     carries is the sentence the terminal prints.
+  const watchedOnCard = await page.locator('[data-machine-card] [data-vitals-detail="watch"]').allInnerTexts();
+  const watchedPrinted = cliReadings("alpha", envB).filter((s) => watchedOnCard.some((c) => c.trim() === s.trim()));
+  if (watchedPrinted.length !== 2) {
+    throw new Error(`the card's two watched sentences ${JSON.stringify(watchedOnCard)} are not what \`khor devices\` prints: ${cliReadings("alpha", envB).join(" | ")}`);
+  }
+  await sameNumberOfReadings("alpha", envB);
+  cli(envB, "watch", "alpha");
+  await until("the rows to go once the list is cleared from the terminal", 40_000, async () =>
+    (await page.locator("[data-machine-card] [data-watch-row]").count()) === 0,
+    1_000,
+  );
+  await page.locator('[data-machine-card] [data-dial="disk"]').click();
+
   //     **The road reading is one fact, not two** (批⑦): the card and
   //     `khor devices` are two faces on one `Node::hops` answer, and a
   //     screen that worked it out for itself is a screen that can
