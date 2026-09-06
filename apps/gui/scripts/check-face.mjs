@@ -2039,56 +2039,63 @@ try {
       );
     }
 
-    //   **The plan, on the row and on the detail.** Both, because they
-    //   are one sentence assembled once: a page that showed it in only
-    //   one place would be the row and its detail disagreeing about
-    //   what the row is.
-    //   The row's line is the plan and **only** the plan now
-    //   (2026-09-06:「卡头不再写类型 · 厂商 · 来源」). Equality, not
-    //   `includes`: the whole point of that ruling is what is *not*
-    //   there, and a substring check passes on the line it replaced.
-    //   **The plan is a chip on the name's line, and the sub-line's
-    //   three segments survive at this column's width.** Read as ink,
-    //   not as text: the failure this is written for is a sub-line that
-    //   *says* the right three words while the last one is drawn as
-    //   「Claud…」, and `textContent` cannot see an ellipsis — the
-    //   browser truncates in layout, not in the DOM.
+    //   **The plan says itself once per surface.** On the row it is
+    //   the sub-line; on the card's head it is a chip beside the title.
+    //
+    //   ⚠️ **Rewritten 2026-09-07, and the product is what changed.**
+    //   This used to require a chip **on the row** as well
+    //   (`f9e2062`, one day old) while the sub-line said 类型 · 提供商 ·
+    //   来源. The ruling cut that line to one word — and for a
+    //   subscription that word *is* the plan, so the chip and the line
+    //   had become two spellings of one fact on a row with room for
+    //   one. The chip stayed where the name is a title.
+    //
+    //   **Equality, not `includes`**: the whole point of the ruling is
+    //   what is *not* on the line, and a substring check passes on the
+    //   three-segment line it replaced.
     const rowPlan = await page.evaluate(() => {
       const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
-      const chip = row?.querySelector("[data-quota-plan]");
       const line = row?.querySelector("[data-quota-sub-line]");
-      const box = row?.getBoundingClientRect();
-      const chipBox = chip?.getBoundingClientRect();
       return {
-        chip: chip?.textContent?.trim() ?? null,
+        // **An absence, with the live control beside it**: the same
+        // selector finds the head's chip in this same run, so a zero
+        // here is「the row has none」and not「the marker was renamed」.
+        chipOnRow: row?.querySelectorAll("[data-quota-plan]").length ?? null,
         line: line?.textContent?.trim() ?? null,
         // The mark of a truncated line: more text than there is room
-        // for. One pixel of slack for sub-pixel layout.
+        // for. One pixel of slack for sub-pixel layout. `textContent`
+        // cannot see an ellipsis — the browser truncates in layout.
         cut: line ? line.scrollWidth > line.clientWidth + 1 : null,
-        // The whole chip, not most of it.
-        chipWhole:
-          chipBox && box ? chipBox.left >= box.left - 0.5 && chipBox.right <= box.right + 0.5 : null,
-        chipWidth: chipBox ? Math.round(chipBox.width) : 0,
       };
     });
+    const headChips = await page.locator("[data-quota-detail] [data-quota-plan]").count();
     const headChip = (await page.locator("[data-quota-detail] [data-quota-plan]").textContent().catch(() => null))?.trim();
     const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
-    if (rowPlan.chip !== quotaPlan || headChip !== quotaPlan) {
+    if (headChips !== 1 || headChip !== quotaPlan) {
       fail(
-        `the plan chip reads ${JSON.stringify(rowPlan.chip)} on the row and ${JSON.stringify(headChip)} on the card head, not ${JSON.stringify(quotaPlan)}`,
+        `the card head draws ${headChips} plan chips reading ${JSON.stringify(headChip)}, not one saying ${JSON.stringify(quotaPlan)}`,
+      );
+    } else if (rowPlan.chipOnRow !== 0) {
+      fail(
+        `the row still draws ${rowPlan.chipOnRow} plan chip(s) — the sub-line is the plan now, and two spellings of one fact is what 2026-09-07 removed`,
       );
     }
-    if (rowPlan.cut !== false || rowPlan.chipWhole !== true || rowPlan.chipWidth < 8) {
-      fail(
-        `at this column's width the sub-line is cut=${rowPlan.cut} (${JSON.stringify(rowPlan.line)}) and the chip is ${rowPlan.chipWidth}px, whole=${rowPlan.chipWhole} — the line's three segments and the whole chip both have to fit`,
-      );
-    }
-    //   …and the sub-line is the three axes, on every row: the
-    //   subscription's and an account's alike.
+    //   …and the sub-line is **one word**: the plan on the
+    //   subscription, the provider on an account. 来源 is not on either
+    //   — it is the heading over the group, which is why this page
+    //   opens grouped by it (asserted in 8a·iii).
     const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
-    if ((rowPlan.line?.split("·").length ?? 0) !== 3 || (billLine?.split("·").length ?? 0) !== 3) {
+    if (rowPlan.line !== quotaPlan) {
       fail(
-        `the sub-lines are ${JSON.stringify(rowPlan.line)} and ${JSON.stringify(billLine)} — 类型 · 提供商 · 来源 on both`,
+        `the subscription row's sub-line is ${JSON.stringify(rowPlan.line)}, not the plan ${JSON.stringify(quotaPlan)}`,
+      );
+    } else if (billLine?.includes("·")) {
+      fail(
+        `an account's sub-line is ${JSON.stringify(billLine)} — one word, and a separator means more than one`,
+      );
+    } else if (rowPlan.cut !== false) {
+      fail(
+        `at this column's width the sub-line is still cut (${JSON.stringify(rowPlan.line)}) — one word was supposed to end that`,
       );
     }
 
@@ -2172,6 +2179,59 @@ try {
       fail(
         `the arcs read ${JSON.stringify(arcs)} — a fraction draws itself (0.45), a reading with no ceiling draws a whole ring (1), and only 问不出来 leaves bare track (null)`,
       );
+    }
+
+    //   ── 8·the drawer ───────────────────────────────────────────
+    //   「多环要可以展开」(2026-09-07): the panel lists the windows, and
+    //   pressing the handle gives each one **its own dial**.
+    //
+    //   **Counted against the fixture, never against the pips.** The
+    //   rim and the spread are drawn from one list in the product
+    //   (`subDials`), so 「as many dials as pips」 is true of any wrong
+    //   list — the same hole the note further up is about. The number
+    //   an outside thing states is `quotaWindows.length`.
+    const drawerShut = await page.locator("[data-quota-spread]").count();
+    if (drawerShut !== 0) {
+      fail(`the card opens with its drawer already out (${drawerShut}) — 展开 is a thing you press`);
+    }
+    await press("[data-quota-spread-toggle]");
+    const drawer = await page.evaluate(() => {
+      const box = document.querySelector("[data-quota-spread]");
+      return {
+        dials: [...(box?.querySelectorAll("[data-quota-spread-dial]") ?? [])].map((e) => ({
+          id: e.getAttribute("data-quota-spread-dial"),
+          // Each one is a dial of its own, with its own number in it —
+          // not a row of the same drawing repeated.
+          centre: e.querySelector("[data-dial-face] text")?.textContent ?? null,
+          arcs: e.querySelectorAll("[data-ring-fill]").length,
+        })),
+        expanded: document.querySelector("[data-quota-spread-toggle]")?.getAttribute("aria-expanded"),
+      };
+    });
+    if (drawer.dials.length !== quotaWindows.length) {
+      fail(
+        `展开 draws ${drawer.dials.length} dials for the fixture's ${quotaWindows.length} windows — one dial per part, and the count comes from the fixture, not from the rim`,
+      );
+    } else if (drawer.expanded !== "true") {
+      fail(`the handle says aria-expanded=${JSON.stringify(drawer.expanded)} with the drawer open`);
+    } else {
+      //   Each window's own number, in its own dial — a spread that
+      //   drew the right count of *identical* dials would pass a count
+      //   and say nothing.
+      for (const w of quotaWindows) {
+        const id = w.scope ? `${w.span}:${w.scope}` : String(w.span);
+        const d = drawer.dials.find((x) => x.id === id);
+        if (!d || d.centre !== `${Math.round(w.used_pct)}%` || d.arcs !== 1) {
+          fail(
+            `the drawer's dial for ${JSON.stringify(id)} reads ${JSON.stringify(d?.centre ?? null)} with ${d?.arcs ?? 0} arcs, and the window is ${w.used_pct}%`,
+          );
+        }
+      }
+    }
+    //   …shut again, so what follows measures the card at rest.
+    await press("[data-quota-spread-toggle]");
+    if ((await page.locator("[data-quota-spread]").count()) !== 0) {
+      fail("the drawer would not shut — 收起 is the same handle");
     }
 
     //   ── 8·credits, the other arm ────────────────────────────────

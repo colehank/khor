@@ -305,9 +305,14 @@ function fullest(dials: Dial[]): Dial | null {
   return dials.reduce<Dial | null>((m, d) => (m === null || d.pct > m.pct ? d : m), null);
 }
 
-/** What sits in the ring's centre: the share when there is one, the
-    spend when there is a number but no denominator, what is left when
-    the provider reports a wallet rather than a spend, nothing else. */
+/**
+ * What sits in the dial's centre: the share when there is one, the
+ * spend when there is a number but no denominator, what is left when
+ * the provider reports a wallet rather than a spend, nothing else.
+ *
+ * **On the row. The card's dial says only the share** — see the note on
+ * the card's two columns.
+ */
 function centre(r: AccountRing): string {
   const { reading } = r;
   if (reading.trouble) return "";
@@ -315,6 +320,34 @@ function centre(r: AccountRing): string {
   if (reading.spent != null) return money(reading.spent, null);
   if (reading.remaining != null) return money(reading.remaining, null);
   return "";
+}
+
+/**
+ * What the **card's** dial says in its middle: the share, or nothing.
+ *
+ * ⚠️ **The mock contradicts itself here, and this is the one place the
+ * implementation deliberately does not follow it.** In
+ * `khor-usage-mock.html` the account card prints the money twice — once
+ * under the dial (`12.34 / 100 USD`) and again in the facts beside it
+ * (`已用 12.34` / `上限 100`). The mock is the user's own reviewed
+ * draft, so **somebody reading it against this file will see a missing
+ * line and take it for a drop.** It is not: the card's two halves are
+ * 「表盘 | 事实」, and a number that appears in both halves makes the
+ * split mean nothing. The dial says how full; the list says the
+ * figures.
+ *
+ * **The cost, stated so it is not mistaken for an omission either**: a
+ * reading with no denominator (不限量, a prepaid wallet) gets a full arc
+ * and an **empty** middle, with the number on the right. Full arc +
+ * nothing + 「不限量」 is a whole sentence — the mock draws it that way
+ * too (`centre: ""`).
+ *
+ * The row keeps `centre`: a list has no second column to put a figure
+ * in, so there the middle is the only place a number can go.
+ */
+function share(reading: AccountRing["reading"]): string {
+  if (reading.trouble || reading.fill == null) return "";
+  return `${Math.round(reading.fill * 100)}%`;
 }
 
 /**
@@ -387,19 +420,35 @@ function valueWord(axis: string, value: string): string {
 /** The axis's own name, for the heading over its ticks and over its
     group. */
 /**
- * The line under a row's name — the three axes, and **only** the three.
+ * The line under a row's name — **one word**.
  *
- * The plan briefly sat here as a fourth segment and the result was
- * 「订阅 · Max 20x · Claud…」 in a 288-wide column: 来源 truncated off
- * the end of its own row, an axis you can tick and cannot see. The plan
- * moved up to the name's line instead of this line getting longer.
+ * The plan where there is one (a subscription's 「Max 20x」), the
+ * provider where there is not (「new-api 站」). 2026-09-07:「列表副行只剩
+ * 档或厂商一个词(来源是组头)」.
  *
- * **Why these three and not fewer**: each is an axis the bar filters
- * and groups by, and each is what makes 「search reads the words on the
- * row」 true rather than a search over hidden fields.
+ * # What the three segments cost, and where they went
+ *
+ * It was 类型 · 提供商 · 来源, and at this column's 288 the third was
+ * being drawn as 「khor 登…」 on the wider rows — **an axis you can tick
+ * and cannot read**, which is the shape this repo keeps being bitten
+ * by. Making the line longer was not available; making it shorter meant
+ * choosing which axis a row wears.
+ *
+ * **None of the three was dropped, they moved to where there is room**:
+ * 来源 is the heading over the group (which is why the page now opens
+ * grouped by it — `GROUP_DEFAULT`), 提供商 is this line on every row
+ * that has no plan, and 类型 is the tick and the heading you get by
+ * choosing that axis. What a row shows is one of them; what the *page*
+ * shows is all three.
+ *
+ * The plan also left the name's line, where it was a chip
+ * (`f9e2062`, one day old): a chip beside the name and a word under it
+ * were two spellings of one fact, and the row only has room for one.
+ * The **card's** head keeps its chip — there the name is a title and
+ * the plan is a badge on it, which is a different sentence.
  */
 function subLine(r: Row): string {
-  return [kindWord(r.kind), providerWord(r.provider), fromWord(r.from)].join(" · ");
+  return r.plan ?? providerWord(r.provider);
 }
 
 /** The `disabled_reason` key as a status word — never a sentence
@@ -428,14 +477,19 @@ function axisWord(axis: string): string {
  * 「either」; ticking 订阅 and a provider means 「the subscription, and
  * from that provider」.
  *
- * **Search reads what the row shows.** The row prints its name and,
- * under it, 类型 · 提供商 · 来源 — so those four are what the box
- * matches, in the words on the glass rather than the keys behind them.
- * Typing 「turing」 finds that machine's subscription because the row
- * says 「turing」; typing 「claude」 finds it because the row says the
- * provider. A field the row does not print is not searchable here, and
- * that is the rule, not a gap: a hit you cannot see on the row it
- * matched reads as the search being broken.
+ * **Search reads what the *page* shows** — which stopped being the
+ * same as what the row shows on 2026-09-07, when the sub-line was cut
+ * to one word.
+ *
+ * The rule it replaces was 「search reads the words on the row」, and
+ * its reason was that a hit you cannot see on the row it matched reads
+ * as the search being broken. That reason survives; what changed is
+ * where the words are. 来源 is the heading over the group this page
+ * opens on, 类型 and 提供商 are the ticks in the bar and the headings
+ * you get by choosing those axes — **all three are on the glass, none
+ * of them is on every row.** So typing 「turing」 still lands you
+ * somewhere you can see why, and searching a field the page never
+ * prints is still not a thing this box does.
  */
 export function visibleQuota(rows: Row[], query: string, ticked: string[]): Row[] {
   const q = query.trim().toLowerCase();
@@ -494,6 +548,27 @@ const GROUP_DEFAULT = "from:";
  * start the question over rather than infer an answer nobody gave.
  * A person who wants a flat list is one press from it and that press is
  * remembered.
+ *
+ * # ⚠️ This is not a general move, and here is its expiry date
+ *
+ * **Renaming the key throws away everybody's setting.** It is allowed
+ * this once because of a fact with a date on it: the axis being
+ * defaulted to was *itself* added at 18:15 on 2026-09-06 (`3e9b4d9`,
+ * 「额度那栏接上搜索、三条轴的过滤和分组」), seven hours before this
+ * change — and in those seven hours the only sessions that opened this
+ * page on any machine were development and acceptance. **Every stored
+ * value is a leftover from building it, not a choice anybody made**, so
+ * 「respect the explicit choice」 is protecting something that does not
+ * exist.
+ *
+ * The next person changing this default will very likely **not** have
+ * that fact. If the axis has been in real hands for months, renaming
+ * the key is throwing away other people's settings, and the honest fix
+ * is the one this note keeps pointing at: **make the storage able to
+ * tell 「chose flat」 from 「never chose」** — a second value, or an
+ * absent key meaning absent — and then a default can move without
+ * touching anybody's answer. That work is not done here; it is what
+ * this shortcut is borrowed against.
  */
 const GROUP_KEY = "khor.quota.group.v2";
 
@@ -554,6 +629,10 @@ export function QuotaLanding({
   const [board, setBoard] = useState<AccountRing[] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
+  // Which cards have their drawer open. **A set keyed by row, not one
+  // boolean**: 「I opened this card」 is a fact about that card, and a
+  // single flag would make walking away and back a way of closing it.
+  const [spread, setSpread] = useState<Set<string>>(() => new Set());
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hidden = useHidden();
@@ -769,41 +848,18 @@ export function QuotaLanding({
               pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
             />
             <span className="flex min-w-0 flex-1 flex-col">
-              {/* **The plan rides the name's line, not the one under
-                  it** (2026-09-06). Put into the sub-line it made
-                  「订阅 · Max 20x · Claud…」 at this column's 288 —
-                  and what fell off the end was 来源, one of the three
-                  axes this page filters and groups by. An axis you can
-                  tick but cannot see is the shape this repo keeps being
-                  bitten by, so the fourth thing left the line rather
-                  than the line getting longer.
-                  **When it is genuinely tight the name gives way**: the
-                  name truncates, the chip does not shrink, and the
-                  sub-line's three segments stay whole. */}
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-fact">{r.name}</span>
-                {r.plan && (
-                  <span
-                    data-quota-plan
-                    // **Bordered, not tinted.** The mock fills this chip
-                    // with `--accent`, and `--accent` is also what paints
-                    // the *selected* row — the subscription row is
-                    // selected by default, so a tinted chip would sit on
-                    // its own colour and read as nothing. Same shape as
-                    // the chip on the card head, so the two are one
-                    // thing seen twice rather than two chips.
-                    className="flex-none rounded-full border px-1.5 py-px text-[11px] leading-tight text-muted-foreground"
-                  >
-                    {r.plan}
-                  </span>
-                )}
-              </span>
-              {/* **Three segments, and the middle one is why.** 提供商
-                  is one of the three axes this page filters and groups
-                  by; an axis you can tick but cannot see is the shape
-                  this repo keeps being bitten by — and it is also what
-                  makes 「search reads the words on the row」 true
-                  rather than a search over a hidden field. */}
+              {/* ⚠️ **The plan's chip left this row on 2026-09-07**,
+                  one day after it arrived (`f9e2062`). It was a chip
+                  beside the name *and* the sub-line said 类型 · 提供商 ·
+                  来源 underneath; the ruling cut the line to one word,
+                  and that word for a subscription **is the plan** — so
+                  the chip and the line had become two spellings of the
+                  same fact, on a row with room for one.
+                  The card's head still wears it: there the name is a
+                  title and the plan is a badge on it. */}
+              <span className="truncate text-fact">{r.name}</span>
+              {/* **One word**, and which word depends on what this row
+                  has: the plan, or the provider (`subLine`). */}
               <span data-quota-sub-line className="truncate text-xs text-muted-foreground">
                 {subLine(r)}
               </span>
@@ -912,6 +968,28 @@ export function QuotaLanding({
             </div>
           ))}
         </dl>
+        {/* **The drawer's handle, and it says what pressing it does** —
+            not what the drawer is (the same rule the machine row's
+            置顶 / 取消置顶 follows). Below the list rather than beside
+            the dial, because what it opens is a bigger version of the
+            list. */}
+        {dials.length > 0 && (
+          <button
+            type="button"
+            data-quota-spread-toggle={current.id}
+            aria-expanded={spread.has(current.id)}
+            onClick={() =>
+              setSpread((was) => {
+                const next = new Set(was);
+                if (!next.delete(current.id)) next.add(current.id);
+                return next;
+              })
+            }
+            className="flex min-h-touch items-center self-start text-xs text-muted-foreground hover:text-foreground"
+          >
+            {spread.has(current.id) ? gui.quota_spread_close : gui.quota_spread_open}
+          </button>
+        )}
       {/* **The credits' figures, and credits is still not a window.**
           A window is a fraction of a period that refills by itself;
           this is money, it does not refill and it has no reset — which
@@ -973,6 +1051,33 @@ export function QuotaLanding({
       )}
         </div>
       </div>
+      {/* **One dial per part, and that is the same list the rim was
+          drawn from** (`subDials`) — 「轮缘卡点数 = 展开后的表盘数,
+          一一对应」. The lead's dial answers 「什么最先卡住我」 with one
+          arc and a rim; this answers 「每个窗口各是多少」 by giving each
+          one its own arc, at the size where a number can sit inside it.
+          Nothing here is a second reading: it is the marks, spread out. */}
+      {spread.has(current.id) && (
+        <div data-quota-spread className="flex flex-wrap gap-x-8 gap-y-4 border-t pt-4">
+          {dials.map((d) => (
+            <div
+              key={d.id}
+              data-quota-spread-dial={d.id}
+              className="flex min-w-0 flex-col items-center gap-0.5"
+            >
+              <Face size={RING_SIZE_CARD} stroke={RING_STROKE_CARD} fraction={d.pct / 100}>
+                {`${Math.round(d.pct)}%`}
+              </Face>
+              <span className="text-fact">{d.word}</span>
+              {d.resets_at !== null && (
+                <span className="text-aux text-muted-foreground">
+                  {gui.quota_resets(until(d.resets_at * 1000))}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -994,7 +1099,7 @@ export function QuotaLanding({
           fraction={arcOf(acc.reading)}
           strain={acc.strain}
         >
-          {centre(acc)}
+          {share(acc.reading)}
         </Face>
         <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
         {acc.reading.trouble ? (
@@ -1023,6 +1128,23 @@ export function QuotaLanding({
                 <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>
                 <dd data-quota-remaining className="tabular-nums">
                   {money(acc.reading.remaining, acc.reading.currency)}
+                  {/* **The wallet's one line, and why it is the only
+                      one.** DeepSeek and Moonshot answer a balance and
+                      nothing else — no spend, no ceiling, no day
+                      buckets — so this card has one figure and the
+                      sentence says that is the endpoint's doing, not a
+                      reading khor failed to take. **It says what the
+                      provider gave, never what khor cannot draw**: the
+                      second half would be explaining our own plumbing,
+                      which is the family this page deleted a round of.
+                      Only where there is no spend beside it — an
+                      OpenRouter key reports both, and there the balance
+                      is one figure among several. */}
+                  {acc.reading.spent == null && (
+                    <span data-quota-balance-only className="ml-2 text-muted-foreground">
+                      {gui.accounts_balance_only}
+                    </span>
+                  )}
                 </dd>
               </>
             )}
@@ -1215,6 +1337,15 @@ function CardHead({ row }: { row: Row }) {
       {row.plan && (
         <span
           data-quota-plan
+          // **Bordered, not tinted.** The mock fills this chip with
+          // `--accent`, and `--accent` is also what paints the selected
+          // row — so a tinted chip would sit on its own colour.
+          // `text-xs`, and that is the *only* spelling of this size.
+          // The row's copy of this chip wrote the pixel count out as an
+          // arbitrary value instead; measured 2026-09-07 on the live
+          // page, both computed the same font-size to the pixel — so it
+          // was never a second size, only a second name for one, which
+          // is what the px and type gates refuse by name.
           className="flex-none rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
         >
           {row.plan}
