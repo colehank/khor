@@ -3869,9 +3869,11 @@ try {
   //         wrong series, goes red on a value rather than on a shape;
   //       - **the median is inside the box** and **the peak is at or
   //         above its top** — geometry, read off the elements;
-  //       - **the box is under the hairlines and the median bar over
-  //         them**, by document order — a box painted on top would
-  //         cover the very hairs the figure is made of;
+  //       - **the box's fill is under the hairlines, and its outline
+  //         and the median bar over them**, by document order — a fill
+  //         painted on top would cover the very hairs the figure is
+  //         made of, and a bar painted underneath is under a slab of
+  //         black exactly where the middle half of the readings is;
   //       - **the box wears `--massLo`**, computed, not a new colour —
   //         the mark is a quantity and wears what the areas wear.
   {
@@ -3903,6 +3905,7 @@ try {
       for (const box of band.querySelectorAll("[data-day-trend-of]")) {
         const key = box.dataset.dayTrendOf;
         const med = band.querySelector(`[data-day-median="${key}"]`);
+        const frame = band.querySelector(`[data-day-trend-frame="${key}"]`);
         const peak = [...band.querySelectorAll("circle")].find((c) => c.getAttribute("r") === "2.8" && Math.abs(Number(c.getAttribute("cx")) - Number(box.getAttribute("x")) - Number(box.getAttribute("width")) / 2) < 0.6);
         out[key] = {
           q1: Number(box.dataset.dayQ1),
@@ -3914,6 +3917,7 @@ try {
           peakY: peak ? Number(peak.getAttribute("cy")) : null,
           boxBeforeHairs: hairs ? order(box) < order(hairs) : null,
           medAfterHairs: hairs && med ? order(med) > order(hairs) : null,
+          frameAfterHairs: hairs && frame ? order(frame) > order(hairs) : null,
           fill: getComputedStyle(box).fill,
         };
       }
@@ -3939,8 +3943,8 @@ try {
         if (m.peakY !== null && m.peakY > m.top + 0.6) {
           fail(`the ${k} axis's peak (y=${m.peakY}) is below the box's top (${m.top}) — a maximum under the 75th percentile`);
         }
-        if (m.boxBeforeHairs !== true || m.medAfterHairs !== true) {
-          fail(`the ${k} axis's box/median are painted in the wrong order (box under hairs: ${m.boxBeforeHairs}, median over hairs: ${m.medAfterHairs})`);
+        if (m.boxBeforeHairs !== true || m.medAfterHairs !== true || m.frameAfterHairs !== true) {
+          fail(`the ${k} axis's box/median are painted in the wrong order (fill under hairs: ${m.boxBeforeHairs}, outline over hairs: ${m.frameAfterHairs}, median over hairs: ${m.medAfterHairs})`);
         }
       }
       const fills = new Set(keys.map((k) => marks.marks[k]?.fill).filter(Boolean));

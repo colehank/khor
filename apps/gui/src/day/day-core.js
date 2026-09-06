@@ -382,16 +382,22 @@ function drawPara(svg, T, W, narrow, fill){
      assumes a bell, and a day of CPU is nothing like one.
 
      **Where it sits in the ink order is the whole of its design.** The
-     box goes down *before* the hairlines, so the hairs stay the figure
-     and the box reads as their ground; it wears `--massLo`, the
+     box's fill goes down *before* the hairlines, so the hairs stay the
+     figure and the box reads as their ground; it wears `--massLo`, the
      lightest of the mass inks — lighter than a fresh thread, darker
      than the axis hair, no new colour (a quantity wears what the areas
-     wear). The median bar goes on *after* the hairlines, where it has
-     to be readable through them, and before the peak — which it can
-     never touch, since the peak is the maximum and the box stops at
-     P75. Neither carries a number: the brush readout already says the
-     median in words, and a figure that printed three more per axis
-     would be a table. */
+     wear). Its outline and the median bar go on *after* the hairlines,
+     because that is where they have to be read: **the middle half of
+     the readings is, by definition, exactly where the bundle is
+     thickest**, and a mark painted only under it is a mark painted
+     under a slab of black (seen on the real Mac-mini, 2026-09-06: the
+     box was a lighter smudge inside the bundle and the bar was gone).
+     Both wear a paper halo first, the peak label's own trick, so they
+     stay a hairline of ink on a hairline of paper rather than a patch
+     over the threads. Before the peak, which they can never touch —
+     the peak is the maximum and the box stops at P75. Neither carries
+     a number: the brush readout already says the median in words, and
+     a figure that printed three more per axis would be a table. */
   const BOXW = narrow?7:9, MEDW = narrow?11:13;
   const tb = el(svg,'g',{class:'fade',style:'animation-delay:.3s','data-day-trend':''});
   T.forEach((t,k)=>{
@@ -423,9 +429,15 @@ function drawPara(svg, T, W, narrow, fill){
 
   T.forEach((t,k)=>{
     const q=quartiles(t); if(!q) return;
+    const top=mapY(q.q3), h=Math.max(1,mapY(q.q1)-top);
+    const frame = {x:AX[k]-BOXW/2,y:top.toFixed(2),width:BOXW,height:h.toFixed(2),rx:1.5,fill:'none'};
+    el(svg,'rect',{...frame,'stroke-width':2.4,class:'halo fade',style:'animation-delay:.6s'});
+    el(svg,'rect',{...frame,'stroke-width':.9,class:'k3 fade',style:'animation-delay:.6s',
+      'data-day-trend-frame':t.key||t.name});
     const y=mapY(q.med).toFixed(2);
-    el(svg,'line',{x1:AX[k]-MEDW/2,y1:y,x2:AX[k]+MEDW/2,y2:y,'stroke-width':1.4,
-      'stroke-linecap':'round',class:'k3 fade',style:'animation-delay:.6s',
+    const bar = {x1:AX[k]-MEDW/2,y1:y,x2:AX[k]+MEDW/2,y2:y,'stroke-linecap':'round'};
+    el(svg,'line',{...bar,'stroke-width':3.6,class:'halo fade',style:'animation-delay:.6s'});
+    el(svg,'line',{...bar,'stroke-width':1.5,class:'k2 fade',style:'animation-delay:.6s',
       'data-day-median':t.key||t.name,'data-day-med':q.med.toFixed(1)});
   });
 
