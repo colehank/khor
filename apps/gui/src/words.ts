@@ -149,6 +149,33 @@ export const AXES = ["state:", "dev:", "cat:", "at:"] as const;
 export type Axis = (typeof AXES)[number];
 
 /**
+ * The 额度 page's three (2026-09-06:「组别可以有来源(机器、设置,即 khor
+ * 登记的)、提供商、类型(订阅、计费)」).
+ *
+ * **A second list rather than four more entries in the first.** These
+ * are not sessions and none of these keys can ever appear in a session's
+ * store or the other way round; one flat list would let a tick from one
+ * page be read on the other, and the reading would be silent nonsense
+ * rather than an error.
+ *
+ * ⚠️ **`from:` and not `home:`, because the value is not always a
+ * machine.** 来源 is 「where this row's reading comes from」: a
+ * subscription row's is the machine whose Claude Code was read, an
+ * account's is 「khor 登记」 — the account was typed into khor, and
+ * *which machine holds its key* is a property of the account, shown in
+ * the detail, not where the reading comes from. One value per row, so
+ * an OR within the axis cannot select overlapping sets and a grouping
+ * puts each row in exactly one group.
+ *
+ * ⚠️ **And not `at:`**, which on the session list means the working
+ * directory. Two stores that never meet would not actually collide, but
+ * re-using a spelling for a different meaning is the drift the note
+ * above this one exists to prevent.
+ */
+export const QUOTA_AXES = ["kind:", "by:", "from:"] as const;
+export type QuotaAxis = (typeof QUOTA_AXES)[number];
+
+/**
  * Which axis a ticked key belongs to.
  *
  * **A key with no prefix is a state word**, and that rule is doing two
@@ -160,15 +187,23 @@ export type Axis = (typeof AXES)[number];
  * direction too (an older app reading a newer store sees keys it does
  * not know and, per its own rule, simply matches no rows on them).
  */
-export function axisOf(key: string): Axis {
-  const found = AXES.find((a) => key.startsWith(a));
-  return found ?? "state:";
+export function axisOf(key: string): Axis;
+export function axisOf<T extends readonly string[]>(key: string, axes: T): T[number];
+export function axisOf(key: string, axes: readonly string[] = AXES): string {
+  const found = axes.find((a) => key.startsWith(a));
+  // **The fallback is the sessions rule, and it is first on purpose.**
+  // For that list `axes[0]` is `state:`, which is exactly the
+  // compatibility described above. For any other list nothing ever
+  // wrote a bare key, so an unprefixed key does not arise there — and
+  // if one ever did, landing on the first axis is at least a value
+  // that can be untucked rather than a crash.
+  return found ?? axes[0];
 }
 
 /** The value inside a ticked key — the state word, machine name, or
     category name. An unprefixed key is the whole value (see `axisOf`). */
-export function valueOf(key: string): string {
-  const a = AXES.find((x) => key.startsWith(x));
+export function valueOf(key: string, axes: readonly string[] = AXES): string {
+  const a = axes.find((x) => key.startsWith(x));
   return a ? key.slice(a.length) : key;
 }
 
