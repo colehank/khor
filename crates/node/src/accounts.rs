@@ -429,6 +429,9 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         remaining: None,
         expires_at: None,
         models: Vec::new(),
+        days: Vec::new(),
+        spent_this_month: None,
+        spent_all_time: None,
     }
 }
 
@@ -561,6 +564,12 @@ fn read_openrouter(
     let monthly = decimal(d.get("usage_monthly"));
     let mut r = bare(account, None, now);
     r.currency = Some("USD".to_owned());
+    // **Both figures, whichever branch the fraction takes.** They are
+    // two periods, and which of them used to reach a screen depended on
+    // whether the key had a cap — so 「已用」 meant this month on one
+    // account and all time on another, with nothing saying which.
+    r.spent_this_month = monthly;
+    r.spent_all_time = all_time;
     match decimal(d.get("limit")) {
         Some(cap) => {
             let left = decimal(d.get("limit_remaining"))
@@ -767,6 +776,7 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
         "https://api.anthropic.com/v1/organizations/cost_report?starting_at={start}&bucket_width=1d&limit=31"
     );
     let mut cents = 0.0;
+    let mut days: Vec<khor_core::DaySpend> = Vec::new();
     let c = client();
     loop {
         let j = get_json(
@@ -775,10 +785,19 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
         .await?
         .map_err(|_| trouble::UNREACHABLE)?;
         for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            // **The bucket's own total, kept as well as summed.** The
+            // day was always in this answer — it was the loop that threw
+            // it away. Amounts come back in cents as decimal strings.
+            let mut in_bucket = 0.0;
             for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten() {
                 if let Some(a) = r.get("amount") {
-                    cents += a.as_f64().or_else(|| a.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0);
+                    in_bucket +=
+                        a.as_f64().or_else(|| a.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0);
                 }
+            }
+            cents += in_bucket;
+            if let Some(at) = instant_of(bucket, "starting_at") {
+                days.push(khor_core::DaySpend { at, spent: in_bucket / 100.0 });
             }
         }
         match j.get("next_page").and_then(serde_json::Value::as_str) {
@@ -790,7 +809,27 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
             _ => break,
         }
     }
-    Ok(against_budget(bare(account, None, now), cents / 100.0, account.budget, "USD"))
+    let mut r = against_budget(bare(account, None, now), cents / 100.0, account.budget, "USD");
+    r.days = days;
+    Ok(r)
+}
+
+/// A bucket's start instant, unix seconds, however the vendor spelled
+/// it: a number, or an RFC 3339 string.
+///
+/// **Two spellings because the two vendors disagree** — OpenAI's
+/// `start_time` is a unix integer and Anthropic's `starting_at` is a
+/// timestamp string. A bucket khor cannot place in time gets **no
+/// entry** rather than one at the epoch: a bar at 1970 is not a
+/// missing bar, it is a wrong one, and it would drag every chart's
+/// axis with it.
+fn instant_of(bucket: &serde_json::Value, key: &str) -> Option<i64> {
+    let v = bucket.get(key)?;
+    if let Some(n) = v.as_i64() {
+        return (n > 0).then_some(n);
+    }
+    let s = v.as_str()?;
+    s.parse::<jiff::Timestamp>().ok().map(|t| t.as_second())
 }
 
 /// OpenAI: the organisation's costs through an **admin** key
@@ -817,11 +856,18 @@ async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountR
     let mut url =
         format!("https://api.openai.com/v1/organization/costs?start_time={start}&bucket_width=1d&limit=31");
     let mut dollars = 0.0;
+    let mut days: Vec<khor_core::DaySpend> = Vec::new();
     loop {
         let j = get_json(c.get(&url).bearer_auth(key)).await?.map_err(|_| trouble::UNREACHABLE)?;
         for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            let mut in_bucket = 0.0;
             for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten() {
-                dollars += r.pointer("/amount/value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+                in_bucket += r.pointer("/amount/value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+            }
+            dollars += in_bucket;
+            // Already dollars here, where Anthropic's are cents.
+            if let Some(at) = instant_of(bucket, "start_time") {
+                days.push(khor_core::DaySpend { at, spent: in_bucket });
             }
         }
         match j.get("next_page").and_then(serde_json::Value::as_str) {
@@ -835,7 +881,9 @@ async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountR
     }
     // The organisation's own ceiling outranks a registered budget: it
     // is the one that actually stops requests (429 past it).
-    Ok(against_budget(bare(account, None, now), dollars, limit_usd.or(account.budget), "USD"))
+    let mut r = against_budget(bare(account, None, now), dollars, limit_usd.or(account.budget), "USD");
+    r.days = days;
+    Ok(r)
 }
 
 #[cfg(test)]
@@ -949,6 +997,67 @@ mod tests {
         let ok = serve(r#"{"code":true,"message":"ok","data":{"total_used":1}}"#).await;
         let said = get_json(client().get(format!("http://127.0.0.1:{ok}/"))).await;
         assert!(said.is_ok(), "and a 200 with no `success` key is not one");
+    }
+
+    /// **A bucket's start, in either vendor's spelling, and none at all
+    /// where it cannot be placed.**
+    ///
+    /// OpenAI's `start_time` is a unix integer, Anthropic's
+    /// `starting_at` an RFC 3339 string — one function, two shapes,
+    /// because two readers doing it separately is how they come to
+    /// disagree about a bar's position. The last two arms are the
+    /// control: a bucket khor cannot place gets **no entry**, never one
+    /// at the epoch, because a bar at 1970 is not a missing bar — it is
+    /// a wrong one, and it drags the whole axis with it.
+    #[test]
+    fn a_bucket_is_placed_by_either_vendors_spelling_or_not_at_all() {
+        let at = |k: &str, v: serde_json::Value| instant_of(&serde_json::json!({k: v}), k);
+        assert_eq!(at("start_time", serde_json::json!(1_757_000_000i64)), Some(1_757_000_000));
+        // **The two spellings of one instant must land on one number**,
+        // asserted against each other rather than against a constant.
+        // The first draft wrote the epoch seconds out by hand and they
+        // were wrong by twelve days — a number nobody had computed,
+        // which is the same failure as quoting a hash from memory. This
+        // way the test cannot be wrong about what 2026-09-01 *is*; it
+        // can only be wrong about the two readings disagreeing, which
+        // is the thing it is for.
+        let as_text = at("starting_at", serde_json::json!("2026-09-01T00:00:00Z"))
+            .expect("an RFC 3339 instant parses");
+        assert_eq!(
+            at("start_time", serde_json::json!(as_text)),
+            Some(as_text),
+            "an RFC 3339 instant lands on the same axis as an integer",
+        );
+        assert!(as_text > 1_700_000_000, "…and it is this decade, not the epoch");
+        assert_eq!(at("start_time", serde_json::json!(0)), None, "the epoch is not a bucket");
+        assert_eq!(at("starting_at", serde_json::json!("not a time")), None);
+        assert_eq!(instant_of(&serde_json::json!({}), "start_time"), None, "and a silent bucket");
+    }
+
+    /// **OpenRouter states two periods and both survive, whichever
+    /// branch the fraction takes.**
+    ///
+    /// Two arms, capped and uncapped, because *which* figure used to
+    /// reach a screen depended on exactly that — so 「已用」 meant this
+    /// month on one account and all time on another, with nothing on
+    /// the glass saying which. An implementation that kept only one
+    /// passes one arm and fails the other.
+    #[test]
+    fn openrouter_keeps_its_month_and_its_lifetime_apart() {
+        let capped = serde_json::json!({
+            "data": {"limit": 20.0, "limit_remaining": 5.0, "usage": 115.0, "usage_monthly": 15.0}
+        });
+        let r = read_openrouter(&wallet(Provider::Openrouter, None), &capped, 0).unwrap();
+        assert_eq!(r.spent_this_month, Some(15.0));
+        assert_eq!(r.spent_all_time, Some(115.0));
+        assert_eq!(r.spent, Some(15.0), "and `spent` still means what the fraction is made of");
+
+        let uncapped = serde_json::json!({
+            "data": {"limit": null, "usage": 115.0, "usage_monthly": 15.0}
+        });
+        let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &uncapped, 0).unwrap();
+        assert_eq!(r.spent_this_month, Some(15.0), "the month survives the other branch too");
+        assert_eq!(r.spent_all_time, Some(115.0), "…and so does the lifetime");
     }
 
     /// The fraction and its strain are this side's judgment, on

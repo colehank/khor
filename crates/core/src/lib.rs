@@ -1481,6 +1481,26 @@ pub enum QuotaTrouble {
 /// fraction, only numbers, and the ring draws its track (`fill: None`).
 /// A face that computed the share itself would be a second opinion
 /// about what "full" means, and the two would drift.
+/// One bucket of a provider's own cost report: what it says was spent
+/// over a stretch, and when that stretch began.
+///
+/// **The instant is the provider's, not a calendar day khor worked
+/// out.** Both vendors answer buckets with their own start
+/// (Anthropic's `starting_at`, OpenAI's `start_time`), asked for at a
+/// day's width — so carrying the bucket's start says exactly what was
+/// reported and nothing more. A screen east or west of the reporting
+/// zone would cut its days elsewhere; this way the disagreement is
+/// visible instead of baked in
+/// ([`UsageDay`] carries the same ruling for khor's own days).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct DaySpend {
+    /// When this bucket starts, unix seconds, as the provider stated it.
+    #[ts(type = "number")]
+    pub at: i64,
+    /// What it says was spent in it, in the reading's `currency`.
+    pub spent: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct AccountReading {
     /// `khor_sync::accounts::Account::id`.
@@ -1563,6 +1583,47 @@ pub struct AccountReading {
     /// the flag; this field is already the answer.
     #[serde(default)]
     pub models: Vec<String>,
+    /// This month so far, one entry per day the provider reported, in
+    /// the order it reported them. Empty where a provider has no cost
+    /// report at all.
+    ///
+    /// **The numbers were already being fetched and thrown away.** Both
+    /// vendors are asked for `bucket_width=1d` over the month
+    /// (`fetch_claude` / `fetch_openai`), and until 2026-09-07 the
+    /// reader summed the buckets into `spent` and dropped the shape —
+    /// so a page could say 「12.34 spent」 and could not say 「and nine
+    /// of it was Tuesday」, from data already on the wire.
+    ///
+    /// **Not derived from anything.** `spent` stays the provider's own
+    /// total rather than a sum of these, because a page must not have
+    /// two answers to one question: if a bucket is missing, the total is
+    /// still right and the chart is visibly short, which is the honest
+    /// pair.
+    ///
+    /// Tail field, defaulted: an older reader drops it and keeps the rest.
+    #[serde(default)]
+    pub days: Vec<DaySpend>,
+    /// This month's spend and the key's lifetime spend, in `currency`,
+    /// **where the provider states them as two separate figures**.
+    ///
+    /// OpenRouter does (`usage_monthly` and `usage` on `/api/v1/key`),
+    /// and until 2026-09-07 only one of them survived: whichever the
+    /// fraction happened to need went into `spent` and the other was
+    /// dropped. **They are two facts about two periods** — a page that
+    /// showed one of them under a bare 「已用」 was answering 「how much
+    /// have I spent」 with a number whose period depended on whether the
+    /// key had a cap.
+    ///
+    /// `None` where the provider reports no such figure. `spent` is
+    /// untouched and still means 「what the fraction is made of」.
+    ///
+    /// Tail fields, defaulted: an older reader drops them.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub spent_this_month: Option<f64>,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub spent_all_time: Option<f64>,
 }
 
 /// What khor can say about the subscription right now.
@@ -2194,10 +2255,10 @@ mod tests {
     }
 
     /// **Over the wire from an older peer**: a khor that predates the
-    /// token's expiry and model list sends thirteen fields, and its
-    /// readings must come back with neither — **not with a date at the
-    /// epoch and not with a phantom model limit**, which are the two
-    /// shapes those fields turn into when they are guessed at.
+    /// fields added on 2026-09-07 sends thirteen, and its readings must
+    /// come back with none of them — **not a date at the epoch, not a
+    /// phantom model limit, not a chart of a single day in 1970**,
+    /// which are the shapes those fields turn into when guessed at.
     ///
     /// **The byte assertion is the whole test.** Without it the sample
     /// could be a fifteen-field frame with the two new fields written
@@ -2207,7 +2268,7 @@ mod tests {
     /// fixarray of thirteen; anything else means the sample drifted and
     /// the test is no longer about an older peer.
     #[test]
-    fn an_account_reading_from_an_older_peer_has_no_expiry_and_no_models() {
+    fn an_account_reading_from_an_older_peer_carries_none_of_the_tail_fields() {
         let old = (
             "acc1".to_owned(),
             "gateway".to_owned(),
@@ -2225,14 +2286,19 @@ mod tests {
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
         assert_eq!(bytes[0], 0x9d, "the sample must be a thirteen-field frame, or it proves nothing");
-        assert!(
-            !String::from_utf8_lossy(&bytes).contains("expires"),
-            "and it must not carry the key it predates",
-        );
+        for absent in ["expires", "models", "days", "spent_this"] {
+            assert!(
+                !String::from_utf8_lossy(&bytes).contains(absent),
+                "the sample must not carry {absent}, a key it predates",
+            );
+        }
 
         let r: AccountReading = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(r.expires_at, None, "an older peer said nothing about expiry");
         assert!(r.models.is_empty(), "…and nothing about a model limit");
+        assert!(r.days.is_empty(), "…and no day buckets, rather than a day at the epoch");
+        assert_eq!(r.spent_this_month, None, "…and no month figure");
+        assert_eq!(r.spent_all_time, None, "…nor a lifetime one");
         assert_eq!(r.fill, Some(0.45), "…while the rest of the reading survived whole");
         assert_eq!(r.name, "gateway");
     }
