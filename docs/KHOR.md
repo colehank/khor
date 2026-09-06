@@ -51,3 +51,4 @@ UI 用 shadcn/ui，参考 Apple。没有技术壁垒，体验就是壁垒。
 | [UX.md](UX.md) | 界面判据：姿势、状态呈现、语料库、设置纪律 |
 | [HOOKS.md](HOOKS.md) | 进程接入：钩子怎么交状态词、Claude Code 怎么挂 |
 | [AGENT.md](AGENT.md) | Khor 智能体：权限两档、执行位置、账户 |
+| [NEWAPI.md](NEWAPI.md) | new-api 两个端点的形状：字段、哨兵、上限——**一份会过期的快照** |
