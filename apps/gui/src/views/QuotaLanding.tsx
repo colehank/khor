@@ -1268,6 +1268,54 @@ export function QuotaLanding({
                 <dd>{until(acc.reading.resets_at * 1000)}</dd>
               </>
             )}
+            {/* **到期, and only where there is one.** A token that never
+                expires carries `null` here, not a zero — the two
+                sentinels the endpoint uses (`0` on the wire, `-1` in its
+                own table) are turned away at the parser, because either
+                of them drawn straight is 1970-01-01: a date that looks
+                entirely real. */}
+            {acc.reading.expires_at != null && (
+              <>
+                <dt className="text-muted-foreground">{gui.accounts_expires}</dt>
+                <dd data-quota-expires>{until(acc.reading.expires_at * 1000)}</dd>
+              </>
+            )}
+            {/* **模型, and the list is already the answer.** Whether the
+                limit is switched on was decided at the parser — the
+                endpoint keeps the old names after it is switched off,
+                and 「limited to these」 versus 「not limited」 are
+                opposite sentences made of the same real model names. An
+                empty list is 「no limit in force」 and draws nothing. */}
+            {acc.reading.models.length > 0 && (
+              <>
+                <dt className="text-muted-foreground">{gui.accounts_models}</dt>
+                <dd data-quota-models className="flex flex-wrap gap-1">
+                  {acc.reading.models.map((m) => (
+                    <span key={m} className="rounded bg-secondary px-1.5 font-mono text-xs">
+                      {m}
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
+            {/* **Two periods, each under its own word.** Which of these
+                reached the screen used to depend on whether the key had
+                a cap, so 「已用」 meant this month on one account and all
+                time on another with nothing saying which. Drawn only
+                beside each other — one of them alone is the ambiguity
+                again. */}
+            {acc.reading.spent_this_month != null && acc.reading.spent_all_time != null && (
+              <>
+                <dt className="text-muted-foreground">{gui.accounts_this_month}</dt>
+                <dd data-quota-month className="tabular-nums">
+                  {money(acc.reading.spent_this_month, acc.reading.currency)}
+                </dd>
+                <dt className="text-muted-foreground">{gui.accounts_all_time}</dt>
+                <dd data-quota-all-time className="tabular-nums">
+                  {money(acc.reading.spent_all_time, acc.reading.currency)}
+                </dd>
+              </>
+            )}
           </>
         )}
         {/* ⚠️ **The reading's age left this list on 2026-09-07** and is
@@ -1279,6 +1327,7 @@ export function QuotaLanding({
             carries no labels. */}
         </dl>
       </div>
+      <SpendDays reading={acc.reading} />
       {/* ⚠️ **Tombstone: the 撤掉 button left this card on 2026-09-07**
           (「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹 置顶 /
           编辑 / 删除」). It is the row's menu now, beside 置顶 and 编辑,
@@ -1404,6 +1453,72 @@ export function QuotaLanding({
         }}
       />
     </section>
+  );
+}
+
+/**
+ * The card's second section: what this account spent, by day.
+ *
+ * # The title is the reading, not the request
+ *
+ * ⚠️ **It says how many days this chart *covers*, never how many were
+ * asked for.** new-api's log road answers its most recent 1000 records
+ * with no time window and no paging, so a busy key spends the whole
+ * ceiling inside a day — and a chart labelled 「7 天」 holding half of
+ * one does not error and does not look empty: **it draws a true picture
+ * of the wrong stretch.** The two vendors have no such ceiling and their
+ * title is just as honest, because it is the same sentence either way:
+ * this is what is here.
+ *
+ * The cap line is the second half and only appears when the provider
+ * actually cut the log (`log_capped`). **A disclaimer that is always on
+ * screen is read as decoration**, and it would be false on almost every
+ * account — so the title says what the chart is, and this says why it
+ * is that, and both are true.
+ *
+ * # The bars
+ *
+ * One column per day the provider reported, in the order it reported
+ * them, each as tall as its share of the fullest day. **Heights are
+ * relative to the tallest bar, not to any budget**: this section
+ * answers 「when did it go」, and the dial above already answers 「how
+ * much of what I have」.
+ */
+function SpendDays({ reading }: { reading: AccountRing["reading"] }) {
+  const days = reading.days;
+  if (days.length === 0) return null;
+  const most = Math.max(...days.map((d) => d.spent));
+  return (
+    <div data-quota-days className="flex flex-col gap-2 border-t pt-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
+        <span data-quota-days-title className="text-fact">
+          {gui.accounts_trend_days(days.length)}
+        </span>
+        {reading.log_capped != null && (
+          <span data-quota-days-capped>{gui.accounts_log_capped(reading.log_capped)}</span>
+        )}
+      </div>
+      {/* **The chart grows with the data, it does not stretch to fill.**
+          Three days at `flex-1` across a card is three slabs — measured
+          2026-09-07: 350px each, which reads as a diagram of something
+          else. A bar has a width it stops at, and a short window simply
+          takes less room. */}
+      <div className="flex h-16 max-w-sm items-end gap-1">
+        {days.map((d) => (
+          <div
+            key={d.at}
+            data-quota-day={d.at}
+            data-quota-day-spent={d.spent.toFixed(4)}
+            title={`${money(d.spent, reading.currency)}`}
+            className="min-w-1 max-w-10 flex-1 rounded-t bg-muted-foreground/60"
+            // **A day with no spending still gets a column, one pixel
+            // tall** — a gap would read as a day the provider did not
+            // report, and those are two different facts.
+            style={{ height: `${most > 0 ? Math.max(1, (d.spent / most) * 100) : 1}%` }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

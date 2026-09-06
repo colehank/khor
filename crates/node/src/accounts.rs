@@ -432,6 +432,8 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         days: Vec::new(),
         spent_this_month: None,
         spent_all_time: None,
+        model_days: Vec::new(),
+        log_capped: None,
     }
 }
 
@@ -694,6 +696,17 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
     r.unlimited = unlimited;
     r.expires_at = expires_at;
     r.models = models;
+    // **A second request, and it is allowed to fail on its own.** The
+    // log is the chart; the figures above are the reading. A gateway
+    // too old for `/api/log/token`, or one that refuses it, must not
+    // turn a good quota reading into 问不出来 — so this is read for
+    // what it gives and dropped when it gives nothing.
+    if let Ok(Ok(j)) = get_json(c.get(format!("{base}/api/log/token")).bearer_auth(key)).await {
+        let (days, model_days, capped) = read_log(&j, per_unit);
+        r.days = days;
+        r.model_days = model_days;
+        r.log_capped = capped;
+    }
     if !unlimited && let Some(avail) = available {
         let total = used + avail;
         r.limit = Some(total / per_unit);
@@ -749,6 +762,87 @@ fn model_limits_of(d: &serde_json::Value) -> Vec<String> {
     let mut out: Vec<String> = map.keys().cloned().collect();
     out.sort();
     out
+}
+
+/// How many records new-api's log road answers at most
+/// (`common.MaxRecentItems`, `common/constants.go:60`, read 2026-09-07
+/// at `0c76e4da`).
+///
+/// **It is a ceiling on the answer, not a page size**: the road takes
+/// no time window and no page (`model/log.go:140-148`), so this many
+/// records **is** everything khor can see, newest first. A busy key
+/// spends it in a day.
+///
+/// Named here rather than in the reader so that the number and the
+/// sentence about it live together, and so a gateway that answers more
+/// than this some day shows up as a changed constant rather than as a
+/// chart that quietly stopped being cut.
+const NEWAPI_LOG_MAX: usize = 1000;
+
+/// A new-api token's recent consumption, cut into days and into models.
+///
+/// **Only `type == 2` is spending** (`LogTypeConsume`,
+/// `model/log.go:87`); the other kinds are top-ups, admin actions,
+/// system notes, errors and refunds, and summing them would bill a
+/// person for their own refund. **`quota` is in the gateway's raw
+/// units**, the same ones `total_used` is in, so it takes the same
+/// divisor.
+///
+/// Days are cut in **this machine's** zone, which is a choice and not
+/// an accident: the endpoint states an instant per record and no day at
+/// all, so somebody has to cut them, and the person reading the chart
+/// is here (`khor_core::UsageDay` carries the ruling).
+///
+/// The third answer is the ceiling — see [`NEWAPI_LOG_MAX`] and
+/// `AccountReading::log_capped`.
+fn read_log(
+    j: &serde_json::Value,
+    per_unit: f64,
+) -> (Vec<khor_core::DaySpend>, Vec<khor_core::ModelDay>, Option<u32>) {
+    let Some(rows) = j.get("data").and_then(serde_json::Value::as_array) else {
+        return (Vec::new(), Vec::new(), None);
+    };
+    let zone = jiff::tz::TimeZone::system();
+    // Keyed by the day's start so the two lists cannot disagree about
+    // which bucket a record fell in: one pass, one decision per record.
+    let mut per_day: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
+    let mut per_model: std::collections::BTreeMap<(i64, String), f64> =
+        std::collections::BTreeMap::new();
+    for row in rows {
+        if row.get("type").and_then(serde_json::Value::as_i64) != Some(2) {
+            continue;
+        }
+        let Some(at) = row.get("created_at").and_then(serde_json::Value::as_i64).filter(|t| *t > 0)
+        else {
+            continue;
+        };
+        let Some(start) = jiff::Timestamp::from_second(at)
+            .ok()
+            .and_then(|t| t.to_zoned(zone.clone()).start_of_day().ok())
+            .map(|d| d.timestamp().as_second())
+        else {
+            continue;
+        };
+        let spent = row.get("quota").and_then(serde_json::Value::as_f64).unwrap_or(0.0) / per_unit;
+        *per_day.entry(start).or_default() += spent;
+        let model = row
+            .get("model_name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        *per_model.entry((start, model)).or_default() += spent;
+    }
+    let days =
+        per_day.into_iter().map(|(at, spent)| khor_core::DaySpend { at, spent }).collect();
+    let model_days = per_model
+        .into_iter()
+        .map(|((at, model), spent)| khor_core::ModelDay { at, model, spent })
+        .collect();
+    // **`>=`, not `==`.** A gateway with a raised ceiling would answer
+    // more, and「exactly a thousand」would then read as「not cut」on the
+    // one build where being cut matters most.
+    let capped = (rows.len() >= NEWAPI_LOG_MAX).then(|| rows.len() as u32);
+    (days, model_days, capped)
 }
 
 /// The first instant of this month, UTC, unix seconds — the window the
@@ -1058,6 +1152,66 @@ mod tests {
         let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &uncapped, 0).unwrap();
         assert_eq!(r.spent_this_month, Some(15.0), "the month survives the other branch too");
         assert_eq!(r.spent_all_time, Some(115.0), "…and so does the lifetime");
+    }
+
+    /// **The log becomes days and models, and the two lists agree.**
+    ///
+    /// Four claims, and each has something in the sample that would
+    /// break it alone:
+    ///
+    /// - **only `type == 2` is spending** — the sample carries a top-up
+    ///   (`type: 1`) worth more than everything else put together, so an
+    ///   implementation that summed every row is off by a mile rather
+    ///   than by a rounding;
+    /// - **`quota` is raw units** — divided by the same `per_unit` the
+    ///   quota figures use;
+    /// - **the day totals equal the model totals**, asserted against
+    ///   each other: they come out of one pass, and a face drawing a
+    ///   stack taller than its own column would be two readings of one
+    ///   number;
+    /// - **a short log is not cut** — the control for `log_capped`,
+    ///   without which 「always says cut」 passes.
+    #[test]
+    fn a_token_log_becomes_days_and_models_that_add_up() {
+        let day = 86_400;
+        let t = 1_800_000_000i64;
+        let rows = serde_json::json!({"success": true, "data": [
+            {"type": 2, "created_at": t,           "model_name": "gpt-5",  "quota": 500_000},
+            {"type": 2, "created_at": t + 60,      "model_name": "gpt-5",  "quota": 250_000},
+            {"type": 2, "created_at": t + 60,      "model_name": "opus",   "quota": 1_000_000},
+            {"type": 2, "created_at": t + day * 2, "model_name": "opus",   "quota": 750_000},
+            // Not spending: a top-up, and it dwarfs the rest on purpose.
+            {"type": 1, "created_at": t + 120,     "model_name": "",       "quota": 99_000_000},
+            // Unplaceable in time — dropped rather than stacked at the epoch.
+            {"type": 2, "created_at": 0,           "model_name": "gpt-5",  "quota": 500_000},
+        ]});
+        let (days, models, capped) = read_log(&rows, 500_000.0);
+
+        let total: f64 = days.iter().map(|d| d.spent).sum();
+        assert!((total - 5.0).abs() < 1e-9, "1+0.5+2+1.5 = 5 dollars, and no top-up in it: {total}");
+        assert_eq!(days.len(), 2, "two days had spending, and the epoch row is not a third");
+
+        let by_day: f64 = days.iter().map(|d| d.spent).sum();
+        let by_model: f64 = models.iter().map(|m| m.spent).sum();
+        assert!((by_day - by_model).abs() < 1e-9, "the two lists are one pass over one answer");
+        assert_eq!(models.len(), 3, "gpt-5 and opus on the first day, opus on the third");
+
+        assert_eq!(capped, None, "six rows is not a thousand");
+    }
+
+    /// **A log at the ceiling says so, and one under it does not.**
+    ///
+    /// The control is the whole test: `log_capped` decides whether a
+    /// chart gets to keep calling itself a week, so an implementation
+    /// that never sets it and one that always sets it are both wrong in
+    /// ways only the other arm catches.
+    #[test]
+    fn a_log_cut_at_the_ceiling_carries_the_count() {
+        let row = serde_json::json!({"type": 2, "created_at": 1_800_000_000i64, "model_name": "m", "quota": 0});
+        let full = serde_json::json!({"data": vec![row.clone(); NEWAPI_LOG_MAX]});
+        assert_eq!(read_log(&full, 1.0).2, Some(NEWAPI_LOG_MAX as u32), "at the ceiling: cut");
+        let short = serde_json::json!({"data": vec![row; NEWAPI_LOG_MAX - 1]});
+        assert_eq!(read_log(&short, 1.0).2, None, "one under it: not cut");
     }
 
     /// The fraction and its strain are this side's judgment, on

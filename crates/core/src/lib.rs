@@ -1501,6 +1501,25 @@ pub struct DaySpend {
     pub spent: f64,
 }
 
+/// What one model cost on one day, where a provider itemises that far.
+///
+/// **A second list beside [`DaySpend`], not a field inside it.** Every
+/// provider that reports anything reports a day total; only new-api
+/// itemises the models under it. Folding the model into `DaySpend`
+/// would make one list mean two things depending on who filled it —
+/// the drift this crate keeps being written against — so the day axis
+/// stays one shape for everybody and the breakdown is a layer that only
+/// some readings have.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct ModelDay {
+    /// The day this belongs to, unix seconds at its start.
+    #[ts(type = "number")]
+    pub at: i64,
+    /// The model's name **as the provider spelled it**.
+    pub model: String,
+    pub spent: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct AccountReading {
     /// `khor_sync::accounts::Account::id`.
@@ -1624,6 +1643,30 @@ pub struct AccountReading {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub spent_all_time: Option<f64>,
+    /// The same window as `days`, itemised by model, where the provider
+    /// itemises it. **Its day totals must equal `days`** — they come out
+    /// of one pass over one answer, and a face that drew a stack taller
+    /// than its own column would be showing two readings of one number.
+    #[serde(default)]
+    pub model_days: Vec<ModelDay>,
+    /// `Some(n)` when the provider's log **was cut at `n` records** and
+    /// what is above is therefore only part of the window asked for.
+    ///
+    /// ⚠️ **This is the difference between a short chart and a wrong
+    /// one.** new-api's `/api/log/token` answers the most recent
+    /// `MaxRecentItems` records — 1000, `common/constants.go:60` — in
+    /// `id desc`, with **no time window and no paging**
+    /// (`model/log.go:140-148`). A busy key can spend that in a day, and
+    /// then a chart labelled 「7 days」 holds half of one. It does not
+    /// error and it does not look empty: **it draws a true picture of
+    /// the wrong stretch**, which is the shape this repo refuses.
+    ///
+    /// So the count travels, and whoever draws it must say what it
+    /// covers. `None` is 「not cut」 — not 「unknown」: a provider with no
+    /// log at all has no chart to mislabel.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub log_capped: Option<u32>,
 }
 
 /// What khor can say about the subscription right now.
@@ -2286,7 +2329,7 @@ mod tests {
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
         assert_eq!(bytes[0], 0x9d, "the sample must be a thirteen-field frame, or it proves nothing");
-        for absent in ["expires", "models", "days", "spent_this"] {
+        for absent in ["expires", "models", "days", "spent_this", "model_days", "log_capped"] {
             assert!(
                 !String::from_utf8_lossy(&bytes).contains(absent),
                 "the sample must not carry {absent}, a key it predates",
@@ -2299,6 +2342,8 @@ mod tests {
         assert!(r.days.is_empty(), "…and no day buckets, rather than a day at the epoch");
         assert_eq!(r.spent_this_month, None, "…and no month figure");
         assert_eq!(r.spent_all_time, None, "…nor a lifetime one");
+        assert!(r.model_days.is_empty(), "…no itemised models");
+        assert_eq!(r.log_capped, None, "…and a log it never had was not cut");
         assert_eq!(r.fill, Some(0.45), "…while the rest of the reading survived whole");
         assert_eq!(r.name, "gateway");
     }

@@ -492,6 +492,17 @@ try {
       resets_at: null,
       trouble: null,
       at_ms: Date.now(),
+      // The tail fields, spelled out so a fixture that leaves one off
+      // is a `undefined` the page can be caught mishandling — rather
+      // than a key React never sees.
+      remaining: null,
+      expires_at: null,
+      models: [],
+      days: [],
+      spent_this_month: null,
+      spent_all_time: null,
+      model_days: [],
+      log_capped: null,
       ...patch,
     },
     age_ms: 0,
@@ -500,6 +511,7 @@ try {
     strain: null,
     base_url: null,
     budget: null,
+    pinned: false,
   });
   const board = [
     ring("acc-fill", "gateway", "newapi", {
@@ -509,7 +521,29 @@ try {
       currency: "USD",
       resets_at: Math.floor(Date.now() / 1000) + 86_400,
     }),
-    ring("acc-number", "vendor", "claude", { spent: 12.34, currency: "USD" }),
+    // **A vendor with a day chart and no ceiling on its log** — the
+    // control arm for the account below, which has both.
+    ring("acc-number", "vendor", "claude", {
+      spent: 12.34,
+      currency: "USD",
+      days: [
+        { at: 1_800_000_000, spent: 4.0 },
+        { at: 1_800_086_400, spent: 8.34 },
+      ],
+    }),
+    // **A gateway whose log the provider cut.** Three days here, and
+    // the fixture's own count is what the title has to say — 「7 天」
+    // hard-coded would pass on any chart at all.
+    ring("acc-capped", "gateway2", "newapi", {
+      spent: 9.0,
+      currency: "USD",
+      days: [
+        { at: 1_800_000_000, spent: 1.0 },
+        { at: 1_800_086_400, spent: 3.0 },
+        { at: 1_800_172_800, spent: 5.0 },
+      ],
+      log_capped: 1000,
+    }),
     // …and the refused one is carried from a peer, so the read-from
     // line (who read it, how long ago) is on the glass to be measured.
     {
@@ -2179,6 +2213,67 @@ try {
       fail(
         `the arcs read ${JSON.stringify(arcs)} — a fraction draws itself (0.45), a reading with no ceiling draws a whole ring (1), and only 问不出来 leaves bare track (null)`,
       );
+    }
+
+    //   ── 8·the day chart, and what its title is allowed to say ──
+    //   2026-09-07:「看图的人不能以为自己看的是 7 天」. new-api's log
+    //   road answers its most recent 1000 records with no time window,
+    //   so a busy key spends the ceiling inside a day — and a chart
+    //   labelled 「7 天」 holding half of one **does not error and does
+    //   not look empty: it draws a true picture of the wrong stretch**.
+    //
+    //   **Two accounts, and neither alone is enough.** `acc-number` has
+    //   two days and an uncut log; `acc-capped` has three days and a
+    //   cut one. So: the title is read off the fixture's own day count
+    //   (a hard-coded 「7 天」 passes on any chart), and the cap line is
+    //   present on one and **absent on the other** — a build that always
+    //   draws it, or never does, fails on one of the two.
+    const chartOf = async (row, days) => {
+      await page.locator(`[data-quota-row="${row}"]`).click();
+      await wait(300);
+      return await page.evaluate(() => {
+        const box = document.querySelector("[data-quota-days]");
+        if (!box) return null;
+        const bars = [...box.querySelectorAll("[data-quota-day]")];
+        return {
+          title: box.querySelector("[data-quota-days-title]")?.textContent?.trim() ?? null,
+          capped: box.querySelector("[data-quota-days-capped]")?.textContent?.trim() ?? null,
+          bars: bars.length,
+          // Read as ink, not as a style string: the tallest day must
+          // actually be the tallest bar on the glass.
+          heights: bars.map((b) => Math.round(b.getBoundingClientRect().height)),
+          spends: bars.map((b) => Number(b.getAttribute("data-quota-day-spent"))),
+        };
+      });
+    };
+    const plain = await chartOf("acc-number");
+    const cut = await chartOf("acc-capped");
+    const daysOf = (id) => board.find((r) => r.reading.account === id).reading.days;
+    if (!plain || !cut) {
+      fail(`probe dead: the day chart never drew (plain=${!!plain} cut=${!!cut})`);
+    } else if (plain.bars !== daysOf("acc-number").length || cut.bars !== daysOf("acc-capped").length) {
+      fail(
+        `the charts draw ${plain.bars} and ${cut.bars} bars for fixtures of ${daysOf("acc-number").length} and ${daysOf("acc-capped").length} days`,
+      );
+    } else if (!plain.title?.includes(String(plain.bars)) || !cut.title?.includes(String(cut.bars))) {
+      fail(
+        `the titles say ${JSON.stringify([plain.title, cut.title])} for ${plain.bars} and ${cut.bars} days — the title is what the chart covers, not what was asked for`,
+      );
+    } else if (plain.capped !== null) {
+      fail(`an uncut log draws a cap line (${JSON.stringify(plain.capped)}) — it would be false on almost every account`);
+    } else if (!cut.capped?.includes("1000")) {
+      fail(`a cut log says ${JSON.stringify(cut.capped)} — it carries the count the provider actually answered`);
+    } else {
+      //   …and the bars are the readings: the fullest day is the tallest
+      //   column. A chart that drew equal bars would pass every count
+      //   above and say nothing.
+      const tallest = cut.heights.indexOf(Math.max(...cut.heights));
+      const richest = cut.spends.indexOf(Math.max(...cut.spends));
+      if (tallest !== richest || new Set(cut.heights).size !== cut.heights.length) {
+        fail(
+          `the cut chart's bars are ${JSON.stringify(cut.heights)} for spends ${JSON.stringify(cut.spends)} — the fullest day is the tallest, and three different days are three different heights`,
+        );
+      }
     }
 
     //   ── 8·the row's menu ───────────────────────────────────────
