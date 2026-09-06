@@ -25,6 +25,7 @@ import {
   removeAccount,
   type AccountRing,
   type QuotaAnswer,
+  type QuotaCredits,
   type QuotaWindow,
 } from "@/api";
 import { IconBack } from "@/components/icons";
@@ -226,8 +227,14 @@ type Row = {
       **not** the machine holding an account's key, which is a property
       of the account and lives in its detail. */
   from: string;
+  /** The plan behind this row, where the row has one —「Max 20x」 for
+      the subscription, nothing for a registered account. Read from the
+      stored credential by the node (`Quota::plan`), which is why it is
+      a product name rather than a catalog word. */
+  plan: string | null;
   account: AccountRing | null;
   windows: QuotaWindow[];
+  credits: QuotaCredits | null;
 };
 
 /** What sits in the ring's centre: the share when there is one, the
@@ -286,6 +293,23 @@ function valueWord(axis: string, value: string): string {
 
 /** The axis's own name, for the heading over its ticks and over its
     group. */
+/** The line under a row's name, and the same line under the detail's
+    title. **One function, because they are one sentence** — the row and
+    its detail disagreeing about what a row *is* was the shape this page
+    kept drifting into. The plan sits second where there is one: it
+    qualifies 「订阅」, and reads as part of it. */
+function subLine(r: Row): string {
+  return [kindWord(r.kind), r.plan, providerWord(r.provider), fromWord(r.from)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** The `disabled_reason` key's sentence. A key this build never heard
+    of is shown as itself — same bargain `troubleWord` makes. */
+function creditWord(key: string): string {
+  return key === "out_of_credits" ? gui.quota_credits_out : key;
+}
+
 function axisWord(axis: string): string {
   switch (axis) {
     case "kind:":
@@ -327,7 +351,7 @@ export function visibleQuota(rows: Row[], query: string, ticked: string[]): Row[
     const on = answersOf(r);
     for (const [axis, set] of wanted) if (!set.has(on[axis] ?? "")) return false;
     if (q === "") return true;
-    const said = [r.name, ...QUOTA_AXES.map((a) => valueWord(a, on[a] ?? ""))].join(" ");
+    const said = [r.name, r.plan ?? "", ...QUOTA_AXES.map((a) => valueWord(a, on[a] ?? ""))].join(" ");
     return said.toLowerCase().includes(q);
   });
 }
@@ -430,8 +454,10 @@ export function QuotaLanding({
             kind: "sub" as const,
             provider: "claude",
             from: me,
+            plan: quota.quota.plan,
             account: null,
             windows: quota.quota.windows,
+            credits: quota.quota.credits,
           },
         ]
       : []),
@@ -441,8 +467,10 @@ export function QuotaLanding({
       kind: "bill" as const,
       provider: a.reading.provider,
       from: "",
+      plan: null,
       account: a,
       windows: [] as QuotaWindow[],
+      credits: null,
     })),
   ];
   const shown = visibleQuota(rows, query, words);
@@ -614,7 +642,7 @@ export function QuotaLanding({
                   makes 「search reads the words on the row」 true
                   rather than a search over a hidden field. */}
               <span data-quota-sub-line className="truncate text-xs text-muted-foreground">
-                {kindWord(r.kind)} · {providerWord(r.provider)} · {fromWord(r.from)}
+                {subLine(r)}
               </span>
             </span>
             <span className="flex-none text-xs tabular-nums text-muted-foreground">
@@ -665,9 +693,7 @@ export function QuotaLanding({
     <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
       <div className="flex min-w-0 flex-col">
         <span className="text-title">{current.name}</span>
-        <span className="text-sm text-muted-foreground">
-          {kindWord(current.kind)} · {providerWord(current.provider)} · {fromWord(current.from)}
-        </span>
+        <span className="text-sm text-muted-foreground">{subLine(current)}</span>
       </div>
       <div className="flex flex-wrap gap-6">
         {current.windows.map((w) => (
@@ -686,6 +712,61 @@ export function QuotaLanding({
           </div>
         ))}
       </div>
+      {/* **The credits, and they are not a window.** Windows are a
+          fraction of a period that refills by itself; this is money,
+          it does not refill and it has no reset. So it is a list of
+          figures rather than a ring, it is not in `ringWindows`, and
+          the row's right-hand summary never names it — three separate
+          places where treating it as a window would have said 「how
+          full am I」 with two different kinds of thing.
+          The dl is the account detail's, reused: one shape for
+          「figures about an account」 on this page, not a second. */}
+      {current.credits && (
+        <dl
+          data-quota-credits
+          className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"
+        >
+          <dt className="text-muted-foreground">{gui.quota_credits}</dt>
+          <dd data-quota-credits-on={current.credits.enabled}>
+            {current.credits.enabled ? gui.quota_credits_on : gui.quota_credits_off}
+            {/* The reason only where there is one to give, and it is
+                the endpoint's key turned into a sentence — a key khor
+                has never heard of is printed as itself rather than
+                swallowed, because a person can act on a reason they
+                can read. */}
+            {!current.credits.enabled && current.credits.disabled_reason
+              ? ` · ${creditWord(current.credits.disabled_reason)}`
+              : ""}
+          </dd>
+          {/* **`!= null`, not truthiness**: a balance of exactly 0 is a
+              fact worth drawing, and `0 &&` would hide precisely the
+              reader who most needs to see it. */}
+          {current.credits.used != null && (
+            <>
+              <dt className="text-muted-foreground">{gui.accounts_spent}</dt>
+              <dd data-quota-credits-used className="tabular-nums">
+                {money(current.credits.used, current.credits.currency)}
+              </dd>
+            </>
+          )}
+          {current.credits.balance != null && (
+            <>
+              <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>
+              <dd data-quota-credits-balance className="tabular-nums">
+                {money(current.credits.balance, current.credits.currency)}
+              </dd>
+            </>
+          )}
+          {current.credits.monthly_limit != null && (
+            <>
+              <dt className="text-muted-foreground">{gui.quota_credits_monthly}</dt>
+              <dd className="tabular-nums">
+                {money(current.credits.monthly_limit, current.credits.currency)}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
     </div>
   );
 

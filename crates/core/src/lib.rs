@@ -1343,6 +1343,43 @@ pub struct QuotaWindow {
     pub severity: Option<String>,
 }
 
+/// The prepaid credits that carry on after the plan's windows are full
+/// — Anthropic's「usage credits」, billed at API prices out of a
+/// balance the person topped up.
+///
+/// **Not a window, and it must not be drawn as one.** A window is a
+/// fraction of a period that refills by itself; this is money, it does
+/// not refill, and it has no reset. Putting it on the ring or into the
+/// row's summary would make「how full am I」answer with two different
+/// kinds of thing — so it lives in the detail and nowhere else.
+///
+/// **Every figure is in the currency's major unit**, converted at the
+/// parser out of the minor units the endpoint reports with their own
+/// exponent. The two blocks it reports (`extra_usage` and `spend`) are
+/// the same money spelled twice.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+pub struct QuotaCredits {
+    /// Whether spending past the plan is switched on right now.
+    pub enabled: bool,
+    /// Why not, as the endpoint's own key (`out_of_credits`). A reason
+    /// this build has never heard of is shown as itself, the same
+    /// bargain [`QuotaTrouble`]'s words make — the person can act on a
+    /// key they can read, and cannot act on one khor swallowed.
+    pub disabled_reason: Option<String>,
+    /// Spent so far, and what is left. `None` where the endpoint said
+    /// nothing rather than said zero: a balance nobody reported is not
+    /// an empty wallet, and drawing it as 0 would be this layer
+    /// inventing the one number a person would act on.
+    pub used: Option<f64>,
+    pub balance: Option<f64>,
+    pub monthly_limit: Option<f64>,
+    pub currency: Option<String>,
+    /// Whether credits were ever switched on. Distinguishes「off, and
+    /// you have used this before」from「off, and you have never had
+    /// it」, which are different sentences to a reader.
+    pub ever_enabled: bool,
+}
+
 /// What this machine's Claude subscription has left.
 ///
 /// **Read through the user's own Claude Code login, and the interface has
@@ -1376,6 +1413,28 @@ pub struct Quota {
     /// [`VitalsReading`] carries, applied to an account.
     #[ts(type = "number | null")]
     pub as_of: Option<i64>,
+    /// The plan this login is on — 「Max 20x」, 「Pro」 — as the stored
+    /// credential states it, **not asked for over the network**.
+    ///
+    /// `claudeAiOauth.rateLimitTier` already sits in the file khor
+    /// reads for the access token, so this costs no request. The
+    /// endpoint's `/api/oauth/profile` answers it too, and is
+    /// deliberately not asked: it is another non-public endpoint and it
+    /// carries personal profile besides, for a fact already on disk.
+    ///
+    /// The slug is de-slugged, never invented: `default_claude_max_20x`
+    /// becomes 「Max 20x」, and a slug that does not fit that shape is
+    /// shown as itself rather than guessed at.
+    ///
+    /// **Read fresh on every [`Quota`], including cache hits**, because
+    /// it is a fact about the login rather than about the reading — a
+    /// person who changes plan should not have to wait out a cache.
+    #[serde(default)]
+    pub plan: Option<String>,
+    /// The prepaid credits, where the endpoint reported them. `None`
+    /// from the statusline file, which says nothing about money.
+    #[serde(default)]
+    pub credits: Option<QuotaCredits>,
 }
 
 /// Why there is no quota reading — as a cause, never as a sentence.

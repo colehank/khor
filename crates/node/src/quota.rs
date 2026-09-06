@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use khor_core::{Quota, QuotaTrouble, QuotaWindow, QuotaWindowSpan};
+use khor_core::{Quota, QuotaCredits, QuotaTrouble, QuotaWindow, QuotaWindowSpan};
 use serde_json::Value;
 
 const ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -61,8 +61,84 @@ const FAIL_COOLDOWN: i64 = 600;
 static MEM_CACHE: Mutex<Option<(i64, Quota)>> = Mutex::new(None);
 static LAST_FAIL: Mutex<Option<i64>> = Mutex::new(None);
 
-/// This machine's reading, from whichever source can answer.
+/// This machine's reading, from whichever source can answer — **plus
+/// the plan, which is not part of any of them.**
+///
+/// The plan lives in the stored credential, so it is read here rather
+/// than inside a source: it costs no request, it is the same answer
+/// whichever source supplied the windows, and reading it outside the
+/// caches means changing plan shows up at once instead of after five
+/// minutes. A `plan` that came back inside a cached [`Quota`] is
+/// overwritten for that reason and not consulted.
 pub async fn read() -> Result<Quota, QuotaTrouble> {
+    let mut quota = read_windows().await?;
+    quota.plan = plan_label();
+    Ok(quota)
+}
+
+/// The plan the stored credential names, spelled for a person.
+///
+/// **Nothing is asked over the network**: `rateLimitTier` sits in the
+/// same file `access_token` already reads. The slug is the vendor's, and
+/// so is every word that comes out of it — `default_claude_max_20x` is
+/// 「Max 20x」 because that is what those pieces say, and a slug that
+/// does not fit the shape is passed through untouched.
+///
+/// `subscriptionType` is the coarser second spelling of the same fact
+/// (「max」 with no multiplier) and answers only when the tier is
+/// missing — a plan named without its size is still better than none.
+fn plan_label() -> Option<String> {
+    let raw = stored_credential().ok()?;
+    let json: Value = serde_json::from_str(&raw).ok()?;
+    let oauth = json.get("claudeAiOauth")?;
+    if let Some(tier) = oauth.get("rateLimitTier").and_then(Value::as_str) {
+        return Some(plan_from_tier(tier));
+    }
+    oauth
+        .get("subscriptionType")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(title_case)
+}
+
+/// `max` → `Max`. One word, first letter up, and nothing else touched.
+fn title_case(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// `default_claude_max_20x` → 「Max 20x」; `default_claude_pro` → 「Pro」.
+///
+/// **A slug that does not fit comes back whole.** Guessing at an
+/// unfamiliar tier would put a plan name on the screen that the vendor
+/// never used, and a reader cannot tell an invented name from a real
+/// one — whereas a raw slug is visibly the endpoint's own word.
+fn plan_from_tier(tier: &str) -> String {
+    let Some(rest) = tier.strip_prefix("default_claude_") else {
+        return tier.to_owned();
+    };
+    let (plan, size) = match rest.split_once('_') {
+        Some((plan, size)) => (plan, Some(size)),
+        None => (rest, None),
+    };
+    if !matches!(plan, "pro" | "max") {
+        return tier.to_owned();
+    }
+    match size {
+        // The multiplier is only a multiplier if it looks like one.
+        Some(size) if size.ends_with('x') && size[..size.len() - 1].chars().all(|c| c.is_ascii_digit()) => {
+            format!("{} {size}", title_case(plan))
+        }
+        Some(_) => tier.to_owned(),
+        None => title_case(plan),
+    }
+}
+
+/// This machine's windows, from whichever source can answer.
+async fn read_windows() -> Result<Quota, QuotaTrouble> {
     if let Some(quota) = read_local_status() {
         return Ok(quota);
     }
@@ -188,7 +264,13 @@ fn read_local_status() -> Option<Quota> {
         .duration_since(SystemTime::UNIX_EPOCH)
         .ok()
         .map(|d| d.as_secs() as i64);
-    Some(Quota { windows, as_of })
+    // The hook's file is about windows and says nothing about money.
+    Some(Quota {
+        windows,
+        as_of,
+        plan: None,
+        credits: None,
+    })
 }
 
 async fn fetch() -> Result<Quota, QuotaTrouble> {
@@ -212,6 +294,10 @@ async fn fetch() -> Result<Quota, QuotaTrouble> {
     Ok(Quota {
         windows,
         as_of: None,
+        // Filled by `read`, which has the credential; a source knows
+        // only what its own payload said.
+        plan: None,
+        credits: parse_credits(&json),
     })
 }
 
@@ -416,6 +502,68 @@ fn from_top_keys(v: &Value, now: i64) -> Vec<QuotaWindow> {
     out
 }
 
+/// Money, out of whichever of the endpoint's two spellings answers.
+///
+/// **`extra_usage` and `spend` are the same credits twice**: 921 with
+/// `decimal_places: 2` and 921 with `exponent: 2` are both 9.21 USD.
+/// This reads `extra_usage` because that is the block carrying the
+/// switch and the reason, and falls back to `spend` for a figure the
+/// first one left out.
+///
+/// ⚠️ **A minor-unit amount with no exponent is not read at all.** The
+/// exponent is what turns 921 into 9.21, and assuming 2 would be a
+/// hundred-fold error on a currency that does not have two decimals —
+/// an amount off by 100 is worse than an amount missing, because a
+/// person acts on it.
+fn parse_credits(v: &Value) -> Option<QuotaCredits> {
+    let extra = v.get("extra_usage").filter(|e| !e.is_null());
+    let spend = v.get("spend").filter(|s| !s.is_null());
+    let (extra, spend) = (extra?, spend);
+    // `used_credits` is in minor units, and `decimal_places` says how
+    // many. Both or neither.
+    let major = |amount: Option<f64>, places: Option<i64>| -> Option<f64> {
+        Some(amount? / 10f64.powi(i32::try_from(places?).ok()?))
+    };
+    let used = major(
+        extra.get("used_credits").and_then(Value::as_f64),
+        extra.get("decimal_places").and_then(Value::as_i64),
+    )
+    .or_else(|| {
+        let used = spend?.get("used")?;
+        major(
+            used.get("amount_minor").and_then(Value::as_f64),
+            used.get("exponent").and_then(Value::as_i64),
+        )
+    });
+    let money_at = |block: Option<&Value>, key: &str| -> Option<f64> {
+        let m = block?.get(key).filter(|v| !v.is_null())?;
+        // Either a bare number in the major unit, or the minor-unit
+        // object `spend` uses.
+        m.as_f64()
+            .or_else(|| major(m.get("amount_minor").and_then(Value::as_f64), m.get("exponent").and_then(Value::as_i64)))
+    };
+    Some(QuotaCredits {
+        enabled: extra.get("is_enabled").and_then(Value::as_bool).unwrap_or(false),
+        disabled_reason: extra
+            .get("disabled_reason")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
+        used,
+        balance: money_at(spend, "balance"),
+        monthly_limit: money_at(Some(extra), "monthly_limit").or_else(|| money_at(spend, "limit")),
+        currency: extra
+            .get("currency")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| spend?.get("used")?.get("currency")?.as_str().map(str::to_owned)),
+        ever_enabled: extra
+            .get("credits_ever_enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
+}
+
 /// Where a window sits in the order [`Quota::windows`] promises:
 /// shortest first, and the whole plan before one model's share of it.
 fn seat(w: &QuotaWindow) -> (u8, bool, String) {
@@ -476,6 +624,8 @@ mod tests {
                 severity: None,
             }],
             as_of: None,
+            plan: None,
+            credits: None,
         }
     }
 
@@ -725,6 +875,61 @@ mod tests {
             unix_seconds(&serde_json::json!("2026-09-12T08:00:00.400168+00:00")),
             Some(1_789_200_000),
         );
+    }
+
+    #[test]
+    fn a_tier_slug_is_de_slugged_and_an_unfamiliar_one_is_not_guessed_at() {
+        assert_eq!(plan_from_tier("default_claude_max_20x"), "Max 20x");
+        assert_eq!(plan_from_tier("default_claude_max_5x"), "Max 5x");
+        assert_eq!(plan_from_tier("default_claude_pro"), "Pro");
+        // **Whole, not half.** Every one of these has a piece this
+        // build recognises, and guessing from that piece would put a
+        // plan name on the screen the vendor never used.
+        assert_eq!(plan_from_tier("enterprise_claude_max_20x"), "enterprise_claude_max_20x");
+        assert_eq!(plan_from_tier("default_claude_team_20x"), "default_claude_team_20x");
+        assert_eq!(plan_from_tier("default_claude_max_enormous"), "default_claude_max_enormous");
+        assert_eq!(plan_from_tier(""), "");
+    }
+
+    /// Money, and the reason the exponent is not assumed: the capture
+    /// says 921 twice, in two blocks, each with its own way of saying
+    /// 「shift two places」.
+    #[test]
+    fn the_two_spellings_of_the_same_credits_read_as_the_same_money() {
+        let credits = parse_credits(&real()).expect("the capture has both blocks");
+        assert_eq!(credits.used, Some(9.21));
+        assert_eq!(credits.currency.as_deref(), Some("USD"));
+        assert!(!credits.enabled);
+        assert_eq!(credits.disabled_reason.as_deref(), Some("out_of_credits"));
+        assert!(credits.ever_enabled);
+        // Neither was reported, and neither may be drawn as zero.
+        assert_eq!(credits.balance, None);
+        assert_eq!(credits.monthly_limit, None);
+
+        // `spend` alone says the same money a different way.
+        let only_spend = serde_json::json!({
+            "extra_usage": {"is_enabled": true},
+            "spend": {"used": {"amount_minor": 921, "currency": "USD", "exponent": 2}},
+        });
+        assert_eq!(parse_credits(&only_spend).unwrap().used, Some(9.21));
+    }
+
+    /// An amount whose exponent nobody stated is **not read**, because
+    /// assuming two decimals is a hundred-fold error on a currency that
+    /// does not have them — and a wrong figure about money is acted on.
+    #[test]
+    fn a_minor_unit_amount_with_no_exponent_is_left_unread() {
+        let body = serde_json::json!({
+            "extra_usage": {"is_enabled": false, "used_credits": 921.0},
+            "spend": {"used": {"amount_minor": 921}},
+        });
+        assert_eq!(parse_credits(&body).unwrap().used, None);
+    }
+
+    #[test]
+    fn a_payload_with_no_credits_block_says_so_rather_than_zero() {
+        assert!(parse_credits(&serde_json::json!({"five_hour": null})).is_none());
+        assert!(parse_credits(&serde_json::json!({"extra_usage": null})).is_none());
     }
 
     #[test]

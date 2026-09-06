@@ -534,11 +534,34 @@ try {
     { span: "seven_day", scope: null, used_pct: 39, resets_at: Math.floor(Date.now() / 1000) + 86_400, active: true, severity: "normal" },
     { span: "seven_day", scope: "Fable", used_pct: 29, resets_at: Math.floor(Date.now() / 1000) + 86_400, active: false, severity: "normal" },
   ];
+  // The plan is a product name the node de-slugged out of the stored
+  // credential (`default_claude_max_20x`), not a catalog word — so the
+  // fixture states it the way the node hands it over.
+  const quotaPlan = "Max 20x";
+  // **The credits, and the two `null`s are the point.** The capture the
+  // parser was written against reports `balance` and `monthly_limit` as
+  // null while reporting a spend — so「有才画」has something to be
+  // wrong about here. A fixture with all three filled cannot tell a
+  // page that checks from one that draws whatever it is handed.
+  const quotaCredits = {
+    enabled: false,
+    disabled_reason: "out_of_credits",
+    used: 9.21,
+    balance: null,
+    monthly_limit: null,
+    currency: "USD",
+    ever_enabled: true,
+  };
   await page.route("**/quota", (r) =>
     r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        quota: { windows: quotaWindows, as_of: Math.floor(Date.now() / 1000) - 120 },
+        quota: {
+          windows: quotaWindows,
+          as_of: Math.floor(Date.now() / 1000) - 120,
+          plan: quotaPlan,
+          credits: quotaCredits,
+        },
         trouble: null,
       }),
     }),
@@ -1893,6 +1916,49 @@ try {
       fail(
         `the per-model window does not wear the endpoint's own name ${JSON.stringify(scoped.scope)} — got ${JSON.stringify(scopedSaid)}`,
       );
+    }
+
+    //   **The plan, on the row and on the detail.** Both, because they
+    //   are one sentence assembled once: a page that showed it in only
+    //   one place would be the row and its detail disagreeing about
+    //   what the row is.
+    const planOnRow = await page.locator('[data-quota-row][data-quota-kind="sub"] [data-quota-sub-line]').textContent();
+    const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
+    if (!planOnRow?.includes(quotaPlan)) {
+      fail(`the subscription row does not name its plan ${JSON.stringify(quotaPlan)} — got ${JSON.stringify(planOnRow)}`);
+    }
+
+    //   **The credits: shown, and not shown as a window.** Three
+    //   claims, and the third is the one a careless build fails:
+    //   `balance` and `monthly_limit` are null in this fixture and must
+    //   draw *no row at all* — the wrong implementation draws an empty
+    //   one, which reads as「your balance is nothing」.
+    if (planOnDetail !== 1) {
+      fail(`probe dead: the subscription detail draws ${planOnDetail} 信用额 blocks, so nothing below is measuring one`);
+    } else {
+      const credits = await page.locator("[data-quota-detail] [data-quota-credits]").evaluate((dl) => ({
+        text: dl.textContent ?? "",
+        pairs: dl.querySelectorAll("dt").length,
+        used: dl.querySelector("[data-quota-credits-used]")?.textContent ?? null,
+        balance: dl.querySelector("[data-quota-credits-balance]") !== null,
+        on: dl.querySelector("[data-quota-credits-on]")?.getAttribute("data-quota-credits-on") ?? null,
+      }));
+      if (!credits.used?.includes("9.21") || credits.on !== "false") {
+        fail(`the 信用额 block says used=${JSON.stringify(credits.used)} on=${JSON.stringify(credits.on)} for a spent-out fixture`);
+      }
+      if (credits.balance || credits.pairs !== 2) {
+        fail(
+          `the 信用额 block drew ${credits.pairs} rows and balance=${credits.balance} — the fixture reports no balance and no monthly limit, and a row for a figure nobody stated reads as a zero`,
+        );
+      }
+      //   …and it is not on the ring: the layers were already checked
+      //   above against the *windows*, so a credits figure that leaked
+      //   into `ringWindows` would have shown up there. The one thing
+      //   left to say is that the row's summary is a window, not money.
+      const summary = await page.locator('[data-quota-row][data-quota-kind="sub"]').textContent();
+      if (summary?.includes("9.21")) {
+        fail(`the subscription row's summary names the credits (${JSON.stringify(summary)}) — money is not a window`);
+      }
     }
   }
 

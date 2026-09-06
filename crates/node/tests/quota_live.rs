@@ -41,6 +41,12 @@ async fn the_endpoint_answers_and_leaves_the_machine_a_shared_cache() {
             // is being shown anyway.
             println!("windows: {:?}", quota.windows);
             println!("as_of: {:?}", quota.as_of);
+            // The plan comes from the stored credential, the credits
+            // from the payload; both are printed because both are
+            // things a person is already being shown, and neither is a
+            // secret. Nothing here prints the token.
+            println!("plan: {:?}", quota.plan);
+            println!("credits: {:?}", quota.credits);
             assert!(
                 !quota.windows.is_empty(),
                 "a successful read with no windows means the shape moved and the parser gave up \
