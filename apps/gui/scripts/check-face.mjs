@@ -402,6 +402,18 @@ try {
       const bare = { ...fresh, top: fresh.top.map((t) => ({ ...t, gpu_pct: null, gpu_mem: null, run_secs: null })) };
       return r.fulfill({ contentType: "application/json", body: JSON.stringify(bare) });
     }
+    // **A page whose CPU readings crowd the bottom of the axis** — what
+    // this Mac's own table looks like (most rows at 0, the rest spread
+    // over three decades below one percent). Served for the 读写 order,
+    // which nothing else here asks for, so the scatter's tick labels
+    // can be measured on readings that put several ticks inside one
+    // hundredth of a percent (2026-09-06: `0.00% 0.01% 0.01% 0.02%`).
+    if (r.request().postDataJSON().by === "io") {
+      const fresh = dayNow();
+      const crowd = [0, 0, 0.000001, 0.000002, 0.0031, 0.0062, 0.0093, 0.0124, 0.0186, 0.031, 0.062, 0.12, 0.31, 1.2, 3.1, 12.4, 45, 240.5];
+      const low = { ...fresh, top: fresh.top.map((t, i) => ({ ...t, cpu_pct: crowd[i % crowd.length] })) };
+      return r.fulfill({ contentType: "application/json", body: JSON.stringify(low) });
+    }
     if (held.on) {
       held.seen += 1;
       await new Promise((ok) => (held.release = ok));
@@ -2190,6 +2202,7 @@ try {
               chars: +(shown / Math.max(0.001, per)).toFixed(2),
               cellW: +cell.getBoundingClientRect().width.toFixed(1),
               text: cell.textContent.trim().slice(0, 24),
+              bent: lineEl.dataset.bent === "1",
             });
           }
           return out;
@@ -2213,19 +2226,35 @@ try {
           page.evaluate((on) => {
             const line = document.querySelector("[data-machine-card] [data-top-row] [data-c='cmd'] [data-cmd-line]");
             if (!line) return false;
-            if (on) line.style.width = "3px";
-            else line.style.removeProperty("width");
+            if (on) {
+              line.style.width = "3px";
+              line.dataset.bent = "1";
+            } else {
+              line.style.removeProperty("width");
+              delete line.dataset.bent;
+            }
             return true;
           }, on);
-        if (!(await bend(true))) {
-          fail("probe dead: no 「命令」 line to squeeze, so 「the name is always there」 was never shown to be checkable");
-        } else {
-          const squeezed = await cmdCells();
+        //   **Read off the cell that was squeezed, and squeeze again if
+        //   it is gone.** The card re-asks for its table every few
+        //   seconds, and an answer landing between the squeeze and the
+        //   reading can hand the row a fresh line element — one without
+        //   the 3px on it. Measured 2026-09-06: one run in six read
+        //   「3 characters」 here, which is the *unsqueezed* tightest
+        //   cell, and the probe called itself dead. The mark says which
+        //   cell wore the squeeze; a reading with no marked cell is
+        //   retried rather than judged.
+        let bent = null;
+        for (let go = 0; go < 4 && bent === null; go += 1) {
+          if (!(await bend(true))) break;
+          const squeezed = (await cmdCells()).filter((c) => c.bent);
           await bend(false);
-          const least = squeezed.length ? Math.min(...squeezed.map((c) => c.chars)) : null;
-          if (!(least !== null && least < 1)) {
-            fail(`probe dead: a cell squeezed to three pixels still reported ${least} characters of its name — the check below cannot fail`);
-          }
+          if (squeezed.length) bent = squeezed[0];
+        }
+        if (bent === null) {
+          fail("probe dead: no 「命令」 line to squeeze (or none stayed squeezed long enough to read), so 「the name is always there」 was never shown to be checkable");
+        } else if (!(bent.chars < 1)) {
+          fail(`probe dead: a cell squeezed to three pixels still reported ${bent.chars} characters of its name — the check below cannot fail`);
         }
       }
       const cells = await cmdCells();
@@ -3906,6 +3935,15 @@ try {
         const key = box.dataset.dayTrendOf;
         const med = band.querySelector(`[data-day-median="${key}"]`);
         const frame = band.querySelector(`[data-day-trend-frame="${key}"]`);
+        const label = band.querySelector(`[data-day-peak-label="${key}"]`);
+        //   Boxes in the drawing's own units (the viewBox is 1:1 with
+        //   pixels); the bar is a line, so its box is grown by half
+        //   its halo stroke, and the outline by half of its.
+        const grow = (b, by) => (b ? { l: b.x - by, r: b.x + b.width + by, t: b.y - by, b: b.y + b.height + by } : null);
+        const hit = (a, c) => !!a && !!c && !(a.r < c.l || c.r < a.l || a.b < c.t || c.b < a.t);
+        const labelBox = label ? grow(label.getBBox(), 0) : null;
+        const barBox = med ? grow(med.getBBox(), 1.8) : null;
+        const frameBox = frame ? grow(frame.getBBox(), 1.2) : null;
         const peak = [...band.querySelectorAll("circle")].find((c) => c.getAttribute("r") === "2.8" && Math.abs(Number(c.getAttribute("cx")) - Number(box.getAttribute("x")) - Number(box.getAttribute("width")) / 2) < 0.6);
         out[key] = {
           q1: Number(box.dataset.dayQ1),
@@ -3919,6 +3957,11 @@ try {
           medAfterHairs: hairs && med ? order(med) > order(hairs) : null,
           frameAfterHairs: hairs && frame ? order(frame) > order(hairs) : null,
           fill: getComputedStyle(box).fill,
+          framed: !!frame,
+          boxH: Number(box.getAttribute("height")),
+          labelOnBar: hit(labelBox, barBox),
+          labelOnFrame: hit(labelBox, frameBox),
+          labelBox,
         };
       }
       return { massLo, marks: out, view: band.dataset.dayView };
@@ -3943,8 +3986,24 @@ try {
         if (m.peakY !== null && m.peakY > m.top + 0.6) {
           fail(`the ${k} axis's peak (y=${m.peakY}) is below the box's top (${m.top}) — a maximum under the 75th percentile`);
         }
-        if (m.boxBeforeHairs !== true || m.medAfterHairs !== true || m.frameAfterHairs !== true) {
+        //   A box under four pixels high has no inside for an outline
+        //   to enclose, so it is drawn as its bar alone; at four and
+        //   above the outline is owed. Read off the fill's height, the
+        //   same number the drawing decides by.
+        if (m.framed !== m.boxH >= 4) {
+          fail(`the ${k} axis's box is ${m.boxH}px high and ${m.framed ? "wears" : "lacks"} an outline — under 4px only the median bar is drawn, at 4px and above the box is`);
+        }
+        if (m.boxBeforeHairs !== true || m.medAfterHairs !== true || (m.framed && m.frameAfterHairs !== true)) {
           fail(`the ${k} axis's box/median are painted in the wrong order (fill under hairs: ${m.boxBeforeHairs}, outline over hairs: ${m.frameAfterHairs}, median over hairs: ${m.medAfterHairs})`);
+        }
+        //   **The peak label yields to the mark** (2026-09-06, seen on
+        //   内存 and 磁盘: a day that peaks where it usually sits put
+        //   「峰值 86% · 17:20」 across its own box). Both are owed, and
+        //   neither may cover the other; the label is the one that moves.
+        if (!m.labelBox) {
+          fail(`the ${k} axis has no peak label to keep off its box — the probe cannot tell whether one covers the other`);
+        } else if (m.labelOnBar || m.labelOnFrame) {
+          fail(`the ${k} axis's peak label sits on its quartile mark (on the bar: ${m.labelOnBar}, on the box: ${m.labelOnFrame}; label ${JSON.stringify(m.labelBox)})`);
         }
       }
       const fills = new Set(keys.map((k) => marks.marks[k]?.fill).filter(Boolean));
@@ -4257,6 +4316,79 @@ try {
       await pick("y", "mem");
       await wait(200);
     }
+  }
+
+  //     ── every tick wears a label of its own ────────────────────
+  //
+  //     2026-09-06, seen on this Mac's own table once the axis began
+  //     at the data's minimum: `0.00% 0.01% 0.01% 0.02% 0.12% 0.94%
+  //     7.6%`. Two labels reading the same over two positions break
+  //     the one promise a tick makes (`ruler`'s: the label is a real
+  //     reading, drawn where that reading belongs), and a `0.00%` on
+  //     an axis whose lowest reading is above zero is a reading that
+  //     was never taken. So, on both axes and on two pages:
+  //
+  //       - no two ticks on an axis print the same label;
+  //       - a label reads as zero only for the reading zero — at most
+  //         one such label, and only when the axis really starts at 0.
+  //
+  //     **Measured on a page built to crowd the bottom of the axis**
+  //     — the 读写 order answers with CPU readings three decades under
+  //     one percent, two of them a millionth apart, which is the shape
+  //     that made the old two-decimal rule print the same label thrice.
+  //     The default page is measured too, as the arm that says the
+  //     crowding page is the one doing the work.
+  {
+    const labels = () =>
+      page.evaluate(() => {
+        const plot = document.querySelector("[data-machine-card] [data-top-plot]");
+        if (!plot) return null;
+        return {
+          pair: plot.dataset.plotAxes,
+          xLo: Number(plot.dataset.plotXLo),
+          x: [...plot.querySelectorAll("[data-plot-tick-x] text")].map((t) => t.textContent.trim()),
+          y: [...plot.querySelectorAll("[data-plot-tick-y] text")].map((t) => t.textContent.trim()),
+        };
+      });
+    const judge = (got, page) => {
+      if (!got || got.x.length < 3 || got.y.length < 3) {
+        fail(`probe dead: the ${page} page draws ${got?.x.length ?? 0}×${got?.y.length ?? 0} tick labels, so 「each tick has its own label」 measured nothing`);
+        return;
+      }
+      for (const [axis, ls] of [["x", got.x], ["y", got.y]]) {
+        const dup = ls.filter((l, i) => ls.indexOf(l) !== i);
+        if (dup.length) fail(`the ${page} page's ${axis} axis prints the same label twice: ${dup.map((d) => `「${d}」`).join(" ")} (all: ${ls.join(", ")})`);
+      }
+      const zeros = got.x.filter((l) => parseFloat(l) === 0);
+      const allowed = got.xLo === 0 ? 1 : 0;
+      if (zeros.length > allowed) {
+        fail(`the ${page} page's x axis prints ${zeros.length} labels that read as zero (${zeros.join(", ")}) for an axis starting at ${got.xLo} — a reading above zero written as 0`);
+      }
+    };
+    judge(await labels(), "default");
+    //   Wide, because the 读写 head is folded away at the narrow stop
+    //   the scatter sections run at — a press on a head that is not on
+    //   screen waits thirty seconds and then throws. Put back after.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+    await page.locator('[data-machine-card] [data-top-head="io"] button').click();
+    const arrived = await until(8_000, async () => (await labels())?.xLo === 0);
+    if (!arrived) fail("probe dead: ordering by 读写 never drew the crowded page (x lo stayed above 0)");
+    else {
+      const got = await labels();
+      judge(got, "crowded");
+      console.log(`plot ticks (crowded page): x ${got.x.join(" ")} · y ${got.y.join(" ")}`);
+    }
+    await page.locator('[data-machine-card] [data-top-head="cpu"] button').click();
+    await until(8_000, async () => (await labels())?.xLo > 0);
+    await page.setViewportSize({ width: 380, height: 800 });
+    await wait(300);
+    //   Back where the sections below expect the figure: on screen.
+    //   Their first reading is a resting position, and a plot left
+    //   below the fold by the resize here would be scrolled into view
+    //   by their first press — read as 「the picker moved the figure」.
+    await page.locator("[data-machine-card] [data-top-plot]").scrollIntoViewIfNeeded();
+    await wait(300);
   }
 
   //     ── the two axes are the reader's, and changing one changes ──

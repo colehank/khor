@@ -1717,21 +1717,55 @@ function cellOf(k: Exclude<SortCol, "name">, r: Load["top"][number]): string {
  * `null` on either axis **is not drawn** — see `Scatter`.
  */
 const AXES = {
-  //   **The tick keeps its significant figures.** `Math.round` was
-  //   enough while every axis was a square root — its ticks are even
-  //   fractions of the maximum, so the small ones are still whole
-  //   percents. On a log axis the ticks are even fractions of the
-  //   *axis*, and the first few land at 0.03%, 0.2%, 1.3% — measured on
-  //   this Mac, where they came out as four ticks all reading 「0%」.
+  //   **A tick's precision is decided beside its neighbours, not here.**
+  //   `tick(v, d)` writes the reading with `d` decimals and `tickSet`
+  //   (in `Scatter`) picks `d` per tick — the fewest that keep its
+  //   label apart from every other label on that axis, and that keep a
+  //   reading above zero from printing as zero. Fixed rules were tried
+  //   twice and failed the same way twice: `Math.round` gave four ticks
+  //   reading 「0%」 on a log axis, and 「two decimals under 1」 gave
+  //   `0.00% 0.01% 0.01% 0.02%` once the axis started at the data's own
+  //   minimum (2026-09-06, on this Mac). Two labels that read the same
+  //   over two different positions break the one promise a tick makes.
+  //
+  //   时长 ignores `d`: its words are a ladder of units (秒/分钟/小时/天)
+  //   with no decimals to add, so two ticks inside one rung print the
+  //   same word — and `tickSet` drops the second rather than draw it.
   cpu: {
     word: () => cli.vitals_name_cpu,
     of: (r: Load["top"][number]) => r.cpu_pct,
-    tick: (v: number) => `${v >= 10 || v === 0 ? Math.round(v) : v < 1 ? v.toFixed(2) : v.toFixed(1)}%`,
+    tick: (v: number, d: number) => `${v.toFixed(d)}%`,
   },
-  mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number) => bytes(v) },
-  vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number) => bytes(v) },
+  mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number, d: number) => bytes(v, d) },
+  vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number, d: number) => bytes(v, d) },
   time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000) },
 } as const;
+
+/**
+ * The ticks of one axis, each with the label it can wear without
+ * colliding: the fewest decimals that keep it apart from every other
+ * tick's label at that same precision, and that keep a reading above
+ * zero from reading as zero (a `0.00%` on an axis whose lowest reading
+ * is 0.06% is a label that lies). Two ticks whose labels cannot be
+ * told apart at all (时长's unit ladder) become one — the second is
+ * dropped, never drawn twice.
+ */
+function tickSet(r: { tick: (f: number) => number }, a: { tick: (v: number, d: number) => string }, fractions: number[]) {
+  const vs = fractions.map((f) => r.tick(f));
+  const at = (i: number, d: number) => a.tick(vs[i], d);
+  const set = vs.map((v, i) => {
+    // Zero is 「0」, at no decimals: nothing else may read as zero (the
+    // rule below), so it cannot collide, and 「0.000%」 is a zero
+    // dressed as a measurement.
+    if (v === 0) return { v, label: at(i, 0) };
+    let d = 0;
+    const clashes = () =>
+      vs.some((_, j) => j !== i && at(j, d) === at(i, d)) || parseFloat(at(i, d)) === 0;
+    while (d < 6 && clashes()) d += 1;
+    return { v, label: at(i, d) };
+  });
+  return set.filter((t, i) => set.findIndex((o) => o.label === t.label) === i);
+}
 type AxisKey = keyof typeof AXES;
 const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
 
@@ -2029,6 +2063,8 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   // An axis that looks evenly spaced while a transform hides underneath
   // is the one that misleads.
   const steps = [0, 1, 2, 3, 4, 5, 6].map((k) => k / 6);
+  const xTicks = tickSet(rx, ax, steps);
+  const yTicks = tickSet(ry, ay, steps);
   const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
   return (
     <div
@@ -2100,28 +2136,22 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
         <svg data-plot-svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="text-foreground">
           <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
           <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="currentColor" strokeOpacity={0.15} />
-          {steps.map((f) => {
-            const v = rx.tick(f);
-            return (
-              <g key={`x${f}`} data-plot-tick-x={Math.round(v * 10) / 10}>
-                <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
-                <text x={sx(v)} y={H - padB + 14} fontSize={10} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
-                  {ax.tick(v)}
-                </text>
-              </g>
-            );
-          })}
-          {steps.map((f) => {
-            const v = ry.tick(f);
-            return (
-              <g key={`y${f}`} data-plot-tick-y={Math.round(v)}>
-                <line x1={padL - 3} y1={sy(v)} x2={padL} y2={sy(v)} stroke="currentColor" strokeOpacity={0.3} />
-                <text x={padL - 6} y={sy(v) + 3} fontSize={10} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
-                  {ay.tick(v)}
-                </text>
-              </g>
-            );
-          })}
+          {xTicks.map(({ v, label }) => (
+            <g key={`x${v}`} data-plot-tick-x={Math.round(v * 10) / 10}>
+              <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
+              <text x={sx(v)} y={H - padB + 14} fontSize={10} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
+                {label}
+              </text>
+            </g>
+          ))}
+          {yTicks.map(({ v, label }) => (
+            <g key={`y${v}`} data-plot-tick-y={Math.round(v)}>
+              <line x1={padL - 3} y1={sy(v)} x2={padL} y2={sy(v)} stroke="currentColor" strokeOpacity={0.3} />
+              <text x={padL - 6} y={sy(v) + 3} fontSize={10} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+                {label}
+              </text>
+            </g>
+          ))}
           {placed.map(({ r, x, y }) => {
             const cx = sx(x);
             const cy = sy(y);
@@ -2194,7 +2224,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                       it answers 「指到哪个点就说哪个点」 by construction,
                       where a proximity panel would answer 「附近有个
                       点」. */}
-                  <title>{`${cmdText(r)}\n${ax.tick(x)} · ${ay.tick(y)}`}</title>
+                  <title>{`${cmdText(r)}\n${ax.tick(x, 1)} · ${ay.tick(y, 1)}`}</title>
                 </circle>
               </g>
             );
@@ -3142,7 +3172,9 @@ function volWord(mount: string): string {
   return steps[steps.length - 1] ?? mount;
 }
 
-function bytes(n: number): string {
+/** `d` is the decimals in the unit chosen — one by default, more only
+    where an axis's ticks need them to stay apart (`tickSet`). */
+function bytes(n: number, d = 1): string {
   const units = ["B", "K", "M", "G", "T"];
   let v = n;
   let u = 0;
@@ -3150,5 +3182,5 @@ function bytes(n: number): string {
     v /= 1024;
     u += 1;
   }
-  return u === 0 ? `${n}${units[0]}` : `${v.toFixed(1)}${units[u]}`;
+  return u === 0 ? `${Math.round(n)}${units[0]}` : `${v.toFixed(d)}${units[u]}`;
 }

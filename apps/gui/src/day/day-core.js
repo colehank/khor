@@ -427,14 +427,26 @@ function drawPara(svg, T, W, narrow, fill){
     lines.push({i,p,base:{cls:p.getAttribute('class'),op:p.getAttribute('opacity'),w:'0.6'}});
   }
 
-  T.forEach((t,k)=>{
-    const q=quartiles(t); if(!q) return;
+  /* **A box too thin to have an inside is not drawn as a box.** Under
+     `BOX_MIN` the outline's two strokes would meet in the middle and
+     the mark would read as a smudge on the bar (磁盘 on the real
+     Mac-mini sat at 84.2 all day: a zero-high box). The fill stays —
+     it carries the numbers the gate reads and is invisible under the
+     bundle anyway — and the median bar alone says 「here, and never
+     anywhere else」, which is what a zero-wide middle half means. */
+  const BOX_MIN = 4;
+  const boxOf = t => { const q=quartiles(t); if(!q) return null;
     const top=mapY(q.q3), h=Math.max(1,mapY(q.q1)-top);
-    const frame = {x:AX[k]-BOXW/2,y:top.toFixed(2),width:BOXW,height:h.toFixed(2),rx:1.5,fill:'none'};
-    el(svg,'rect',{...frame,'stroke-width':2.4,class:'halo fade',style:'animation-delay:.6s'});
-    el(svg,'rect',{...frame,'stroke-width':.9,class:'k3 fade',style:'animation-delay:.6s',
-      'data-day-trend-frame':t.key||t.name});
-    const y=mapY(q.med).toFixed(2);
+    return { q, top, h, framed: h >= BOX_MIN, bar: mapY(q.med) }; };
+  T.forEach((t,k)=>{
+    const b=boxOf(t); if(!b) return;
+    if(b.framed){
+      const frame = {x:AX[k]-BOXW/2,y:b.top.toFixed(2),width:BOXW,height:b.h.toFixed(2),rx:1.5,fill:'none'};
+      el(svg,'rect',{...frame,'stroke-width':2.4,class:'halo fade',style:'animation-delay:.6s'});
+      el(svg,'rect',{...frame,'stroke-width':.9,class:'k3 fade',style:'animation-delay:.6s',
+        'data-day-trend-frame':t.key||t.name});
+    }
+    const q=b.q, y=b.bar.toFixed(2);
     const bar = {x1:AX[k]-MEDW/2,y1:y,x2:AX[k]+MEDW/2,y2:y,'stroke-linecap':'round'};
     el(svg,'line',{...bar,'stroke-width':3.6,class:'halo fade',style:'animation-delay:.6s'});
     el(svg,'line',{...bar,'stroke-width':1.5,class:'k2 fade',style:'animation-delay:.6s',
@@ -448,9 +460,23 @@ function drawPara(svg, T, W, narrow, fill){
     el(svg,'circle',{cx:AX[k],cy:mapY(pk.v),r:2.8,class:(strained?'sf':'ink')+' fade',
       style:`animation-delay:${.85+k*.04}s`});
     const left = k>=n-1 && n>1;
-    txt(svg,{x:AX[k]+(left?-8:8),y:mapY(pk.v)+3.5,'font-size':short?8:(narrow?8.5:9),
+    /* **The label yields to the quartile mark, never the other way**
+       (2026-09-06, seen on 内存 and 磁盘: a day that peaks where it
+       usually sits puts the peak on top of its own box). The label
+       hangs 3.5 under the peak's y; a box's top is at P75, which is at
+       or below the peak, so the two collide exactly when the day was
+       flat near its top. Then the label moves up until its bottom
+       clears whatever is drawn there — the framed box's top, or the
+       bar alone — by a hairline. The dot stays on the peak: it is the
+       peak, and a dot on a bar reads as 「here, and this is also the
+       most it got」. */
+    const b = boxOf(t);
+    const obstacle = b ? (b.framed ? b.top - 2.2 : b.bar - 2.8) : null;
+    let ly = mapY(pk.v)+3.5;
+    if(obstacle!=null && ly + 2 > obstacle) ly = obstacle - 2;
+    txt(svg,{x:AX[k]+(left?-8:8),y:ly.toFixed(2),'font-size':short?8:(narrow?8.5:9),
       'font-weight':800,'text-anchor':left?'end':'start',
-      class:(strained?'sf':'ink')+' fade',
+      class:(strained?'sf':'ink')+' fade','data-day-peak-label':t.key||t.name,
       style:`paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:${.9+k*.04}s`},
       short?Math.round(pk.v)+'%':WORDS.peakAt(Math.round(pk.v)+'%',hhmm(pk.i)));
     peakY[k]=mapY(pk.v);
