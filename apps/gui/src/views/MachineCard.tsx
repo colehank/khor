@@ -168,7 +168,9 @@ function Body({
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
-              `QuotaRings`' head carries the whole road. */}
+              `QuotaLanding`'s tombstone carries the whole road —
+              `QuotaRings` itself went on 2026-09-06 when the band became
+              a row. */}
           {/* **Only on this machine's card**, because the file it edits
               is on this machine. Putting it on every card would be a
               control that silently applies to one machine out of a list.

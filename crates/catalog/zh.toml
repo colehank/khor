@@ -1373,9 +1373,11 @@ accounts-trouble-no-key = "那台机器上没有这个账号的钥匙"
 accounts-trouble-no-reading = "那台机器还没答过"
 accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
 accounts-trouble-unknown-provider = "这台 khor 不认识这家,升级它才读得到"
-# 额度页脚下那条带的题头:本机 Claude Code 登录的两窗。2026-08-28「额度都是
-# 机器卡里的」曾把它们钉在两张机器卡上;2026-09-02「机器页面不需要有 token
-# usage 的环」撤了卡上那份——这条带从此是它们唯一的家。
+# 本机 Claude Code 登录那两窗的名字,现在是额度列表里**一行的行名**。
+# 它搬过两次家:2026-08-28「额度都是机器卡里的」把它钉在两张机器卡上;
+# 2026-09-02「机器页面不需要有 token usage 的环」撤了卡上那份,它成了页脚
+# 一条独立的横带;2026-09-06「不要有现在下方单独一个订阅的横条」把横带折
+# 进列表——它和登记过的账户列在一处,靠「类型」和「来源」两条轴分辨。
 accounts-subscription = "Claude Code 订阅"
 # 额度页那三条分组/过滤轴的名字与值(2026-09-06:「额度这侧边栏分组,和 chat 的
 # sessionlist 类似,有 filter 和搜索。组别可以有来源(机器、设置,即 khor 登记的)、
@@ -1398,6 +1400,13 @@ quota-by = "提供商"
 # 一行一个值,所以轴内 OR 选不出重叠的集合,按来源分组时一行只进一个组。
 quota-from = "来源"
 quota-from-khor = "khor 登记"
+# 按哪条轴分组。**和会话那边的「排布」是两件事,所以不共用那个词**:
+# 会话的排布问节点要一个新顺序(`Arrange`,组头是节点给的);这里一行都不
+# 重排,只在同一条列表上换一处切口。一个词同时解释两件事,正是这仓里
+# 「宽泛的名字是一块布」那条讲的代价。
+quota-group = "分组"
+# 单子里得有一条退得回来的:三条轴都不选时列表是一条平的名单。
+quota-group-none = "不分组"
 # 机器行/机器卡的连接方式位,轮到本机时的词:本机到自己没有路,这个词就是
 # 那条读数(2026-09-02:「本机不用写一个括号在机器名旁边。连接方式就是本机」)。
 # [cli] 的 this-machine 是括号后缀,还给终端列表和向导用;别混。
@@ -1560,6 +1569,9 @@ search-sessions = "搜索会话"
 # something the box cannot find — and a second key with this same text
 # is a build error by design (one text, one name).
 search-devices = "搜索机器"
+# 额度那一栏的搜索框。搜的是行上写着的字——行名、类型、提供商、来源
+# (`visibleQuota`),不是任何一个藏起来的字段。
+search-quota = "搜索额度"
 filter = "筛选"
 # The filter menu's axis headings. It ticks on three axes now (状态 /
 # 机器 / 类别), and a flat checkbox list with no headings reads as one

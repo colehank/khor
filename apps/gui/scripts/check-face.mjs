@@ -1745,9 +1745,18 @@ try {
   await page.setViewportSize({ width: 1400, height: 900 });
   await press(rail("quota"));
   await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+  // **`board.length + 1`, and the `+ 1` is the subscription.** The
+  // `**/quota` route above answers two windows, so this fixture has a
+  // subscription to list, and 2026-09-06 folded it out of the foot's
+  // band and into the list (「不要有现在下方单独一个订阅的横条」). The
+  // number is spelled as the fixture plus that one row rather than as
+  // `4`, so a fixture that stops answering a quota changes this count
+  // by itself instead of leaving a constant behind that used to mean
+  // something.
+  const listed = board.length + 1;
   const quotaRows = await page.locator("[data-quota-row]").count();
-  if (quotaRows !== board.length) {
-    fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts`);
+  if (quotaRows !== listed) {
+    fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts and one subscription`);
   }
   const fillRow = await page.locator('[data-quota-row="acc-fill"]').textContent();
   if (!fillRow?.includes("45%")) {
@@ -1805,6 +1814,137 @@ try {
       fail(`the subscription row draws ${layers} ring layers for two windows of different lengths`);
     }
   }
+
+  // ── 8a) 额度's bar: search, the three axes, the grouping ──────
+  // 2026-09-06:「额度这侧边栏分组,和 chat 的 sessionlist 类似,有 filter
+  // 和搜索」. Every claim below is tied to the fixture: three accounts
+  // (来源 =「khor 登记」, providers newapi/claude/openai) and one
+  // subscription (来源 = this machine, `gate`).
+  const quotaBar = async () => (await page.locator("[data-quota-row]").count());
+  const quotaKinds = async () =>
+    (await page.locator("[data-quota-row]").evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-quota-kind")),
+    ));
+
+  // (0) **The two 类型 words, read off the menu rather than copied
+  // here.** Everything below compares against these, so a rename in
+  // `zh.toml` moves the gate with the product instead of turning it
+  // red — and if the ticks ever stop being there, the probe says so
+  // rather than measuring a filter that is not on the screen.
+  await press("[data-pane-filter]");
+  const tickLabel = async (key) =>
+    (await page.locator(`[data-filter-option="${key}"]`).textContent())?.trim() ?? "";
+  const subTickWord = await tickLabel("kind:sub");
+  const billTickWord = await tickLabel("kind:bill");
+  if (!subTickWord || !billTickWord || subTickWord === billTickWord) {
+    fail(
+      `probe dead: the 类型 axis offers ${JSON.stringify([subTickWord, billTickWord])} — nothing below is measuring an axis`,
+    );
+  }
+  await page.keyboard.press("Escape");
+  await wait(300);
+
+  // (i) **Search reads the words on the row, not only its name.** The
+  // 计费 word is on the three accounts' second line and is in no row's
+  // *name* — so a box matching names alone comes back with nothing
+  // here, and one ignoring the query comes back with all four. Both
+  // wrong answers are on the other side of this number.
+  await page.locator("[data-pane-search]").fill(billTickWord);
+  await wait(300);
+  const billOnly = await quotaKinds();
+  if (billOnly.length !== board.length || billOnly.some((k) => k !== "bill")) {
+    fail(
+      `searching ${JSON.stringify(billTickWord)} leaves ${JSON.stringify(billOnly)} — the ${board.length} billed rows were expected, and the row's own words are what the box reads`,
+    );
+  }
+  // …and a word nothing carries empties the list and says so. Without
+  // this arm the one above is satisfied by a box that narrows to
+  // whatever it likes as long as the subscription is not in it.
+  await page.locator("[data-pane-search]").fill("zzqqxx");
+  await wait(300);
+  const noneLeft = await quotaBar();
+  const saidNone = await page.locator("[data-quota-none]").count();
+  if (noneLeft !== 0 || saidNone !== 1) {
+    fail(`a search matching nothing leaves ${noneLeft} rows and ${saidNone} 「没有匹配的」`);
+  }
+  await page.locator("[data-pane-search]").fill("");
+  await page.keyboard.press("Escape");
+  await wait(300);
+  if ((await quotaBar()) !== listed) {
+    fail(`clearing the box leaves ${await quotaBar()} rows, not the ${listed} the list had`);
+  }
+
+  // (ii) **The 来源 axis, both arms.** One tick is not a control: a
+  // filter that always leaves the accounts standing would pass
+  // 「tick khor 登记, get the accounts」 while being blind to the axis.
+  // So both values are ticked in turn and the two answers have to be
+  // *different* ones — which is the difference the fixture was built to
+  // have (three accounts registered here, one subscription read on
+  // `gate`).
+  await press("[data-pane-filter]");
+  await press('[data-filter-option="from:"]');
+  const khorOnly = await page.locator("[data-quota-row]").evaluateAll((els) =>
+    els.map((e) => e.getAttribute("data-quota-from")),
+  );
+  if (khorOnly.length !== board.length || khorOnly.some((f) => f !== "khor")) {
+    fail(`ticking 来源 =「khor 登记」 leaves ${JSON.stringify(khorOnly)}`);
+  }
+  await press('[data-filter-option="from:"]');
+  await press('[data-filter-option="from:gate"]');
+  const gateOnly = await page.locator("[data-quota-row]").evaluateAll((els) =>
+    els.map((e) => e.getAttribute("data-quota-from")),
+  );
+  if (gateOnly.length !== 1 || gateOnly[0] !== "gate") {
+    fail(`ticking 来源 =「gate」 leaves ${JSON.stringify(gateOnly)}, not this machine's subscription alone`);
+  }
+  await press('[data-filter-option="from:gate"]');
+
+  // (iii) **Grouping cuts the same list three ways, and 不分组 draws no
+  // heading at all.** The heading and the tick print one string — the
+  // page's own rule — so the 订阅 heading is compared against the word
+  // read off the tick above rather than against a copy written here.
+  const groupKeys = async () =>
+    (await page.locator("[data-quota-group]").evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-quota-group")),
+    ));
+  if ((await groupKeys()).length !== 0) {
+    fail(`不分组 draws ${JSON.stringify(await groupKeys())} headings`);
+  }
+  await press('[data-arrange-option="kind:"]');
+  const byKind = await groupKeys();
+  if (byKind.length !== 2 || !byKind.includes("kind:sub") || !byKind.includes("kind:bill")) {
+    fail(`分组 by 类型 draws ${JSON.stringify(byKind)} — one 订阅 heading and one 计费 heading were expected`);
+  }
+  const kindHead = (await page.locator('[data-quota-group="kind:sub"]').textContent())?.trim();
+  if (kindHead !== subTickWord) {
+    fail(`the 订阅 heading says ${JSON.stringify(kindHead)} and its tick says ${JSON.stringify(subTickWord)} — one value, two spellings`);
+  }
+  // The second axis, because a grouper that ignores which axis it was
+  // given would draw the same two headings again.
+  await press('[data-arrange-option="from:"]');
+  const byFrom = await groupKeys();
+  if (byFrom.length !== 2 || !byFrom.includes("from:gate") || !byFrom.includes("from:")) {
+    fail(`分组 by 来源 draws ${JSON.stringify(byFrom)} — this machine and 「khor 登记」 were expected`);
+  }
+  await press(`[data-arrange-option="none"]`);
+  await page.keyboard.press("Escape");
+  await wait(300);
+  // **Put the pane back.** The ticks and the grouping are remembered in
+  // localStorage, so anything left on here would follow the run into
+  // every later section and into the screenshots.
+  if ((await quotaBar()) !== listed || (await groupKeys()).length !== 0) {
+    fail(
+      `the 额度 pane was left filtered: ${await quotaBar()} rows and ${JSON.stringify(await groupKeys())} headings`,
+    );
+  }
+  // What this section actually read, printed like every other one: a
+  // section that only fails is a section nobody can tell ran.
+  console.log(
+    `额度 bar: ${listed} rows (${board.length} + 1 ${subTickWord}), ` +
+      `search ${JSON.stringify(billTickWord)} → ${billOnly.length}, nothing → 0, ` +
+      `来源 khor → ${khorOnly.length} / gate → ${gateOnly.length}, ` +
+      `groups ${JSON.stringify(byKind)} then ${JSON.stringify(byFrom)}`,
+  );
 
   // ── 8b) narrow: the open sessions are a count and a switcher ──────
   // The wide strip's other half (`TabStrip`'s head): a phone shows one
@@ -5438,7 +5578,7 @@ try {
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
-      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, the machine surfaces bare of subscription arcs, the \u989d\u5ea6 rows in all three shapes with the arcs at their foot, and narrow's session tabs switching for real",
+      "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, the machine surfaces bare of subscription arcs, the \u989d\u5ea6 rows in all three shapes with the subscription among them and its bar narrowing them, and narrow's session tabs switching for real",
     );
 } finally {
   await browser?.close();

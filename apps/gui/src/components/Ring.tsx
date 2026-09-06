@@ -237,7 +237,8 @@ export function Ring({
  * step per layer, never a second hue** — the layers are the same
  * quantity, and a second colour would say they are different kinds of
  * thing. (It is also why no strain scale reaches here: a quota arc at
- * 80% is a fact, not a warning — `QuotaRings`' rule.)
+ * 80% is a fact, not a warning — `QuotaLanding`'s subscription rings, where that rule now lives —
+ * `QuotaRings` was folded into it on 2026-09-06.)
  *
  * Ordering, which tracks exist, and what the centre says are the
  * caller's, because they are the three things above and no component

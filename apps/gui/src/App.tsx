@@ -1415,7 +1415,17 @@ export default function App() {
             {mark
               ? markPlace
               : quotas
-                ? <QuotaLanding narrow quota={quota} />
+                ? (
+                    <QuotaLanding
+                      narrow
+                      me={devices.find((d) => d.me)?.name ?? ""}
+                      quota={quota}
+                      query={queries.quota}
+                      onQuery={setQuery}
+                      words={words.quota}
+                      onToggleWord={toggleWord}
+                    />
+                  )
                 : browses
                   ? browsingLanding
                   : switchingTabs && openTabs.length > 0
@@ -1435,7 +1445,15 @@ export default function App() {
             <div className="min-w-0 flex-1">{markPlace}</div>
           ) : quotas ? (
             <div className="min-w-0 flex-1">
-              <QuotaLanding narrow={false} quota={quota} />
+              <QuotaLanding
+                narrow={false}
+                me={devices.find((d) => d.me)?.name ?? ""}
+                quota={quota}
+                query={queries.quota}
+                onQuery={setQuery}
+                words={words.quota}
+                onToggleWord={toggleWord}
+              />
             </div>
           ) : browses ? (
             // The whole width beside the rail, and that width is the
