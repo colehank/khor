@@ -23,10 +23,20 @@
  * # The geometry is copied, not re-derived
  *
  * `ARC0`, `SPAN`, the radius, the milestone dots and the two rim radii
- * come across verbatim from the prototype (`ring-rim-pips.html`).
- * **The radius especially must not be adjusted**: arc length follows
- * from it, and the check that this matches the drawing it came from
- * compares lengths.
+ * come across verbatim from the prototype (`ring-rim-pips.html`) — as
+ * **proportions of the size they were measured at** (`REF_SIZE`), so
+ * the same drawing comes out at any size and the machine card's, at 88,
+ * is those numbers unchanged.
+ *
+ * ⚠️ **The line above used to end「and the check that this matches the
+ * drawing it came from compares lengths」. There is no such check** —
+ * grepped 2026-09-07 for `ring-rim-pips` and `getTotalLength` across
+ * `apps/gui` / `crates` / `docs` and the only hit is this paragraph
+ * (the finder proved on `data-dial-pip`, which is found where it
+ * lives). A sentence pointing at a gate that does not exist is worse
+ * than no sentence: it tells the next person the radius is guarded.
+ * **It is guarded by the dumps in `Face`'s `ratio` note instead**, and
+ * those are a thing somebody ran.
  */
 import { gaugeColor } from "@/lib/vitals";
 import type { Strain } from "@/api";
@@ -52,6 +62,38 @@ export function arc(cx: number, cy: number, r: number, a0: number, a1: number): 
 }
 
 const ang = (frac: number) => ARC0 + Math.min(1, Math.max(0, frac)) * SPAN;
+
+/** The size the dial's lengths were measured at — the machine card's.
+    Not a size anybody has to draw at: it is the denominator that turns
+    those measurements into proportions, so a dial at 32 is the same
+    drawing and not a different one. */
+const REF_SIZE = 88;
+
+/** The default box: twice the drawing across, one size down. The
+    machine card's, and the only one until 2026-09-07. */
+const BOX_RATIO = 1.6;
+
+/**
+ * The dial in a list row: **the same drawing one size down**, not a
+ * circle that happens to be little.
+ *
+ * 32 across is `--avatar`, which is the single-diameter rule being kept
+ * rather than broken — two marks on one row are two facts, and the
+ * moment one is bigger, size starts claiming one of them matters more.
+ *
+ * ⚠️ **The card's pair (`RING_SIZE_CARD` / `RING_STROKE_CARD`) still
+ * lives in `Ring.tsx`**, which is where the machine card imports them
+ * from. Two homes for one family is not the shape anybody wants; moving
+ * them is a change to the machine card's imports, and that surface
+ * belongs to another lane today.
+ */
+export const DIAL_ROW_SIZE = 32;
+/** The box a row gives the dial: **just the drawing**, no margins. See
+    `Face`'s `ratio`. */
+export const DIAL_ROW_RATIO = 1;
+/** Thinner than the card's 4, in the proportion the sizes are: a row's
+    arc at the card's stroke is a band with no hole in it. */
+export const DIAL_ROW_STROKE = 2.6;
 
 /** One part under a dial: a card, a volume. `v` is its own reading on
     the same 0–100 scale the dial uses; `null` means the machine could
@@ -106,6 +148,7 @@ export function Face({
   strain,
   pips,
   unknown,
+  ratio = BOX_RATIO,
   children,
 }: {
   size: number;
@@ -121,21 +164,55 @@ export function Face({
       marking them would invent a meaning the drawing does not have. */
   pips?: Pip[];
   unknown?: boolean;
+  /**
+   * How wide the box is, as a multiple of `size`. The default is the
+   * machine card's: **twice the drawing**, which is room the card
+   * spends on purpose.
+   *
+   * A list row has no such room. The dial is ~25px wide at `size` 32
+   * and the default box is 51 — **19px of nothing**, taken out of the
+   * column the name and its line live in. Measured 2026-09-07: with
+   * the default box the 额度 row's sub-line went from whole to
+   * truncated at that column's 288, which is the failure `check-face`
+   * was already watching for.
+   *
+   * **The drawing does not move when this changes**, only the window
+   * onto it: the dial is centred in the box either way (`cx` is half
+   * the width), and `1.6` reproduces `S * 0.8` to the bit.
+   */
+  ratio?: number;
   /** The number in the middle. */
   children?: React.ReactNode;
 }) {
   const S = size;
-  const cx = S * 0.8;
+  const W = S * ratio;
+  const cx = W / 2;
   const cy = S * 0.6;
-  const R = 30;
+  // **Every length in here is a fraction of the dial it was drawn at.**
+  // The prototype was measured at 88 across, and until 2026-09-07 the
+  // radius and the six offsets below were the raw numbers off that
+  // drawing — which meant a dial asked for at any other size drew its
+  // arc outside its own box. At 32 (the size a list row has room for)
+  // the viewBox is 51.2 × 32 and `R = 30` puts the whole gauge in the
+  // margin: nothing visible, no error.
+  //
+  // So the numbers stay exactly what they were measured as and get
+  // multiplied by how much of the reference size this one is.
+  // **`k` is 1 at 88 to the bit**, which is the machine card's size and
+  // stroke — the card's drawing is unchanged by construction, and that
+  // was measured rather than assumed (dial dumps before and after are
+  // the same string, with a deliberately wrong offset in between to
+  // prove the comparison can fail at all).
+  const k = S / REF_SIZE;
+  const R = 30 * k;
   const marks = (pips ?? []).filter((p): p is Pip & { v: number } => p.v !== null);
   const vals = marks.map((p) => p.v);
   const color = gaugeColor(strain);
   return (
     <svg
       data-dial-face
-      viewBox={`0 0 ${S * 1.6} ${S}`}
-      width={S * 1.6}
+      viewBox={`0 0 ${W} ${S}`}
+      width={W}
       height={S}
       role="presentation"
       className="text-foreground"
@@ -167,8 +244,8 @@ export function Face({
       {/* Milestones at a quarter, a half, three quarters. Without them a
           mark's angle cannot be read as a number. */}
       {[25, 50, 75].map((mk) => {
-        const [x, y] = pol(cx, cy, R - stroke / 2 - 3, ang(mk / 100));
-        return <circle key={mk} cx={x} cy={y} r={0.9} fill="currentColor" fillOpacity={0.45} />;
+        const [x, y] = pol(cx, cy, R - stroke / 2 - 3 * k, ang(mk / 100));
+        return <circle key={mk} cx={x} cy={y} r={0.9 * k} fill="currentColor" fillOpacity={0.45} />;
       })}
       {/* How far the parts are spread, as a length. Only with two or
           more to span between. */}
@@ -178,7 +255,7 @@ export function Face({
           d={arc(
             cx,
             cy,
-            R + stroke / 2 + 6,
+            R + stroke / 2 + 6 * k,
             ang(Math.min(...vals) / 100),
             ang(Math.max(...vals) / 100),
           )}
@@ -190,8 +267,8 @@ export function Face({
       )}
       {marks.map((p, i) => {
         const a = ang(p.v / 100);
-        const [x1, y1] = pol(cx, cy, R + stroke / 2 + 2, a);
-        const [x2, y2] = pol(cx, cy, R + stroke / 2 + 9, a);
+        const [x1, y1] = pol(cx, cy, R + stroke / 2 + 2 * k, a);
+        const [x2, y2] = pol(cx, cy, R + stroke / 2 + 9 * k, a);
         return (
           <line
             key={i}
@@ -202,7 +279,13 @@ export function Face({
             x2={x2}
             y2={y2}
             stroke={p.strain ? "var(--strain)" : "currentColor"}
-            strokeWidth={1.7}
+            // **The one length with a floor under it**, and the floor
+            // is what the mark is for: a pip is the thing being read off
+            // the rim, and scaled the whole way down it thins to 0.6 at
+            // a row's size — a hairline that reads as an artefact rather
+            // than a reading. The track and the arc around it are wide
+            // enough to survive the scale; this is not.
+            strokeWidth={1.7 * Math.max(0.7, k)}
             strokeLinecap="round"
           >
             <title>{`${p.word} ${Math.round(p.v)}%`}</title>
@@ -211,8 +294,8 @@ export function Face({
       })}
       <text
         x={cx}
-        y={cy + 6}
-        fontSize={19}
+        y={cy + 6 * k}
+        fontSize={19 * k}
         fontWeight={800}
         textAnchor="middle"
         fill="currentColor"

@@ -1769,13 +1769,14 @@ try {
   //    this machine's or a peer's, on the devices landing or in the
   //    mark's place. They were on this machine's cards from 2026-08-28
   //    (「额度都是机器卡里的」) until 2026-09-02, when 「机器页面不需要
-  //    有token usage的环」 took them off; the 额度 landing's foot is
-  //    their one home. **Section 8 below proves the finder**: the same
-  //    `[data-quota-window]` selector counts two windows there in this
-  //    very run, so a zero here is an absence and not a renamed marker
+  //    有token usage的环」 took them off; the 额度 landing is their one
+  //    home. **Section 8 below proves the finder**: the same
+  //    `[data-quota-window]` selector counts this fixture's windows
+  //    there in this very run, so a zero here is an absence and not a
+  //    renamed marker
   //    (the `.nav-badge` family's antidote). The `**/quota` route at
-  //    the head of this file stays — it feeds the band section 8
-  //    measures.
+  //    the head of this file stays — it feeds the subscription row
+  //    section 8 measures.
   const arcsOn = async (what) => {
     await until(5_000, async () => (await page.locator(what).count()) > 0);
     await wait(300);
@@ -1899,20 +1900,76 @@ try {
         `the subscription's detail draws ${JSON.stringify(shownWindows)} for the fixture's ${quotaWindows.length} windows`,
       );
     }
-    //   **The gap between these two numbers is the rule.** The detail
-    //   lists every window; the ring layers only *lengths*, and one
-    //   model's share of a week is not a third length — so three in the
-    //   detail and two on the ring, with the scoped one being exactly
-    //   the difference. Counting only one of them cannot tell「the ring
-    //   dropped a layer」from「the parser dropped a window」.
-    const tracks = await page
-      .locator('[data-quota-row][data-quota-kind="sub"] [data-nested-track]')
-      .evaluateAll((els) => els.map((e) => e.getAttribute("data-nested-track")));
-    const lengths = quotaWindows.filter((w) => w.scope === null);
-    if (tracks.length !== lengths.length || tracks.some((t) => t.includes(":"))) {
+    //   **One pip per part, one for one** — the counting rule that
+    //   replaced the concentric ring on 2026-09-07
+    //   (「轮缘卡点数 = 展开后的表盘数」). The rim is read off the
+    //   drawing (`data-dial-pip`) and the list off the panel
+    //   (`data-quota-part`), so a build that draws a mark for something
+    //   it does not list, or lists something it does not mark, is the
+    //   one thing this cannot pass.
+    //
+    //   ⚠️ **Rewritten from「two layers, and a scoped window is not a
+    //   layer」** — the rule `727d030` brought back and 2026-09-07
+    //   overturned:「你绘制的只有两个外环线段。但它有四个环。如果是两两
+    //   重叠就没关系」. **The product changed, not the assertion.** The
+    //   old shape stacked arcs at different radii, where a week's Fable
+    //   share nested inside the week it is a share of made one radius
+    //   mean two things; on a rim there are no radii, only angles, and
+    //   two windows at the same percent are two marks on one spot.
+    //
+    //   **The scoped window is what makes this falsifiable at all**: it
+    //   is exactly the mark the previous rule dropped, so a build still
+    //   filtering by `scope` draws two pips here and goes red — which
+    //   is the difference this gate is built around rather than a count
+    //   that any implementation with the right total would satisfy.
+    //
+    //   ⚠️ **And the third term is not padding.** The pips and the
+    //   parts come off one list in the product, so `pips === parts`
+    //   holds however wrong that list is — a filter reinstated upstream
+    //   drops a mark *and* a line together and the two still agree.
+    //   What catches it is comparing both against the **fixture**.
+    //   Measured 2026-09-07 by putting the old `scope === null` filter
+    //   back: the red reads「2 pips for 2 parts and 3 routed windows」,
+    //   which is the third term firing and the first two staying quiet.
+    const rim = await page.evaluate(() => {
+      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
+      const detail = document.querySelector("[data-quota-detail]");
+      return {
+        pips: [...(row?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
+          word: e.getAttribute("data-dial-pip"),
+          at: Number(e.getAttribute("data-dial-pip-at")),
+        })),
+        parts: [...(detail?.querySelectorAll("[data-quota-part]") ?? [])].map((e) =>
+          e.getAttribute("data-quota-part"),
+        ),
+        // The hairline from the lowest mark to the highest: 「spread out
+        // or not」 with a length, drawn only where there are two marks
+        // to span between.
+        span: row?.querySelectorAll("[data-dial-span]").length ?? 0,
+      };
+    });
+    const scopedWindow = quotaWindows.find((w) => w.scope !== null);
+    if (rim.pips.length !== rim.parts.length || rim.pips.length !== quotaWindows.length) {
       fail(
-        `the subscription row's ring is ${JSON.stringify(tracks)} — one layer per length was expected (${lengths.length}), and a window limited to a model is not a length`,
+        `the subscription's rim carries ${rim.pips.length} pips for ${rim.parts.length} parts and ${quotaWindows.length} routed windows — one pip per part, one for one`,
       );
+    } else if (!rim.pips.some((p) => p.word.includes(scopedWindow.scope))) {
+      fail(
+        `the rim's pips are ${JSON.stringify(rim.pips.map((p) => p.word))} — the window limited to ${JSON.stringify(scopedWindow.scope)} has no mark, which is the filter 2026-09-07 removed`,
+      );
+    } else if (rim.span !== 1) {
+      fail(`three marks and ${rim.span} spread arcs — the hairline says how far apart they are`);
+    }
+    //   …and every mark sits at its own window's number, so a rim that
+    //   drew the right *count* at the wrong angles is not a pass.
+    for (const w of quotaWindows) {
+      const word = w.scope ?? String(w.span);
+      const mark = rim.pips.find((p) => (w.scope ? p.word.includes(w.scope) : p.at === w.used_pct));
+      if (!mark || mark.at !== w.used_pct) {
+        fail(
+          `the window ${JSON.stringify(word)} is ${w.used_pct}% and its mark reads ${JSON.stringify(mark?.at ?? null)}`,
+        );
+      }
     }
     //   **And the model's name is the payload's, not the catalog's.**
     //   The fixture names a model `zh.toml` has never heard of, so a
@@ -2031,9 +2088,14 @@ try {
     }
 
     //   **A ring with no ceiling is a full ring** (2026-09-06 user
-    //   ruling). Read off `stroke-dasharray`, which is the arc itself
-    //   rather than a class that might mean it: the first number over
-    //   the circumference *is* the fraction drawn.
+    //   ruling). Still read off the arc itself rather than a class that
+    //   might mean it — but the arc is a 210° `path` now, not a dashed
+    //   circle, so the reading is **the angle its last point sits at**:
+    //   the dial opens at −195° and sweeps 210°, so where the arc stops
+    //   *is* the fraction. `stroke-dasharray` reads `null` on a path
+    //   and this gate would have gone quietly green-on-null for every
+    //   row — **the assertion did not change, the geometry under it
+    //   did** (2026-09-07:「环全部和机器卡对齐」).
     //
     //   Three rows, three answers, and **all three are needed**: an
     //   implementation that draws everything full passes on `acc-number`
@@ -2043,14 +2105,28 @@ try {
     //   rule is caught by one of the other two.
     const arcs = await page.locator("[data-quota-row]").evaluateAll((rows) =>
       rows.map((row) => {
-        const arc = row.querySelector("[data-ring-fill]");
-        const track = row.querySelector("circle");
-        if (!arc || !track) return { id: row.getAttribute("data-quota-row"), drawn: null };
-        const [ink, whole] = (arc.getAttribute("stroke-dasharray") ?? "").split(" ").map(Number);
-        return {
-          id: row.getAttribute("data-quota-row"),
-          drawn: whole ? Number((ink / whole).toFixed(2)) : null,
-        };
+        const id = row.getAttribute("data-quota-row");
+        const svg = row.querySelector("[data-dial-face]");
+        const arc = svg?.querySelector("[data-ring-fill]");
+        // The track is always drawn, so its absence means the dial
+        // itself never rendered — a different failure from「no arc」and
+        // it must not read as one.
+        if (!svg || svg.querySelectorAll("path").length === 0) return { id, drawn: "no dial" };
+        if (!arc) return { id, drawn: null };
+        // **The centre is read off the box, never assumed.** The dial
+        // is centred in whatever box it was given (`Face`'s `ratio` —
+        // a row's box is tight, the machine card's is twice the
+        // drawing), so a hard-coded `S * 0.8` measures the right arc
+        // from the wrong origin and returns a plausible wrong number
+        // rather than failing.
+        const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+        const [cx, cy] = [vb[2] / 2, vb[3] * 0.6];
+        const n = (arc.getAttribute("d") ?? "").replace(/,/g, " ").trim().split(/\s+/).map(Number);
+        const [x, y] = [n[n.length - 2], n[n.length - 1]];
+        let deg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
+        while (deg < -195) deg += 360;
+        while (deg > 165) deg -= 360;
+        return { id, drawn: Number(((deg + 195) / 210).toFixed(2)) };
       }),
     );
     const arcOf = (id) => arcs.find((a) => a.id === id)?.drawn ?? null;

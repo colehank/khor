@@ -19,8 +19,6 @@
 //     is that they do not.
 //
 // The centre of a ring is the caller's: a number, a word, or nothing.
-import { cn } from "@/lib/utils";
-
 
 /**
  * How opaque the **unfilled** part of a track is.
@@ -58,18 +56,17 @@ export const TRACK_OPACITY = 0.35;
  */
 export const RING_SIZE = 64;
 
-/**
- * The diameter a ring takes **inside a list row**.
- *
- * **Equal to `--avatar` on purpose, and that is the single-diameter rule
- * being kept rather than broken.** Two circles on one row are two facts;
- * the moment one is bigger, size starts claiming one of them matters
- * more, which is exactly what the rule guards against. Today's caller
- * is the 额度 page's account rows — the machine rows' reading stack,
- * this constant's first customer, left on 2026-09-02 (「这个环很抽象,
- * 看不明白。取消」).
- */
-export const RING_SIZE_ROW = 32;
+/* ⚠️ **Tombstone: `RING_SIZE_ROW` (32) is gone, 2026-09-07.**
+
+   Its last caller was the 额度 page's rows, and those draw a **dial**
+   now, not a ring (「环全部和机器卡对齐」). The size itself survived the
+   move — 32 is still `--avatar`, still for the same reason — but it
+   moved to the drawing that uses it: `Face`'s `DIAL_ROW_SIZE`, beside
+   the stroke that goes with it.
+
+   Left here rather than deleted silently because a constant with no
+   caller is a size the next person reaches for by accident, and one
+   that vanished with no word is a size the next person re-invents. */
 /** The machine card's rings (2026-09-03, to the user's reference): a
     third again larger than a row's and drawn thinner, so the number
     inside leads and the arc reads as a gauge rather than a badge. */
@@ -137,53 +134,57 @@ function Arc({
  * One measure, drawn as one ring, with whatever the caller puts in the
  * middle.
  *
- * ⚠️ **Tombstone: 「every ring this app draws now is one measure with
- * its own centre」 is no longer true, and the sentence it replaces was
- * right about the case it came from.**
+ * **Every ring this app draws is one measure with its own centre**, and
+ * that sentence is true again as of 2026-09-07.
  *
- * Concentric tracks (`NestedRing`) left with the machine rows' reading
- * stack on 2026-09-02 —「这个环很抽象,看不明白。取消」— and the reason
- * was not that they were concentric. Those four arcs were **CPU, GPU,
- * memory and disk**: four unrelated quantities, so 「the outer one is
- * fuller」 meant nothing, nothing said which arc was which, and the
- * centre had to pick one of four numbers with no rule for picking.
+ * ⚠️ **Tombstone: `NestedRing` is gone a second time, and this time it
+ * is not coming back as a ring.**
  *
- * `NestedRing` is back below for the 额度 rows on 2026-09-06, under a
- * rule that names exactly what was missing — see its own head. The
- * single-track `Ring` is still what everything else draws, and still
- * the right default.
+ * Concentric tracks left first on 2026-09-02 with the machine rows'
+ * reading stack (「这个环很抽象,看不明白。取消」). They came back on
+ * 2026-09-06 (`727d030`) for the 额度 rows under a rule that answered
+ * what was missing then: same quantity, stated order, centre chosen by
+ * a rule. **That rule was satisfied and the shape was still wrong** —
+ * 2026-09-07:「嵌套环和机器那一样,有外弧和卡点」.
+ *
+ * What replaced it is not a different ring but a different drawing: the
+ * machine card's 210° dial (`Face`), where the arc is the fullest window
+ * and **every window is a pip on the rim**. The reason concentric arcs
+ * lost is the reason the dial exists at all — several readings of one
+ * quantity have to be *comparable at a glance*, and「further out is
+ * longer」asks a reader to learn a legend, while two marks at the same
+ * angle are visibly the same number.
+ *
+ * The one thing the nesting could say and the dial cannot is which
+ * layer is which by radius alone. The dial answers that with words in
+ * the panel beside it, one line per pip — which was already true when
+ * the nesting was here (`NestedRing`'s own third precondition:「颜色是
+ * 谜题,词才是答案」), so nothing was lost with it.
  */
 export function Ring({
   fraction,
   color,
   size = RING_SIZE,
   stroke = STROKE,
-  centerClass = "text-fact",
   children,
 }: {
   /** `null` when there is no denominator — then only the track is drawn. */
   fraction: number | null;
   color: string;
   size?: number;
-  /** The arc's width. The default is the row size's; a large ring on
-      the machine card is drawn thinner so the number inside leads. */
+  /** The arc's width. The default goes with the one diameter above;
+      nothing passes another today, and a caller that wants one owes a
+      reason, because the width is part of what makes two rings on one
+      screen comparable. */
   stroke?: number;
-  /**
-   * The size tier the centre reads at.
-   *
-   * **A tier, not a free class**, and there is exactly one caller that
-   * needs a second one: the subscription's arcs, where the percentage is
-   * the whole reason the panel exists. `--text-hero`'s own note in
-   * tokens.css names「a quota arc's centre」as what that size is for,
-   * and nothing had ever used it there — the number sat at `--text-fact`
-   * in a panel of `--text-aux` lines, a step of one and a half units
-   * standing in for "this is the fact". (Sizes named, not spelled: this
-   * file is inside the px gate.)
-   *
-   * Everywhere else the default holds: a machine's rings sit four to a
-   * row and none of them outranks another.
-   */
-  centerClass?: string;
+  /* ⚠️ **Tombstone: `centerClass` is gone, 2026-09-07.** It existed for
+     one caller — the 额度 detail's per-window arcs, which wanted a
+     bigger number in the middle than a machine's rings do. Those arcs
+     are a dial now (`Face`), and the last caller went with them; what
+     is left (the mark's place) has always used the default. A prop
+     nobody passes is the same trap as a constant nobody reads: the next
+     person reaches for it and re-opens the question of what size a
+     centre is. */
   children?: React.ReactNode;
 }) {
   const r = (size - stroke) / 2;
@@ -202,7 +203,7 @@ export function Ring({
       {children != null && (
         <span
           data-ring-center
-          className={cn("col-start-1 row-start-1 font-title tabular-nums", centerClass)}
+          className="col-start-1 row-start-1 font-title tabular-nums text-fact"
         >
           {children}
         </span>
@@ -210,101 +211,9 @@ export function Ring({
     </span>
   );
 }
-
-/**
- * Several readings of **one quantity**, as concentric arcs.
- *
- * # What has to be true before this shape is readable at all
- *
- * The version of this that was removed (see `Ring`'s head) failed on
- * three counts, and a caller may only use this one if it can answer all
- * three:
- *
- * 1. **Every track is the same quantity on the same scale.** Then
- *    「the outer arc is fuller than the inner」 is a true and useful
- *    sentence. Four unrelated readings stacked make that sentence
- *    meaningless, which is what 「看不明白」 was describing.
- * 2. **The order outward is a rule that fits in one sentence**, and the
- *    caller states it. A stack with no order is a pile.
- * 3. **The centre is chosen by a rule, not picked**, and something on
- *    screen says *which* track it came from — colour alone is a puzzle,
- *    a word is an answer.
- *
- * # What this file provides, and what it refuses
- *
- * Geometry only: one colour, one arc per track, each ring inside the
- * last by exactly one stroke plus a hair. **One colour with an opacity
- * step per layer, never a second hue** — the layers are the same
- * quantity, and a second colour would say they are different kinds of
- * thing. (It is also why no strain scale reaches here: a quota arc at
- * 80% is a fact, not a warning — `QuotaLanding`'s subscription rings, where that rule now lives —
- * `QuotaRings` was folded into it on 2026-09-06.)
- *
- * Ordering, which tracks exist, and what the centre says are the
- * caller's, because they are the three things above and no component
- * can answer them for it.
- */
-export function NestedRing({
-  tracks,
-  color,
-  size = RING_SIZE_ROW,
-  stroke = STROKE,
-  centerClass = "text-aux",
-  children,
-}: {
-  /** Outermost first — the caller's stated order, drawn as given. */
-  tracks: { id: string; fraction: number | null }[];
-  color: string;
-  size?: number;
-  stroke?: number;
-  centerClass?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <span
-      data-nested-ring={tracks.length}
-      className="relative inline-grid place-items-center"
-      style={{ width: size, height: size }}
-    >
-      <svg width={size} height={size} aria-hidden="true" className="col-start-1 row-start-1">
-        {tracks.map((t, i) => (
-          // **The step is opacity, not hue.** Outermost at full ink,
-          // each one inside it a step lighter — so 「further in」 is
-          // legible without a legend, and the legend that does exist
-          // says a word rather than repeating the colour.
-          <g key={t.id} data-nested-track={t.id} opacity={1 - i * LAYER_STEP}>
-            <Arc
-              cx={size / 2}
-              r={(size - stroke) / 2 - i * (stroke + LAYER_GAP)}
-              stroke={stroke}
-              color={color}
-              fraction={t.fraction}
-            />
-          </g>
-        ))}
-      </svg>
-      {children != null && (
-        <span
-          data-ring-center
-          className={cn("col-start-1 row-start-1 font-title tabular-nums", centerClass)}
-        >
-          {children}
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** How much ink each layer gives up to the one outside it. Enough that
-    two layers are told apart at a glance, not so much that the inner
-    one reads as absent. */
-const LAYER_STEP = 0.4;
-/** The hair between two tracks, so they are two arcs and not one thick
-    one. */
-const LAYER_GAP = 1.5;
 
 /** One measure of a set: its own share, its own colour — the shape
     `vitalsTracks` hands the mark's node card, which draws each as its
-    own `Ring`. (A set is several rings; `NestedRing` above is for the
-    other case, several readings of *one* quantity.) */
+    own `Ring`. (A set is several rings. Several readings of *one*
+    quantity is the dial's case now, not a ring's — `Face`.) */
 export type Track = { id: string; fraction: number | null; color: string };

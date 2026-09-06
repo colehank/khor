@@ -1,18 +1,24 @@
-// 额度: the API accounts a person registered, each as a ring.
+// 额度: the API accounts a person registered, each as a dial.
 //
-// **One ring is one account, and the account is on one machine.** The
+// **One dial is one account, and the account is on one machine.** The
 // key never leaves the machine it was registered on; that machine reads
 // the provider and every other machine shows what it last read, with
-// how long ago (`khor_node::accounts`). So a ring here is never "this
+// how long ago (`khor_node::accounts`). So a reading here is never "this
 // screen asked the provider" — it is "the home machine last read this",
 // and the age beside it is part of the reading, not decoration.
+//
+// **The drawing is the machine card's** (2026-09-07:「环全部和机器卡对
+// 齐」): the same 210° `Face`, one size down in a row. A subscription's
+// arc is its fullest window and every window is a pip on the rim, one
+// for one with the lines listed beside it; an account has one reading
+// and no parts, so it has no pips.
 //
 // **The fraction and the ink are the node's.** `fill` and `strain`
 // arrive decided (a new-api token fills against its own quota, the two
 // vendors against the registered budget, no budget is no fraction);
-// this page draws a track where there is no fraction and paints the
-// arc in the strain ink the disks wear (`gaugeColor`), never a ramp of
-// its own.
+// this page turns「no fraction」into a full arc or bare track by the
+// rule in `arcOf`, and paints in the strain ink the disks wear, never a
+// ramp of its own.
 //
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
@@ -31,7 +37,8 @@ import {
 import { IconBack } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
-import { NestedRing, Ring, RING_SIZE, RING_SIZE_ROW } from "@/components/Ring";
+import { DIAL_ROW_RATIO, DIAL_ROW_SIZE, DIAL_ROW_STROKE, Face, type Pip } from "@/components/Face";
+import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,7 +51,6 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
-import { gaugeColor } from "@/lib/vitals";
 
 import { QUOTA_AXES, axisOf, lasting, until, valueOf } from "@/words";
 
@@ -122,32 +128,26 @@ function money(n: number, currency: string | null): string {
   return currency ? `${figure} ${currency}` : figure;
 }
 
-/**
- * How long each span khor can order is, in minutes — **and the table
- * having exactly these two entries is the rule about the ring**.
- *
- * ⚠️ **The ring draws one layer per *length*.** A window limited to one
- * model is a share of a length, not another length, so it never goes on
- * the ring: three concentric arcs where two of them are the same seven
- * days is precisely the shape removed on 2026-09-02 (`Ring`'s
- * tombstone). Those live in the detail, where each window is its own
- * single ring and nothing has to be told apart by radius.
- *
- * **This used to be a table with `null` in it** — `seven_day_sonnet:
- * null` meaning「not a length, do not ring it」— which encoded the rule
- * as an exception list that every new window had to be added to. The
- * type now says it: a span khor can order is a *string*, and one it
- * cannot is `{ other }`, so `typeof span === "string"` is the whole
- * test and a length nobody has seen yet is handled without an entry
- * here.
- *
- * The day the endpoint reports a thirty-day window, this table grows a
- * row and the ring becomes three layers, still ordered by length.
- */
-const SPAN_MINUTES: Record<string, number> = {
-  five_hour: 5 * 60,
-  seven_day: 7 * 24 * 60,
-};
+/* ⚠️ **Tombstone: `SPAN_MINUTES` and `ringWindows` are gone,
+   2026-09-07 — and with them the rule 「一个模型的份额不是第三个长度,
+   所以它不上环」.**
+
+   That rule was right about *concentric arcs*: stacking a week's
+   Fable share inside the week it is a share of made two radii mean
+   two different things. The drawing changed, and the rule did not
+   survive the change. On a dial there are no radii to confuse — every
+   window is a mark on one rim, at the angle of its own number — and
+   the user's judgment is that all of them belong there:
+   「你绘制的只有两个外环线段。但它有四个环。如果是两两重叠就没关系」.
+
+   **The replacement is a counting rule, not a filter**: the rim
+   carries exactly as many pips as the spread has dials, one per
+   window, and two windows at the same percent are two pips on one
+   spot. A window khor has no length for still gets a pip, because the
+   endpoint still gave it a number — where the old code needed a
+   `SPAN_MINUTES` entry to draw anything at all.
+
+   `windowId` stayed: it is an identity, not an ordering. */
 
 /** One window's identity, for a React key and for the gate's selector:
     the span, plus the model it is limited to where there is one. The
@@ -155,23 +155,6 @@ const SPAN_MINUTES: Record<string, number> = {
 function windowId(w: QuotaWindow): string {
   const span = typeof w.span === "string" ? w.span : `other:${w.span.other}`;
   return w.scope ? `${span}:${w.scope}` : span;
-}
-
-/** The windows that go on the ring, **outermost first — longest
-    first**, which is the one-sentence order `NestedRing` requires its
-    caller to state: further out is a longer window. */
-function ringWindows(ws: QuotaWindow[]): QuotaWindow[] {
-  return ws
-    .filter((w) => typeof w.span === "string" && w.scope === null && SPAN_MINUTES[w.span] != null)
-    .sort((a, b) => (SPAN_MINUTES[String(b.span)] ?? 0) - (SPAN_MINUTES[String(a.span)] ?? 0));
-}
-
-/** The window a reader is closest to running out of — what the nested
-    ring's centre shows, and what the row's right-hand summary names.
-    **Chosen by a rule, not picked**: it is the one that will stop you
-    first. */
-function worst(ws: QuotaWindow[]): QuotaWindow | null {
-  return ws.reduce<QuotaWindow | null>((m, w) => (m === null || w.used_pct > m.used_pct ? w : m), null);
 }
 
 /** 订阅 or 计费. */
@@ -215,7 +198,7 @@ function windowWord(w: QuotaWindow): string {
 }
 
 /**
- * One line of the 額度 list, whichever of the two things it is.
+ * One line of the 额度 list, whichever of the two things it is.
  *
  * **The subscription is a row, not a band at the foot** (2026-09-06:
  * 「不要有现在下方单独一个订阅的横条」). It had a strip of its own
@@ -244,6 +227,69 @@ type Row = {
   windows: QuotaWindow[];
   credits: QuotaCredits | null;
 };
+
+/**
+ * Credits as a share of something, or `null` when it is not one.
+ *
+ * **A dial needs a denominator and credits only sometimes has one.**
+ * The endpoint reports a `monthly_limit` on some accounts and not on
+ * others (the capture this was written against reports a spend and no
+ * ceiling at all), so credits joins the pips **only when it has a
+ * fraction of its own** — 2026-09-07:「Credits 只有在有分母时才是一个
+ * 环」. With no ceiling it is a line of facts beside the dial, not an
+ * empty track on it: an empty track is the picture of *nothing used*,
+ * which is the opposite of what a spent-out balance means.
+ *
+ * `enabled` is `extra_usage.is_enabled` (`khor_node::quota`), which is
+ * the switch that decides whether this money can be spent at all — off,
+ * and there is no window to be a fraction of either.
+ */
+function creditsPct(c: QuotaCredits | null): number | null {
+  if (c === null || !c.enabled) return null;
+  if (c.used == null || c.monthly_limit == null || c.monthly_limit <= 0) return null;
+  return Math.min(100, (c.used / c.monthly_limit) * 100);
+}
+
+/** One thing a subscription's dial is made of: a window, or credits
+    when credits has a ceiling.
+
+    **`window` is not decoration.** Credits is a part of this dial and
+    it is still not a window — it is money, it does not refill, it has
+    no reset — so what is drawn from this list carries the two names
+    apart, and only a real window answers to 「window」. */
+type Dial = { id: string; word: string; pct: number; resets_at: number | null; window: boolean };
+
+/**
+ * Everything the subscription's dial is made of — **one list, feeding
+ * the rim, the row and (later) the spread**, so their counts cannot
+ * disagree.
+ *
+ * That is the rule that replaced `ringWindows`'s filter: 「轮缘卡点数 =
+ * 展开后的表盘数,一一对应」. A window this build has no length word for
+ * is still a pip, because the endpoint still gave it a number.
+ */
+function subDials(r: Row): Dial[] {
+  const out: Dial[] = r.windows.map((w) => ({
+    id: windowId(w),
+    word: windowWord(w),
+    pct: w.used_pct,
+    resets_at: w.resets_at,
+    window: true,
+  }));
+  const credits = creditsPct(r.credits);
+  // Never a reset: credits is money, it does not refill by itself.
+  if (credits !== null) {
+    out.push({ id: "credits", word: gui.quota_credits, pct: credits, resets_at: null, window: false });
+  }
+  return out;
+}
+
+/** The one a reader is closest to running out of — the arc the dial
+    draws and the number in its middle. **Chosen by a rule, not
+    picked**: it is the one that will stop you first. */
+function fullest(dials: Dial[]): Dial | null {
+  return dials.reduce<Dial | null>((m, d) => (m === null || d.pct > m.pct ? d : m), null);
+}
 
 /** What sits in the ring's centre: the share when there is one, the
     spend when there is a number but no denominator, what is left when
@@ -611,8 +657,11 @@ export function QuotaLanding({
       )}
       {grouped.map((r, i) => {
         const on = current?.id === r.id;
-        const layers = ringWindows(r.windows);
-        const bad = worst(layers);
+        // **One list for the rim and for the summary**, so the mark
+        // count and the word on the right cannot come from two
+        // different ideas of what this row is made of.
+        const dials = r.account ? [] : subDials(r);
+        const lead = fullest(dials);
         // A heading starts where the group changes between neighbouring
         // rows. `GROUP_NONE` answers the empty string for every row, so
         // it draws none — no branch of its own.
@@ -645,27 +694,23 @@ export function QuotaLanding({
               on && "bg-accent hover:bg-accent",
             )}
           >
-            {layers.length > 1 ? (
-              // **Several readings of one quantity**, which is the only
-              // shape `NestedRing` allows: each layer is 「how much of
-              // this window is used」, in percent, on one scale. Order
-              // outward is the window's length, and the centre is the
-              // one that will stop you first — named in words on the
-              // right, because colour alone is a puzzle.
-              <NestedRing
-                tracks={layers.map((w) => ({ id: windowId(w), fraction: w.used_pct / 100 }))}
-                color={gaugeColor(null)}
-                size={RING_SIZE_ROW}
-              >
-                {bad ? `${Math.round(bad.used_pct)}%` : ""}
-              </NestedRing>
-            ) : (
-              <Ring
-                fraction={r.account ? arcOf(r.account.reading) : (bad?.used_pct ?? 0) / 100}
-                color={gaugeColor(r.account?.strain ?? null)}
-                size={RING_SIZE_ROW}
-              />
-            )}
+            {/* **The machine card's dial, one size down** — the same
+                210° geometry, the same milestones, the same rim
+                (2026-09-07:「环全部和机器卡对齐」). The arc is the
+                fullest window; every window is a pip at its own angle,
+                so two windows at the same percent are two marks on one
+                spot and a row with one window looks like a gauge rather
+                than a stack. No number inside at this size: the number
+                is the word on the right, where there is room to say
+                *which* window it is. */}
+            <Face
+              size={DIAL_ROW_SIZE}
+              stroke={DIAL_ROW_STROKE}
+              ratio={DIAL_ROW_RATIO}
+              fraction={r.account ? arcOf(r.account.reading) : lead ? lead.pct / 100 : null}
+              strain={r.account?.strain ?? null}
+              pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+            />
             <span className="flex min-w-0 flex-1 flex-col">
               {/* **The plan rides the name's line, not the one under
                   it** (2026-09-06). Put into the sub-line it made
@@ -707,7 +752,7 @@ export function QuotaLanding({
               </span>
             </span>
             <span className="flex-none text-xs tabular-nums text-muted-foreground">
-              {r.account ? centre(r.account) : bad ? `${windowWord(bad)} ${Math.round(bad.used_pct)}%` : ""}
+              {r.account ? centre(r.account) : lead ? `${lead.word} ${Math.round(lead.pct)}%` : ""}
             </span>
           </button>
           </Fragment>
@@ -744,12 +789,14 @@ export function QuotaLanding({
     />
   );
 
-  // **Two details, because there are two kinds of row.** The account's
-  // is what this page always drew; the subscription's is every window
-  // as **its own single ring** — the nesting on the row answers 「什么
-  //最先卡住我」 and this answers 「每个窗口各是多少」, which is the
-  // split `NestedRing`'s head requires of anything that stacks arcs.
+  // **Two details, because there are two kinds of row.** The
+  // subscription's leads with the same dial its row wears, one size up:
+  // the row answers 「什么最先卡住我」 at a glance and the card answers
+  // 「每个窗口各是多少」 in words beside it — one drawing, read twice,
+  // instead of a second vocabulary on the second screen.
   const acc = current?.account ?? null;
+  const dials = current && current.account === null ? subDials(current) : [];
+  const lead = fullest(dials);
   const subDetail = current && current.account === null && (
     <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
       {/* **Name and plan, and nothing else** (2026-09-06: 「卡头不再写
@@ -770,34 +817,67 @@ export function QuotaLanding({
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-6">
-        {current.windows.map((w) => (
-          <div key={windowId(w)} data-quota-window={windowId(w)} className="flex items-center gap-row">
-            <Ring fraction={w.used_pct / 100} color={gaugeColor(null)} centerClass="text-lg">
-              {`${Math.round(w.used_pct)}%`}
-            </Ring>
-            <span className="flex min-w-0 flex-col">
-              {/* Named, so a gate can read the window's *name* rather
-                  than the block's text — that block also holds the
-                  ring's percentage and the reset line, and a measure
-                  that splits those apart on whitespace reads 「39%7」. */}
-              <span data-quota-window-name className="text-fact">{windowWord(w)}</span>
-              {w.resets_at !== null && (
-                <span className="text-aux text-muted-foreground">
-                  {gui.quota_resets(until(w.resets_at * 1000))}
-                </span>
-              )}
-            </span>
-          </div>
-        ))}
+      {/* **The dial, and what it is made of beside it.** Every window
+          used to be a ring of its own, side by side — which drew the
+          same quantity at four radii and left 「哪个最先卡住我」 to be
+          worked out by comparing four circles. One dial answers that
+          (the arc is the fullest window, the number in it is that
+          window's), and the rim carries a mark per window at its own
+          angle: **as many pips as there are lines in the list beside
+          it, one for one**. Two windows at the same percent are two
+          marks on one spot, which is a true drawing of two windows that
+          are equally full.
+          Credits is in this list when it has a ceiling to fill against
+          — then it is a pip like any other; when it has none it is a
+          figure below and no mark, because a mark needs an angle and an
+          angle needs a denominator (`creditsPct`). */}
+      <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        <Face
+          size={RING_SIZE_CARD}
+          stroke={RING_STROKE_CARD}
+          fraction={lead ? lead.pct / 100 : null}
+          pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+        >
+          {lead ? `${Math.round(lead.pct)}%` : ""}
+        </Face>
+        <dl
+          data-quota-parts
+          className="grid min-w-0 grid-cols-[auto_1fr_auto] gap-x-6 gap-y-1 text-sm"
+        >
+          {dials.map((d) => (
+            // `contents`, so the three cells line up in the grid while
+            // the window still has an element of its own to be named
+            // by — a gate that reads the *name* rather than the block
+            // needs somewhere to hang the name (measuring the block and
+            // splitting on whitespace reads 「39%7」).
+            <div
+              key={d.id}
+              data-quota-part={d.id}
+              data-quota-window={d.window ? d.id : undefined}
+              className="contents"
+            >
+              <dt data-quota-window-name className="text-fact">{d.word}</dt>
+              <dd className="text-muted-foreground">
+                {d.resets_at !== null ? gui.quota_resets(until(d.resets_at * 1000)) : ""}
+              </dd>
+              <dd data-quota-window-pct className="text-right font-title tabular-nums">
+                {Math.round(d.pct)}%
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
-      {/* **The credits, and they are not a window.** Windows are a
-          fraction of a period that refills by itself; this is money,
-          it does not refill and it has no reset. So it is a list of
-          figures rather than a ring, it is not in `ringWindows`, and
-          the row's right-hand summary never names it — three separate
-          places where treating it as a window would have said 「how
-          full am I」 with two different kinds of thing.
+      {/* **The credits' figures, and credits is still not a window.**
+          A window is a fraction of a period that refills by itself;
+          this is money, it does not refill and it has no reset — which
+          is why it has no reset line in the list above and why nothing
+          here calls it one (`Dial.window`).
+          ⚠️ **What changed on 2026-09-07 is narrower than it looks**:
+          credits now takes a pip *when the endpoint gave it a
+          ceiling*, because at that point it is a fraction like the
+          others and the user asked for one mark per part. With no
+          ceiling it is exactly what it always was — these figures and
+          no mark (`creditsPct`).
           The dl is the account detail's, reused: one shape for
           「figures about an account」 on this page, not a second. */}
       {current.credits && (
@@ -852,9 +932,18 @@ export function QuotaLanding({
   const detail = acc && (
     <div data-quota-detail={acc.reading.account} className="flex flex-col gap-4 p-4">
       <div className="flex items-center gap-4">
-        <Ring fraction={arcOf(acc.reading)} color={gaugeColor(acc.strain)} size={RING_SIZE}>
+        {/* **The same dial the subscription wears**, with no pips: an
+            account is one reading and has no parts. A ring here and a
+            dial one row up would be two vocabularies for one question
+            on one page (2026-09-07:「环全部和机器卡对齐」). */}
+        <Face
+          size={RING_SIZE_CARD}
+          stroke={RING_STROKE_CARD}
+          fraction={arcOf(acc.reading)}
+          strain={acc.strain}
+        >
           {centre(acc)}
-        </Ring>
+        </Face>
         {/* The account's own head, cut by the same ruling: the
             provider and the base URL are what the person typed into the
             registration form, and the row they pressed says the
