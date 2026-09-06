@@ -30,10 +30,11 @@ import { ageIfOld, connectionWord } from "@/words";
  * **The arcs then left the footing too**: 「额度都是机器卡里的」 (the
  * same person, later the same day) moved them onto this machine's
  * cards — and on 2026-09-02 they left the machine surfaces altogether
- * (「机器页面不需要有token usage的环」): the 额度 landing's foot is
- * their one home now, where 额度 is read. So this screen is the
- * picture and nothing else, twice over; `QuotaRings` carries the whole
- * road.
+ * (「机器页面不需要有token usage的环」): the 额度 landing is their one
+ * home now, where 额度 is read — its foot for a while, and since
+ * 2026-09-06 a row in its list (「不要有现在下方单独一个订阅的横条」).
+ * So this screen is the picture and nothing else, twice over;
+ * `QuotaLanding`'s head and tombstone carry the whole road.
  *
  * # Everything here is a machine, and pressing one opens its card
  *
