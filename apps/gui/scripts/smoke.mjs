@@ -267,8 +267,18 @@ const VITE_PORT = Number(process.env.VITE_PORT ?? 1442);
 // is test data, not the thing under test (docs/handoff 中文 rule).
 const NEEDLE = "khor-smoke-hello";
 
+// **A web port of its own, per home.** `khor serve` stands its web face
+// up on `khor_web::DEFAULT_PORT` (5467) unless `KHOR_WEB_PORT` says
+// otherwise, and on a developer's machine that port belongs to the
+// resident the user is actually using. Without this the run's serve
+// prints 「网页脸起不来,5467 口占着了」 — a real refusal, about a face
+// nothing here asserts on, in the log a person reads when something
+// else went red. It cost one investigation on 2026-09-06. Ports next to
+// the run's other two, and a home apiece so the two serves do not take
+// each other's.
+let webPort = Number(process.env.WEB_PORT ?? 1444);
 const homeEnv = (dir, name) => {
-  const e = { ...process.env, KHOR_HOME: dir, KHOR_NAME: name };
+  const e = { ...process.env, KHOR_HOME: dir, KHOR_NAME: name, KHOR_WEB_PORT: String(webPort++) };
   delete e.KHOR_SESSION;
   return e;
 };
@@ -2415,6 +2425,21 @@ for line in sys.stdin:
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await settle();
+    // **The probe's own verb, asserted before its reading is believed.**
+    // The rule under test is `[data-slot="button"]:active`, so a target
+    // that is not in `:active` while held is a reading about something
+    // else — and the red it produces points at the press rule, which is
+    // fine. Measured 2026-09-06 on the pane's 「+」: scale 1, opacity 1,
+    // and its menu already open. A Radix trigger acts on `pointerdown`
+    // and the open menu takes the pointer off it, so `:active` is gone
+    // before this line runs. 「动词属于探针,不属于产品」.
+    const live = await locator.evaluate((el) => el.matches(":active"));
+    if (!live) {
+      throw new Error(
+        "probe dead: the control is not :active while held — a menu trigger " +
+          "acts on pointerdown and cannot be measured here",
+      );
+    }
     const held = await style();
     // Away first, then up: a press released off the control is not a
     // click, so measuring one costs nothing.
@@ -2432,17 +2457,51 @@ for line in sys.stdin:
   if (!(pressScale > 0 && pressScale < 1)) {
     throw new Error(`--press is not a give: ${pressScale}`);
   }
-  //      **Measured on the pane's 「+」**, because that is the `Button`
-  //      this landing has left: the session row's pin moved into a menu
-  //      (§15) and the machine row's followed it on 2026-09-06, and a
-  //      menu item is not this component — it is not a `Button`, so the
-  //      give this item asserts does not apply to it and asserting it
-  //      there would be inventing a rule. Same component, same claim,
-  //      a control over.
+  //      **Measured on the machine card's back**, because it is the
+  //      `Button` on this landing that is a button and nothing else:
+  //      the session row's pin moved into a menu (§15) and the machine
+  //      row's followed it on 2026-09-06, and a menu item is not this
+  //      component — it is not a `Button`, so the give this item asserts
+  //      does not apply to it and asserting it there would be inventing
+  //      a rule.
+  //
+  //      **The pane's 「+」 was the target for one day and could not be
+  //      one** (2026-09-06, a red): it is a `DropdownMenuTrigger`, and a
+  //      trigger acts on `pointerdown` — by the time a held probe reads
+  //      it the menu is open and the pointer is off the trigger, so
+  //      `:active` never applies and the reading is 1. Nothing was wrong
+  //      with the press rule; the target was wrong. The `:active` check
+  //      inside `pressing` is what says so now, in one line, instead of
+  //      pointing this assertion at a rule that is fine.
+  //
+  //      The card's back is a ghost icon `Button` like the 「+」, opens
+  //      nothing, and on the narrow face it is the one control the card
+  //      must always have.
+  //
+  //      **The row is read first, then the walk into the card.** A row
+  //      is on the list screen and the back is on the detail screen, and
+  //      the reduced-motion pass at the end of this section reads the
+  //      back again — so the section ends on the screen that has it,
+  //      rather than walking back and leaving that locator pointing at a
+  //      screen that is gone (the note further down is the scar from the
+  //      last time this order was got wrong).
   await openLanding("devices");
   await until("the device list", 10_000, async () => (await page.locator("[data-device]").count()) > 0);
-  const pin = page.locator("[data-pane-new]");
-  const press = await pressing(pin);
+  //      A row answers a press too — it is the most-pressed thing here —
+  //      with the dim and **without** the give: a full-width strip
+  //      scaling reads as the layout slipping, not as a press. Both
+  //      halves asserted, or "it does nothing" would pass the first.
+  const rowPress = await pressing(page.locator("[data-row] [data-row-open]").first());
+  if (!(rowPress.held.opacity < rowPress.resting.opacity)) {
+    throw new Error(`a row must answer a press: ${JSON.stringify(rowPress)}`);
+  }
+  if (rowPress.held.scale !== 1) {
+    throw new Error(`a row must not scale under a press: ${rowPress.held.transform}`);
+  }
+  await page.locator("[data-device] [data-row-open]").first().click();
+  await until("a machine's card", 10_000, async () => (await page.locator("[data-back]").count()) === 1);
+  const back = page.locator("[data-back]");
+  const press = await pressing(back);
   if (press.resting.scale !== 1) {
     throw new Error(`probe dead: the control is already scaled at rest: ${press.resting.transform}`);
   }
@@ -2457,20 +2516,9 @@ for line in sys.stdin:
         `${press.resting.opacity} -> ${press.held.opacity}`,
     );
   }
-  //      Released off the control, so the menu behind it never opened.
-  if ((await page.locator("[data-new-item]").count()) !== 0) {
-    throw new Error("the press probe pressed something for real — the 「+」 menu is open");
-  }
-  //      A row answers a press too — it is the most-pressed thing here —
-  //      with the dim and **without** the give: a full-width strip
-  //      scaling reads as the layout slipping, not as a press. Both
-  //      halves asserted, or "it does nothing" would pass the first.
-  const rowPress = await pressing(page.locator("[data-row] [data-row-open]").first());
-  if (!(rowPress.held.opacity < rowPress.resting.opacity)) {
-    throw new Error(`a row must answer a press: ${JSON.stringify(rowPress)}`);
-  }
-  if (rowPress.held.scale !== 1) {
-    throw new Error(`a row must not scale under a press: ${rowPress.held.transform}`);
+  //      Released off the control, so the card never went back.
+  if ((await page.locator("[data-back]").count()) !== 1) {
+    throw new Error("the press probe pressed something for real — the card went back");
   }
 
   //      …and under reduced motion the give goes while the dim stays.
@@ -2479,7 +2527,7 @@ for line in sys.stdin:
   //      做了但没变化 failure arrived at through an accessibility
   //      setting.
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const still = await pressing(pin);
+  const still = await pressing(back);
   const stillScreen = await screenAnim();
   await page.emulateMedia({ reducedMotion: "no-preference" });
   if (still.held.scale !== 1) {
@@ -2492,10 +2540,12 @@ for line in sys.stdin:
     throw new Error(`reduced motion must take the slide away: ${stillScreen.animation}`);
   }
   //      Back to the sessions list, and **after the last reader of the
-  //      device pin** rather than straight after the first: the reduced
-  //      motion pass below uses the same locator, and moving the walk
-  //      back up here left it pointing at a list that was no longer on
-  //      screen — a timeout that reads as the pin having vanished.
+  //      card's back** rather than straight after the first: the reduced
+  //      motion pass above uses the same locator, and moving the walk
+  //      back up here left it pointing at a screen that was no longer up
+  //      — a timeout that reads as the control having vanished. It was
+  //      the device pin's list when this was first written; the same
+  //      order is what the walk into the card has to keep.
   await openLanding("sessions");
   await until("rows again", 10_000, async () => (await page.locator("[data-row]").count()) > 0);
 
@@ -6237,11 +6287,20 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     (await page.locator('[data-quota-row][data-trouble="unreachable"]').count()) === 1,
   );
   // alpha's two, carried over on the report beat.
-  await until("alpha's good token as a 45% ring wearing alpha's name", 90_000, async () => {
+  //
+  // **The reading is on the row; the machine that took it is not.** The
+  // row wore 「alpha」 when this was written (d84bbe9) and stopped on
+  // 2026-09-06 (3e9b4d9): its third segment is 来源, which for a
+  // registered account is 「khor 登记」 — the machine holding the key is
+  // a property of the account and lives in its detail. So this asks the
+  // row only for the figure, and the detail below asks for the name.
+  // **Both halves are still asserted**, because together they are the
+  // one claim this whole item makes: the key never left alpha, and beta
+  // is showing what alpha read.
+  await until("alpha's good token as a 45% ring", 90_000, async () => {
     const row = page.locator(`[data-quota-row="${goodId}"]`);
     if ((await row.count()) !== 1) return false;
-    const text = await row.innerText();
-    return text.includes("45%") && text.includes("alpha");
+    return (await row.innerText()).includes("45%");
   });
   await until("alpha's wrong key carried as 钥匙被拒", 90_000, async () =>
     (await page.locator('[data-quota-row][data-trouble="key-refused"]').count()) === 1,
@@ -6255,14 +6314,67 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   // The detail: the good ring's figures, and the CLI's own board says
   // the same number.
   await page.locator(`[data-quota-row="${goodId}"]`).click();
-  await until("the good account's figures", 10_000, async () => {
+  await until("the good account's figures, and alpha as the reader", 10_000, async () => {
     const d = page.locator(`[data-quota-detail="${goodId}"]`);
-    return (await d.count()) === 1 && (await d.innerText()).includes("0.90 / 2.00 USD");
+    if ((await d.count()) !== 1) return false;
+    const text = await d.innerText();
+    return text.includes("0.90 / 2.00 USD") && text.includes("alpha");
   });
   const board = cli(envB, "quota");
   if (!board.includes("gw-good") || !board.includes("45%")) {
     throw new Error(`khor quota on beta does not carry alpha's reading: ${board}`);
   }
+  // 30) a machine leaves the network from its row's menu — `khor forget`
+  //     (2026-09-06:「机器左侧 list…右键,置顶或删除」). Two presses, and
+  //     the first is the control arm: it arms the sentence and moves
+  //     nothing, on both faces — a menu that forgot on one press would
+  //     empty the row here and the assertions after it would still
+  //     pass. Then the second, and gamma is gone from beta's list **and
+  //     from beta's own CLI**: the tombstone travels
+  //     (`DeviceDoc::set_gone`), so this is one fact read off both
+  //     faces. This machine's own row offers no such item at all —
+  //     `Node::forget_device` refuses it by name, and an item whose one
+  //     answer is no is not offered.
+  //
+  //     **Before 26, not after it.** This was written last and read
+  //     last, and 26 below **ends the bridge** — so every call made here
+  //     went out over a door that was already shut, and the row's menu
+  //     wore 「Failed to fetch」, which reads exactly like the node
+  //     refusing to forget the machine (2026-09-06, and it took a run
+  //     with the menu's own text printed to tell the two apart). What
+  //     「last」 was protecting is that nothing *after this* needs gamma,
+  //     and 26 does not.
+  await openLanding("devices");
+  await until("gamma on the device list", 10_000, async () =>
+    (await page.locator('[data-device="gamma"]').count()) === 1,
+  );
+  const listsGamma = () => cli(envB, "devices").split("\n").some((l) => l.startsWith("gamma\t"));
+  if (!listsGamma()) throw new Error("probe dead: beta's CLI does not list gamma before anything was forgotten");
+  const ownRow = await page.locator('[data-device="beta"]').getAttribute("data-row");
+  await openRowMenu(ownRow);
+  if ((await page.locator('[data-menu-item="forget"]').count()) !== 0) {
+    throw new Error("this machine's own row offers to forget itself — the one press the node always refuses");
+  }
+  await closeRowMenu();
+  const goneRow = await page.locator('[data-device="gamma"]').getAttribute("data-row");
+  await openRowMenu(goneRow);
+  if ((await page.locator('[data-menu-item="forget"]').count()) !== 1) {
+    throw new Error("gamma's row offers no way to forget it");
+  }
+  await page.locator('[data-menu-item="forget"]').click();
+  await until("the sentence between the two presses", 5_000, async () =>
+    (await page.locator('[data-menu-confirm="forget"]').count()) === 1,
+  );
+  await settle();
+  if ((await page.locator('[data-device="gamma"]').count()) !== 1 || !listsGamma()) {
+    throw new Error("one press forgot the machine — nothing stood between the press and the act");
+  }
+  await page.locator('[data-menu-item="forget"]').click();
+  await until("gamma to leave beta's machine list", 20_000, async () =>
+    (await page.locator('[data-device="gamma"]').count()) === 0,
+  );
+  await until("beta's CLI to stop listing gamma", 20_000, () => !listsGamma(), 1_000);
+
   // Back to the sessions landing: what follows reads rows off it.
   await openLanding("sessions");
 
@@ -6419,48 +6531,6 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   }
   await closeRowMenu();
 
-  // 30) a machine leaves the network from its row's menu — `khor forget`
-  //     (2026-09-06:「机器左侧 list…右键,置顶或删除」). Two presses, and
-  //     the first is the control arm: it arms the sentence and moves
-  //     nothing, on both faces — a menu that forgot on one press would
-  //     empty the row here and the assertions after it would still
-  //     pass. Then the second, and gamma is gone from beta's list **and
-  //     from beta's own CLI**: the tombstone travels
-  //     (`DeviceDoc::set_gone`), so this is one fact read off both
-  //     faces. This machine's own row offers no such item at all —
-  //     `Node::forget_device` refuses it by name, and an item whose one
-  //     answer is no is not offered. **Last, because nothing after it
-  //     may need gamma.**
-  await openLanding("devices");
-  await until("gamma on the device list", 10_000, async () =>
-    (await page.locator('[data-device="gamma"]').count()) === 1,
-  );
-  const listsGamma = () => cli(envB, "devices").split("\n").some((l) => l.startsWith("gamma\t"));
-  if (!listsGamma()) throw new Error("probe dead: beta's CLI does not list gamma before anything was forgotten");
-  const ownRow = await page.locator('[data-device="beta"]').getAttribute("data-row");
-  await openRowMenu(ownRow);
-  if ((await page.locator('[data-menu-item="forget"]').count()) !== 0) {
-    throw new Error("this machine's own row offers to forget itself — the one press the node always refuses");
-  }
-  await closeRowMenu();
-  const goneRow = await page.locator('[data-device="gamma"]').getAttribute("data-row");
-  await openRowMenu(goneRow);
-  if ((await page.locator('[data-menu-item="forget"]').count()) !== 1) {
-    throw new Error("gamma's row offers no way to forget it");
-  }
-  await page.locator('[data-menu-item="forget"]').click();
-  await until("the sentence between the two presses", 5_000, async () =>
-    (await page.locator('[data-menu-confirm="forget"]').count()) === 1,
-  );
-  await settle();
-  if ((await page.locator('[data-device="gamma"]').count()) !== 1 || !listsGamma()) {
-    throw new Error("one press forgot the machine — nothing stood between the press and the act");
-  }
-  await page.locator('[data-menu-item="forget"]').click();
-  await until("gamma to leave beta's machine list", 20_000, async () =>
-    (await page.locator('[data-device="gamma"]').count()) === 0,
-  );
-  await until("beta's CLI to stop listing gamma", 20_000, () => !listsGamma(), 1_000);
 
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
