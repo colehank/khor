@@ -1206,8 +1206,31 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
           );
         })}
       </div>
+      {/* **The editor sticks to the bottom of the drawer**, because it is
+          this drawer's workbench and not its last row. It sat at the end
+          of the scrolling column when it arrived, and the drawer's
+          viewport is 175px on a 720-tall window: measured 2026-09-06 the
+          whole editor was at y=208 with the scroller ending at y=200 —
+          **not one pixel of it on screen**, and no hint that it was
+          there (the 「下滑查看更多」 mark counts clipped *rows*, and the
+          editor is not one). A control nobody can see is the same as a
+          control that is not there, which is what the disk drawer was
+          asked to grow.
+
+          `bg-card` because it must not be see-through with rows sliding
+          under it, and that is the ground the panel around it paints.
+
+          **It does not fix a drawer too short for its own content** —
+          the rows still scroll behind it and one row's worth of room
+          goes to the editor. What it fixes is that the way *in* is
+          always on screen. */}
       {editable && (
-        <div data-watch-editor data-dirty={dirty} hidden={!open} className="mt-in flex flex-col gap-in text-sm">
+        <div
+          data-watch-editor
+          data-dirty={dirty}
+          hidden={!open}
+          className="sticky bottom-0 mt-in flex flex-col gap-in bg-card pt-in text-sm"
+        >
           <div className="flex min-w-0 items-center gap-in">
             <Input
               data-watch-input
