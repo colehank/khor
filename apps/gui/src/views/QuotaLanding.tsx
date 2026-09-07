@@ -368,33 +368,32 @@ function centre(r: AccountRing): string {
   return "";
 }
 
-/**
- * What the **card's** dial says in its middle: the share, or nothing.
- *
- * ⚠️ **The mock contradicts itself here, and this is the one place the
- * implementation deliberately does not follow it.** In
- * `khor-usage-mock.html` the account card prints the money twice — once
- * under the dial (`12.34 / 100 USD`) and again in the facts beside it
- * (`已用 12.34` / `上限 100`). The mock is the user's own reviewed
- * draft, so **somebody reading it against this file will see a missing
- * line and take it for a drop.** It is not: the card's two halves are
- * 「表盘 | 事实」, and a number that appears in both halves makes the
- * split mean nothing. The dial says how full; the list says the
- * figures.
- *
- * **The cost, stated so it is not mistaken for an omission either**: a
- * reading with no denominator (不限量, a prepaid wallet) gets a full arc
- * and an **empty** middle, with the number on the right. Full arc +
- * nothing + 「不限量」 is a whole sentence — the mock draws it that way
- * too (`centre: ""`).
- *
- * The row keeps `centre`: a list has no second column to put a figure
- * in, so there the middle is the only place a number can go.
- */
-function share(reading: AccountRing["reading"]): string {
-  if (reading.trouble || reading.fill == null) return "";
-  return `${Math.round(reading.fill * 100)}%`;
-}
+/* ⚠️ **Tombstone: `share()` is gone, 2026-09-07** — it drew the card's
+   dial with a percentage or **nothing**, and the nothing was wrong.
+
+   User:「说过的没有额度的环,显示金额,你也没有做到」. A reading with no
+   denominator (不限量, a prepaid wallet) now shows its **money** in the
+   middle, the same thing the list row has always shown — the card and
+   the row say one thing, not two.
+
+   ⚠️ **What went here before was a note explaining why the mock was not
+   followed, and that note was wrong.** It argued that the mock printed
+   the money twice — under the dial and again in the facts — so the
+   dial's copy was a draft's blemish. **The mock was right.** The two
+   figures are not one sentence said twice: the middle of the dial is
+   「what this account has spent」, and the list beside it is
+   「已用 / 上限 / 重置」. One is a reading, the other is its parts.
+
+   **This is written down rather than quietly deleted** because the old
+   note told the next person that a missing line in the mock was
+   deliberate. Somebody comparing the mock to this file has now been
+   misled once; they should not be misled twice.
+
+   The subscription's dial is **not** this case and keeps its empty
+   middle: with no whole-plan window there is no number to put there —
+   not a money figure either, because a subscription has no 「spent」.
+   That one is bare track and nothing, ruled separately (`headline`). */
+
 
 /**
  * How much arc to draw for an account.
@@ -1283,7 +1282,7 @@ export function QuotaLanding({
           fraction={arcOf(acc.reading)}
           strain={acc.strain}
         >
-          {share(acc.reading)}
+          {centre(acc)}
         </Face>
         <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
         {acc.reading.trouble ? (

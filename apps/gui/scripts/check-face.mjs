@@ -2276,6 +2276,41 @@ try {
       }
     }
 
+    //   ── 8·what an account's dial says in its middle ────────────
+    //   2026-09-07:「说过的没有额度的环,显示金额」. A reading with no
+    //   denominator shows its money there; one with a denominator shows
+    //   the share.
+    //
+    //   **Two rows, and neither alone is enough** — `acc-fill` has a
+    //   fraction (0.45) and `acc-number` has a spend and no ceiling. An
+    //   implementation that always draws money passes on the second and
+    //   fails the first; one that always draws a percent fails the
+    //   second; **and one that draws nothing when there is no fraction
+    //   — which is what this replaced — passes neither.**
+    const middleOf = async (row) => {
+      await page.locator(`[data-quota-row="${row}"]`).click();
+      await wait(300);
+      return (
+        await page
+          .locator(`[data-quota-detail="${row}"] [data-quota-lead] text`)
+          .textContent()
+          .catch(() => null)
+      )?.trim() ?? null;
+    };
+    const withCeiling = await middleOf("acc-fill");
+    const without = await middleOf("acc-number");
+    if (withCeiling !== "45%") {
+      fail(`a reading with a ceiling reads ${JSON.stringify(withCeiling)} in the middle, not its share`);
+    } else if (!without) {
+      fail(
+        `a reading with no ceiling reads ${JSON.stringify(without)} in the middle — 「没有额度的环,显示金额」`,
+      );
+    } else if (!without.includes("12.34")) {
+      fail(
+        `a reading with no ceiling reads ${JSON.stringify(without)} where the fixture spent 12.34 — the middle is that spend`,
+      );
+    }
+
     //   ── 8·the row's menu ───────────────────────────────────────
     //   2026-09-07:「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹
     //   置顶 / 编辑 / 删除」. Three claims, and the first two are an
