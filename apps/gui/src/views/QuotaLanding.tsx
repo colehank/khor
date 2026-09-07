@@ -37,7 +37,7 @@ import {
   type QuotaCredits,
   type QuotaWindow,
 } from "@/api";
-import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
+import { IconBack } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
@@ -674,10 +674,6 @@ export function QuotaLanding({
   const [board, setBoard] = useState<AccountRing[] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
-  // Which cards have their drawer open. **A set keyed by row, not one
-  // boolean**: 「I opened this card」 is a fact about that card, and a
-  // single flag would make walking away and back a way of closing it.
-  const [spread, setSpread] = useState<Set<string>>(() => new Set());
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
       keeps for the machine list, and for its reason: what failed
@@ -1077,104 +1073,62 @@ export function QuotaLanding({
           figure below and no mark, because a mark needs an angle and an
           angle needs a denominator (`creditsPct`). */}
       <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
-        {/* **The dial is the handle** (2026-09-07:「点击环本身展开,和机器
-            页一样,而不是现在的一排字!」). Same gesture the machine card
-            answers, and **a toggle rather than an open**: pressing a
-            dial that is already showing closes it, because anything
-            else makes the press do nothing when it is already on, which
-            reads as a stuck control (`MachineCard`'s `Dial` states the
-            same rule).
-            **「和机器页一样」 is about the gesture, not the pixels.**
-            What affordance each card needs is decided by its own
-            situation: the machine card has four dials side by side with
-            a word under each, which is itself an announcement that
-            these are things to choose between. This card has **one**
-            dial and no word under it — so the same gesture needs a
-            different sign that it is there at all. Do not 「align」 this
-            with the machine card by deleting that sign. */}
-        <button
-          type="button"
-          data-quota-dial-toggle={current.id}
-          aria-expanded={spread.has(current.id)}
-          // The words the text button used to wear, moved: a screen
-          // reader hears what pressing it does, which is the same rule
-          // the row menu's 置顶 / 取消置顶 follows. **A shape with no
-          // name is a control only sighted readers have.**
-          aria-label={spread.has(current.id) ? gui.quota_spread_close : gui.quota_spread_open}
-          disabled={dials.length === 0}
-          onClick={() =>
-            setSpread((was) => {
-              const next = new Set(was);
-              if (!next.delete(current.id)) next.add(current.id);
-              return next;
-            })
-          }
-          className="flex flex-col items-center rounded-md"
+        {/* ⚠️ **Tombstone: this dial was a button for about an hour,
+            and before that there was a row of words under the list.
+            Neither is here now, and the story is worth keeping because
+            it is three judgments about three different things — not
+            somebody changing their mind.**
+
+            1. The first ruling had two sentences that disagree:「底下
+               『展开』」and「和机器卡按表盘开抽屉是同一个动作」. The
+               first was built. **Nobody went back to ask**, and that is
+               the part to learn from.
+            2. Looking at the built thing, the user ruled:「点击环本身
+               展开,和机器页一样,而不是现在的一排字!」 — the words went,
+               the dial became the handle (`02066e9`).
+            3. Looking at *that*, the user ruled:「直接就展开,不用用户
+               点击」, with the reason:「左多环右展开 bar 来铺宽度空间」.
+
+            **Each ruling is about what was in front of them**: a mock, a
+            row of words, a card with half its width empty. The third one
+            makes the first two moot — a drawer that is always open needs
+            no handle — so the handle is gone rather than disabled.
+
+            What is left is the dial, drawn and not pressed. */}
+        <Face
+          size={RING_SIZE_CARD}
+          stroke={RING_STROKE_CARD}
+          fraction={lead ? lead.pct / 100 : null}
+          pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
         >
-          {/* ⚠️ **No whole-plan window means bare track, and that is a
-              档 this page already has.** `fraction` of `null` draws the
-              track alone — the very same picture 问不出来 wears on an
-              account (`arcOf`), and it says the same thing here: khor
-              has no number for 「how full is this subscription」.
-              **Not a full arc** (that is 不限量, and borrowing it would
-              be exactly the 「fell into the answer next door」 this
-              whole change is about) and **not 0%** (that is a reading,
-              and a reading nobody could take is not zero).
-              The centre is empty for the same reason, and the row's
-              summary with it. **Nothing is lost**: every window is
-              still a line in the panel beside this, still a pip on this
-              rim, and still a dial of its own in the drawer. What is
-              missing is only the number that would have claimed to
-              speak for the whole. */}
-          <Face
-            size={RING_SIZE_CARD}
-            stroke={RING_STROKE_CARD}
-            fraction={lead ? lead.pct / 100 : null}
-            pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
-          >
-            {lead ? `${Math.round(lead.pct)}%` : ""}
-          </Face>
-          {/* ⚠️ **This arrow does two jobs, and the first is why it
-              exists at all: it says 「this can be pressed」.**
-              A lone circle announces nothing — with the row of words
-              gone, a reader who has not read this file has no way to
-              learn the drawer is there, and **a button nobody knows to
-              press is the same as no button**. The second job is the
-              one it shares with the machine card's word: 「this is
-              open」.
-              **Two jobs is the reason it earns its place** — said here
-              because 「an arrow under a dial」 reads as decoration, and
-              the next person to tidy this card will reach for it.
-              Two channels and no third: the direction it points, and
-              the ink. **No ground, no border, no capsule** — the rail's
-              own rule, and the machine card's. And **not the arc**: the
-              arc is a reading, and a reading may not be dimmed to say
-              something about the interface.
-              Inside the same button as the dial, never beside it: two
-              hit areas doing one job is the next bug's shape. */}
-          {dials.length > 0 && (
-            <span
-              data-quota-dial-caret
-              data-on={spread.has(current.id)}
-              aria-hidden="true"
-              className={cn(
-                "flex",
-                spread.has(current.id) ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {spread.has(current.id) ? <IconChevronUp /> : <IconChevronDown />}
-            </span>
-          )}
-        </button>
+          {lead ? `${Math.round(lead.pct)}%` : ""}
+        </Face>
         {/* **The right column, and everything in it is a fact about
             this subscription** — the windows, then the credits. They
             are one column rather than two blocks stacked under the card
             because that is the half the dial does not fill
-            (2026-09-07:「表盘 | 事实」). */}
-        <div className="flex min-w-0 flex-col gap-3">
+            (2026-09-07:「表盘 | 事实」).
+            ⚠️ **`flex-1` is load-bearing, and its absence is invisible.**
+            Without it this column is sized to its content, the bars'
+            `1fr` track resolves to **zero**, and every bar measures 0px
+            wide — which on a screenshot reads as 「the bars have not
+            been added yet」, not as 「the layout is broken」. Measured
+            2026-09-07: 0px before, and it was the measurement that
+            found it, not the picture. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {/* **Name, bar, number — and the bar is why this is the shape**
+            (2026-09-07:「左多环右展开 bar 来铺宽度空间」,「类似机器卡片
+            的环 bar 组合」). The machine card pairs a dial with rows of
+            exactly this, for exactly this reason: **a bar is the one
+            reading that grows sideways**, so a card with width to spare
+            spends it on the readings instead of leaving it blank.
+            The reset rides the name in muted ink rather than taking a
+            column of its own — the same seat the machine card gives a
+            volume's mount point beside its path. A column for it would
+            push the bar into a gutter, and the bar is the point. */}
         <dl
           data-quota-parts
-          className="grid min-w-0 grid-cols-[auto_1fr_auto] gap-x-6 gap-y-1 text-sm"
+          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 text-sm"
         >
           {dials.map((d) => (
             // `contents`, so the three cells line up in the grid while
@@ -1188,9 +1142,22 @@ export function QuotaLanding({
               data-quota-window={d.window ? d.id : undefined}
               className="contents"
             >
-              <dt data-quota-window-name className="text-fact">{d.word}</dt>
-              <dd className="text-muted-foreground">
-                {d.resets_at !== null ? gui.quota_resets(until(d.resets_at * 1000)) : ""}
+              {/* ⚠️ **`data-quota-window-name` is on the word, not on
+                  this cell.** The cell holds the reset line too, and a
+                  measure that reads the cell gets 「7 天窗口23 小时后重
+                  置」 — the same 「39%7」 the older comment on this block
+                  warns about, re-made the moment the reset moved in
+                  here. Caught by that very gate, 2026-09-07. */}
+              <dt className="flex min-w-0 items-baseline gap-2 text-fact">
+                <span data-quota-window-name className="truncate">{d.word}</span>
+                {d.resets_at !== null && (
+                  <span className="flex-none text-aux text-muted-foreground">
+                    {gui.quota_resets(until(d.resets_at * 1000))}
+                  </span>
+                )}
+              </dt>
+              <dd data-quota-part-bar className="flex min-w-0 items-center">
+                <QuotaBar pct={d.pct} />
               </dd>
               <dd data-quota-window-pct className="text-right font-title tabular-nums">
                 {Math.round(d.pct)}%
@@ -1275,33 +1242,21 @@ export function QuotaLanding({
       )}
         </div>
       </div>
-      {/* **One dial per part, and that is the same list the rim was
-          drawn from** (`subDials`) — 「轮缘卡点数 = 展开后的表盘数,
-          一一对应」. The lead's dial answers 「什么最先卡住我」 with one
-          arc and a rim; this answers 「每个窗口各是多少」 by giving each
-          one its own arc, at the size where a number can sit inside it.
-          Nothing here is a second reading: it is the marks, spread out. */}
-      {spread.has(current.id) && (
-        <div data-quota-spread className="flex flex-wrap gap-x-8 gap-y-4 border-t pt-4">
-          {dials.map((d) => (
-            <div
-              key={d.id}
-              data-quota-spread-dial={d.id}
-              className="flex min-w-0 flex-col items-center gap-0.5"
-            >
-              <Face size={RING_SIZE_CARD} stroke={RING_STROKE_CARD} fraction={d.pct / 100}>
-                {`${Math.round(d.pct)}%`}
-              </Face>
-              <span className="text-fact">{d.word}</span>
-              {d.resets_at !== null && (
-                <span className="text-aux text-muted-foreground">
-                  {gui.quota_resets(until(d.resets_at * 1000))}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* ⚠️ **Tombstone: the row of per-window dials that used to hang
+          under this card is gone, 2026-09-07** —「左多环右展开 bar 来铺
+          宽度空间」. It drew each window as its own 88px dial, in a strip
+          below; the same windows are the bars on the right now.
+
+          **The reason is width, and it is a real one.** Those dials sat
+          under a card whose right half was empty, so the card was tall
+          and narrow while the room went unused. Bars grow sideways —
+          that is what makes them the shape for「fill the width」, and it
+          is the same pairing the machine card makes (a dial, and rows of
+          `name | bar | number` beside it).
+
+          **Nothing was lost with them**: every window is still a line
+          over there, with its own name, its own reset and its own
+          number, and still a pip on the rim of the dial to the left. */}
     </div>
   );
 
@@ -1637,6 +1592,42 @@ function SpendDays({ reading }: { reading: AccountRing["reading"] }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * One window's share as a horizontal bar.
+ *
+ * ⚠️ **This duplicates `MachineCard`'s `Bar`, deliberately and
+ * temporarily.** That one is a local function in a file another lane is
+ * working in, and reaching into it — or moving it out to
+ * `components/` — is an edit to that file. The two are the same
+ * measurements on purpose (`h-1.5`, a `bg-foreground/10` track, a
+ * rounded ink), so they read as one thing on two cards.
+ *
+ * **A duplicated primitive is a debt, and the interest is that the two
+ * drift**: the next person to change one of them will not know the
+ * other exists. It is written down here so somebody can pay it — the
+ * fix is one shared component, and it costs a change to a file that was
+ * not this lane's to touch today.
+ *
+ * No strain ramp: a quota at 80% is a fact, not a warning
+ * (`Ring`'s note carries that ruling). The machine card's bar takes a
+ * strain because a disk at 95% *is* a warning.
+ */
+function QuotaBar({ pct }: { pct: number }) {
+  return (
+    // **Two elements, and the outer one is the cell.** A bar that *is*
+    // the grid child inherits the row's height and draws as a fat pill;
+    // the cell is full height and the track is a hairline centred in it
+    // (the machine card learned this on the real face).
+    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+      <span
+        data-quota-part-ink
+        className="block h-full rounded-full bg-muted-foreground"
+        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+      />
+    </span>
   );
 }
 
