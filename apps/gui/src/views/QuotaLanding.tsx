@@ -151,36 +151,70 @@ function troubleWord(key: string): string {
  */
 const RING_CHARS = 4;
 
+/* ⚠️ **Tombstone: `sign()` is gone, 2026-09-07 — a table from currency
+   codes to marks (`USD→$`, `CNY|RMB→¥`), one day old when it was
+   pulled.**
+
+   **It is not that the table was incomplete. It is that no table can be
+   complete, and that its input was never trustworthy.** The user's
+   words on both halves:「不要去识别,不然各种货币符号我们识别不完,
+   用户也可能说的不对」——
+
+   - **there is no closed set to recognise.** Every entry khor adds is
+     a promise about a world that keeps adding currencies, and the
+     branch that catches the rest cannot say anything true. Yesterday's
+     shape answered an unknown code with no mark at all, which is
+     honest and also useless to the person reading it;
+   - **and the code being translated is itself a guess.** The gateways
+     report a code the account may not be billed in — that is why
+     [`AccountRing.unit`] exists at all. A perfect table over a wrong
+     input produces a confident wrong mark.
+
+   So khor stopped reading codes. **The mark is the characters the
+   person typed**, carried to the screen untranslated, and where they
+   have typed nothing it is [`DEFAULT_MARK`]. Nothing in this file maps
+   one string to another one, and nothing should be added that does. */
+
 /**
- * The currency's sign, for the ring where there is no room for a code.
+ * What a figure wears when nobody has said otherwise.
  *
- * ⚠️ **Not a catalog word, and the reason is the precedent this file
- * already set for `·`**: punctuation is not copy. `$` is notation — it
- * is the same mark in every language this app might speak, and it is
- * not khor's to translate.
+ * 2026-09-07:「默认是 $」.
  *
- * **What khor may not do is invent one.** `currency` is the endpoint's
- * own answer, carried and not authored (`AccountReading::currency`), so
- * a code with no sign khor knows gets **no sign** rather than a guessed
- * one — a figure with the wrong mark on it is worse than a figure with
- * none. Two codes reach this today: `USD` from every gateway and
- * vendor, `CNY` from Moonshot's China site (`khor_node::accounts`).
+ * ⚠️ **It has a cost, and the cost was accepted knowingly**: an account
+ * really billed in renminbi — Moonshot's China site is the one khor
+ * has met — reads `$` until somebody opens 编辑 and types `¥`. That is
+ * a change of judge, not an oversight. Yesterday khor decided from the
+ * endpoint's code and drew nothing when it could not tell; today the
+ * person decides, and **a default they can see and change is worth
+ * more than a guess khor makes on their behalf** — the guess is the
+ * thing they cannot argue with.
+ *
+ * ⚠️ **Applied when drawing, never when storing.** An account with no
+ * override stores `null`, not `"$"`. Writing it down would turn a
+ * default into a decision nobody made — the same reason the edit box
+ * shows this as a placeholder rather than a value, and the same reason
+ * the node still carries the endpoint's own answer untouched
+ * (`AccountReading::currency`).
  */
-function sign(currency: string | null): string {
-  switch (currency) {
-    case "USD":
-      return "$";
-    // **`RMB` and `CNY` are one currency spelled two ways**, and the
-    // person typing a unit into the edit box is likelier to write the
-    // first — the ruling that created that box was 「他说 usd,但可能是
-    // rmb」. A synonym is not a guess: an unknown code still gets no
-    // sign at all.
-    case "CNY":
-    case "RMB":
-      return "¥";
-    default:
-      return "";
-  }
+const DEFAULT_MARK = "$";
+
+/** The marks 编辑 offers as one press. **A shortcut row, not a set of
+    allowed values** — see where it is drawn. `$` leads because it is
+    [`DEFAULT_MARK`]; the other three are the currencies an account
+    reachable from here is plausibly billed in, and the length is
+    bounded by the one line they have to sit on. */
+const UNIT_PICKS = ["$", "¥", "€", "£"];
+
+/** The mark an account's figures wear: what its owner typed, else
+    [`DEFAULT_MARK`]. **One source for the ring and the column** — they
+    used to reach for `sign(currency)` and `currency`, which is how one
+    of them could say `124$` while the other said `124 USDT`. */
+function markOf(unit: string | null): string {
+  // `??` alone would let an empty string through as「no mark at all」.
+  // The node already stores blank as absent, so this only ever fires on
+  // a wire that broke that promise — and the one thing the default
+  // exists to prevent is a figure standing there with no unit.
+  return unit === null || unit.trim() === "" ? DEFAULT_MARK : unit;
 }
 
 /**
@@ -196,28 +230,56 @@ function sign(currency: string | null): string {
  * only band it changes is 10–99.99, which used to draw `12.34` and now
  * draws `12$`.
  */
-function ringWord(n: number, currency: string | null): string {
-  const mark = sign(currency);
+function ringWord(n: number, mark: string): string {
   const whole = Math.round(n);
-  if (`${whole}${mark}`.length <= RING_CHARS) return `${whole}${mark}`;
-  // Past four characters the sign is what goes, because the magnitude
-  // is the part a person is reading — see this batch's report: `1.2k$`
-  // is five, and the user's own example (`1.1k`) carries no sign.
-  const step = (v: number, suffix: string) => `${Math.round(v)}${suffix}${mark}`;
-  if (whole < 1_000_000) return step(n / 1_000, "k");
-  return step(n / 1_000_000, "m");
+  const fits = (s: string) => s.length <= RING_CHARS;
+  if (fits(`${whole}${mark}`)) return `${whole}${mark}`;
+  // Not enough room: buy some by shortening the **magnitude**, which is
+  // what `1.1k` was asked for.
+  const short = whole < 1_000_000 ? `${Math.round(n / 1_000)}k` : `${Math.round(n / 1_000_000)}m`;
+  if (fits(`${short}${mark}`)) return `${short}${mark}`;
+  // ⚠️ **And when even that does not fit, the mark is what goes — not
+  // the digits.** Since 2026-09-07 the mark is free text (「直接输入
+  // 符号」), so it can be longer than the whole budget, and a step down
+  // in magnitude cannot pay for it: `124` under a `USDT` would become
+  // `0kUSDT`, then `0k`, and **a reading of 124 would be drawn as
+  // zero**. The magnitude is the part a person is reading, so it keeps
+  // its own full form and the column beside it spells the unit out.
+  return fits(`${whole}`) ? `${whole}` : short;
 }
 
-/** The figure a column shows, with its unit spelled out.
+/**
+ * The figure a column shows, with its unit spelled out in full.
  *
- * **This and [`ringWord`] disagree on purpose, and the disagreement is
- * not a bug to be tidied away.** A ring has four characters and spends
- * them on the magnitude, so `USDT` — a code khor has no sign for —
- * draws a bare `124` there; this line has room for the whole thing and
- * says `124 USDT`. (2026-09-07:「USDT 在环里只显示 124,右栏显示
- * …USDT」. Measured: at ≥100 this rounds too, so at that size what
- * differs between the two places is the *unit word*; below 100 the
- * cents differ as well — `12$` on the ring, `12.34 USD` here.)
+ * **`unit` is whatever string its caller holds, and this function does
+ * not interpret it**: for an account that is the mark its owner typed
+ * (or [`DEFAULT_MARK`]); for the subscription's credits it is the code
+ * the endpoint reported. Nothing here maps one to the other — see the
+ * tombstone above `DEFAULT_MARK` for why khor stopped doing that.
+ *
+ * ⚠️ **Why credits are not defaulted to `$` like an account is.** The
+ * default exists because a person can open 编辑 and correct it. The
+ * subscription has no such box, so a `$` there would be a mark nobody
+ * could argue with — the exact thing the default was chosen over. Its
+ * figures wear the endpoint's own code, or nothing.
+ *
+ * # The space, and why it is conditional
+ *
+ * 2026-09-07:「右栏要读起来像钱」. A mark that is a **symbol** sits
+ * against its figure (`124$`, `1235¥`); one that starts with a
+ * **letter** is a word and takes a word gap (`124 USDT`). Measured on
+ * the page before choosing: `124 $` reads as a typo and `124USDT` as
+ * one token.
+ *
+ * **This is typography, not recognition.** It does not decide *what*
+ * the unit is — that is the thing khor stopped doing — only whether
+ * the two things beside each other need air between them. A person who
+ * types `£` and a person who types `GBP` both get their own string back.
+ *
+ * ⚠️ **This and [`ringWord`] round differently on purpose**: above 100
+ * both drop the decimals, below it a ring says `12$` where this says
+ * `12.34$` — the ring has four characters, this line has as many as it
+ * needs. What they may **never** differ on is the unit itself.
  *
  * ⚠️ **The unit is a label, never a rate.** An account may carry a
  * `unit` its owner typed, because a gateway can stamp 「USD」 on
@@ -226,9 +288,10 @@ function ringWord(n: number, currency: string | null): string {
  * **Nothing here may grow into a conversion**: no rates, no sources,
  * no arithmetic. That is a different feature and a different ruling.
  */
-function money(n: number, currency: string | null): string {
+function money(n: number, unit: string | null): string {
   const figure = n >= 100 ? n.toFixed(0) : n.toFixed(2);
-  return currency ? `${figure} ${currency}` : figure;
+  if (!unit) return figure;
+  return /^\p{L}/u.test(unit) ? `${figure} ${unit}` : `${figure}${unit}`;
 }
 
 /* ⚠️ **Tombstone: `SPAN_MINUTES` and `ringWindows` are gone,
@@ -464,8 +527,13 @@ function centre(r: AccountRing): string {
   const { reading } = r;
   if (reading.trouble) return "";
   if (reading.fill != null) return `${Math.round(reading.fill * 100)}%`;
-  if (reading.spent != null) return ringWord(reading.spent, reading.currency);
-  if (reading.remaining != null) return ringWord(reading.remaining, reading.currency);
+  // **`r.unit`, not `reading.currency`.** The reading carries the
+  // endpoint's own code, which is not a mark and is not khor's to
+  // translate into one; the mark is the person's, defaulted here and
+  // nowhere upstream.
+  const mark = markOf(r.unit);
+  if (reading.spent != null) return ringWord(reading.spent, mark);
+  if (reading.remaining != null) return ringWord(reading.remaining, mark);
   return "";
 }
 
@@ -1424,9 +1492,9 @@ export function QuotaLanding({
                   {acc.reading.limit != null
                     ? gui.accounts_of(
                         money(acc.reading.spent, null),
-                        money(acc.reading.limit, acc.reading.currency),
+                        money(acc.reading.limit, markOf(acc.unit)),
                       )
-                    : money(acc.reading.spent, acc.reading.currency)}
+                    : money(acc.reading.spent, markOf(acc.unit))}
                   {acc.reading.unlimited ? ` · ${gui.accounts_unlimited}` : ""}
                 </dd>
               </>
@@ -1435,7 +1503,7 @@ export function QuotaLanding({
               <>
                 <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>
                 <dd data-quota-remaining className="tabular-nums">
-                  {money(acc.reading.remaining, acc.reading.currency)}
+                  {money(acc.reading.remaining, markOf(acc.unit))}
                   {/* **The wallet's one line, and why it is the only
                       one.** DeepSeek and Moonshot answer a balance and
                       nothing else — no spend, no ceiling, no day
@@ -1510,11 +1578,11 @@ export function QuotaLanding({
               <>
                 <dt className="text-muted-foreground">{gui.accounts_this_month}</dt>
                 <dd data-quota-month className="tabular-nums">
-                  {money(acc.reading.spent_this_month, acc.reading.currency)}
+                  {money(acc.reading.spent_this_month, markOf(acc.unit))}
                 </dd>
                 <dt className="text-muted-foreground">{gui.accounts_all_time}</dt>
                 <dd data-quota-all-time className="tabular-nums">
-                  {money(acc.reading.spent_all_time, acc.reading.currency)}
+                  {money(acc.reading.spent_all_time, markOf(acc.unit))}
                 </dd>
               </>
             )}
@@ -1529,7 +1597,7 @@ export function QuotaLanding({
             carries no labels. */}
         </dl>
       </div>
-      <SpendDays reading={acc.reading} />
+      <SpendDays reading={acc.reading} mark={markOf(acc.unit)} />
       {/* ⚠️ **Tombstone: the 撤掉 button left this card on 2026-09-07**
           (「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹 置顶 /
           编辑 / 删除」). It is the row's menu now, beside 置顶 and 编辑,
@@ -1686,7 +1754,7 @@ export function QuotaLanding({
  * answers 「when did it go」, and the dial above already answers 「how
  * much of what I have」.
  */
-function SpendDays({ reading }: { reading: AccountRing["reading"] }) {
+function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: string }) {
   const days = reading.days;
   if (days.length === 0) return null;
   const most = Math.max(...days.map((d) => d.spent));
@@ -1711,7 +1779,9 @@ function SpendDays({ reading }: { reading: AccountRing["reading"] }) {
             key={d.at}
             data-quota-day={d.at}
             data-quota-day-spent={d.spent.toFixed(4)}
-            title={`${money(d.spent, reading.currency)}`}
+            // The account's own mark, handed down rather than read again —
+            // 「一个账户在这一屏上只有一个单位」 covers the tooltip too.
+            title={`${money(d.spent, mark)}`}
             className="min-w-1 max-w-10 flex-1 rounded-t bg-muted-foreground/60"
             // **A day with no spending still gets a column, one pixel
             // tall** — a gap would read as a day the provider did not
@@ -1956,36 +2026,78 @@ function EditDialog({
               {gui.accounts_key_keep}
             </span>
           </label>
-          {/* **单位:标签,不是汇率.** 2026-09-07:「同样的数字,单位不同
-              而已」 — a gateway that stamps 「USD」 on renminbi reported
-              the right amount under the wrong name, and the person who
-              topped the account up knows which it was. **Nothing here
-              converts anything**; the figure is untouched.
+          {/* **单位:人打进去的那串字符,khor 不认它。** 2026-09-07:
+              「直接输入符号。比如 $,不要去识别,不然各种货币符号我们
+              识别不完,用户也可能说的不对。」 The box holds a *mark*,
+              not a currency code, and whatever is in it is drawn as it
+              stands — see the tombstone over `DEFAULT_MARK`.
 
-              ⚠️ **The endpoint's own answer is the placeholder, never
-              the value.** Filled in as a value it would mean that
-              somebody who came here to change the *name* and pressed
-              save walked away with a unit override pinned to whatever
-              the gateway happened to say — **a control that changes
-              state when nobody touches it is not an option, it is a
-              decision made on their behalf.** (The key box next to this
-              one refuses the mirror image: it may not show what is
-              stored. Same rule, opposite direction: the interface does
-              not make a choice the person did not make.)
+              ⚠️ **The placeholder is `$` — the default — and no longer
+              the endpoint's code.** It used to show what the gateway
+              claimed, which made sense while khor read codes; it now
+              reads as an invitation to type one, and a typed `USD`
+              would land on the ring as three characters of a
+              four-character budget. What an empty box actually draws
+              is `$`, and that is what stands in it.
 
-              A placeholder is visible, vanishes on the first keystroke
-              and is not submitted — which is exactly the standing
-              「what the platform claims」 deserves. */}
+              ⚠️ **Still a placeholder, never a value.** Prefilled, a
+              person who came to fix a *name* and pressed 保存 would
+              leave with a unit override they never chose — **a control
+              that changes state while nobody touches it is not an
+              option, it is a decision taken on their behalf.** (The key
+              box above refuses the mirror image: it may not show what
+              is stored. Same rule, opposite direction.)
+
+              **Nothing here converts anything**; the figure is
+              untouched, and this must not grow into a rate feature. */}
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.accounts_unit}</span>
             <Input
               data-quota-edit-unit
               value={unit}
-              placeholder={acc.reading.currency ?? ""}
+              placeholder={DEFAULT_MARK}
               onChange={(e) => setUnit(e.target.value)}
             />
+            {/* **Shortcuts, not an enumeration.** 2026-09-07:「给几个
+                推荐选项,默认是 $」. Pressing one fills the box and
+                leaves it editable — the free field above is still the
+                whole answer, and a mark that is not on this row (a
+                person typing `₩`, or `USDT`) saves exactly the same
+                way. **The row must not read as a set of allowed
+                values**, which is why these are chips beside an open
+                field rather than a picker in front of one.
+
+                Four, and the count is set by 「一行放得下」: they sit
+                on one line at the dialog's width with room to spare,
+                and a fifth buys a currency khor has never seen an
+                account in. `$` is first because it is the default.
+
+                **The one in force is marked**, so a person opening 编辑
+                can see what this account reads as today — including
+                when the box is empty and the answer is the default. The
+                mark is a real difference in ink (border and ground),
+                not a `data-` label about one. */}
+            <span data-quota-unit-picks className="flex flex-wrap items-center gap-1">
+              {UNIT_PICKS.map((m) => {
+                const on = m === markOf(unit === "" ? null : unit);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    data-quota-unit-pick={m}
+                    onClick={() => setUnit(m)}
+                    className={cn(
+                      "flex-none rounded-full border px-2 py-0.5 text-xs",
+                      on ? "border-foreground/40 bg-accent text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
+            </span>
             <span data-quota-edit-unit-note className="text-xs text-muted-foreground">
-              {gui.accounts_unit_keep}
+              {gui.accounts_unit_blank(DEFAULT_MARK)}
             </span>
           </label>
           {BUDGETED.includes(acc.reading.provider) && (
