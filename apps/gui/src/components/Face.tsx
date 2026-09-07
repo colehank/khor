@@ -69,6 +69,144 @@ const ang = (frac: number) => ARC0 + Math.min(1, Math.max(0, frac)) * SPAN;
     drawing and not a different one. */
 const REF_SIZE = 88;
 
+/** How far from the centre **any** mark can sit: the rim, plus a pip's
+    whole length, plus half its round cap. The one expression the crop
+    and the drawing both read — see [`Face`]'s `crop`. */
+function reachOf(size: number, stroke: number): number {
+  const k = size / REF_SIZE;
+  return 30 * k + stroke / 2 + 9 * k + 0.85 * Math.max(0.7, k);
+}
+
+/** How tall a **cropped** box comes out for a dial of this size. */
+function croppedHeight(size: number, stroke: number): number {
+  const reach = reachOf(size, stroke);
+  return reach * (1 + Math.sin((ARC0 + SPAN) * D2R)) + stroke / 2;
+}
+
+/**
+ * The `size` whose cropped box comes out `h` tall — [`croppedHeight`]
+ * run backwards.
+ *
+ * ⚠️ **Solved, not written down, and that is the whole point.** The
+ * answer comes out a fraction rather than a round number (about 49 for
+ * a 32-tall box at this row's stroke — **an illustration, not a
+ * promise**: it moves with `reach`), and a `49` sitting in the source
+ * would go on looking reasonable **for ever** after somebody changed a
+ * pip's length or the stroke: the box would quietly stop
+ * being the height it is supposed to share, and nothing would break —
+ * the sort of stale number this repo has watched outlive its own
+ * argument. Bisection because `croppedHeight` is piecewise (the pip's
+ * cap has a floor under it), so an algebraic inverse would be a second
+ * expression to keep in step with the first.
+ */
+function sizeForCroppedHeight(h: number, stroke: number): number {
+  let lo = 1;
+  let hi = 1000;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (croppedHeight(mid, stroke) < h) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * The height a mark gets in a list row, **mirroring `--avatar`**
+ * (`apps/gui/src/styles/tokens.css:936`, `32px`).
+ *
+ * # Why a mirror rather than a reference
+ *
+ * 2026-09-07:「把这些环和机器头像…一视同仁,他们都是一种类型/实体」.
+ * A row's avatar and a row's dial are one size slot, and the slot is a
+ * CSS token — but `Face` is sized in numbers, so the token cannot be
+ * *referenced* here without moving how every dial gets its size, which
+ * is a change the machine card would ride along on.
+ *
+ * **So the number is copied, and a gate is what makes the copy safe**:
+ * `check-face` measures the rendered height of a 額度 row's dial
+ * against the rendered height of a session row's avatar and requires
+ * them equal. A mirror that drifts goes red on the thing a person
+ * actually cares about — **two marks on screen being the same size** —
+ * rather than on two symbols pointing at one constant, which a stray
+ * coefficient inside `Face` could satisfy while the screen disagreed.
+ *
+ * ⚠️ **If this slot is meant to change, change `--avatar`** and bring
+ * this line with it. Changing only one of the two is the failure the
+ * gate exists to catch, and its wording says so.
+ *
+ * # Why 32 is a size the dial can actually take
+ *
+ * **It could not, before the crop.** The ring's middle has to hold
+ * `124$`, and the reading that decides it is the string against the
+ * rim's inner diameter. Both numbers carry the state they were taken
+ * in, on the same line, because this exact comparison was got wrong
+ * twice in one day by reading two states as one:
+ *
+ * ```
+ * 历史 · 裁框前,S 写死 40:    124$ = 24.4  vs  inner = 24.7   余 0.3
+ * 历史 · 一次性跑,S 钉死 49:  124$ = 29.3  vs  inner = 30.8   余 1.5
+ * 当前 · S = DIAL_ROW_SIZE:   124$ = 30.3  vs  inner = 32   余 1.7
+ * ```
+ *
+ * ⚠️ **前两行是历史,而且它们里的 `40` 和 `49` 是死数。** 代码里那个
+ * size 特意写成了 `sizeForCroppedHeight(...)`,理由是「写死的话
+ * `reach` 一变它就静默变错」——**那条理由对注释里的数字一字不差地
+ * 成立**,所以当前那一行只用名字。前两行留着是因为它们记的是**当时
+ * 量到的事实**,不是现在的承诺;标上「历史」是它们和第三行唯一的区别,
+ * 而没有这个标,三行读起来是一张表。
+ *
+ * ⚠️ **The middle line is not the state that shipped.** It was taken
+ * in a throwaway run with `DIAL_ROW_SIZE` pinned to a flat number
+ * while the ladder's `USDT` row was flipped to `$` so that a `124$`
+ * existed to measure at all. What shipped is the *solved* size, a box
+ * of **51 × 32** on screen.
+ *
+ * **The last line sat at 「未量」 for an hour rather than carrying an
+ * interpolated number, and that was the right way round.** 29.3 and 32
+ * side by side invite a 「余 2.6」 that would have read exactly like
+ * the two measured lines — the failure this notation exists to stop,
+ * committed twice in one evening before it was written down. The real
+ * figure came from putting a `$`-marked row of ~124 back into the
+ * fixture for one run and reading `ring middles:`; **it is 1.7, not
+ * the 2.6 the arithmetic offered.**
+ *
+ * ⚠️ **Cropping does not widen the rim** — `R = 30k` is untouched by
+ * it. What changed is that **a box 32 tall now means a larger `size`**,
+ * because the box stopped carrying 35% of dead band.
+ *
+ * ⚠️ **There are three 32s on this page and no two of them are the
+ * same quantity:**
+ *
+ * | where | what it is |
+ * |---|---|
+ * | `AVATAR_BOX` / `--avatar` | a **box height**, and the only one of the three anybody chose |
+ * | the box the row's dial renders at | that height, **arrived at** by solving for it |
+ * | `inner` in the table above | the rim's **inner diameter**, a length inside the drawing |
+ *
+ * **The third one is a coincidence and must not be read as an
+ * identity.** `inner` is `2R − stroke`; the box's height is
+ * `reach·(1+sin15°) + stroke/2`. Those two expressions move apart the
+ * moment `stroke` changes — a thicker rim *shrinks* `inner` while it
+ * *grows* the box — and they are equal today only because the size was
+ * solved to make the second one 32 and the first happened to land
+ * there too. **Nothing keeps them together, and nothing will say so
+ * when they part.**
+ *
+ * That is the whole hazard in one place: all three are bare integers
+ * spelled `32`, which is exactly how the first two got compared as
+ * though they were one number, an evening before this was written.
+ *
+ * ⚠️ **The two marks share a height, not a footprint.** An avatar is
+ * 32 × 32; a 210° dial at this height measures **51 across** on
+ * screen, because its
+ * ink is 1.46 times as wide as it is tall. Squaring it up would mean
+ * squashing the arc or cutting its ends off — breaking the drawing to
+ * satisfy a sentence about the drawing. The user's words are about
+ * *standing* (「一种类型/实体」), and the arc draws progress where the
+ * avatar draws identity; the thing they share is the slot they sit in.
+ */
+export const AVATAR_BOX = 32;
+
 /** The default box: twice the drawing across, one size down. The
     machine card's, and the only one until 2026-09-07. */
 const BOX_RATIO = 1.6;
@@ -77,7 +215,20 @@ const BOX_RATIO = 1.6;
  * The dial in a list row: **the same drawing one size down**, not a
  * circle that happens to be little.
  *
- * ⚠️ **It was 32 — `--avatar` — until 2026-09-07.** That number came
+ * ⚠️ **Everything below the next paragraph is history, and the sizes
+ * in it are dead numbers.** This constant is *solved* now
+ * (`sizeForCroppedHeight(AVATAR_BOX, DIAL_ROW_STROKE)`), so `32` and
+ * `40` below are two earlier values it held, not two options it has —
+ * and the readings taken at them describe those worlds, not this one.
+ * The trail is kept because it records **why the row's dial stopped
+ * being an avatar's size and then came back to one**, which is a
+ * question the next person will ask; the numbers in it are evidence
+ * from a date, not measurements of the current build.
+ *
+ * ⚠️ **It was 32 — `--avatar` — until 2026-09-07** (and it is a
+ * 32-tall *box* again since, by a different route: the box is cropped
+ * to the drawing now, so the same height needs a bigger `size`). That
+ * number came
  * from the single-diameter rule: two circles on one row are two facts,
  * and the moment one is bigger, size starts claiming one of them
  * matters more. **There is no second circle on these rows**, and the
@@ -104,7 +255,11 @@ const BOX_RATIO = 1.6;
  * | `124$` at 40 | 24.4 | 24.7 | fits, 0.3 to spare |
  *
  * So the sign and this size are one decision: keeping the sign on a
- * three-digit figure **requires** the larger ring. A revert to 32 was
+ * three-digit figure **requires** more room than a 32-`size` dial had.
+ * (**That sentence is true at any pair of sizes**, which is exactly
+ * why the `40` it was written about could go stale in it without
+ * anything breaking — the rim is wider again today, and by a mechanism
+ * this paragraph predates.) A revert to 32 was
  * proposed on the reading 「`124` is 18.3, it fits」 — and that 18.3 was
  * `124` **without** the sign, at size **40**. Two numbers from two
  * states read exactly like one comparison.
@@ -115,6 +270,16 @@ const BOX_RATIO = 1.6;
  * them is a change to the machine card's imports, and that surface
  * belongs to another lane today.
  */
+/** The box a row gives the dial: **just the drawing**, no margins. See
+    `Face`'s `ratio`. */
+export const DIAL_ROW_RATIO = 1;
+/** Thinner than the card's 4, in the proportion the sizes are: a row's
+    arc at the card's stroke is a band with no hole in it. */
+export const DIAL_ROW_STROKE = 2.6;
+/* **Declared before the size on purpose**: the size is *solved* from
+   the stroke now (`sizeForCroppedHeight`), so a stroke declared after
+   it would be a temporal-dead-zone crash at module load — the kind
+   that takes the whole page white rather than drawing one dial wrong. */
 /* ⚠️ **The ceiling on this number is the row's *words*, not the row's
    height** (2026-09-07, and it is written here because the next person
    will arrive with the opposite intuition).
@@ -127,23 +292,22 @@ const BOX_RATIO = 1.6;
    and its sub-line live in, because a 210° dial is wider than it is
    tall (ink 32.5 × 22.2, a ratio of 1.46) and `ratio` is 1 here.
 
-   Measured that day, and the two numbers are close enough that the
-   next widening should be measured rather than reasoned about:
+   ⚠️ **Where that ceiling actually is has not been measured, and an
+   earlier version of this note claimed it had.** It read 「49 whole,
+   51.2 truncated, so there are 2.2px left」 — and those two numbers
+   came from two different worlds: the 49 was measured that evening,
+   the 51.2 was this file's own older note about a `32 × 1.6` box in
+   the row layout **as it stood before this batch rearranged it**.
+   Measured after the crop landed, **51 does not truncate** —
+   `check-face`'s live `cut` assertion (`scrollWidth > clientWidth`, on
+   the subscription's sub-line) stays green at the size shipped here.
 
-   | box width | the sub-line |
-   |---|---|
-   | 49 | whole |
-   | 51.2 | **truncated** (the 32 × 1.6 box, caught by `check-face`) |
-
-   So: **「the detail's ring may grow, the row's may not」 is not a
-   style preference, it is 2.2px of room.** */
-export const DIAL_ROW_SIZE = 40;
-/** The box a row gives the dial: **just the drawing**, no margins. See
-    `Face`'s `ratio`. */
-export const DIAL_ROW_RATIO = 1;
-/** Thinner than the card's 4, in the proportion the sizes are: a row's
-    arc at the card's stroke is a band with no hole in it. */
-export const DIAL_ROW_STROKE = 2.6;
+   So the honest statement is the weaker one: **the row's dial is
+   bounded by its words and not by its height, and nobody has found
+   the edge.** Whoever widens it next has to measure — and the cheap
+   way is to read that line's `scrollWidth - clientWidth` rather than
+   to trust a remembered pixel count, this note included. */
+export const DIAL_ROW_SIZE = sizeForCroppedHeight(AVATAR_BOX, DIAL_ROW_STROKE);
 
 /**
  * The dial on a card that has **only this dial** — the 額度 page's.
@@ -353,9 +517,8 @@ export function Face({
   // cap — see `crop`. Kept beside `R` rather than at the `viewBox` so
   // that a change to either offset below breaks the reader's eye on
   // both at once.
-  const reach = R + stroke / 2 + 9 * k + 0.85 * Math.max(0.7, k);
-  const boxY = crop ? cy - reach : 0;
-  const boxH = crop ? Math.sin((ARC0 + SPAN) * D2R) * reach + stroke / 2 + reach : S;
+  const boxY = crop ? cy - reachOf(S, stroke) : 0;
+  const boxH = crop ? croppedHeight(S, stroke) : S;
   const marks = (pips ?? []).filter((p): p is Pip & { v: number } => p.v !== null);
   const vals = marks.map((p) => p.v);
   const color = gaugeColor(strain);

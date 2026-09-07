@@ -2511,6 +2511,15 @@ try {
       if (!svg) return null;
       const S = svg.getBoundingClientRect();
       let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      // **The track alone, beside the whole ink.** The track is one
+      // arc of fixed radius drawn at fixed angles, so its bounds are
+      // pure geometry; every other child sits at an angle that comes
+      // from *data* (a pip is drawn at its own reading's angle, and a
+      // pip near 50% reaches the very top where one near 4% does not).
+      // Reporting both is what tells a later reader whether a shift in
+      // these numbers was a change to the drawing or a change to the
+      // fixture.
+      const t = svg.querySelector("path")?.getBBox();
       for (const c of svg.children) {
         const b = c.getBBox();
         if (b.width === 0 && b.height === 0) continue;
@@ -2537,6 +2546,8 @@ try {
         // pip sliced off and reports nothing. Positive numbers are
         // room to spare on each side.
         spare: [+(x0 - bx).toFixed(1), +(bx + bw - x1).toFixed(1), +(y0 - by).toFixed(1), +(by + bh - y1).toFixed(1)],
+        track: t ? `${+t.width.toFixed(1)}x${+t.height.toFixed(1)}` : null,
+        trackAspect: t && t.height ? +(t.width / t.height).toFixed(2) : null,
       };
     });
     if (!dialBox) {
@@ -2578,7 +2589,8 @@ try {
       );
     }
     console.log(
-      `dial box: ink ${dialBox?.ink} in ${dialBox?.box}, fills ${dialBox?.wideShare} across / ${dialBox?.tallShare} down, aspect ${dialBox?.boxAspect} vs ink ${dialBox?.inkAspect}`,
+      `dial box: ink ${dialBox?.ink} in ${dialBox?.box}, fills ${dialBox?.wideShare} across / ${dialBox?.tallShare} down, ` +
+        `aspect ${dialBox?.boxAspect} vs ink ${dialBox?.inkAspect} vs track ${dialBox?.trackAspect} (track ${dialBox?.track})`,
     );
 
     //   ── 8·what an account's dial says in its middle ────────────
@@ -7457,6 +7469,64 @@ try {
   if (refused.whyInBody !== 1) {
     fail(`the refusal is not where the rows would be (${refused.whyInBody} in the table body) — it has to read as what replaced them`);
   }
+
+  //   The stops above leave the shell at whatever width they last
+  //   needed; both readings below have to come from one posture, so it
+  //   is stated here rather than inherited.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  //   ── one size slot, two kinds of mark ───────────────────────
+  //   2026-09-07:「把这些环和机器头像,也就是 sessionlist 里的头像、
+  //   机器 list 或机器页面的头像一视同仁,他们都是一种类型/实体。」
+  //
+  //   **Read on two screens, because that is the only place the claim
+  //   lives.** `Face`'s `AVATAR_BOX` mirrors `--avatar` in `tokens.css`
+  //   — a number copied from CSS into TS, which nothing in either
+  //   language can keep in step. **This is what keeps the copy safe**,
+  //   and it is deliberately not a check that two symbols point at one
+  //   constant: those two `32`s are different quantities (`--avatar` is
+  //   a box, `DIAL_ROW_SIZE` is a `size` parameter, and `Face` divides
+  //   one to get the other), so an assertion about references would be
+  //   blind to exactly the drift this is for. **The claim is about the
+  //   screen, so the reading is off the screen.**
+  //
+  //   Heights only. An avatar is square and a 210° dial is 1.46 times
+  //   as wide as it is tall — **they share a slot, not a footprint**,
+  //   and squaring the dial up would mean squashing the arc.
+  const markSlot = async () => {
+    await open("sessions");
+    await until(5_000, async () => (await page.locator("[data-list] [data-row]").count()) > 0);
+    const mark = await page.evaluate(() => {
+      const e = document.querySelector(
+        "[data-list] [data-row] [data-face], [data-list] [data-row] [data-face-blank]",
+      );
+      return e ? +e.getBoundingClientRect().height.toFixed(1) : null;
+    });
+    await open("quota");
+    await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+    const dial = await page.evaluate(() => {
+      const e = document.querySelector("[data-quota-row] [data-dial-face]");
+      return e ? +e.getBoundingClientRect().height.toFixed(1) : null;
+    });
+    return { mark, dial };
+  };
+  const slotRead = await markSlot();
+  if (slotRead.mark === null || slotRead.dial === null) {
+    //   The avatars in this fixture draw as `AvatarBlank` (no face on
+    //   the machines it routes), which is the same box sized by the
+    //   same utility — but if **neither** selector matches, the
+    //   comparison below would be two nulls agreeing.
+    fail(
+      `probe dead: the session row's mark measured ${slotRead.mark} and the 額度 row's dial ${slotRead.dial} — nothing below is comparing two marks`,
+    );
+  } else if (Math.abs(slotRead.mark - slotRead.dial) > 0.5) {
+    fail(
+      `a session row's mark is ${slotRead.mark} tall and a 額度 row's dial is ${slotRead.dial} — they are one size slot ` +
+        `(「一视同仁」), and the slot is 「--avatar」 in tokens.css. **If the slot is meant to change, change that token ` +
+        `and bring Face's AVATAR_BOX with it**; changing either one alone is the drift this measures, so do not ` +
+        `settle it by editing whichever of the two you happened to open first.`,
+    );
+  }
+  console.log(`size slot: session mark ${slotRead.mark} tall, 額度 dial ${slotRead.dial} tall`);
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
