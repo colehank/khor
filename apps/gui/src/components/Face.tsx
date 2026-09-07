@@ -77,9 +77,23 @@ const BOX_RATIO = 1.6;
  * The dial in a list row: **the same drawing one size down**, not a
  * circle that happens to be little.
  *
- * 32 across is `--avatar`, which is the single-diameter rule being kept
- * rather than broken — two marks on one row are two facts, and the
- * moment one is bigger, size starts claiming one of them matters more.
+ * ⚠️ **It was 32 — `--avatar` — until 2026-09-07.** That number came
+ * from the single-diameter rule: two circles on one row are two facts,
+ * and the moment one is bigger, size starts claiming one of them
+ * matters more. **There is no second circle on these rows**, and the
+ * reading moved *inside* this one (「最左环…右边是更新时间」), so the
+ * rule it was keeping does not apply and the number it produced was
+ * costing legibility.
+ *
+ * ⚠️ **It buys less than it looks like it buys, and that is written
+ * down on purpose.** The centre's type scales with the dial
+ * (`fontSize = 19k`), so a bigger ring holds a *slightly* longer string,
+ * not a proportionally longer one: measured 2026-09-07, `12.34` needs
+ * 22.6 units of a 19.2 inner at 32, and 27.7 of a 24.7 at 40 — from
+ * 1.18× over to 1.12× over. **It does not fit at either size.** What
+ * made it fit is the four-character rule (`RING_CHARS`), not this.
+ * Somebody reading 「the ring got bigger for the money」 should know it
+ * was not the fix.
  *
  * ⚠️ **The card's pair (`RING_SIZE_CARD` / `RING_STROKE_CARD`) still
  * lives in `Ring.tsx`**, which is where the machine card imports them
@@ -87,7 +101,7 @@ const BOX_RATIO = 1.6;
  * them is a change to the machine card's imports, and that surface
  * belongs to another lane today.
  */
-export const DIAL_ROW_SIZE = 32;
+export const DIAL_ROW_SIZE = 40;
 /** The box a row gives the dial: **just the drawing**, no margins. See
     `Face`'s `ratio`. */
 export const DIAL_ROW_RATIO = 1;

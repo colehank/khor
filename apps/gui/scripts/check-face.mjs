@@ -2114,18 +2114,30 @@ try {
         `the row still draws ${rowPlan.chipOnRow} plan chip(s) — the sub-line is the plan now, and two spellings of one fact is what 2026-09-07 removed`,
       );
     }
-    //   …and the sub-line is **one word**: the plan on the
-    //   subscription, the provider on an account. 来源 is not on either
-    //   — it is the heading over the group, which is why this page
-    //   opens grouped by it (asserted in 8a·iii).
+    //   …and the sub-line is **类型 · 提供商, the same pair on every
+    //   row** (2026-09-07:「标题是用户可以自己起的。我们要有个统一的类型
+    //   模型,订阅/计费、厂商。写在副标题」).
+    //
+    //   ⚠️ **Rewritten from 「one word: the plan, or the provider」 —
+    //   the product changed.** That version had a subscription wearing
+    //   its plan and an account wearing its provider: two kinds of row
+    //   speaking two different languages, which is what a unified model
+    //   rules out. The name above is free text somebody typed, so it
+    //   classifies nothing and this line carries the whole of what a
+    //   row *is*.
+    //
+    //   **Both rows, the same shape on each** — a check on the
+    //   subscription alone would pass a build that still special-cased
+    //   accounts.
     const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
-    if (rowPlan.line !== quotaPlan) {
+    const twoParts = (line) => (line ?? "").split("·").map((x) => x.trim()).filter(Boolean);
+    if (twoParts(rowPlan.line).length !== 2 || twoParts(billLine).length !== 2) {
       fail(
-        `the subscription row's sub-line is ${JSON.stringify(rowPlan.line)}, not the plan ${JSON.stringify(quotaPlan)}`,
+        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} — 类型 · 提供商 on every row, whichever kind it is`,
       );
-    } else if (billLine?.includes("·")) {
+    } else if (rowPlan.line?.includes(quotaPlan)) {
       fail(
-        `an account's sub-line is ${JSON.stringify(billLine)} — one word, and a separator means more than one`,
+        `the subscription's sub-line still carries its plan (${JSON.stringify(rowPlan.line)}) — the plan is a product name, and this line says what kind of thing the row is`,
       );
     } else if (rowPlan.cut !== false) {
       fail(
@@ -2276,6 +2288,49 @@ try {
       }
     }
 
+    //   ── 8·what a ring may hold ─────────────────────────────────
+    //   2026-09-07:「保持在 4 位字符以内吧。比如,百分比最长是 100%。
+    //   然后,124 这里就是 124$。」
+    //
+    //   **Two claims, and they are not the same claim.** The character
+    //   count is the *rule* — it does not drift when a face, a size or
+    //   a stroke changes. The fit is the *outcome*, and four wide
+    //   characters can still overflow: `124$` measures 24.4 against an
+    //   inner 24.7, which is 0.3 of room. **Either alone lets the other
+    //   one's failure through.**
+    //
+    //   Every row, because the band that broke was 10–99.99 (`12.34`,
+    //   five characters) and it is one account among several — a check
+    //   on 「the first row」 would have passed while that one overflowed.
+    const middles = await page.evaluate(() => {
+      return [...document.querySelectorAll("[data-quota-row]")].map((r) => {
+        const svg = r.querySelector("[data-dial-face]");
+        const t = svg?.querySelector("text");
+        const vbH = svg ? Number(svg.getAttribute("viewBox").split(" ")[3]) : 0;
+        const inner = 2 * 30 * (vbH / 88) - 2.6;
+        const b = t?.getBBox();
+        return {
+          id: r.getAttribute("data-quota-row"),
+          text: t?.textContent ?? "",
+          chars: (t?.textContent ?? "").length,
+          over: b ? +(b.width - inner).toFixed(1) : -1,
+        };
+      });
+    });
+    const tooLong = middles.filter((m) => m.chars > 4);
+    const spilling = middles.filter((m) => m.over > 0);
+    if (middles.length === 0) {
+      fail("probe dead: no row drew a dial, so nothing below measures a middle");
+    } else if (tooLong.length > 0) {
+      fail(
+        `a ring's middle reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
+      );
+    } else if (spilling.length > 0) {
+      fail(
+        `a ring's middle spills out of its ring: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — four characters is the rule, fitting is the outcome, and both are owed`,
+      );
+    }
+
     //   ── 8·the dial's box holds the drawing, not a margin ───────
     //   2026-09-07:「额度的环…周围都有很多空白,浪费了很多空间,环明明可以
     //   更大一些。这些似乎是没有好的设计原则导致的。」 The principle he
@@ -2367,9 +2422,14 @@ try {
       fail(
         `a reading with no ceiling reads ${JSON.stringify(without)} in the middle — 「没有额度的环,显示金额」`,
       );
-    } else if (!without.includes("12.34")) {
+    } else if (without !== "12$") {
+      //   ⚠️ **Was `includes("12.34")`, and the product changed**: a
+      //   ring's middle is at most four characters now (「保持在 4 位
+      //   字符以内」), so 12.34 rounds to whole units and wears its
+      //   sign. **Equality, not `includes`** — the ruling is about the
+      //   shortening, and a substring check passes on the long form.
       fail(
-        `a reading with no ceiling reads ${JSON.stringify(without)} where the fixture spent 12.34 — the middle is that spend`,
+        `a reading with no ceiling reads ${JSON.stringify(without)} where the fixture spent 12.34 — four characters means 「12$」`,
       );
     }
 
@@ -2538,9 +2598,14 @@ try {
     await routeQuota(quotaCredits, slicedWindows);
     await goToQuota();
     const whole = await headlineOf();
-    if (!whole.centre.includes("30") || !whole.summary.includes("30")) {
+    //   ⚠️ **The card's middle only.** This read the row's right-hand
+    //   cell too, and that cell stopped being the reading on 2026-09-07
+    //   (「右边是更新时间」) — the row's figure is in its ring now, which
+    //   `8·what a ring may hold` measures. **The product changed; what
+    //   this section is about did not.**
+    if (!whole.centre.includes("30")) {
       fail(
-        `with a 30% week beside an 88% model slice the card reads ${JSON.stringify(whole.centre)} and the row ${JSON.stringify(whole.summary)} — the headline is the whole plan, not the fullest window`,
+        `with a 30% week beside an 88% model slice the card reads ${JSON.stringify(whole.centre)} — the headline is the whole plan, not the fullest window`,
       );
     }
     //   (b) **Only a five-hour window.** Still the whole plan, and the
@@ -2554,11 +2619,16 @@ try {
       await page.locator('[data-quota-part="five_hour"] [data-quota-window-name]').textContent()
     )?.trim() ?? "";
     if (!fiveHourWord) {
-      fail("probe dead: the five-hour window has no word, so the summary below measures nothing");
-    } else if (!hour.summary.includes(fiveHourWord) || !hour.centre.includes("4")) {
+      fail("probe dead: the five-hour window has no word, so what follows measures nothing");
+    } else if (!hour.centre.includes("4")) {
       fail(
-        `with only a five-hour window the row says ${JSON.stringify(hour.summary)} and the card ${JSON.stringify(hour.centre)} — it steps down to the whole plan's shorter window and names it`,
+        `with only a five-hour window the card reads ${JSON.stringify(hour.centre)} — it steps down to the whole plan's shorter window`,
       );
+    } else if (!hour.parts.includes("five_hour")) {
+      //   …and it is nameable: the row no longer prints the window's
+      //   word (its right end is the age), so the panel is where a
+      //   reader learns *which* window that 4% belongs to.
+      fail(`the panel lists ${JSON.stringify(hour.parts)} — the window it stepped down to has to be nameable`);
     }
     //   (c) **No unscoped window at all**: nothing may be invented.
     //   Bare track — **not a full arc** (that is 不限量) and **not 0%**
@@ -2576,9 +2646,9 @@ try {
       fail(
         `with no whole-plan window the dial still draws an arc (${JSON.stringify(none.arc)}) — bare track is the picture for「there is no such number」`,
       );
-    } else if (none.centre.trim() !== "" || none.summary !== "") {
+    } else if (none.centre.trim() !== "") {
       fail(
-        `with no whole-plan window the card says ${JSON.stringify(none.centre)} and the row ${JSON.stringify(none.summary)} — neither may invent one`,
+        `with no whole-plan window the card says ${JSON.stringify(none.centre)} — it may not invent one`,
       );
     } else if (none.parts.length !== slicesOnly.length) {
       fail(

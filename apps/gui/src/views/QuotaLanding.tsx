@@ -136,6 +136,72 @@ function troubleWord(key: string): string {
   }
 }
 
+/**
+ * How many characters the middle of a ring may hold.
+ *
+ * 2026-09-07:「保持在 4 位字符以内吧。比如,百分比最长是 `100%`。」
+ *
+ * **A count, not a width, and that is what makes it a rule.** The gate
+ * that came before this measured the string against the ring's inner
+ * diameter — true, but it drifts: change the face, the size or the
+ * stroke and yesterday's safe string overflows with nothing to say so.
+ * **A character count does not drift.** The width check stays as well,
+ * because four *wide* characters can still overflow — the count is the
+ * rule and the width is the outcome.
+ */
+const RING_CHARS = 4;
+
+/**
+ * The currency's sign, for the ring where there is no room for a code.
+ *
+ * ⚠️ **Not a catalog word, and the reason is the precedent this file
+ * already set for `·`**: punctuation is not copy. `$` is notation — it
+ * is the same mark in every language this app might speak, and it is
+ * not khor's to translate.
+ *
+ * **What khor may not do is invent one.** `currency` is the endpoint's
+ * own answer, carried and not authored (`AccountReading::currency`), so
+ * a code with no sign khor knows gets **no sign** rather than a guessed
+ * one — a figure with the wrong mark on it is worse than a figure with
+ * none. Two codes reach this today: `USD` from every gateway and
+ * vendor, `CNY` from Moonshot's China site (`khor_node::accounts`).
+ */
+function sign(currency: string | null): string {
+  switch (currency) {
+    case "USD":
+      return "$";
+    case "CNY":
+      return "¥";
+    default:
+      return "";
+  }
+}
+
+/**
+ * A reading as it goes **inside a ring**: at most [`RING_CHARS`].
+ *
+ * - a share is already short — `100%` is the longest one there is;
+ * - money is rounded to whole units and wears its sign: `124$`;
+ * - and past what fits, `1.2k` / `1.2m`.
+ *
+ * ⚠️ **The rounding is not new here.** `money` has always dropped the
+ * decimals above 100 (`123.75` has been drawing as `124` since before
+ * this rule), so what this adds is the sign and the k/m step — and the
+ * only band it changes is 10–99.99, which used to draw `12.34` and now
+ * draws `12$`.
+ */
+function ringWord(n: number, currency: string | null): string {
+  const mark = sign(currency);
+  const whole = Math.round(n);
+  if (`${whole}${mark}`.length <= RING_CHARS) return `${whole}${mark}`;
+  // Past four characters the sign is what goes, because the magnitude
+  // is the part a person is reading — see this batch's report: `1.2k$`
+  // is five, and the user's own example (`1.1k`) carries no sign.
+  const step = (v: number, suffix: string) => `${(v).toFixed(1)}${suffix}`;
+  if (whole < 1_000_000) return step(n / 1_000, "k");
+  return step(n / 1_000_000, "m");
+}
+
 function money(n: number, currency: string | null): string {
   const figure = n >= 100 ? n.toFixed(0) : n.toFixed(2);
   return currency ? `${figure} ${currency}` : figure;
@@ -364,15 +430,18 @@ function headline(r: Row, dials: Dial[]): Dial | null {
  * spend when there is a number but no denominator, what is left when
  * the provider reports a wallet rather than a spend, nothing else.
  *
- * **On the row. The card's dial says only the share** — see the note on
- * the card's two columns.
+ * **Everything here is at most [`RING_CHARS`]** — see `ringWord`. It is
+ * the same function on the card and on the row: one seat, one rule, and
+ * the card's larger ring does not get a longer string just because it
+ * would fit. Two spellings of one figure on one screen is what this
+ * page keeps coming back to.
  */
 function centre(r: AccountRing): string {
   const { reading } = r;
   if (reading.trouble) return "";
   if (reading.fill != null) return `${Math.round(reading.fill * 100)}%`;
-  if (reading.spent != null) return money(reading.spent, null);
-  if (reading.remaining != null) return money(reading.remaining, null);
+  if (reading.spent != null) return ringWord(reading.spent, reading.currency);
+  if (reading.remaining != null) return ringWord(reading.remaining, reading.currency);
   return "";
 }
 
@@ -473,35 +542,44 @@ function valueWord(axis: string, value: string): string {
 /** The axis's own name, for the heading over its ticks and over its
     group. */
 /**
- * The line under a row's name — **one word**.
+ * The line under a row's name — **类型 · 提供商**, the same pair on
+ * every row.
  *
- * The plan where there is one (a subscription's 「Max 20x」), the
- * provider where there is not (「new-api 站」). 2026-09-07:「列表副行只剩
- * 档或厂商一个词(来源是组头)」.
+ * # Why the name cannot carry any of this
  *
- * # What the three segments cost, and where they went
+ * 2026-09-07:「标题是用户可以自己起的。我们要有个统一的类型模型,订阅/
+ * 计费、厂商。写在副标题。」 **The title is free text somebody typed**,
+ * so it classifies nothing — and a list still has to let a reader see,
+ * at a glance, what each row *is*. There is exactly one place left for
+ * that, and this is it.
  *
- * It was 类型 · 提供商 · 来源, and at this column's 288 the third was
- * being drawn as 「khor 登…」 on the wider rows — **an axis you can tick
- * and cannot read**, which is the shape this repo keeps being bitten
- * by. Making the line longer was not available; making it shorter meant
- * choosing which axis a row wears.
+ * **「统一的类型模型」 is the judgment, not a description.** Every row is
+ * described by the same pair — kind, then provider — whichever kind of
+ * thing it is. The version this replaces was `r.plan ?? provider`: a
+ * subscription wore its plan and an account wore its provider, **two
+ * kinds of row speaking two different languages**, which is precisely
+ * what a 「unified model」 rules out.
  *
- * **None of the three was dropped, they moved to where there is room**:
- * 来源 is the heading over the group (which is why the page now opens
- * grouped by it — `GROUP_DEFAULT`), 提供商 is this line on every row
- * that has no plan, and 类型 is the tick and the heading you get by
- * choosing that axis. What a row shows is one of them; what the *page*
- * shows is all three.
+ * # ⚠️ This line has been three segments, then one, and is now two
  *
- * The plan also left the name's line, where it was a chip
- * (`f9e2062`, one day old): a chip beside the name and a word under it
- * were two spellings of one fact, and the row only has room for one.
- * The **card's** head keeps its chip — there the name is a title and
- * the plan is a badge on it, which is a different sentence.
+ * Each change had a reason and none of them was style:
+ *
+ * - **Three** (类型 · 提供商 · 来源) was the first shape. At this
+ *   column's 288 the third was drawn as 「khor 登…」 — an axis you can
+ *   filter by and cannot read.
+ * - **One** came when 来源 moved to the group heading (the page opens
+ *   grouped by it) and the plan moved to a chip beside the name. The
+ *   row then said the plan, or the provider.
+ * - **Two, now**, because that one word was not a *model*: it said a
+ *   different kind of fact depending on the row. 来源 stays on the
+ *   heading; the plan goes back to the card's head, where it has room.
+ *
+ * The plan is off the row entirely — it is a product name for one
+ * vendor's one product, and a row's job here is to say what *kind* of
+ * thing this is.
  */
 function subLine(r: Row): string {
-  return r.plan ?? providerWord(r.provider);
+  return [kindWord(r.kind), providerWord(r.provider)].join(" · ");
 }
 
 /** The `disabled_reason` key as a status word — never a sentence
@@ -998,26 +1076,39 @@ export function QuotaLanding({
               fraction={r.account ? arcOf(r.account.reading) : lead ? lead.pct / 100 : null}
               strain={r.account?.strain ?? null}
               pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
-            />
+            >
+              {/* **The reading moved inside the ring** (2026-09-07:
+                  「最左环,旁边上标题,下类型,右边是更新时间」) — the
+                  right end of the row is the age now, so this is the
+                  only seat left for it. */}
+              {r.account ? centre(r.account) : lead ? `${Math.round(lead.pct)}%` : ""}
+            </Face>
             <span className="flex min-w-0 flex-1 flex-col">
-              {/* ⚠️ **The plan's chip left this row on 2026-09-07**,
-                  one day after it arrived (`f9e2062`). It was a chip
-                  beside the name *and* the sub-line said 类型 · 提供商 ·
-                  来源 underneath; the ruling cut the line to one word,
-                  and that word for a subscription **is the plan** — so
-                  the chip and the line had become two spellings of the
-                  same fact, on a row with room for one.
-                  The card's head still wears it: there the name is a
-                  title and the plan is a badge on it. */}
-              <span className="truncate text-fact">{r.name}</span>
-              {/* **One word**, and which word depends on what this row
-                  has: the plan, or the provider (`subLine`). */}
+              {/* **The title, and it is somebody's own word.** The
+                  user names these (「标题是用户可以自己起的」), so it
+                  classifies nothing and the line under it carries the
+                  whole of what this row *is*. */}
+              <span data-quota-name className="truncate text-fact">{r.name}</span>
+              {/* **类型 · 提供商, the same pair on every row** — see
+                  `subLine` for why a unified model is the point rather
+                  than a tidier line. */}
               <span data-quota-sub-line className="truncate text-xs text-muted-foreground">
                 {subLine(r)}
               </span>
             </span>
-            <span className="flex-none text-xs tabular-nums text-muted-foreground">
-              {r.account ? centre(r.account) : lead ? `${lead.word} ${Math.round(lead.pct)}%` : ""}
+            {/* **The right end is when this was read**, not what it
+                says — the reading is in the ring now. An age here and a
+                figure in the ring are two different questions, and the
+                row answers each once.
+                **Just the age**, not 「谁读的,多久以前」: that sentence
+                is the *card head's* seat, and a row that repeated it
+                would be saying one fact twice on one screen — measured
+                too, at 288 it is 98px and cuts the row's own name off.
+                `card-age` is the machine card's word for exactly this,
+                reused rather than re-spelled (the catalog refuses one
+                text under two names, which is the right refusal here). */}
+            <span data-quota-age-cell className="flex-none text-xs tabular-nums text-muted-foreground">
+              {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
             </span>
           </button>
           </RowMenuMaybe>
