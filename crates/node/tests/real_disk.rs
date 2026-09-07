@@ -278,6 +278,48 @@ fn khor_can_read_every_spending_record_on_this_machine() {
             t.input, t.cached_input, t.cache_write, t.output
         );
     }
+    // And the same again one axis finer, because 「which model」 is a
+    // question a screen now asks and this is the tool that answers it in
+    // a form somebody can check. **The rows are the same records** — the
+    // day list is projected out of this one (`Meters::tally_in`) — so a
+    // per-model diff that moves while the per-day diff does not is the
+    // model name having moved, and nothing else.
+    //
+    // The unnamed row prints as `-`: a blank column would be a name
+    // nobody can read where the fact is that the vendor's file recorded
+    // none (`khor_core::UsageModelDay::model`).
+    println!("day\tcategory\tmodel\tinput\tcached\tcache_write\toutput");
+    for m in &usage.models {
+        println!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            m.day,
+            m.category,
+            m.model.as_deref().unwrap_or("-"),
+            m.tokens.input,
+            m.tokens.cached_input,
+            m.tokens.cache_write,
+            m.tokens.output
+        );
+    }
+    // Per model over the whole history, with the days it appears on —
+    // the shape another tool's summary is most likely to be in, so that
+    // a disagreement can be read without adding up a page of rows by
+    // hand.
+    let mut per_model: std::collections::BTreeMap<(&str, &str), (khor_core::Tokens, usize)> =
+        std::collections::BTreeMap::new();
+    for m in &usage.models {
+        let e = per_model
+            .entry((m.category.as_str(), m.model.as_deref().unwrap_or("-")))
+            .or_default();
+        e.0.add(m.tokens);
+        e.1 += 1;
+    }
+    for ((category, model), (t, days)) in &per_model {
+        println!(
+            "model\t{category}\t{model}\t{}\t{}\t{}\t{}\t{days}d",
+            t.input, t.cached_input, t.cache_write, t.output
+        );
+    }
 
     assert!(
         !usage.days.is_empty(),
