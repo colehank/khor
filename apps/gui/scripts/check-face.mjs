@@ -592,6 +592,42 @@ try {
       currency: "USDT",
       unit: "USDT",
     }),
+    // **The widest string a ring's middle can hold, and until
+    // 2026-09-08 nothing drew it.**
+    //
+    // The middle is capped at four characters (`RING_CHARS`) and
+    // checked twice: the count, and — because four *wide* characters
+    // can still overflow — the string's width against the rim's inner
+    // diameter. **That second check had never seen its worst input.**
+    // Measured the night this row was added: the widest middle on the
+    // glass was `45%` at **27** of a 32 inner, while `124$` measures
+    // **30.3** — three digits *and* a mark, which is the most four
+    // characters can weigh. The margin the check actually has is
+    // **1.7**, and it was reading one of **5.0**.
+    //
+    // It came to light by accident: `124$` had to be conjured for one
+    // throwaway run (by flipping the row above to `$`) to measure a
+    // figure for `Face`'s notes — **and then reverted, which put the
+    // worst case back out of reach.** A sample that exists only inside
+    // somebody's temporary edit is a sample the gate does not have.
+    //
+    // **What it buys, measured rather than argued.** Teardown: the
+    // middle's type from `19 * k` to `22 * k`, +15.8%, a change any
+    // hand tuning the dial could make. The spill check named exactly
+    // one offender — `[["124$", 2.5]]` — while `45%` grew to **30.8**
+    // and stayed inside its 32. **Without this row that fault ships
+    // green**, and it ships as a number drawn over its own ring.
+    //
+    // ⚠️ **A new row rather than a change to the row above.** That one
+    // is a rung of the unit ladder below, whose whole claim is that
+    // its three rows differ in `unit` and nothing else; editing it to
+    // borrow a `$` quietly costs the ladder a rung — and the letter/
+    // symbol spacing rule would lose its only lettered sample with it.
+    ring("acc-widest", "big figure", "newapi", {
+      spent: 123.75,
+      currency: "$",
+      unit: "$",
+    }),
     // **The unit ladder's three rungs are these next three rows, and
     // every field but `unit` is identical across them** — same figure,
     // same provider, same days. Anything else that differed would be a
@@ -3401,13 +3437,17 @@ try {
 
     //   …and back to the fixture everything after this was written
     //   against, so a later section is not silently measuring this one.
+    //
     //   ⚠️ **Three arms above lean on these two lines and none of them
     //   puts the route back itself** — the capped credits, the uncapped
     //   credits, and the pip-room arm, which routes a **50% five-hour
     //   window** to push a mark to the very top. **Anything inserted
     //   between the last of them and this restore inherits that 50%
     //   window**, and 8a below is written against the standing fixture
-    //   (9 rows = 8 accounts + 1 subscription): it would go red saying
+    //   (`board.length + 1` rows — 10 since a widest-middle account
+    //   joined the fixture on 2026-09-08, and spelled as the sum
+    //   rather than as a count for exactly that reason): it would go
+    //   red saying
     //   something about *8a*, which is a sentence about a section that
     //   is not broken.
     //
