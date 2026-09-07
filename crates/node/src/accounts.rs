@@ -207,6 +207,9 @@ impl Node {
             // choice, and a new row claiming it would be this code
             // making that choice for them.
             pinned: false,
+            // …and nothing arrives with a unit either: until somebody
+            // types one, what the endpoint says is what khor says.
+            unit: None,
         };
         std::fs::create_dir_all(self.keys_dir()).map_err(msg::cant_make_keys_dir)?;
         link::write_private(&self.keys_dir().join(&account.id), key.as_bytes())?;
@@ -278,6 +281,7 @@ impl Node {
         base_url: Option<&str>,
         key: Option<&str>,
         budget: Option<f64>,
+        unit: Option<&str>,
     ) -> Result<(), String> {
         let loaded = self.accounts_loaded()?;
         let mut account = loaded.doc.get(id).ok_or_else(|| msg::no_such_account(id))?;
@@ -314,6 +318,10 @@ impl Node {
         account.name = name.to_owned();
         account.base_url = base_url;
         account.budget = budget;
+        // **Blank is 「use what the endpoint said」**, not an empty
+        // string: the two are one thing to a person and two to a
+        // reader downstream, and `None` is the one that means it.
+        account.unit = unit.map(str::trim).filter(|u| !u.is_empty()).map(str::to_owned);
         loaded.doc.set(&account)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
@@ -435,16 +443,31 @@ impl Node {
         let now = crate::live::now_ms();
         let mut out = Vec::with_capacity(all.len());
         for account in all {
+            // **The unit override is applied here and nowhere else.**
+            // Both faces come through this function — the GUI's board
+            // and `khor quota` — so a screen and the terminal cannot
+            // disagree about what an account is billed in. It is a
+            // *label*: the figure beside it is untouched, because the
+            // gateway reported the right amount under the wrong name
+            // (`Account::unit`).
+            let relabel = |mut r: AccountReading| {
+                if let Some(unit) = account.unit.clone() {
+                    r.currency = Some(unit);
+                }
+                r
+            };
             if account.home == me {
                 if let Some(r) = mine.iter().find(|r| r.account == account.id) {
-                    out.push((r.clone(), 0));
+                    out.push((relabel(r.clone()), 0));
                 }
                 continue;
             }
             let carried = self
                 .peer_quotas(&account.home)
                 .and_then(|(rs, age)| rs.into_iter().find(|r| r.account == account.id).map(|r| (r, age)));
-            out.push(carried.unwrap_or_else(|| (bare(&account, Some(trouble::NO_READING), now), 0)));
+            let (reading, age) =
+                carried.unwrap_or_else(|| (bare(&account, Some(trouble::NO_READING), now), 0));
+            out.push((relabel(reading), age));
         }
         Ok(out)
     }
@@ -1266,6 +1289,7 @@ mod tests {
             budget: Some(100.0),
             home: "h".into(),
             pinned: false,
+            unit: None,
         };
         let r = against_budget(bare(&acc, None, 0), 91.0, acc.budget, "USD");
         assert_eq!(r.fill, Some(0.91));
@@ -1309,6 +1333,72 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// **The unit override relabels the board, and moves no figure.**
+    /// 2026-09-07,用户:「他说 usd,但可能是 rmb。同样的数字,单位不同
+    /// 而已。」
+    ///
+    /// Three arms, and none of them is redundant:
+    ///
+    /// - **before** — the endpoint's own word comes through untouched,
+    ///   which is what makes the second arm mean something. Without it
+    ///   an implementation that always wrote `RMB` would pass.
+    /// - **after** — the override wins, **and `spent` is compared
+    ///   against the same number**: this is the assertion that a later
+    ///   reader turning this into a conversion has to break. A test
+    ///   that only read `currency` would let a rate through silently.
+    /// - **blank** — an emptied box is 「use what the endpoint said」,
+    ///   not an override to the empty string. Those two are one thing
+    ///   to the person typing and two things to everything downstream,
+    ///   so the stored value is read as well as the board's.
+    #[test]
+    fn the_unit_a_person_typed_relabels_the_board_and_moves_no_figure() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-unit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let a = n
+            .register_account("gw", Provider::Newapi, Some("http://127.0.0.1:1"), "sk-x", None)
+            .unwrap();
+        // **Re-seeded before every read, with the identical reading.**
+        // An edit drops the cached reading on purpose (the budget is a
+        // denominator, see `update_account`), so without this the arms
+        // after an edit would be measuring a failed live read rather
+        // than the override — and they would differ in two things at
+        // once.
+        let seed = || {
+            let mut read = bare(&a, None, crate::live::now_ms());
+            read.spent = Some(123.75);
+            read.currency = Some("USD".to_owned());
+            n.cache_reading(&a.id, &Cached { reading: read, failed_at_ms: None });
+        };
+        seed();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+
+        let before = rt.block_on(n.quota_board()).unwrap();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].0.currency.as_deref(), Some("USD"), "with no override, the endpoint's word stands");
+
+        n.update_account(&a.id, "gw", Some("http://127.0.0.1:1"), None, None, Some("RMB")).unwrap();
+        seed();
+        let after = rt.block_on(n.quota_board()).unwrap();
+        assert_eq!(after[0].0.currency.as_deref(), Some("RMB"), "the person's word wins over the endpoint's");
+        assert_eq!(
+            after[0].0.spent, before[0].0.spent,
+            "a label changed, not a rate: the figure is the one the endpoint reported"
+        );
+
+        n.update_account(&a.id, "gw", Some("http://127.0.0.1:1"), None, None, Some("   ")).unwrap();
+        seed();
+        let cleared = rt.block_on(n.quota_board()).unwrap();
+        assert_eq!(cleared[0].0.currency.as_deref(), Some("USD"), "an emptied box hands the naming back");
+        assert_eq!(
+            n.accounts().unwrap()[0].unit,
+            None,
+            "…and stores nothing, rather than an override to the empty string"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn wallet(provider: Provider, budget: Option<f64>) -> Account {
         Account {
             id: "a".into(),
@@ -1318,6 +1408,7 @@ mod tests {
             budget,
             home: "h".into(),
             pinned: false,
+            unit: None,
         }
     }
 

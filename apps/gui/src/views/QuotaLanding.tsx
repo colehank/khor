@@ -170,7 +170,13 @@ function sign(currency: string | null): string {
   switch (currency) {
     case "USD":
       return "$";
+    // **`RMB` and `CNY` are one currency spelled two ways**, and the
+    // person typing a unit into the edit box is likelier to write the
+    // first — the ruling that created that box was 「他说 usd,但可能是
+    // rmb」. A synonym is not a guess: an unknown code still gets no
+    // sign at all.
     case "CNY":
+    case "RMB":
       return "¥";
     default:
       return "";
@@ -202,6 +208,24 @@ function ringWord(n: number, currency: string | null): string {
   return step(n / 1_000_000, "m");
 }
 
+/** The figure a column shows, with its unit spelled out.
+ *
+ * **This and [`ringWord`] disagree on purpose, and the disagreement is
+ * not a bug to be tidied away.** A ring has four characters and spends
+ * them on the magnitude, so `USDT` — a code khor has no sign for —
+ * draws a bare `124` there; this line has room for the whole thing and
+ * says `124 USDT`. (2026-09-07:「USDT 在环里只显示 124,右栏显示
+ * …USDT」. Measured: at ≥100 this rounds too, so at that size what
+ * differs between the two places is the *unit word*; below 100 the
+ * cents differ as well — `12$` on the ring, `12.34 USD` here.)
+ *
+ * ⚠️ **The unit is a label, never a rate.** An account may carry a
+ * `unit` its owner typed, because a gateway can stamp 「USD」 on
+ * renminbi (「他说 usd,但可能是 rmb。同样的数字,单位不同而已」) — the
+ * node swaps the *name* before the board is sent and touches no digit.
+ * **Nothing here may grow into a conversion**: no rates, no sources,
+ * no arithmetic. That is a different feature and a different ruling.
+ */
 function money(n: number, currency: string | null): string {
   const figure = n >= 100 ? n.toFixed(0) : n.toFixed(2);
   return currency ? `${figure} ${currency}` : figure;
@@ -1396,7 +1420,7 @@ export function QuotaLanding({
             {acc.reading.spent != null && (
               <>
                 <dt className="text-muted-foreground">{gui.accounts_spent}</dt>
-                <dd className="tabular-nums">
+                <dd data-quota-spent className="tabular-nums">
                   {acc.reading.limit != null
                     ? gui.accounts_of(
                         money(acc.reading.spent, null),
@@ -1846,6 +1870,7 @@ function EditDialog({
   const [baseUrl, setBaseUrl] = useState("");
   const [key, setKey] = useState("");
   const [budget, setBudget] = useState("");
+  const [unit, setUnit] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1857,6 +1882,11 @@ function EditDialog({
     setBaseUrl(acc.base_url ?? "");
     setKey("");
     setBudget(acc.budget == null ? "" : String(acc.budget));
+    // **The override, not the effective unit.** `reading.currency` has
+    // the override already applied, so seeding from it would fill this
+    // box on every account that has ever been read — the thing the
+    // note above refuses.
+    setUnit(acc.unit ?? "");
     setError(null);
     setBusy(false);
   }, [acc]);
@@ -1876,6 +1906,9 @@ function EditDialog({
       // different sentence.
       key: key.trim() === "" ? undefined : key,
       budget: parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined,
+      // Blank travels as absent: 「use what the endpoint said」 is the
+      // absence of an override, not an override to nothing.
+      unit: unit.trim() === "" ? undefined : unit.trim(),
     })
       .then(onSaved)
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
@@ -1921,6 +1954,38 @@ function EditDialog({
             />
             <span data-quota-edit-key-note className="text-xs text-muted-foreground">
               {gui.accounts_key_keep}
+            </span>
+          </label>
+          {/* **单位:标签,不是汇率.** 2026-09-07:「同样的数字,单位不同
+              而已」 — a gateway that stamps 「USD」 on renminbi reported
+              the right amount under the wrong name, and the person who
+              topped the account up knows which it was. **Nothing here
+              converts anything**; the figure is untouched.
+
+              ⚠️ **The endpoint's own answer is the placeholder, never
+              the value.** Filled in as a value it would mean that
+              somebody who came here to change the *name* and pressed
+              save walked away with a unit override pinned to whatever
+              the gateway happened to say — **a control that changes
+              state when nobody touches it is not an option, it is a
+              decision made on their behalf.** (The key box next to this
+              one refuses the mirror image: it may not show what is
+              stored. Same rule, opposite direction: the interface does
+              not make a choice the person did not make.)
+
+              A placeholder is visible, vanishes on the first keystroke
+              and is not submitted — which is exactly the standing
+              「what the platform claims」 deserves. */}
+          <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{gui.accounts_unit}</span>
+            <Input
+              data-quota-edit-unit
+              value={unit}
+              placeholder={acc.reading.currency ?? ""}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+            <span data-quota-edit-unit-note className="text-xs text-muted-foreground">
+              {gui.accounts_unit_keep}
             </span>
           </label>
           {BUDGETED.includes(acc.reading.provider) && (

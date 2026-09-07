@@ -478,7 +478,7 @@ try {
   // percent), and a trouble key (no numbers, a sentence). Hand-shaped
   // from `AccountRing`/`AccountReading`; drift draws nothing and the
   // 额度 stop goes probe-dead saying so.
-  const ring = (account, name, provider, patch) => ({
+  const ring = (account, name, provider, { unit = null, ...patch } = {}) => ({
     reading: {
       account,
       name,
@@ -512,6 +512,14 @@ try {
     base_url: null,
     budget: null,
     pinned: false,
+    // **The unit the person typed, and it sits beside the reading, not
+    // inside it.** The node relabels `reading.currency` before the
+    // board leaves it, so the override is spelled once here and its
+    // *effect* is spelled as the row's `currency` — a fixture that set
+    // only one of the two would be describing a wire state that cannot
+    // happen. (Lifted out of `patch` for that reason: `patch` fills the
+    // reading.)
+    unit,
   });
   const board = [
     ring("acc-fill", "gateway", "newapi", {
@@ -529,10 +537,29 @@ try {
     // this row that branch has never run**. A rule nobody has walked is
     // not 「probably fine」, it is unknown (this repo's own judgment,
     // written the same day).
+    // **…and it is also the 「the person said so」 tier of the unit
+    // ladder**: `unit` is set, and `currency` carries it because the
+    // node applies the override before the board is sent. `RMB` is
+    // deliberate — it is the spelling the user predicted people would
+    // type (「他说 usd,但可能是 rmb」) and the one `sign()` has to map
+    // to the same 「¥」 as `CNY`.
     ring("acc-thousands", "big spender", "newapi", {
       spent: 1234.5,
-      currency: "USD",
+      currency: "RMB",
+      unit: "RMB",
       unlimited: true,
+    }),
+    // **A code khor does not know, with a real figure behind it.**
+    // 2026-09-07:「USDT 在环里只显示 124,右栏显示 …USDT」 — the ring
+    // has four characters and gives them to the magnitude; the column
+    // has a line and spells the unit out. An unknown code draws **no
+    // sign** rather than a guessed one, and this row is what makes
+    // 「no sign」 an observation instead of an intention. (What the
+    // column actually reads at this size is measured further down —
+    // the figure was not assumed from the quote.)
+    ring("acc-usdt", "wallet", "newapi", {
+      spent: 123.75,
+      currency: "USDT",
     }),
     ring("acc-number", "vendor", "claude", {
       spent: 12.34,
@@ -2444,6 +2471,69 @@ try {
       );
     }
 
+    //   ── 8·a unit khor knows, and one it does not ───────────────
+    //   2026-09-07:「USDT 在环里只显示 124,右栏显示 123.75 USDT」.
+    //   **The two places disagree and that is the design**: the ring
+    //   has four characters and spends them on the magnitude, the
+    //   column has a whole line and spends it on the whole truth. Both
+    //   are read here, because a check on the ring alone would pass an
+    //   implementation that shortened the column too.
+    //
+    //   ⚠️ **One correction to that quote, measured rather than
+    //   assumed**: at 123.75 the column reads `124 USDT`, not
+    //   `123.75 USDT` — `money()` has rounded at ≥100 since long
+    //   before this feature and its numeric half is out of scope here.
+    //   So at *this* magnitude the difference between the two places
+    //   is the **unit word**, not the digits. The digits differ lower
+    //   down, and `acc-number` is where that is measured (`12$` on the
+    //   ring, `12.34 USD` in the column) — **one row could not have
+    //   shown both halves**, and asserting only the round one would
+    //   have left 「the column does not shorten」 untested.
+    //
+    //   **And an unknown code draws no sign, rather than a guessed
+    //   one.** That claim needs the other arm to mean anything: a
+    //   `sign()` that returned `""` for everything would satisfy
+    //   「USDT gets none」 while quietly dropping every sign on the
+    //   page. `acc-thousands` is that arm — it carries `RMB`, which is
+    //   the spelling the user predicted (「他说 usd,但可能是 rmb」)
+    //   and which must land on the same 「¥」 as `CNY`.
+    const unknownMid = await middleOf("acc-usdt");
+    //   Read **while that row is the open one** — `middleOf` opens a
+    //   detail and the previous one leaves the screen, so a column read
+    //   after the next call would be `null` no matter what the page
+    //   drew. (It was, the first time this ran.)
+    const spentCol = await page.evaluate(
+      () =>
+        document.querySelector('[data-quota-detail="acc-usdt"] [data-quota-spent]')?.textContent?.trim() ?? null,
+    );
+    const knownMid = await middleOf("acc-thousands");
+    await middleOf("acc-number");
+    const fineCol = await page.evaluate(
+      () =>
+        document.querySelector('[data-quota-detail="acc-number"] [data-quota-spent]')?.textContent?.trim() ?? null,
+    );
+    if (unknownMid === null || knownMid === null || spentCol === null || fineCol === null) {
+      fail(
+        `probe dead: the unit rows drew middle=${JSON.stringify(unknownMid)}/${JSON.stringify(knownMid)} and columns=${JSON.stringify(spentCol)}/${JSON.stringify(fineCol)}`,
+      );
+    } else if (knownMid !== "1k¥") {
+      fail(
+        `a reading in RMB draws ${JSON.stringify(knownMid)} in its middle — 「RMB」 and 「CNY」 are one currency spelled two ways, so both wear 「¥」`,
+      );
+    } else if (unknownMid !== "124") {
+      fail(
+        `a reading in USDT draws ${JSON.stringify(unknownMid)} in its middle — a code khor has no sign for gets none, not a guessed one`,
+      );
+    } else if (spentCol !== "124 USDT") {
+      fail(
+        `the column beside that ring reads ${JSON.stringify(spentCol)} — the ring drops the unit it has no sign for, the column spells it out`,
+      );
+    } else if (fineCol !== "12.34 USD") {
+      fail(
+        `the column of a 12.34 reading says ${JSON.stringify(fineCol)} while its ring says 「12$」 — the column is the place the cents survive`,
+      );
+    }
+
     //   ── 8·the row's menu ───────────────────────────────────────
     //   2026-09-07:「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹
     //   置顶 / 编辑 / 删除」. Three claims, and the first two are an
@@ -2540,6 +2630,66 @@ try {
     } else if (here.value !== "" || peer.value !== "" || /••|已设置|\*\*\*/.test(here.text + peer.text)) {
       fail(
         `the edit dialog says something about the stored key (here=${JSON.stringify(here.value)} peer=${JSON.stringify(peer.value)}) — it never echoes one and never says whether one exists`,
+      );
+    }
+
+    //   **编辑's unit box: three tiers, and each one has to look like
+    //   itself.** 2026-09-07:「new-api 等 api 平台返回的一般不是准的,
+    //   他说 usd,但可能是 rmb」 — so an account may carry a unit the
+    //   person typed, overriding what the endpoint claims.
+    //
+    //   ① the person said so → the box **holds** it (`acc-thousands`,
+    //   `RMB`); ② only the endpoint said so → the box is **empty** and
+    //   the endpoint's word is the **placeholder** (`acc-fill`, `USD`);
+    //   ③ nobody said → **both** empty (`acc-trouble`, no currency at
+    //   all).
+    //
+    //   ⚠️ **The reason tier ② is a placeholder and not a value.** A
+    //   prefilled `USD` would mean that someone who came here to fix a
+    //   *name* and pressed 保存 walked away with a unit override
+    //   nailed to whatever the gateway happened to say — **a control
+    //   that changes state while nobody touches it is not an option,
+    //   it is a decision taken on their behalf.** So a filled tier ②
+    //   is the failure this measures, not a cosmetic difference; and
+    //   tier ③ is what keeps 「placeholder」 from being read as
+    //   「always show something」.
+    const unitBox = async (row) => {
+      await page.locator(`[data-quota-row="${row}"]`).click({ button: "right" });
+      await wait(400);
+      await page.locator('[data-menu-item="edit"]').click();
+      await wait(400);
+      const seen = await page.evaluate(() => {
+        const box = document.querySelector("[data-quota-edit-unit]");
+        return {
+          drew: box !== null,
+          // The real properties, not markers beside them — the same
+          // ruling the key box above was rewritten under.
+          value: box?.value ?? null,
+          hint: box?.placeholder ?? null,
+        };
+      });
+      await page.keyboard.press("Escape");
+      await wait(300);
+      return seen;
+    };
+    const said = await unitBox("acc-thousands");
+    const reported = await unitBox("acc-fill");
+    const silent = await unitBox("acc-trouble");
+    if (!said.drew || !reported.drew || !silent.drew) {
+      fail(
+        `probe dead: the edit dialog drew no unit box (${said.drew}/${reported.drew}/${silent.drew}), so the three tiers below measure nothing`,
+      );
+    } else if (said.value !== "RMB") {
+      fail(
+        `an account overridden to RMB opens its 单位 box holding ${JSON.stringify(said.value)} — the person's own word is what the box holds`,
+      );
+    } else if (reported.value !== "" || reported.hint !== "USD") {
+      fail(
+        `an account with no override opens its 单位 box holding ${JSON.stringify(reported.value)} / hinting ${JSON.stringify(reported.hint)} — the endpoint's claim is a placeholder, never a value (a saved form must not invent a choice nobody made)`,
+      );
+    } else if (silent.value !== "" || silent.hint !== "") {
+      fail(
+        `an account nothing has reported a currency for hints ${JSON.stringify(silent.hint)} — there is nothing to stand in for`,
       );
     }
 

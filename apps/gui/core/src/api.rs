@@ -166,6 +166,7 @@ pub fn answer(
                 opt_str("base_url")?.as_deref(),
                 opt_str("key")?.as_deref(),
                 budget,
+                opt_str("unit")?.as_deref(),
             )?;
             Ok("null".to_owned())
         }

@@ -1377,6 +1377,25 @@ accounts-key-stays = "密钥只留在这台机器上,别的机器读这台读到
 # …and which key can read usage at all: both vendors' usage reports are
 # organisation-level admin calls; a plain API key cannot read them.
 accounts-needs-admin = "这家读用量要 admin 密钥,普通 API 密钥读不到。"
+# 编辑框里那一格:这个账户**实际**是按什么单位计的。
+#
+# 2026-09-07 用户裁,原话:「new-api 等 api 平台返回的一般不是准的。他说 usd,
+# 但可能是 rmb。**同样的数字,单位不同而已。**」
+#
+# **它改的是标签,不是数。** 123.75 还是 123.75——网关把人民币标成了 USD,报的金额没错,
+# 错的是它的名字。而**充钱的人知道自己充的是什么币**,平台是在猜。
+#
+# **不换算、不引汇率**:那是另一件事、另一次裁决。
+accounts-unit = "单位"
+# 那一格下面那句。
+#
+# **这一格空着的意思和密钥那格不一样**,所以不复用那句话:密钥空着是「不动已存的」,
+# 这一格空着是「用平台报的」。
+#
+# **不写「平台常报错」**(2026-09-07 领队砍的):那是替用户对第三方下断言,而我们只见过
+# 一家平台、两个账户;而且那个问题 placeholder 已经答了——框里灰着平台报的那个值,
+# 比一句通论更直接地说清「这一格在覆盖什么」。
+accounts-unit-keep = "留空就用平台报的"
 accounts-budget = "每月预算"
 accounts-budget-hint = "不填就只记数,不画环"
 accounts-no-budget = "没定预算,只记数"

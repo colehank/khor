@@ -148,6 +148,34 @@ pub struct Account {
     /// by their own rules is two answers to 「what is at the top」.
     #[serde(default)]
     pub pinned: bool,
+    /// The unit this account is really billed in, **as the person who
+    /// pays for it says**, overriding whatever the endpoint reports.
+    ///
+    /// 2026-09-07,用户:「new-api 等 api 平台返回的一般不是准的。他说
+    /// usd,但可能是 rmb。同样的数字,单位不同而已。」
+    ///
+    /// ⚠️ **It is a label, not a rate.** The figure does not change:
+    /// 123.75 stays 123.75, and what moves is only what it is called.
+    /// A gateway that stamps 「USD」 on renminbi is not reporting a
+    /// different amount, it is reporting the same amount with the wrong
+    /// name on it — and **the person who topped the account up knows
+    /// which currency they sent**, where the platform is guessing.
+    ///
+    /// **Nothing downstream may turn this into a conversion.** No rate,
+    /// no source, no arithmetic. That would be a different feature and
+    /// a different ruling.
+    ///
+    /// `None` is 「use what the endpoint said」, which is what every
+    /// account has until somebody types here. Tail field, `serde
+    /// default`: an older khor reads the account whole and only misses
+    /// the override.
+    ///
+    /// **On the doc rather than in a local preference**, and that is
+    /// the point: the same account seen from another machine has to
+    /// carry the same unit. **A unit that is only right on this laptop
+    /// misleads exactly as much as a wrong one.**
+    #[serde(default)]
+    pub unit: Option<String>,
 }
 
 pub struct AccountDoc {
@@ -243,6 +271,7 @@ mod tests {
             base_url: Some("https://gw.example".to_owned()),
             budget: None,
             home: "aa".to_owned(),
+            unit: None,
             pinned: false,
         }
     }
@@ -259,13 +288,16 @@ mod tests {
     /// in it, which is the shape it is meant to exclude, and the whole
     /// thing would be checking that serde can read its own output.
     #[test]
-    fn an_account_from_before_the_pin_reads_as_unpinned() {
+    fn an_account_from_before_these_fields_reads_without_them() {
         let old = r#"{"id":"k1","name":"gateway","provider":"newapi",
             "base_url":"https://gw.example","home":"aa"}"#;
-        assert!(!old.contains("pinned"), "the old shape must not carry the key it predates");
+        for absent in ["pinned", "unit"] {
+            assert!(!old.contains(absent), "the old shape must not carry {absent}, a key it predates");
+        }
         let account: Account = serde_json::from_str(old).expect("an older khor's account still reads");
         assert_eq!(account, one("k1", "gateway"), "every other field survives whole");
         assert!(!account.pinned, "absent is not pinned");
+        assert_eq!(account.unit, None, "…and absent is not a unit override either");
     }
 
     /// **Pinned floats, and the order under it is unchanged.**

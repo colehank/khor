@@ -248,6 +248,10 @@ export const updateAccount = (a: {
   base_url?: string;
   key?: string;
   budget?: number;
+  /** The unit this account is really billed in, overriding what the
+      endpoint reports. **Blank means「use what the endpoint said」**,
+      so an empty box travels as absent rather than as `""`. */
+  unit?: string;
 }) => call<null>("update_account", a);
 /* **There is no `fetchUsage` any more**, and its absence is the point.
    It asked the node for every day there has ever been — an eighteen
