@@ -9,9 +9,10 @@
 //
 // **The drawing is the machine card's** (2026-09-07:「环全部和机器卡对
 // 齐」): the same 210° `Face`, one size down in a row. A subscription's
-// arc is its fullest window and every window is a pip on the rim, one
-// for one with the lines listed beside it; an account has one reading
-// and no parts, so it has no pips.
+// arc is **the window that speaks for the whole plan** (`headline`) and
+// every window is a pip on the rim, one for one with the lines listed
+// beside it; an account has one reading and no parts, so it has no
+// pips.
 //
 // **The fraction and the ink are the node's.** `fill` and `strain`
 // arrive decided (a new-api token fills against its own quota, the two
@@ -301,11 +302,52 @@ function subDials(r: Row): Dial[] {
   return out;
 }
 
-/** The one a reader is closest to running out of — the arc the dial
-    draws and the number in its middle. **Chosen by a rule, not
-    picked**: it is the one that will stop you first. */
-function fullest(dials: Dial[]): Dial | null {
-  return dials.reduce<Dial | null>((m, d) => (m === null || d.pct > m.pct ? d : m), null);
+/**
+ * The window that speaks for the subscription **as a whole** — the arc
+ * the dial draws, the number in its middle, and the summary on the row.
+ *
+ * ⚠️ **Tombstone: it used to be 「the fullest one」** (`worst`, then
+ * `fullest`), and 2026-09-07 the user overruled it:「list 页、打开后的多
+ * 环,claude 显示 week_all。现在,是 fable。」
+ *
+ * **That rule was answering a different question and answering it
+ * well.** It exists because `is_active` cannot be trusted — the
+ * endpoint had it `false` on the 29% session window and `true` on the
+ * weekly, so 「the one that is governing you」 has no honest source
+ * (`QuotaWindow::active` carries that finding). 「The fullest」 avoids
+ * that bad signal, and **avoiding a bad signal is not the same as
+ * choosing the right window.**
+ *
+ * **Why the whole-plan week is the right one.** `7 天 · Fable` is a
+ * window *scoped to one model*: how full it is says how much of that
+ * model's slice is gone. 「How much of my week have I used」 is what the
+ * unscoped week answers. When a line has room for exactly one number,
+ * that number has to be about **this subscription**, not about one
+ * slice of it — and the slices are not lost: each is a dial of its own
+ * in the drawer, which is where they belong.
+ *
+ * # The rule, in three steps, and each keeps the same property
+ *
+ * 1. The **longest unscoped** window — today's readings make that the
+ *    week.
+ * 2. No week, but a five-hour: that one. **Still the whole plan**, just
+ *    a shorter period — and the row prints the window's own word, so a
+ *    reader sees 「5 小时窗口」 and knows what they are looking at.
+ * 3. **No unscoped window at all: nothing.** There is no honest number
+ *    for the whole plan, so none is drawn — see the dial's own note for
+ *    what it does instead of inventing one.
+ *
+ * **Length comes from the node's order, not from a table here.**
+ * `Quota::windows` arrives sorted shortest-first, whole plan before any
+ * one model's share (`khor_node::quota`'s `seat`), so the last unscoped
+ * entry *is* the longest one. A second opinion about which span is
+ * longer is how two places come to disagree about one order.
+ */
+function headline(r: Row, dials: Dial[]): Dial | null {
+  const whole = r.windows.reduce<QuotaWindow | null>((m, w) => (w.scope === null ? w : m), null);
+  if (whole === null) return null;
+  const id = windowId(whole);
+  return dials.find((d) => d.id === id) ?? null;
 }
 
 /**
@@ -888,7 +930,7 @@ export function QuotaLanding({
         // count and the word on the right cannot come from two
         // different ideas of what this row is made of.
         const dials = r.account ? [] : subDials(r);
-        const lead = fullest(dials);
+        const lead = headline(r, dials);
         // A heading starts where the group changes between neighbouring
         // rows. `GROUP_NONE` answers the empty string for every row, so
         // it draws none — no branch of its own.
@@ -938,7 +980,8 @@ export function QuotaLanding({
             {/* **The machine card's dial, one size down** — the same
                 210° geometry, the same milestones, the same rim
                 (2026-09-07:「环全部和机器卡对齐」). The arc is the
-                fullest window; every window is a pip at its own angle,
+                whole-plan window (`headline`); every window is a pip at
+                its own angle,
                 so two windows at the same percent are two marks on one
                 spot and a row with one window looks like a gauge rather
                 than a stack. No number inside at this size: the number
@@ -1015,7 +1058,7 @@ export function QuotaLanding({
   // instead of a second vocabulary on the second screen.
   const acc = current?.account ?? null;
   const dials = current && current.account === null ? subDials(current) : [];
-  const lead = fullest(dials);
+  const lead = current && current.account === null ? headline(current, dials) : null;
   const subDetail = current && current.account === null && (
     <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
       <CardHead row={current} />
@@ -1023,8 +1066,8 @@ export function QuotaLanding({
           used to be a ring of its own, side by side — which drew the
           same quantity at four radii and left 「哪个最先卡住我」 to be
           worked out by comparing four circles. One dial answers that
-          (the arc is the fullest window, the number in it is that
-          window's), and the rim carries a mark per window at its own
+          (the arc and the number are the whole-plan window's —
+          `headline`), and the rim carries a mark per window at its own
           angle: **as many pips as there are lines in the list beside
           it, one for one**. Two windows at the same percent are two
           marks on one spot, which is a true drawing of two windows that
@@ -1068,6 +1111,21 @@ export function QuotaLanding({
           }
           className="flex flex-col items-center rounded-md"
         >
+          {/* ⚠️ **No whole-plan window means bare track, and that is a
+              档 this page already has.** `fraction` of `null` draws the
+              track alone — the very same picture 问不出来 wears on an
+              account (`arcOf`), and it says the same thing here: khor
+              has no number for 「how full is this subscription」.
+              **Not a full arc** (that is 不限量, and borrowing it would
+              be exactly the 「fell into the answer next door」 this
+              whole change is about) and **not 0%** (that is a reading,
+              and a reading nobody could take is not zero).
+              The centre is empty for the same reason, and the row's
+              summary with it. **Nothing is lost**: every window is
+              still a line in the panel beside this, still a pip on this
+              rim, and still a dial of its own in the drawer. What is
+              missing is only the number that would have claimed to
+              speak for the whole. */}
           <Face
             size={RING_SIZE_CARD}
             stroke={RING_STROKE_CARD}

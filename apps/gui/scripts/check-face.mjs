@@ -631,14 +631,14 @@ try {
     monthly_limit: null,
     balance: null,
   };
-  const routeQuota = async (credits) => {
+  const routeQuota = async (credits, windows = quotaWindows) => {
     await page.unroute("**/quota");
     await page.route("**/quota", (r) =>
       r.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
           quota: {
-            windows: quotaWindows,
+            windows,
             as_of: Math.floor(Date.now() / 1000) - 120,
             plan: quotaPlan,
             credits,
@@ -2507,6 +2507,111 @@ try {
       );
     }
 
+    //   **One way back to a freshly-routed card**, shared by every arm
+    //   below: the route is swapped, the page reloaded so the shell
+    //   asks again, and the subscription re-opened.
+    const goToQuota = async () => {
+      await page.reload({ waitUntil: "load" });
+      await wait(400);
+      await press(rail("quota"));
+      await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+      await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
+      await wait(300);
+    };
+
+    //   ── 8·which window speaks for the whole plan ───────────────
+    //   2026-09-07:「list 页、打开后的多环,claude 显示 week_all。现在,
+    //   是 fable。」 The headline is the **longest unscoped** window, not
+    //   the fullest one — a window scoped to a model says how full that
+    //   model's slice is, and a line with room for one number owes it
+    //   to the subscription, not to a slice of it.
+    //
+    //   **The fixture is built so 「fullest」 and 「whole plan」 give
+    //   different answers**: the week is 39% and Fable's slice is 29%,
+    //   so a build that still picked the fullest would happen to agree
+    //   — which is why the arms below add one where the *scoped* window
+    //   is the fullest. Without that, this check passes on the code it
+    //   was written to replace.
+    const headlineOf = async () => await page.evaluate(() => {
+      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
+      const detail = document.querySelector("[data-quota-detail]");
+      const arc = detail?.querySelector("[data-quota-lead] [data-ring-fill]");
+      return {
+        summary: row?.lastElementChild?.textContent?.trim() ?? "",
+        centre: detail?.querySelector("[data-quota-lead] text")?.textContent ?? "",
+        // Bare track is「no arc drawn at all」— the same picture 问不出来
+        // wears. Read off the arc itself, never off a class.
+        arc: arc === null || arc === undefined ? null : arc.getAttribute("d"),
+        // What is still listed beside it: nothing may be lost when the
+        // headline is.
+        parts: [...(detail?.querySelectorAll("[data-quota-part]") ?? [])].map((e) =>
+          e.getAttribute("data-quota-part"),
+        ),
+      };
+    });
+    //   (a) **A scoped window that is fuller than the unscoped one.**
+    //   The headline must still be the week's 30, not the slice's 88 —
+    //   this is the arm that tells the new rule from the old one.
+    const slicedWindows = [
+      { span: "five_hour", scope: null, used_pct: 4, resets_at: null, active: null, severity: null },
+      { span: "seven_day", scope: null, used_pct: 30, resets_at: null, active: null, severity: null },
+      { span: "seven_day", scope: "Fable", used_pct: 88, resets_at: null, active: null, severity: null },
+    ];
+    await routeQuota(quotaCredits, slicedWindows);
+    await goToQuota();
+    const whole = await headlineOf();
+    if (!whole.centre.includes("30") || !whole.summary.includes("30")) {
+      fail(
+        `with a 30% week beside an 88% model slice the card reads ${JSON.stringify(whole.centre)} and the row ${JSON.stringify(whole.summary)} — the headline is the whole plan, not the fullest window`,
+      );
+    }
+    //   (b) **Only a five-hour window.** Still the whole plan, and the
+    //   row says which window it is — a reader has to see that this is
+    //   not a week.
+    const hourOnly = [slicedWindows[0]];
+    await routeQuota(quotaCredits, hourOnly);
+    await goToQuota();
+    const hour = await headlineOf();
+    const fiveHourWord = (
+      await page.locator('[data-quota-part="five_hour"] [data-quota-window-name]').textContent()
+    )?.trim() ?? "";
+    if (!fiveHourWord) {
+      fail("probe dead: the five-hour window has no word, so the summary below measures nothing");
+    } else if (!hour.summary.includes(fiveHourWord) || !hour.centre.includes("4")) {
+      fail(
+        `with only a five-hour window the row says ${JSON.stringify(hour.summary)} and the card ${JSON.stringify(hour.centre)} — it steps down to the whole plan's shorter window and names it`,
+      );
+    }
+    //   (c) **No unscoped window at all**: nothing may be invented.
+    //   Bare track — **not a full arc** (that is 不限量) and **not 0%**
+    //   (that is a reading). And the panel still lists every slice: the
+    //   third claim is what tells 「the headline is gone」 from 「the
+    //   card fell over」.
+    const slicesOnly = [
+      { span: "seven_day", scope: "Fable", used_pct: 88, resets_at: null, active: null, severity: null },
+      { span: "seven_day", scope: "Opus", used_pct: 12, resets_at: null, active: null, severity: null },
+    ];
+    await routeQuota(quotaCredits, slicesOnly);
+    await goToQuota();
+    const none = await headlineOf();
+    if (none.arc !== null) {
+      fail(
+        `with no whole-plan window the dial still draws an arc (${JSON.stringify(none.arc)}) — bare track is the picture for「there is no such number」`,
+      );
+    } else if (none.centre.trim() !== "" || none.summary !== "") {
+      fail(
+        `with no whole-plan window the card says ${JSON.stringify(none.centre)} and the row ${JSON.stringify(none.summary)} — neither may invent one`,
+      );
+    } else if (none.parts.length !== slicesOnly.length) {
+      fail(
+        `the panel lists ${JSON.stringify(none.parts)} for ${slicesOnly.length} routed windows — losing the headline may not cost the slices`,
+      );
+    }
+    //   …and back to the fixture the rest of this section is written
+    //   against.
+    await routeQuota(quotaCredits);
+    await goToQuota();
+
     //   ── 8·credits, the other arm ────────────────────────────────
     //   Everything above measured credits **without** a ceiling: no
     //   pip, a figure below. That is one arm, and one arm of a control
@@ -2520,14 +2625,6 @@ try {
     //   product (see the note further up), so `pips === parts` is true
     //   of any wrong list; `windows + 1` is the number an outside
     //   thing says it should be.
-    const goToQuota = async () => {
-      await page.reload({ waitUntil: "load" });
-      await wait(400);
-      await press(rail("quota"));
-      await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
-      await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
-      await wait(300);
-    };
     await routeQuota(quotaCreditsCapped);
     await goToQuota();
     const capped = await page.evaluate(() => {
