@@ -191,3 +191,47 @@ fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
     assert_eq!(usage.today, None, "and states no day rather than today's");
     let _ = std::fs::remove_dir_all(&r);
 }
+
+/// **The network-wide answer states a day, and it is this machine's.**
+///
+/// `khor_core::Usage::today` is what a face cuts 「the last seven days」
+/// with, and it is the one thing in that payload a face cannot work out
+/// for itself: the rows carry civil dates in the *answering* machine's
+/// zone and nothing says which zone that is. A `None` here does not
+/// leave a face with no window — it leaves it reaching for its own
+/// today, which is right on the machine it runs on and a day out about
+/// a khor it reached over the web.
+///
+/// **Asserted against this node's other answer rather than against a
+/// constant.** `Node::usage` and `Node::usage_everywhere` are two paths
+/// to the same question, and what has to hold is that they agree —
+/// a date written out by hand here would be a constant only the author
+/// could check, which is the shape this tree keeps refusing.
+///
+/// **What it does not catch**: a second implementation that cuts the
+/// day in a *different* zone. The two answers would then differ only
+/// during the hours the zones disagree, so this would be red some of
+/// the day and green the rest — the reason both paths go through one
+/// `khor_node::usage::today`, which is structural rather than
+/// asserted. What is asserted here is the failure that is always
+/// available: saying nothing.
+#[test]
+fn the_network_wide_answer_states_this_machines_day_and_not_nobodys() {
+    let r = root("today");
+    let node = Node::open_as(r.clone(), "solo").unwrap();
+    let everywhere = node.usage_everywhere().expect("a node can sum its own network");
+    assert!(
+        everywhere.today.is_some(),
+        "the machine that answered knows what day it is, spent or not"
+    );
+    assert_eq!(
+        everywhere.today,
+        node.usage().today,
+        "the summary and this machine's own answer cut the same day"
+    );
+    assert!(
+        everywhere.days.is_empty(),
+        "…and it says so beside no spending at all, which is where a day is easiest to drop"
+    );
+    let _ = std::fs::remove_dir_all(&r);
+}

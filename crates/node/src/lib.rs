@@ -2930,6 +2930,14 @@ impl Node {
     /// about which side of midnight a late evening falls on; the
     /// alternative is a day boundary that is wrong for everybody instead
     /// of right for each.
+    ///
+    /// ⚠️ **That paragraph is about the rows, and it does not reach the
+    /// `today` field** — a distinction worth spelling out because
+    /// missing it is what put a `None` there for a day (the tombstone
+    /// is on the field, below). 「Whose rows are these」 has no single
+    /// answer; 「who answered this」 has exactly one, and it is the
+    /// machine running this code.
+    ///
     /// **The model breakdown is merged too, and it has to be.** An
     /// empty `models` beside a full `days` is the one sentence
     /// `khor_core::UsageModelDay` reserves for 「the answering machine
@@ -2986,12 +2994,32 @@ impl Node {
                     tokens,
                 })
                 .collect(),
-            // **No day, because there is no one day here.** These rows
-            // were each cut in their own machine's zone (see above), so
-            // any date written here would be one machine's opinion
-            // wearing the network's name. `None` is the field saying
-            // 「nobody stated one」, which is the truth.
-            today: None,
+            // **This machine's own day, which is what the field means.**
+            //
+            // ⚠️ **Tombstone (2026-09-08): this was `None`, and the
+            // reasoning under it was wrong in a way worth keeping.** It
+            // read 「these rows were each cut in their own machine's
+            // zone, so any date here would be one machine's opinion
+            // wearing the network's name」 — a true sentence about
+            // *whose rows these are*, applied to a field that is not
+            // about the rows. `khor_core::Usage::today` says what it
+            // is: **the day on the machine that answered**, and the
+            // machine that answered this is the one running this code.
+            //
+            // The consequence of the old `None` was not a missing
+            // figure: a face needs *some* today to cut 「the last seven
+            // days」 with, so it would have reached for its own — right
+            // on the machine it runs on and off by a day about a khor
+            // it reached over the web. **A branch nobody wired up does
+            // not become 「no value」, it becomes the value next to
+            // it**, and this tree keeps meeting that.
+            //
+            // Comparing this machine's window against a peer's days is
+            // off by at most a day at the boundary, which
+            // `usage::window_start` already weighed and called the
+            // smaller of the two errors available — and `khor usage`
+            // has cut its window this way all along.
+            today: Some(usage::today().to_string()),
         })
     }
 

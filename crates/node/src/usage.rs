@@ -492,7 +492,14 @@ pub fn meters_for(home: &Path) -> std::sync::Arc<Meters> {
 /// face that worked out "today" its own way would eventually disagree
 /// with the rows it is filtering, and the disagreement would only show up
 /// around midnight.
-fn today() -> jiff::civil::Date {
+///
+/// **Public because it has a second caller and must not grow a second
+/// implementation**: `Node::usage_everywhere` states this machine's own
+/// day beside a set of rows several machines cut. One function is what
+/// makes 「the date beside the rows」 and 「the date the window is cut
+/// from」 the same date; two would be a pair that only disagrees around
+/// midnight, which is the hour nobody is looking.
+pub fn today() -> jiff::civil::Date {
     today_in(&jiff::tz::TimeZone::system())
 }
 
