@@ -478,7 +478,7 @@ try {
   // percent), and a trouble key (no numbers, a sentence). Hand-shaped
   // from `AccountRing`/`AccountReading`; drift draws nothing and the
   // 额度 stop goes probe-dead saying so.
-  const ring = (account, name, provider, { unit = null, ...patch } = {}) => ({
+  const ring = (account, name, provider, { unit = null, kind = "bill", ...patch } = {}) => ({
     reading: {
       account,
       name,
@@ -520,6 +520,22 @@ try {
     // happen. (Lifted out of `patch` for that reason: `patch` fills the
     // reading.)
     unit,
+    // ⚠️ **A field the wire has always carried and this fixture never
+    // did** (`AccountRing.kind`, non-optional). It cost a whole gate:
+    // 「类型」 is not a hard-coded pair of ticks, it is **derived from
+    // the rows on screen** (`QuotaLanding`'s `seen(axis)`), so every
+    // row answering `undefined` meant the `kind:bill` tick was never
+    // drawn and its probe waited 30 seconds for a node that could not
+    // exist.
+    //
+    // **Neither「the gate went stale」nor「the product broke」**, which
+    // were the two candidates — it is the third thing this repo has a
+    // name for: a hand-written mock drifting from the Rust it stands
+    // in for. The product reads the real field; only this file was
+    // still living in the world before it. Judged by reading
+    // `seen(axis)` and `AccountRing.ts` rather than by pointing the
+    // probe somewhere it would go green.
+    kind,
   });
   const board = [
     ring("acc-fill", "gateway", "newapi", {
@@ -2275,14 +2291,29 @@ try {
         // it must not read as one.
         if (!svg || svg.querySelectorAll("path").length === 0) return { id, drawn: "no dial" };
         if (!arc) return { id, drawn: null };
-        // **The centre is read off the box, never assumed.** The dial
-        // is centred in whatever box it was given (`Face`'s `ratio` —
-        // a row's box is tight, the machine card's is twice the
-        // drawing), so a hard-coded `S * 0.8` measures the right arc
-        // from the wrong origin and returns a plausible wrong number
-        // rather than failing.
-        const vb = svg.getAttribute("viewBox").split(" ").map(Number);
-        const [cx, cy] = [vb[2] / 2, vb[3] * 0.6];
+        // **The centre is read off the track that was drawn, not off
+        // the box.**
+        //
+        // ⚠️ It used to be `[vb[2] / 2, vb[3] * 0.6]`, and the comment
+        // above it said the centre was 「never assumed」 — **while
+        // assuming `cy = 0.6 × the box's height`, which held only
+        // while the box's height was `size`.** Cropping the box
+        // vertically (2026-09-07) made that false and this gate read
+        // 1.13 and 0.37 for arcs that were perfectly correct: a
+        // plausible wrong number, which is the failure the old comment
+        // was written about, arriving through the half it did not
+        // cover.
+        //
+        // The track is one arc of known radius starting at `ARC0`
+        // (−195°), so its own `d` gives the centre with nothing
+        // assumed about the box at all: `M x0 y0 A r r …`, and
+        // `centre = start − r·(cos ARC0, sin ARC0)`.
+        const track = svg.querySelector("path");
+        const td = /M([-\d.]+)\s+([-\d.]+)\s*A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
+        if (!td) return { id, drawn: "no track" };
+        const [x0, y0, r] = [Number(td[1]), Number(td[2]), Number(td[3])];
+        const A0 = (-195 * Math.PI) / 180;
+        const [cx, cy] = [x0 - r * Math.cos(A0), y0 - r * Math.sin(A0)];
         const n = (arc.getAttribute("d") ?? "").replace(/,/g, " ").trim().split(/\s+/).map(Number);
         const [x, y] = [n[n.length - 2], n[n.length - 1]];
         let deg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
@@ -2377,17 +2408,34 @@ try {
       return [...document.querySelectorAll("[data-quota-row]")].map((r) => {
         const svg = r.querySelector("[data-dial-face]");
         const t = svg?.querySelector("text");
-        const vbH = svg ? Number(svg.getAttribute("viewBox").split(" ")[3]) : 0;
-        const inner = 2 * 30 * (vbH / 88) - 2.6;
+        // **The rim's own radius and stroke, off the track that was
+        // drawn.**
+        //
+        // ⚠️ Was `2 * 30 * (vbH / 88) - 2.6` — the reference size and
+        // the row's stroke written out again here, with the box's
+        // height standing in for `size`. Both halves of that broke on
+        // 2026-09-07: the box stopped being `size` tall (it is cropped
+        // to the drawing now), and a hard-coded `2.6` cannot describe
+        // two dials of different strokes. It reported five middles
+        // spilling that were not.
+        const track = svg?.querySelector("path");
+        const td = /A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
+        const inner = td ? 2 * Number(td[1]) - Number(track.getAttribute("stroke-width") ?? 0) : 0;
         const b = t?.getBBox();
         return {
           id: r.getAttribute("data-quota-row"),
           text: t?.textContent ?? "",
           chars: (t?.textContent ?? "").length,
           over: b ? +(b.width - inner).toFixed(1) : -1,
+          w: b ? +b.width.toFixed(1) : -1,
+          inner: +inner.toFixed(1),
+          box: svg ? `${Math.round(svg.getBoundingClientRect().width)}x${Math.round(svg.getBoundingClientRect().height)}` : "?",
         };
       });
     });
+    console.log(
+      `ring middles: ${middles.map((m) => `${m.id} "${m.text}" ${m.w}/${m.inner} box ${m.box}`).join(" · ")}`,
+    );
     const tooLong = middles.filter((m) => m.chars > 4);
     const spilling = middles.filter((m) => m.over > 0);
     if (middles.length === 0) {
@@ -2437,32 +2485,76 @@ try {
       const svg = document.querySelector("[data-quota-lead] [data-dial-face]");
       if (!svg) return null;
       const S = svg.getBoundingClientRect();
-      let x0 = 1e9, x1 = -1e9;
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
       for (const c of svg.children) {
         const b = c.getBBox();
         if (b.width === 0 && b.height === 0) continue;
         x0 = Math.min(x0, b.x);
         x1 = Math.max(x1, b.x + b.width);
+        y0 = Math.min(y0, b.y);
+        y1 = Math.max(y1, b.y + b.height);
       }
-      const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+      // **Everything below is in the drawing's own units**, not CSS
+      // pixels: the box is the `viewBox`, the ink is the children's
+      // bounds, and the two are directly comparable there. Mixing the
+      // rendered rect in was how the height half stayed invisible —
+      // the rect and the `viewBox` height agreed by construction, so
+      // dividing one by the other could only ever answer 1.
+      const [bx, by, bw, bh] = svg.getAttribute("viewBox").split(/\s+/).map(Number);
       return {
-        w: Math.round(S.width),
-        h: Math.round(S.height),
-        aspect: +(S.width / S.height).toFixed(2),
-        inkShare: +(((x1 - x0) * (S.width / vb[2])) / S.width).toFixed(2),
+        box: `${+bw.toFixed(1)}x${+bh.toFixed(1)}`,
+        ink: `${+(x1 - x0).toFixed(1)}x${+(y1 - y0).toFixed(1)}`,
+        wideShare: +((x1 - x0) / bw).toFixed(2),
+        tallShare: +((y1 - y0) / bh).toFixed(2),
+        boxAspect: +(bw / bh).toFixed(2),
+        inkAspect: +((x1 - x0) / (y1 - y0)).toFixed(2),
+        // Clipping is silent — an over-tight box draws a dial with a
+        // pip sliced off and reports nothing. Positive numbers are
+        // room to spare on each side.
+        spare: [+(x0 - bx).toFixed(1), +(bx + bw - x1).toFixed(1), +(y0 - by).toFixed(1), +(by + bh - y1).toFixed(1)],
       };
     });
     if (!dialBox) {
       fail("probe dead: the card's dial never drew, so nothing below measures a box");
-    } else if (dialBox.aspect > 1.15) {
+    } else if (dialBox.spare.some((v) => v < 0)) {
       fail(
-        `the card's dial sits in a ${dialBox.w}×${dialBox.h} box (aspect ${dialBox.aspect}) — the box holds the drawing, and margin is the layout's to give`,
+        `the dial's ink hangs outside its box (spare ${JSON.stringify(dialBox.spare)} on ⊣⊢⊤⊥) — a box tighter than the drawing clips it, and clipping does not raise anything`,
       );
-    } else if (dialBox.inkShare < 0.7) {
+    } else if (dialBox.wideShare < 0.7) {
       fail(
-        `the dial's ink fills ${dialBox.inkShare} of its box — a tight box that the drawing does not fill is the same white space by another route`,
+        `the dial's ink fills ${dialBox.wideShare} of its box across — a tight box the drawing does not fill is the same white space by another route`,
+      );
+    } else if (dialBox.tallShare < 0.7) {
+      //   ⚠️ **This half did not exist until 2026-09-07, and its
+      //   absence is why the fault survived a gate written about
+      //   exactly this.** 「现在列表的环没有充分填充垂直高度」 —
+      //   measured that day: ink 22.2 of a 40 box and 59.6 of a 110
+      //   one, **0.55 both times**, while the section above reported a
+      //   tight box. It was tight on the axis it looked at.
+      fail(
+        `the dial's ink fills ${dialBox.tallShare} of its box top to bottom (${dialBox.ink} in ${dialBox.box}) — a 210° dial is not as tall as it is wide, and a box that pretends otherwise is dead band`,
+      );
+    } else if (Math.abs(dialBox.boxAspect - dialBox.inkAspect) > 0.25) {
+      //   ⚠️ **Was `aspect > 1.15`, a constant, and the product
+      //   changed under it.** That number said 「roughly square」, which
+      //   was the right *proxy* while the box's height was always
+      //   `size`; with the box cropped to the drawing it is wider than
+      //   tall **because the drawing is** (ink 32.5 × 22.2), and a
+      //   square box would now be the fault. So the constant is
+      //   replaced by the thing it was standing in for: **the box has
+      //   the drawing's proportions.**
+      //
+      //   **This is not the threshold being loosened to let a change
+      //   through** — it is stricter where it counts: the box as it
+      //   shipped that morning (aspect 1.00 against an ink aspect of
+      //   1.46) fails this and passed the old one.
+      fail(
+        `the dial's box is ${dialBox.boxAspect} wide-to-tall where its drawing is ${dialBox.inkAspect} — the box takes the drawing's shape, and the difference between them is margin nobody asked for`,
       );
     }
+    console.log(
+      `dial box: ink ${dialBox?.ink} in ${dialBox?.box}, fills ${dialBox?.wideShare} across / ${dialBox?.tallShare} down, aspect ${dialBox?.boxAspect} vs ink ${dialBox?.inkAspect}`,
+    );
 
     //   ── 8·what an account's dial says in its middle ────────────
     //   2026-09-07:「说过的没有额度的环,显示金额」. A reading with no

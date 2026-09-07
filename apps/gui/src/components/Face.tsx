@@ -115,6 +115,28 @@ const BOX_RATIO = 1.6;
  * them is a change to the machine card's imports, and that surface
  * belongs to another lane today.
  */
+/* ⚠️ **The ceiling on this number is the row's *words*, not the row's
+   height** (2026-09-07, and it is written here because the next person
+   will arrive with the opposite intuition).
+
+   The 額度 detail's dial can be opened up — its cell is 121 tall
+   against 68 of box, and the bar column beside it has 624px of slack,
+   so growth there costs nothing anyone can see. **A list row is the
+   other case**: the box is already as tall as the row's usable 40, and
+   every pixel this grows is taken sideways out of the column the name
+   and its sub-line live in, because a 210° dial is wider than it is
+   tall (ink 32.5 × 22.2, a ratio of 1.46) and `ratio` is 1 here.
+
+   Measured that day, and the two numbers are close enough that the
+   next widening should be measured rather than reasoned about:
+
+   | box width | the sub-line |
+   |---|---|
+   | 49 | whole |
+   | 51.2 | **truncated** (the 32 × 1.6 box, caught by `check-face`) |
+
+   So: **「the detail's ring may grow, the row's may not」 is not a
+   style preference, it is 2.2px of room.** */
 export const DIAL_ROW_SIZE = 40;
 /** The box a row gives the dial: **just the drawing**, no margins. See
     `Face`'s `ratio`. */
@@ -150,7 +172,22 @@ export const DIAL_ROW_STROKE = 2.6;
  * can sit 9k beyond the rim. At these numbers that is ~102 in a box of
  * 110, so a mark at the widest angle still has room.
  */
-export const DIAL_CARD_SIZE = 110;
+export const DIAL_CARD_SIZE = 169;
+/* ⚠️ **169 since 2026-09-07, and the two numbers that decided it are on
+   one line.** 「点击后的用量界面的环…明明可以放的更大」 — and unlike the
+   row above, here there was somewhere for it to go. What growth costs
+   is the bar column beside it, so both were read in the same state:
+
+   | | dial box | ink | bar beside it |
+   |---|---|---|---|
+   | before | 110 × 110 | 88.4 × 56.9 | 624 |
+   | after  | 169 × 102 | 134.5 × 86.1 | 565 |
+
+   **The box got taller by nothing and the drawing grew by half**: the
+   crop took 45% of the height back, and `size` spent it. 102 still
+   sits inside the 121 the cell already had, so no row moved; the bar
+   gave up 59px of 624, which is the part of this that a person could
+   notice, and it is the trade the ruling asked to see. */
 /** Just the drawing. See above — the room around it is the layout's. */
 export const DIAL_CARD_RATIO = 1;
 /** The machine card's 4, in the proportion the sizes are (110/88), so
@@ -212,6 +249,7 @@ export function Face({
   pips,
   unknown,
   ratio = BOX_RATIO,
+  crop = false,
   children,
 }: {
   size: number;
@@ -244,6 +282,48 @@ export function Face({
    * the width), and `1.6` reproduces `S * 0.8` to the bit.
    */
   ratio?: number;
+  /**
+   * Whether the box hugs the drawing **from above and below**.
+   *
+   * # What it is for
+   *
+   * A 210° dial is not as tall as it is wide, and until 2026-09-07 the
+   * box was square-ish regardless: `viewBox` height was always `size`,
+   * while the ink only ever reached from `cy - reach` to a little past
+   * `cy`. Measured on the 額度 page that day: **the ink was 22.2 of a
+   * 40 box and 59.6 of a 110 one — 55% both times**, and the 45% left
+   * over was not a margin anybody chose. It is the same fault `ratio`
+   * fixed horizontally, on the other axis, found later because a
+   * horizontal gap pushes text sideways where a vertical one merely
+   * looks like air.
+   *
+   * ⚠️ **This is why 「make the ring bigger」 is not `size + n`**:
+   * raising `size` alone scales the dead band with the drawing. Bigger
+   * ring, and proportionally more nothing around it.
+   *
+   * # What the bounds are
+   *
+   * `reach` is the furthest **any** mark can sit from the centre — the
+   * rim plus a pip's full length plus its round cap — so the crop is
+   * computed from the same expressions that draw, not from a number
+   * measured off one screenshot. **A dial with no pips therefore keeps
+   * a little slack**, and that is deliberate: the same component draws
+   * both, and a box tight around a pip-less dial would clip the pips
+   * off a dial that has them. Silently — clipping is not an error.
+   *
+   * The bottom is the arc's own end (`ARC0 + SPAN`, below centre by
+   * `sin 15°`) plus half a stroke for the round cap; the centred text
+   * sits above that.
+   *
+   * ⚠️ **Default `false`, and the machine card must stay that way
+   * until somebody measures it.** Its box (141 × 88) is not spare
+   * room — it holds the sentence on the dial's other face — and the
+   * wrapper around it in `MachineCard` hard-codes `RING_SIZE_CARD` for
+   * its height, so a cropped box there would shrink the drawing inside
+   * a wrapper that did not shrink. That is a second change, not a
+   * consequence of this one.
+   */
+  crop?: boolean;
   /** The number in the middle. */
   children?: React.ReactNode;
 }) {
@@ -268,15 +348,23 @@ export function Face({
   // prove the comparison can fail at all).
   const k = S / REF_SIZE;
   const R = 30 * k;
+  // **The box's vertical bounds, off the same numbers as the drawing.**
+  // `reach`: the rim, plus a pip's whole length, plus half its round
+  // cap — see `crop`. Kept beside `R` rather than at the `viewBox` so
+  // that a change to either offset below breaks the reader's eye on
+  // both at once.
+  const reach = R + stroke / 2 + 9 * k + 0.85 * Math.max(0.7, k);
+  const boxY = crop ? cy - reach : 0;
+  const boxH = crop ? Math.sin((ARC0 + SPAN) * D2R) * reach + stroke / 2 + reach : S;
   const marks = (pips ?? []).filter((p): p is Pip & { v: number } => p.v !== null);
   const vals = marks.map((p) => p.v);
   const color = gaugeColor(strain);
   return (
     <svg
       data-dial-face
-      viewBox={`0 0 ${W} ${S}`}
+      viewBox={`0 ${boxY} ${W} ${boxH}`}
       width={W}
-      height={S}
+      height={boxH}
       role="presentation"
       className="text-foreground"
     >

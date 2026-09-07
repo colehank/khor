@@ -1236,6 +1236,7 @@ export function QuotaLanding({
               size={DIAL_ROW_SIZE}
               stroke={DIAL_ROW_STROKE}
               ratio={DIAL_ROW_RATIO}
+              crop
               fraction={arcOf(r)}
               strain={r.account?.strain ?? null}
               pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
@@ -1365,6 +1366,7 @@ export function QuotaLanding({
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
           ratio={DIAL_CARD_RATIO}
+          crop
           fraction={arcOf(current)}
           pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
         >
@@ -1547,6 +1549,7 @@ export function QuotaLanding({
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
           ratio={DIAL_CARD_RATIO}
+          crop
           fraction={arcOf(current)}
           strain={acc.strain}
         >
