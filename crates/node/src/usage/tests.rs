@@ -784,8 +784,14 @@ fn an_empty_home_spends_nothing_and_reports_nothing_unreadable() {
     let _ = std::fs::remove_dir_all(&empty);
     std::fs::create_dir_all(&empty).unwrap();
     let usage = Meters::at(&empty).tally_in(&plus_eight());
-    assert_eq!(usage, Usage::default());
-    assert!(usage.days.is_empty() && usage.unreadable == 0);
+    // **The spending is compared, not the whole answer**, because one
+    // field of it is not about the spending: `today` is what day it is
+    // where the answering machine stands, and a home nobody has run an
+    // agent in still has a date. Comparing against `Usage::default()`
+    // would be asserting that an empty home does not know what day it
+    // is (`khor_core::Usage::today`).
+    assert!(usage.days.is_empty() && usage.models.is_empty() && usage.unreadable == 0);
+    assert!(usage.today.is_some(), "the machine knows its own day whether or not it spent");
     let _ = std::fs::remove_dir_all(&empty);
 }
 
@@ -854,7 +860,12 @@ fn the_categories_are_the_ones_the_session_list_already_spells() {
 /// module can touch the machine it runs on unless it says so.
 #[test]
 fn the_empty_registry_reads_nothing() {
-    assert_eq!(Meters::empty().tally_in(&plus_eight()), Usage::default());
+    let nothing = Meters::empty().tally_in(&plus_eight());
+    assert_eq!(
+        Usage { today: None, ..nothing.clone() },
+        Usage::default(),
+        "everything the registry could have read is empty"
+    );
 }
 
 /// **The answer is kept until the files move, and re-folded the moment
@@ -1085,4 +1096,222 @@ fn a_window_of_n_days_reaches_back_n_minus_one() {
     // Zero is not a window; it is treated as one day rather than given a
     // meaning of its own, and the caller refuses it before getting here.
     assert_eq!(window_start(0), window_start(1));
+}
+
+// ── the model breakdown ─────────────────────────────────────
+
+/// **Every token the day list reports is in the model list too, and
+/// exactly once.**
+///
+/// The property `khor_core::UsageModelDay` promises whoever draws a
+/// percentage from it: the denominator they are shown is the whole.
+///
+/// **Its teardown is not「delete the field」but the plausible mistake** —
+/// summing only the *named* rows into the day list, which is what
+/// somebody tidying up writes, and which leaves every percentage on the
+/// screen looking right while the total quietly shrinks underneath it.
+///
+/// **Both directions, because either alone passes for the wrong
+/// reason**: a model list carrying rows for days the day list never
+/// mentions still satisfies "the days add up", and a truncated one
+/// still satisfies "no row is orphaned".
+#[test]
+fn the_model_rows_add_up_to_the_day_rows_and_none_of_them_is_orphaned() {
+    let usage = both("model-exhaustive");
+    // The positive half first: a suite where the fixture stopped
+    // spending would satisfy every loop below by never entering it.
+    assert!(!usage.days.is_empty(), "the fixture spends something");
+    assert!(!usage.models.is_empty(), "…and the breakdown is not simply absent");
+    for day in &usage.days {
+        let mut sum = Tokens::default();
+        let mut rows = 0usize;
+        for m in usage.models.iter().filter(|m| m.day == day.day && m.category == day.category) {
+            sum.add(m.tokens);
+            rows += 1;
+        }
+        assert!(rows > 0, "{} {} has a day row and no model rows", day.day, day.category);
+        assert_eq!(
+            sum, day.tokens,
+            "{} {}: the model rows must add up to the day row",
+            day.day, day.category
+        );
+    }
+    for m in &usage.models {
+        assert!(
+            usage.days.iter().any(|d| d.day == m.day && d.category == m.category),
+            "a model row for {} {} with no day row above it",
+            m.day,
+            m.category
+        );
+    }
+}
+
+/// **A record that names a model and one that does not, differing in
+/// that and nothing else.**
+///
+/// Both lines are built here rather than borrowed from the shared
+/// fixture so the one difference is visible in one place: same instant,
+/// same four counters, same everything, and one carries a `model` key.
+/// Their message ids differ because one id is one record by this
+/// vendor's rule — an id cannot decide which model a row is filed
+/// under, so it is not a second variable.
+///
+/// **Two teardowns, failing in opposite directions**, which is what
+/// makes them a pair rather than one test run twice: make `model_of`
+/// always answer `None` and the named row vanishes; drop unnamed
+/// records at the fold and the day total falls from 20 to 10.
+#[test]
+fn a_record_that_names_no_model_is_counted_and_gets_a_row_of_its_own() {
+    let home = std::env::temp_dir().join(format!("khor-usage-unnamed-{}", std::process::id()));
+    let dir = home.join(".claude/projects/p");
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&dir).unwrap();
+    let counters = r#""input_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":10"#;
+    std::fs::write(
+        dir.join("s.jsonl"),
+        format!(
+            "{}\n{}\n",
+            format_args!(
+                r#"{{"type":"assistant","timestamp":"2026-08-17T06:00:00Z","message":{{"id":"named","model":"m-1","usage":{{{counters}}}}}}}"#
+            ),
+            format_args!(
+                r#"{{"type":"assistant","timestamp":"2026-08-17T06:00:00Z","message":{{"id":"bare","usage":{{{counters}}}}}}}"#
+            ),
+        ),
+    )
+    .unwrap();
+
+    let usage = Meters::at(&home).tally_in(&plus_eight());
+    assert_eq!(usage.days.len(), 1, "one vendor, one day");
+    assert_eq!(usage.days[0].tokens.output, 20, "both records are counted, named or not");
+
+    let rows: Vec<(Option<&str>, u64)> =
+        usage.models.iter().map(|m| (m.model.as_deref(), m.tokens.output)).collect();
+    assert_eq!(
+        rows,
+        vec![(Some("m-1"), 10), (None, 10)],
+        "the named row, then the unnamed one — and the unnamed one is a row, not a silence"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// **Which meter can name a model, spelled out one vendor at a time.**
+///
+/// A property ("every category produces at least one named row") would
+/// be satisfied by a meter that stamped one constant on everything, and
+/// by nine of the thirteen even if four of them broke. So this is the
+/// enumeration that goes with it: each name is read off the fixture,
+/// and a meter that stopped carrying the model turns its own row red
+/// without touching its neighbours'.
+///
+/// **The four `None`s are a claim about khor's samples, not about those
+/// vendors' formats**: `roo`'s three and `openclaw` write no model in
+/// any document khor has, and upstream has not been read for one. If it
+/// turns up, this row changes and nothing else does.
+#[test]
+fn each_meter_names_the_model_where_the_sample_it_reads_has_one() {
+    let usage = both("model-per-vendor");
+    let mut seen: std::collections::BTreeMap<&str, Vec<Option<&str>>> =
+        std::collections::BTreeMap::new();
+    for m in &usage.models {
+        let row = seen.entry(m.category.as_str()).or_default();
+        let name = m.model.as_deref();
+        if !row.contains(&name) {
+            row.push(name);
+        }
+    }
+    let want: std::collections::BTreeMap<&str, Vec<Option<&str>>> = [
+        ("amp", vec![Some("a-model"), Some("b-model"), Some("c-model")]),
+        ("claude", vec![Some("a-model")]),
+        ("cline", vec![None]),
+        ("codex", vec![Some("a-model"), Some("b-model")]),
+        ("gemini", vec![Some("a-model")]),
+        ("junie", vec![Some("a-model"), Some("b-model")]),
+        ("kilocode", vec![None]),
+        ("kimchi", vec![Some("a-model")]),
+        ("openclaw", vec![None]),
+        // The fixture's `p-C` bills real tokens and names no model —
+        // the record the module head keeps for exactly this.
+        ("pi", vec![Some("a-model"), None]),
+        ("qwen", vec![Some("a-model")]),
+        ("roocode", vec![None]),
+        ("senpi", vec![Some("a-model")]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(seen, want);
+}
+
+/// **Codex's model comes from a line that carries no numbers, and it
+/// has to survive the lines in between.**
+///
+/// The only meter here whose model is not on the record it belongs to:
+/// a `turn_context` states it once and the `token_count`s after it
+/// inherit it. Two things are asserted and the fixture is arranged so
+/// that neither can pass without the other — the 02:00 turn has no
+/// context of its own (so it is only named if the state carried across
+/// a repeat line), and the 16:30 turn has a new one (so a reader that
+/// simply remembered the first name forever would file it under
+/// `a-model`).
+#[test]
+fn a_codex_turn_wears_the_model_its_turn_context_named() {
+    let usage = both("codex-model");
+    let row = |day: &str, model: &str| {
+        usage
+            .models
+            .iter()
+            .find(|m| m.category == "codex" && m.day == day && m.model.as_deref() == Some(model))
+            .map(|m| m.tokens)
+    };
+    assert_eq!(
+        row("2026-08-17", "a-model"),
+        Some(tokens(600, 2400, 0, 150)),
+        "both of the day's turns, the second one carrying the name across"
+    );
+    assert_eq!(
+        row("2026-08-18", "b-model"),
+        Some(tokens(400, 100, 33, 20)),
+        "and the turn after the second context is not still `a-model`"
+    );
+    assert_eq!(
+        usage.models.iter().filter(|m| m.category == "codex").count(),
+        2,
+        "two contexts, two model rows — no third row for a name nobody wrote"
+    );
+}
+
+/// **The day khor says it is, is the day it cut the rows with.**
+///
+/// `khor_core::Usage::today` exists because a face cannot work out a
+/// *remote* machine's today, so the one thing that must never happen is
+/// this field being cut in a zone other than the one the rows beside it
+/// were cut in. Asserted against fixed offsets, so the answer does not
+/// depend on where the machine running the tests stands.
+///
+/// **The control is two zones 25 hours apart, and that number is the
+/// point**: their civil dates differ at every instant of the year, so
+/// an implementation that ignored the zone and reached for the system
+/// clock fails this at three in the morning as surely as at noon.
+/// Comparing +08 against UTC would have been a control that agrees for
+/// two thirds of every day — one that passes without deciding
+/// anything.
+#[test]
+fn the_answer_states_the_day_in_the_same_zone_it_cut_the_rows_in() {
+    let meters = Meters::at(&fixture_home("today"));
+    let at = |hours: i32| {
+        meters.tally_in(&TimeZone::fixed(jiff::tz::offset(hours as i8))).today.expect("khor knows its own day")
+    };
+    let east = at(14);
+    let west = at(-11);
+    // **The control runs first, on purpose.** The exact-value check
+    // below fires too on most teardowns, and whichever assertion is
+    // written first is the only one anybody ever sees fail — so the
+    // one that decides something at every hour of the year goes ahead
+    // of the one whose failure depends on what time it is.
+    assert_ne!(east, west, "25 hours apart is never the same civil date");
+    assert_eq!(
+        east,
+        jiff::Timestamp::now().to_zoned(TimeZone::fixed(jiff::tz::offset(14))).date().to_string(),
+        "and the earlier of the two is that zone's own today"
+    );
 }

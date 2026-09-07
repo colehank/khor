@@ -707,6 +707,23 @@ fn usage(rest: &[String]) -> Result<(), String> {
         }
         for row in recent {
             println!("\t{}\t{}\t{}", row.day, row.category, tokens_line(&row.tokens));
+            // The models under that day, one indent deeper. **Absent
+            // rather than empty when the answering machine predates the
+            // breakdown** (`khor_core::Usage::models`), which is why
+            // this is a filter over what arrived and never a row of its
+            // own saying 「no models」 — that would be a claim about the
+            // spending where the truth is a claim about the answerer.
+            //
+            // ⚠️ **This layout is for a person to read, not for the
+            // next screen to copy.** Whoever draws the 花了多少 page
+            // reads `Usage::models`, which states its own ordering and
+            // its own exhaustiveness; a face that reproduced these tabs
+            // would be depending on a shape nothing keeps stable.
+            for m in usage.models.iter().filter(|m| m.day == row.day && m.category == row.category)
+            {
+                let name = m.model.as_deref().unwrap_or(cli::USAGE_MODEL_UNNAMED);
+                println!("\t\t{}\t{}", name, tokens_line(&m.tokens));
+            }
         }
         if usage.unreadable > 0 {
             println!("\t{}", cli::usage_unreadable(usage.unreadable));

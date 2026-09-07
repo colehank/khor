@@ -153,3 +153,41 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
     let _ = std::fs::remove_dir_all(&ra);
     let _ = std::fs::remove_dir_all(&rb);
 }
+
+/// **The second place an old spending answer has to survive, and it is
+/// not the wire.**
+///
+/// A peer's answer is kept on disk as JSON
+/// (`Node::cache_peer_usage` writes `.khor/usage/<device>`), and that
+/// file outlives the khor that wrote it by however long the machine
+/// stands. So the round trip that matters here is **old file, new
+/// code** — a different codec from the frame's msgpack, with a
+/// different way of spelling "the field is not there", and a wire test
+/// alone would have covered neither.
+///
+/// The old shape is written out by hand on purpose: serialising the
+/// current struct and deleting keys would be asking the new code to
+/// describe the old one.
+#[test]
+fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
+    let r = root("olddisk");
+    let node = Node::open_as(r.clone(), "solo").unwrap();
+    let peer = "ab".repeat(32);
+    let dir = r.join(".khor").join("usage");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(&peer),
+        r#"{"at_ms":1786928400000,"usage":{"days":[{"day":"2026-08-17","category":"claude","tokens":{"input":1,"cached_input":2,"cache_write":3,"output":4}}],"unreadable":5}}"#,
+    )
+    .unwrap();
+
+    let (usage, _age) = node.usage_of(&peer).expect("the file on disk is the answer");
+    assert_eq!(output_of(&usage), 4, "what the old khor did record survives whole");
+    assert_eq!(usage.unreadable, 5);
+    assert!(
+        usage.models.is_empty(),
+        "an answer from before the breakdown says so by being empty, not by being wrong"
+    );
+    assert_eq!(usage.today, None, "and states no day rather than today's");
+    let _ = std::fs::remove_dir_all(&r);
+}

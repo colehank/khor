@@ -78,13 +78,75 @@ use std::sync::Mutex;
 
 use khor_core::{Tokens, Usage, UsageDay};
 
-/// One record a meter kept: what was spent, and when.
+/// One record a meter kept: what was spent, when, and by which model.
 ///
 /// **The instant, not the day.** See the module head.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// **Not `Copy` any more, and the cost is stated rather than hidden**:
+/// the model turned this into a type that owns something. It is one
+/// [`Arc`] wide (16 bytes) and the strings behind it are shared through
+/// [`interned`], so the ~55 568 claude records this machine holds grew
+/// by under a megabyte rather than by one allocation each. The module
+/// head keeps a memory budget on purpose; this is the entry for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Kept {
     pub at: jiff::Timestamp,
     pub tokens: Tokens,
+    /// The model the vendor's own file named, or `None` when it named
+    /// none. **A meter never invents one**, and never borrows the one
+    /// beside it: see `khor_core::UsageModelDay::model` for what the
+    /// absence is allowed to mean downstream.
+    pub model: Option<std::sync::Arc<str>>,
+}
+
+/// How many distinct model names [`interned`] will hold.
+///
+/// **A cap because the pool's input is somebody else's file.** The
+/// honest count is small — a machine sees a handful of models — but
+/// nothing in a transcript stops a `model` field from being a thousand
+/// different strings, and a pool with no ceiling would turn that into
+/// memory that is never given back. Past the cap the names are still
+/// read and still counted; they simply stop being shared, which costs
+/// an allocation and changes no answer.
+const MODEL_POOL_MAX: usize = 512;
+
+/// One [`Arc`] per distinct model name, shared by every record naming
+/// it.
+///
+/// A transcript names the same handful of models tens of thousands of
+/// times over, so the alternative is one allocation per record for a
+/// string the process already has. Process-wide rather than per-meter
+/// or per-[`Meters`]: what is shared is an immutable name, never a
+/// figure, so it cannot carry one home's numbers into another's the way
+/// a shared *tally* would (see [`meters_for`] on why that split
+/// matters).
+fn interned(name: &str) -> std::sync::Arc<str> {
+    use std::collections::HashSet;
+    static POOL: std::sync::OnceLock<Mutex<HashSet<std::sync::Arc<str>>>> =
+        std::sync::OnceLock::new();
+    let mut pool = POOL
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if let Some(had) = pool.get(name) {
+        return had.clone();
+    }
+    let fresh: std::sync::Arc<str> = std::sync::Arc::from(name);
+    if pool.len() < MODEL_POOL_MAX {
+        pool.insert(fresh.clone());
+    }
+    fresh
+}
+
+/// The model a record names, interned, or `None` when it names none.
+///
+/// **Blank counts as none.** A vendor that writes `"model": ""` has not
+/// named a model, and a row labelled with an empty string would be a
+/// name nobody can read rather than an absence somebody can be told
+/// about.
+fn model_of(v: &serde_json::Value, key: &str) -> Option<std::sync::Arc<str>> {
+    let name = v.get(key)?.as_str()?.trim();
+    (!name.is_empty()).then(|| interned(name))
 }
 
 /// One vendor's spending, before anyone has said whose it is or what day
@@ -312,28 +374,45 @@ impl Meters {
     /// answer is due, and it is the seam a test uses to pin a zone, since
     /// an assertion about which day a timestamp falls on is otherwise an
     /// assertion about where the machine running the tests happens to be.
+    /// # One map, two lists, and why that is not tidiness
+    ///
+    /// The finer cut is the one that is folded, and the day list is
+    /// **projected out of it**. `khor_core::UsageModelDay` promises a
+    /// reader that the model rows for a (day, vendor) sum to that day's
+    /// row exactly, and this is where that promise is kept: with one
+    /// map there is no second pass to disagree with the first, so the
+    /// property holds by construction rather than by anyone
+    /// remembering. Two independent folds would be the shape where a
+    /// filter added to one of them silently shrinks a denominator, and
+    /// every percentage drawn from it still looks right.
     pub fn tally_in(&self, zone: &jiff::tz::TimeZone) -> Usage {
         self.passes.fetch_add(1, Ordering::Relaxed);
-        let mut rows: HashMap<(String, &'static str), Tokens> = HashMap::new();
+        let mut rows: HashMap<(String, &'static str, Option<std::sync::Arc<str>>), Tokens> =
+            HashMap::new();
         let mut unreadable = 0u64;
         for m in &self.meters {
             let tally = m.tally();
             unreadable = unreadable.saturating_add(tally.unreadable);
             for k in tally.kept {
                 let day = k.at.to_zoned(zone.clone()).date().to_string();
-                rows.entry((day, m.vendor())).or_default().add(k.tokens);
+                rows.entry((day, m.vendor(), k.model)).or_default().add(k.tokens);
             }
         }
-        let mut days: Vec<UsageDay> = rows
+        let mut models: Vec<khor_core::UsageModelDay> = rows
             .into_iter()
             // A day on which a vendor spent nothing is not a row. It can
             // happen: a file khor can open, holding only records it
             // cannot read, would otherwise produce a row of zeroes that
             // reads as "this agent ran and cost nothing".
+            //
+            // **Dropped here rather than after the sum, and the two are
+            // the same answer**: these counters are unsigned, so a sum
+            // is zero exactly when every part of it is.
             .filter(|(_, tokens)| !tokens.is_zero())
-            .map(|((day, category), tokens)| UsageDay {
+            .map(|((day, category, model), tokens)| khor_core::UsageModelDay {
                 day,
                 category: category.to_owned(),
+                model: model.map(|m| m.to_string()),
                 tokens,
             })
             .collect();
@@ -341,8 +420,35 @@ impl Meters {
         // machines asked the same question answer in the same order —
         // a face that had to sort would be the second sort this repo
         // keeps refusing to grow (`crate::list`).
-        days.sort_by(|a, b| a.day.cmp(&b.day).then_with(|| a.category.cmp(&b.category)));
-        Usage { days, unreadable }
+        //
+        // **The unnamed model sorts last, not first**, which is what
+        // `None` would do left to its own ordering: it is the row a
+        // reader wants after the ones that say something, and a list
+        // that opened with 「没记模型」 would put khor's one silence at
+        // the top of every vendor.
+        models.sort_by(|a, b| {
+            a.day
+                .cmp(&b.day)
+                .then_with(|| a.category.cmp(&b.category))
+                .then_with(|| a.model.is_none().cmp(&b.model.is_none()))
+                .then_with(|| a.model.cmp(&b.model))
+        });
+        // The projection. Sorted above, so one (day, vendor)'s rows are
+        // adjacent and this is a fold rather than a second grouping.
+        let mut days: Vec<UsageDay> = Vec::new();
+        for row in &models {
+            match days.last_mut() {
+                Some(last) if last.day == row.day && last.category == row.category => {
+                    last.tokens.add(row.tokens)
+                }
+                _ => days.push(UsageDay {
+                    day: row.day.clone(),
+                    category: row.category.clone(),
+                    tokens: row.tokens,
+                }),
+            }
+        }
+        Usage { days, unreadable, models, today: Some(today_in(zone).to_string()) }
     }
 }
 
@@ -387,7 +493,20 @@ pub fn meters_for(home: &Path) -> std::sync::Arc<Meters> {
 /// with the rows it is filtering, and the disagreement would only show up
 /// around midnight.
 fn today() -> jiff::civil::Date {
-    jiff::Timestamp::now().to_zoned(jiff::tz::TimeZone::system()).date()
+    today_in(&jiff::tz::TimeZone::system())
+}
+
+/// Today where a given zone stands.
+///
+/// **The seam is here for the same reason [`Meters::tally_in`]'s is**:
+/// an assertion about which day an instant falls on is otherwise an
+/// assertion about where the machine running the tests happens to be.
+/// It is also what lets the date khor reports as its own
+/// (`khor_core::Usage::today`) be cut by the very zone that cut the
+/// rows beside it — two facts from one call rather than two calls that
+/// can straddle a midnight between them.
+fn today_in(zone: &jiff::tz::TimeZone) -> jiff::civil::Date {
+    jiff::Timestamp::now().to_zoned(zone.clone()).date()
 }
 
 /// The earliest day a window of `days` ending today takes in.
@@ -957,7 +1076,16 @@ pub mod claude {
             // time.
             Some(seen) if seen.tokens.output >= tokens.output => {}
             _ => {
-                best.insert(id.to_owned(), Kept { at, tokens });
+                // **The model off the same writing as the numbers**, not
+                // merged in field by field. It is the rule this meter
+                // already lives by — one whole reading per id — applied
+                // to the one field that is not a counter: the writing
+                // that supplied these tokens is the one that says which
+                // model produced them.
+                best.insert(
+                    id.to_owned(),
+                    Kept { at, tokens, model: super::model_of(message, "model") },
+                );
             }
         }
         Read::Fine
@@ -988,7 +1116,7 @@ pub mod claude {
                     }
                 }
             }
-            Tally { kept: best.into_values().copied().collect(), unreadable }
+            Tally { kept: best.into_values().cloned().collect(), unreadable }
         }
     }
 }
@@ -1065,6 +1193,22 @@ pub mod codex {
     pub struct Rollout {
         turns: Vec<Kept>,
         previous: Option<(Tokens, u64)>,
+        /// The model the most recent `turn_context` named. **This is
+        /// the only meter here whose model is not on the line that
+        /// carries the numbers**: codex states it once per turn in an
+        /// event of its own, ahead of the `token_count`s it governs
+        /// (measured on this machine: one rollout holds 12
+        /// `turn_context` against 24 `token_count`, and the model
+        /// changes across a session). `session_meta` does **not** carry
+        /// one — it has `model_provider` and no model — so a
+        /// `token_count` before the first `turn_context` genuinely has
+        /// no name available and stays `None`.
+        ///
+        /// Living in the per-file state rather than in a local is what
+        /// makes it survive a pass that read only the tail: the last
+        /// `turn_context` may be thousands of bytes behind the offset
+        /// this pass started at.
+        model: Option<std::sync::Arc<str>>,
     }
 
     pub struct Codex {
@@ -1101,6 +1245,16 @@ pub mod codex {
 
     fn fold(roll: &mut Rollout, v: &serde_json::Value) -> Read {
         let Some(payload) = v.get("payload") else { return Read::Fine };
+        // A turn's context names the model the turns after it spend on.
+        // **Assigned, not merged**: a `turn_context` that names no model
+        // clears the one before it rather than letting it stand, because
+        // carrying a stale name forward would file one model's tokens
+        // under another's — and a wrong name is worse here than no name
+        // (`khor_core::UsageModelDay::model`).
+        if v.get("type").and_then(serde_json::Value::as_str) == Some("turn_context") {
+            roll.model = super::model_of(payload, "model");
+            return Read::Fine;
+        }
         if payload.get("type").and_then(serde_json::Value::as_str) != Some("token_count") {
             return Read::Fine;
         }
@@ -1128,7 +1282,7 @@ pub mod codex {
             return Read::Fine;
         }
         roll.previous = Some((tokens, running));
-        roll.turns.push(Kept { at, tokens });
+        roll.turns.push(Kept { at, tokens, model: roll.model.clone() });
         Read::Fine
     }
 
@@ -1144,7 +1298,7 @@ pub mod codex {
         fn tally(&self) -> Tally {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
-            let kept = states.into_iter().flat_map(|r| r.turns.iter().copied()).collect();
+            let kept = states.into_iter().flat_map(|r| r.turns.iter().cloned()).collect();
             Tally { kept, unreadable }
         }
     }
@@ -1306,7 +1460,12 @@ pub mod gemini {
             // and a no-op otherwise.
             Some(seen) if seen.tokens.output >= tokens.output => {}
             _ => {
-                best.insert(id.to_owned(), Kept { at, tokens });
+                // The answer's own line names the model, so this needs
+                // no state and cannot drift from the numbers beside it.
+                best.insert(
+                    id.to_owned(),
+                    Kept { at, tokens, model: super::model_of(v, "model") },
+                );
             }
         }
         Read::Fine
@@ -1339,7 +1498,7 @@ pub mod gemini {
                     }
                 }
             }
-            Tally { kept: best.into_values().copied().collect(), unreadable }
+            Tally { kept: best.into_values().cloned().collect(), unreadable }
         }
     }
 }
@@ -1388,9 +1547,22 @@ pub mod pi {
     //!
     //! - **A record with no model is still counted.** Upstream drops it,
     //!   because it prices tokens per model and cannot price what it
-    //!   cannot name. khor bills no money and never reads the model, so
-    //!   dropping the record would throw away tokens somebody spent for a
-    //!   reason khor does not have.
+    //!   cannot name. khor bills no money, so dropping the record would
+    //!   throw away tokens somebody spent for a reason khor does not
+    //!   have.
+    //!
+    //!   ⚠️ **Tombstone (2026-09-07): this used to read 「khor bills no
+    //!   money *and never reads the model*」, and the second half is no
+    //!   longer true** — every meter here now carries the name into
+    //!   `Kept::model` so the spending can be cut by model. **The
+    //!   ruling above did not change with it**, and that is the point
+    //!   of writing this down rather than editing the words and moving
+    //!   on: reading the model was never what decided whether to keep
+    //!   the record. An unnamed record is still counted, and now it
+    //!   also has somewhere honest to sit
+    //!   (`khor_core::UsageModelDay::model`). The fixture's `p-C` is
+    //!   that record, and it is what the unnamed row is asserted
+    //!   against.
     //! - **Deduplication is scoped to the session**, which is upstream's
     //!   default (`parse_pi_format_file`). Message ids in this format are
     //!   per-session — the upstream tests use `msg_001` — so merging on a
@@ -1509,7 +1681,15 @@ pub mod pi {
         match session.best.get(id) {
             Some(seen) if seen.tokens.output >= tokens.output => {}
             _ => {
-                session.best.insert(id.to_owned(), Kept { at, tokens });
+                // **The model alone, not `provider/model` joined.**
+                // This format states both, and the pair would be a
+                // second spelling of a name every other meter reports
+                // bare — the same model would then be two rows
+                // depending on which agent billed it.
+                session.best.insert(
+                    id.to_owned(),
+                    Kept { at, tokens, model: super::model_of(message, "model") },
+                );
             }
         }
         Read::Fine
@@ -1535,7 +1715,7 @@ pub mod pi {
             let mut loose: Vec<Kept> = Vec::new();
             for state in states {
                 let Some(session) = state.id.as_deref() else {
-                    loose.extend(state.best.values().copied());
+                    loose.extend(state.best.values().cloned());
                     continue;
                 };
                 for (id, kept) in &state.best {
@@ -1548,7 +1728,7 @@ pub mod pi {
                     }
                 }
             }
-            loose.extend(best.into_values().copied());
+            loose.extend(best.into_values().cloned());
             Tally { kept: loose, unreadable }
         }
     }
@@ -1744,7 +1924,15 @@ pub mod roo {
                 unreadable += 1;
                 continue;
             };
-            kept.push(Kept { at, tokens });
+            // **No model, and that is a fact about the samples khor has**
+            // rather than about the format. This payload carries `cost`,
+            // the four counters and `apiProtocol`; nothing in the fixture
+            // — upstream's own test document, see the module head — names
+            // a model, and **upstream's source has not been read for
+            // one**. So these land in the unnamed row, where they are
+            // still counted and still visible. Finding the name later is
+            // one line here and no change on the wire.
+            kept.push(Kept { at, tokens, model: None });
         }
         (kept, unreadable)
     }
@@ -1761,7 +1949,7 @@ pub mod roo {
         fn tally(&self) -> Tally {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(named_under(&self.root, LOG), parse);
-            let kept = states.into_iter().flat_map(|s| s.iter().copied()).collect();
+            let kept = states.into_iter().flat_map(|s| s.iter().cloned()).collect();
             Tally { kept, unreadable }
         }
     }
@@ -1888,7 +2076,7 @@ pub mod qwen {
         let (Some(tokens), Some(at)) = (tokens_of(usage), at_of(v, "timestamp")) else {
             return Read::Unreadable;
         };
-        kept.push(Kept { at, tokens });
+        kept.push(Kept { at, tokens, model: super::model_of(v, "model") });
         Read::Fine
     }
 
@@ -1905,7 +2093,7 @@ pub mod qwen {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(&self.projects_dir(), fold);
             Tally {
-                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                kept: states.into_iter().flat_map(|k| k.iter().cloned()).collect(),
                 unreadable,
             }
         }
@@ -1995,7 +2183,13 @@ pub mod junie {
         let mut missed = false;
         for row in rows {
             match tokens_of(row) {
-                Some(tokens) => kept.push(Kept { at, tokens }),
+                // **The row's own model**, which is the whole reason
+                // this format bills a list rather than a record: the
+                // event already knew which model each half went to, and
+                // that was the one thing this loop used to drop.
+                Some(tokens) => {
+                    kept.push(Kept { at, tokens, model: super::model_of(row, "model") })
+                }
                 None => missed = true,
             }
         }
@@ -2019,7 +2213,7 @@ pub mod junie {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
             Tally {
-                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                kept: states.into_iter().flat_map(|k| k.iter().cloned()).collect(),
                 unreadable,
             }
         }
@@ -2272,7 +2466,13 @@ pub mod amp {
         if events.is_empty() {
             let kept = messages
                 .into_iter()
-                .filter_map(|r| r.at.map(|at| Kept { at, tokens: r.tokens }))
+                .filter_map(|r| {
+                    r.at.map(|at| Kept {
+                        at,
+                        tokens: r.tokens,
+                        model: Some(super::interned(&r.model)),
+                    })
+                })
                 .collect();
             return (kept, unreadable);
         }
@@ -2295,9 +2495,19 @@ pub mod amp {
             }
         }
         events.extend(extra);
+        // **Always `Some` here, and that is the format rather than a
+        // guess**: a record whose account names no model never becomes a
+        // `Record` at all (`ledger_records` and `message_records` both
+        // turn one away), so this meter cannot produce an unnamed row.
         let kept = events
             .into_iter()
-            .filter_map(|r| r.at.map(|at| Kept { at, tokens: r.tokens }))
+            .filter_map(|r| {
+                r.at.map(|at| Kept {
+                    at,
+                    tokens: r.tokens,
+                    model: Some(super::interned(&r.model)),
+                })
+            })
             .collect();
         (kept, unreadable)
     }
@@ -2315,7 +2525,7 @@ pub mod amp {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(json_under(&self.threads_dir()), parse);
             Tally {
-                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                kept: states.into_iter().flat_map(|k| k.iter().cloned()).collect(),
                 unreadable,
             }
         }
@@ -2426,7 +2636,14 @@ pub mod openclaw {
         let (Some(tokens), Some(at)) = (tokens_of(usage), at) else {
             return Read::Unreadable;
         };
-        kept.push(Kept { at, tokens });
+        // **No model, on the same footing as `roo`'s**: the fixture is
+        // upstream's own record and it carries `input`/`output`/
+        // `cacheRead`/`cacheWrite`/`totalTokens`/`cost` and no model,
+        // and **upstream's source has not been read for one**. The Pi
+        // format this one's numbers are spelled like *does* name a
+        // model on the message, which is a reason to look again, not a
+        // reason to read a field nobody has seen.
+        kept.push(Kept { at, tokens, model: None });
         Read::Fine
     }
 
@@ -2443,7 +2660,7 @@ pub mod openclaw {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(&self.root, fold);
             Tally {
-                kept: states.into_iter().flat_map(|k| k.iter().copied()).collect(),
+                kept: states.into_iter().flat_map(|k| k.iter().cloned()).collect(),
                 unreadable,
             }
         }

@@ -584,6 +584,25 @@ usage-taken = "{0}前的账"
 # missing something. Zero and silence mean the same thing; a non-zero
 # count and silence do not.
 usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
+# The model row for tokens whose own file never said which model spent
+# them (`khor_core::UsageModelDay::model` is `None`).
+#
+# **It says the file did not record it, not that khor did not recognise
+# it** — those are two different sentences and only one of them is true
+# here. A record khor cannot make sense of is counted by
+# `usage-unreadable` above and never reaches this row, so 「读不出来」
+# would be claiming the neighbouring failure.
+#
+# It has to be a word rather than a blank because these tokens are real
+# and are inside the totals: dropping the row would hand whoever draws
+# percentages a denominator quietly missing them
+# (`khor_core::UsageModelDay` states that as a property).
+#
+# **The face is meant to use this key rather than grow a `gui` twin.**
+# Two names for one text is what `build.rs` refuses inside a section and
+# what drift looks like across two — and this word answers the same
+# question on both screens.
+usage-model-unnamed = "没记模型"
 summary-sent = "摘要已发,等对方许可。传输号: {0}"
 # Said before accept goes quiet, and only when this machine does not
 # have the offer yet. A verb that sits silent gets killed and re-run,

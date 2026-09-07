@@ -1018,24 +1018,86 @@ mod tests {
     /// one is sent here on purpose.
     #[test]
     fn a_spending_answer_crosses_inside_its_response() {
+        let tokens =
+            khor_core::Tokens { input: 1, cached_input: 2, cache_write: 3, output: 4 };
         let sent = khor_core::Usage {
             days: vec![khor_core::UsageDay {
                 day: "2026-08-17".to_owned(),
                 category: "claude".to_owned(),
-                tokens: khor_core::Tokens {
-                    input: 1,
-                    cached_input: 2,
-                    cache_write: 3,
-                    output: 4,
-                },
+                tokens,
             }],
             unreadable: 5,
+            // **Both a named model and the unnamed one**, because the
+            // absence is a value here rather than a missing field, and
+            // a codec that dropped `None` on the floor would arrive
+            // looking like a shorter list rather than like an error.
+            models: vec![
+                khor_core::UsageModelDay {
+                    day: "2026-08-17".to_owned(),
+                    category: "claude".to_owned(),
+                    model: Some("a-model".to_owned()),
+                    tokens,
+                },
+                khor_core::UsageModelDay {
+                    day: "2026-08-17".to_owned(),
+                    category: "claude".to_owned(),
+                    model: None,
+                    tokens: khor_core::Tokens::default(),
+                },
+            ],
+            today: Some("2026-08-17".to_owned()),
         };
         let bytes = encode(&Response::Usage { usage: sent.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::Usage { usage } => assert_eq!(usage, sent),
             other => panic!("decoded wrong: {other:?}"),
         }
+    }
+
+    /// **A spending answer from before the model breakdown still
+    /// decodes, and says so by being empty rather than by being wrong.**
+    ///
+    /// The tail-default half of this codec's one-way property, on the
+    /// frame that just grew two fields. `models` empty beside a
+    /// non-empty `days` is the sentence `khor_core::UsageModelDay`
+    /// reserves for exactly this peer — 「it cannot tell」 — and `today`
+    /// is `None` rather than a date nobody stated.
+    ///
+    /// **The old shape is spelled out here rather than trusted**: this
+    /// encoding is positional, so "the field is absent" is a frame that
+    /// is *shorter*, and the length is asserted for the same reason the
+    /// vitals version asserts it — a struct that quietly still carried
+    /// the fields would round-trip and prove nothing.
+    #[test]
+    fn a_spending_answer_from_before_the_model_breakdown_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct OldUsage {
+            days: Vec<khor_core::UsageDay>,
+            unreadable: u64,
+        }
+        let day = khor_core::UsageDay {
+            day: "2026-08-17".to_owned(),
+            category: "claude".to_owned(),
+            tokens: khor_core::Tokens { input: 1, cached_input: 2, cache_write: 3, output: 4 },
+        };
+        let old = rmp_serde::to_vec(&OldUsage { days: vec![day.clone()], unreadable: 5 }).unwrap();
+        let fresh = rmp_serde::to_vec(&khor_core::Usage {
+            days: vec![day.clone()],
+            unreadable: 5,
+            models: vec![],
+            today: None,
+        })
+        .unwrap();
+        assert!(old.len() < fresh.len(), "the old frame really is shorter: it lacks the new fields");
+
+        let u: khor_core::Usage = rmp_serde::from_slice(&old).unwrap();
+        assert_eq!(u.days, vec![day], "what it did record survives whole");
+        assert_eq!(u.unreadable, 5);
+        assert!(
+            u.models.is_empty(),
+            "a peer that cannot cut by model says so by an empty list, not by a wrong one"
+        );
+        assert_eq!(u.today, None, "and it states no day rather than a default one");
     }
 
     /// The satellite pair crosses whole, age included — the age is the

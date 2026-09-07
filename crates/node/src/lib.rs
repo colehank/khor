@@ -2930,15 +2930,38 @@ impl Node {
     /// about which side of midnight a late evening falls on; the
     /// alternative is a day boundary that is wrong for everybody instead
     /// of right for each.
+    /// **The model breakdown is merged too, and it has to be.** An
+    /// empty `models` beside a full `days` is the one sentence
+    /// `khor_core::UsageModelDay` reserves for 「the answering machine
+    /// cannot cut by model」 — so a summary that summed the days and
+    /// dropped the models would not lose a feature, it would **state
+    /// something false about every machine in the network**, including
+    /// the ones that answered in full. That is the shape this tree
+    /// keeps meeting: a branch nobody wired up does not become "no
+    /// value", it becomes the value next to it.
+    ///
+    /// A machine that genuinely cannot cut by model contributes its
+    /// days and no model rows, so this list is **not** exhaustive over
+    /// this one's days the way a single machine's is — mixing an old
+    /// khor into the network is exactly the case where the property has
+    /// to give, and the honest place for it to give is here rather than
+    /// in a machine's own answer.
     pub fn usage_everywhere(&self) -> Result<khor_core::Usage, String> {
         let mut rows: std::collections::BTreeMap<(String, String), khor_core::Tokens> =
             Default::default();
+        let mut models: std::collections::BTreeMap<
+            (String, String, Option<String>),
+            khor_core::Tokens,
+        > = Default::default();
         let mut unreadable = 0u64;
         for d in self.devices()? {
             let Some((u, _)) = self.usage_of(&d.id) else { continue };
             unreadable = unreadable.saturating_add(u.unreadable);
             for day in u.days {
                 rows.entry((day.day, day.category)).or_default().add(day.tokens);
+            }
+            for m in u.models {
+                models.entry((m.day, m.category, m.model)).or_default().add(m.tokens);
             }
         }
         Ok(khor_core::Usage {
@@ -2950,6 +2973,25 @@ impl Node {
                 .map(|((day, category), tokens)| khor_core::UsageDay { day, category, tokens })
                 .collect(),
             unreadable,
+            // `BTreeMap` puts `None` **first** among the models, where a
+            // single machine's answer puts it last. Both orders are
+            // sorted and neither is the other's bug; a face that cares
+            // orders what it draws.
+            models: models
+                .into_iter()
+                .map(|((day, category, model), tokens)| khor_core::UsageModelDay {
+                    day,
+                    category,
+                    model,
+                    tokens,
+                })
+                .collect(),
+            // **No day, because there is no one day here.** These rows
+            // were each cut in their own machine's zone (see above), so
+            // any date written here would be one machine's opinion
+            // wearing the network's name. `None` is the field saying
+            // 「nobody stated one」, which is the truth.
+            today: None,
         })
     }
 

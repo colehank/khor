@@ -1233,6 +1233,63 @@ pub struct UsageDay {
     pub tokens: Tokens,
 }
 
+/// One model's share of one vendor's spend on one day, on one machine.
+///
+/// **A second list beside [`UsageDay`], not a field inside it** — the
+/// ruling [`ModelDay`] already carries for money, and it lands harder
+/// here because of a reason that one does not have: **an older peer**.
+/// A `model` field on `UsageDay` would make every row of that list a
+/// vendor-day *total* when the answer came from a khor that predates
+/// this, and a (vendor, model) row when it came from one that does not
+/// — one list meaning two things, **with nothing in the frame saying
+/// which**. So the day axis stays one shape for everybody and the
+/// breakdown is a layer that only some answers have.
+///
+/// # The two properties a reader may rely on
+///
+/// **This list is exhaustive.** Every token in [`Usage::days`] appears
+/// in exactly one row here, so the rows for a (day, category) sum to
+/// that day's row exactly. It is not a gate's promise but the shape of
+/// the code: `khor_node::usage::Meters::tally_in` folds *one* map keyed
+/// by (day, vendor, model) and projects the day list out of it, so
+/// there is no second pass that could disagree. Whoever draws
+/// percentages from this can trust the denominator; a breakdown that
+/// carried only the *named* part would hand them a 100% that quietly
+/// left tokens out.
+///
+/// **Empty here beside a non-empty [`Usage::days`] means the answering
+/// machine cannot tell** — a khor from before this existed — and it is
+/// distinguishable from "spent nothing", which empties both. A face
+/// that painted the first as an empty chart would be stating a fact
+/// nobody established.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct UsageModelDay {
+    /// The civil date, as [`UsageDay::day`] cuts it and in the same
+    /// zone.
+    pub day: String,
+    /// Whose tokens these were, as [`UsageDay::category`] spells it.
+    pub category: String,
+    /// The model's name **as the vendor's own file spelled it**, and
+    /// `None` when that file named no model.
+    ///
+    /// **`None` is not "khor does not recognise it"** — a record khor
+    /// cannot read is counted in [`Usage::unreadable`] and never
+    /// reaches here. It is the narrower and more honest sentence: the
+    /// vendor wrote the tokens down without writing which model spent
+    /// them. Four of the thirteen vendor names khor meters have no
+    /// model in the samples khor has at all; the rest can still produce
+    /// an unnamed record one at a time.
+    ///
+    /// **`None` rather than `""`** so that a face cannot paint it by
+    /// accident: an empty string renders as an empty label and reads as
+    /// a model whose name is missing, where null forces whoever draws
+    /// it to reach for the word (`cli.usage-model-unnamed`). A default
+    /// painted as fact is the failure this crate keeps being written
+    /// against.
+    pub model: Option<String>,
+    pub tokens: Tokens,
+}
+
 /// What one machine has spent, by day and by vendor.
 ///
 /// **Asked for, never replicated**, the same call [`Vitals`] makes and for
@@ -1251,6 +1308,32 @@ pub struct Usage {
     /// quietly omits what it could not parse.
     #[ts(type = "number")]
     pub unreadable: u64,
+    /// The same spending cut one axis finer. Sorted the same way, then
+    /// by model with the unnamed row last. See [`UsageModelDay`] for
+    /// why this is a second list and for the two properties it holds.
+    ///
+    /// Tail field, defaulted: an older peer's answer has none and says
+    /// so by being empty.
+    #[serde(default)]
+    pub models: Vec<UsageModelDay>,
+    /// The civil date **on the machine that answered**, cut in its own
+    /// zone at the moment it worked this out.
+    ///
+    /// **Not derivable from anything else here, which is the whole
+    /// reason it is a field.** [`UsageDay::day`] is in the answering
+    /// machine's zone and nothing in this frame says which zone that
+    /// is; a face that used its *own* today to decide "up to and
+    /// including today" would be right about the machine it runs on and
+    /// off by a day about every other one. `khor_node::usage`'s window
+    /// carries the same ruling for the same reason — a face that worked
+    /// out today its own way eventually disagrees with the rows it is
+    /// filtering, and the disagreement only shows up around midnight.
+    ///
+    /// `None` from a khor that predates it. That is 「it did not say」,
+    /// and a face falling back to its own today should know that is
+    /// what it is doing rather than believe it was told.
+    #[serde(default)]
+    pub today: Option<String>,
 }
 
 /// **How long** one subscription window is — and nothing else.
@@ -2643,10 +2726,32 @@ mod tests {
         assert_eq!(bytes[0], 0x93, "day, category, tokens");
         assert_eq!(rmp_serde::from_slice::<UsageDay>(&bytes).unwrap(), day);
 
-        let answer = Usage { days: vec![day], unreadable: 2 };
+        let answer = Usage {
+            days: vec![day.clone()],
+            unreadable: 2,
+            models: vec![UsageModelDay {
+                day: day.day.clone(),
+                category: day.category.clone(),
+                model: Some("a-model".to_owned()),
+                tokens: day.tokens,
+            }],
+            today: Some("2026-08-17".to_owned()),
+        };
         let bytes = rmp_serde::to_vec(&answer).unwrap();
-        assert_eq!(bytes[0], 0x92, "the rows and what could not be read");
+        // **Four, and in this order**: the rows, what could not be read,
+        // the same rows cut by model, and the answering machine's own
+        // day. The last two were appended in that order on 2026-09-07
+        // and the count is asserted rather than the names because that
+        // is what this encoding actually carries — a field inserted
+        // anywhere but the tail moves everything after it and this line
+        // is what says so out loud.
+        assert_eq!(bytes[0], 0x94);
         assert_eq!(rmp_serde::from_slice::<Usage>(&bytes).unwrap(), answer);
+        assert_eq!(
+            rmp_serde::to_vec(&answer.models[0]).unwrap()[0],
+            0x94,
+            "day, category, model, tokens"
+        );
     }
 
     /// **A count of what could not be read survives the wire**, which is
@@ -2661,7 +2766,7 @@ mod tests {
     #[test]
     fn an_empty_answer_and_a_blind_one_do_not_look_alike_on_the_wire() {
         let quiet = Usage::default();
-        let blind = Usage { days: Vec::new(), unreadable: 2 };
+        let blind = Usage { unreadable: 2, ..Usage::default() };
         assert_ne!(rmp_serde::to_vec(&quiet).unwrap(), rmp_serde::to_vec(&blind).unwrap());
         for answer in [quiet, blind] {
             let bytes = rmp_serde::to_vec(&answer).unwrap();
