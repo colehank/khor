@@ -9,7 +9,8 @@
 //
 // **The drawing is the machine card's** (2026-09-07:「环全部和机器卡对
 // 齐」): the same 210° `Face`, one size down in a row. A subscription's
-// arc is **the window that speaks for the whole plan** (`headline`) and
+// arc is **the window that speaks for the whole plan** (the node's
+// `whole_plan_fill`) and
 // every window is a pip on the rim, one for one with the lines listed
 // beside it; an account has one reading and no parts, so it has no
 // pips.
@@ -88,6 +89,14 @@ type Provider = (typeof PROVIDERS)[number];
 const BUDGETED: readonly string[] = ["claude", "openai", "openrouter"];
 /** Both vendors' usage reports are organisation-level admin calls. */
 const NEEDS_ADMIN: readonly string[] = ["claude", "openai"];
+/** Whose subscription khor can read — the vendors whose own login it
+    knows how to find (`khor_node::accounts::sub_reader`). The node
+    refuses anything else by name, so this list only decides what the
+    form *offers*; it is here beside `PROVIDERS` and `BUDGETED` because
+    that is where this file already keeps that kind of fact. codex is
+    the next candidate and is absent until its credential has been
+    read. */
+const SUBSCRIBED: readonly string[] = ["claude"];
 
 function providerWord(p: string): string {
   switch (p) {
@@ -131,6 +140,12 @@ function troubleWord(key: string): string {
       return gui.accounts_trouble_gateway_too_old;
     case "unknown-provider":
       return gui.accounts_trouble_unknown_provider;
+    // A subscription's two, and they are two because the remedies are:
+    // log in over there, or run the vendor's command once over there.
+    case "no-login":
+      return gui.accounts_trouble_no_login;
+    case "login-stale":
+      return gui.accounts_trouble_login_stale;
     default:
       return key;
   }
@@ -324,8 +339,19 @@ function windowId(w: QuotaWindow): string {
 }
 
 /** 订阅 or 计费. */
-function kindWord(k: "sub" | "bill"): string {
-  return k === "sub" ? gui.quota_kind_sub : gui.quota_kind_bill;
+function kindWord(k: string): string {
+  switch (k) {
+    case "sub":
+      return gui.quota_kind_sub;
+    case "bill":
+      return gui.quota_kind_bill;
+    // A kind from a newer khor, shown as itself — `providerWord`'s
+    // default and the same bargain. 计费 over a row that is not billed
+    // would be khor claiming; the other khor's own word is visibly not
+    // khor's.
+    default:
+      return k;
+  }
 }
 
 /** The machine a subscription was read on, or 「khor 登记」 for an
@@ -378,7 +404,7 @@ type Row = {
   name: string;
   /** `sub` or `bill` — see `zh.toml`'s note: it answers both 「按什么计」
       and 「这一行怎么来的」. */
-  kind: "sub" | "bill";
+  kind: string;
   provider: string;
   /** The machine whose Claude Code was read, or `""` for 「khor 登记」 —
       **not** the machine holding an account's key, which is a property
@@ -392,6 +418,22 @@ type Row = {
   account: AccountRing | null;
   windows: QuotaWindow[];
   credits: QuotaCredits | null;
+  /**
+   * How full this row is, `0..=1`, or `null` for 「no fraction」 — the
+   * arc of its dial and the number in the middle.
+   *
+   * **Always the node's** (`Quota::fill` probed, `AccountReading::fill`
+   * registered), and that is the point of the field. A subscription is
+   * drawable two ways now — probed and registered — and if each worked
+   * its own share out of the windows, 「the two draw the same arc」
+   * would be a property somebody had to keep true. One number makes it
+   * a property nothing can break.
+   *
+   * ⚠️ **Tombstone: `headline()` decided this here until 2026-09-07.**
+   * The rule is unchanged and it was right; it lives in
+   * `khor_node::quota::whole_plan_fill` now, with its reasoning.
+   */
+  fill: number | null;
   /**
    * How old this reading is, in ms, and `null` for 「taken just now」.
    *
@@ -464,53 +506,27 @@ function subDials(r: Row): Dial[] {
   return out;
 }
 
-/**
- * The window that speaks for the subscription **as a whole** — the arc
- * the dial draws, the number in its middle, and the summary on the row.
- *
- * ⚠️ **Tombstone: it used to be 「the fullest one」** (`worst`, then
- * `fullest`), and 2026-09-07 the user overruled it:「list 页、打开后的多
- * 环,claude 显示 week_all。现在,是 fable。」
- *
- * **That rule was answering a different question and answering it
- * well.** It exists because `is_active` cannot be trusted — the
- * endpoint had it `false` on the 29% session window and `true` on the
- * weekly, so 「the one that is governing you」 has no honest source
- * (`QuotaWindow::active` carries that finding). 「The fullest」 avoids
- * that bad signal, and **avoiding a bad signal is not the same as
- * choosing the right window.**
- *
- * **Why the whole-plan week is the right one.** `7 天 · Fable` is a
- * window *scoped to one model*: how full it is says how much of that
- * model's slice is gone. 「How much of my week have I used」 is what the
- * unscoped week answers. When a line has room for exactly one number,
- * that number has to be about **this subscription**, not about one
- * slice of it — and the slices are not lost: each is a dial of its own
- * in the drawer, which is where they belong.
- *
- * # The rule, in three steps, and each keeps the same property
- *
- * 1. The **longest unscoped** window — today's readings make that the
- *    week.
- * 2. No week, but a five-hour: that one. **Still the whole plan**, just
- *    a shorter period — and the row prints the window's own word, so a
- *    reader sees 「5 小时窗口」 and knows what they are looking at.
- * 3. **No unscoped window at all: nothing.** There is no honest number
- *    for the whole plan, so none is drawn — see the dial's own note for
- *    what it does instead of inventing one.
- *
- * **Length comes from the node's order, not from a table here.**
- * `Quota::windows` arrives sorted shortest-first, whole plan before any
- * one model's share (`khor_node::quota`'s `seat`), so the last unscoped
- * entry *is* the longest one. A second opinion about which span is
- * longer is how two places come to disagree about one order.
- */
-function headline(r: Row, dials: Dial[]): Dial | null {
-  const whole = r.windows.reduce<QuotaWindow | null>((m, w) => (w.scope === null ? w : m), null);
-  if (whole === null) return null;
-  const id = windowId(whole);
-  return dials.find((d) => d.id === id) ?? null;
-}
+/* ⚠️ **Tombstone: `headline()` lived here until 2026-09-07.**
+
+   It answered 「which window speaks for the whole plan」 — the longest
+   unscoped one — and it answered it correctly. **What changed is not
+   the rule, it is how many places could ask.** A subscription used to
+   reach this file exactly one way, probed off this machine; it can now
+   also arrive as a registered account, whose reading comes back over
+   the mesh with a share already in it. Two sources for one picture, and
+   「the probed row and the registered row draw the same arc」 becomes a
+   property somebody has to keep true — a shape this page has paid for
+   before.
+
+   So the rule moved **whole**, its reasoning with it, to
+   `khor_node::quota::whole_plan_fill`: why the longest *unscoped*
+   window rather than the fullest, why `is_active` is not a trustworthy
+   signal, why nothing is drawn when no window covers the plan. Both
+   readers carry the node's one number in `Row.fill` now, and the two
+   rows cannot disagree because there is nothing left to disagree with.
+
+   `subDials` stayed here on purpose: its pips are the windows
+   themselves, one mark per reading, and no choosing happens in it. */
 
 /**
  * What sits in the dial's centre: the share when there is one, the
@@ -584,9 +600,23 @@ function centre(r: AccountRing): string {
  * turning it into 1.0 up there would put a number on the wire that the
  * provider never reported.
  */
-function arcOf(reading: AccountRing["reading"]): number | null {
-  if (reading.trouble) return null;
-  return reading.fill ?? 1;
+function arcOf(r: Row): number | null {
+  if (r.account?.reading.trouble) return null;
+  // **A subscription with no whole-plan window draws bare track, never
+  // a full ring.** A full ring says 「nothing caps this」 about an
+  // account; about a subscription it would say 「your week is gone」.
+  // The two things a full ring can mean are opposite here, which is why
+  // the `?? 1` below is deliberately not shared with this branch.
+  if (r.kind === "sub") return r.fill;
+  return r.fill ?? 1;
+}
+
+/** The middle of a row's dial. A registered row says what its reading
+    says (`centre`); a probed subscription has no reading object, so its
+    share is spelled here — the same rounding, on the same number. */
+function centreOf(r: Row): string {
+  if (r.account) return centre(r.account);
+  return r.fill == null ? "" : `${Math.round(r.fill * 100)}%`;
 }
 
 /** The id the subscription row wears. Not an account id and cannot
@@ -889,19 +919,34 @@ export function QuotaLanding({
   // **One list, two kinds of thing.** The subscription is first because
   // it is the reading you did not ask for — everything below it you
   // registered yourself.
+  // **登记取代探测.** The probed row is what a khor that has been told
+  // nothing still shows; registering this machine's subscription gives
+  // the same login a name, a place in the order, a menu, and a reading
+  // every other machine can see. Both at once would be one login drawn
+  // twice, so the probe stands down the moment a registered
+  // subscription is homed here — and a machine with no registration
+  // keeps its zero-configuration first screen, which is why the probe
+  // was not simply deleted.
+  //
+  // **`mine` rather than a device id**: it is the node's own answer to
+  // 「was this read here」 (`quota_board`), which is exactly what
+  // 「homed here」 means. Asking by id would make this screen learn its
+  // own machine id, which it has no other use for.
+  const subHere = (board ?? []).some((a) => a.kind === "sub" && a.mine);
   const rows: Row[] = [
-    ...(quota?.quota && quota.quota.windows.length > 0
+    ...(quota?.quota && quota.quota.windows.length > 0 && !subHere
       ? [
           {
             id: SUB_ID,
             name: gui.accounts_subscription,
-            kind: "sub" as const,
+            kind: "sub",
             provider: "claude",
             from: me,
             plan: quota.quota.plan,
             account: null,
             windows: quota.quota.windows,
             credits: quota.quota.credits,
+            fill: quota.quota.fill,
             // `as_of` is unix seconds and `null` is 「this call」 — the
             // node's own words, kept apart from 「zero ms ago」 because
             // a served cache entry and a fresh fetch look identical
@@ -913,15 +958,35 @@ export function QuotaLanding({
     ...(board ?? []).map((a) => ({
       id: a.reading.account,
       name: a.reading.name,
-      kind: "bill" as const,
+      kind: a.kind,
       provider: a.reading.provider,
-      from: "",
-      plan: null,
+      // **来源 is where the reading came from.** A subscription is read
+      // through a login on its home machine, so it names that machine —
+      // the same answer the probed row gives, which is what lets one
+      // replace the other. A billed account's reading comes from a key
+      // somebody filled in, which is 「khor 登记」 and not a machine.
+      from: a.kind === "sub" ? a.home_name : "",
+      plan: a.reading.plan,
       account: a,
-      windows: [] as QuotaWindow[],
-      credits: null,
+      windows: a.reading.windows,
+      credits: a.reading.credits,
+      fill: a.reading.fill,
       // The node answers 0 for a reading this machine took itself.
-      age_ms: a.mine ? null : a.age_ms,
+      //
+      // ⚠️ **A subscription read here is the exception, because it is
+      // replacing a row that already told the truth.** The probed row
+      // shows its reading's real age (`Quota::as_of`), and that reading
+      // comes out of a machine-wide cache up to five minutes deep — so
+      // a registered row claiming 「刚刚」 would be a step backwards on
+      // the one row a person can compare against yesterday. Its own
+      // `at_ms` is that same age, carried by the node.
+      //
+      // **A billed account read here has the same cache and is left
+      // alone**: nothing on that row has ever said otherwise, and
+      // changing it is a ruling about the age axis, not about
+      // subscriptions.
+      age_ms:
+        a.mine && a.kind === "sub" ? Date.now() - a.reading.at_ms : a.mine ? null : a.age_ms,
     })),
   ];
   const shown = visibleQuota(rows, query, words);
@@ -1014,10 +1079,13 @@ export function QuotaLanding({
    * is the reading, the row is the thing. `RowMenu` gives one mechanism
    * for right-click, long-press and the keyboard's Menu key.
    *
-   * **Only an account has these.** The subscription row is not a
-   * registration — there is nothing to edit and nothing to remove, and
-   * an item whose one answer is no is not offered (`DevicesList` makes
-   * the same refusal for this machine's own row).
+   * **Only a registration has these**, which since 2026-09-07 includes
+   * a registered subscription: it has a name somebody chose, a place in
+   * the order and a row to remove, so it gets the same three. What is
+   * left without a menu is the **probed** row — nothing was registered,
+   * so there is nothing to edit or remove, and an item whose one answer
+   * is no is not offered (`DevicesList` makes the same refusal for this
+   * machine's own row).
    *
    * **Each action rejects when it did not take**, which is how the menu
    * learns to stay open: `RowMenu` closes on a resolve and keeps the
@@ -1103,8 +1171,11 @@ export function QuotaLanding({
         // **One list for the rim and for the summary**, so the mark
         // count and the word on the right cannot come from two
         // different ideas of what this row is made of.
-        const dials = r.account ? [] : subDials(r);
-        const lead = headline(r, dials);
+        // The pips are the windows themselves, so **every**
+        // subscription row has them — probed or registered. Keyed on
+        // the kind rather than on 「has an account」, which used to be
+        // the same question and is not one any more.
+        const dials = r.kind === "sub" ? subDials(r) : [];
         // A heading starts where the group changes between neighbouring
         // rows. `GROUP_NONE` answers the empty string for every row, so
         // it draws none — no branch of its own.
@@ -1165,7 +1236,7 @@ export function QuotaLanding({
               size={DIAL_ROW_SIZE}
               stroke={DIAL_ROW_STROKE}
               ratio={DIAL_ROW_RATIO}
-              fraction={r.account ? arcOf(r.account.reading) : lead ? lead.pct / 100 : null}
+              fraction={arcOf(r)}
               strain={r.account?.strain ?? null}
               pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
             >
@@ -1173,7 +1244,7 @@ export function QuotaLanding({
                   「最左环,旁边上标题,下类型,右边是更新时间」) — the
                   right end of the row is the age now, so this is the
                   only seat left for it. */}
-              {r.account ? centre(r.account) : lead ? `${Math.round(lead.pct)}%` : ""}
+              {centreOf(r)}
             </Face>
             <span className="flex min-w-0 flex-1 flex-col">
               {/* **The title, and it is somebody's own word.** The
@@ -1244,9 +1315,13 @@ export function QuotaLanding({
   // 「每个窗口各是多少」 in words beside it — one drawing, read twice,
   // instead of a second vocabulary on the second screen.
   const acc = current?.account ?? null;
-  const dials = current && current.account === null ? subDials(current) : [];
-  const lead = current && current.account === null ? headline(current, dials) : null;
-  const subDetail = current && current.account === null && (
+  // **By kind, and that is the whole change here.** 「Has an account」
+  // used to mean 「is not a subscription」; a registered subscription
+  // has one, so asking the old question would draw *both* cards for it
+  // — the windows card and the money card, one under the other.
+  const isSub = current?.kind === "sub";
+  const dials = current && isSub ? subDials(current) : [];
+  const subDetail = current && isSub && (
     <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
       <CardHead row={current} />
       {/* **The dial, and what it is made of beside it.** Every window
@@ -1290,10 +1365,10 @@ export function QuotaLanding({
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
           ratio={DIAL_CARD_RATIO}
-          fraction={lead ? lead.pct / 100 : null}
+          fraction={arcOf(current)}
           pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
         >
-          {lead ? `${Math.round(lead.pct)}%` : ""}
+          {centreOf(current)}
         </Face>
         {/* **The right column, and everything in it is a fact about
             this subscription** — the windows, then the credits. They
@@ -1456,7 +1531,7 @@ export function QuotaLanding({
     </div>
   );
 
-  const detail = acc && current && (
+  const detail = acc && current && !isSub && (
     <div data-quota-detail={acc.reading.account} className="flex flex-col gap-4 p-4">
       <CardHead row={current} />
       {/* **The same two columns the subscription's card has**: the dial
@@ -1472,7 +1547,7 @@ export function QuotaLanding({
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
           ratio={DIAL_CARD_RATIO}
-          fraction={arcOf(acc.reading)}
+          fraction={arcOf(current)}
           strain={acc.strain}
         >
           {centre(acc)}
@@ -1936,6 +2011,13 @@ function EditDialog({
   onSaved: () => void;
 }) {
   const acc = row?.account ?? null;
+  // What a subscription has to edit is its name; the boxes below are
+  // for things it does not have, and the node refuses them (its
+  // `register_subscription`). **The 单位 box is deliberately left
+  // standing** — it is another lane's work this week, and it is inert
+  // here rather than wrong: a subscription draws no money figure for a
+  // unit to be the label of.
+  const isSub = row?.kind === "sub";
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [key, setKey] = useState("");
@@ -1996,7 +2078,7 @@ function EditDialog({
             <span className="text-muted-foreground">{gui.accounts_name}</span>
             <Input data-quota-edit-name value={name} onChange={(e) => setName(e.target.value)} />
           </label>
-          {acc.reading.provider === "newapi" && (
+          {!isSub && acc.reading.provider === "newapi" && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">{gui.accounts_address}</span>
               <Input
@@ -2007,6 +2089,7 @@ function EditDialog({
               />
             </label>
           )}
+          {!isSub && (
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.accounts_key}</span>
             <Input
@@ -2026,6 +2109,7 @@ function EditDialog({
               {gui.accounts_key_keep}
             </span>
           </label>
+          )}
           {/* **单位:人打进去的那串字符,khor 不认它。** 2026-09-07:
               「直接输入符号。比如 $,不要去识别,不然各种货币符号我们
               识别不完,用户也可能说的不对。」 The box holds a *mark*,
@@ -2100,7 +2184,7 @@ function EditDialog({
               {gui.accounts_unit_blank(DEFAULT_MARK)}
             </span>
           </label>
-          {BUDGETED.includes(acc.reading.provider) && (
+          {!isSub && BUDGETED.includes(acc.reading.provider) && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">{gui.accounts_budget}</span>
               <Input
@@ -2138,6 +2222,7 @@ function RegisterDialog({
   onRegistered: (id: string) => void;
 }) {
   const [provider, setProvider] = useState<Provider>("newapi");
+  const [kind, setKind] = useState("bill");
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [key, setKey] = useState("");
@@ -2148,6 +2233,7 @@ function RegisterDialog({
   useEffect(() => {
     if (!open) return;
     setProvider("newapi");
+    setKind("bill");
     setName("");
     setBaseUrl("");
     setKey("");
@@ -2164,8 +2250,12 @@ function RegisterDialog({
     registerAccount({
       name,
       provider,
-      base_url: provider === "newapi" ? baseUrl : undefined,
-      key,
+      kind,
+      base_url: kind === "sub" || provider !== "newapi" ? undefined : baseUrl,
+      // **Empty rather than omitted, and the node refuses a key on a
+      // subscription rather than dropping one.** Between them there is
+      // no path where a secret is accepted and quietly thrown away.
+      key: kind === "sub" ? "" : key,
       budget: parsedBudget !== undefined && Number.isFinite(parsedBudget) ? parsedBudget : undefined,
     })
       .then((id) => {
@@ -2183,10 +2273,43 @@ function RegisterDialog({
           <DialogTitle>{gui.accounts_register}</DialogTitle>
         </DialogHeader>
         <div className="flex min-w-0 flex-col gap-3">
+          {/* **类型 first, because it decides what the rest of this form
+              even is** — a subscription has no key, no address and no
+              budget, and a form that asked for them and then refused
+              them would be asking somebody to type a secret it was
+              always going to send back.
+
+              The same two words the list's 类型 axis is made of, so a
+              person picks here what they will read there. Picking 订阅
+              narrows 提供商 to the vendors whose login khor knows how
+              to find, and carries the choice over rather than leaving a
+              provider selected that the kind cannot use. */}
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">{gui.quota_kind}</span>
+            <div className="flex flex-wrap gap-1">
+              {["bill", "sub"].map((k) => (
+                <Button
+                  key={k}
+                  size="sm"
+                  variant={kind === k ? "secondary" : "ghost"}
+                  data-quota-kind-pick={k}
+                  data-on={kind === k}
+                  onClick={() => {
+                    setKind(k);
+                    if (k === "sub" && !SUBSCRIBED.includes(provider)) {
+                      setProvider(SUBSCRIBED[0] as Provider);
+                    }
+                  }}
+                >
+                  {kindWord(k)}
+                </Button>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.accounts_provider}</span>
             <div className="flex flex-wrap gap-1">
-              {PROVIDERS.map((p) => (
+              {(kind === "sub" ? PROVIDERS.filter((p) => SUBSCRIBED.includes(p)) : PROVIDERS).map((p) => (
                 <Button
                   key={p}
                   size="sm"
@@ -2204,7 +2327,7 @@ function RegisterDialog({
             <span className="text-muted-foreground">{gui.accounts_name}</span>
             <Input data-quota-name value={name} onChange={(e) => setName(e.target.value)} />
           </label>
-          {provider === "newapi" && (
+          {kind !== "sub" && provider === "newapi" && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">{gui.accounts_address}</span>
               <Input
@@ -2215,6 +2338,17 @@ function RegisterDialog({
               />
             </label>
           )}
+          {kind === "sub" ? (
+            /* **The note is the key box's replacement, not decoration.**
+               Somebody who came here to register something and finds no
+               box to put a secret in is owed the reason — it is the
+               same debt the two lines under the key box pay, in the
+               other direction: there is nothing to paste because what
+               reads this is the login already on this machine. */
+            <p data-quota-sub-note className="text-xs text-muted-foreground">
+              {gui.accounts_sub_note}
+            </p>
+          ) : (
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.accounts_key}</span>
             <Input
@@ -2231,7 +2365,8 @@ function RegisterDialog({
               {NEEDS_ADMIN.includes(provider) ? `${gui.accounts_key_stays} ${gui.accounts_needs_admin}` : gui.accounts_key_stays}
             </span>
           </label>
-          {BUDGETED.includes(provider) && (
+          )}
+          {kind !== "sub" && BUDGETED.includes(provider) && (
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">{gui.accounts_budget}</span>
               <Input

@@ -221,13 +221,21 @@ export const fetchLoad = (machine: string, top: number, by: string, desc: boolea
     lives — this machine's read now, another's as last carried here
     with its age (`Node::quota_board`). */
 export const fetchQuotaBoard = () => call<AccountRing[]>("quota_board");
-/** 登记 an API account **on this machine**: the key is written here and
-    never leaves; the description replicates. `provider` is the word the
-    form offers (newapi / claude / openai); the node refuses an unknown
-    one by name. Answers the new account's id. */
+/** 登记 an account **on this machine**: a key is written here and never
+    leaves; the description replicates. `provider` is the word the form
+    offers (newapi / claude / openai); the node refuses an unknown one
+    by name. Answers the new account's id.
+
+    `kind` is `bill` (a key you fill in) or `sub` (that machine's own
+    vendor login, `khor_sync::accounts::AccountKind`). **A subscription
+    takes no key**, and the node refuses one that is sent rather than
+    dropping it — so `key` stays required here and the form sends the
+    empty string, which is the shape that cannot silently swallow a
+    secret. */
 export const registerAccount = (a: {
   name: string;
   provider: string;
+  kind: string;
   base_url?: string;
   key: string;
   budget?: number;

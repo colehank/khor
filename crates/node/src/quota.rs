@@ -87,11 +87,15 @@ pub async fn read() -> Result<Quota, QuotaTrouble> {
 /// Registration calls it to refuse a subscription on a machine that has
 /// nothing to read (`khor_node::accounts::register_account`). Calling
 /// [`read`] there instead would be wrong twice: it can leave over HTTP,
-/// and its transient answers — a cooldown, an expired token — would
-/// refuse a registration that is perfectly good. **Having no credential
-/// is the one state that is neither transient nor guessed**: it is
-/// exactly what [`QuotaTrouble::NoLogin`] means, and it is the only
-/// thing a registering machine can prove on the spot.
+/// and its answers include states that pass and fail by the minute — a
+/// cooldown, a token that expired an hour ago. **A gate on a transient
+/// state means the same action gives two different answers two minutes
+/// apart, and that is not a refusal, it is a dice roll.**
+///
+/// **Having no credential at all is the one state that is neither
+/// transient nor guessed**: it is exactly what [`QuotaTrouble::NoLogin`]
+/// means, and it is the only thing a registering machine can prove on
+/// the spot.
 pub fn logged_in() -> bool {
     stored_credential().is_ok()
 }
