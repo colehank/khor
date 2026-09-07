@@ -3401,6 +3401,20 @@ try {
 
     //   …and back to the fixture everything after this was written
     //   against, so a later section is not silently measuring this one.
+    //   ⚠️ **Three arms above lean on these two lines and none of them
+    //   puts the route back itself** — the capped credits, the uncapped
+    //   credits, and the pip-room arm, which routes a **50% five-hour
+    //   window** to push a mark to the very top. **Anything inserted
+    //   between the last of them and this restore inherits that 50%
+    //   window**, and 8a below is written against the standing fixture
+    //   (9 rows = 8 accounts + 1 subscription): it would go red saying
+    //   something about *8a*, which is a sentence about a section that
+    //   is not broken.
+    //
+    //   So: an arm added down here either restores what it routed, or
+    //   goes **above** this line and says in its own note that it
+    //   borrows this one. (`8b` a few screens up does the first: it
+    //   only touches `**/quota_board` and puts that back itself.)
     await routeQuota(quotaCredits);
     await goToQuota();
   }
