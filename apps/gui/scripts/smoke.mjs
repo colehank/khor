@@ -6366,8 +6366,16 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //      the pinned row been first alphabetically, 「pinned」 and
   //      「did nothing」 would give the same answer and this would be a
   //      check that cannot fail.
+  //      **Only the registered accounts, because the subscription row
+  //      is nailed to the top** and pinning cannot move anything above
+  //      it (`QuotaLanding`: 「订阅在前,因为它是你没主动要的那份读数」).
+  //      Written against the whole list first, and it could never pass:
+  //      `order[0]` was the subscription every time, so the red said
+  //      「pinning does not work」 about a product that was fine — the
+  //      gate had a model of the list that the list never had. Caught
+  //      2026-09-07 09:48, the first time it was ever run.
   const rowOrder = async () =>
-    await page.locator("[data-quota-row]").evaluateAll((els) =>
+    await page.locator('[data-quota-row][data-quota-kind="bill"]').evaluateAll((els) =>
       els.map((e) => e.getAttribute("data-quota-row")),
     );
   const beforePin = await rowOrder();
