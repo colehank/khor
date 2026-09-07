@@ -602,6 +602,32 @@ function centre(r: AccountRing): string {
  */
 function arcOf(r: Row): number | null {
   if (r.account?.reading.trouble) return null;
+  // ⚠️ **A share that is neither a number nor `null` is left to draw
+  // `NaN`, and that is a decision.** 2026-09-07 the replica stopped
+  // supplying `fill` and this drew `A57.6 57.6 0 0 0 NaN NaN`. A guard
+  // here would have turned the gate's message — which carries that
+  // `NaN` and so names its own cause — into a generic 「no reading」:
+  // **a failure that says what happened, traded for one that does
+  // not.**
+  //
+  // ⚠️ **It is not invisible, which is the opposite of what this
+  // comment first said.** The first draft argued 「the browser ignores
+  // a NaN path, so the screen is identical either way」. **A screenshot
+  // that day showed the subscription's ring drawn as a broken arc with
+  // stray strokes, while every account's ring beside it was whole** —
+  // and the geometry gate was **green** through it, because NaN
+  // segments never enter a bounding box. So the true cost of this
+  // choice is not 「a worse message」, it is 「a visibly broken ring」,
+  // and it is only ever paid where the reading comes from a replica.
+  //
+  // ⚠️ **It rests on one thing, and that thing is a rule somebody could
+  // break next week: the node always sends `fill`.** `khor_node::proto`
+  // bans `skip_serializing_if` and gives tail fields `serde default`, so
+  // an `Option` crosses as `null` and never as an absent key —
+  // `undefined` is a state only a hand-written replica can reach. **Put
+  // `skip_serializing_if` on `Quota::fill` or `AccountReading::fill` and
+  // this stops being gate-only evidence and starts drawing NaN in front
+  // of people**, with nothing anywhere to say so.
   // **A subscription with no whole-plan window draws bare track, never
   // a full ring.** A full ring says 「nothing caps this」 about an
   // account; about a subscription it would say 「your week is gone」.
@@ -919,7 +945,8 @@ export function QuotaLanding({
   // **One list, two kinds of thing.** The subscription is first because
   // it is the reading you did not ask for — everything below it you
   // registered yourself.
-  // **登记取代探测.** The probed row is what a khor that has been told
+  // **A registration replaces the probe.** The probed row is what a
+  // khor that has been told
   // nothing still shows; registering this machine's subscription gives
   // the same login a name, a place in the order, a menu, and a reading
   // every other machine can see. Both at once would be one login drawn
@@ -2284,7 +2311,7 @@ function RegisterDialog({
 
               The same two words the list's 类型 axis is made of, so a
               person picks here what they will read there. Picking 订阅
-              narrows 提供商 to the vendors whose login khor knows how
+              narrows 哪家 to the vendors whose login khor knows how
               to find, and carries the choice over rather than leaving a
               provider selected that the kind cannot use. */}
           <div className="flex flex-col gap-1 text-sm">

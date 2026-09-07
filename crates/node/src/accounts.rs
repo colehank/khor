@@ -623,7 +623,7 @@ impl Node {
 ///
 /// Registration, the login check and the reader all go through this
 /// function, and [`SUB_PROVIDERS`]' words are derived from it rather
-/// than listed beside it. That is the whole shape of the codex 口子:
+/// than listed beside it. That is the whole shape of the opening left for codex:
 /// **adding a vendor is one arm here** (plus whatever reads that
 /// vendor's credential), not a second list to keep in step with this
 /// one — and a list kept in step by hand is how a provider comes to be
@@ -668,7 +668,7 @@ async fn read_subscription(account: &Account, now: i64) -> AccountReading {
     subscription_reading(account, reader.read().await, now)
 }
 
-/// A [`Quota`] as one row of the 額度 board — **the seam the reading is
+/// A [`Quota`] as one row of the 额度 board — **the seam the reading is
 /// tested at.**
 ///
 /// Split out because the step above it reads the machine's real stored

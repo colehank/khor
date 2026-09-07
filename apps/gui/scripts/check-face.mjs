@@ -503,6 +503,19 @@ try {
       spent_all_time: null,
       model_days: [],
       log_capped: null,
+      // The three a **subscription's** reading carries (2026-09-07).
+      // Spelled out for the reason the block above is: an omitted key
+      // reaches the page as `undefined`, and `undefined` is not `null`
+      // — it walks straight through a `!== null` guard. Measured that
+      // day: a missing `credits` throws inside `creditsPct` (whose
+      // first line is `c === null`), and a missing `fill` draws
+      // `A57.6 57.6 0 0 0 NaN NaN`. **Neither state can come off the
+      // wire**: every `Option` here is a tail field with `serde
+      // default` and no `skip_serializing_if`, so it crosses as
+      // `null`. They are states only this file can invent.
+      windows: [],
+      plan: null,
+      credits: null,
       ...patch,
     },
     age_ms: 0,
@@ -718,7 +731,18 @@ try {
     monthly_limit: null,
     balance: null,
   };
-  const routeQuota = async (credits, windows = quotaWindows) => {
+  // ⚠️ **`fill` is stated by each caller, never worked out here.**
+  // The node decides which window speaks for the whole plan
+  // (`khor_node::quota::whole_plan_fill`) and sends the share; this
+  // replica's job is to *supply* it, not to reproduce the rule. A
+  // fixture that computed it from `windows` would be the replica
+  // running the very rule the arms below are checking against, and the
+  // two would agree no matter what either of them did.
+  //
+  // The default is the standing fixture's whole-plan week (39 of
+  // `quotaWindows`), so a caller that says nothing gets a consistent
+  // reading.
+  const routeQuota = async (credits, windows = quotaWindows, fill = 0.39) => {
     await page.unroute("**/quota");
     await page.route("**/quota", (r) =>
       r.fulfill({
@@ -729,6 +753,7 @@ try {
             as_of: Math.floor(Date.now() / 1000) - 120,
             plan: quotaPlan,
             credits,
+            fill,
           },
           trouble: null,
         }),
@@ -2895,15 +2920,38 @@ try {
         ),
       };
     });
+    //   ⚠️ **Tombstone: these three arms used to test the *rule*, and
+    //   they do not any more.** Until 2026-09-07 the face picked the
+    //   window that speaks for the whole plan (`headline()`), and these
+    //   walked its three steps: the longest unscoped window, the
+    //   five-hour when there is no week, and **nothing** when no window
+    //   covers the plan.
+    //
+    //   That rule lives in `khor_node::quota::whole_plan_fill` now, so
+    //   that a probed subscription and a **registered** one share one
+    //   answer instead of each working out its own. It is tested there,
+    //   three steps and a teardown each
+    //   (`the_share_is_the_longest_window_that_covers_the_whole_plan`).
+    //
+    //   **What is left here is one step smaller, and worth saying
+    //   because these arms read as if they were more:** that the face
+    //   draws the share it was handed, and that a `null` share draws
+    //   bare track rather than a full ring or a zero. **They say
+    //   nothing about which window that share came from** — somebody
+    //   who breaks that rule and comes here looking for the red will
+    //   not find it here. It is in the Rust.
+    //
     //   (a) **A scoped window that is fuller than the unscoped one.**
     //   The headline must still be the week's 30, not the slice's 88 —
-    //   this is the arm that tells the new rule from the old one.
+    //   and the share routed with it says 30, so what this arm now
+    //   proves is that the face prints what it was given rather than
+    //   reaching for the fullest number on screen.
     const slicedWindows = [
       { span: "five_hour", scope: null, used_pct: 4, resets_at: null, active: null, severity: null },
       { span: "seven_day", scope: null, used_pct: 30, resets_at: null, active: null, severity: null },
       { span: "seven_day", scope: "Fable", used_pct: 88, resets_at: null, active: null, severity: null },
     ];
-    await routeQuota(quotaCredits, slicedWindows);
+    await routeQuota(quotaCredits, slicedWindows, 0.3);
     await goToQuota();
     const whole = await headlineOf();
     //   ⚠️ **The card's middle only.** This read the row's right-hand
@@ -2920,7 +2968,7 @@ try {
     //   row says which window it is — a reader has to see that this is
     //   not a week.
     const hourOnly = [slicedWindows[0]];
-    await routeQuota(quotaCredits, hourOnly);
+    await routeQuota(quotaCredits, hourOnly, 0.04);
     await goToQuota();
     const hour = await headlineOf();
     const fiveHourWord = (
@@ -2947,7 +2995,12 @@ try {
       { span: "seven_day", scope: "Fable", used_pct: 88, resets_at: null, active: null, severity: null },
       { span: "seven_day", scope: "Opus", used_pct: 12, resets_at: null, active: null, severity: null },
     ];
-    await routeQuota(quotaCredits, slicesOnly);
+    // `null`, which is what the node sends when no window covers the
+    // whole plan — and the assertion below is that a `null` share
+    // draws bare track. **Not `undefined`**: that is the replica's own
+    // failure mode and it draws a NaN arc, which would fail this arm
+    // for a reason that has nothing to do with the product.
+    await routeQuota(quotaCredits, slicesOnly, null);
     await goToQuota();
     const none = await headlineOf();
     if (none.arc !== null) {
@@ -2963,6 +3016,127 @@ try {
         `the panel lists ${JSON.stringify(none.parts)} for ${slicesOnly.length} routed windows — losing the headline may not cost the slices`,
       );
     }
+
+    //   ── 8b) 登记过的订阅:一行,一张卡,一个数 ────────────────
+    //   2026-09-07 用户:「现在的登记里面,还应该能够登记订阅。」 A
+    //   subscription is something you register now; the probed row is
+    //   what a khor that has been told nothing still shows. Both at
+    //   once would be one login drawn twice.
+    const routeBoard = async (rows) => {
+      await page.unroute("**/quota_board");
+      await page.route("**/quota_board", (r) =>
+        r.fulfill({ contentType: "application/json", body: JSON.stringify(rows) }),
+      );
+    };
+    //   `windows` is the standing fixture's, so the registered row is
+    //   made of exactly what the probed row is made of — one replacing
+    //   the other is the claim, and a different set of windows would
+    //   blur it. `credits` is stated because a subscription's reading
+    //   carries it (see `ring`'s note on why an omitted key is not a
+    //   null).
+    const registered = (mine) => ({
+      ...ring("acc-sub", "max", "claude", {
+        kind: "sub",
+        fill: 0.39,
+        windows: quotaWindows,
+        plan: "Max 20x",
+        credits: null,
+      }),
+      mine,
+      home_name: mine ? "gate" : "peer",
+      age_ms: mine ? 0 : 42_000,
+    });
+    const subRowIds = async () =>
+      await page
+        .locator('[data-quota-row][data-quota-kind="sub"]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-quota-row")));
+
+    //   **Read as ids, not as a count**: 「one row」 and 「the *right*
+    //   one」 are two claims, and a build that suppressed the
+    //   registration instead of the probe satisfies the count.
+    await routeBoard([...board, registered(true)]);
+    await goToQuota();
+    const homedHere = await subRowIds();
+    if (JSON.stringify(homedHere) !== JSON.stringify(["acc-sub"])) {
+      fail(
+        `with this machine's subscription registered the list draws ${JSON.stringify(homedHere)} — the registration stands and the probe (sub:local) stands down`,
+      );
+    }
+
+    //   ⚠️ **This arm is the test.** The one above passes just as well
+    //   against a build that hides the probe whenever *any*
+    //   subscription exists anywhere in the mesh. This one registers a
+    //   subscription homed on **another** machine and demands the probe
+    //   **stay** — two logins, two rows. One arm cannot tell those
+    //   builds apart, and it would read exactly like a successful
+    //   verification.
+    //
+    //   The two fixtures differ in **one field** (`mine`): two that
+    //   differed in two are not a control group, they are two
+    //   unrelated samples, and whichever difference the code happened
+    //   to read explains the result.
+    await routeBoard([...board, registered(false)]);
+    await goToQuota();
+    const homedElsewhere = (await subRowIds()).sort();
+    if (JSON.stringify(homedElsewhere) !== JSON.stringify(["acc-sub", "sub:local"])) {
+      fail(
+        `a subscription registered on another machine left ${JSON.stringify(homedElsewhere)} — it must not stand down this machine's own probed row: two logins, two rows`,
+      );
+    }
+
+    //   **One row is one card.** 「Has an account」 used to mean 「is not
+    //   a subscription」; a registered one has both, so a detail chosen
+    //   the old way draws the windows card **and** the money card, one
+    //   under the other, each answering as if the other were not there.
+    await routeBoard([...board, registered(true)]);
+    await goToQuota();
+    await page.locator('[data-quota-row="acc-sub"]').click();
+    await wait(300);
+    const cards = await page.locator("[data-quota-detail]").count();
+    if (cards !== 1) {
+      fail(`a registered subscription opens ${cards} cards — one row is one card`);
+    } else if ((await page.locator("[data-quota-detail] [data-quota-parts]").count()) !== 1) {
+      //   …and it is the **windows** card, told from the money card by
+      //   what only one of them has rather than by an attribute both
+      //   would carry.
+      fail("a registered subscription's card has no window list — it opened the money card");
+    }
+
+    //   ⚠️⚠️ **THIS FIXTURE IS DELIBERATELY IMPOSSIBLE. MAKING IT
+    //   CONSISTENT SILENTLY RETIRES THIS ARM.** The share (0.5) matches
+    //   none of its own windows (4 / 39 / 29), which cannot happen on
+    //   the wire — the node derives `fill` *from* those windows. It
+    //   reads like bad test data. It is not.
+    //
+    //   **What happens if you tidy it:** set it to 0.39 and this arm
+    //   goes on passing, for ever, against every implementation — it
+    //   would then be asserting that a face which re-derives the number
+    //   from the windows draws the same thing as one that prints what
+    //   it was handed, **which is true, which is why the assertion
+    //   would be worthless**. Nothing would go red, and the axis this
+    //   arm exists for would stop being tested with no sign of it.
+    //
+    //   That axis is 「the face draws the node's number」 — the property
+    //   the rule's move out of `QuotaLanding.tsx` created. **Every
+    //   other arm here is consistent, and consistency is exactly what
+    //   blinds them to it**: a face that quietly grew its own copy of
+    //   the rule back would pass all of them.
+    const impossible = registered(true);
+    await routeBoard([...board, { ...impossible, reading: { ...impossible.reading, fill: 0.5 } }]);
+    await goToQuota();
+    await page.locator('[data-quota-row="acc-sub"]').click();
+    await wait(300);
+    const middle = (await page.locator("[data-quota-detail] [data-quota-lead] text").first().textContent())?.trim() ?? "";
+    if (middle !== "50%") {
+      fail(
+        `the dial's middle reads ${JSON.stringify(middle)} for a reading whose share is 0.5 — the face must draw the node's number, and any of the routed windows appearing here means the rule that moved to khor_node::quota::whole_plan_fill grew back`,
+      );
+    }
+
+    //   Put the board back: everything after this is written against
+    //   the standing fixture, and a gate that left its own state behind
+    //   would make the next section's failure somebody else's puzzle.
+    await routeBoard(board);
     //   …and back to the fixture the rest of this section is written
     //   against.
     await routeQuota(quotaCredits);

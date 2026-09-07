@@ -1871,7 +1871,7 @@ pub struct AccountReading {
     /// of `Node::visit` (`link.rs`), which caches a peer's readings only
     /// on `Ok`. An older khor that cannot decode this longer frame
     /// keeps the answer it carried home last time, **with an age that
-    /// goes on climbing** on every row of its 額度 page, and shows
+    /// goes on climbing** on every row of its 额度 page, and shows
     /// 「那台机器还没答过」 for an account it never heard from. Both
     /// land where the page already knows how to say 「I cannot tell」,
     /// so a tail default is the right one of the three ways — not a new
