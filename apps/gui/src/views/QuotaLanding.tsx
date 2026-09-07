@@ -37,6 +37,7 @@ import {
   type QuotaCredits,
   type QuotaWindow,
 } from "@/api";
+import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
@@ -1156,9 +1157,13 @@ export function QuotaLanding({
                   </span>
                 )}
               </dt>
-              <dd data-quota-part-bar className="flex min-w-0 items-center">
-                <QuotaBar pct={d.pct} />
-              </dd>
+              {/* **The machine card's bar, the same component**
+                  (`components/Bar`) — 「类似机器卡片的环 bar 组合」 read
+                  literally. **No `strain`**: a quota at 80% is a fact,
+                  not a warning (that component's head carries why, so
+                  the next reader does not take the missing argument for
+                  an oversight). */}
+              <Bar pct={d.pct} />
               <dd data-quota-window-pct className="text-right font-title tabular-nums">
                 {Math.round(d.pct)}%
               </dd>
@@ -1592,42 +1597,6 @@ function SpendDays({ reading }: { reading: AccountRing["reading"] }) {
         ))}
       </div>
     </div>
-  );
-}
-
-/**
- * One window's share as a horizontal bar.
- *
- * ⚠️ **This duplicates `MachineCard`'s `Bar`, deliberately and
- * temporarily.** That one is a local function in a file another lane is
- * working in, and reaching into it — or moving it out to
- * `components/` — is an edit to that file. The two are the same
- * measurements on purpose (`h-1.5`, a `bg-foreground/10` track, a
- * rounded ink), so they read as one thing on two cards.
- *
- * **A duplicated primitive is a debt, and the interest is that the two
- * drift**: the next person to change one of them will not know the
- * other exists. It is written down here so somebody can pay it — the
- * fix is one shared component, and it costs a change to a file that was
- * not this lane's to touch today.
- *
- * No strain ramp: a quota at 80% is a fact, not a warning
- * (`Ring`'s note carries that ruling). The machine card's bar takes a
- * strain because a disk at 95% *is* a warning.
- */
-function QuotaBar({ pct }: { pct: number }) {
-  return (
-    // **Two elements, and the outer one is the cell.** A bar that *is*
-    // the grid child inherits the row's height and draws as a fat pill;
-    // the cell is full height and the track is a hairline centred in it
-    // (the machine card learned this on the real face).
-    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-      <span
-        data-quota-part-ink
-        className="block h-full rounded-full bg-muted-foreground"
-        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
-      />
-    </span>
   );
 }
 

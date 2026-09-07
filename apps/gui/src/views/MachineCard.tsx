@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
@@ -15,7 +16,6 @@ import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
-import { gaugeColor } from "@/lib/vitals";
 import { CopyId } from "@/views/DetailPane";
 import { ago, hopWord, lasting } from "@/words";
 
@@ -1280,35 +1280,13 @@ function Occupant({ row, share, value }: { row: Load["top"][number]; share: numb
   );
 }
 
-/** One part's share, on the track every other part shares. `null` draws
-    the track alone — a reading that could not be taken is not a zero. */
-function Bar({ pct, strain }: { pct: number | null; strain: Strain | null }) {
-  // **Two elements, and the outer one is the cell.** The row gives
-  // every direct child the row's height so the three columns line up;
-  // a bar that *is* that child inherits 27 and draws as a fat pill
-  // (seen on the real face before this — the track swallowed the row
-  // and the bars overlapped each other). So the cell is a full-height
-  // box and the track is a hairline centred inside it.
-  //
-  // **`data-part-bar` stays on the cell**, not on the track: the narrow
-  // layout moves this whole cell to a line of its own, and a selector
-  // written for the row's direct child stops matching the moment the
-  // attribute moves a level down — which is how the bars disappeared at
-  // 390 the first time this was split.
-  return (
-    <span data-part-bar className="flex w-full items-center">
-      <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-        {pct !== null && (
-          <span
-            data-part-ink
-            className="block h-full rounded-full"
-            style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: gaugeColor(strain) }}
-          />
-        )}
-      </span>
-    </span>
-  );
-}
+/* `Bar` moved to `components/Bar.tsx` on 2026-09-07: the 額度 page's
+   window rows draw the same thing, and a second copy of a primitive has
+   nothing keeping the two in step (that component's head carries the
+   whole account, including why the quota bars pass no `strain`). The
+   DOM it emits is unchanged — `data-part-bar` on the cell,
+   `data-part-ink` on the ink. */
+
 
 /** The wall clock for one instant, hours and minutes in the reader's
     own locale — the head's 更新于. (It printed the day chart's two ends

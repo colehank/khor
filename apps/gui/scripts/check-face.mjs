@@ -2517,11 +2517,15 @@ try {
         // **Real widths, off the glass.** Not a class, not the `style`
         // string, not a `data-` number: a marker saying 39 while the
         // ink is 0 wide is the trap section 8's key box fell into.
+        // **`data-part-*`, the machine card's names**, because it is
+        // the machine card's component now (`components/Bar`). Scoped
+        // to this card's rows, so the two surfaces cannot read each
+        // other's bars.
         track: rows.map((r) =>
-          Math.round(r.querySelector("[data-quota-part-bar]")?.getBoundingClientRect().width ?? -1),
+          Math.round(r.querySelector("[data-part-bar]")?.getBoundingClientRect().width ?? -1),
         ),
         ink: rows.map((r) =>
-          Math.round(r.querySelector("[data-quota-part-ink]")?.getBoundingClientRect().width ?? -1),
+          Math.round(r.querySelector("[data-part-ink]")?.getBoundingClientRect().width ?? -1),
         ),
         pct: rows.map((r) => r.querySelector("[data-quota-window-pct]")?.textContent?.trim() ?? ""),
       };
