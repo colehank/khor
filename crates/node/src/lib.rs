@@ -62,7 +62,7 @@ pub use khor_sync::agents::Spec as AgentSpec;
 /// Re-exported for the reason `AgentSpec` is: the faces and the CLI
 /// register accounts, and they should name the account's shape without
 /// depending on the sync crate for it.
-pub use khor_sync::accounts::{Account, Provider};
+pub use khor_sync::accounts::{Account, AccountKind, Provider};
 /// One conversation an agent said it has, as khor remembers it
 /// (`khor_sync::agents::Seen`).
 pub use khor_sync::agents::{Answer as AgentAnswer, Seen as AgentSeen};

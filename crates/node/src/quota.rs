@@ -73,7 +73,71 @@ static LAST_FAIL: Mutex<Option<i64>> = Mutex::new(None);
 pub async fn read() -> Result<Quota, QuotaTrouble> {
     let mut quota = read_windows().await?;
     quota.plan = plan_label();
+    // Beside the windows it is a function of, and after any cache, for
+    // the same reason `plan` is here: computed where they are is what
+    // makes it impossible for the number and the windows to disagree.
+    quota.fill = whole_plan_fill(&quota.windows);
     Ok(quota)
+}
+
+/// Whether this machine has a Claude Code login at all — **asked
+/// without touching the network**, which is what makes it usable where
+/// it is used.
+///
+/// Registration calls it to refuse a subscription on a machine that has
+/// nothing to read (`khor_node::accounts::register_account`). Calling
+/// [`read`] there instead would be wrong twice: it can leave over HTTP,
+/// and its transient answers — a cooldown, an expired token — would
+/// refuse a registration that is perfectly good. **Having no credential
+/// is the one state that is neither transient nor guessed**: it is
+/// exactly what [`QuotaTrouble::NoLogin`] means, and it is the only
+/// thing a registering machine can prove on the spot.
+pub fn logged_in() -> bool {
+    stored_credential().is_ok()
+}
+
+/// How full the subscription is **as a whole**, `0..=1`, or `None` when
+/// no window speaks for the whole plan.
+///
+/// # The rule, in three steps, and each keeps the same property
+///
+/// 1. The **longest unscoped** window — today's readings make that the
+///    week.
+/// 2. No week, but a five-hour: that one. **Still the whole plan**,
+///    just a shorter period.
+/// 3. **No unscoped window at all: `None`.** There is no honest number
+///    for the whole plan, so none is given — never a scoped window
+///    standing in for one, and never a zero.
+///
+/// **Why the whole-plan window and not the fullest one.** 2026-09-07
+/// the user ruled 「list 页、打开后的多环,claude 显示 week_all。现在,是
+/// fable。」 — a window *scoped to one model* says how much of that
+/// model's slice is gone, and when a line has room for exactly one
+/// number, that number has to be about **this subscription**, not about
+/// one slice of it. The slices are not lost: each is a pip of its own
+/// on the rim.
+///
+/// **The rule it replaced was answering a different question and
+/// answering it well.** 「The fullest one」 existed because `is_active`
+/// cannot be trusted — the endpoint had it `false` on the 29% session
+/// window and `true` on the weekly ([`QuotaWindow::active`] carries
+/// that finding) — and **avoiding a bad signal is not the same as
+/// choosing the right window**.
+///
+/// **Length comes from the order these arrive in, not from a table
+/// here**: `parse_windows` sorts them shortest-first, whole plan before
+/// any one model's share, so the last unscoped entry *is* the longest
+/// one. A second opinion about which span is longer is how two places
+/// come to disagree about one order.
+///
+/// ⚠️ **This lived in the face until 2026-09-07** (`QuotaLanding.tsx`'s
+/// `headline`), which was survivable while a subscription was one
+/// probed row and stopped being survivable when a subscription could
+/// also be a registered account — see [`Quota::fill`] for what having
+/// two sources for one picture would have cost.
+fn whole_plan_fill(windows: &[QuotaWindow]) -> Option<f32> {
+    let whole = windows.iter().rev().find(|w| w.scope.is_none())?;
+    Some((whole.used_pct / 100.0).clamp(0.0, 1.0))
 }
 
 /// The plan the stored credential names, spelled for a person.
@@ -268,6 +332,10 @@ fn read_local_status() -> Option<Quota> {
     Some(Quota {
         windows,
         as_of,
+        // Both filled by `read`: a source knows only what its own
+        // payload said, and the share is a reading of the windows
+        // rather than a thing any source reports.
+        fill: None,
         plan: None,
         credits: None,
     })
@@ -297,6 +365,7 @@ async fn fetch() -> Result<Quota, QuotaTrouble> {
         // Filled by `read`, which has the credential; a source knows
         // only what its own payload said.
         plan: None,
+        fill: None,
         credits: parse_credits(&json),
     })
 }
@@ -626,7 +695,57 @@ mod tests {
             as_of: None,
             plan: None,
             credits: None,
+            fill: None,
         }
+    }
+
+    fn window(span: QuotaWindowSpan, scope: Option<&str>, used_pct: f32) -> QuotaWindow {
+        QuotaWindow {
+            span,
+            scope: scope.map(str::to_owned),
+            used_pct,
+            resets_at: None,
+            active: None,
+            severity: None,
+        }
+    }
+
+    /// **The whole plan's window, not the fullest one and not a model's
+    /// slice.**
+    ///
+    /// The fixture is the shape the endpoint actually answers, in the
+    /// order `parse_windows` leaves it: a five-hour, the week, and the
+    /// week *scoped to one model*. Each of the three numbers is
+    /// distinct and the scoped one is **the fullest**, so the two rules
+    /// this replaced answer differently here — 「the fullest」 would say
+    /// 71%, 「the last window」 would say 71%, and only 「the longest
+    /// unscoped」 says 39%. A fixture whose scoped window was the
+    /// emptiest could not tell them apart.
+    #[test]
+    fn the_share_is_the_longest_window_that_covers_the_whole_plan() {
+        let windows = vec![
+            window(QuotaWindowSpan::FiveHour, None, 4.0),
+            window(QuotaWindowSpan::SevenDay, None, 39.0),
+            window(QuotaWindowSpan::SevenDay, Some("Fable"), 71.0),
+        ];
+        assert_eq!(whole_plan_fill(&windows), Some(0.39));
+        // Step two: no week, and the five-hour speaks for the plan.
+        assert_eq!(whole_plan_fill(&windows[..1]), Some(0.04));
+        // Step three: **nothing**, never a scoped window standing in
+        // for the plan and never a zero — a zero is a drawing of
+        // 「nothing used」, which is a claim this has no basis for.
+        assert_eq!(whole_plan_fill(&windows[2..]), None);
+        assert_eq!(whole_plan_fill(&[]), None);
+    }
+
+    /// A reading is a share of one, not a percentage, and it cannot
+    /// leave that range: the endpoint has answered past 100 (`percent`
+    /// clamps for the same reason) and an arc drawn past full is a
+    /// worse answer than a full one.
+    #[test]
+    fn the_share_stays_within_one() {
+        assert_eq!(whole_plan_fill(&[window(QuotaWindowSpan::FiveHour, None, 140.0)]), Some(1.0));
+        assert_eq!(whole_plan_fill(&[window(QuotaWindowSpan::FiveHour, None, -3.0)]), Some(0.0));
     }
 
     /// The disk cache exists to save a *request*, not a millisecond: the

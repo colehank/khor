@@ -129,10 +129,17 @@ pub fn answer(
                 None | Some(serde_json::Value::Null) => None,
                 Some(v) => Some(v.as_f64().ok_or_else(|| "arg is not a number: budget".to_owned())?),
             };
+            // `kind` is required rather than defaulted to 「bill」 for
+            // `budget`'s reason one step further: a page that failed to
+            // send it would register a *billed* account for somebody
+            // who picked 订阅, and the refusal they would then read is
+            // 「密钥是空的」 — a sentence about a box the form never
+            // showed them.
             to_json(&crate::register_account(
                 root,
                 &arg("name")?,
                 &arg("provider")?,
+                &arg("kind")?,
                 opt_str("base_url")?.as_deref(),
                 &arg("key")?,
                 budget,

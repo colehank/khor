@@ -563,6 +563,18 @@ pub struct AccountRing {
     /// a screen sorting by its own copy of the rule is how two faces
     /// come to disagree about what is at the top.
     pub pinned: bool,
+    /// `bill` or `sub` (`khor_sync::accounts::AccountKind`), the word
+    /// the row's 类型 axis is made of.
+    ///
+    /// **From the registration, not from the reading**, and that is
+    /// what makes it usable: the account document replicates, so this
+    /// is known for every row on every machine — including a row whose
+    /// home has never answered. Read off the reading instead (「it has
+    /// windows, so it must be a subscription」) it would be *inferred*,
+    /// and a subscription whose login expired has no windows: the row
+    /// would quietly change kind at the moment it broke, which is the
+    /// moment a person most needs it to say what it is.
+    pub kind: String,
 }
 
 /// Every registered account's ring (`Node::quota_board`), home machines
@@ -586,6 +598,9 @@ pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
                 budget: account.and_then(|a| a.budget),
                 unit: account.and_then(|a| a.unit.clone()),
                 pinned: account.is_some_and(|a| a.pinned),
+                kind: account
+                    .map(|a| a.kind.word().to_owned())
+                    .unwrap_or_else(|| khor_node::AccountKind::Bill.word().to_owned()),
                 age_ms,
                 reading,
             }
@@ -593,20 +608,29 @@ pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
         .collect())
 }
 
-/// 登记 (`Node::register_account`): the provider word is parsed here so
-/// the face and the CLI refuse an unknown one with the same sentence.
-/// Answers the new account's id.
+/// 登记 (`Node::register_account`): the provider and kind words are
+/// parsed here so the face and the CLI refuse an unknown one with the
+/// same sentence. Answers the new account's id.
+///
+/// **`kind` is a word rather than a bool** for the reason it is a word
+/// everywhere else: 「订阅 / 计费」 is an axis that will hold a third
+/// value before it holds none, and a `bool` named `sub` would have to
+/// be replaced rather than extended — while spelling it out costs one
+/// `parse` that already refuses by name.
 pub fn register_account(
     root: &Path,
     name: &str,
     provider: &str,
+    kind: &str,
     base_url: Option<&str>,
     key: &str,
     budget: Option<f64>,
 ) -> Result<String, String> {
     let provider = khor_node::Provider::parse(provider)
         .ok_or_else(|| khor_catalog::msg::no_such_provider(provider))?;
-    Ok(open(root)?.register_account(name, provider, base_url, key, budget)?.id)
+    let kind = khor_node::AccountKind::parse(kind)
+        .ok_or_else(|| khor_catalog::msg::no_such_kind(kind))?;
+    Ok(open(root)?.register_account(name, provider, kind, base_url, key, budget)?.id)
 }
 
 pub fn remove_account(root: &Path, id: &str) -> Result<(), String> {

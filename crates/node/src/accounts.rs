@@ -81,8 +81,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use khor_catalog::msg;
-use khor_core::{AccountReading, Fill, Strain};
-use khor_sync::accounts::{Account, Provider};
+use khor_core::{AccountReading, Fill, Quota, QuotaTrouble, Strain};
+use khor_sync::accounts::{Account, AccountKind, Provider};
 use serde::{Deserialize, Serialize};
 
 use crate::link;
@@ -118,6 +118,36 @@ pub mod trouble {
     /// machine reads, so this is the home machine having been
     /// downgraded past its own registration.
     pub const UNKNOWN_PROVIDER: &str = "unknown-provider";
+    /// A registered subscription whose home machine has no vendor login
+    /// left to read. **Registration refuses this state**
+    /// (`register_account`), so reaching it means the login went away
+    /// afterwards — which is a thing that happens, and a different
+    /// remedy from the one below.
+    pub const NO_LOGIN: &str = "no-login";
+    /// The home machine's vendor login is expired or was refused. khor
+    /// does not refresh it (`khor_core::QuotaTrouble::Stale`); the
+    /// person runs the vendor's own command once over there.
+    pub const LOGIN_STALE: &str = "login-stale";
+}
+
+/// The provider words a subscription can be registered against —
+/// **derived from [`sub_reader`], never listed beside it.**
+///
+/// A provider belongs here exactly when this build knows which stored
+/// login answers for it, and that is one fact: asking the reader means
+/// the form, the refusal and the reading cannot come to disagree about
+/// what is offered. A second list kept in step by hand is how a
+/// provider ends up on a form that nothing can read — the registration
+/// succeeds and the row arrives troubled, the same mistake as
+/// registering a subscription on a machine with no login.
+///
+/// codex's credential is the next candidate and is deliberately absent
+/// until somebody has read where it lives.
+pub fn sub_provider_words() -> Vec<&'static str> {
+    Provider::WORDS
+        .into_iter()
+        .filter(|word| Provider::parse(word).as_ref().and_then(sub_reader).is_some())
+        .collect()
 }
 
 /// One reading as kept on disk: the reading and, when the last attempt
@@ -163,10 +193,34 @@ impl Node {
     /// a gateway without an address; the provider word is validated by
     /// the caller (`Provider::parse`) so the CLI and the face refuse it
     /// in one voice.
+    ///
+    /// # Two kinds, one rule about `home`
+    ///
+    /// A billed account is homed here because **its key is here** and a
+    /// secret does not travel. A subscription has no key, so that
+    /// reason does not apply to it — and it is still homed here, for a
+    /// different one: what reads it is the vendor's login *on this
+    /// machine*, and **whether that login exists is the one thing a
+    /// registering machine can prove on the spot**
+    /// (`quota::logged_in`).
+    ///
+    /// Letting somebody register a subscription *for* another machine
+    /// would put a claim into a replicated document that the writer
+    /// cannot check — and it would not fail at the keyboard, it would
+    /// fail minutes later as a permanently troubled row on a screen
+    /// somewhere else, which the person can only delete and retype.
+    /// **`home` is a field, not a constant**: `--home` is an argument
+    /// somebody can add the day that trade looks worth it, and nothing
+    /// here has to be redone for it.
+    ///
+    /// An unknown kind is refused rather than taken for a billed one,
+    /// the same bargain [`Provider::parse`] makes: `AccountKind::Other`
+    /// only ever *arrives* from a newer khor, it is never registered.
     pub fn register_account(
         &self,
         name: &str,
         provider: Provider,
+        kind: AccountKind,
         base_url: Option<&str>,
         key: &str,
         budget: Option<f64>,
@@ -174,6 +228,11 @@ impl Node {
         let name = name.trim();
         if name.is_empty() {
             return Err(msg::ACCOUNT_NAME_BLANK.into());
+        }
+        match kind {
+            AccountKind::Sub => return self.register_subscription(name, provider, base_url, key, budget),
+            AccountKind::Other(word) => return Err(msg::no_such_kind(word)),
+            AccountKind::Bill => {}
         }
         let key = key.trim();
         if key.is_empty() {
@@ -210,9 +269,84 @@ impl Node {
             // …and nothing arrives with a unit either: until somebody
             // types one, what the endpoint says is what khor says.
             unit: None,
+            kind: AccountKind::Bill,
         };
         std::fs::create_dir_all(self.keys_dir()).map_err(msg::cant_make_keys_dir)?;
         link::write_private(&self.keys_dir().join(&account.id), key.as_bytes())?;
+        self.commit_account(account)
+    }
+
+    /// Registers **this machine's** vendor subscription: a name, and
+    /// nothing else to fill in.
+    ///
+    /// Four refusals, and each one is a thing that cannot be discovered
+    /// later at the same price:
+    ///
+    /// - **A key, an address or a budget was given.** Refused rather
+    ///   than dropped. Dropping a key is the worst of the four: the
+    ///   person pastes a secret, reads 「registered」, and the secret
+    ///   went nowhere — the same shape `account_key_elsewhere` exists
+    ///   to refuse.
+    /// - **A provider with no subscription khor can read**
+    ///   ([`sub_reader`] answers nothing for it).
+    /// - **No login on this machine.** The one check that is neither
+    ///   transient nor a guess, and the whole reason `home` is here.
+    /// - **A second subscription on this machine.** One machine holds
+    ///   one login with no way to choose between logins, so a second
+    ///   registration could only ever draw a second row of the same
+    ///   numbers — which is the duplication this batch removed from the
+    ///   probe row, re-made by hand.
+    fn register_subscription(
+        &self,
+        name: &str,
+        provider: Provider,
+        base_url: Option<&str>,
+        key: &str,
+        budget: Option<f64>,
+    ) -> Result<Account, String> {
+        let given_address = base_url.map(str::trim).is_some_and(|u| !u.is_empty());
+        if !key.trim().is_empty() || given_address || budget.is_some() {
+            return Err(msg::ACCOUNT_SUB_TAKES_NOTHING_ELSE.into());
+        }
+        let Some(reader) = sub_reader(&provider) else {
+            return Err(msg::provider_has_no_sub(provider.word(), sub_provider_words().join("、")));
+        };
+        let me = self.device_str().to_owned();
+        // **Before the login check, deliberately.** Both can be true at
+        // once — a machine that registered its subscription and later
+        // lost the login — and 「已经登记过了」 is the more specific of
+        // the two answers: it names the row that already exists, where
+        // the other would send somebody to log in again for a
+        // registration they would still not be allowed to make.
+        if let Some(had) = self.accounts()?.into_iter().find(|a| a.kind.is_sub() && a.home == me) {
+            return Err(msg::account_sub_already_here(had.name));
+        }
+        if !reader.logged_in() {
+            return Err(msg::ACCOUNT_SUB_NO_LOGIN.into());
+        }
+        self.commit_account(Account {
+            id: link::fresh_hex()?,
+            name: name.to_owned(),
+            provider,
+            // **Three fields a subscription has no use for**, and they
+            // are `None` here because they were refused above rather
+            // than because this is where they get thrown away.
+            base_url: None,
+            budget: None,
+            unit: None,
+            home: me,
+            pinned: false,
+            kind: AccountKind::Sub,
+        })
+    }
+
+    /// Writes a fresh registration to the replicated doc. The key, when
+    /// there is one, is already on disk by the time this is called —
+    /// **that order matters**: a doc entry with no key beside it reads
+    /// as 「the home machine holds no key for this account」, which is a
+    /// sentence about a registration somebody made, not about one that
+    /// half-happened.
+    fn commit_account(&self, account: Account) -> Result<Account, String> {
         let loaded = self.accounts_loaded()?;
         loaded.doc.set(&account)?;
         let mut store = loaded.store;
@@ -364,6 +498,17 @@ impl Node {
     }
 
     async fn read_one(&self, account: &Account, now: i64) -> AccountReading {
+        // **A subscription keeps no reading of its own on this disk.**
+        // `quota::read` already holds three layers for exactly this
+        // purpose — five minutes in memory, a disk cache every process
+        // on the machine shares, a ten-minute cooldown after a failure
+        // — so a second cache over it would add only its own staleness,
+        // and `at_ms` would then say 「read now」 about a figure two
+        // caches deep. The age it carries is the reading's own
+        // (`Quota::as_of`), which is the axis this page is built on.
+        if account.kind.is_sub() {
+            return read_subscription(account, now).await;
+        }
         let cached = self.cached_reading(&account.id);
         if let Some(c) = &cached
             && c.reading.trouble.is_none()
@@ -473,6 +618,105 @@ impl Node {
     }
 }
 
+/// Which stored login answers for a provider's subscription — **the
+/// one place that decides it, and everything else asks here.**
+///
+/// Registration, the login check and the reader all go through this
+/// function, and [`SUB_PROVIDERS`]' words are derived from it rather
+/// than listed beside it. That is the whole shape of the codex 口子:
+/// **adding a vendor is one arm here** (plus whatever reads that
+/// vendor's credential), not a second list to keep in step with this
+/// one — and a list kept in step by hand is how a provider comes to be
+/// offered on a form that nothing can read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubReader {
+    /// Claude Code's own credential on this machine (`crate::quota`).
+    ClaudeCode,
+}
+
+pub fn sub_reader(provider: &Provider) -> Option<SubReader> {
+    match provider {
+        Provider::Claude => Some(SubReader::ClaudeCode),
+        _ => None,
+    }
+}
+
+impl SubReader {
+    /// Is that login on this machine at all — **without going near the
+    /// network** (`quota::logged_in`).
+    fn logged_in(self) -> bool {
+        match self {
+            SubReader::ClaudeCode => crate::quota::logged_in(),
+        }
+    }
+
+    async fn read(self) -> Result<khor_core::Quota, QuotaTrouble> {
+        match self {
+            SubReader::ClaudeCode => crate::quota::read().await,
+        }
+    }
+}
+
+/// This machine's subscription reading for one registered account.
+async fn read_subscription(account: &Account, now: i64) -> AccountReading {
+    let Some(reader) = sub_reader(&account.provider) else {
+        // Registration refuses a provider nothing can read, so reaching
+        // this means the home machine has been downgraded past its own
+        // registration — the state `UNKNOWN_PROVIDER` already names.
+        return bare(account, Some(trouble::UNKNOWN_PROVIDER), now);
+    };
+    subscription_reading(account, reader.read().await, now)
+}
+
+/// A [`Quota`] as one row of the 額度 board — **the seam the reading is
+/// tested at.**
+///
+/// Split out because the step above it reads the machine's real stored
+/// credential and can leave over HTTP: a test that called it would be
+/// asking a person's keychain what a mapping does.
+fn subscription_reading(
+    account: &Account,
+    read: Result<Quota, QuotaTrouble>,
+    now: i64,
+) -> AccountReading {
+    let quota = match read {
+        Ok(quota) => quota,
+        Err(why) => return bare(account, Some(sub_trouble(&why)), now),
+    };
+    AccountReading {
+        // **The share is the node's, and it is the same number the
+        // subscription's own reading carries** (`Quota::fill`) — one
+        // rule, one function, so a probed row and a registered row
+        // cannot draw different arcs for one login.
+        fill: quota.fill,
+        // The reading's own age, not this call's: `None` is 「taken
+        // just now」 and anything else is when it was really taken.
+        at_ms: quota.as_of.map_or(now, |seconds| seconds * 1000),
+        windows: quota.windows,
+        plan: quota.plan,
+        credits: quota.credits,
+        ..bare(account, None, now)
+    }
+}
+
+/// Why a subscription has no numbers, in the account board's words.
+///
+/// **`Cooling`'s minutes do not survive**, and that is a real loss said
+/// out loud rather than papered over: the board's vocabulary is keys,
+/// one sentence each, and there is nowhere in a key to put a number.
+/// The two new words are the ones worth having — 「no login」 and
+/// 「expired login」 have different remedies, and telling them apart is
+/// the whole value of saying anything.
+fn sub_trouble(why: &QuotaTrouble) -> &'static str {
+    match why {
+        QuotaTrouble::NoLogin => trouble::NO_LOGIN,
+        QuotaTrouble::Stale => trouble::LOGIN_STALE,
+        QuotaTrouble::Cooling { .. } => trouble::COOLING,
+        QuotaTrouble::Unreadable => trouble::UNREADABLE,
+        QuotaTrouble::Unreachable => trouble::UNREACHABLE,
+    }
+}
+
 /// A reading with no numbers: the account named, the trouble said.
 fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
     AccountReading {
@@ -496,6 +740,9 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         spent_all_time: None,
         model_days: Vec::new(),
         log_capped: None,
+        windows: Vec::new(),
+        plan: None,
+        credits: None,
     }
 }
 
@@ -1290,6 +1537,7 @@ mod tests {
             home: "h".into(),
             pinned: false,
             unit: None,
+            kind: AccountKind::Bill,
         };
         let r = against_budget(bare(&acc, None, 0), 91.0, acc.budget, "USD");
         assert_eq!(r.fill, Some(0.91));
@@ -1313,7 +1561,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let n = Node::open(root.clone()).unwrap();
         let a = n
-            .register_account("gw", Provider::Newapi, Some("http://127.0.0.1:1"), "sk-x", None)
+            .register_account("gw", Provider::Newapi, AccountKind::Bill, Some("http://127.0.0.1:1"), "sk-x", None)
             .unwrap();
         let now = crate::live::now_ms();
         let mut refused = bare(&a, Some(trouble::KEY_REFUSED), now - 1_000);
@@ -1357,7 +1605,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let n = Node::open(root.clone()).unwrap();
         let a = n
-            .register_account("gw", Provider::Newapi, Some("http://127.0.0.1:1"), "sk-x", None)
+            .register_account("gw", Provider::Newapi, AccountKind::Bill, Some("http://127.0.0.1:1"), "sk-x", None)
             .unwrap();
         // **Re-seeded before every read, with the identical reading.**
         // An edit drops the cached reading on purpose (the budget is a
@@ -1409,6 +1657,7 @@ mod tests {
             home: "h".into(),
             pinned: false,
             unit: None,
+            kind: AccountKind::Bill,
         }
     }
 
@@ -1497,5 +1746,163 @@ mod tests {
         let start = month_start(now_ms);
         let z = jiff::Timestamp::from_second(start).unwrap().to_zoned(jiff::tz::TimeZone::UTC);
         assert_eq!((z.year(), z.month(), z.day(), z.hour()), (2026, 9, 1, 0));
+    }
+
+    fn subscription(home: &str) -> Account {
+        Account {
+            id: "s1".into(),
+            name: "max".into(),
+            provider: Provider::Claude,
+            base_url: None,
+            budget: None,
+            home: home.to_owned(),
+            pinned: false,
+            unit: None,
+            kind: AccountKind::Sub,
+        }
+    }
+
+    fn a_window(span: khor_core::QuotaWindowSpan, scope: Option<&str>, used: f32) -> khor_core::QuotaWindow {
+        khor_core::QuotaWindow {
+            span,
+            scope: scope.map(str::to_owned),
+            used_pct: used,
+            resets_at: None,
+            active: None,
+            severity: None,
+        }
+    }
+
+    /// **A subscription's reading is that machine's quota carried
+    /// whole** — and the two fields that are *not* copies are what this
+    /// is really about.
+    ///
+    /// `fill` is taken from the quota rather than worked out again
+    /// here: it is the same number a probed subscription draws with
+    /// (`Quota::fill`), which is what makes 「the registered row and the
+    /// probed row show the same arc」 impossible to break rather than a
+    /// thing to keep true. And `at_ms` is the **reading's** age, not
+    /// this call's — the quota is served out of caches up to five
+    /// minutes deep, so stamping it with now would make every reading
+    /// claim to be fresh.
+    ///
+    /// The money fields stay empty on purpose: a subscription has no
+    /// 「spent」, and a figure written into `spent` would draw money on
+    /// a row that has none.
+    #[test]
+    fn a_subscription_reading_carries_the_quota_and_keeps_its_own_age() {
+        use khor_core::QuotaWindowSpan::{FiveHour, SevenDay};
+        let acc = subscription("h");
+        let taken = 1_788_309_000;
+        let quota = Quota {
+            windows: vec![a_window(FiveHour, None, 4.0), a_window(SevenDay, Some("Fable"), 71.0)],
+            as_of: Some(taken),
+            plan: Some("Max 20x".into()),
+            credits: None,
+            fill: Some(0.39),
+        };
+        let r = subscription_reading(&acc, Ok(quota), taken * 1000 + 600_000);
+        assert_eq!(r.trouble, None);
+        assert_eq!(r.account, "s1");
+        assert_eq!(r.fill, Some(0.39), "the node's one fraction, not a second opinion");
+        assert_eq!(r.at_ms, taken * 1000, "the reading's own age, not the moment it was asked for");
+        assert_eq!(r.windows.len(), 2, "every window crosses, including a model's slice");
+        assert_eq!(r.plan.as_deref(), Some("Max 20x"));
+        assert_eq!((r.spent, r.limit, r.remaining), (None, None, None), "a subscription has no spend");
+    }
+
+    /// **Every way a subscription can be unreadable says which way it
+    /// was**, and the two new ones are the reason this matters: 「no
+    /// login」 and 「the login expired」 send a person to two different
+    /// actions, and there is nothing else on the row to tell them
+    /// apart.
+    ///
+    /// The keys' *texts* cannot collide — `khor_catalog`'s build
+    /// refuses two names with one text — so what is left to check here
+    /// is that each cause reaches its own key, and that a trouble
+    /// leaves no numbers behind it.
+    #[test]
+    fn a_subscription_that_cannot_be_read_says_which_kind_of_cannot() {
+        let acc = subscription("h");
+        for (why, key) in [
+            (QuotaTrouble::NoLogin, trouble::NO_LOGIN),
+            (QuotaTrouble::Stale, trouble::LOGIN_STALE),
+            (QuotaTrouble::Cooling { minutes: 3 }, trouble::COOLING),
+            (QuotaTrouble::Unreachable, trouble::UNREACHABLE),
+            (QuotaTrouble::Unreadable, trouble::UNREADABLE),
+        ] {
+            let r = subscription_reading(&acc, Err(why.clone()), 7);
+            assert_eq!(r.trouble.as_deref(), Some(key), "{why:?}");
+            assert_eq!(r.fill, None, "{why:?}: no share behind a trouble");
+            assert!(r.windows.is_empty(), "{why:?}: no windows behind a trouble");
+            assert_eq!(r.name, "max", "…and the row still knows what it is");
+        }
+    }
+
+    /// **A subscription takes a name and nothing else — and the extras
+    /// are refused, never dropped.**
+    ///
+    /// Dropping is the failure worth spending a test on: a person
+    /// pastes a key, reads 「registered」, and the key went nowhere.
+    /// Each arm is one field on its own, so a refusal that fired for
+    /// the wrong reason would show as the wrong sentence.
+    ///
+    /// **The control is the last line of the first half**: nothing was
+    /// registered by any of the four refusals. An implementation that
+    /// wrote the account first and refused afterwards passes every
+    /// `unwrap_err` above it.
+    ///
+    /// The 「already registered here」 arm seeds the doc directly rather
+    /// than registering twice, so that this test says nothing about
+    /// whether *this* machine happens to be logged into Claude Code —
+    /// which is a fact about the person running it, not about the code.
+    #[test]
+    fn a_subscription_refuses_everything_it_has_no_use_for() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-sub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let add = |p: Provider, url: Option<&str>, key: &str, budget: Option<f64>| {
+            n.register_account("s", p, AccountKind::Sub, url, key, budget).unwrap_err()
+        };
+        let no_use = msg::ACCOUNT_SUB_TAKES_NOTHING_ELSE;
+        assert_eq!(add(Provider::Claude, None, "sk-x", None), no_use, "a key");
+        assert_eq!(add(Provider::Claude, Some("https://gw"), "", None), no_use, "an address");
+        assert_eq!(add(Provider::Claude, None, "", Some(20.0)), no_use, "a budget");
+        assert_eq!(
+            add(Provider::Newapi, None, "", None),
+            msg::provider_has_no_sub("newapi", sub_provider_words().join("、")),
+            "a gateway has no login to read"
+        );
+        assert!(n.accounts().unwrap().is_empty(), "control: a refusal registers nothing");
+
+        n.commit_account(subscription(n.device_str())).unwrap();
+        assert_eq!(
+            n.register_account("another", Provider::Claude, AccountKind::Sub, None, "", None).unwrap_err(),
+            msg::account_sub_already_here("max"),
+            "one machine holds one login, so a second row could only repeat the first"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The list a person is offered and the list something can read are
+    /// **one list**, and this pins what is in it today.
+    ///
+    /// It is meant to go red the day a second vendor's login is read —
+    /// that is the moment somebody has to look at the form, the
+    /// refusal and the reader together, and a green test would let the
+    /// first two stay behind.
+    #[test]
+    fn only_the_vendors_whose_login_khor_reads_can_be_subscribed_to() {
+        assert_eq!(sub_provider_words(), ["claude"]);
+        assert!(sub_reader(&Provider::Claude).is_some());
+        assert!(sub_reader(&Provider::Openai).is_none(), "codex's credential has not been read yet");
+        assert!(sub_reader(&Provider::Other("quantum-llm".into())).is_none());
+        // Every word the refusal offers is a word `parse` accepts —
+        // otherwise it would name a kind nobody can type.
+        let refusal = msg::no_such_kind("x");
+        for w in AccountKind::WORDS {
+            assert!(refusal.contains(w), "no-such-kind does not name {w}: {refusal}");
+        }
     }
 }

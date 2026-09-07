@@ -1435,6 +1435,35 @@ pub struct Quota {
     /// from the statusline file, which says nothing about money.
     #[serde(default)]
     pub credits: Option<QuotaCredits>,
+    /// How full this subscription is **as a whole**, `0..=1` — the
+    /// share an arc draws and the number in its middle. `None` when no
+    /// window speaks for the whole plan.
+    ///
+    /// **Which window that is, is decided in one place**
+    /// (`khor_node::quota::whole_plan_fill`) and this field is its
+    /// answer. It is the same doctrine [`AccountReading::fill`] states
+    /// — the fraction is the node's, never the screen's — arriving late
+    /// because a subscription had no [`AccountReading`] until
+    /// 2026-09-07.
+    ///
+    /// ⚠️ **Tombstone: this rule used to live in the face**, as
+    /// `QuotaLanding.tsx`'s `headline()`. That was survivable while a
+    /// subscription was one probed row; it stopped being survivable the
+    /// day a subscription could also be a *registered account*, because
+    /// then the same picture had two sources — the probe's windows
+    /// through `headline()`, and the registration's reading through
+    /// `AccountReading::fill` — and 「the two rows look identical」
+    /// became a property somebody had to keep true. **It is now a
+    /// property nothing can break: both rows read this one number.**
+    ///
+    /// **Recomputed on every read, including cache hits**, the way
+    /// `plan` is: it is a function of `windows`, so computing it beside
+    /// them is what makes it impossible for the two to disagree — and
+    /// a cache entry written by a khor that predates this field gets it
+    /// for free instead of decoding as 「no fraction」.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub fill: Option<f32>,
 }
 
 /// Why there is no quota reading — as a cause, never as a sentence.
@@ -1670,6 +1699,42 @@ pub struct AccountReading {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub log_capped: Option<u32>,
+    /// ── What a **subscription** account reads as ──────────────
+    ///
+    /// The three fields below are empty for every account with a key
+    /// behind it and filled only for a registered subscription
+    /// (`khor_sync::accounts::AccountKind::Sub`), whose reading is a
+    /// [`Quota`] rather than a spend: windows that refill, the plan the
+    /// login is on, and the prepaid credits beside them. `fill` above
+    /// carries the whole-plan share for it, by the same rule and from
+    /// the same function as [`Quota::fill`] — so a subscription needs
+    /// no field of its own for the one number the ring draws.
+    ///
+    /// **Tail fields, `serde default`, no `skip_serializing_if`** —
+    /// `khor_node::proto`'s rule, and that module also demands the
+    /// sentence be said out loud before appending: *when an older peer
+    /// refuses this whole frame, is what it then shows any different
+    /// from what it shows on success?*
+    ///
+    /// **It is different.** The consumer is the `Response::Quotas` arm
+    /// of `Node::visit` (`link.rs`), which caches a peer's readings only
+    /// on `Ok`. An older khor that cannot decode this longer frame
+    /// keeps the answer it carried home last time, **with an age that
+    /// goes on climbing** on every row of its 額度 page, and shows
+    /// 「那台机器还没答过」 for an account it never heard from. Both
+    /// land where the page already knows how to say 「I cannot tell」,
+    /// so a tail default is the right one of the three ways — not a new
+    /// variant, and not a silent default painted as fact.
+    #[serde(default)]
+    pub windows: Vec<QuotaWindow>,
+    /// The plan the subscription's login is on — 「Max 20x」, 「Pro」.
+    /// A product name from the stored credential, never a khor word
+    /// ([`Quota::plan`]).
+    #[serde(default)]
+    pub plan: Option<String>,
+    /// The subscription's prepaid credits ([`Quota::credits`]).
+    #[serde(default)]
+    pub credits: Option<QuotaCredits>,
 }
 
 /// What khor can say about the subscription right now.

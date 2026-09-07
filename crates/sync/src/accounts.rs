@@ -113,6 +113,86 @@ impl<'de> Deserialize<'de> for Provider {
     }
 }
 
+/// What kind of thing was registered — **an axis of its own, crossing
+/// [`Provider`] rather than living inside it.**
+///
+/// `Bill` is an account with a key behind it: khor holds a secret on
+/// one machine and asks the provider what it has spent. `Sub` is a
+/// subscription — **no key at all**, because what reads it is the
+/// vendor's own session already logged in on the home machine
+/// (`khor_node::quota` reads Claude Code's stored credential). So the
+/// two kinds differ in *what khor holds*, and `home` means the same
+/// thing for both: the one machine that can read this account.
+///
+/// # Why this is not a `Provider` variant
+///
+/// A `claude-sub` word would have to be joined by `openai-sub` the day
+/// codex's local login is read, and by one more for every vendor after
+/// that — the provider list would carry a product of two axes and every
+/// consumer that matches on it would grow the same product. Kept apart,
+/// adding a vendor's subscription is **adding a provider to one list**
+/// (`khor_node::accounts::SUB_PROVIDERS`), not redoing this class.
+///
+/// **A word this build has never heard of still comes through**, as
+/// `Other`, for [`Provider::Other`]'s reason and it is worth repeating
+/// because the failure is silent: [`AccountDoc::get`] reads with
+/// `.ok()`, so a kind this build could not decode would not be an
+/// error — it would be a registration that is **not there**, on the
+/// machines least able to work out why.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum AccountKind {
+    /// A key on one machine, billed per token or against a gateway's
+    /// own ceiling. **The default, and it has to be**: this field is a
+    /// tail field with `serde default`, so every account written before
+    /// it existed is one of these — which they all were.
+    #[default]
+    Bill,
+    /// A vendor subscription, read through that vendor's own login on
+    /// the home machine.
+    Sub,
+    /// A word from a newer khor: carried and shown, never read here.
+    Other(String),
+}
+
+impl AccountKind {
+    /// The words `parse` accepts, spelled as `word` spells them — one
+    /// list, so a refusal cannot name fewer kinds than exist.
+    pub const WORDS: [&'static str; 2] = ["bill", "sub"];
+
+    pub fn parse(word: &str) -> Option<AccountKind> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "bill" => Some(AccountKind::Bill),
+            "sub" | "subscription" => Some(AccountKind::Sub),
+            _ => None,
+        }
+    }
+
+    pub fn word(&self) -> &str {
+        match self {
+            AccountKind::Bill => "bill",
+            AccountKind::Sub => "sub",
+            AccountKind::Other(word) => word,
+        }
+    }
+
+    pub fn is_sub(&self) -> bool {
+        matches!(self, AccountKind::Sub)
+    }
+}
+
+impl Serialize for AccountKind {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.word())
+    }
+}
+
+impl<'de> Deserialize<'de> for AccountKind {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let word = String::deserialize(d)?;
+        Ok(AccountKind::parse(&word).unwrap_or(AccountKind::Other(word)))
+    }
+}
+
 /// One registered account, as every machine sees it. No secret.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Account {
@@ -176,6 +256,19 @@ pub struct Account {
     /// misleads exactly as much as a wrong one.**
     #[serde(default)]
     pub unit: Option<String>,
+    /// A key on this machine, or that machine's own login
+    /// ([`AccountKind`]).
+    ///
+    /// **Tail field, `serde default`, for `pinned`'s reason and with a
+    /// worse failure if it were not**: an older khor decoding a
+    /// subscription would not merely lose a word, it would lose the
+    /// *whole registration* — [`AccountDoc::get`] reads with `.ok()` —
+    /// and a row that is silently absent is the shape this module keeps
+    /// paying for. Defaulted, an older khor reads the account whole and
+    /// takes it for a billed one: it shows the home machine's reading
+    /// like any other row, and only 「what kind is this」 is beyond it.
+    #[serde(default)]
+    pub kind: AccountKind,
 }
 
 pub struct AccountDoc {
@@ -273,6 +366,7 @@ mod tests {
             home: "aa".to_owned(),
             unit: None,
             pinned: false,
+            kind: AccountKind::Bill,
         }
     }
 
@@ -291,13 +385,57 @@ mod tests {
     fn an_account_from_before_these_fields_reads_without_them() {
         let old = r#"{"id":"k1","name":"gateway","provider":"newapi",
             "base_url":"https://gw.example","home":"aa"}"#;
-        for absent in ["pinned", "unit"] {
+        for absent in ["pinned", "unit", "kind"] {
             assert!(!old.contains(absent), "the old shape must not carry {absent}, a key it predates");
         }
         let account: Account = serde_json::from_str(old).expect("an older khor's account still reads");
         assert_eq!(account, one("k1", "gateway"), "every other field survives whole");
         assert!(!account.pinned, "absent is not pinned");
         assert_eq!(account.unit, None, "…and absent is not a unit override either");
+        // …and an account written before subscriptions existed is a
+        // billed one, which every account written then was. The wrong
+        // default here would not read as a wrong word: `Sub` would send
+        // the reader looking for a login instead of the key that is
+        // actually on disk.
+        assert_eq!(account.kind, AccountKind::Bill, "absent is a billed account");
+    }
+
+    /// **A kind from a newer khor comes through, and goes back out
+    /// unchanged** — [`Provider`]'s test one axis over, and for the
+    /// same reason: the doc reads each account with `.ok()`, so a kind
+    /// this build could not decode would take the whole registration
+    /// with it. The last line is the control: the same word is refused
+    /// at registration, so `Other` can only ever arrive.
+    #[test]
+    fn a_kind_word_from_the_future_is_carried_not_dropped() {
+        let json = r#"{"id":"k","name":"n","provider":"newapi","home":"aa","kind":"team-seat"}"#;
+        let a: Account = serde_json::from_str(json).unwrap();
+        assert_eq!(a.kind, AccountKind::Other("team-seat".into()));
+        assert_eq!(a.kind.word(), "team-seat");
+        let back = serde_json::to_string(&a).unwrap();
+        assert!(back.contains("\"kind\":\"team-seat\""), "{back}");
+        let d = AccountDoc::new(1).unwrap();
+        d.set(&a).unwrap();
+        assert_eq!(d.all(), vec![a], "listed, not dropped");
+        assert_eq!(AccountKind::parse("team-seat"), None, "control: never registered here");
+    }
+
+    /// The two kinds are spelled the way they are registered, and a
+    /// subscription says so on the wire.
+    #[test]
+    fn a_kind_is_spelled_the_way_it_is_registered() {
+        assert_eq!(AccountKind::parse("sub"), Some(AccountKind::Sub));
+        assert_eq!(AccountKind::parse("subscription"), Some(AccountKind::Sub));
+        assert_eq!(AccountKind::parse("Bill"), Some(AccountKind::Bill));
+        assert_eq!(AccountKind::parse("seat"), None);
+        for w in AccountKind::WORDS {
+            assert_eq!(AccountKind::parse(w).as_ref().map(AccountKind::word), Some(w), "{w} round-trips");
+        }
+        let mut sub = one("k", "n");
+        sub.kind = AccountKind::Sub;
+        let json = serde_json::to_string(&sub).unwrap();
+        assert!(json.contains("\"kind\":\"sub\""), "{json}");
+        assert!(sub.kind.is_sub() && !one("k", "n").kind.is_sub());
     }
 
     /// **Pinned floats, and the order under it is unchanged.**

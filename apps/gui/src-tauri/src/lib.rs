@@ -39,6 +39,7 @@ async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
 fn register_account(
     name: String,
     provider: String,
+    kind: String,
     base_url: Option<String>,
     key: String,
     budget: Option<f64>,
@@ -47,6 +48,7 @@ fn register_account(
         &Node::root_from_env(),
         &name,
         &provider,
+        &kind,
         base_url.as_deref(),
         &key,
         budget,

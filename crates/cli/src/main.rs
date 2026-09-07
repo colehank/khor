@@ -1639,11 +1639,17 @@ fn accounts(rest: &[String]) -> Result<(), String> {
                 println!("{}", cli::ACCOUNTS_NONE);
             }
             for a in listed {
+                // The kind rides beside the provider because together
+                // they are what this row *is* — 「claude sub」 and
+                // 「claude bill」 are two different things to register
+                // and two different things to read, and a listing that
+                // showed only the vendor would spell them the same.
                 println!(
-                    "{}	{}	{}	{}	{}",
+                    "{}	{}	{}	{}	{}	{}",
                     a.id,
                     a.name,
                     a.provider.word(),
+                    a.kind.word(),
                     names.get(&a.home).cloned().unwrap_or(a.home),
                     a.base_url.unwrap_or_default()
                 );
@@ -1657,10 +1663,12 @@ fn accounts(rest: &[String]) -> Result<(), String> {
             let mut base_url: Option<String> = None;
             let mut key: Option<String> = None;
             let mut budget: Option<f64> = None;
+            let mut kind: Option<String> = None;
             while let Some(flag) = it.next() {
                 let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
                 match flag.as_str() {
                     "--provider" => provider = Some(value()?),
+                    "--kind" => kind = Some(value()?),
                     "--base-url" => base_url = Some(value()?),
                     "--key" => key = Some(value()?),
                     "--key-stdin" => {
@@ -1677,8 +1685,26 @@ fn accounts(rest: &[String]) -> Result<(), String> {
             let provider = provider.ok_or_else(|| USAGE.to_string())?;
             let provider = khor_node::Provider::parse(&provider)
                 .ok_or_else(|| msg::no_such_provider(&provider))?;
-            let key = key.ok_or_else(|| USAGE.to_string())?;
-            let a = n.register_account(&name, provider, base_url.as_deref(), &key, budget)?;
+            // **Absent is 「bill」, and a word that is present is
+            // parsed** — an unknown one is refused by name rather than
+            // falling back to the default, which would register the
+            // wrong kind of thing under a word the person chose on
+            // purpose.
+            let kind = match kind {
+                Some(word) => {
+                    khor_node::AccountKind::parse(&word).ok_or_else(|| msg::no_such_kind(&word))?
+                }
+                None => khor_node::AccountKind::Bill,
+            };
+            // A subscription has no key to give, and the node refuses
+            // one that is given — so the *requirement* lifts here while
+            // the refusal stays over there, in one voice with the face.
+            let key = match key {
+                Some(key) => key,
+                None if kind.is_sub() => String::new(),
+                None => return Err(USAGE.into()),
+            };
+            let a = n.register_account(&name, provider, kind, base_url.as_deref(), &key, budget)?;
             println!("{}", a.id);
             Ok(())
         }
@@ -1727,6 +1753,12 @@ fn quota(rest: &[String]) -> Result<(), String> {
             (None, Some(s), None, _) => format!("{s:.2} {currency}"),
             // A wallet says what is left and nothing about what went.
             (None, None, _, Some(left)) => cli::quota_remaining(format_args!("{left:.2} {currency}")),
+            // **A subscription has no 「spent」 at all**, so 「没有数」
+            // would be false here — the number is in the next column,
+            // where the share is. What goes in this seat is the plan,
+            // the one fact this row has that a billed account has not
+            // (empty when the credential did not name one).
+            (None, None, _, None) if !r.windows.is_empty() => r.plan.clone().unwrap_or_default(),
             (None, None, _, None) => cli::QUOTA_NO_NUMBER.to_owned(),
         };
         let share = r.fill.map(|f| format!("{:.0}%", f * 100.0)).unwrap_or_default();
