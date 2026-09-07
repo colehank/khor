@@ -2548,6 +2548,8 @@ try {
         spare: [+(x0 - bx).toFixed(1), +(bx + bw - x1).toFixed(1), +(y0 - by).toFixed(1), +(by + bh - y1).toFixed(1)],
         track: t ? `${+t.width.toFixed(1)}x${+t.height.toFixed(1)}` : null,
         trackAspect: t && t.height ? +(t.width / t.height).toFixed(2) : null,
+        trackWide: t ? +(t.width / bw).toFixed(2) : null,
+        trackTall: t ? +(t.height / bh).toFixed(2) : null,
       };
     });
     if (!dialBox) {
@@ -2556,41 +2558,43 @@ try {
       fail(
         `the dial's ink hangs outside its box (spare ${JSON.stringify(dialBox.spare)} on ⊣⊢⊤⊥) — a box tighter than the drawing clips it, and clipping does not raise anything`,
       );
-    } else if (dialBox.wideShare < 0.7) {
-      fail(
-        `the dial's ink fills ${dialBox.wideShare} of its box across — a tight box the drawing does not fill is the same white space by another route`,
-      );
-    } else if (dialBox.tallShare < 0.7) {
-      //   ⚠️ **This half did not exist until 2026-09-07, and its
-      //   absence is why the fault survived a gate written about
-      //   exactly this.** 「现在列表的环没有充分填充垂直高度」 —
-      //   measured that day: ink 22.2 of a 40 box and 59.6 of a 110
-      //   one, **0.55 both times**, while the section above reported a
-      //   tight box. It was tight on the axis it looked at.
-      fail(
-        `the dial's ink fills ${dialBox.tallShare} of its box top to bottom (${dialBox.ink} in ${dialBox.box}) — a 210° dial is not as tall as it is wide, and a box that pretends otherwise is dead band`,
-      );
-    } else if (Math.abs(dialBox.boxAspect - dialBox.inkAspect) > 0.25) {
-      //   ⚠️ **Was `aspect > 1.15`, a constant, and the product
-      //   changed under it.** That number said 「roughly square」, which
-      //   was the right *proxy* while the box's height was always
-      //   `size`; with the box cropped to the drawing it is wider than
-      //   tall **because the drawing is** (ink 32.5 × 22.2), and a
-      //   square box would now be the fault. So the constant is
-      //   replaced by the thing it was standing in for: **the box has
-      //   the drawing's proportions.**
+    } else if (dialBox.trackWide < 0.6 || dialBox.trackTall < 0.6) {
+      //   ⚠️ **Measured against the track, and the reason is a fault
+      //   this section had for four hours on 2026-09-07.**
       //
-      //   **This is not the threshold being loosened to let a change
-      //   through** — it is stricter where it counts: the box as it
-      //   shipped that morning (aspect 1.00 against an ink aspect of
-      //   1.46) fails this and passed the old one.
+      //   It used to compare the box's proportions against **all** the
+      //   ink's, and against a 0.25 tolerance. Both numbers were real
+      //   and both came out of one run, so it read like a sound
+      //   comparison — but they are not the same kind of quantity:
+      //
+      //   | | reading | what it is |
+      //   |---|---|---|
+      //   | box | 1.66 | a **decision** (`ratio`, and the crop) |
+      //   | track | 1.59 | **pure geometry** — `2R : 1.2588R`, a 210° constant, and `getBBox` excludes the stroke so size and stroke fall out of it too |
+      //   | all ink | 1.48 | the track **plus the pips**, and a pip is drawn at the angle of *its own reading* |
+      //
+      //   So 0.11 of that spread was **data**: a window near 50% puts a
+      //   pip at the very top and a window near 4% does not. The
+      //   tolerance had 0.07 left. **A different set of percentages in
+      //   the fixture turns this red, and the red says 「the box has
+      //   the wrong proportions」 — pointing at something that is not
+      //   broken.** It was passing on the fixture's numbers, not on the
+      //   product's.
+      //
+      //   The track carries the same claim with none of the data:
+      //   cropped it fills **0.71** of the box's height, uncropped
+      //   **0.43**, and neither number moves when a percentage does.
+      //
+      //   ⚠️ **The ink's own shares are still printed below** — they
+      //   are worth reading, they are just not fit to assert on.
       fail(
-        `the dial's box is ${dialBox.boxAspect} wide-to-tall where its drawing is ${dialBox.inkAspect} — the box takes the drawing's shape, and the difference between them is margin nobody asked for`,
+        `the dial's track fills ${dialBox.trackWide} across and ${dialBox.trackTall} down of its box (track ${dialBox.track} in ${dialBox.box}) — the box is cropped to the drawing, and a box the arc itself does not fill is dead band`,
       );
     }
     console.log(
-      `dial box: ink ${dialBox?.ink} in ${dialBox?.box}, fills ${dialBox?.wideShare} across / ${dialBox?.tallShare} down, ` +
-        `aspect ${dialBox?.boxAspect} vs ink ${dialBox?.inkAspect} vs track ${dialBox?.trackAspect} (track ${dialBox?.track})`,
+      `dial box: track ${dialBox?.track} fills ${dialBox?.trackWide}/${dialBox?.trackTall} of ${dialBox?.box} · ` +
+        `ink ${dialBox?.ink} fills ${dialBox?.wideShare}/${dialBox?.tallShare} (read, not asserted) · ` +
+        `aspect box ${dialBox?.boxAspect} track ${dialBox?.trackAspect} ink ${dialBox?.inkAspect}`,
     );
 
     //   ── 8·what an account's dial says in its middle ────────────
@@ -3300,6 +3304,100 @@ try {
         `probe dead: the uncapped credits' spend reads ${JSON.stringify(uncapped.used)} — if the figures are not on the glass, 「no pip」 is measuring a block that never drew`,
       );
     }
+
+    //   ── 8·a pip may not be drawn outside its box ───────────────
+    //   **The thing the crop could break, and the only assertion that
+    //   would notice.** `Face` crops the box to `reach` — the rim plus
+    //   a pip's whole length plus its round cap — and a crop computed
+    //   without that allowance would slice pips off. **Clipping raises
+    //   nothing**: the mark is simply not there, on a dial that
+    //   otherwise looks perfect.
+    //
+    //   ⚠️ **It needs a pip near 50%, and the standing fixture has
+    //   none** (4 / 39 / 29) — so this arm routes its own windows and
+    //   puts one there. A pip's angle is its own reading's, and only
+    //   one near half-way reaches the top of the dial, which is the
+    //   edge the crop is tight against.
+    //
+    //   **How much that sample is worth, measured rather than
+    //   argued.** Three teardowns of `reachOf`, each run whole:
+    //
+    //   | what was broken | who caught it |
+    //   |---|---|
+    //   | the crop turned off | the track check (0.71 → **0.43**) and the size-slot gate |
+    //   | `reach` forgets the pips entirely | this (50% is **18.9** out) — and `spare`, which crosses on the standing fixture too |
+    //   | `reach` forgets only the round **cap** | **this alone** (50% is **1.63** out) |
+    //
+    //   The third row is why the 50 is here. At 4/39/29 the topmost
+    //   pip still had **4.57** of room under that same break, so
+    //   `spare` stayed green, the track check went *greener* (0.73),
+    //   and a dial was quietly painting outside its box. **A pip at 50
+    //   sits on the boundary by construction** — `reach` is defined as
+    //   exactly how far it goes — so it is the one sample that turns
+    //   an error of any size into a red.
+    //
+    //   ⚠️ **The stroke is added back by hand.** `getBBox` is the
+    //   geometry, not the paint; a pip is a round-capped line, so the
+    //   mark on screen reaches half a stroke further on every side
+    //   than its box says. Measuring the geometry alone would call a
+    //   crop 「inside」 while the cap hung over the edge.
+    const topWindows = [
+      { span: "five_hour", scope: null, used_pct: 50, resets_at: Math.floor(Date.now() / 1000) + 3600, active: false, severity: "normal" },
+      { span: "seven_day", scope: null, used_pct: 39, resets_at: Math.floor(Date.now() / 1000) + 86_400, active: true, severity: "normal" },
+    ];
+    await routeQuota(quotaCredits, topWindows, 0.5);
+    await goToQuota();
+    const pipRoom = await page.evaluate(() => {
+      const svg = document.querySelector("[data-quota-lead] [data-dial-face]");
+      if (!svg) return null;
+      const [bx, by, bw, bh] = svg.getAttribute("viewBox").split(/\s+/).map(Number);
+      const pips = [...svg.querySelectorAll("[data-dial-pip]")].map((e) => {
+        const b = e.getBBox();
+        const half = (parseFloat(getComputedStyle(e).strokeWidth) || 0) / 2;
+        return {
+          at: e.getAttribute("data-dial-pip-at"),
+          //   The smallest of the four margins: negative means the
+          //   painted mark crosses that edge of the box.
+          room: +Math.min(
+            b.x - half - bx,
+            bx + bw - (b.x + b.width + half),
+            b.y - half - by,
+            by + bh - (b.y + b.height + half),
+          ).toFixed(2),
+        };
+      });
+      return { pips, tightest: pips.length ? pips.reduce((m, p) => (p.room < m.room ? p : m)) : null };
+    });
+    if (!pipRoom || pipRoom.pips.length !== topWindows.length) {
+      fail(
+        `probe dead: a dial routed ${topWindows.length} windows drew ${pipRoom ? pipRoom.pips.length : "no"} pips — nothing below is measuring a mark`,
+      );
+    } else if (!pipRoom.pips.some((p) => p.at === "50")) {
+      fail(
+        `probe void: the pips read ${JSON.stringify(pipRoom.pips.map((p) => p.at))} and none of them is the 50 this arm routed — without it the check below never reaches the top of the box, which is the only edge it is about`,
+      );
+    } else if (pipRoom.tightest.room < -0.5) {
+      //   ⚠️ **The expected reading here is exactly `0`, and that is
+      //   the design rather than a near miss.** The crop's bound *is*
+      //   the furthest a pip can reach (`Face`'s `reach`), so the
+      //   worst-placed pip — the one at 50%, straight up — lands on
+      //   the boundary to the pixel. Measured 2026-09-07: `50` has
+      //   `0.00` of room and `39` has `6.21`.
+      //
+      //   So the half-unit is **slack for float noise, not slack in
+      //   the claim**: a crop that actually forgot the pips misses by
+      //   a pip's whole length (`9k`, about 17 units at this size),
+      //   which is thirty times this tolerance. **Widening it to make
+      //   something pass would be a different act** — this is here so
+      //   that a `-0.004` from sub-pixel rounding does not read as a
+      //   clipped mark.
+      fail(
+        `a pip at ${pipRoom.tightest.at}% is drawn ${-pipRoom.tightest.room} outside its box — the crop must leave room for a pip's whole length and its cap (Face reach), and a clipped mark raises nothing at all`,
+      );
+    }
+    console.log(
+      `pip room: ${JSON.stringify(pipRoom?.pips)} — tightest ${pipRoom?.tightest?.room} at ${pipRoom?.tightest?.at}%`,
+    );
 
     //   …and back to the fixture everything after this was written
     //   against, so a later section is not silently measuring this one.
