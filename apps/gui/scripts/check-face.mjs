@@ -2276,6 +2276,68 @@ try {
       }
     }
 
+    //   ── 8·the dial's box holds the drawing, not a margin ───────
+    //   2026-09-07:「额度的环…周围都有很多空白,浪费了很多空间,环明明可以
+    //   更大一些。这些似乎是没有好的设计原则导致的。」 The principle he
+    //   was missing, written down and now checked: **the box holds the
+    //   drawing; the room around it belongs to the layout.**
+    //
+    //   Measured before the change: a 141 × 88 box holding 71 × 48 of
+    //   ink — **half of it empty**, and the emptiness was inherited.
+    //   `Face`'s default box is 1.6 × its size because the *machine*
+    //   card needs room for the sentence on the dial's other face; this
+    //   card has no such sentence and took the box anyway.
+    //
+    //   **Two assertions, and the first does not depend on the
+    //   fixture.** How wide the ink runs depends on where the pips
+    //   fall, which is data; how wide the *box* is, is a decision. So
+    //   the box's own proportions are checked first, and the ink's
+    //   share second as the outcome.
+    //
+    //   ⚠️ **What this is really guarding is the next widening.** The
+    //   box grew wide for a reason that was true somewhere else; the
+    //   way it happens again is somebody needing to fit one more thing
+    //   and reaching for `ratio`. Then the white space is back and no
+    //   test says so.
+    //   **On the subscription's dial, named rather than whichever card
+    //   happened to be open.** Its rim carries pips, so its ink is the
+    //   widest a dial here gets — measuring a pip-less account dial
+    //   instead reads 0.68 for a box that is perfectly tight, and a
+    //   threshold loosened to let that pass would stop catching the
+    //   thing this is for. (Found by writing it the other way first.)
+    await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
+    await wait(300);
+    const dialBox = await page.evaluate(() => {
+      const svg = document.querySelector("[data-quota-lead] [data-dial-face]");
+      if (!svg) return null;
+      const S = svg.getBoundingClientRect();
+      let x0 = 1e9, x1 = -1e9;
+      for (const c of svg.children) {
+        const b = c.getBBox();
+        if (b.width === 0 && b.height === 0) continue;
+        x0 = Math.min(x0, b.x);
+        x1 = Math.max(x1, b.x + b.width);
+      }
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number);
+      return {
+        w: Math.round(S.width),
+        h: Math.round(S.height),
+        aspect: +(S.width / S.height).toFixed(2),
+        inkShare: +(((x1 - x0) * (S.width / vb[2])) / S.width).toFixed(2),
+      };
+    });
+    if (!dialBox) {
+      fail("probe dead: the card's dial never drew, so nothing below measures a box");
+    } else if (dialBox.aspect > 1.15) {
+      fail(
+        `the card's dial sits in a ${dialBox.w}×${dialBox.h} box (aspect ${dialBox.aspect}) — the box holds the drawing, and margin is the layout's to give`,
+      );
+    } else if (dialBox.inkShare < 0.7) {
+      fail(
+        `the dial's ink fills ${dialBox.inkShare} of its box — a tight box that the drawing does not fill is the same white space by another route`,
+      );
+    }
+
     //   ── 8·what an account's dial says in its middle ────────────
     //   2026-09-07:「说过的没有额度的环,显示金额」. A reading with no
     //   denominator shows its money there; one with a denominator shows

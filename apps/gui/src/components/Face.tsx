@@ -95,6 +95,41 @@ export const DIAL_ROW_RATIO = 1;
     arc at the card's stroke is a band with no hole in it. */
 export const DIAL_ROW_STROKE = 2.6;
 
+/**
+ * The dial on a card that has **only this dial** — the 額度 page's.
+ *
+ * # The rule these three numbers come from
+ *
+ * **The box holds the drawing; the room around it is the layout's, not
+ * the `viewBox`'s.** Measured 2026-09-07 on the 額度 card: the box was
+ * 141 × 88 and the ink inside it 71 × 48 — **half the box was empty**,
+ * and that emptiness was inherited rather than chosen. The default
+ * `BOX_RATIO` of 1.6 is the *machine card's*: it needs a box wide
+ * enough for the sentence on the dial's other face
+ * (「内存 12.3G / 16.0G」). This card has no such sentence and took the
+ * box anyway. **A number carried over from somewhere it had a reason,
+ * to somewhere it has none, is what the white space was made of.**
+ *
+ * ⚠️ **And this is why 「make the ring bigger」 is not `size + 22`.**
+ * Raising `size` alone scales the dead margin with the drawing: more
+ * ring, and *more* white around it. The ring gets bigger **because the
+ * box got tight** — first `ratio` down to 1, then the size up, and the
+ * ink goes from 71 wide to about 90 in a box that shrank from 141 to
+ * 110.
+ *
+ * The worst case the box must hold is `2 × (R + stroke/2 + 9k)` — the
+ * arc reaches ±R horizontally (it sweeps through 0° and 180°) and a pip
+ * can sit 9k beyond the rim. At these numbers that is ~102 in a box of
+ * 110, so a mark at the widest angle still has room.
+ */
+export const DIAL_CARD_SIZE = 110;
+/** Just the drawing. See above — the room around it is the layout's. */
+export const DIAL_CARD_RATIO = 1;
+/** The machine card's 4, in the proportion the sizes are (110/88), so
+    this is the same drawing at a different size rather than a thinner
+    one. */
+export const DIAL_CARD_STROKE = 5;
+
 /** One part under a dial: a card, a volume. `v` is its own reading on
     the same 0–100 scale the dial uses; `null` means the machine could
     not read that part, and **a part nobody could read gets no mark at

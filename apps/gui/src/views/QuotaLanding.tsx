@@ -42,8 +42,16 @@ import { IconBack } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
-import { DIAL_ROW_RATIO, DIAL_ROW_SIZE, DIAL_ROW_STROKE, Face, type Pip } from "@/components/Face";
-import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
+import {
+  DIAL_CARD_RATIO,
+  DIAL_CARD_SIZE,
+  DIAL_CARD_STROKE,
+  DIAL_ROW_RATIO,
+  DIAL_ROW_SIZE,
+  DIAL_ROW_STROKE,
+  Face,
+  type Pip,
+} from "@/components/Face";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -1096,8 +1104,9 @@ export function QuotaLanding({
 
             What is left is the dial, drawn and not pressed. */}
         <Face
-          size={RING_SIZE_CARD}
-          stroke={RING_STROKE_CARD}
+          size={DIAL_CARD_SIZE}
+          stroke={DIAL_CARD_STROKE}
+          ratio={DIAL_CARD_RATIO}
           fraction={lead ? lead.pct / 100 : null}
           pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
         >
@@ -1277,8 +1286,9 @@ export function QuotaLanding({
           rim with no marks is the honest drawing of that. */}
       <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
         <Face
-          size={RING_SIZE_CARD}
-          stroke={RING_STROKE_CARD}
+          size={DIAL_CARD_SIZE}
+          stroke={DIAL_CARD_STROKE}
+          ratio={DIAL_CARD_RATIO}
           fraction={arcOf(acc.reading)}
           strain={acc.strain}
         >
