@@ -197,7 +197,7 @@ function ringWord(n: number, currency: string | null): string {
   // Past four characters the sign is what goes, because the magnitude
   // is the part a person is reading — see this batch's report: `1.2k$`
   // is five, and the user's own example (`1.1k`) carries no sign.
-  const step = (v: number, suffix: string) => `${(v).toFixed(1)}${suffix}`;
+  const step = (v: number, suffix: string) => `${Math.round(v)}${suffix}${mark}`;
   if (whole < 1_000_000) return step(n / 1_000, "k");
   return step(n / 1_000_000, "m");
 }

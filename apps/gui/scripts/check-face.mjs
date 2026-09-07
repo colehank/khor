@@ -523,6 +523,17 @@ try {
     }),
     // **A vendor with a day chart and no ceiling on its log** — the
     // control arm for the account below, which has both.
+    // **A figure past four characters, so the k step is walked by
+    // something.** 2026-09-07:「超过了 4 位,能不能用别的方式,比如
+    // 1.1k」 — and the real readings top out at 123.75, so **without
+    // this row that branch has never run**. A rule nobody has walked is
+    // not 「probably fine」, it is unknown (this repo's own judgment,
+    // written the same day).
+    ring("acc-thousands", "big spender", "newapi", {
+      spent: 1234.5,
+      currency: "USD",
+      unlimited: true,
+    }),
     ring("acc-number", "vendor", "claude", {
       spent: 12.34,
       currency: "USD",

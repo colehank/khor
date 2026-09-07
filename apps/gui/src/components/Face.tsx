@@ -85,15 +85,29 @@ const BOX_RATIO = 1.6;
  * rule it was keeping does not apply and the number it produced was
  * costing legibility.
  *
- * ⚠️ **It buys less than it looks like it buys, and that is written
- * down on purpose.** The centre's type scales with the dial
+ * ⚠️ **It buys less than it looks like it buys, and it was very nearly
+ * reverted for that.** The centre's type scales with the dial
  * (`fontSize = 19k`), so a bigger ring holds a *slightly* longer string,
- * not a proportionally longer one: measured 2026-09-07, `12.34` needs
- * 22.6 units of a 19.2 inner at 32, and 27.7 of a 24.7 at 40 — from
- * 1.18× over to 1.12× over. **It does not fit at either size.** What
- * made it fit is the four-character rule (`RING_CHARS`), not this.
- * Somebody reading 「the ring got bigger for the money」 should know it
- * was not the fix.
+ * not a proportionally longer one: `12.34` needed 22.6 units of a 19.2
+ * inner at 32, and 27.7 of a 24.7 at 40 — **it fits at neither**, and
+ * what fixed that band was the four-character rule (`RING_CHARS`), not
+ * this number.
+ *
+ * ⚠️ **But 40 is load-bearing for a different string, and only a
+ * measurement says which.** The rule 「round and keep the sign」 turns
+ * 123.75 into `124$` — **four characters where it used to be three**,
+ * because the sign is one of them. Measured 2026-09-07:
+ *
+ * | | width | inner | |
+ * |---|---|---|---|
+ * | `124$` at 32 | 19.8 | 19.2 | **over by 0.6** |
+ * | `124$` at 40 | 24.4 | 24.7 | fits, 0.3 to spare |
+ *
+ * So the sign and this size are one decision: keeping the sign on a
+ * three-digit figure **requires** the larger ring. A revert to 32 was
+ * proposed on the reading 「`124` is 18.3, it fits」 — and that 18.3 was
+ * `124` **without** the sign, at size **40**. Two numbers from two
+ * states read exactly like one comparison.
  *
  * ⚠️ **The card's pair (`RING_SIZE_CARD` / `RING_STROKE_CARD`) still
  * lives in `Ring.tsx`**, which is where the machine card imports them
