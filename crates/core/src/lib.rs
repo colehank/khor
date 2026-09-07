@@ -1632,6 +1632,74 @@ pub struct ModelDay {
     pub spent: f64,
 }
 
+/// What one model spent on one day **in tokens**, as the provider's own
+/// account of it.
+///
+/// # Why this is a third list and not two more fields on [`ModelDay`]
+///
+/// **Tokens and money are two quantities, and one row holding both
+/// would be a row that is half-filled for everybody.** They arrive from
+/// the same endpoint, on the same day, about the same model — and they
+/// still cannot share a row: new-api reports both, the two vendors'
+/// cost report and usage report are **two different endpoints** either
+/// of which can fail on its own, and the wallets report neither. A
+/// merged row would need a rule for "money but no tokens", and the
+/// only honest spelling of that rule is a second list that is simply
+/// absent. Same ruling as [`ModelDay`] beside [`DaySpend`], one level
+/// further out.
+///
+/// # These are not khor's own token counts, and must never be compared
+/// with them
+///
+/// `khor_node::usage` counts tokens too, off the agents' transcripts,
+/// and the two numbers **are supposed to disagree**: a provider bills
+/// per request through one key over its own window, while a transcript
+/// records what an agent wrote down on this machine — a different
+/// population (other machines, other keys, subagents) cut on a
+/// different clock. A gate asserting they match would be a gate written
+/// to go red, and nobody reading that red would know which side to
+/// change. They answer two questions and belong on screen as two
+/// answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct ModelTokenDay {
+    /// The day this belongs to, unix seconds at its start — the same
+    /// axis [`DaySpend::at`] uses, so the two lists line up.
+    #[ts(type = "number")]
+    pub at: i64,
+    /// The model's name **as the provider spelled it**, and `None`
+    /// where the provider named none.
+    ///
+    /// **`None` is a row, not a silence** — the tokens are real and are
+    /// inside the day's total, so dropping them would shrink a
+    /// denominator without shrinking anything visible. The word for it
+    /// is `cli.usage-model-unnamed`, the same one
+    /// [`UsageModelDay::model`] reaches for, because it is the same
+    /// sentence: the source did not record which model.
+    ///
+    /// It happens two ways here and they are worth telling apart when
+    /// reading a report: a record whose own `model` was blank, and a
+    /// whole answer where the provider did not honour the grouping ask
+    /// — which arrives as **one unnamed row per day** carrying that
+    /// day's whole total. Both are 「nobody said which model」 and
+    /// neither is a wrong number.
+    pub model: Option<String>,
+    pub tokens: Tokens,
+    /// Whether `tokens.cached_input` and `tokens.cache_write` are
+    /// **figures the provider stated**.
+    ///
+    /// **`false` means those two are not zero, they are not reported**
+    /// — and the difference matters on a screen, where a painted 0 is a
+    /// claim that nothing was cached. new-api's log carries
+    /// `prompt_tokens` and `completion_tokens` and nothing else, so its
+    /// rows say `false`; the two vendors' usage reports itemise the
+    /// cache and say `true`.
+    ///
+    /// A `bool` rather than four `Option`s because the split is a
+    /// property of the *source*, not of a row: no provider here reports
+    /// the cache for some of its own rows and not others.
+    pub cache_split: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 pub struct AccountReading {
     /// `khor_sync::accounts::Account::id`.
@@ -1818,6 +1886,28 @@ pub struct AccountReading {
     /// The subscription's prepaid credits ([`Quota::credits`]).
     #[serde(default)]
     pub credits: Option<QuotaCredits>,
+    /// The same window again, in **tokens** rather than money, itemised
+    /// by model — where the provider has a token report at all. See
+    /// [`ModelTokenDay`] for why this is a list of its own and for the
+    /// one comparison nobody may make with it.
+    ///
+    /// **Empty is 「this provider does not report tokens」**, and it is
+    /// the ordinary answer: the wallets (DeepSeek, Moonshot,
+    /// OpenRouter) publish a balance and nothing else, and a registered
+    /// subscription's endpoint publishes percentages. Empty beside a
+    /// non-empty `days` therefore does **not** mean the reading is
+    /// short — money and tokens come from two roads and only three
+    /// providers walk the second one.
+    ///
+    /// **Tail field, `serde default`, no `skip_serializing_if`** — and
+    /// the sentence `khor_node::proto` demands before appending: an
+    /// older peer refusing this longer frame keeps its previous
+    /// readings with an age that goes on climbing, which is different
+    /// from what it shows on success and lands where the 額度 page
+    /// already says 「I cannot tell」. The same answer the fields above
+    /// gave, for the same consumer.
+    #[serde(default)]
+    pub model_tokens: Vec<ModelTokenDay>,
 }
 
 /// What khor can say about the subscription right now.

@@ -743,6 +743,7 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         windows: Vec::new(),
         plan: None,
         credits: None,
+        model_tokens: Vec::new(),
     }
 }
 
@@ -1011,10 +1012,11 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
     // turn a good quota reading into 问不出来 — so this is read for
     // what it gives and dropped when it gives nothing.
     if let Ok(Ok(j)) = get_json(c.get(format!("{base}/api/log/token")).bearer_auth(key)).await {
-        let (days, model_days, capped) = read_log(&j, per_unit);
-        r.days = days;
-        r.model_days = model_days;
-        r.log_capped = capped;
+        let log = read_log(&j, per_unit);
+        r.days = log.days;
+        r.model_days = log.model_days;
+        r.model_tokens = log.model_tokens;
+        r.log_capped = log.capped;
     }
     if !unlimited && let Some(avail) = available {
         let total = used + avail;
@@ -1102,20 +1104,43 @@ const NEWAPI_LOG_MAX: usize = 1000;
 /// all, so somebody has to cut them, and the person reading the chart
 /// is here (`khor_core::UsageDay` carries the ruling).
 ///
-/// The third answer is the ceiling — see [`NEWAPI_LOG_MAX`] and
+/// `capped` is the ceiling — see [`NEWAPI_LOG_MAX`] and
 /// `AccountReading::log_capped`.
-fn read_log(
-    j: &serde_json::Value,
-    per_unit: f64,
-) -> (Vec<khor_core::DaySpend>, Vec<khor_core::ModelDay>, Option<u32>) {
+///
+/// # The tokens were already on the wire
+///
+/// **`prompt_tokens` and `completion_tokens` sit on every one of these
+/// records** (`model/log.go:59-81`), beside the `quota` this reader was
+/// already taking — so the token account costs **no extra request and
+/// no extra key**, only the two fields this function used to walk past.
+///
+/// ⚠️ **Two numbers, not four, and khor cannot say what the first one
+/// counts.** The row publishes no cache read and no cache write, so
+/// those two ride as `cache_split: false` — 「not reported」, which a
+/// screen must not draw as zero. And **whether `prompt_tokens` already
+/// nets out a cached part is not stated anywhere khor has read**: the
+/// column is the gateway's own, gateways front many upstreams, and
+/// there is no per-record total here to referee it the way
+/// `khor_node::usage::reconciled` referees a transcript. So it is
+/// carried across as the gateway's `input` and **nothing is subtracted
+/// on a guess** — being wrong that way makes khor's input column too
+/// large by whatever was cached, which is visible beside a
+/// `cache_split: false` that says khor does not know; subtracting on a
+/// guess would invent a cache figure that was never reported.
+fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
     let Some(rows) = j.get("data").and_then(serde_json::Value::as_array) else {
-        return (Vec::new(), Vec::new(), None);
+        return LogRead::default();
     };
     let zone = jiff::tz::TimeZone::system();
     // Keyed by the day's start so the two lists cannot disagree about
     // which bucket a record fell in: one pass, one decision per record.
     let mut per_day: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
     let mut per_model: std::collections::BTreeMap<(i64, String), f64> =
+        std::collections::BTreeMap::new();
+    // Keyed the same way, off the same records, in the same pass — so
+    // 「which day did this request fall in」 is decided once and the
+    // money list and the token list cannot answer it differently.
+    let mut per_model_tokens: std::collections::BTreeMap<(i64, String), khor_core::Tokens> =
         std::collections::BTreeMap::new();
     for row in rows {
         if row.get("type").and_then(serde_json::Value::as_i64) != Some(2) {
@@ -1139,7 +1164,14 @@ fn read_log(
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        *per_model.entry((start, model)).or_default() += spent;
+        *per_model.entry((start, model.clone())).or_default() += spent;
+        let n = |k: &str| row.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        per_model_tokens.entry((start, model)).or_default().add(khor_core::Tokens {
+            input: n("prompt_tokens"),
+            cached_input: 0,
+            cache_write: 0,
+            output: n("completion_tokens"),
+        });
     }
     let days =
         per_day.into_iter().map(|(at, spent)| khor_core::DaySpend { at, spent }).collect();
@@ -1147,11 +1179,170 @@ fn read_log(
         .into_iter()
         .map(|((at, model), spent)| khor_core::ModelDay { at, model, spent })
         .collect();
+    let model_tokens = per_model_tokens
+        .into_iter()
+        // A request that billed money and reported no tokens is a row
+        // of two zeroes, which reads as 「this model ran for free」.
+        // Nothing else here has to be dropped: a record with no spend
+        // never entered the map.
+        .filter(|(_, t)| !t.is_zero())
+        .map(|((at, model), tokens)| khor_core::ModelTokenDay {
+            at,
+            // Blank is 「the record named none」, not a model called "".
+            model: (!model.is_empty()).then_some(model),
+            tokens,
+            cache_split: false,
+        })
+        .collect();
     // **`>=`, not `==`.** A gateway with a raised ceiling would answer
     // more, and「exactly a thousand」would then read as「not cut」on the
     // one build where being cut matters most.
     let capped = (rows.len() >= NEWAPI_LOG_MAX).then(|| rows.len() as u32);
-    (days, model_days, capped)
+    LogRead { days, model_days, model_tokens, capped }
+}
+
+/// What one pass over new-api's log answers: three lists cut off the
+/// same records, and whether the records were all of them.
+///
+/// A struct rather than a tuple because it stopped being two things.
+#[derive(Default)]
+struct LogRead {
+    days: Vec<khor_core::DaySpend>,
+    model_days: Vec<khor_core::ModelDay>,
+    model_tokens: Vec<khor_core::ModelTokenDay>,
+    capped: Option<u32>,
+}
+
+/// One day-and-model bucket, as both vendors' token reports shape them.
+///
+/// Keyed rather than pushed, because a report grouped by more than one
+/// thing answers several rows per (day, model) — khor asks for one
+/// grouping, and folding is what makes a second one arrive as a sum
+/// instead of as duplicate rows.
+type TokenRows = std::collections::BTreeMap<(i64, Option<String>), khor_core::Tokens>;
+
+/// The folded buckets as the wire shape, oldest day first and the
+/// unnamed model last within a day.
+///
+/// **Unnamed last, not first**, which is what `None`'s own ordering
+/// would do: it is the row a reader wants after the ones that say
+/// something (`khor_core::UsageModelDay` makes the same call).
+fn token_rows(rows: TokenRows, cache_split: bool) -> Vec<khor_core::ModelTokenDay> {
+    let mut out: Vec<khor_core::ModelTokenDay> = rows
+        .into_iter()
+        // A bucket the provider reported with nothing in it is not a
+        // row: every one of these reports answers a bucket per day
+        // whether or not anything happened in it, and a day of zeroes
+        // reads as 「this model ran and cost nothing」.
+        .filter(|(_, t)| !t.is_zero())
+        .map(|((at, model), tokens)| khor_core::ModelTokenDay { at, model, tokens, cache_split })
+        .collect();
+    out.sort_by(|a, b| {
+        a.at.cmp(&b.at)
+            .then_with(|| a.model.is_none().cmp(&b.model.is_none()))
+            .then_with(|| a.model.cmp(&b.model))
+    });
+    out
+}
+
+/// The model a result names, or `None` where it names none.
+///
+/// Both reports answer `model: null` for a result that was not grouped
+/// by model — which is what arrives if the grouping ask is not honoured
+/// — and that is a **coarser** answer, never a wrong one: the row then
+/// carries the day's whole total under 「nobody said which model」.
+fn result_model(r: &serde_json::Value) -> Option<String> {
+    let name = r.get("model")?.as_str()?.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
+/// One page of Anthropic's messages usage report, folded in.
+///
+/// ⚠️ **Shape from the vendor's own reference**, `GET
+/// /v1/organizations/usage_report/messages` at
+/// `platform.claude.com/docs/en/api/admin-api/usage-cost/get-messages-usage-report`,
+/// read 2026-09-07. **Documentation, not a capture** — no khor has met
+/// this endpoint with a real admin key yet, so every field is read
+/// through `Option` and a page that disagrees loses figures rather than
+/// the reading.
+///
+/// The four names land without arithmetic, which is the reason this
+/// endpoint is worth a request of its own: `uncached_input_tokens` is
+/// already `khor_core::Tokens::input`'s promise (input never including
+/// what came out of a cache), and the cache write is the **sum of the
+/// two ephemeral lifetimes** — 1 hour and 5 minutes are two prices for
+/// one act, and khor's column is the act.
+fn claude_token_page(j: &serde_json::Value, out: &mut TokenRows) {
+    for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        // A bucket khor cannot place in time gets no row rather than
+        // one at the epoch — `instant_of`'s ruling, for the reason it
+        // states: a bar at 1970 is a wrong bar, not a missing one.
+        let Some(at) = instant_of(bucket, "starting_at") else { continue };
+        for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten()
+        {
+            let n = |k: &str| r.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+            let ephemeral = |k: &str| {
+                r.pointer(&format!("/cache_creation/{k}"))
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+            };
+            out.entry((at, result_model(r))).or_default().add(khor_core::Tokens {
+                input: n("uncached_input_tokens"),
+                cached_input: n("cache_read_input_tokens"),
+                cache_write: ephemeral("ephemeral_1h_input_tokens")
+                    .saturating_add(ephemeral("ephemeral_5m_input_tokens")),
+                output: n("output_tokens"),
+            });
+        }
+    }
+}
+
+/// One page of OpenAI's completions usage report, folded in.
+///
+/// ⚠️ **Shape from the vendor's own OpenAPI document**,
+/// `GET /v1/organization/usage/completions` — `openai/openai-openapi` at
+/// `b61ced96515cb6e73794ff459e9e12ca57596c72`, `openapi.yaml:14399`
+/// (the route) and `:65381` (`UsageCompletionsResult`), read 2026-09-07
+/// over `gh api`, nothing cloned. **Specification, not a capture**: no
+/// khor has met this endpoint with a real admin key yet.
+///
+/// ⚠️⚠️ **`input_tokens` is the trap and it does not announce itself.**
+/// The document says it is 「the aggregated number of input tokens used,
+/// **including cached and cache-write tokens**」, while
+/// `input_uncached_tokens` is the one that excludes them — and
+/// `khor_core::Tokens::input` promises the second. Reading the obvious
+/// name would double-count every cached token into two columns, and
+/// **nothing would say so**: the figures stay plausible, the totals
+/// stay positive, and only a person who knew both names would ever
+/// notice. Same shape as the disagreement `khor_node::usage`'s module
+/// head records between claude's and codex's transcripts, met again at
+/// a different door.
+///
+/// The subtraction is the fallback and not the rule: a build that stops
+/// sending `input_uncached_tokens` still has the same fact spelled as
+/// `input_tokens` minus the two cache columns, per the same document.
+fn openai_token_page(j: &serde_json::Value, out: &mut TokenRows) {
+    for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        let Some(at) = instant_of(bucket, "start_time") else { continue };
+        for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten()
+        {
+            let n = |k: &str| r.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+            let cached = n("input_cached_tokens");
+            let cache_write = n("input_cache_write_tokens");
+            let uncached = r
+                .get("input_uncached_tokens")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_else(|| {
+                    n("input_tokens").saturating_sub(cached).saturating_sub(cache_write)
+                });
+            out.entry((at, result_model(r))).or_default().add(khor_core::Tokens {
+                input: uncached,
+                cached_input: cached,
+                cache_write,
+                output: n("output_tokens"),
+            });
+        }
+    }
 }
 
 /// The first instant of this month, UTC, unix seconds — the window the
@@ -1214,7 +1405,81 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
     }
     let mut r = against_budget(bare(account, None, now), cents / 100.0, account.budget, "USD");
     r.days = days;
+    // **A second request, and it is allowed to fail on its own** — the
+    // same bargain new-api's log road strikes: the money above is the
+    // reading, the tokens are a layer beside it, and an admin key that
+    // can read costs but not usage must not turn a good reading into
+    // 问不出来. Cost is one call per five minutes per account
+    // (`CACHE_TTL_MS`); this makes it two, which is the price of the
+    // only figures either vendor states in tokens at all.
+    r.model_tokens = claude_model_tokens(&c, key, &start).await;
     Ok(r)
+}
+
+/// How many pages either token report is followed for.
+///
+/// **One is already enough** — both are asked at `bucket_width=1d` with
+/// `limit=31` over a single month, so 31 buckets is the whole answer —
+/// and the cap exists for the other reason: a paging loop that trusts
+/// the server's own `has_more` is a loop whose end condition is written
+/// by somebody else. The cost of being wrong here is a figure missing
+/// from a chart; the cost of the unbounded form is a resident that
+/// never comes back.
+const TOKEN_PAGES: usize = 4;
+
+/// Anthropic's **token** report, beside the cost report the reading is
+/// built from: `GET /v1/organizations/usage_report/messages`, grouped
+/// by model, over the same month.
+///
+/// **The same admin key and the same headers as the cost report** — a
+/// sibling road on one API, so this asks nothing new of the person.
+///
+/// ⚠️ **The header is inherited rather than verified**: the vendor's
+/// reference spells its example with `Authorization: Bearer`, while
+/// khor reaches this API with `x-api-key` and that is what its cost
+/// report answers to today. Both are documented ways to carry an admin
+/// key; if this one is the wrong one here, the road answers 401 and is
+/// dropped whole — a missing layer, never a wrong number.
+///
+/// Returns an empty list for every way this can go wrong. See
+/// `khor_core::AccountReading::model_tokens`: empty is 「no token report
+/// from this provider」, which is also the ordinary answer for five of
+/// the seven.
+async fn claude_model_tokens(
+    c: &reqwest::Client,
+    key: &str,
+    start: &str,
+) -> Vec<khor_core::ModelTokenDay> {
+    let ask = |page: Option<&str>| {
+        let mut url = format!(
+            "https://api.anthropic.com/v1/organizations/usage_report/messages?starting_at={start}&bucket_width=1d&limit=31&group_by[]=model"
+        );
+        if let Some(p) = page {
+            url.push_str(&format!("&page={p}"));
+        }
+        url
+    };
+    let mut rows = TokenRows::new();
+    let mut page: Option<String> = None;
+    for _ in 0..TOKEN_PAGES {
+        let Ok(Ok(j)) = get_json(
+            c.get(ask(page.as_deref()))
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01"),
+        )
+        .await
+        else {
+            break;
+        };
+        claude_token_page(&j, &mut rows);
+        match j.get("next_page").and_then(serde_json::Value::as_str) {
+            Some(next) if j.get("has_more").and_then(serde_json::Value::as_bool) == Some(true) => {
+                page = Some(next.to_owned())
+            }
+            _ => break,
+        }
+    }
+    token_rows(rows, true)
 }
 
 /// A bucket's start instant, unix seconds, however the vendor spelled
@@ -1286,7 +1551,51 @@ async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountR
     // is the one that actually stops requests (429 past it).
     let mut r = against_budget(bare(account, None, now), dollars, limit_usd.or(account.budget), "USD");
     r.days = days;
+    // The token road, on the same terms Anthropic's is on: a layer
+    // beside the reading, dropped whole if it cannot be had.
+    r.model_tokens = openai_model_tokens(&c, key, start).await;
     Ok(r)
+}
+
+/// OpenAI's **token** report: `GET /v1/organization/usage/completions`,
+/// grouped by model, over the same month and on the same admin key the
+/// costs road already uses.
+///
+/// `group_by=model` is the document's own serialisation (a `form`-style
+/// array); Anthropic's sibling wants `group_by[]=model`. **Neither
+/// spelling can make this wrong** — a grouping ask that is not honoured
+/// comes back as one result per bucket with `model: null`, which lands
+/// as one unnamed row per day carrying that day's whole total
+/// (`result_model` says so where it is read).
+async fn openai_model_tokens(
+    c: &reqwest::Client,
+    key: &str,
+    start: i64,
+) -> Vec<khor_core::ModelTokenDay> {
+    let ask = |page: Option<&str>| {
+        let mut url = format!(
+            "https://api.openai.com/v1/organization/usage/completions?start_time={start}&bucket_width=1d&limit=31&group_by=model"
+        );
+        if let Some(p) = page {
+            url.push_str(&format!("&page={p}"));
+        }
+        url
+    };
+    let mut rows = TokenRows::new();
+    let mut page: Option<String> = None;
+    for _ in 0..TOKEN_PAGES {
+        let Ok(Ok(j)) = get_json(c.get(ask(page.as_deref())).bearer_auth(key)).await else {
+            break;
+        };
+        openai_token_page(&j, &mut rows);
+        match j.get("next_page").and_then(serde_json::Value::as_str) {
+            Some(next) if j.get("has_more").and_then(serde_json::Value::as_bool) == Some(true) => {
+                page = Some(next.to_owned())
+            }
+            _ => break,
+        }
+    }
+    token_rows(rows, true)
 }
 
 #[cfg(test)]
@@ -1484,17 +1793,29 @@ mod tests {
     fn a_token_log_becomes_days_and_models_that_add_up() {
         let day = 86_400;
         let t = 1_800_000_000i64;
+        // **The token columns ride the same rows**, because they arrive
+        // in the same records and the whole point of reading them is
+        // that no second request was made. Their sizes are chosen so
+        // that a reader taking the wrong rows is off by a lot: the
+        // top-up alone carries eighteen million.
         let rows = serde_json::json!({"success": true, "data": [
-            {"type": 2, "created_at": t,           "model_name": "gpt-5",  "quota": 500_000},
-            {"type": 2, "created_at": t + 60,      "model_name": "gpt-5",  "quota": 250_000},
-            {"type": 2, "created_at": t + 60,      "model_name": "opus",   "quota": 1_000_000},
-            {"type": 2, "created_at": t + day * 2, "model_name": "opus",   "quota": 750_000},
+            {"type": 2, "created_at": t,           "model_name": "gpt-5",  "quota": 500_000,
+             "prompt_tokens": 100, "completion_tokens": 10},
+            {"type": 2, "created_at": t + 60,      "model_name": "gpt-5",  "quota": 250_000,
+             "prompt_tokens": 20,  "completion_tokens": 2},
+            {"type": 2, "created_at": t + 60,      "model_name": "opus",   "quota": 1_000_000,
+             "prompt_tokens": 300, "completion_tokens": 30},
+            {"type": 2, "created_at": t + day * 2, "model_name": "opus",   "quota": 750_000,
+             "prompt_tokens": 40,  "completion_tokens": 4},
             // Not spending: a top-up, and it dwarfs the rest on purpose.
-            {"type": 1, "created_at": t + 120,     "model_name": "",       "quota": 99_000_000},
+            {"type": 1, "created_at": t + 120,     "model_name": "",       "quota": 99_000_000,
+             "prompt_tokens": 9_000_000, "completion_tokens": 9_000_000},
             // Unplaceable in time — dropped rather than stacked at the epoch.
-            {"type": 2, "created_at": 0,           "model_name": "gpt-5",  "quota": 500_000},
+            {"type": 2, "created_at": 0,           "model_name": "gpt-5",  "quota": 500_000,
+             "prompt_tokens": 7, "completion_tokens": 7},
         ]});
-        let (days, models, capped) = read_log(&rows, 500_000.0);
+        let log = read_log(&rows, 500_000.0);
+        let (days, models) = (&log.days, &log.model_days);
 
         let total: f64 = days.iter().map(|d| d.spent).sum();
         assert!((total - 5.0).abs() < 1e-9, "1+0.5+2+1.5 = 5 dollars, and no top-up in it: {total}");
@@ -1505,7 +1826,71 @@ mod tests {
         assert!((by_day - by_model).abs() < 1e-9, "the two lists are one pass over one answer");
         assert_eq!(models.len(), 3, "gpt-5 and opus on the first day, opus on the third");
 
-        assert_eq!(capped, None, "six rows is not a thousand");
+        assert_eq!(log.capped, None, "six rows is not a thousand");
+
+        // **The tokens are cut on the same records as the money.** Sums
+        // rather than per-day figures, so this says the same thing in
+        // every time zone — the day boundary is the money half's
+        // business and is asserted there.
+        let tok = &log.model_tokens;
+        assert_eq!(tok.len(), 3, "the same three (day, model) buckets the money made");
+        let input: u64 = tok.iter().map(|m| m.tokens.input).sum();
+        let output: u64 = tok.iter().map(|m| m.tokens.output).sum();
+        assert_eq!(
+            (input, output),
+            (460, 46),
+            "100+20+300+40 and 10+2+30+4 — the top-up's eighteen million is not in it, \
+             and neither are the seven the epoch row carries"
+        );
+        assert!(
+            tok.iter().all(|m| !m.cache_split),
+            "this gateway publishes no cache columns, and 「not reported」 is not zero"
+        );
+        assert!(
+            tok.iter().all(|m| m.tokens.cached_input == 0 && m.tokens.cache_write == 0),
+            "…so the two it does not report stay empty rather than invented"
+        );
+    }
+
+    /// **A row with no token columns makes no token row, and a row with
+    /// no model name makes an unnamed one.**
+    ///
+    /// Two claims, each with its own pair differing in **one field**.
+    /// The money arm is the control for both: every row here bills the
+    /// same `quota`, so anything that changes between the two answers
+    /// is the field that was changed and nothing else.
+    #[test]
+    fn a_log_row_without_tokens_makes_no_row_and_one_without_a_model_makes_an_unnamed_one() {
+        let t = 1_800_000_000i64;
+        let log = |extra: serde_json::Value| {
+            let mut row = serde_json::json!({"type": 2, "created_at": t, "quota": 500_000});
+            let obj = row.as_object_mut().unwrap();
+            for (k, v) in extra.as_object().unwrap() {
+                obj.insert(k.clone(), v.clone());
+            }
+            read_log(&serde_json::json!({"data": [row]}), 500_000.0)
+        };
+
+        // One field apart: `prompt_tokens` present or absent.
+        let with = log(serde_json::json!({"model_name": "m", "prompt_tokens": 5}));
+        let without = log(serde_json::json!({"model_name": "m"}));
+        assert_eq!(with.days.len(), 1, "both rows bill money");
+        assert_eq!(without.days.len(), 1);
+        assert_eq!(with.model_tokens.len(), 1, "the one that reported tokens gets a token row");
+        assert_eq!(with.model_tokens[0].tokens.input, 5);
+        assert!(
+            without.model_tokens.is_empty(),
+            "and a request that reported none is not a model that ran for free"
+        );
+
+        // One field apart: `model_name` filled or blank.
+        let named = log(serde_json::json!({"model_name": "m", "prompt_tokens": 5}));
+        let blank = log(serde_json::json!({"model_name": "", "prompt_tokens": 5}));
+        assert_eq!(named.model_tokens[0].model.as_deref(), Some("m"));
+        assert_eq!(
+            blank.model_tokens[0].model, None,
+            "blank is 「the record named none」, never a model whose name is the empty string"
+        );
     }
 
     /// **A log at the ceiling says so, and one under it does not.**
@@ -1518,9 +1903,9 @@ mod tests {
     fn a_log_cut_at_the_ceiling_carries_the_count() {
         let row = serde_json::json!({"type": 2, "created_at": 1_800_000_000i64, "model_name": "m", "quota": 0});
         let full = serde_json::json!({"data": vec![row.clone(); NEWAPI_LOG_MAX]});
-        assert_eq!(read_log(&full, 1.0).2, Some(NEWAPI_LOG_MAX as u32), "at the ceiling: cut");
+        assert_eq!(read_log(&full, 1.0).capped, Some(NEWAPI_LOG_MAX as u32), "at the ceiling: cut");
         let short = serde_json::json!({"data": vec![row; NEWAPI_LOG_MAX - 1]});
-        assert_eq!(read_log(&short, 1.0).2, None, "one under it: not cut");
+        assert_eq!(read_log(&short, 1.0).capped, None, "one under it: not cut");
     }
 
     /// The fraction and its strain are this side's judgment, on
@@ -1905,4 +2290,328 @@ mod tests {
             assert!(refusal.contains(w), "no-such-kind does not name {w}: {refusal}");
         }
     }
+    /// ⚠️ **The one field on OpenAI's usage report that is a trap, and
+    /// the fallback for the build that stops sending it.**
+    ///
+    /// `input_tokens` **includes** the cached and cache-write parts;
+    /// `input_uncached_tokens` is the one `khor_core::Tokens::input`
+    /// promises. The sample is built so the two answers cannot be
+    /// confused: reading the wrong name gives 1000 where the right one
+    /// gives 150, and **nothing else in the row changes** — no error,
+    /// no zero, no negative, just an input column six times too big
+    /// with a plausible number in it.
+    ///
+    /// The second arm is one field apart from the first: the same
+    /// result with `input_uncached_tokens` **removed**. The subtraction
+    /// has to land on the same 150, or a provider that drops the field
+    /// silently starts double-counting its own cache.
+    #[test]
+    fn openai_input_is_the_uncached_column_and_not_the_one_that_includes_the_cache() {
+        let result = |extra: serde_json::Value| {
+            let mut r = serde_json::json!({
+                "model": "gpt-5",
+                "input_tokens": 1000,
+                "input_cached_tokens": 800,
+                "input_cache_write_tokens": 50,
+                "output_tokens": 20,
+            });
+            let obj = r.as_object_mut().unwrap();
+            for (k, v) in extra.as_object().unwrap() {
+                obj.insert(k.clone(), v.clone());
+            }
+            let page = serde_json::json!({"data": [{"start_time": 1_800_000_000i64, "results": [r]}]});
+            let mut rows = TokenRows::new();
+            openai_token_page(&page, &mut rows);
+            token_rows(rows, true)
+        };
+
+        let stated = result(serde_json::json!({"input_uncached_tokens": 150}));
+        assert_eq!(stated.len(), 1);
+        assert_eq!(
+            stated[0].tokens,
+            khor_core::Tokens { input: 150, cached_input: 800, cache_write: 50, output: 20 },
+            "the uncached column, never the one that includes the cache"
+        );
+        assert_ne!(stated[0].tokens.input, 1000, "…and 1000 is what reading `input_tokens` gives");
+
+        let derived = result(serde_json::json!({}));
+        assert_eq!(
+            derived[0].tokens, stated[0].tokens,
+            "with the column absent, 1000 - 800 - 50 is the same fact spelled the other way"
+        );
+    }
+
+    /// **Anthropic's cache write is two lifetimes added, and its four
+    /// names land without arithmetic.**
+    ///
+    /// One hour and five minutes are two prices for one act, and khor's
+    /// column is the act — so a reader taking either alone loses the
+    /// other silently. The control is that the two are different
+    /// numbers: with `1h == 5m` a sum, a maximum and either one alone
+    /// would all be wrong in ways this test could not tell apart.
+    #[test]
+    fn a_claude_usage_bucket_adds_both_cache_lifetimes_into_one_column() {
+        let page = serde_json::json!({"data": [{
+            "starting_at": "2027-01-15T00:00:00Z",
+            "results": [{
+                "model": "claude-opus-5",
+                "uncached_input_tokens": 11,
+                "cache_read_input_tokens": 22,
+                "cache_creation": {"ephemeral_1h_input_tokens": 300, "ephemeral_5m_input_tokens": 44},
+                "output_tokens": 55,
+            }],
+        }]});
+        let mut rows = TokenRows::new();
+        claude_token_page(&page, &mut rows);
+        let out = token_rows(rows, true);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].model.as_deref(), Some("claude-opus-5"));
+        assert_eq!(
+            out[0].tokens,
+            khor_core::Tokens { input: 11, cached_input: 22, cache_write: 344, output: 55 },
+            "300 + 44 — not 300, not 44, and not the larger of the two"
+        );
+        assert!(out[0].cache_split, "this vendor states the cache, so the two columns mean something");
+    }
+
+    /// **A report that did not honour the grouping is coarser, never
+    /// wrong.**
+    ///
+    /// Neither vendor's array-parameter spelling is verified against a
+    /// live endpoint, so the question that matters is what happens if
+    /// the ask is ignored: the answer comes back with `model: null` and
+    /// one result per bucket, and it has to land as **one unnamed row
+    /// carrying that day's whole total** — the day figure still true,
+    /// the breakdown honestly absent.
+    ///
+    /// The control is the second arm, one field apart: the same bucket
+    /// with a model named. Without it, 「files everything under None」
+    /// would pass.
+    #[test]
+    fn an_ungrouped_token_report_lands_as_one_unnamed_row_that_still_totals() {
+        let bucket = |model: serde_json::Value| {
+            let page = serde_json::json!({"data": [{
+                "start_time": 1_800_000_000i64,
+                "results": [{
+                    "model": model,
+                    "input_uncached_tokens": 7,
+                    "input_cached_tokens": 0,
+                    "input_cache_write_tokens": 0,
+                    "output_tokens": 3,
+                }],
+            }]});
+            let mut rows = TokenRows::new();
+            openai_token_page(&page, &mut rows);
+            token_rows(rows, true)
+        };
+        let ungrouped = bucket(serde_json::Value::Null);
+        assert_eq!(ungrouped.len(), 1);
+        assert_eq!(ungrouped[0].model, None, "nobody said which model");
+        assert_eq!((ungrouped[0].tokens.input, ungrouped[0].tokens.output), (7, 3),
+            "and the day's total is still the day's total");
+        let grouped = bucket(serde_json::json!("gpt-5"));
+        assert_eq!(grouped[0].model.as_deref(), Some("gpt-5"), "the control: a named row is named");
+        assert_eq!(grouped[0].tokens, ungrouped[0].tokens, "same tokens, one field apart");
+    }
+
+    /// **An empty bucket is not a row, and the unnamed row sorts last.**
+    ///
+    /// Both reports answer a bucket per day whether or not anything
+    /// happened in it, so 「a day of zeroes」 arrives on its own and
+    /// reads as 「this model ran and cost nothing」. And `None`'s own
+    /// ordering would put the one row khor cannot name at the **top**
+    /// of every day, which is the opposite of useful.
+    #[test]
+    fn an_empty_token_bucket_is_dropped_and_the_unnamed_row_comes_last() {
+        let page = serde_json::json!({"data": [{
+            "start_time": 1_800_000_000i64,
+            "results": [
+                {"model": serde_json::Value::Null, "input_uncached_tokens": 1, "output_tokens": 0},
+                {"model": "zzz", "input_uncached_tokens": 1, "output_tokens": 0},
+                {"model": "aaa", "input_uncached_tokens": 1, "output_tokens": 0},
+                {"model": "empty", "input_uncached_tokens": 0, "output_tokens": 0},
+            ],
+        }]});
+        let mut rows = TokenRows::new();
+        openai_token_page(&page, &mut rows);
+        let out = token_rows(rows, true);
+        assert_eq!(
+            out.iter().map(|m| m.model.as_deref()).collect::<Vec<_>>(),
+            vec![Some("aaa"), Some("zzz"), None],
+            "named first and in order, the unnamed one last, and the empty bucket not at all"
+        );
+    }
+
+    /// **Somebody actually asks for the tokens** — not just 「the reader
+    /// is written correctly」.
+    ///
+    /// The parsers above prove the shapes are read right. They would go
+    /// on passing with the line that fills `model_tokens` deleted from
+    /// `fetch_newapi`, because a test that calls a function directly
+    /// never asks whether anything else does. So this one walks the
+    /// whole road against a real socket: `fetch_newapi` makes its three
+    /// requests, and the tokens have to come out the far end.
+    ///
+    /// **It also proves the tokens cost no second road**: the log
+    /// answered here is the same one the money already came from, and
+    /// both figures land off it.
+    ///
+    /// ⚠️ **The two vendors have no equivalent and cannot have one
+    /// here**: their hosts are literals in `claude_model_tokens` and
+    /// `openai_model_tokens`, so there is nowhere to point a local
+    /// socket. Their call sites are ungated, and that is stated rather
+    /// than papered over.
+    #[tokio::test]
+    async fn a_gateways_tokens_travel_the_whole_road_and_not_only_the_parser() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            for _ in 0..6 {
+                let Ok((mut sock, _)) = l.accept().await else { break };
+                let mut buf = [0u8; 2048];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let body = if req.contains("/api/status") {
+                    r#"{"data":{"quota_per_unit":500000}}"#.to_owned()
+                } else if req.contains("/api/log/token") {
+                    r#"{"data":[{"type":2,"created_at":1800000000,"model_name":"gpt-5","quota":500000,"prompt_tokens":123,"completion_tokens":45}]}"#.to_owned()
+                } else {
+                    r#"{"code":true,"data":{"total_used":500000,"total_available":500000,"unlimited_quota":false,"expires_at":0}}"#.to_owned()
+                };
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len(),
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+
+        let mut account = wallet(Provider::Newapi, None);
+        account.base_url = Some(format!("http://127.0.0.1:{port}"));
+        let r = fetch_newapi(&account, "sk-x", 0).await.expect("the gateway answered");
+
+        assert_eq!(r.days.len(), 1, "the money came off the log, as it did before");
+        assert_eq!(r.model_tokens.len(), 1, "and the tokens came off the same log");
+        assert_eq!(r.model_tokens[0].model.as_deref(), Some("gpt-5"));
+        assert_eq!(
+            (r.model_tokens[0].tokens.input, r.model_tokens[0].tokens.output),
+            (123, 45),
+            "the figures the gateway actually sent, through the reader that is actually called"
+        );
+        assert!(!r.model_tokens[0].cache_split, "a gateway log has no cache columns to state");
+    }
+
+    /// **A reading *file* written before the token report still
+    /// parses.**
+    ///
+    /// `.khor/quotas/<id>.json` is JSON with named fields, and **there
+    /// are such files on real machines right now**, written by the khor
+    /// that ran before this field existed. The old text is spelled out
+    /// by hand rather than round-tripped, because serialising the
+    /// current struct and deleting a key is asking the new code to
+    /// describe the old one.
+    ///
+    /// **Its own test, not one half of a bigger one.** The wire surface
+    /// below is a different codec with a different way of spelling 「the
+    /// field is absent」, and two surfaces sharing a test means the
+    /// second assertion is never seen to fail — the first one always
+    /// gets there first.
+    #[test]
+    fn a_reading_file_written_before_the_token_report_still_parses() {
+        let r: AccountReading = serde_json::from_str(OLD_READING_JSON)
+            .expect("the file on disk still parses");
+        assert_eq!(r.spent, Some(1.5), "what it did record survives whole");
+        assert_eq!(r.days.len(), 1);
+        assert!(
+            r.model_tokens.is_empty(),
+            "a reading from before the token report says so by being empty, not by being wrong"
+        );
+    }
+
+    /// One `.khor/quotas/<id>.json` as the khor before 2026-09-07 wrote
+    /// it: every field that existed then, and none that did not.
+    const OLD_READING_JSON: &str = r#"{"account":"a","name":"n","provider":"newapi","home":"h",
+        "fill":null,"spent":1.5,"limit":null,"currency":"USD","unlimited":false,"resets_at":null,
+        "trouble":null,"at_ms":7,"remaining":null,"expires_at":null,"models":[],
+        "days":[{"at":1800000000,"spent":1.5}],"spent_this_month":null,"spent_all_time":null,
+        "model_days":[],"log_capped":null,"windows":[],"plan":null,"credits":null}"#;
+
+    /// **A reading *frame* from before the token report still decodes.**
+    ///
+    /// The wire is positional msgpack, so 「the field is absent」 is a
+    /// **shorter array** — and the only honest way to produce one is to
+    /// write the struct that produces it, which is what `OldReading`
+    /// is. The length is asserted for the same reason `khor_node::proto`
+    /// asserts it on its own old frames: a struct that quietly still
+    /// carried the field would round-trip and prove nothing.
+    #[test]
+    fn a_reading_frame_from_before_the_token_report_still_decodes() {
+        #[derive(serde::Serialize)]
+        struct OldReading {
+            account: String,
+            name: String,
+            provider: String,
+            home: String,
+            fill: Option<f32>,
+            spent: Option<f64>,
+            limit: Option<f64>,
+            currency: Option<String>,
+            unlimited: bool,
+            resets_at: Option<i64>,
+            trouble: Option<String>,
+            at_ms: i64,
+            remaining: Option<f64>,
+            expires_at: Option<i64>,
+            models: Vec<String>,
+            days: Vec<khor_core::DaySpend>,
+            spent_this_month: Option<f64>,
+            spent_all_time: Option<f64>,
+            model_days: Vec<khor_core::ModelDay>,
+            log_capped: Option<u32>,
+            windows: Vec<khor_core::QuotaWindow>,
+            plan: Option<String>,
+            credits: Option<khor_core::QuotaCredits>,
+        }
+        let mut want = bare(&wallet(Provider::Newapi, None), None, 7);
+        want.spent = Some(1.5);
+        want.currency = Some("USD".to_owned());
+        want.days = vec![khor_core::DaySpend { at: 1_800_000_000, spent: 1.5 }];
+
+        let old_wire = rmp_serde::to_vec(&OldReading {
+            account: want.account.clone(),
+            name: want.name.clone(),
+            provider: want.provider.clone(),
+            home: want.home.clone(),
+            fill: want.fill,
+            spent: want.spent,
+            limit: want.limit,
+            currency: want.currency.clone(),
+            unlimited: want.unlimited,
+            resets_at: want.resets_at,
+            trouble: want.trouble.clone(),
+            at_ms: want.at_ms,
+            remaining: want.remaining,
+            expires_at: want.expires_at,
+            models: want.models.clone(),
+            days: want.days.clone(),
+            spent_this_month: want.spent_this_month,
+            spent_all_time: want.spent_all_time,
+            model_days: want.model_days.clone(),
+            log_capped: want.log_capped,
+            windows: want.windows.clone(),
+            plan: want.plan.clone(),
+            credits: want.credits.clone(),
+        })
+        .unwrap();
+        let fresh = rmp_serde::to_vec(&want).unwrap();
+        assert!(old_wire.len() < fresh.len(), "the old frame really is shorter: it lacks the field");
+
+        let back: AccountReading = rmp_serde::from_slice(&old_wire).unwrap();
+        assert!(back.model_tokens.is_empty(), "an older peer's answer carries no token list");
+        assert_eq!(back, want, "and everything it did carry arrives unchanged");
+    }
+
 }
