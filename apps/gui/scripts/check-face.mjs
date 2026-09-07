@@ -2401,7 +2401,41 @@ try {
     if (drawerShut !== 0) {
       fail(`the card opens with its drawer already out (${drawerShut}) — 展开 is a thing you press`);
     }
-    await press("[data-quota-spread-toggle]");
+    //   ⚠️ **The handle is the dial, 2026-09-07** —「点击环本身展开,和机
+    //   器页一样,而不是现在的一排字!」. **The product changed, not the
+    //   assertion**: this pressed `[data-quota-spread-toggle]`, a line
+    //   of text under the window list, and that button is gone.
+    //
+    //   **Three claims, and the middle one is the absence.** The dial
+    //   carries the toggle; **no text button is left** (checked with
+    //   the dial's own presence as the live control in the same run —
+    //   a zero that came from a renamed marker would be indistinguishable
+    //   otherwise); and the words the text button wore are on the dial
+    //   for a reader who cannot see it, because **a shape with no name
+    //   is a control only some readers have**.
+    const handle = await page.evaluate(() => {
+      const dial = document.querySelector("[data-quota-dial-toggle]");
+      return {
+        dials: document.querySelectorAll("[data-quota-dial-toggle]").length,
+        texts: document.querySelectorAll("[data-quota-spread-toggle]").length,
+        named: (dial?.getAttribute("aria-label") ?? "").trim(),
+        expanded: dial?.getAttribute("aria-expanded") ?? null,
+        // The dial has to be *inside* the button, not beside it: two hit
+        // areas doing one job is the next bug's shape.
+        holdsDial: dial?.querySelector("[data-dial-face]") !== null && dial !== null,
+        caret: dial?.querySelector("[data-quota-dial-caret]")?.getAttribute("data-on") ?? null,
+      };
+    });
+    if (handle.dials !== 1 || !handle.holdsDial) {
+      fail(`the drawer's handle is ${handle.dials} dial button(s), holding a dial: ${handle.holdsDial}`);
+    } else if (handle.texts !== 0) {
+      fail(`a text 展开 button is still on the card (${handle.texts}) — the dial is the handle now`);
+    } else if (!handle.named || handle.expanded !== "false" || handle.caret !== "false") {
+      fail(
+        `the shut dial reads aria-label=${JSON.stringify(handle.named)} aria-expanded=${handle.expanded} caret=${handle.caret} — it must say what it is and that it is shut`,
+      );
+    }
+    await press("[data-quota-dial-toggle]");
     const drawer = await page.evaluate(() => {
       const box = document.querySelector("[data-quota-spread]");
       return {
@@ -2412,15 +2446,24 @@ try {
           centre: e.querySelector("[data-dial-face] text")?.textContent ?? null,
           arcs: e.querySelectorAll("[data-ring-fill]").length,
         })),
-        expanded: document.querySelector("[data-quota-spread-toggle]")?.getAttribute("aria-expanded"),
+        expanded: document.querySelector("[data-quota-dial-toggle]")?.getAttribute("aria-expanded"),
+        // Both channels flip together, and neither is the arc: the
+        // arrow's direction is its `data-on`, its ink is measured.
+        caretOn: document.querySelector("[data-quota-dial-caret]")?.getAttribute("data-on") ?? null,
+        caretInk: (() => {
+          const c = document.querySelector("[data-quota-dial-caret]");
+          return c ? getComputedStyle(c).color : null;
+        })(),
       };
     });
     if (drawer.dials.length !== quotaWindows.length) {
       fail(
         `展开 draws ${drawer.dials.length} dials for the fixture's ${quotaWindows.length} windows — one dial per part, and the count comes from the fixture, not from the rim`,
       );
-    } else if (drawer.expanded !== "true") {
-      fail(`the handle says aria-expanded=${JSON.stringify(drawer.expanded)} with the drawer open`);
+    } else if (drawer.expanded !== "true" || drawer.caretOn !== "true") {
+      fail(
+        `with the drawer open the handle says aria-expanded=${JSON.stringify(drawer.expanded)} and its arrow says ${JSON.stringify(drawer.caretOn)}`,
+      );
     } else {
       //   Each window's own number, in its own dial — a spread that
       //   drew the right count of *identical* dials would pass a count
@@ -2435,10 +2478,33 @@ try {
         }
       }
     }
-    //   …shut again, so what follows measures the card at rest.
-    await press("[data-quota-spread-toggle]");
-    if ((await page.locator("[data-quota-spread]").count()) !== 0) {
-      fail("the drawer would not shut — 收起 is the same handle");
+    //   **The arrow's ink is the second channel, and it has to move.**
+    //   Measured rather than read off a class: one channel doing the
+    //   work of two is the shape a colour-blind reader loses, and a
+    //   `data-on` that flips while nothing on the glass does is a
+    //   marker describing itself (the trap section 8 hit on the key
+    //   box). Compared against the shut state's ink, which the run
+    //   above recorded.
+    //   …shut again, so what follows measures the card at rest. **The
+    //   same handle**, which is what 收起 means: a press that only ever
+    //   opened would leave a drawer nobody can put away.
+    await press("[data-quota-dial-toggle]");
+    const afterShut = await page.evaluate(() => ({
+      drawers: document.querySelectorAll("[data-quota-spread]").length,
+      caret: document.querySelector("[data-quota-dial-caret]")?.getAttribute("data-on") ?? null,
+      ink: (() => {
+        const c = document.querySelector("[data-quota-dial-caret]");
+        return c ? getComputedStyle(c).color : null;
+      })(),
+    }));
+    if (afterShut.drawers !== 0 || afterShut.caret !== "false") {
+      fail(
+        `the drawer would not shut (${afterShut.drawers} left, arrow ${afterShut.caret}) — 收起 is the same handle`,
+      );
+    } else if (afterShut.ink === drawer.caretInk) {
+      fail(
+        `the arrow's ink is ${afterShut.ink} both open and shut — the direction is one channel and the ink was supposed to be the second`,
+      );
     }
 
     //   ── 8·credits, the other arm ────────────────────────────────

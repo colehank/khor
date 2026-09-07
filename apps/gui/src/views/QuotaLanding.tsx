@@ -36,7 +36,7 @@ import {
   type QuotaCredits,
   type QuotaWindow,
 } from "@/api";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconChevronDown, IconChevronUp } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
@@ -1034,14 +1034,80 @@ export function QuotaLanding({
           figure below and no mark, because a mark needs an angle and an
           angle needs a denominator (`creditsPct`). */}
       <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
-        <Face
-          size={RING_SIZE_CARD}
-          stroke={RING_STROKE_CARD}
-          fraction={lead ? lead.pct / 100 : null}
-          pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+        {/* **The dial is the handle** (2026-09-07:「点击环本身展开,和机器
+            页一样,而不是现在的一排字!」). Same gesture the machine card
+            answers, and **a toggle rather than an open**: pressing a
+            dial that is already showing closes it, because anything
+            else makes the press do nothing when it is already on, which
+            reads as a stuck control (`MachineCard`'s `Dial` states the
+            same rule).
+            **「和机器页一样」 is about the gesture, not the pixels.**
+            What affordance each card needs is decided by its own
+            situation: the machine card has four dials side by side with
+            a word under each, which is itself an announcement that
+            these are things to choose between. This card has **one**
+            dial and no word under it — so the same gesture needs a
+            different sign that it is there at all. Do not 「align」 this
+            with the machine card by deleting that sign. */}
+        <button
+          type="button"
+          data-quota-dial-toggle={current.id}
+          aria-expanded={spread.has(current.id)}
+          // The words the text button used to wear, moved: a screen
+          // reader hears what pressing it does, which is the same rule
+          // the row menu's 置顶 / 取消置顶 follows. **A shape with no
+          // name is a control only sighted readers have.**
+          aria-label={spread.has(current.id) ? gui.quota_spread_close : gui.quota_spread_open}
+          disabled={dials.length === 0}
+          onClick={() =>
+            setSpread((was) => {
+              const next = new Set(was);
+              if (!next.delete(current.id)) next.add(current.id);
+              return next;
+            })
+          }
+          className="flex flex-col items-center rounded-md"
         >
-          {lead ? `${Math.round(lead.pct)}%` : ""}
-        </Face>
+          <Face
+            size={RING_SIZE_CARD}
+            stroke={RING_STROKE_CARD}
+            fraction={lead ? lead.pct / 100 : null}
+            pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+          >
+            {lead ? `${Math.round(lead.pct)}%` : ""}
+          </Face>
+          {/* ⚠️ **This arrow does two jobs, and the first is why it
+              exists at all: it says 「this can be pressed」.**
+              A lone circle announces nothing — with the row of words
+              gone, a reader who has not read this file has no way to
+              learn the drawer is there, and **a button nobody knows to
+              press is the same as no button**. The second job is the
+              one it shares with the machine card's word: 「this is
+              open」.
+              **Two jobs is the reason it earns its place** — said here
+              because 「an arrow under a dial」 reads as decoration, and
+              the next person to tidy this card will reach for it.
+              Two channels and no third: the direction it points, and
+              the ink. **No ground, no border, no capsule** — the rail's
+              own rule, and the machine card's. And **not the arc**: the
+              arc is a reading, and a reading may not be dimmed to say
+              something about the interface.
+              Inside the same button as the dial, never beside it: two
+              hit areas doing one job is the next bug's shape. */}
+          {dials.length > 0 && (
+            <span
+              data-quota-dial-caret
+              data-on={spread.has(current.id)}
+              aria-hidden="true"
+              className={cn(
+                "flex",
+                spread.has(current.id) ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {spread.has(current.id) ? <IconChevronUp /> : <IconChevronDown />}
+            </span>
+          )}
+        </button>
         {/* **The right column, and everything in it is a fact about
             this subscription** — the windows, then the credits. They
             are one column rather than two blocks stacked under the card
@@ -1074,28 +1140,22 @@ export function QuotaLanding({
             </div>
           ))}
         </dl>
-        {/* **The drawer's handle, and it says what pressing it does** —
-            not what the drawer is (the same rule the machine row's
-            置顶 / 取消置顶 follows). Below the list rather than beside
-            the dial, because what it opens is a bigger version of the
-            list. */}
-        {dials.length > 0 && (
-          <button
-            type="button"
-            data-quota-spread-toggle={current.id}
-            aria-expanded={spread.has(current.id)}
-            onClick={() =>
-              setSpread((was) => {
-                const next = new Set(was);
-                if (!next.delete(current.id)) next.add(current.id);
-                return next;
-              })
-            }
-            className="flex min-h-touch items-center self-start text-xs text-muted-foreground hover:text-foreground"
-          >
-            {spread.has(current.id) ? gui.quota_spread_close : gui.quota_spread_open}
-          </button>
-        )}
+        {/* ⚠️ **Tombstone: the row of words under this list is gone,
+            2026-09-07** —「点击环本身展开,和机器页一样,而不是现在的一排
+            字!」. It was a `<button>` saying 展开每个窗口 / 收起.
+            **Its two words are not gone with it**: they are the dial's
+            `aria-label` now, saying the same thing to a reader who
+            cannot see the arrow. What was removed is a *second
+            vocabulary for one gesture* — the machine card already had
+            this gesture and it is the dial there, so a card that
+            answered it with a line of text was teaching the same act
+            twice.
+            **How this came to be built the other way is worth keeping**:
+            the ruling behind it was two sentences —「底下『展开』」and
+            「和机器卡按表盘开抽屉是同一个动作」— and they disagree. The
+            first was implemented. That was not a mistake in the doing;
+            it was a judgment with two readings that nobody went back to
+            ask about. */}
       {/* **The credits' figures, and credits is still not a window.**
           A window is a fraction of a period that refills by itself;
           this is money, it does not refill and it has no reset — which
