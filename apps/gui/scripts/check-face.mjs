@@ -4456,16 +4456,41 @@ try {
     //   wrong: **one page computing its own**. The teardown for 「one
     //   place decides」 is therefore to give one page its own number and
     //   watch this go red, not to edit the shared one.
-    const drawnAt = (svg, tickGroup, tickText, pickSel) =>
+    const drawnAt = (svg, tickGroup, tickText, pickSel, seatSel, xPickSel) =>
       page.evaluate(
-        ([svgSel, group, word, pick]) => {
+        ([svgSel, group, word, pick, seat, xpick]) => {
           const el = document.querySelector(svgSel);
           if (!el) return null;
           const frame = el.getBoundingClientRect();
           const ticks = [...document.querySelectorAll(group)];
           const first = document.querySelector(word);
           const label = document.querySelector(pick);
+          //   **Where the settings button sits, in the figure's own
+          //   frame.** This is the one the user pointed at
+          //   (2026-09-09:「为什么机器和余量页三个点的位置还不一样」),
+          //   and until that day the 額度 trend chart's button was not
+          //   in a figure at all — it was in a row underneath.
+          const btn = seat ? document.querySelector(seat) : null;
+          //   ⚠️ **Both ends, because the seats are not all measured
+          //   from the same one.** `labelSeat` puts the y label at a
+          //   `top` and the x label and the settings button at a
+          //   `bottom` — so comparing two figures of different heights
+          //   by distance-from-the-top says they disagree when they are
+          //   obeying the same rule. Measured 2026-09-09: 148 / 228 /
+          //   180 from the top for three figures whose seats are
+          //   identical. **`up` is the reading that matches the rule.**
+          const at = (n) => {
+            const r = n.getBoundingClientRect();
+            return {
+              x: +(r.left - frame.left).toFixed(1),
+              y: +(r.top - frame.top).toFixed(1),
+              up: +(frame.bottom - r.bottom).toFixed(1),
+            };
+          };
+          const xLab = xpick ? document.querySelector(xpick) : null;
           return {
+            settings: btn ? at(btn) : null,
+            xLabel: xLab ? at(xLab) : null,
             // The tick word's ink size, and where its gutter ends —
             // both are what the reader sees, not what was imported.
             font: first ? getComputedStyle(first).fontSize : null,
@@ -4480,14 +4505,36 @@ try {
               : null,
           };
         },
-        [svg, tickGroup, tickText, pickSel],
+        [svg, tickGroup, tickText, pickSel, seatSel ?? null, xPickSel ?? null],
       );
+    //   ⚠️ **Scoped to the zone, not to the half.** This half draws two
+    //   figures and both carry `data-usage-tick-x` since 2026-09-09 —
+    //   an unscoped selector would count one figure's ticks while
+    //   measuring the other's frame, which is the two-readings-one-state
+    //   mistake with the state left out of the reading.
+    const stats = `${half} [data-usage-zone="stats"]`;
+    const trend = `${half} [data-usage-zone="trend"]`;
     const drawnMine = await drawnAt(
-      `${half} [data-usage-scatter]`,
-      `${half} [data-usage-tick-x]`,
-      `${half} [data-usage-tick-y] text`,
-      `${half} [data-plot-pick="y"]`,
+      `${stats} [data-usage-scatter]`,
+      `${stats} [data-usage-tick-x]`,
+      `${stats} [data-usage-tick-y] text`,
+      `${stats} [data-plot-pick="y"]`,
+      `${stats} [data-plot-settings]`,
+      `${stats} [data-plot-pick="x"]`,
     );
+    //   **The bar chart is the third figure, and it is the one the user
+    //   was looking at.** It has no y label — its vertical axis is a
+    //   count — so what is compared here is the tick ink, the gutter
+    //   and **where the settings button sits**.
+    const drawnBars = await drawnAt(
+      `${trend} [data-usage-chart]`,
+      `${trend} [data-usage-tick-x]`,
+      `${trend} [data-usage-tick-y] text`,
+      `${trend} [data-plot-pick="view"]`,
+      `${trend} [data-plot-settings]`,
+      `${trend} [data-plot-pick="view"]`,
+    );
+    const mineFoot = (await page.locator(`${half} [data-plot-foot]`).count()) > 0;
     await open("devices");
     await press("[data-list] [data-row-open]");
     await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) > 0);
@@ -4499,6 +4546,8 @@ try {
       "[data-machine-card] [data-plot-tick-x]",
       "[data-machine-card] [data-plot-tick-y] text",
       '[data-machine-card] [data-plot-pick="y"]',
+      "[data-machine-card] [data-plot-settings]",
+      '[data-machine-card] [data-plot-pick="x"]',
     );
     if (!mine || !theirs || mineHead === null || theirsHead === null) {
       fail(
@@ -4544,6 +4593,20 @@ try {
         ["y-tick gutter", drawnMine.gutter, drawnTheirs.gutter],
         ["y label x", drawnMine.label?.x, drawnTheirs.label?.x],
         ["y label y", drawnMine.label?.y, drawnTheirs.label?.y],
+        ["settings seat x", drawnMine.settings?.x, drawnTheirs.settings?.x],
+        ["settings seat up", drawnMine.settings?.up, drawnTheirs.settings?.up],
+        ["x label up", drawnMine.xLabel?.up, drawnTheirs.xLabel?.up],
+        //   **The third figure.** The bar chart's controls sat in a row
+        //   under it until 2026-09-09 — the same control in the same
+        //   product with two ideas of where it lives, which is what
+        //   「为什么机器和余量页三个点的位置还不一样」 names. Its tick
+        //   ink and gutter are here for the same reason: one drawing
+        //   method has to reach the figure the reader opens first.
+        ["bar tick ink", drawnBars?.font, drawnTheirs.font],
+        ["bar y-tick gutter", drawnBars?.gutter, drawnTheirs.gutter],
+        ["bar settings seat x", drawnBars?.settings?.x, drawnTheirs.settings?.x],
+        ["bar settings seat up", drawnBars?.settings?.up, drawnTheirs.settings?.up],
+        ["bar x label up", drawnBars?.xLabel?.up, drawnTheirs.xLabel?.up],
       ]) {
         const same = typeof mineV === "number" && typeof theirsV === "number" ? Math.abs(mineV - theirsV) <= 0.6 : mineV === theirsV;
         if (!same) {
@@ -4554,7 +4617,24 @@ try {
           );
         }
       }
-      console.log(`one drawing: ${JSON.stringify(drawnTheirs)} on both figures`);
+      //   **The foot, by one name on both.** It said the same sentence
+      //   from the same key on both pages since 2026-09-08 and still
+      //   wore two different marks and sat on opposite sides — which is
+      //   how a gate reading 「one drawing method」 could be green while
+      //   a reader saw two feet.
+      //   ⚠️ **Each foot is read on its own screen.** The first draft
+      //   asked for both in one `evaluate` at this point — and by here
+      //   the walk has left the 額度 pane, so it read `mine: false` on a
+      //   card that was not on the glass. Two readings, two states, one
+      //   comparison: the mistake this file keeps catching.
+      const feet = { mine: mineFoot, theirs: await page.locator("[data-machine-card] [data-plot-foot]").count() > 0 };
+      if (!feet.mine || !feet.theirs) {
+        fail(`the figures' feet are marked ${JSON.stringify(feet)} — one sentence, one key, and it has to be findable by one name on both`);
+      }
+      if (!drawnBars || !(drawnBars.ticks >= 2)) {
+        fail(`probe dead: the 額度 bar chart reads ${JSON.stringify(drawnBars)} — a figure with no ticks agrees with anything`);
+      }
+      console.log(`one drawing: ${JSON.stringify(drawnTheirs)} · bars ${JSON.stringify(drawnBars)}`);
     }
     await open("quota");
     await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);

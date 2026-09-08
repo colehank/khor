@@ -132,6 +132,24 @@ export function usePlotBox(initial: { w: number; h: number } = { w: 900, h: 170 
  * is not, so each is centred on its strip and overflows it invisibly:
  * what has to land inside is the ink, not the hit area.
  */
+/**
+ * **Where a tick's word sits under the horizontal axis.**
+ *
+ * One expression for every figure on both pages, because it was two:
+ * the scatters wrote `H - padB + 14` and the 額度 trend chart wrote
+ * `H - 6` — **14px lower, and straight through the strip
+ * `labelSeat("x")` reserves for the axis's own name**. Measured
+ * 2026-09-09: that is why the bar chart could not carry its label the
+ * way the scatters do, and why its controls had to sit outside the
+ * figure instead.
+ *
+ * `+ 14` puts the word's baseline below the axis line rather than on
+ * it; `padB` is the room set aside under the drawing for exactly this.
+ */
+export function xTickY(h: number): number {
+  return h - PLOT.padB + 14;
+}
+
 export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   // **Three corners, and the fourth is left empty on purpose.** The
   // two labels take the corners a scatter is least likely to put a

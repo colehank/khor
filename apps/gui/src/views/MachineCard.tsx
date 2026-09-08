@@ -9,7 +9,7 @@ import { hugRatio } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD, dialFor } from "@/components/Ring";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { Panel } from "@/components/Panel";
-import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
+import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2457,7 +2457,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           {xTicks.map(({ v, label }) => (
             <g key={`x${v}`} data-plot-tick-x={Math.round(v * 10) / 10}>
               <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
-              <text x={sx(v)} y={H - padB + 14} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
+              <text x={sx(v)} y={xTickY(H)} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
                 {label}
               </text>
             </g>

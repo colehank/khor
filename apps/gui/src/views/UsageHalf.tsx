@@ -67,7 +67,7 @@ import type { AccountReading } from "@/gen/bindings/AccountReading";
 import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
-import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
+import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
 import { Panel } from "@/components/Panel";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
@@ -520,7 +520,11 @@ function Trend({
           className="overflow-visible text-foreground"
         >
           {[0, 1, 2, 3].map((k) => (
-            <g key={k}>
+            //   Marked the way both scatters mark theirs, so the gate
+            //   that holds 「one drawing method」 can read this figure
+            //   too — it could not before 2026-09-09, and that is part
+            //   of why this one drifted.
+            <g key={k} data-usage-tick-y={(peak * k) / 3}>
               <line x1={PLOT.padL} x2={W - PLOT.padR} y1={y((peak * k) / 3)} y2={y((peak * k) / 3)} stroke="currentColor" strokeOpacity={PLOT.frameInk} />
               <text x={PLOT.padL - 6} y={y((peak * k) / 3) + 3} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
                 {k === 0 ? "0" : count((peak * k) / 3)}
@@ -567,7 +571,16 @@ function Trend({
           })}
           {days.map((d, i) =>
             i % Math.max(1, Math.ceil(days.length / 6)) === 0 || i === days.length - 1 ? (
-              <text key={d} x={cx(i)} y={H - 6} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
+              <text
+                key={d}
+                data-usage-tick-x={d}
+                x={cx(i)}
+                y={xTickY(H)}
+                fontSize={PLOT.tick}
+                textAnchor="middle"
+                fill="currentColor"
+                fillOpacity={PLOT.tickWordInk}
+              >
                 {d.slice(5)}
               </text>
             ) : null,
@@ -639,20 +652,37 @@ function Trend({
           </text>
         </svg>
       )}
-      </div>
       {/* **The x axis says what it is; one button changes it**
           (2026-09-08:「都做成一个小的设置按钮,点击后进行选择」). The two
           words were controls until that day — press 「按天」 and the
           candidates replaced it in place. What the axis keeps is the
           half of the 2026-09-05 ruling that still holds: **an axis
-          carries one word, and it is the right one.** */}
-      <div className="flex items-baseline justify-between">
-        <AxisLabel
-          which="view"
-          word={view === "model" ? gui.usage_view_model : gui.usage_view_day}
-          rulerWord={win === 0 ? gui.usage_window_all : gui.usage_window_days(win)}
-          align="left"
-        />
+          carries one word, and it is the right one.**
+
+          ⚠️ **And since 2026-09-09 they sit in the figure's own seats,
+          not in a row under it** (the user:「为什么机器和余量页三个点
+          的位置还不一样」). They were outside because they could not
+          fit inside: this chart wrote its day labels at `H - 6`, 14px
+          lower than either scatter, straight through the strip
+          `labelSeat("x")` reserves. **The fix was to make the two
+          figures agree about where a tick's word goes** (`xTickY`),
+          which freed the same strip here — not to invent a second
+          place for these controls.
+
+          The label goes in the **x** seat because that is what it
+          names: 「按天 / 按模型」 is what this axis *is*, and the window
+          is how far it reaches. There is no y label — this axis is a
+          count, and a word saying so would be a word saying nothing. */}
+      <span className="pointer-events-none absolute inset-0">
+        <span className="pointer-events-auto absolute" style={labelSeat("x")}>
+          <AxisLabel
+            which="view"
+            word={view === "model" ? gui.usage_view_model : gui.usage_view_day}
+            rulerWord={win === 0 ? gui.usage_window_all : gui.usage_window_days(win)}
+            align="right"
+          />
+        </span>
+        <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
         <PlotSettings
           rows={[
             {
@@ -673,6 +703,8 @@ function Trend({
           ]}
           onPick={(row, k) => (row === "view" ? onView(k === "model" ? "model" : "day") : onWin(Number(k)))}
         />
+        </span>
+      </span>
       </div>
       {/* **The legend sits under the drawing, not over it** (2026-09-08,
           the user: 「模型 legend 写在柱状图的下方」). It is the same list
@@ -959,7 +991,7 @@ function Stats({
         ))}
         {tickSet(rx, ax, steps(rx)).map(({ v, label }) => (
           <g key={`x${v}`} data-usage-tick-x={v}>
-            <text x={X(v)} y={H - PLOT.padB + 14} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
+            <text x={X(v)} y={xTickY(H)} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
               {label}
             </text>
           </g>
@@ -1028,10 +1060,11 @@ function Stats({
           The window sits here too: it is a fact about what was drawn,
           not a title over it. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-row text-aux text-muted-foreground">
-        {/* `data-plot-area-of` rather than a name of this page's own:
-            both figures say this sentence from one key now, so a gate
-            comparing them looks for one attribute. */}
-        <span data-plot-area-of={axes.z}>{gui.plot_area_is(AXES[axes.z].word())}</span>
+        {/* ⚠️ **The facts about the window on the left, the sentence
+            about the drawing on the right** — the machine card's foot
+            reads that way round (`off` first, then what the dot's size
+            means), and until 2026-09-09 this one read the other way.
+            One sentence, one key, and now one side. */}
         <span className="flex items-baseline gap-x-row">
           {/* **How many models are not on the picture, said out loud.**
               A model with no reading on one of these two axes is not
@@ -1044,6 +1077,11 @@ function Stats({
             {days.length > 0 ? gui.usage_range(days[0], days[days.length - 1], days.length) : ""}
           </span>
         </span>
+        {/* `data-plot-foot` and `data-plot-area-of`, the machine card's
+            own marks: both figures say this sentence from one key, so
+            the gate that holds 「one drawing method」 finds it by one
+            name on both. */}
+        <span data-plot-foot data-plot-area-of={axes.z}>{gui.plot_area_is(AXES[axes.z].word())}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-aux tabular-nums">
