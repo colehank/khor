@@ -113,6 +113,16 @@ export const RING_SIZE = 64;
  * **88 did not fit a four-character reading and 132 does** — a machine
  * at three digits of CPU is ordinary, so the enlargement closes a
  * latent overflow rather than opening one.
+ *
+ * ⚠️ **That overflow is a reason of its own, not a side effect of the
+ * enlargement — and it comes back if this number goes back.** It was
+ * already on screen before any of this: any dial reading three digits
+ * drew 1.25px outside its own ring, silently, and nothing said so.
+ * `check-face.mjs`'s dial section asserts it now (`100%` put into the
+ * product's own `<text>`, measured there, put back), so a size that
+ * cannot hold the widest reading is a red rather than a thing somebody
+ * notices on a busy machine. **If this constant is ever lowered, that
+ * is the gate to read first.**
  */
 export const RING_SIZE_CARD = 132;
 export const RING_STROKE_CARD = 4;
