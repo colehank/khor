@@ -213,22 +213,37 @@ function dayAxis(rows: UsageRow[], today: string | null, back: number): string[]
  * the token rows and `QuotaLanding`'s `SpendDays` draws the money ones,
  * off the same `at` from the same pass over the same log.
  *
- * ⚠️ **It is read in UTC, and for the new-api road that is wrong by a
- * day** — measured on real accounts 2026-09-09: `khor_node::accounts`'s
- * `read_log` cuts that road's buckets with `TimeZone::system()`, i.e.
- * at the answering node's **local** midnight, and reading that instant
- * back in UTC lands on the day before for every zone east of it. The
- * two vendors' roads are unaffected: their buckets are the provider's
- * own and are UTC.
+ * **An instant does not name a day on its own.** 2026-09-08 00:00 in
+ * Asia/Shanghai is 2026-09-07 16:00Z, so the zone that *cut* the bucket
+ * has to come with it — `AccountReading::zone`, filled on all three
+ * roads (the two vendors answer UTC buckets of their own; new-api's are
+ * cut by khor at the reading node's local midnight).
  *
- * **The fix is ruled and is a wire change** (2026-09-09: carry the zone
- * that cut each bucket, on all three roads, so `at` and `zone` are read
- * together and the contract is one sentence again). **This is the
- * function it lands in** — one call site each, which is why they were
- * merged here first.
+ * ⚠️ **Until 2026-09-09 this read every instant as UTC, and on the
+ * new-api road that was a day early — measured on real accounts, seven
+ * rows out of seven.** The old spelling read like a decision: a comment
+ * here said the boundary 「was cut upstream by whoever billed it」, which
+ * is true of the two vendors and false of the road most people are on.
+ *
+ * `zone` missing is an older peer, and then this falls back to UTC —
+ * **which is the old bug, silently, for that one account**. Nothing on
+ * the screen says so; `AccountReading::zone` carries when that stops
+ * being a transition and becomes a fault.
  */
-export function civilDay(at: number): string {
-  return new Date(at * 1000).toISOString().slice(0, 10);
+export function civilDay(at: number, zone: string | null | undefined): string {
+  const t = new Date(at * 1000);
+  if (!zone) return t.toISOString().slice(0, 10);
+  try {
+    //   `en-CA` is `YYYY-MM-DD` — the same shape the transcript road's
+    //   civil dates already come in, so both roads' days compare as
+    //   strings without a second format anywhere.
+    return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+  } catch {
+    //   An unknown zone name is not a reason to draw nothing: fall back
+    //   the way a missing one does, and be wrong the same way rather
+    //   than in a new one.
+    return t.toISOString().slice(0, 10);
+  }
 }
 
 /** `YYYY-MM-DD` plus `n` days, through UTC so the arithmetic cannot
@@ -1406,7 +1421,7 @@ export function fromReading(
   if (tok.length === 0) return { rows: null, why: gui.usage_no_report, cacheKnown: false };
   return {
     rows: tok.map((m) => ({
-      day: civilDay(m.at),
+      day: civilDay(m.at, reading.zone),
       model: m.model,
       input: m.tokens.input,
       output: m.tokens.output,

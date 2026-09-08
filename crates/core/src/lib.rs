@@ -1908,6 +1908,50 @@ pub struct AccountReading {
     /// gave, for the same consumer.
     #[serde(default)]
     pub model_tokens: Vec<ModelTokenDay>,
+    /// **The zone whose midnight cut the buckets in `days`,
+    /// `model_days` and `model_tokens`** — IANA name, or `"UTC"`.
+    ///
+    /// Read the day a bucket belongs to **from `at` and this together**.
+    /// An instant alone does not name a day: 2026-09-08 00:00 in
+    /// Asia/Shanghai is 2026-09-07 16:00Z, and a screen formatting that
+    /// instant in UTC prints the day before for every account east of
+    /// Greenwich. Measured on real accounts 2026-09-09: **every new-api
+    /// row was a day early**, seven days out of seven.
+    ///
+    /// ⚠️ **Why it is filled on all three roads and not only the one
+    /// that needed it.** The two vendors answer buckets of their own,
+    /// cut at UTC (Anthropic's `starting_at`, OpenAI's `start_time`);
+    /// new-api answers *records*, and `khor_node::accounts`'s
+    /// `read_log` cuts them into days itself, at the **reading node's**
+    /// local midnight. Filling only the third would leave the contract
+    /// two sentences — 「the provider's bucket, except on that road」 —
+    /// and a reader would have to know which road they were on to
+    /// format a date. Filled everywhere, it is one sentence and needs
+    /// no branch: **`at` is an instant, `zone` cut it, read the day
+    /// with both.**
+    ///
+    /// `None` is an older peer that predates this field. The face falls
+    /// back to UTC there, **and on the new-api road that is the old
+    /// bug, silently** — nothing on the screen says the date might be a
+    /// day out.
+    ///
+    /// ⚠️ **When this default stops being a transition and becomes a
+    /// fault**: once every node in the fleet is past this release, a
+    /// `None` here means a node fell behind rather than 「not yet
+    /// upgraded」, and those two want different handling. Nothing
+    /// measures that today; the day someone adds it, this is the line
+    /// to read.
+    ///
+    /// **Tail field, `serde default`, no `skip_serializing_if`** — and
+    /// the sentence `khor_node::proto` demands before appending: an
+    /// older peer refusing this longer frame keeps its previous
+    /// readings with an age that goes on climbing, which is different
+    /// from what it shows on success and lands where the 額度 page
+    /// already says 「I cannot tell」. The same answer the fields above
+    /// gave, for the same consumer.
+    #[serde(default)]
+    #[ts(type = "string | null")]
+    pub zone: Option<String>,
 }
 
 /// What khor can say about the subscription right now.
@@ -2274,6 +2318,75 @@ pub struct Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **An older peer's reading, and the field it has never heard of.**
+    ///
+    /// `AccountReading::zone` was appended 2026-09-09 to carry the zone
+    /// whose midnight cut the buckets. Nodes do not upgrade at once, so
+    /// the wire has to survive a sender that predates it — and this is
+    /// the half that is easy to get wrong twice over:
+    ///
+    ///   1. **the frame really has to be missing the key.** A test that
+    ///      serialised the new struct and read it back would pass on a
+    ///      `zone` written and read as `null`, which is a different
+    ///      fact from 「the sender never had one」. So the key is taken
+    ///      out and its absence is asserted **by name** before anything
+    ///      is decoded.
+    ///   2. **the default has to be `None`, not a value.** A `"UTC"`
+    ///      default would put a date on screen and swear to a zone
+    ///      nobody sent — 「一档接不上会变成旁边那一档」 in its wire form.
+    ///
+    /// ⚠️ **The old frame is built by removing the key from a real
+    /// one**, not by hand-writing an older shape: the first draft did
+    /// hand-write it, guessed `home`'s encoding wrong, and failed to
+    /// decode **for a reason that had nothing to do with the field
+    /// being tested** — a red that points somewhere else is worse than
+    /// no test, and here the shape is not the thing under test.
+    #[test]
+    fn a_reading_from_before_the_zone_field_still_decodes() {
+        let mine = AccountReading {
+            account: "acc-1".to_owned(),
+            name: "gateway".to_owned(),
+            provider: "newapi".to_owned(),
+            home: "dev0".to_owned(),
+            fill: None,
+            spent: Some(1.5),
+            limit: None,
+            currency: Some("USD".to_owned()),
+            unlimited: false,
+            resets_at: None,
+            trouble: None,
+            at_ms: 1_800_000_000_000,
+            remaining: None,
+            expires_at: None,
+            models: Vec::new(),
+            days: Vec::new(),
+            spent_this_month: None,
+            spent_all_time: None,
+            model_days: Vec::new(),
+            log_capped: None,
+            windows: Vec::new(),
+            plan: None,
+            credits: None,
+            model_tokens: Vec::new(),
+            zone: Some("Asia/Shanghai".to_owned()),
+        };
+        let mut frame = serde_json::to_value(&mine).expect("a reading serialises");
+        assert!(frame.get("zone").is_some(), "this node writes the field, or the removal below proves nothing");
+        frame.as_object_mut().expect("an object").remove("zone");
+        let bytes = serde_json::to_vec(&frame).expect("the older frame serialises");
+        let text = String::from_utf8(bytes.clone()).expect("json is utf-8");
+        assert!(
+            !text.contains("zone"),
+            "the sample still carries a zone key, so 「an older peer never sent one」 is not what this is testing: {text}",
+        );
+        let back: AccountReading = serde_json::from_slice(&bytes).expect("an older peer's frame still decodes");
+        assert_eq!(back.zone, None, "a frame with no zone must read as 「nobody said」, never as a zone");
+        assert_eq!(back.spent, Some(1.5), "the fields that were there are still there");
+        let again: AccountReading =
+            serde_json::from_slice(&serde_json::to_vec(&mine).expect("serialises")).expect("decodes");
+        assert_eq!(again.zone.as_deref(), Some("Asia/Shanghai"), "and what this node sends survives its own round trip");
+    }
 
     fn a_session(kind: &str) -> Session {
         Session {

@@ -1987,7 +1987,7 @@ function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: s
               fill="currentColor"
               fillOpacity={0.6}
             >
-              <title>{`${civilDay(d.at)} · ${money(d.spent, mark)}`}</title>
+              <title>{`${civilDay(d.at, reading.zone)} · ${money(d.spent, mark)}`}</title>
             </rect>
           ))}
           {days.map((d, i) =>
@@ -2002,7 +2002,7 @@ function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: s
                 fill="currentColor"
                 fillOpacity={PLOT.tickWordInk}
               >
-                {civilDay(d.at).slice(5)}
+                {civilDay(d.at, reading.zone).slice(5)}
               </text>
             ) : null,
           )}

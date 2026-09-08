@@ -692,12 +692,25 @@ try {
     // the fixture's own count is what the title has to say — 「7 天」
     // hard-coded would pass on any chart at all.
     ring("acc-capped", "gateway2", "newapi", {
+      //   ⚠️ **These three instants are real local midnights, and that
+      //   is the whole point of them** (2026-09-09). Every other `at`
+      //   in this fixture is a round number like `1_800_000_000` —
+      //   08:00Z, **not a day boundary in any zone** — so reading it as
+      //   UTC and reading it in the node's zone give the same date, and
+      //   a gate comparing the two readings could not tell them apart.
+      //   That is 「两条胳膊被造得必然一致」 in its purest form: the
+      //   date bug measured on real accounts was invisible here.
+      //
+      //   `1_788_537_600` is 2026-09-05 00:00 in Asia/Shanghai, which is
+      //   2026-09-04 16:00Z. **A face reading these as UTC prints the
+      //   day before, all three.**
+      zone: "Asia/Shanghai",
       spent: 9.0,
       currency: "USD",
       days: [
-        { at: 1_800_000_000, spent: 1.0 },
-        { at: 1_800_086_400, spent: 3.0 },
-        { at: 1_800_172_800, spent: 5.0 },
+        { at: 1_788_537_600, spent: 1.0 },
+        { at: 1_788_624_000, spent: 3.0 },
+        { at: 1_788_710_400, spent: 5.0 },
       ],
       log_capped: 1000,
       // **`cache_split: false` is 「those two were not reported」, not
@@ -707,8 +720,8 @@ try {
       // cache-derived columns must leave the table rather than be
       // drawn as zeroes.
       model_tokens: [
-        { at: 1_800_000_000, model: "deepseek-chat", tokens: { input: 300, cached_input: 0, cache_write: 0, output: 700 }, cache_split: false },
-        { at: 1_800_086_400, model: "deepseek-chat", tokens: { input: 150, cached_input: 0, cache_write: 0, output: 350 }, cache_split: false },
+        { at: 1_788_537_600, model: "deepseek-chat", tokens: { input: 300, cached_input: 0, cache_write: 0, output: 700 }, cache_split: false },
+        { at: 1_788_624_000, model: "deepseek-chat", tokens: { input: 150, cached_input: 0, cache_write: 0, output: 350 }, cache_split: false },
       ],
     }),
     // …and the refused one is carried from a peer, so the read-from
@@ -2855,7 +2868,21 @@ try {
       fail(`an uncut log draws a cap line (${JSON.stringify(plain.capped)}) — it would be false on almost every account`);
     } else if (!cut.capped?.includes("1000")) {
       fail(`a cut log says ${JSON.stringify(cut.capped)} — it carries the count the provider actually answered`);
-    } else if (cut.words.length === 0 || !cut.words.every((w) => /^\d{2}-\d{2}$/.test(w))) {
+    } else if (JSON.stringify(cut.words) !== JSON.stringify(["09-05", "09-06", "09-07"])) {
+      //   ⚠️ **The dates are asserted by value, and the values are the
+      //   fixture's own zone.** `acc-capped`'s three instants are local
+      //   midnights in Asia/Shanghai; **reading them as UTC prints
+      //   09-04 / 09-05 / 09-06 — the whole column a day early**, which
+      //   is what real accounts were showing until 2026-09-09
+      //   (measured: seven rows out of seven). A shape check
+      //   (「they look like MM-DD」) passes on both readings and would
+      //   have said nothing about the bug this exists for.
+      fail(
+        `the money chart's day words are ${JSON.stringify(cut.words)} — this account's buckets were cut at Asia/Shanghai ` +
+          `midnight, so they are 09-05/09-06/09-07; a whole column one day early is an instant read in the wrong zone ` +
+          `(AccountReading::zone travels with them for exactly this)`,
+      );
+    } else if (cut.words.length === 0) {
       fail(
         `the money chart's day words are ${JSON.stringify(cut.words)} — a bar chart over days has to say which days ` +
           `(the user, 2026-09-09:「bar图也没有日期」)`,

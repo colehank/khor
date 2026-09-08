@@ -744,6 +744,10 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
         plan: None,
         credits: None,
         model_tokens: Vec::new(),
+        //   **No buckets, so no zone that cut them.** `bare` is the
+        //   reading with no numbers in it; the field is filled by
+        //   whoever fills the lists, beside the pass that cut them.
+        zone: None,
     }
 }
 
@@ -1017,6 +1021,15 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
         r.model_days = log.model_days;
         r.model_tokens = log.model_tokens;
         r.log_capped = log.capped;
+        //   **This road's buckets are khor's own, cut at this node's
+        //   local midnight** — `read_log` groups per-request records
+        //   with `TimeZone::system()`, because a person reading a
+        //   gateway's log means their own day. The zone travels with
+        //   the buckets so a face can name that day instead of
+        //   guessing: reading these instants as UTC printed the day
+        //   before for every account east of Greenwich (measured on
+        //   real accounts, 2026-09-09, seven rows out of seven).
+        r.zone = Some(jiff::tz::TimeZone::system().iana_name().unwrap_or("UTC").to_owned());
     }
     if !unlimited && let Some(avail) = available {
         let total = used + avail;
@@ -1413,6 +1426,12 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
     // (`CACHE_TTL_MS`); this makes it two, which is the price of the
     // only figures either vendor states in tokens at all.
     r.model_tokens = claude_model_tokens(&c, key, &start).await;
+    //   **The provider's own buckets, and they are UTC** (`starting_at`
+    //   on the cost report, `bucket_width=1d`). Said rather than left
+    //   empty: a face that has to ask 「which road is this」 before it
+    //   can format a date is a face with a branch in it, and the branch
+    //   is what went wrong on the road next door.
+    r.zone = Some("UTC".to_owned());
     Ok(r)
 }
 
@@ -1554,6 +1573,9 @@ async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountR
     // The token road, on the same terms Anthropic's is on: a layer
     // beside the reading, dropped whole if it cannot be had.
     r.model_tokens = openai_model_tokens(&c, key, start).await;
+    //   OpenAI's `start_time` buckets, likewise UTC. See the note on
+    //   the Anthropic road for why this is stated rather than omitted.
+    r.zone = Some("UTC".to_owned());
     Ok(r)
 }
 
