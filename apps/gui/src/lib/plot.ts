@@ -9,8 +9,9 @@ import { useEffect, useRef, useState } from "react";
  * # What was actually different, and it was not the control
  *
  * Both pages already drew their axis labels with the same component
- * (`components/AxisPick`). What disagreed was **the coordinate system
- * they were placed into**, measured 2026-09-08:
+ * (`components/PlotControls`, then still named `AxisPick`). What
+ * disagreed was **the coordinate system they were placed into**,
+ * measured 2026-09-08:
  *
  * | | machine card | 額度 card |
  * |---|---|---|
@@ -82,8 +83,8 @@ export const PLOT = {
       as the same (`day/day-core.js` draws its hairlines at 0.6). */
   hair: 1.1,
   /** The floor a finger needs, so a label strip can be centred on it.
-      Mirrors `--touch`; `AxisPick` wears the class, this is the number
-      the strip's offset is computed from. */
+      Mirrors `--touch`; `PlotControls` wears the class, this is the
+      number the strip's offset is computed from. */
   touch: 44,
 } as const;
 
@@ -152,4 +153,81 @@ export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   if (which === "y") return { left: PLOT.padL, top: 0, height: PLOT.padT, ...middle };
   if (which === "x") return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
   return { left: PLOT.padL, bottom: (12 - PLOT.touch) / 2 };
+}
+
+/**
+ * **Which quantities may be offered as a dot's area: the ones every row
+ * on this screen has a reading for.**
+ *
+ * 2026-09-08. The 額度 card encodes a third quantity as the dot's area
+ * and the machine card was to do the same — until the measurement:
+ * `gpu_mem` is null on **200 of 200 rows on two of the three machines**
+ * (`zh.toml`'s `top-plot-off` records it; the gate's own fixture has it
+ * on 2 of 23). Offered as an area, that draws every one of those dots
+ * at the floor, and **a floor-sized dot reads as 「the smallest」** —
+ * so the picture would be saying those two hundred processes use the
+ * least video memory, which is the neighbouring-value error this plot
+ * has always been built against.
+ *
+ * ⚠️ **This is stricter than the rule that decides whether a column is
+ * drawn, and the difference is not an inconsistency.** That one asks
+ * 「has *any* row ever filled this?」 (`Seen`), because what it decides
+ * is whether a whole column exists, and a missing cell there is simply
+ * an **empty cell** — a thing the reader can see is absent. The area
+ * decides a **radius**, and the point has to exist regardless: it is
+ * carrying X and Y. **There is no 「do not draw」 for it**, so a missing
+ * reading has nowhere to go but the floor. The same question, asked of
+ * two things whose 「missing」 looks different, gets two answers.
+ *
+ * **Nobody maintains a list.** The day a machine reports video memory
+ * for every process, that quantity appears in the picker on its own;
+ * the day one stops, it leaves. The gate asserts the property rather
+ * than the names.
+ */
+export function everyRowHas<K extends string, R>(
+  keys: readonly K[],
+  rows: R[],
+  read: (k: K, r: R) => number | null | undefined,
+): K[] {
+  if (rows.length === 0) return [];
+  return keys.filter((k) => rows.every((r) => {
+    const v = read(k, r);
+    return v !== null && v !== undefined && Number.isFinite(v);
+  }));
+}
+
+/**
+ * **How big the dots may get, given how many there are.**
+ *
+ * ⚠️ **A fixed range cannot serve both figures.** The 額度 card draws
+ * ten models across a wide band; the machine card draws two hundred
+ * processes. The same `19` that is a comfortable dot for ten tiles the
+ * drawing for two hundred — the machine card's own waiver says it in
+ * as many words. So the range is a function of the count and the room,
+ * and the rule is one rule.
+ *
+ * The floor is the machine card's drawn dot (1.8): the smallest reading
+ * still has to be a dot rather than nothing. The ceiling is the square
+ * root of the room each point would get if they were spread evenly,
+ * quartered — a dot is not meant to fill its share, only to be
+ * comparable with its neighbours — and capped where a dot stops being
+ * a dot.
+ */
+export function dotSpan(n: number, w: number, h: number): { min: number; max: number } {
+  const min = 1.8;
+  const room = Math.sqrt(Math.max(w, 1) * Math.max(h, 1) / Math.max(n, 1)) / 4;
+  return { min, max: Math.max(min + 0.5, Math.min(19, room)) };
+}
+
+/**
+ * A dot's radius for a reading.
+ *
+ * **The area carries the value, so the radius is its square root** — a
+ * radius read straight off the number makes a 4× value look 16× big.
+ * The floor is not zero (the smallest dot still has to be there), so
+ * the two ends are interpolated **in area** and taken back to a radius.
+ */
+export function dotRadius(v: number, vmax: number, span: { min: number; max: number }): number {
+  const t = vmax > 0 ? Math.max(v, 0) / vmax : 0;
+  return Math.sqrt(span.min * span.min + (span.max * span.max - span.min * span.min) * t);
 }

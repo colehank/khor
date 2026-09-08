@@ -9,7 +9,7 @@ import { hugRatio } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { Panel } from "@/components/Panel";
-import { PLOT, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
+import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1560,9 +1560,9 @@ function Busy({
           were read as them (2026-09-04:「上面的散点图的 X 和 y 设置是
           下面表的表头」). **Those two rows no longer exist**: the axis
           words became one word printed on each axis, and the picker
-          opens in place (`AxisPick`). What is above the table's head
-          now is the figure's foot — a sentence, not a row of
-          column-shaped words.
+          opens in place (`components/PlotControls`). What is above
+          the table's head now is the figure's foot — a sentence, not a
+          row of column-shaped words.
 
           So the order is the reader's to choose again, and they chose
           this one. **If a third swap is ever proposed, the thing to
@@ -2115,13 +2115,18 @@ function ruler(vals: number[]): {
  * setting, and it costs one press to get back.
  */
 const axesStore = {
-  pair: { x: "cpu" as AxisKey, y: "mem" as AxisKey },
+  // **Three now, not two** (2026-09-08): the dot's area is a reading
+  // too. `mem` is the opening choice because it is one of the two
+  // quantities every process on every machine reports — see
+  // `everyRowHas`, which is also what decides whether a quantity may be
+  // offered here at all.
+  pair: { x: "cpu" as AxisKey, y: "mem" as AxisKey, z: "mem" as AxisKey },
   subs: new Set<() => void>(),
   get() {
     return this.pair;
   },
-  set(next: { x: AxisKey; y: AxisKey }) {
-    if (next.x === this.pair.x && next.y === this.pair.y) return;
+  set(next: { x: AxisKey; y: AxisKey; z: AxisKey }) {
+    if (next.x === this.pair.x && next.y === this.pair.y && next.z === this.pair.z) return;
     this.pair = next;
     this.subs.forEach((f) => f());
   },
@@ -2247,6 +2252,10 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   const padR = PLOT.padR;
   const ax = AXES[axes.x];
   const ay = AXES[axes.y];
+  // **Which quantities this screen may offer as an area** — the ones
+  // every row has a reading for. See `everyRowHas` for why this is
+  // stricter than the rule that decides whether a column is drawn.
+  const areaKeys = everyRowHas(AXIS_KEYS, rows, (k, r) => AXES[k].of(r));
   // **The rows this picture can actually place.** Both readings, or the
   // row is not on it — see the head.
   const placed = rows
@@ -2255,10 +2264,16 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   const off = rows.length - placed.length;
   const rx = ruler(placed.map((p) => p.x));
   const ry = ruler(placed.map((p) => p.y));
-  const vrams = rows.map((r) => r.gpu_mem).filter((v): v is number => v !== null && v > 0);
-  const maxVram = vrams.length > 0 ? Math.max(...vrams) : 0;
-  const RMAX = 11;
-  const halo = (v: number) => (maxVram > 0 ? RMAX * Math.sqrt(v / maxVram) : 0);
+  // **The third quantity is the dot's own area now** (2026-09-08), and
+  // which quantities may be offered as one is decided by the data —
+  // see `everyRowHas`. `az` is guaranteed a reading on every placed row
+  // by that filter, so a floor-sized dot here means 「the smallest」 and
+  // never 「nobody said」.
+  const az = AXES[areaKeys.includes(axes.z) ? axes.z : (areaKeys[0] ?? "cpu")];
+  const zs = placed.map((p) => az.of(p.r)).filter((v): v is number => v !== null && Number.isFinite(v));
+  const zmax = zs.length > 0 ? Math.max(...zs) : 0;
+  const span = dotSpan(placed.length, W - padL - padR, H - padT - padB);
+  const dotR = (r: Load["top"][number]) => dotRadius(az.of(r) ?? 0, zmax, span);
   // **A margin at both ends of each axis**, in pixels rather than as a
   // fraction of the ruler: the two extreme readings sit *exactly* on
   // `at = 0` and `at = 1` now that the axis is the data's own span, and
@@ -2280,7 +2295,6 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   const steps = tickFractions();
   const xTicks = tickSet(rx, ax, steps);
   const yTicks = tickSet(ry, ay, steps);
-  const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
   return (
     <div
       data-top-plot
@@ -2341,25 +2355,28 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           </span>
           {/* **One button for what this figure is set to** (2026-09-08:
               「都做成一个小的设置按钮,点击后进行选择」).
-              ⚠️ **Two rows here, not three.** The 額度 card's figure
-              offers a third quantity as the dot's **area**; this one
-              does not yet, and the reason is a measurement rather than
-              an omission: `gpu_mem` is null on 200 of 200 rows on two
+              **Three rows: X, Y, and the dot's area.** The third one
+              was the open question, and what settled it is a
+              measurement: `gpu_mem` is null on 200 of 200 rows on two
               of the three machines (`zh.toml`'s `top-plot-off` records
               it), and an area encoding has no 「do not draw」 — a null
               reading can only land on the floor, which reads as 「the
               smallest」. That is the neighbouring-value error this plot
-              is built against, and which quantities may be offered as
-              an area is an open ruling. **The halo is untouched until
-              it lands.** */}
+              is built against. So the area row offers only what
+              **every** row on this screen reports (`areaKeys`), while
+              an axis row offers everything: a row missing an axis
+              reading is simply not placed and the foot says how many,
+              but a point must exist to carry X and Y, so its size has
+              nowhere to go. **Nobody maintains a list** — the day a
+              machine reports video memory for every process, 显存
+              becomes offerable on its own. */}
           <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
             <PlotSettings
-              rows={(["x", "y"] as const).map((which) => ({
-                key: which,
-                word: which.toUpperCase(),
-                chosen: axes[which],
-                options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })),
-              }))}
+              rows={[
+                { key: "x", word: "X", chosen: axes.x, options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })) },
+                { key: "y", word: "Y", chosen: axes.y, options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })) },
+                { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: areaKeys.map((k) => ({ key: k, word: AXES[k].word() })) },
+              ]}
               onPick={(row, k) => axesStore.set({ ...axes, [row]: k as AxisKey })}
             />
           </span>
@@ -2404,17 +2421,43 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                 className="cursor-pointer"
               >
 
-                {r.gpu_mem !== null && r.gpu_mem > 0 && (
-                  <circle
-                    data-plot-halo={Math.round(halo(r.gpu_mem) * 10) / 10}
-                    cx={cx}
-                    cy={cy}
-                    r={halo(r.gpu_mem)}
-                    fill="currentColor"
-                    fillOpacity={0.14}
-                  />
-                )}
-                {r.gpu_mem === 0 && (
+                {/* ⚠️ **Tombstone: the halo is gone, 2026-09-08.** It was
+                    a ring around the dot whose radius was
+                    `11 × √(显存 / 最大显存)` — the third quantity, drawn
+                    as an area, in a channel of its own.
+
+                    Two reasons, and the second is the user's:
+                    **it encoded 显存**, which is null on 200 of 200 rows
+                    on two of the three machines — so on those it drew
+                    **nothing at all**, and 「nothing」 was exactly the
+                    档 a ring can have and a dot cannot; and **it was a
+                    second visual channel** for the same idea the 額度
+                    card draws as the dot's own size, which is half of
+                    「看起来是两个产品」.
+
+                    ⚠️ **When it should come back:** the day 显存 is
+                    reported for every process on the machines people
+                    actually use, the third quantity's picker will offer
+                    it on its own (`everyRowHas` decides, nobody
+                    maintains a list). **Whether a separate ring is
+                    wanted then is a new question, not this decision
+                    carried forward** — the reason it existed was that a
+                    ring can be absent, and once the quantity is never
+                    absent that reason is gone.
+
+                    turing's three rows lose their halo; 显存 is still a
+                    column in the table. */}
+                {/* **Nought is not the smallest.** The area's floor is
+                    a dot that can still be seen, so a reading of zero
+                    and the smallest reading above zero come out nearly
+                    the same size — and that is the neighbouring-value
+                    error again, one rung down. A row that was looked at
+                    and read zero says so in a shape instead: a dashed
+                    ring, which no reading draws.
+                    ⚠️ It follows whichever quantity carries the area
+                    (`az`), not 显存 — it was 显存's until 2026-09-08
+                    because 显存 was the only third quantity. */}
+                {az.of(r) === 0 && (
                   <circle
                     data-plot-zero
                     cx={cx}
@@ -2427,8 +2470,8 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                   />
                 )}
                 {/* **The target is wider than the dot, and it is the
-                    same circle.** The drawn radius is 1.8 because that
-                    is what keeps two hundred of them readable; the
+                    same circle.** The drawn radius is a reading now
+                    (`dotSpan` keeps two hundred of them readable); the
                     pointer gets a transparent stroke around it rather
                     than a second element — two hundred extra nodes on a
                     card that re-lays-out on every viewport change is a
@@ -2442,9 +2485,10 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                     directly below, which is the canonical list and is
                     reachable without any of this. */}
                 <circle
+                  data-plot-area={Math.round(dotR(r) * 100) / 100}
                   cx={cx}
                   cy={cy}
-                  r={1.8}
+                  r={dotR(r)}
                   fill="currentColor"
                   fillOpacity={0.75}
                   stroke="transparent"
@@ -2475,23 +2519,18 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               machine. */}
           {off > 0 && <span data-plot-off={off}>{cli.top_plot_off(off)}</span>}
         </span>
-        {two.length === 2 && (
-          <span data-plot-foot className="tabular-nums">
-            {cli.top_plot_halo(
-              bytes(two[0]),
-              Math.round(halo(two[0]) * 10) / 10,
-              bytes(two[1]),
-              Math.round(halo(two[1]) * 10) / 10,
-            )}
-          </span>
-        )}
+        {/* **What the dot's size means, in words** — the same sentence
+            the 額度 card's figure says, from the same key. It used to
+            name the halo and two sample radii; the halo is gone and the
+            size is the dot's own, so the sentence is one quantity. */}
+        <span data-plot-foot data-plot-area-of={axes.z}>{gui.plot_area_is(az.word())}</span>
       </div>
     </div>
   );
 }
 
 /* ⚠️ **Tombstone: `AxisPick` was defined here until 2026-09-08.** It is
-   `components/AxisPick` now, with its reasoning, because the 額度 page's
+   `components/PlotControls` now, with its reasoning, because the 額度 page's
    usage half needed the same control and had grown a different one —
    a row of native `<select>`s, 23px tall, in a strip above the figure.
    **Two controls for one idea is the thing this card's own head keeps

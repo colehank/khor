@@ -67,7 +67,7 @@ import type { AccountReading } from "@/gen/bindings/AccountReading";
 import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
-import { PLOT, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
+import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
 import { Panel } from "@/components/Panel";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
@@ -498,8 +498,9 @@ function Trend({
           on this screen.
           These two are the figure's x axis: 「按天 / 按模型」 is **what
           that axis is**, and the window is **how far it reaches**. So
-          they sit on it, at its two ends, in the same control the
-          machine card's axes wear (`components/AxisPick`). */}
+          they sit under it — the axis says both words, and one settings
+          button changes them, which is the shape the machine card's
+          figure wears too (`components/PlotControls`). */}
       {/* **The box the figure is measured into.** Its height is this
           page's own — a stack of ten days needs less air than a scatter
           of labelled models — while everything inside it is
@@ -699,25 +700,21 @@ function Trend({
 /* ⚠️ **Tombstone: `Chip` was here until 2026-09-08, and with it the two
    control strips it filled.** It was a capsule — `rounded-full`, a
    shape nothing else in this app wears — and the machine card's own
-   `AxisPick` head says why that is the wrong thing to be first at: a
+   `PlotControls` head says why that is the wrong thing to be first at: a
    bordered capsule says 「button」 louder than anything else on the
    surface, and this card had no such box before.
    The controls did not go, they moved onto the things they control. */
 
-const R_MIN = 5;
-const R_MAX = 19;
-/**
- * **The area carries the third quantity, so the radius is its square
- * root.** A radius read straight off the number makes a 4× value look
- * 16× big. The floor is not zero — the smallest point still has to be
- * pressable — so the two ends are interpolated **in area** and taken
- * back to a radius, rather than interpolating the radius and leaving
- * the areas wrong at both ends.
- */
-function radius(v: number, max: number): number {
-  const t = max > 0 ? Math.max(v, 0) / max : 0;
-  return Math.sqrt(R_MIN * R_MIN + (R_MAX * R_MAX - R_MIN * R_MIN) * t);
-}
+/* ⚠️ **Tombstone: `R_MIN` 5 / `R_MAX` 19 were constants here until
+   2026-09-08.** They were fine for ten models and would have tiled the
+   machine card's two hundred processes — the same range cannot serve
+   both figures, and 「the same drawing method」 has to mean one rule
+   rather than one number. `lib/plot`'s `dotSpan` is that rule: the
+   range is a function of how many points there are and how much room
+   they have. **`radius()` went with them** — the square root that made
+   the area carry the value is `lib/plot`'s `dotRadius`, and its head
+   still says why a radius read straight off the number makes a 4×
+   value look 16× big. */
 
 /**
  * **统计 — who and how much.** A scatter over the same rows the table
@@ -814,6 +811,24 @@ function Stats({
   const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 260 });
   const iw = W - PLOT.padL - PLOT.padR - 2 * PLOT.inset;
   const ih = H - PLOT.padT - PLOT.padB - 2 * PLOT.inset;
+  const span = dotSpan(pts.length, W - PLOT.padL - PLOT.padR, H - PLOT.padT - PLOT.padB);
+  // **Which quantities may be an area here** — the same data-driven
+  // rule the machine card uses. On this page every quantity a source
+  // reports is reported for every model, so this usually equals
+  // `shown`; when it does not (a model with no input has no cache rate)
+  // the offer shrinks rather than a dot landing on the floor for a
+  // reading nobody took.
+  //
+  // ⚠️ **This call has no gate of its own, and that was measured, not
+  // assumed** (2026-09-08): tearing `everyRowHas` open reddens the
+  // machine card twice and this half not at all, because the browser
+  // gate's fixture gives every model every figure, so `areaKeys` there
+  // is always `shown`. The rule is guarded over there (显存 is on 2 of
+  // 23 rows); what is unguarded is that **this** page still asks it.
+  // To give it an arm the fixture needs a model with no input tokens —
+  // the one shape that makes a cache rate unreadable on a page whose
+  // source does report the cache.
+  const areaKeys = everyRowHas(shown, agg, (k, r) => AXES[k].of(r));
   const X = (v: number) => PLOT.padL + PLOT.inset + iw * rx.at(v);
   const Y = (v: number) => H - PLOT.padB - PLOT.inset - ih * ry.at(v);
 
@@ -882,11 +897,12 @@ function Stats({
           figure's foot, where it is a fact about the drawing rather
           than a title over it. */}
       <div ref={canvas} className="relative h-64 w-full">
-        {/* **The two quantities, each printed on its own axis, each of
-            them the control that changes it** — `components/AxisPick`,
-            the machine card's own. Tucked into the two corners a
-            scatter is least likely to put a point, which is also where
-            the ruler words already were. */}
+        {/* **The two quantities, each printed on its own axis** —
+            `components/PlotControls`, the machine card's own. They are
+            words now, not controls: what changes them is the settings
+            button below. Tucked into the two corners a scatter is least
+            likely to put a point, which is also where the ruler words
+            already were. */}
         <span className="pointer-events-none absolute inset-0">
           <span className="pointer-events-auto absolute" style={labelSeat("y")}>
             <AxisLabel which="y" word={AXES[axes.y].word()} rulerWord={RULER_WORD[ry.kind]()} align="left" />
@@ -894,17 +910,20 @@ function Stats({
           <span className="pointer-events-auto absolute" style={labelSeat("x")}>
             <AxisLabel which="x" word={AXES[axes.x].word()} rulerWord={RULER_WORD[rx.kind]()} align="right" />
           </span>
-          {/* **Three rows, and the third is the one the machine card
-              cannot offer yet**: the dot's area. Every quantity here is
-              reported for every model, so a floor-sized dot means 「the
-              smallest」 and nothing else — which is exactly the property
-              `gpu_mem` does not have over there. */}
+          {/* **Three rows, and the third is the dot's area.** The
+              machine card grew the same row on 2026-09-08, so this is
+              one rule on two figures rather than a shape this card has
+              to itself. The axis rows offer everything this source
+              reports; the area row offers what every model reports,
+              because a point must exist to carry X and Y and so a
+              missing reading has nowhere to go but the floor — where
+              it would read as 「the smallest」. */}
           <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
             <PlotSettings
               rows={[
                 { key: "x", word: "X", chosen: axes.x, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
                 { key: "y", word: "Y", chosen: axes.y, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
-                { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
+                { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: areaKeys.map((k) => ({ key: k, word: AXES[k].word() })) },
               ]}
               onPick={(row, k) => onAxes({ ...axes, [row]: k as AxisKey })}
             />
@@ -941,7 +960,7 @@ function Stats({
           .sort((a, b) => (Number.isFinite(b.z) ? b.z : 0) - (Number.isFinite(a.z) ? a.z : 0))
           .map((p) => {
             const on = hot?.model === (p.r.model ?? "");
-            const r = radius(Number.isFinite(p.z) ? p.z : 0, zmax);
+            const r = dotRadius(Number.isFinite(p.z) ? p.z : 0, zmax, span);
             const berthed = berth(X(p.x), Y(p.y), r, p.r.word.length * 5.1 + 2, taken, W, H - 16);
             return (
               // **It says it is a target**, the way the machine card's
@@ -999,7 +1018,10 @@ function Stats({
           The window sits here too: it is a fact about what was drawn,
           not a title over it. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-row text-aux text-muted-foreground">
-        <span data-usage-area={axes.z}>{gui.usage_scatter_foot(AXES[axes.z].word())}</span>
+        {/* `data-plot-area-of` rather than a name of this page's own:
+            both figures say this sentence from one key now, so a gate
+            comparing them looks for one attribute. */}
+        <span data-plot-area-of={axes.z}>{gui.plot_area_is(AXES[axes.z].word())}</span>
         <span className="flex items-baseline gap-x-row">
           {/* **How many models are not on the picture, said out loud.**
               A model with no reading on one of these two axes is not

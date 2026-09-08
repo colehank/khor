@@ -4041,10 +4041,11 @@ try {
     //   first fetch, and the walk's 額度 stop needs the answer landed.
     //
     //   **The controls are the machine card's, so they are pressed the
-    //   machine card's way**: a word with a chevron that opens in
-    //   place. There are no chips and no `<select>`s here any more, and
-    //   this helper being the same shape as section 10's `pick` is the
-    //   point — one control, one way of pressing it.
+    //   machine card's way**: one settings button per figure, opening a
+    //   panel with a row per thing it sets. There are no chips and no
+    //   `<select>`s here any more, and this helper being the same shape
+    //   as section 10's `pick` is the point — one control, one way of
+    //   pressing it.
     const pickUsage = async (which, key) => {
       // **Open the settings, then pick** — the machine card's helper
       // says why this is two presses since 2026-09-08.
@@ -4214,53 +4215,65 @@ try {
     }
     await pickUsage("window", "0");
 
-    //   ⑥ **The area carries the value, so the radius is its square
-    //   root.** A radius read straight off the reading makes a 4× value
-    //   look 16× big. Measured as the property rather than the formula:
-    //   with a floor at both ends, what has to hold is that the
-    //   **areas** are in the readings' ratio.
     const back = await read();
-    const R_MIN = 5;
-    const area = (p) => p.r * p.r - R_MIN * R_MIN;
+    //   ⑥ **The area carries the value: `r²` is an affine function of
+    //   the reading.**
+    //
+    //   ⚠️ **Stated as the property, because every version of this that
+    //   named a number was wrong within the day.** It compared ratios
+    //   against an absolute tolerance of 0.02 while the ratios were
+    //   0.0016 (an instrument with no resolution); then against a
+    //   written-down floor of 5, which stopped being the floor the hour
+    //   `dotSpan` made the range depend on the point count; then against
+    //   the smallest drawn radius, which is **not** the floor — the
+    //   smallest reading is not zero, so that subtracts too much and
+    //   the error lands entirely on the small dots.
+    //
+    //   `r² = floor² + (ceiling² − floor²) · reading/max` is affine in
+    //   the reading whatever the two ends are, so fitting a line
+    //   through (reading, r²) and checking every dot sits on it tests
+    //   the encoding **without knowing either end**.
+    //
+    //   ⚠️ **This is the only place `dotRadius` is guarded, and the
+    //   machine card draws with the same function.** Measured on
+    //   2026-09-08 by making the radius linear in the reading: this fit
+    //   went red (r² 14.5% off a line, r 0.0% off) and the machine
+    //   card's own dot block did not move at all — its endpoints are
+    //   1.8 and 9.24 under either encoding, so a min/max reading cannot
+    //   tell the two apart. That card is covered **only while both
+    //   figures call the one function**; the day one grows its own
+    //   sizing, this needs a twin over there.
+    const fit = (xs, ys) => {
+      const n = xs.length;
+      const sx = xs.reduce((a, b) => a + b, 0);
+      const sy = ys.reduce((a, b) => a + b, 0);
+      const sxx = xs.reduce((a, b) => a + b * b, 0);
+      const sxy = xs.reduce((a, b, k) => a + b * ys[k], 0);
+      const b1 = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+      const b0 = (sy - b1 * sx) / n;
+      const span = Math.max(...ys) - Math.min(...ys) || 1;
+      return Math.max(...ys.map((y, k) => Math.abs(y - (b0 + b1 * xs[k])))) / span;
+    };
     const rowOf = (m) => usageModels.filter((x) => (x.model ?? "") === m).reduce((a, x) => a + x.tokens.input + x.tokens.output, 0);
-    const big = back.points.reduce((a, b) => (rowOf(b.model) > rowOf(a.model) ? b : a), back.points[0]);
-    //   ⚠️ **Every dot, and the tolerance is relative.** The first
-    //   draft compared only the largest against the smallest with an
-    //   absolute tolerance of 0.02 — and those two are 0.16% apart on
-    //   this fixture, so **both the right answer and the wrong one land
-    //   inside 0.02 of each other** and the teardown ran green. An
-    //   absolute tolerance on a ratio of a thousandth is an instrument
-    //   with no resolution: it agrees with whatever it is shown.
-    if (!big || rowOf(big.model) === 0 || back.points.length < 3) {
-      fail(`probe dead: the scatter has ${back.points.length} points and its biggest sums to ${big ? rowOf(big.model) : "no"} — no ratio could be taken`);
+    const reads = back.points.map((p) => rowOf(p.model));
+    if (back.points.length < 3 || new Set(reads).size < 3) {
+      fail(`probe dead: ${back.points.length} dots over ${new Set(reads).size} distinct readings — a line needs points that differ`);
     } else {
-      const bigRead = rowOf(big.model);
-      for (const p of back.points) {
-        if (p.model === big.model) continue;
-        const want2 = rowOf(p.model) / bigRead;
-        const got = area(p) / area(big);
-        if (Math.abs(got - want2) > 0.05 * want2 + 1e-9) {
-          fail(
-            `${p.model || "(unnamed)"} is ${(100 * want2).toFixed(3)}% of ${big.model} and its dot's area is ${(100 * got).toFixed(3)}% of it ` +
-              `(radii ${p.r.toFixed(3)} and ${big.r.toFixed(3)}) — a radius read straight off the reading makes 4× look 16×`,
-          );
-        }
+      const asArea = fit(reads, back.points.map((p) => p.r * p.r));
+      const asRadius = fit(reads, back.points.map((p) => p.r));
+      if (asArea > 0.02) {
+        fail(
+          `the dots' r² is ${(100 * asArea).toFixed(1)}% off a straight line against their readings — the **area** is meant to ` +
+            `carry the value, and a radius read straight off it makes a 4× value look 16× big`,
+        );
       }
-      //   **The arm that says the loop above has resolution.** It needs
-      //   a dot whose reading is a readable fraction of the biggest —
-      //   on a pair three decades apart the right and the wrong
-      //   encoding are indistinguishable at any sane tolerance. And on
-      //   that dot the radii must **not** themselves be in the
-      //   readings' ratio, which is what the bug would look like.
-      const mid = back.points
-        .filter((p) => p.model !== big.model)
-        .reduce((a, b) => (Math.abs(rowOf(b.model) / bigRead - 0.4) < Math.abs(rowOf(a.model) / bigRead - 0.4) ? b : a));
-      const midWant = rowOf(mid.model) / bigRead;
-      if (!(midWant > 0.05)) {
-        fail(`probe dead: the closest dot to the biggest is ${(100 * midWant).toFixed(2)}% of it, so 「area, not radius」 had nothing it could tell apart`);
-      } else if (Math.abs(mid.r / big.r - midWant) < 0.05 * midWant) {
-        fail(`${mid.model}'s radius is itself the readings' ratio (${(mid.r / big.r).toFixed(3)} against ${midWant.toFixed(3)}) — the area is carrying the square of the value`);
+      // The arm: if `r` itself were affine in the reading — the bug —
+      // this would also be small, and the check above could not tell
+      // the two encodings apart.
+      if (asRadius <= 0.02) {
+        fail(`the dots' radius is itself a straight line against their readings (${(100 * asRadius).toFixed(1)}% off) — that is the encoding this is meant to rule out`);
       }
+      console.log(`dot areas: r² ${(100 * asArea).toFixed(2)}% off a line, r ${(100 * asRadius).toFixed(1)}% off`);
     }
 
     //   **The ruler is printed, and it is chosen rather than fixed.**
@@ -4429,8 +4442,9 @@ try {
     //
     //   2026-09-08, the user: 「x和y的label和机器对不上啊,位置、样式.
     //   …二者统一出一个绘图方法,包括样式、字号等.」 Both pages already
-    //   used the same *control* (`components/AxisPick`); what disagreed
-    //   was the coordinate system it was placed into — one figure was
+    //   used the same *control* (`components/PlotControls`, then still
+    //   named `AxisPick`); what disagreed was the coordinate system it
+    //   was placed into — one figure was
     //   drawn at one unit per pixel, the other into a scaled `viewBox`,
     //   so the second had to approximate the first's pixel offsets as
     //   percentages (`6.59%` is `58 / 880`).
@@ -6933,24 +6947,29 @@ try {
   await page.setViewportSize({ width: 380, height: 800 });
   await wait(200);
 
-  //     ── the scatter: one pair of axes, and three states kept apart
+  //     ── the scatter: three quantities, and nought kept apart
   //
-  //     **Card memory is an area, and the two biggest must be told
-  //     apart.** Radius by square root means area follows bytes; the
-  //     foot prints both readings and both radii so the claim is
-  //     checkable on the page rather than taken on faith. And the three
-  //     states are three appearances on purpose: a halo (there is card
-  //     memory), a dashed ring (looked, it is zero), nothing at all
-  //     (could not look) — merging the last two would turn 「did not
-  //     look」 into 「is idle」, which is the neighbouring-value mistake
-  //     this whole surface is shaped to avoid.
+  //     **The third quantity is the dot's own area** (2026-09-08; the
+  //     halo it replaces has a tombstone below and another in
+  //     `MachineCard`). Two appearances, not three, and the second is
+  //     the one that matters: a reading of **zero** wears a dashed
+  //     ring, because the area's floor is a visible dot and so nought
+  //     and the smallest reading come out nearly the same size. Merging
+  //     those two would turn 「read zero」 into 「the smallest」, which is
+  //     the neighbouring-value mistake this whole surface is shaped to
+  //     avoid. **A quantity some rows do not report cannot be an area
+  //     at all** — that is the picker's job, asserted in section 10.
   const plot = await page.evaluate(() => {
     const box = document.querySelector("[data-machine-card] [data-top-plot]");
     if (!box) return null;
-    const halos = [...box.querySelectorAll("[data-plot-halo]")].map((n) => Number(n.dataset.plotHalo));
+    // **The dots' radii, since 2026-09-08.** These used to be the
+    // halos' — a ring around a fixed dot, encoding 显存. The ring is
+    // gone (`MachineCard`'s tombstone says why), and the third quantity
+    // is the dot's own area.
+    const areas = [...box.querySelectorAll("[data-plot-area]")].map((n) => Number(n.dataset.plotArea));
     return {
       points: box.querySelectorAll("[data-plot-point]").length,
-      halos,
+      areas,
       zeros: box.querySelectorAll("[data-plot-zero]").length,
       foot: box.querySelector("[data-plot-foot]")?.textContent?.trim() ?? "",
       axes: box.textContent.includes("CPU") && box.textContent.includes("内存"),
@@ -6960,15 +6979,49 @@ try {
   else {
     if (plot.points !== load.top.length) fail(`the scatter draws ${plot.points} points for ${load.top.length} rows`);
     if (!plot.axes) fail(`the scatter does not name its axes: "${plot.foot}"`);
-    //   The fixture has one row with card memory, one with none — so
-    //   the halo count is a fact about the data, not about the chart.
-    const withVram = load.top.filter((r) => r.gpu_mem !== null && r.gpu_mem > 0).length;
-    if (plot.halos.length !== withVram) {
-      fail(`${plot.halos.length} halos for ${withVram} rows holding card memory`);
+    //   ⚠️ **Tombstone: 「one halo per row holding card memory」 was
+    //   asserted here.** The halo is gone, so the claim is not failing,
+    //   it stopped existing — see `MachineCard`. What replaces it is
+    //   the property the halo also had and the dot now carries:
+    //
+    //   **Area, not radius** — and ⚠️ **that half is not asserted
+    //   here.** The count and the spread below are; the *shape* of the
+    //   encoding is checked on the 額度 half (section 8a, the line fit
+    //   through (reading, r²)), and it covers this card only because
+    //   both figures call `lib/plot`'s one `dotRadius`. Torn on
+    //   2026-09-08 to be sure: a linear radius reddens that fit and
+    //   leaves everything below untouched, because the endpoints are
+    //   the same either way. What is measured here is `data-plot-area`,
+    //   the radius the circle was actually drawn with.
+    //
+    //   **Every point has one**, which is the other half of the ruling:
+    //   the area quantity is filtered to what every row reports, so a
+    //   dot without a radius would mean that filter let a null through.
+    if (plot.areas.length !== plot.points) {
+      fail(`${plot.areas.length} dots carry an area for ${plot.points} points — the area quantity is meant to be one every row has`);
+    } else if (!plot.areas.every((r) => r > 0)) {
+      fail(`a dot was drawn at radius ${Math.min(...plot.areas)} — the smallest reading is still a dot`);
+    } else {
+      const lo = Math.min(...plot.areas);
+      const hi = Math.max(...plot.areas);
+      // The floor is `dotSpan`'s `min`, so what varies with the reading
+      // is the area above it. Four times the area is twice the radius —
+      // stated as the property rather than as a number, because the
+      // range itself now moves with how many points there are.
+      //
+      // **A whole pixel, not merely a difference.** The halo assertion
+      // this replaces asked for a 5% spread; `hi > lo` on its own would
+      // pass on a thousandth of a pixel, which is an encoding nobody
+      // can read. One device pixel is the floor with a reason of its
+      // own, and the shape of the scale says any real spread clears it:
+      // the smallest dot is 1.8 across, and a reading four times bigger
+      // doubles the radius — so the moment two readings differ enough
+      // to matter, they differ by more than a pixel.
+      if (!(hi - lo >= 1)) {
+        fail(`the dots run ${lo}–${hi} across — under a pixel apart, and with readings this far apart that is an encoding that is not there`);
+      }
+      console.log(`dot areas: ${plot.areas.length} radii, ${lo}–${hi}`);
     }
-    //   **Area, not radius.** Two readings a factor of four apart must
-    //   come out a factor of two apart in radius; a chart that scaled
-    //   the radius directly would show four.
     //   **The points are actually separated.** A linear axis on these
     //   readings puts almost everything in one corner — measured on the
     //   live fleet, the median process is at 0.0% / 0.2% / 1.3% of a
@@ -7009,11 +7062,9 @@ try {
     } else {
       console.log(`scatter: ${near.close} crowded pairs on ${near.n} points (allowed ${Math.floor(near.n / 2)}; linear measures 57)`);
     }
-    if (plot.halos.length > 1) {
-      const sorted = [...plot.halos].sort((a, b) => b - a);
-      const ratio = sorted[0] / sorted[sorted.length - 1];
-      if (!(ratio > 1.05)) fail(`the halos are ${sorted.join(",")} — the biggest and smallest are the same size`);
-    }
+    //   （「the biggest and smallest halo are not the same size」 used to
+    //   be asserted here. It did not stop existing — it moved up into
+    //   the block above, onto the dots that carry the quantity now.）
   }
 
   //     ── the ruler is chosen, said, and lands zero at zero ────────
@@ -7446,11 +7497,38 @@ try {
       await page.locator("[data-machine-card] [data-plot-settings]").click();
       await wait(400);
       const open = await read();
-      if (open.rows !== "x,y") {
-        fail(`the settings opened rows ${JSON.stringify(open.rows)}, and this figure sets x and y`);
+      if (open.rows !== "x,y,z") {
+        fail(`the settings opened rows ${JSON.stringify(open.rows)}, and this figure sets x, y and the dot's area`);
       }
-      if (open.words !== 2 * AXIS_COUNT) {
-        fail(`the settings opened ${open.words} words over ${open.rows} — two rows of ${AXIS_COUNT} quantities each`);
+      //   **The area row offers fewer quantities than an axis row, and
+      //   that is the whole ruling of 2026-09-08.** An axis may be
+      //   drawn against a quantity some rows do not report — the row is
+      //   simply not placed, and the figure says how many. **An area
+      //   cannot**: the point has to exist because it carries X and Y,
+      //   so a missing reading has nowhere to go but the floor, and a
+      //   floor-sized dot reads as 「the smallest」. So the picker only
+      //   offers what **every** row has (`lib/plot`'s `everyRowHas`).
+      //
+      //   On this fixture 显存 is on 2 of 23 rows and 时长 on 22 of 23,
+      //   so both are offerable as an axis and neither as an area —
+      //   which is the difference this counts. **Nobody maintains a
+      //   list**: the day a machine reports video memory for every
+      //   process, that count rises on its own.
+      const rowWords = async (row) =>
+        page.locator(`[data-machine-card] [data-plot-settings-open] [data-plot-set="${row}"] [data-plot-axis]`).count();
+      //   ⚠️ **Tombstone: 「the panel opened 2 × AXIS_COUNT words」 was
+      //   asserted here.** With three rows of which one is deliberately
+      //   shorter, a single product is the wrong shape for the claim —
+      //   and it would have been satisfied by three rows offering
+      //   everything. The two counts below are what it becomes.
+      const [xWords, zWords] = [await rowWords("x"), await rowWords("z")];
+      if (!(zWords >= 1)) {
+        fail(`the area row offers ${zWords} quantities — an empty picker is not a filter, it is a broken one`);
+      } else if (!(zWords < xWords)) {
+        fail(
+          `the area row offers ${zWords} quantities and an axis row offers ${xWords} — on this fixture 显存 has a reading ` +
+            `on 2 of 23 rows, and a quantity nobody reported must not be offerable as a dot's size`,
+        );
       }
       //   **Both measurements, because the labels sit on opposite
       //   sides.** The vertical one is above the drawing, so growing
@@ -7471,7 +7549,7 @@ try {
       //   had a picker each, so 「the pickers are independent」 was a
       //   real property; since 2026-09-08 there is **one** panel with a
       //   row per axis, and both rows are supposed to be there at once
-      //   — which is what `open.rows === "x,y"` above now says. The
+      //   — which is what `open.rows === "x,y,z"` above now says. The
       //   claim did not fail, it stopped existing.
       //
       //   Both labels still have to keep naming their own quantity
