@@ -67,7 +67,8 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
-import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
+import { PLOT, usePlotBox, xTickY } from "@/lib/plot";
+import { UsageHalf, civilDay, fromReading, fromUsage } from "@/views/UsageHalf";
 
 import { QUOTA_AXES, axisOf, lasting, until, valueOf } from "@/words";
 
@@ -1905,8 +1906,16 @@ export function QuotaLanding({
  */
 function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: string }) {
   const days = reading.days;
+  const { box, w: W, h: H } = usePlotBox({ w: 380, h: 132 });
+  const most = Math.max(...days.map((d) => d.spent), 0);
+  const peak = most > 0 ? most : 1;
+  const iw = W - PLOT.padL - PLOT.padR;
+  const ih = H - PLOT.padT - PLOT.padB;
+  const y = (v: number) => PLOT.padT + ih - (ih * v) / peak;
+  const stepW = days.length > 0 ? iw / days.length : iw;
+  const bw = Math.min(34, Math.max(2, stepW * 0.74));
+  const cx = (i: number) => PLOT.padL + stepW * (i + 0.5);
   if (days.length === 0) return null;
-  const most = Math.max(...days.map((d) => d.spent));
   return (
     <div data-quota-days className="flex flex-col gap-in border-t pt-row">
       <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
@@ -1917,27 +1926,87 @@ function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: s
           <span data-quota-days-capped>{gui.accounts_log_capped(reading.log_capped)}</span>
         )}
       </div>
-      {/* **The chart grows with the data, it does not stretch to fill.**
-          Three days at `flex-1` across a card is three slabs — measured
-          2026-09-07: 350px each, which reads as a diagram of something
-          else. A bar has a width it stops at, and a short window simply
-          takes less room. */}
-      <div className="flex h-16 max-w-sm items-end gap-1">
-        {days.map((d) => (
-          <div
-            key={d.at}
-            data-quota-day={d.at}
-            data-quota-day-spent={d.spent.toFixed(4)}
-            // The account's own mark, handed down rather than read again —
-            // 「一个账户在这一屏上只有一个单位」 covers the tooltip too.
-            title={`${money(d.spent, mark)}`}
-            className="min-w-1 max-w-10 flex-1 rounded-t bg-muted-foreground/60"
-            // **A day with no spending still gets a column, one pixel
-            // tall** — a gap would read as a day the provider did not
-            // report, and those are two different facts.
-            style={{ height: `${most > 0 ? Math.max(1, (d.spent / most) * 100) : 1}%` }}
-          />
-        ))}
+      {/* ⚠️ **A figure drawn through `lib/plot`, since 2026-09-09** —
+          and what it replaces is why this matters. It was a row of bare
+          `<div>`s: no axis, no scale, **no dates**, a fixed 64px tall,
+          each bar a percentage of the tallest. The user, on his first
+          look at a new-api account:「bar图也没有日期,也没有模型」 — and
+          he was right about the first half and right for the second
+          reason: **this figure is money per day and has no model layer
+          at all** (`DaySpend` carries `at` and `spent`), while the one
+          that does is the lower half's.
+
+          **It was never in the drawing rule.** 「统一出一个绘图方法」
+          reached the two scatters and then the bar chart below; this
+          one is the figure a reader meets *first* when they open an API
+          account, and it was the last one drawn by hand. Same paddings,
+          same tick ink, same `xTickY` — one place decides all of it.
+
+          **The chart still grows with the data rather than stretching**
+          (2026-09-07: three days at `flex-1` measured 350px each and
+          read as a diagram of something else): the box is capped, and
+          `bw` stops at 34 however few days there are. */}
+      <div ref={box} className="relative h-32 w-full max-w-md">
+        <svg data-quota-days-svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="overflow-visible text-foreground">
+          {[0, 1, 2, 3].map((k) => (
+            <g key={k}>
+              <line
+                x1={PLOT.padL}
+                x2={W - PLOT.padR}
+                y1={y((peak * k) / 3)}
+                y2={y((peak * k) / 3)}
+                stroke="currentColor"
+                strokeOpacity={PLOT.frameInk}
+              />
+              <text
+                x={PLOT.padL - 6}
+                y={y((peak * k) / 3) + 3}
+                fontSize={PLOT.tick}
+                textAnchor="end"
+                fill="currentColor"
+                fillOpacity={PLOT.tickWordInk}
+              >
+                {k === 0 ? "0" : money((peak * k) / 3, mark)}
+              </text>
+            </g>
+          ))}
+          {days.map((d, i) => (
+            <rect
+              key={d.at}
+              data-quota-day={d.at}
+              data-quota-day-spent={d.spent.toFixed(4)}
+              // The account's own mark, handed down rather than read again —
+              // 「一个账户在这一屏上只有一个单位」 covers the tooltip too.
+              x={cx(i) - bw / 2}
+              // **A day with no spending still gets a column, half a
+              // pixel tall** — a gap would read as a day the provider
+              // did not report, and those are two different facts.
+              y={Math.min(y(d.spent), y(0) - 0.6)}
+              width={bw}
+              height={Math.max(y(0) - y(d.spent), 0.6)}
+              fill="currentColor"
+              fillOpacity={0.6}
+            >
+              <title>{`${civilDay(d.at)} · ${money(d.spent, mark)}`}</title>
+            </rect>
+          ))}
+          {days.map((d, i) =>
+            i % Math.max(1, Math.ceil(days.length / 6)) === 0 || i === days.length - 1 ? (
+              <text
+                key={d.at}
+                data-quota-day-word={d.at}
+                x={cx(i)}
+                y={xTickY(H)}
+                fontSize={PLOT.tick}
+                textAnchor="middle"
+                fill="currentColor"
+                fillOpacity={PLOT.tickWordInk}
+              >
+                {civilDay(d.at).slice(5)}
+              </text>
+            ) : null,
+          )}
+        </svg>
       </div>
     </div>
   );

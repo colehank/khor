@@ -206,6 +206,31 @@ function dayAxis(rows: UsageRow[], today: string | null, back: number): string[]
   for (let d = wanted > seen[0] ? wanted : seen[0]; d <= last; d = step(d, 1)) out.push(d);
   return out;
 }
+/**
+ * **Which civil day a bucket's instant belongs to.**
+ *
+ * One place, because two pages read the same instants: this half draws
+ * the token rows and `QuotaLanding`'s `SpendDays` draws the money ones,
+ * off the same `at` from the same pass over the same log.
+ *
+ * ⚠️ **It is read in UTC, and for the new-api road that is wrong by a
+ * day** — measured on real accounts 2026-09-09: `khor_node::accounts`'s
+ * `read_log` cuts that road's buckets with `TimeZone::system()`, i.e.
+ * at the answering node's **local** midnight, and reading that instant
+ * back in UTC lands on the day before for every zone east of it. The
+ * two vendors' roads are unaffected: their buckets are the provider's
+ * own and are UTC.
+ *
+ * **The fix is ruled and is a wire change** (2026-09-09: carry the zone
+ * that cut each bucket, on all three roads, so `at` and `zone` are read
+ * together and the contract is one sentence again). **This is the
+ * function it lands in** — one call site each, which is why they were
+ * merged here first.
+ */
+export function civilDay(at: number): string {
+  return new Date(at * 1000).toISOString().slice(0, 10);
+}
+
 /** `YYYY-MM-DD` plus `n` days, through UTC so the arithmetic cannot
     inherit this browser's zone — these strings are another machine's
     civil dates and are being counted, not converted. */
@@ -1367,11 +1392,7 @@ export function fromReading(
   if (tok.length === 0) return { rows: null, why: gui.usage_no_report, cacheKnown: false };
   return {
     rows: tok.map((m) => ({
-      // `at` is unix seconds at the provider's own day start, and it is
-      // read back **in UTC on purpose**: the boundary was cut upstream
-      // by whoever billed it, and re-cutting it in this browser's zone
-      // would move somebody else's day by the reader's offset.
-      day: new Date(m.at * 1000).toISOString().slice(0, 10),
+      day: civilDay(m.at),
       model: m.model,
       input: m.tokens.input,
       output: m.tokens.output,

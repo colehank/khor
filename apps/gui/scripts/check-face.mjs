@@ -2808,6 +2808,33 @@ try {
           // actually be the tallest bar on the glass.
           heights: bars.map((b) => Math.round(b.getBoundingClientRect().height)),
           spends: bars.map((b) => Number(b.getAttribute("data-quota-day-spent"))),
+          //   **The dates, and where they sit** (2026-09-09). This
+          //   figure had none at all — the user opened a new-api
+          //   account and said 「bar图也没有日期」 — and it was the one
+          //   figure in this app never drawn through `lib/plot`.
+          //
+          //   ⚠️ **Compared against the trend chart on the same screen
+          //   and in the same state**, because both are on an API
+          //   account's card at once. A comparison taken across two
+          //   screens is the mistake this file keeps catching; here
+          //   there is no need to take one.
+          words: [...box.querySelectorAll("[data-quota-day-word]")].map((t) => (t.textContent ?? "").trim()),
+          seat: (() => {
+            const svg = box.querySelector("[data-quota-days-svg]");
+            const word = box.querySelector("[data-quota-day-word]");
+            if (!svg || !word) return null;
+            const f = svg.getBoundingClientRect();
+            const r = word.getBoundingClientRect();
+            return { font: getComputedStyle(word).fontSize, up: +(f.bottom - r.bottom).toFixed(1) };
+          })(),
+          below: (() => {
+            const svg = document.querySelector('[data-usage-zone="trend"] [data-usage-chart]');
+            const word = document.querySelector('[data-usage-zone="trend"] [data-usage-tick-x]');
+            if (!svg || !word) return null;
+            const f = svg.getBoundingClientRect();
+            const r = word.getBoundingClientRect();
+            return { font: getComputedStyle(word).fontSize, up: +(f.bottom - r.bottom).toFixed(1) };
+          })(),
         };
       });
     };
@@ -2828,6 +2855,19 @@ try {
       fail(`an uncut log draws a cap line (${JSON.stringify(plain.capped)}) — it would be false on almost every account`);
     } else if (!cut.capped?.includes("1000")) {
       fail(`a cut log says ${JSON.stringify(cut.capped)} — it carries the count the provider actually answered`);
+    } else if (cut.words.length === 0 || !cut.words.every((w) => /^\d{2}-\d{2}$/.test(w))) {
+      fail(
+        `the money chart's day words are ${JSON.stringify(cut.words)} — a bar chart over days has to say which days ` +
+          `(the user, 2026-09-09:「bar图也没有日期」)`,
+      );
+    } else if (!cut.seat || !cut.below) {
+      fail(`probe dead: money chart seat ${JSON.stringify(cut.seat)}, trend seat ${JSON.stringify(cut.below)} — nothing was compared`);
+    } else if (cut.seat.font !== cut.below.font || Math.abs(cut.seat.up - cut.below.up) > 0.6) {
+      fail(
+        `the money chart writes its dates at ${JSON.stringify(cut.seat)} and the token chart on the same card writes its at ` +
+          `${JSON.stringify(cut.below)} — one drawing method (lib/plot's xTickY and PLOT.tick); a figure with its ` +
+          `own numbers is the thing 「统一出一个绘图方法」 was asked about`,
+      );
     } else {
       //   …and the bars are the readings: the fullest day is the tallest
       //   column. A chart that drew equal bars would pass every count
