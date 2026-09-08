@@ -437,9 +437,411 @@ fn devices(_rest: &[String]) -> Result<(), String> {
 }
 
 /// How many rows `khor top` prints. The card asks for its own count;
-/// a terminal has no pixel width to size from, and ten is what `top`
-/// itself shows above the fold.
+/// ten is what `top` itself shows above the fold. **Not derived from
+/// the terminal**: the width below is read when it can be, but a row
+/// count that changed with the window would make two runs on one
+/// machine disagree about what「最忙的几个」means.
 const TOP_ROWS: u32 = 10;
+
+// ── `khor top`, as the table the card draws ─────────────────────────
+//
+// **A table, not a log** (2026-09-08, user:「我才发现,机器的二进制程序
+// 的表,被搞成了日志.但网页不是.我要的是网页那样的表」).
+// docs/KHOR.md:17「CLI 与 GUI 等价」has said so since before any of
+// this; what stood here printed five tab-separated fields, and a tab
+// stops at multiples of eight, so `74.5M` and `217.9M` on consecutive
+// rows put 「命令」 in two different places. **Not a table that is
+// slightly off — a table only on the batches whose numbers happen to
+// be the same length**, which is exactly why it reads as a log.
+//
+// Everything below mirrors the card at
+// **ff59afe5743857c72979f06477eeaa3cac97c3f5**:
+// `COLS` (`apps/gui/src/views/MachineCard.tsx:1355`), `COL_ORDER`
+// (:1376), `FILLS` (:1394), `STATUS_WORD` (:1424), `cellOf` (:1897).
+// **The sha is half of each reference**: a line number with no version
+// does not break when the file moves, it goes on pointing confidently
+// at whatever ended up there.
+
+/// One column of the process table.
+///
+/// **The order is the card's, and the card's is the user's**
+/// (2026-09-05:「PID · 状态 · USER · 时长 · CPU时间 · CPU · GPU ·
+/// 内存 · 显存 · 读写 · 命令」): the pid you type next, then what the
+/// process *is*, then the two times, then the quantities, and 「命令」
+/// last because it is the only column whose content has no bound — so
+/// it is the one that can take width without opening a canyon between
+/// two numbers.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Col {
+    Pid,
+    Status,
+    User,
+    Time,
+    CpuTime,
+    Cpu,
+    Gpu,
+    Mem,
+    Vram,
+    Io,
+    Cmd,
+}
+
+const TOP_ORDER: [Col; 11] = [
+    Col::Pid,
+    Col::Status,
+    Col::User,
+    Col::Time,
+    Col::CpuTime,
+    Col::Cpu,
+    Col::Gpu,
+    Col::Mem,
+    Col::Vram,
+    Col::Io,
+    Col::Cmd,
+];
+
+impl Col {
+    /// The head word — every one of them out of the catalog, none of
+    /// them written here. (The old listing printed a literal `pid`,
+    /// lowercase, which is not a word `zh.toml` has.)
+    fn head(self) -> &'static str {
+        match self {
+            Col::Pid => cli::TOP_PID,
+            Col::Status => cli::TOP_STATUS,
+            Col::User => cli::TOP_USER,
+            Col::Time => cli::TOP_TIME,
+            Col::CpuTime => cli::TOP_CPUTIME,
+            Col::Cpu => cli::VITALS_NAME_CPU,
+            Col::Gpu => cli::VITALS_NAME_GPU,
+            Col::Mem => cli::VITALS_NAME_MEM,
+            Col::Vram => cli::VITALS_NAME_VRAM,
+            Col::Io => cli::TOP_IO,
+            Col::Cmd => cli::TOP_CMD,
+        }
+    }
+
+    /// Quantities right, words left — the card's `align`.
+    fn right(self) -> bool {
+        matches!(
+            self,
+            Col::Time | Col::CpuTime | Col::Cpu | Col::Gpu | Col::Mem | Col::Vram | Col::Io
+        )
+    }
+
+    /// **Whether this is a column a machine might not be able to fill
+    /// at all** — the seven the card latches in `Seen`. Four of them
+    /// are「an older khor over there does not send this field」and
+    /// three are「this machine has nothing to put in it」, and on screen
+    /// they behave the same way, so they are one mechanism.
+    fn optional(self) -> bool {
+        matches!(
+            self,
+            Col::Status | Col::User | Col::Time | Col::CpuTime | Col::Gpu | Col::Vram | Col::Io
+        )
+    }
+
+    /// What counts as one row filling it — the card's `FILLS`.
+    ///
+    /// **`User` is the odd one**: it is a `String` on the wire and its
+    /// absence is spelled `""`, because a machine that will not name an
+    /// account has no id to send either. So the emptiness has to be
+    /// read, not the null.
+    fn filled_by(self, r: &khor_node::TopRow) -> bool {
+        match self {
+            Col::Status => r.status.is_some(),
+            Col::User => !r.user.is_empty(),
+            Col::Time => r.run_secs.is_some(),
+            Col::CpuTime => r.cpu_ms.is_some(),
+            Col::Gpu => r.gpu_pct.is_some(),
+            Col::Vram => r.gpu_mem.is_some(),
+            Col::Io => r.io_bytes.is_some(),
+            _ => true,
+        }
+    }
+
+    /// What one cell says — the card's `cellOf`.
+    ///
+    /// **An empty string is 「读不到」 and it is deliberate.** Every one
+    /// of these that can be absent says nothing rather than zero: a
+    /// `0%` where the machine never looked is the neighbouring-value
+    /// mistake this tree keeps paying for, and on a table it would be
+    /// compared and believed.
+    ///
+    /// **In a terminal the empty cell is still padded to its column's
+    /// width** (`lay_out` below), and that is not decoration. On the
+    /// card the columns are a CSS grid, so an empty cell holds its
+    /// place by itself; here nothing holds it, and a zero-width cell
+    /// slides every column to its right one place left — the row then
+    /// reads as though the *next* reading belonged to this head.
+    /// **That is not one missing cell, it is one invented one.**
+    fn cell(self, r: &khor_node::TopRow) -> String {
+        match self {
+            Col::Pid => r.pid.to_string(),
+            // A token this build has no word for prints as the token —
+            // never as a neighbour's word. See `status_word`.
+            Col::Status => r.status.as_deref().map(status_word).unwrap_or("").to_owned(),
+            Col::User => r.user.clone(),
+            Col::Time => r.run_secs.map(lasting).unwrap_or_default(),
+            Col::CpuTime => r.cpu_ms.map(cpu_clock).unwrap_or_default(),
+            // **`round`, not `{:.0}`** — Rust's formatter rounds halves
+            // to even and `Math.round` rounds them up, so the card and
+            // the terminal disagreed on every reading landing on a
+            // half. Nobody would ever have noticed, which is the point.
+            Col::Cpu => format!("{}%", r.cpu_pct.round() as i64),
+            Col::Gpu => r.gpu_pct.map(|v| format!("{}%", v.round() as i64)).unwrap_or_default(),
+            Col::Mem => bytes(r.mem),
+            Col::Vram => r.gpu_mem.map(bytes).unwrap_or_default(),
+            Col::Io => r.io_bytes.map(bytes).unwrap_or_default(),
+            Col::Cmd => cmd_text(r),
+        }
+    }
+}
+
+/// **The name and its identifying word, as one field** — the card
+/// merged those two columns into 「命令」 on 2026-09-04 (「表的进程和
+/// 命令合并为一列,就叫命令」), and docs/KHOR.md says the terminal prints
+/// what the card draws. It also gains something here: this listing used
+/// to print the name alone, so three rows of `python3` arrived
+/// indistinguishable in a terminal even though the word had crossed the
+/// wire.
+///
+/// **Not printed twice when it repeats the name** — turing's two vLLM
+/// workers have `argv[0] == name`, and `VLLM::EngineCore
+/// VLLM::EngineCore` reads as a bug. What tells those two apart is the
+/// pid in the first column.
+fn cmd_text(r: &khor_node::TopRow) -> String {
+    match r.arg.as_deref() {
+        Some(a) if a != r.name => format!("{} {}", r.name, a),
+        _ => r.name.clone(),
+    }
+}
+
+/// The word for a status token, or the token itself — the card's
+/// `STATUS_WORD`.
+///
+/// **A token with no word is printed as it stands**: `unknown-13` in a
+/// terminal is something a person can look up, and it is the honest
+/// answer for a status a newer node knows about and this build does
+/// not. What it must never do is fall through to 「运行」 — the node
+/// goes to some trouble not to say that word wrongly
+/// (`khor_node::top::status_token`), and a lookup with a default would
+/// undo all of it here.
+fn status_word(token: &str) -> &str {
+    match token {
+        "run" => cli::TOP_ST_RUN,
+        "sleep" => cli::TOP_ST_SLEEP,
+        "idle" => cli::TOP_ST_IDLE,
+        "spawning" => cli::TOP_ST_SPAWNING,
+        "diskwait" => cli::TOP_ST_DISKWAIT,
+        "dead" => cli::TOP_ST_DEAD,
+        "zombie" => cli::TOP_ST_ZOMBIE,
+        "stopped" => cli::TOP_ST_STOPPED,
+        "tracing" => cli::TOP_ST_TRACING,
+        "parked" => cli::TOP_ST_PARKED,
+        "wakekill" => cli::TOP_ST_WAKEKILL,
+        "waking" => cli::TOP_ST_WAKING,
+        "suspended" => cli::TOP_ST_SUSPENDED,
+        "lockblocked" => cli::TOP_ST_LOCKBLOCKED,
+        "unclear" => cli::TOP_ST_UNCLEAR,
+        other => other,
+    }
+}
+
+/// A duration in the coarsest unit that still says something — the
+/// card's `span()` (`apps/gui/src/words.ts:273` at
+/// ff59afe5743857c72979f06477eeaa3cac97c3f5).
+///
+/// **Deliberately not `human_age`, and this is not a duplication
+/// somebody forgot to clean up.** `human_age` turns over at 120s / 2h /
+/// 48h; the card turns over at 60s / 1h / 24h. Fed the same ninety
+/// seconds the two say 「90 秒」 and 「1 分钟」 — **the same catalog
+/// words, a different reading**, and nothing but a test can tell them
+/// apart, because both are perfectly sensible sentences.
+///
+/// `human_age` has its own callers and its own reason (it dates
+/// *messages*, where a stickier ladder reads better). This is 时长, and
+/// 时长 has to agree with the card. **The mirror is guarded** —
+/// `the_duration_ladder_turns_over_where_the_card_does`, which is the
+/// only thing on this tree that would ever notice it drifting.
+///
+/// The card's `span` takes milliseconds and immediately floors them to
+/// seconds; `run_secs` is already whole seconds, so taking seconds here
+/// is the same function with the round trip removed.
+fn lasting(secs: u64) -> String {
+    if secs < 60 {
+        return cli::age_seconds(secs);
+    }
+    let m = secs / 60;
+    if m < 60 {
+        return cli::age_minutes(m);
+    }
+    let h = m / 60;
+    if h < 24 {
+        return cli::age_hours(h);
+    }
+    cli::age_days(h / 24)
+}
+
+/// Accumulated CPU as a **stopwatch**, where 时长 beside it is a
+/// duration in words — the card's `cpuClock`.
+///
+/// The two columns are both times and they are not the same time: one
+/// is the wall clock, the other core-seconds, and a process on four
+/// cores has burned four times the first. Printed in the same shape
+/// they read as a contradiction (「起了 2 小时,烧了 8 小时」 looks like
+/// a bug); printed as 「2 小时」 and 「8:03:41」 they read as two kinds
+/// of thing, which is what they are.
+///
+/// **Past a hundred hours the seconds go.** hinton's `go.d.plugin` came
+/// back at `1374:35:10` — ten characters, and on the card it spilled
+/// out of its column. The seconds on a figure that size are not a
+/// reading anybody uses; the magnitude is.
+fn cpu_clock(ms: u64) -> String {
+    // `(ms + 500) / 1000` is `Math.round(ms / 1000)` for a count that
+    // cannot be negative, without going through a float.
+    let s = (ms + 500) / 1000;
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    if h >= 100 {
+        return format!("{h}:{m:02}");
+    }
+    if h > 0 {
+        format!("{h}:{m:02}:{:02}", s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// How wide a string is on a screen. `状态` is two chars and four
+/// columns; `.len()` says six and `chars().count()` says two, and both
+/// are wrong in the direction that only shows up on the rows carrying
+/// Chinese.
+fn cols_of(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
+}
+
+/// Which columns this batch of rows can fill.
+///
+/// **The question is 「can any row fill me」, not 「does this machine
+/// have the hardware」** — turing reports two RTX A5000s and not one of
+/// its two hundred processes carries a per-process figure, so asking
+/// about the cards drew two permanently empty columns.
+///
+/// **The card latches this and this does not**, and the difference is
+/// not a simplification. The card re-asks every five seconds, so a
+/// column that vanished between two polls would delete a head the
+/// person was in the middle of pressing; one batch printed once has no
+/// second poll to disagree with.
+fn shown(rows: &[khor_node::TopRow]) -> Vec<Col> {
+    TOP_ORDER
+        .into_iter()
+        .filter(|c| !c.optional() || rows.iter().any(|r| c.filled_by(r)))
+        .collect()
+}
+
+/// Cut a cell down to `room` display columns, ending in an ellipsis.
+///
+/// A wide character that would straddle the last column is left out
+/// rather than half-drawn, so the result can come back one column
+/// narrower than asked — never one wider, which is the direction that
+/// wraps the line.
+fn cut_to(s: &str, room: usize) -> String {
+    if cols_of(s) <= room {
+        return s.to_owned();
+    }
+    let keep = room.saturating_sub(1);
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in s.chars() {
+        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + w > keep {
+            break;
+        }
+        out.push(ch);
+        used += w;
+    }
+    out.push('…');
+    out
+}
+
+/// The head line and one line a row, laid out in columns.
+///
+/// `room` is the terminal's width in display columns, or `None` when
+/// stdout will not say (`tty_size`). **It is only ever used to shorten
+/// 「命令」**, and when it is absent nothing is shortened — see `top`.
+///
+/// **What the padding costs, and when this decision expires.** Spaces
+/// instead of tabs break `khor top | cut -f`. Taken knowingly, on three
+/// counts: nothing on this tree consumes that output (2026-09-08, the
+/// verbs `apps/gui/scripts/smoke.mjs` runs were listed and `top` is not
+/// among them — the same search finds `devices`, which *is* there, so
+/// the empty answer is an answer and not a bad search); what was asked
+/// for is a table a **person** reads; and the right door for a machine
+/// is a `--json`, not a field separator that only lines up by luck.
+/// **Either half of that can stop being true**: give `khor top` a
+/// `--json` and the tab is gone for good, or find one real caller
+/// piping it into `cut` and it was never free. Neither will go red —
+/// this paragraph is the only thing that will tell the next person
+/// where to look.
+fn lay_out(rows: &[khor_node::TopRow], room: Option<usize>) -> Vec<String> {
+    let cols = shown(rows);
+    let mut grid: Vec<Vec<String>> = Vec::with_capacity(rows.len() + 1);
+    grid.push(cols.iter().map(|c| c.head().to_owned()).collect());
+    for r in rows {
+        grid.push(cols.iter().map(|c| c.cell(r)).collect());
+    }
+    // Each column as wide as the widest thing in it, head included —
+    // the card's tracks are content-sized too, and it is what leaves
+    // 「命令」 the most room.
+    let mut w: Vec<usize> = (0..cols.len())
+        .map(|i| grid.iter().map(|row| cols_of(&row[i])).max().unwrap_or(0))
+        .collect();
+    // 「命令」 is the only column that can be shortened, because it is
+    // the only one whose content has no bound. **And only against a
+    // width somebody actually reported**: `room` is `None` down a pipe,
+    // and a pipe has a person on the other end often enough
+    // (`| less`, `| head`) that guessing a width there would hand the
+    // reader the very thing being fixed.
+    if let (Some(room), Some(last)) = (room, cols.len().checked_sub(1)) {
+        debug_assert_eq!(cols[last], Col::Cmd, "「命令」 is never optional, so it is always last");
+        let fixed: usize = w[..last].iter().sum::<usize>() + 2 * last;
+        let budget = room.saturating_sub(fixed);
+        // Below its own head word the fixed columns have already
+        // overrun the terminal, and no cut of the last one can rescue
+        // the line — so leave it whole and let the terminal wrap, which
+        // at least keeps the text.
+        if budget >= cols_of(cols[last].head()) && budget < w[last] {
+            for row in grid.iter_mut().skip(1) {
+                row[last] = cut_to(&row[last], budget);
+            }
+            w[last] = budget;
+        }
+    }
+    grid.iter()
+        .map(|row| {
+            let mut line = String::new();
+            for (i, s) in row.iter().enumerate() {
+                if i > 0 {
+                    line.push_str("  ");
+                }
+                let pad = " ".repeat(w[i].saturating_sub(cols_of(s)));
+                if cols[i].right() {
+                    line.push_str(&pad);
+                    line.push_str(s);
+                } else {
+                    line.push_str(s);
+                    // No trailing run of spaces on the last column:
+                    // nothing follows it to line up with, and they
+                    // would ride along into anything copied out.
+                    if i + 1 < row.len() {
+                        line.push_str(&pad);
+                    }
+                }
+            }
+            line
+        })
+        .collect()
+}
 
 /// What a machine is busy with — the CLI half of the machine card's
 /// lower half (docs/KHOR.md: CLI equals GUI). The top as a table, then
@@ -452,33 +854,17 @@ fn top(rest: &[String]) -> Result<(), String> {
         _ => return Err(USAGE.into()),
     };
     let load = rt()?.block_on(node()?.load_on(machine, TOP_ROWS, khor_node::TopBy::Busiest, true))?;
-    println!(
-        "pid\t{}\t{}\t{}\t{}",
-        cli::TOP_USER,
-        cli::VITALS_NAME_CPU,
-        cli::VITALS_NAME_MEM,
-        cli::TOP_CMD
-    );
-    for r in &load.top {
-        // **The name and its identifying word, as one field** — the
-        // card merged those two columns into 「命令」 on 2026-09-04
-        // (「表的进程和命令合并为一列,就叫命令」), and docs/KHOR.md says
-        // the terminal prints what the card draws. It also gains
-        // something here: this listing used to print the name alone, so
-        // three rows of `python3` arrived indistinguishable in a
-        // terminal even though the word had crossed the wire.
-        //
-        // **Not printed twice when it repeats the name** — turing's two
-        // vLLM workers have `argv[0] == name`, and `VLLM::EngineCore
-        // VLLM::EngineCore` reads as a bug. What tells those two apart
-        // is the pid in the first column.
-        let cmd = match r.arg.as_deref() {
-            Some(a) if a != r.name => format!("{} {}", r.name, a),
-            _ => r.name.clone(),
-        };
-        println!("{}\t{}\t{:.0}%\t{}\t{}", r.pid, r.user, r.cpu_pct, bytes(r.mem), cmd);
+    // **Measured, not guessed** (2026-09-08): down a pipe the ioctl
+    // fails with `ENOTTY`; on a pty `script(1)` just made it succeeds
+    // and answers 0×0, which `tty_size` already refuses; on a real
+    // window it answers the width. `COLUMNS` is not a third way — this
+    // shell does not export it, and the value it holds is `0`, so
+    // reading it would parse fine and lay out a table no columns wide.
+    let room = tty_size().map(|(cols, _)| cols as usize);
+    for line in lay_out(&load.top, room) {
+        println!("{line}");
     }
-    println!("{}\t{}", cli::TOP_DAY, day_line(&load.cpu_day));
+    println!("{}  {}", cli::TOP_DAY, day_line(&load.cpu_day));
     Ok(())
 }
 
@@ -498,6 +884,300 @@ fn day_line(day: &khor_node::CpuDay) -> String {
             BLOCKS[step.min(BLOCKS.len() - 1)]
         })
         .collect()
+}
+
+#[cfg(test)]
+mod top_table {
+    use super::*;
+    use khor_node::TopRow;
+
+    /// Three rows chosen so that every shape the table has to survive
+    /// is in them: a status with a word and one without, a user the
+    /// machine would not name, an absent 读写 and an absent CPU时间,
+    /// and readings that land on all three rungs of the 时长 ladder.
+    fn fixture() -> Vec<TopRow> {
+        let row = |pid, name: &str, arg: Option<&str>, user: &str, cpu_pct, mem| TopRow {
+            pid,
+            name: name.to_owned(),
+            user: user.to_owned(),
+            cpu_pct,
+            mem,
+            gpu_pct: None,
+            gpu_mem: None,
+            run_secs: None,
+            arg: arg.map(str::to_owned),
+            ppid: None,
+            status: None,
+            cpu_ms: None,
+            io_bytes: None,
+        };
+        vec![
+            TopRow {
+                status: Some("run".into()),
+                run_secs: Some(3_600),
+                cpu_ms: Some(3_600_000),
+                io_bytes: Some(1024 * 1024),
+                ..row(12_392, "khor", Some("serve"), "zgh", 70.0, 110 * 1024 * 1024)
+            },
+            TopRow {
+                status: Some("spawning".into()),
+                run_secs: Some(90),
+                cpu_ms: Some(0),
+                io_bytes: None,
+                ..row(7, "python3", None, "zgh", 0.4, 512)
+            },
+            TopRow {
+                // A status this build has no word for. It must arrive
+                // as itself; the one thing it must never do is borrow a
+                // neighbour's word.
+                status: Some("unknown-13".into()),
+                run_secs: Some(90_000),
+                cpu_ms: None,
+                io_bytes: Some(0),
+                ..row(96_042, "Google Chrome Helper", None, "", 11.0, 100 * 1024 * 1024)
+            },
+        ]
+    }
+
+    /// Every cell the fixture should produce, written out here rather
+    /// than asked of the code that produces them.
+    const HEAD: [&str; 9] = [
+        cli::TOP_PID,
+        cli::TOP_STATUS,
+        cli::TOP_USER,
+        cli::TOP_TIME,
+        cli::TOP_CPUTIME,
+        cli::VITALS_NAME_CPU,
+        cli::VITALS_NAME_MEM,
+        cli::TOP_IO,
+        cli::TOP_CMD,
+    ];
+    /// Quantities right, words left — written out here too, so a column
+    /// that quietly changed sides would go red rather than be agreed
+    /// with.
+    const RIGHT: [bool; 9] = [false, false, false, true, true, true, true, true, false];
+
+    fn want_cells() -> Vec<Vec<String>> {
+        let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
+        vec![
+            s(&HEAD),
+            s(&["12392", cli::TOP_ST_RUN, "zgh", &cli::age_hours(1), "1:00:00", "70%", "110.0M", "1.0M", "khor serve"]),
+            s(&["7", cli::TOP_ST_SPAWNING, "zgh", &cli::age_minutes(1), "0:00", "0%", "512B", "", "python3"]),
+            s(&["96042", "unknown-13", "", &cli::age_days(1), "", "11%", "100.0M", "0B", "Google Chrome Helper"]),
+        ]
+    }
+
+    /// Lay `want_cells` out the way the table should have: each column
+    /// as wide as its widest entry, two spaces between, right-aligned
+    /// where `RIGHT` says, and no trailing run on the last one.
+    fn want_lines(cells: &[Vec<String>]) -> Vec<String> {
+        let n = cells[0].len();
+        let w: Vec<usize> =
+            (0..n).map(|i| cells.iter().map(|r| cols_of(&r[i])).max().unwrap()).collect();
+        cells
+            .iter()
+            .map(|row| {
+                let mut line = String::new();
+                for (i, c) in row.iter().enumerate() {
+                    if i > 0 {
+                        line.push_str("  ");
+                    }
+                    let pad = " ".repeat(w[i] - cols_of(c));
+                    if RIGHT[i] {
+                        line.push_str(&pad);
+                        line.push_str(c);
+                    } else {
+                        line.push_str(c);
+                        if i + 1 < n {
+                            line.push_str(&pad);
+                        }
+                    }
+                }
+                line
+            })
+            .collect()
+    }
+
+    /// The first `cols` display columns of a line. A wide character
+    /// that would straddle the edge is left out, so this can come back
+    /// one column short — which is fine for comparing two lines with it,
+    /// because it is short in the same place on both.
+    fn upto(line: &str, cols: usize) -> String {
+        let mut out = String::new();
+        let mut used = 0;
+        for ch in line.chars() {
+            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+            if used + w > cols {
+                break;
+            }
+            out.push(ch);
+            used += w;
+        }
+        out
+    }
+
+    /// **The claim in the form it can be falsified**: under one batch of
+    /// rows every column occupies the same span of display columns on
+    /// every line, head included.
+    ///
+    /// Checked by building the whole table a second way — from cells
+    /// written out above, with widths taken as display columns — and
+    /// comparing the two texts. An implementation that padded by
+    /// `.len()` or by `chars().count()` renders lines that are not this
+    /// text, and the assertion prints both.
+    #[test]
+    fn every_column_lands_on_the_same_display_columns_on_every_line() {
+        let cells = want_cells();
+        // ⚠️ **The arm without which this test is green on a broken
+        // implementation.** Padding by length only comes apart on cells
+        // where length and width disagree; an all-ASCII fixture would
+        // pass a table padded any way at all. `新建中` is three chars,
+        // nine bytes and six columns — if a later edit swaps these rows
+        // for English ones, this fails here rather than going quietly
+        // green downstairs.
+        assert!(
+            cells.iter().flatten().any(|c| cols_of(c) != c.chars().count() && cols_of(c) != c.len()),
+            "no cell in this fixture is a wide character, so the comparison below cannot tell a display-width layout from a byte-length one"
+        );
+        let want = want_lines(&cells);
+        let got = lay_out(&fixture(), None);
+        assert_eq!(got, want, "\ngot:\n{}\nwant:\n{}\n", got.join("\n"), want.join("\n"));
+    }
+
+    /// A column no row can fill is not drawn, and the ones that are keep
+    /// the card's order.
+    #[test]
+    fn a_column_no_row_can_fill_is_not_drawn() {
+        // The fixture reads no GPU at all — the machine this was
+        // written on cannot, and neither can turing's two hundred
+        // processes on two A5000s.
+        assert_eq!(
+            shown(&fixture()),
+            vec![
+                Col::Pid,
+                Col::Status,
+                Col::User,
+                Col::Time,
+                Col::CpuTime,
+                Col::Cpu,
+                Col::Mem,
+                Col::Io,
+                Col::Cmd
+            ]
+        );
+        // One row filling it is enough, and it comes back **in the
+        // card's place** — between CPU and 内存, not appended.
+        let mut with_gpu = fixture();
+        with_gpu[0].gpu_pct = Some(200.0);
+        let cols = shown(&with_gpu);
+        assert_eq!(cols.iter().position(|c| *c == Col::Gpu), Some(6));
+        assert_eq!(cols[7], Col::Mem);
+        // And a batch with nothing optional in it still draws the four
+        // that are never optional — an empty `Seen` is not an empty
+        // table.
+        let bare = TopRow { status: None, run_secs: None, cpu_ms: None, io_bytes: None, user: String::new(), ..fixture()[1].clone() };
+        assert_eq!(shown(&[bare]), vec![Col::Pid, Col::Cpu, Col::Mem, Col::Cmd]);
+    }
+
+    /// The three places the 时长 ladder turns over, against the card's
+    /// (`apps/gui/src/words.ts:273` at
+    /// ff59afe5743857c72979f06477eeaa3cac97c3f5).
+    ///
+    /// **No number here is one somebody worked out.** Each side is a
+    /// catalog word applied to a figure read off that function, so this
+    /// compares two readings of the same table rather than a reading
+    /// against a literal — the kind of constant that goes red saying
+    /// somebody else's name.
+    #[test]
+    fn the_duration_ladder_turns_over_where_the_card_does() {
+        assert_eq!(lasting(0), cli::age_seconds(0));
+        assert_eq!(lasting(59), cli::age_seconds(59));
+        assert_eq!(lasting(60), cli::age_minutes(1));
+        assert_eq!(lasting(3_599), cli::age_minutes(59));
+        assert_eq!(lasting(3_600), cli::age_hours(1));
+        assert_eq!(lasting(86_399), cli::age_hours(23));
+        assert_eq!(lasting(86_400), cli::age_days(1));
+        // **The arm that says why this function exists.** `human_age`
+        // is the other ladder in this file and it turns over elsewhere;
+        // ninety seconds is inside the gap. Delete `lasting` and route
+        // 时长 through `human_age` — the obvious tidy-up — and this is
+        // the line that goes red. Nothing else would: both answers are
+        // sensible sentences made of the same catalog words.
+        assert_ne!(lasting(90), human_age(90 * 1000));
+    }
+
+    /// 「命令」 is the only column that gets shortened, and only against
+    /// a width somebody reported.
+    #[test]
+    fn only_the_command_column_is_cut_and_only_against_a_real_width() {
+        let rows = fixture();
+        let loose = lay_out(&rows, None);
+        // **The control arm.** A width far past what the table needs
+        // must change nothing — otherwise「it cut when I gave it a
+        // width」would be true of every width, and the test below would
+        // be measuring `Some` rather than the arithmetic.
+        assert_eq!(lay_out(&rows, Some(500)), loose, "a width the table already fits under must not cut anything");
+
+        let tight = lay_out(&rows, Some(70));
+        assert_ne!(tight, loose, "70 columns is narrower than this table's own command column");
+        // Everything left of 「命令」 is untouched — the cut takes width
+        // off the last column and off no other. The head line ends in
+        // 「命令」 with nothing padded after it, so the width of
+        // everything before it is that line's width less that word's.
+        let before = cols_of(&loose[0]) - cols_of(cli::TOP_CMD);
+        for (a, b) in tight.iter().zip(&loose) {
+            assert!(cols_of(a) <= cols_of(b));
+            assert_eq!(upto(a, before), upto(b, before), "the cut moved a column left of 「命令」");
+        }
+        assert!(tight.iter().skip(1).any(|l| l.ends_with('…')), "nothing was actually cut");
+        for l in tight.iter().skip(1) {
+            assert!(cols_of(l) <= 70, "a cut line is still wider than the terminal: {l:?}");
+        }
+        // Narrower than the fixed columns alone: cutting the last one
+        // cannot rescue the line, so it is left whole rather than
+        // reduced to an ellipsis.
+        assert_eq!(lay_out(&rows, Some(20)), loose);
+    }
+
+    /// Every status the node can send has its own word, and one it
+    /// cannot arrives as itself.
+    ///
+    /// **What this does not cover**: a token `khor_node::top` grows
+    /// later. That list is `pub(crate)` over there and this cannot
+    /// walk it, so what is guarded is「no arm points at the wrong
+    /// word」, not「no token is missing」.
+    #[test]
+    fn every_status_token_has_its_own_word() {
+        let pairs = [
+            ("run", cli::TOP_ST_RUN),
+            ("sleep", cli::TOP_ST_SLEEP),
+            ("idle", cli::TOP_ST_IDLE),
+            ("spawning", cli::TOP_ST_SPAWNING),
+            ("diskwait", cli::TOP_ST_DISKWAIT),
+            ("dead", cli::TOP_ST_DEAD),
+            ("zombie", cli::TOP_ST_ZOMBIE),
+            ("stopped", cli::TOP_ST_STOPPED),
+            ("tracing", cli::TOP_ST_TRACING),
+            ("parked", cli::TOP_ST_PARKED),
+            ("wakekill", cli::TOP_ST_WAKEKILL),
+            ("waking", cli::TOP_ST_WAKING),
+            ("suspended", cli::TOP_ST_SUSPENDED),
+            ("lockblocked", cli::TOP_ST_LOCKBLOCKED),
+            ("unclear", cli::TOP_ST_UNCLEAR),
+        ];
+        for (token, word) in pairs {
+            assert_eq!(status_word(token), word, "{token}");
+            assert_ne!(status_word(token), token, "{token} came back untranslated");
+        }
+        // Two arms pointing at one word is the way a wrong arm hides:
+        // both readings look like words, and the row says the other
+        // one's fact.
+        let mut words: Vec<&str> = pairs.iter().map(|(_, w)| *w).collect();
+        words.sort_unstable();
+        words.dedup();
+        assert_eq!(words.len(), pairs.len(), "two tokens share a word");
+        assert_eq!(status_word("unknown-13"), "unknown-13");
+    }
 }
 
 /// The road word for one row — and **nothing at all for this machine**.

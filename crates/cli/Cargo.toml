@@ -27,6 +27,9 @@ tokio.workspace = true
 # reader's background (`web_qr`).
 # License: MIT OR Apache-2.0 (checked before use, not after).
 qrcode = { version = "0.14.1", default-features = false }
+# The process table lines its columns up, and lining up needs display
+# width rather than length — see the workspace entry.
+unicode-width.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

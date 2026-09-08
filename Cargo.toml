@@ -32,6 +32,14 @@ khor-sync = { path = "crates/sync" }
 khor-node = { path = "crates/node" }
 gethostname = "1"
 getrandom = "0.3"
+# How wide a string is **on a screen**, which is not how long it is.
+# `状态` is two chars and four columns, and a table padded by `.len()`
+# comes apart on exactly the rows that carry Chinese — while an
+# English-only fixture stays green (`khor top`'s table, crates/cli).
+#
+# **Not a new package**: `vt100` already brings it (Cargo.lock, checked
+# before adding rather than after — the count stayed at 797).
+unicode-width = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 blake3 = "1"
