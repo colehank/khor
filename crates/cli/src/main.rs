@@ -879,6 +879,25 @@ fn top(rest: &[String]) -> Result<(), String> {
 
 /// A day of CPU as blocks — the mean of each run of six buckets (half an
 /// hour), one glyph per run, a dot where none of the six was measured.
+///
+/// **This line is a fixed 66 display columns and does not answer to the
+/// terminal's width**: the label is 16, the separator 2, and there are
+/// 48 glyphs (measured 2026-09-08 20:37, not worked out). The table
+/// above it fits whatever window it is given — at 62 columns the table
+/// came back exactly 62 wide — and **this line is then the only thing
+/// that wraps.**
+///
+/// **Left alone on purpose.** The count is a meaning, not a layout
+/// number: one glyph is half an hour, and a day is 48 of them. It is
+/// also narrower than what it replaced — the tab-separated version put
+/// the blocks at column 24 and ran to 72.
+///
+/// **When to re-open it**: somebody actually reading this in a window
+/// under 66 columns. There is no such person today, which is the whole
+/// reason this is not being done. If there is one, the move is to
+/// coarsen the bucket — an hour to a glyph is 24 of them and a 42-column
+/// line — **not to truncate**, because a day band with its tail cut off
+/// still looks like a day.
 fn day_line(day: &khor_node::CpuDay) -> String {
     const BLOCKS: [char; 8] = ['\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
     day.buckets
