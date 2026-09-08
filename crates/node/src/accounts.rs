@@ -1029,7 +1029,7 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
         //   guessing: reading these instants as UTC printed the day
         //   before for every account east of Greenwich (measured on
         //   real accounts, 2026-09-09, seven rows out of seven).
-        r.zone = Some(jiff::tz::TimeZone::system().iana_name().unwrap_or("UTC").to_owned());
+        r.zone = zone_name(&jiff::tz::TimeZone::system());
     }
     if !unlimited && let Some(avail) = available {
         let total = used + avail;
@@ -1140,6 +1140,39 @@ const NEWAPI_LOG_MAX: usize = 1000;
 /// large by whatever was cached, which is visible beside a
 /// `cache_split: false` that says khor does not know; subtracting on a
 /// guess would invent a cache figure that was never reported.
+/// The IANA name of a zone, **or nothing at all**.
+///
+/// ⚠️ **This was `unwrap_or("UTC")` for six hours on 2026-09-09, and
+/// that is the bug this function exists to name.** A zone whose name
+/// khor cannot read is not UTC; it is a zone khor cannot name. Filling
+/// in `"UTC"` turned 「I do not know」 into a confident wrong answer —
+/// **and into exactly the wrong answer**, since reading these buckets
+/// as UTC is the day-early bug the `zone` field was added to fix. The
+/// old shape was worse than no field at all: a `None` leaves the face
+/// knowing it is falling back, while a `"UTC"` tells it not to.
+///
+/// **How it happened, because the mechanism is not obvious**: `jiff`
+/// was built here with `default-features = false`, which leaves out
+/// `tzdb-zoneinfo`. Without it `TimeZone::system()` reads
+/// `/etc/localtime` as raw TZif and hands back
+/// `TimeZone(TZif("Local"))` — **the offset is right (+08:00 measured
+/// on this machine) and the name is `None`**. With the feature on, the
+/// same call returns `Some("Asia/Singapore")`. Both readings are from
+/// this Mac, 2026-09-09; the feature is now on in the workspace
+/// manifest.
+///
+/// **What is deliberately not done**: falling back to the numeric
+/// offset (`"+08:00"`, which `Intl.DateTimeFormat` does accept). It is
+/// right only while that offset holds — a bucket from the other side of
+/// a daylight-saving change is cut at a local midnight the fixed offset
+/// puts at 23:00 the day before, **which is the same day-shift this is
+/// fixing, just rarer and seasonal**. A rarer version of the bug is a
+/// worse bug. If a real machine turns up with no tzdb at all, that is
+/// the rung to consider, and this is the note to read first.
+fn zone_name(tz: &jiff::tz::TimeZone) -> Option<String> {
+    tz.iana_name().map(str::to_owned)
+}
+
 fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
     let Some(rows) = j.get("data").and_then(serde_json::Value::as_array) else {
         return LogRead::default();
@@ -1622,6 +1655,49 @@ async fn openai_model_tokens(
 
 #[cfg(test)]
 mod tests {
+
+    /// **A zone khor cannot name must not come back named UTC.**
+    ///
+    /// This is the 2026-09-09 regression written as a test rather than
+    /// as a promise: `zone_name` filled `"UTC"` where the name was
+    /// unreadable, and a screen took that at its word and printed every
+    /// new-api day one early — the exact bug the field was added to
+    /// fix, now wearing a value that says it is not a guess.
+    ///
+    /// ⚠️ **It is asserted against the offset, not against a name**,
+    /// which is what lets it run anywhere: a zone at +08:00 calling
+    /// itself UTC is wrong on any machine, while 「this Mac says
+    /// Asia/Singapore」 is a fact about this Mac. **Before the fix this
+    /// went red here** (name `"UTC"`, offset `+08:00`); on a machine
+    /// genuinely on UTC it passes by agreeing, which is correct — there
+    /// is nothing wrong to catch there.
+    #[test]
+    fn a_zone_that_is_not_utc_is_never_reported_as_utc() {
+        let tz = jiff::tz::TimeZone::system();
+        let now = jiff::Timestamp::now();
+        if zone_name(&tz).as_deref() == Some("UTC") {
+            assert_eq!(
+                tz.to_offset(now),
+                jiff::tz::Offset::UTC,
+                "the system zone reports itself as UTC while sitting at {:?} — a name khor could not read must come back \
+                 as None, never as the one zone that would make every bucket a day early",
+                tz.to_offset(now),
+            );
+        }
+        //   And the other arm: a zone that *is* named must keep its
+        //   name, or the field is empty everywhere and says nothing.
+        //
+        //   ⚠️ **Skipped rather than unwrapped where there is no tzdb
+        //   to look a name up in.** The first draft unwrapped, and on
+        //   the very build this test is for — `jiff` without
+        //   `tzdb-zoneinfo` — it panicked *here*, before reaching the
+        //   arm above: **a red pointing at the wrong line, on the one
+        //   configuration the test was written to catch.**
+        match jiff::tz::TimeZone::get("Asia/Shanghai") {
+            Ok(named) => assert_eq!(zone_name(&named).as_deref(), Some("Asia/Shanghai")),
+            Err(_) => println!("no tzdb on this build, so 「a named zone keeps its name」 was not evaluated"),
+        }
+    }
     use super::*;
 
     /// **A 200 with `success: false` is a refusal, and a 200 without
@@ -2637,3 +2713,4 @@ mod tests {
     }
 
 }
+

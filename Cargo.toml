@@ -122,7 +122,7 @@ nvml-wrapper = "0.12"
 # the other candidate, is three and reads the zone through `localtime_r`,
 # whose documented race with `setenv` khor would then own.
 # License: Unlicense OR MIT (checked before use, not after).
-jiff = { version = "0.2", default-features = false, features = ["std", "tz-system"] }
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 # A terminal screen, in memory, for the PTY fallback (crates/detect).
 # **A prerequisite, not a refinement**: the patterns this family matches
 # describe what is on a screen *now*, and the host's replay ring is a
