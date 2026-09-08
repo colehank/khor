@@ -697,6 +697,30 @@ input[type="search"]::-webkit-search-decoration {
 [data-load-top] [data-top-row] > * {
   white-space: nowrap;
 }
+
+/* **The same moment, on the 額度 card's usage table** (2026-09-08).
+   Same token, same duration, same reduced-motion rule — because it is
+   the same gesture, and a gesture that looked different on the second
+   screen is what 「看起来是两个产品」 was about.
+
+   ⚠️ **On the row here, not on the cells.** The machine card's rows are
+   `display: contents` and have no box of their own, which is why that
+   rule reaches for `> *`; these are ordinary `<tr>`s. **Copying the
+   `> *` across would have painted nothing and looked like a correct
+   rule** — the exact trap the note above this describes, met from the
+   other side. */
+[data-usage-half] [data-usage-row] {
+  transition: background-color var(--dur-420) var(--ease-out);
+}
+[data-usage-half] [data-usage-row][data-hot] {
+  background-color: var(--accent);
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-usage-half] [data-usage-row] {
+    transition: none;
+  }
+}
 [data-load-top] [data-c="cmd"][data-open],
 [data-load-top] [data-c="cmd"][data-open] > * {
   white-space: normal;

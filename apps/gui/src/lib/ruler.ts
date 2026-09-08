@@ -106,11 +106,19 @@ export type Ruler = {
 /**
  * The ruler this set of readings is best drawn with.
  *
- * `force` overrides the choice, because the automatic answer is a
- * default and not a claim that the other two are unreadable — the page
- * offers all three and prints which one is in use.
+ * ⚠️ **There is no override, and there was one for a few hours on
+ * 2026-09-08.** A `force` argument fed a 「尺子」 dropdown on the 額度
+ * page, on the reasoning that the automatic answer is a default rather
+ * than a claim the other rulers are unreadable. Both went the same
+ * afternoon: **the machine card has no such control**, and one idea
+ * wearing two different controls on two pages is what 「看起来是两个
+ * 产品」 turned out to mean. The ruler is measured, and printed on the
+ * axis so the reader knows which one they are reading.
+ *
+ * If an override is ever wanted, it is wanted on **both** figures, and
+ * it is one control — not a second one grown next to the first.
  */
-export function ruler(vals: number[], force?: string): Ruler {
+export function ruler(vals: number[]): Ruler {
   const v = vals.filter((x) => x != null && Number.isFinite(x)).sort((a, b) => a - b);
   // Nothing to draw. A flat 0..1 rather than a throw: the caller draws
   // no points either, and an axis is still a frame.
@@ -164,8 +172,6 @@ export function ruler(vals: number[], force?: string): Ruler {
     tick: (f) => lo + s * Math.expm1(f * span),
   };
 
-  const by: Record<string, Ruler> = { linear, sqrt, log };
-  if (force && by[force]) return by[force];
   // **The ruler that keeps the closest pair furthest apart wins, and
   // ties go to the plainer one** — so an axis is only bent when
   // bending it buys something measurable. The 15% is the margin that

@@ -1390,6 +1390,31 @@ try {
     if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
     return press(rail(tab));
   };
+  //     ── 「还没答」那张脸,趁路由还挂着 ──────────────────────
+  //
+  //     **它必须在这里,不能在下面那一节。** 走查(第 3 节)有一站要打开
+  //     这张卡并等下半张画出来,那一站会把这个挂起放掉;等到下面再测,
+  //     它早就答过了。而这张脸只在**第一次**取数时存在——答案一旦落进
+  //     state 就不会再回到「还没答」。
+  //
+  //     An account whose answer has not arrived draws **nothing**: an
+  //     empty frame is not 「no reading」, it is the picture of an
+  //     account that spent nothing, and that is a fact nobody
+  //     established. The route is held, so this is a state to stand in
+  //     rather than a race to win — on a real machine it is 18.5 s.
+  await press(rail("quota"));
+  await until(8000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
+  await press('[data-quota-row="sub:local"]');
+  await wait(500);
+  if ((await page.locator("[data-quota-detail] [data-usage-half]").count()) !== 0) {
+    fail("the usage half drew before its answer arrived — an empty chart is the picture of an account that spent nothing");
+  }
+  usageHold.on = false;
+  usageHold.release();
+  if (!(await until(8000, async () => (await page.locator("[data-usage-half] [data-usage-chart]").count()) > 0))) {
+    fail("probe dead: the usage half never drew after the answer landed, so 「it draws nothing while asking」 measured nothing");
+  }
+
   const STOPS = [
     { name: "sessions list", anchor: "[data-list]", go: () => open("sessions") },
     {
@@ -1493,6 +1518,28 @@ try {
       name: "\u989d\u5ea6",
       anchor: "[data-quota-row]",
       go: () => press(rail("quota")),
+    },
+    {
+      // ⚠️ **The stop this walk did not have, added 2026-09-08.**
+      // 額度's own stop presses the rail and anchors on a *row*, so the
+      // walk stopped at the list — **nothing in it ever opened an
+      // account's detail**, and the whole lower half (its column heads,
+      // its axis pickers) lived outside every finger-floor assertion in
+      // section 3. Measured that day, before this stop existed: the
+      // column heads were 23.3px and the axis pickers 23px, against a
+      // floor of 44 — and the gate was green, because it could not see
+      // them.
+      //
+      // **A floor nothing walks to is not a floor.** The half is only
+      // drawn once the usage answer has landed, which is why the hold
+      // above is released before this walk starts.
+      name: "\u989d\u5ea6 \u00b7 \u4e00\u5f20\u5361\u7684\u4e0b\u534a\u5f20",
+      anchor: "[data-usage-half] [data-usage-chart]",
+      go: async () => {
+        await press(rail("quota"));
+        await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
+        return press('[data-quota-row="sub:local"]');
+      },
     },
     { name: "the mark's place", anchor: "[data-mark-place]", go: () => press("[data-rail-mark]") },
     {
@@ -1616,6 +1663,26 @@ try {
         "only available through it. **It is not「no problem」** — a touch user " +
         "on a dense plot will miss, and the answer to that is a bigger idea " +
         "(brush, or a nearest-point hit test), not a bigger dot.",
+    ],
+    "data-usage-point": [
+      "src/views/UsageHalf.tsx",
+      "a dot on the 額度 card's scatter. **The same waiver the machine " +
+        "card's points carry, and it has to be argued again rather than " +
+        "borrowed, because that card's reason — two hundred of them would " +
+        "tile the drawing — is not this one's: there are seven here.** " +
+        "The reason here is that **the dot's size is a reading**: its area " +
+        "is the third quantity, so a dot grown to the floor is a dot whose " +
+        "size has stopped meaning anything, which is WCAG 2.5.5's Essential " +
+        "carve-out in its literal form. The target is already a transparent " +
+        "circle at 20 viewBox units — about 22px across the wide face and " +
+        "9px on a 390px phone, which is as large as the drawing can afford " +
+        "at each width, and the phone is where these measured 15–34px. " +
+        "**What it does not buy:** a finger on the narrow face. A touch " +
+        "user there will miss, and the honest answer to that is a nearest- " +
+        "point hit test, not a bigger dot. What a dot *does* is mark the " +
+        "row under it in the table — the canonical list, reachable by " +
+        "keyboard, and where that reader was going anyway — so nothing is " +
+        "available only through a dot. **It is not 「no problem」.**",
     ],
     "data-list-seam": [
       "src/App.tsx",
@@ -3797,20 +3864,27 @@ try {
     await press('[data-quota-row="sub:local"]');
     await wait(400);
 
-    //   ① **The empty face is never drawn.** An account whose answer
-    //   has not arrived draws *nothing*: an empty frame is not 「no
-    //   reading」, it is the picture of an account that spent nothing,
-    //   and that is a fact nobody established. The route is held, so
-    //   this is a state to stand in rather than a race to win.
-    if ((await page.locator(half).count()) !== 0) {
-      fail("the usage half drew before its answer arrived — an empty chart is the picture of an account that spent nothing");
-    }
-    usageHold.on = false;
-    usageHold.release();
-    await until(5_000, async () => (await page.locator(`${half} [data-usage-chart]`).count()) > 0);
     if ((await page.locator(`${half} [data-usage-chart]`).count()) === 0) {
-      fail("probe dead: the usage half never drew after the answer landed, so nothing below was measured");
+      fail("probe dead: the usage half never drew, so nothing below was measured");
     }
+    //   ① 「it draws nothing while asking」 is tested **before the
+    //   walk**, at the top of this file — that face only exists on the
+    //   first fetch, and the walk's 額度 stop needs the answer landed.
+    //
+    //   **The controls are the machine card's, so they are pressed the
+    //   machine card's way**: a word with a chevron that opens in
+    //   place. There are no chips and no `<select>`s here any more, and
+    //   this helper being the same shape as section 10's `pick` is the
+    //   point — one control, one way of pressing it.
+    const pickUsage = async (which, key) => {
+      const at = `${half} [data-plot-pick="${which}"]`;
+      if ((await page.locator(`${at} [data-plot-axis]`).count()) === 0) {
+        await page.locator(`${at} [data-plot-label]`).click();
+        await wait(150);
+      }
+      await page.locator(`${at} [data-plot-axis="${key}"]`).click();
+      await wait(300);
+    };
 
     const read = () =>
       page.evaluate(() => {
@@ -3933,8 +4007,7 @@ try {
     //   nothing else.** The days two windows share must report the same
     //   totals to the digit, and a model must not change colour: both
     //   are recalculations dressed as a filter.
-    await press('[data-usage-chip="usage-window-7"]');
-    await wait(300);
+    await pickUsage("window", "7");
     const week = await read();
     // **7 columns, and the 7 is only safe because of how this fixture
     // is cut.** The axis never starts before the source's first day —
@@ -3957,8 +4030,7 @@ try {
         fail(`${m} is ${all.paint[m]} over the whole span and ${paint} over seven days — a colour is a fact about a model, not about a window`);
       }
     }
-    await press('[data-usage-chip="usage-window-0"]');
-    await wait(300);
+    await pickUsage("window", "0");
 
     //   ⑥ **The area carries the value, so the radius is its square
     //   root.** A radius read straight off the reading makes a 4× value
@@ -4020,8 +4092,7 @@ try {
     if (!back.rulerX || !back.rulerY) {
       fail(`the scatter does not say which ruler each axis is on (${back.rulerX} / ${back.rulerY})`);
     }
-    await page.selectOption('[data-quota-detail] [data-usage-pick="y"]', "rate");
-    await wait(300);
+    await pickUsage("y", "rate");
     const bent = await read();
     if (bent.rulerY === back.rulerY) {
       fail(
@@ -4029,8 +4100,7 @@ try {
           `「it is chosen by measurement」 was not tested, only 「it is always this one」`,
       );
     }
-    await page.selectOption('[data-quota-detail] [data-usage-pick="y"]', "read");
-    await wait(300);
+    await pickUsage("y", "read");
 
     //   ⑦ **The provider road, and its three faces.** Which columns
     //   exist is a property of the *source*, and `cache_split: false`
@@ -4063,10 +4133,72 @@ try {
     if (!silent.mute) {
       fail(`acc-widest reports no tokens at all and the half drew ${JSON.stringify(silent)} — a provider that publishes no token report is not an account that spent nothing`);
     }
+    //   ⚠️ **Back to the subscription's card first.** ⑦ above walks
+    //   three API accounts and leaves the pane on the one that reports
+    //   no tokens at all — a card with a sentence and no table on it,
+    //   where every selector below would find nothing and every
+    //   assertion would pass by finding zero of what it was looking
+    //   for. That is the `querySelectorAll`-returns-`[]` shape, and it
+    //   reads as 「the row is not a control」 rather than 「there is no
+    //   row」.
+    await press('[data-quota-row="sub:local"]');
+    await wait(400);
+    if ((await page.locator(`${half} [data-usage-row]`).count()) === 0) {
+      fail("probe dead: no rows on the subscription's card, so nothing about heads or pressing was measured");
+    }
+
+    //   ⑧ **Every head says it can be sorted, not just the sorted
+    //   one.** `aria-sort="none"` is what makes a row of heads read as
+    //   a row of controls; marking only the active column leaves 「these
+    //   can be sorted」 unsaid. The machine card's heads all carry it.
+    const sorts = await page.evaluate((sel) =>
+      [...document.querySelectorAll(`${sel} th[data-usage-col]`)].map((h) => h.getAttribute("aria-sort")), half);
+    if (sorts.length === 0) fail("probe dead: no column heads, so nothing about their sort state was read");
+    else if (sorts.some((v) => v === null)) {
+      fail(`${sorts.filter((v) => v === null).length} of ${sorts.length} column heads carry no aria-sort — 「these columns can be sorted」 is left unsaid`);
+    } else if (sorts.filter((v) => v !== "none").length !== 1) {
+      fail(`${sorts.filter((v) => v !== "none").length} heads claim to be the sorted one (${JSON.stringify(sorts)}) — exactly one column is`);
+    }
+
+    //   ⑨ **Pressing a point locates a row; it does not select one.**
+    //   The machine card's gesture, and this half had the other one:
+    //   point *or* row toggled a tint that stayed. Three parts, and the
+    //   arms that say each can fail:
+    //
+    //     - the row is marked when a point is pressed;
+    //     - **the mark takes itself off** — a mark that stays is a
+    //       selection, and this checks it is gone a second later;
+    //     - **the table is not a control** — pressing a row marks
+    //       nothing, which is the direction that was removed.
+    const hotNow = () => page.evaluate((sel) => ({
+      hot: [...document.querySelectorAll(`${sel} [data-usage-row][data-hot]`)].map((r) => r.dataset.usageRow),
+      rowCursor: getComputedStyle(document.querySelector(`${sel} [data-usage-row]`)).cursor,
+    }), half);
+    await page.locator(`${half} [data-usage-point="claude-opus-5"]`).click();
+    await wait(200);
+    const lit = await hotNow();
+    if (lit.hot.length !== 1 || lit.hot[0] !== "claude-opus-5") {
+      fail(`pressing claude-opus-5's dot marked ${JSON.stringify(lit.hot)} — a point that cannot name its row is a dot`);
+    }
+    await wait(1600);
+    const faded = await hotNow();
+    if (faded.hot.length !== 0) {
+      fail(`the mark on ${JSON.stringify(faded.hot)} is still there 1.8s later — a highlight that stays is a selection, and a selection has to be undone`);
+    }
+    if (lit.rowCursor === "pointer") {
+      fail(`the table's rows still answer the finger (cursor: ${lit.rowCursor}) — the row is where an answer lands, not a control`);
+    }
+    await page.locator(`${half} [data-usage-row="claude-fable-5"]`).click();
+    await wait(300);
+    if ((await hotNow()).hot.length !== 0) {
+      fail("pressing a row marked it — this half is 「a point locates a row」, one way, like the machine card");
+    }
+
     console.log(
       `usage half: ${all.keys.length} models over ${all.cols.length} days (7-day window ${week.cols.length}), ` +
         `stack ${all.scale}, scatter ${back.rulerX}×${back.rulerY} (rate axis ${bent.rulerY}), ` +
-        `cache columns ${itemised.cols.length} vs ${plain.cols.length}, no-report says ${JSON.stringify(silent.mute)}`,
+        `cache columns ${itemised.cols.length} vs ${plain.cols.length}, no-report says ${JSON.stringify(silent.mute)}, ` +
+        `heads ${JSON.stringify(sorts)}`,
     );
     await press('[data-quota-row="sub:local"]');
     await wait(300);

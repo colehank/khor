@@ -48,11 +48,12 @@
  *     or nothing was spent in this window.
  *   - **have it** — the two zones.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AccountReading } from "@/gen/bindings/AccountReading";
 import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
+import { AxisPick } from "@/components/AxisPick";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
 import { cn } from "@/lib/utils";
@@ -302,14 +303,18 @@ export function UsageHalf({
 }) {
   const [win, setWin] = useState<number>(0);
   const [view, setView] = useState<"day" | "model">("day");
-  const [hot, setHot] = useState<string | null>(null);
+  /** Which row the scatter last asked for, and how many times it has
+      asked — the machine card's shape, and for its reason: pressing the
+      same point twice has to be two answers rather than one. **What
+      travels is the model's name**, never a row index: the table's
+      order changes under the reader's hand. */
+  const [hot, setHot] = useState<{ model: string; n: number } | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "total", dir: -1 });
   const [axes, setAxes] = useState<{ x: AxisKey; y: AxisKey; z: AxisKey }>({
     x: "write",
     y: "read",
     z: "total",
   });
-  const [force, setForce] = useState("");
 
   // **Colours are worked out over every model the account has, never
   // over the window's** — see `lib/model-band`. Fed the window's, a
@@ -335,17 +340,22 @@ export function UsageHalf({
 
   return (
     <div data-usage-half data-usage-source={source} className="flex flex-col border-t">
-      <Trend
-        days={days}
-        agg={agg}
-        rows={rows}
-        bands={bands}
-        view={view}
-        win={win}
-        force={force}
-        onView={setView}
-        onWin={setWin}
-      />
+      {/* **One line, and it is the only heading in this block.**
+          ⚠️ The two zone headings this replaces were control strips
+          with titles on them; the strips went (see `Trend` and
+          `Stats`) and the machine card's own figure-and-table panel
+          carries no heading at all — but that panel is on a card whose
+          every part is about one machine.
+          **Measured 2026-09-08**: the subscription's detail pane has
+          exactly three children — the account's identity line, the
+          dial with its windows, and this. Nothing in the first two
+          says what this one is, and the block above it is **money**
+          while this is tokens. Delete this line and the only thing
+          separating the two quantities is a horizontal rule. */}
+      <p data-usage-title className="px-4 pt-3 text-aux font-title text-muted-foreground">
+        {gui.usage_title}
+      </p>
+      <Trend days={days} agg={agg} rows={rows} bands={bands} view={view} win={win} onView={setView} onWin={setWin} />
       <Stats
         agg={agg}
         days={days}
@@ -353,12 +363,10 @@ export function UsageHalf({
         axes={axes}
         shown={shown}
         cacheKnown={cacheKnown}
-        force={force}
         hot={hot}
         sort={sort}
         onAxes={setAxes}
-        onForce={setForce}
-        onHot={setHot}
+        onHot={(model) => setHot({ model, n: (hot?.n ?? 0) + 1 })}
         onSort={setSort}
       />
     </div>
@@ -397,7 +405,6 @@ function Trend({
   bands,
   view,
   win,
-  force,
   onView,
   onWin,
 }: {
@@ -407,7 +414,6 @@ function Trend({
   bands: Map<string | null, string>;
   view: "day" | "model";
   win: number;
-  force: string;
   onView: (v: "day" | "model") => void;
   onWin: (w: number) => void;
 }) {
@@ -438,29 +444,21 @@ function Trend({
   const cx = (i: number) => pad.l + stepW * (i + 0.5);
   const busiest = totals.reduce((a, v, i) => (v > totals[a] ? i : a), 0);
 
-  const modelRuler = ruler(
-    agg.map((r) => r.input + r.output),
-    force,
-  );
+  const modelRuler = ruler(agg.map((r) => r.input + r.output));
 
   return (
     <section data-usage-zone="trend" className="flex flex-col gap-in px-4 py-3">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-        <h3 className="text-aux font-title text-muted-foreground">{gui.usage_zone_trend}</h3>
-        <div className="flex flex-wrap gap-1">
-          {(["day", "model"] as const).map((v) => (
-            <Chip key={v} on={view === v} onClick={() => onView(v)} name={`usage-view-${v}`}>
-              {v === "day" ? gui.usage_view_day : gui.usage_view_model}
-            </Chip>
-          ))}
-          <span className="w-2" />
-          {WINDOWS.map((w) => (
-            <Chip key={w} on={win === w} onClick={() => onWin(w)} name={`usage-window-${w}`}>
-              {w === 0 ? gui.usage_window_all : gui.usage_window_days(w)}
-            </Chip>
-          ))}
-        </div>
-      </header>
+      {/* ⚠️ **No heading and no control strip.** Both were here until
+          2026-09-08: a title beside a row of chips, above the figure.
+          The machine card puts every control **on the thing it
+          controls** — sorting on the column heads, an axis's quantity
+          on that axis — and has no strip at all, so a reader arriving
+          from that card met a second idea of 「where the controls are」
+          on this screen.
+          These two are the figure's x axis: 「按天 / 按模型」 is **what
+          that axis is**, and the window is **how far it reaches**. So
+          they sit on it, at its two ends, in the same control the
+          machine card's axes wear (`components/AxisPick`). */}
       {/* The legend is the same list the table is, in the same order, so
           a colour looked up in one place means the same in the other. */}
       <ul data-usage-key className="flex flex-wrap gap-x-3 gap-y-0.5 text-aux text-muted-foreground">
@@ -600,27 +598,44 @@ function Trend({
           </text>
         </svg>
       )}
+      {/* **The x axis, and its two controls sitting on it** — the view
+          at the end the axis starts from, the window at the end it
+          reaches. Both are the machine card's `AxisPick`: a word with a
+          chevron, 44 tall to a finger, opening in place so the figure
+          above never moves. */}
+      <div className="flex items-baseline justify-between">
+        <AxisPick
+          which="view"
+          chosen={view}
+          options={[
+            { key: "day", word: gui.usage_view_day },
+            { key: "model", word: gui.usage_view_model },
+          ]}
+          rulerWord=""
+          onPick={(k) => onView(k === "model" ? "model" : "day")}
+          align="left"
+        />
+        <AxisPick
+          which="window"
+          chosen={String(win)}
+          options={WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) }))}
+          rulerWord=""
+          onPick={(k) => onWin(Number(k))}
+          align="right"
+        />
+      </div>
       <p className="text-aux text-muted-foreground">{gui.usage_trend_note}</p>
     </section>
   );
 }
 
-function Chip({ on, onClick, name, children }: { on: boolean; onClick: () => void; name: string; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      data-usage-chip={name}
-      aria-pressed={on}
-      onClick={onClick}
-      className={cn(
-        "min-h-touch rounded-full border px-2.5 text-aux font-title",
-        on ? "border-foreground bg-foreground text-background" : "text-muted-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
+/* ⚠️ **Tombstone: `Chip` was here until 2026-09-08, and with it the two
+   control strips it filled.** It was a capsule — `rounded-full`, a
+   shape nothing else in this app wears — and the machine card's own
+   `AxisPick` head says why that is the wrong thing to be first at: a
+   bordered capsule says 「button」 louder than anything else on the
+   surface, and this card had no such box before.
+   The controls did not go, they moved onto the things they control. */
 
 const SCAT_H = 280;
 const R_MIN = 5;
@@ -651,11 +666,9 @@ function Stats({
   axes,
   shown,
   cacheKnown,
-  force,
   hot,
   sort,
   onAxes,
-  onForce,
   onHot,
   onSort,
 }: {
@@ -665,14 +678,55 @@ function Stats({
   axes: { x: AxisKey; y: AxisKey; z: AxisKey };
   shown: AxisKey[];
   cacheKnown: boolean;
-  force: string;
-  hot: string | null;
+  /** The row a point asked for, with a counter so the same point
+      pressed twice is two answers. */
+  hot: { model: string; n: number } | null;
   sort: { key: string; dir: 1 | -1 };
   onAxes: (a: { x: AxisKey; y: AxisKey; z: AxisKey }) => void;
-  onForce: (f: string) => void;
-  onHot: (m: string | null) => void;
+  /** **One way only: a point asks for a row.** The table does not ask
+      for a point back — see the effect below for what this is and is
+      not. */
+  onHot: (model: string) => void;
   onSort: (s: { key: string; dir: 1 | -1 }) => void;
 }) {
+  const box = useRef<HTMLDivElement>(null);
+  // **Locate, not select** — the machine card's gesture, copied whole
+  // because half of it is a different gesture. Three parts:
+  //
+  //   - the row is **brought into view**, stopping below the head
+  //     rather than under it (a sticky head would otherwise hide the
+  //     row that was just asked for);
+  //   - it is marked for **a moment** and the mark clears itself. A
+  //     highlight that stays is a selection, and a selection is a state
+  //     the reader then has to undo;
+  //   - **reduced motion keeps the mark and drops the fade**, holding
+  //     it longer instead. What that setting asks to remove is the
+  //     movement, not the answer.
+  //
+  // ⚠️ This half had the other gesture until 2026-09-08: pressing a
+  // point *or* a row toggled a lasting tint. Two directions and a
+  // sticky state, against the machine card's one direction and a
+  // flash — the same table, two ideas of what pressing it means.
+  useEffect(() => {
+    if (!hot) return;
+    const b = box.current;
+    const row = b?.querySelector(`[data-usage-row="${CSS.escape(hot.model)}"]`);
+    if (!b || !row) return;
+    const head = b.querySelector("thead");
+    const sticky = head && getComputedStyle(head).position === "sticky" ? head.getBoundingClientRect().height : 0;
+    // The nearest thing that actually scrolls — on the wide face that
+    // is the detail column, not this block.
+    let port: HTMLElement | null = b;
+    while (port && port.scrollHeight <= port.clientHeight) port = port.parentElement;
+    if (port) port.scrollTop += row.getBoundingClientRect().top - port.getBoundingClientRect().top - sticky - 4;
+    row.setAttribute("data-hot", "");
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const t = window.setTimeout(() => row.removeAttribute("data-hot"), still ? 2400 : 1200);
+    return () => {
+      window.clearTimeout(t);
+      row.removeAttribute("data-hot");
+    };
+  }, [hot]);
   // An axis the source cannot answer is not offered; if the stored
   // choice was one of those, it falls back to a quantity every source
   // has rather than drawing an axis with no readings on it.
@@ -683,8 +737,8 @@ function Stats({
     .map((r) => ({ r, x: ax.of(r), y: ay.of(r), z: az.of(r) }))
     .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   const off = agg.length - pts.length;
-  const rx = ruler(pts.map((p) => p.x), force);
-  const ry = ruler(pts.map((p) => p.y), force);
+  const rx = ruler(pts.map((p) => p.x));
+  const ry = ruler(pts.map((p) => p.y));
   const zmax = Math.max(...pts.map((p) => (Number.isFinite(p.z) ? p.z : 0)), 0);
   const pad = { l: 58, r: 18, t: 22, b: 34 };
   const iw = W - pad.l - pad.r;
@@ -735,49 +789,44 @@ function Stats({
   const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
 
   return (
-    <section data-usage-zone="stats" className="flex flex-col gap-in border-t px-4 py-3">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-        <h3 className="text-aux font-title text-muted-foreground">{gui.usage_zone_stats}</h3>
-        <span data-usage-range className="text-aux text-muted-foreground">
-          {days.length > 0 ? gui.usage_range(days[0], days[days.length - 1], days.length) : ""}
+    <section data-usage-zone="stats" ref={box} className="flex flex-col gap-in border-t px-4 py-3">
+      {/* ⚠️ **No heading, and no row of `<select>`s.** Both were here
+          until 2026-09-08. The four native selects were 23px tall —
+          half the finger floor — and they sat in a strip above the
+          figure, so 「change what this axis shows」 was a different act
+          here from what it is on the machine card, where the axis's own
+          word is the control.
+          The window this covers moved with them: it is printed at the
+          figure's foot, where it is a fact about the drawing rather
+          than a title over it. */}
+      <div className="relative">
+        {/* **The two quantities, each printed on its own axis, each of
+            them the control that changes it** — `components/AxisPick`,
+            the machine card's own. Tucked into the two corners a
+            scatter is least likely to put a point, which is also where
+            the ruler words already were. */}
+        <span className="pointer-events-none absolute inset-0">
+          <span className="pointer-events-auto absolute" style={{ left: "6.59%", top: 0 }}>
+            <AxisPick
+              which="y"
+              chosen={axes.y}
+              options={shown.map((k) => ({ key: k, word: AXES[k].word() }))}
+              rulerWord={RULER_WORD[ry.kind]()}
+              onPick={(k) => onAxes({ ...axes, y: k as AxisKey })}
+              align="left"
+            />
+          </span>
+          <span className="pointer-events-auto absolute" style={{ right: "2.05%", bottom: "-14px" }}>
+            <AxisPick
+              which="x"
+              chosen={axes.x}
+              options={shown.map((k) => ({ key: k, word: AXES[k].word() }))}
+              rulerWord={RULER_WORD[rx.kind]()}
+              onPick={(k) => onAxes({ ...axes, x: k as AxisKey })}
+              align="right"
+            />
+          </span>
         </span>
-      </header>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-aux text-muted-foreground">
-        {(["x", "y", "z"] as const).map((which) => (
-          <label key={which} className="flex items-center gap-1.5">
-            {which === "z" ? gui.usage_pick_area : which.toUpperCase()}
-            <select
-              data-usage-pick={which}
-              className="rounded-md border bg-card px-1.5 py-0.5 text-foreground"
-              value={which === "x" ? axes.x : which === "y" ? axes.y : axes.z}
-              onChange={(e) => onAxes({ ...axes, [which]: e.target.value as AxisKey })}
-            >
-              {shown.map((k) => (
-                <option key={k} value={k}>
-                  {AXES[k].word()}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
-        <label className="flex items-center gap-1.5">
-          {gui.usage_pick_ruler}
-          {/* **The automatic answer is a default, not a claim that the
-              other two are unreadable**, so it can be overruled — and
-              whichever is in use is printed on the drawing either way. */}
-          <select
-            data-usage-pick="ruler"
-            className="rounded-md border bg-card px-1.5 py-0.5 text-foreground"
-            value={force}
-            onChange={(e) => onForce(e.target.value)}
-          >
-            <option value="">{gui.usage_ruler_auto}</option>
-            <option value="linear">{gui.usage_ruler_linear}</option>
-            <option value="sqrt">{gui.usage_ruler_sqrt}</option>
-            <option value="log">{gui.usage_ruler_log}</option>
-          </select>
-        </label>
-      </div>
       <svg
         data-usage-scatter
         data-usage-ruler-x={rx.kind}
@@ -801,28 +850,39 @@ function Stats({
             </text>
           </g>
         ))}
-        <text x={W - pad.r} y={SCAT_H - 3} fontSize={7.5} fontWeight={700} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
-          {gui.usage_scatter_foot(ax.word(), ay.word(), az.word())}
-          {rx.kind === ry.kind ? ` · ${RULER_WORD[rx.kind]()}` : ` · X ${RULER_WORD[rx.kind]()} · Y ${RULER_WORD[ry.kind]()}`}
-          {/* **How many models are not on the picture, said out loud.**
-              A model with no input at all has no cache rate to be
-              placed by, and a chart quietly missing a row is the same
-              screen as one whose model never ran — the machine card's
-              `top-plot-off` is the same sentence about the same
-              silence. */}
-          {off > 0 ? ` · ${gui.usage_scatter_off(off)}` : ""}
-        </text>
         {/* Biggest first, so a small point lands on top of a big one and
             never under it. */}
         {[...pts]
           .sort((a, b) => (Number.isFinite(b.z) ? b.z : 0) - (Number.isFinite(a.z) ? a.z : 0))
           .map((p) => {
-            const on = hot === keyOf(p.r);
+            const on = hot?.model === (p.r.model ?? "");
             const r = radius(Number.isFinite(p.z) ? p.z : 0, zmax);
             const berthed = berth(X(p.x), Y(p.y), r, p.r.word.length * 5.1 + 2, taken, W, SCAT_H - 16);
             return (
-              <g key={keyOf(p.r)} data-usage-point={p.r.model ?? ""} data-usage-point-r={r} className="cursor-pointer" onClick={() => onHot(on ? null : keyOf(p.r))}>
+              // **It says it is a target**, the way the machine card's
+              // points do: a role and a name, so a reader who cannot
+              // see the drawing is offered the same act.
+              //
+              // **And it is a finger wide, where the machine card
+              // waives that.** Its waiver is 「two hundred 44px points
+              // would tile the drawing and leave nothing to read」 —
+              // true there, and not true here: this picture has one dot
+              // per model, ten at the outside. So instead of a waiver
+              // there is a transparent circle at the floor (20 viewBox
+              // units ≈ 22px of radius at the width this is drawn at),
+              // the same trick under the machine card's own dots, sized
+              // for a table that is small enough to afford it.
+              <g
+                key={keyOf(p.r)}
+                data-usage-point={p.r.model ?? ""}
+                data-usage-point-r={r}
+                role="button"
+                aria-label={p.r.word}
+                className="cursor-pointer"
+                onClick={() => onHot(p.r.model ?? "")}
+              >
                 <title>{`${p.r.word}\n  ${ax.word()} ${ax.tick(p.x, 1)}\n  ${ay.word()} ${ay.tick(p.y, 1)}`}</title>
+                <circle cx={X(p.x)} cy={Y(p.y)} r={Math.max(r, 20)} fill="transparent" />
                 <circle cx={X(p.x)} cy={Y(p.y)} r={r} fill={bands.get(p.r.model)} stroke="var(--card)" strokeWidth={on ? 2 : HAIR + 0.3} opacity={on ? 1 : 0.92} />
                 {berthed && (
                   <text
@@ -845,37 +905,102 @@ function Stats({
             );
           })}
       </svg>
+      </div>
+      {/* **The figure's foot.** The two axes name themselves on the
+          axes, so what is left here is the third quantity — the dot's
+          **area** — and it is named by the same control the axes wear,
+          because a word that decides what the picture shows is a
+          control wherever it stands. The machine card's foot says the
+          same kind of sentence about its halo (`top-plot-halo`).
+          The window sits here too: it is a fact about what was drawn,
+          not a title over it. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-aux text-muted-foreground">
+        <span className="flex items-baseline">
+          {gui.usage_scatter_foot("")}
+          <AxisPick
+            which="area"
+            chosen={axes.z}
+            options={shown.map((k) => ({ key: k, word: AXES[k].word() }))}
+            rulerWord=""
+            onPick={(k) => onAxes({ ...axes, z: k as AxisKey })}
+            align="left"
+          />
+        </span>
+        <span className="flex items-baseline gap-x-3">
+          {/* **How many models are not on the picture, said out loud.**
+              A model with no reading on one of these two axes is not
+              drawn at zero — that would turn 「not read」 into 「the
+              smallest」 — so it is left off, and how many were left off
+              has to be said. `top-plot-off` is the same sentence about
+              the same silence. */}
+          {off > 0 && <span data-usage-off={off}>{gui.usage_scatter_off(off)}</span>}
+          <span data-usage-range>
+            {days.length > 0 ? gui.usage_range(days[0], days[days.length - 1], days.length) : ""}
+          </span>
+        </span>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-aux tabular-nums">
           <thead>
             <tr>
               {cols.map((c) => (
+                // **`aria-sort` on every head, `none` where it is not the
+                // one in use.** Only marking the active column says
+                // 「this column is sorted」 and leaves 「those columns
+                // can be sorted」 unsaid — the machine card's heads all
+                // carry it, which is what makes the row of them read as
+                // a row of controls.
+                //
+                // **And the head is a finger tall.** It was 23.3px
+                // (measured 2026-09-08), a press target at half the
+                // floor, and the walk that asserts that floor never
+                // reaches this surface — see the gate's 額度 stop.
                 <th
                   key={c.key}
                   data-usage-col={c.key}
-                  aria-sort={sort.key === c.key ? (sort.dir < 0 ? "descending" : "ascending") : undefined}
-                  onClick={() => onSort(sort.key === c.key ? { key: c.key, dir: (-sort.dir) as 1 | -1 } : { key: c.key, dir: c.key === "model" ? 1 : -1 })}
+                  aria-sort={sort.key === c.key ? (sort.dir < 0 ? "descending" : "ascending") : "none"}
                   className={cn(
-                    "cursor-pointer whitespace-nowrap border-b px-1 pb-1 font-title text-muted-foreground",
-                    c.key === "model" ? "text-left" : "text-right",
+                    "whitespace-nowrap border-b p-0 font-title text-muted-foreground",
                     sort.key === c.key && "text-foreground",
                   )}
                 >
-                  {c.word}
-                  {sort.key === c.key ? (sort.dir < 0 ? " ↓" : " ↑") : ""}
+                  {/* **The press is on a `<button>`, not on the cell** —
+                      the machine card's heads are built the same way,
+                      and it is not decoration: a handler on a bare
+                      `<th>` is a control only a pointer can find, which
+                      is the thing section 4 of the gate is about. It
+                      also carries the finger floor, which the cell
+                      cannot. */}
+                  <button
+                    type="button"
+                    onClick={() => onSort(sort.key === c.key ? { key: c.key, dir: (-sort.dir) as 1 | -1 } : { key: c.key, dir: c.key === "model" ? 1 : -1 })}
+                    // The floor on **both** axes, which is the machine
+                    // card's own head verbatim: a head 44 tall and 34
+                    // wide is a target you miss sideways, and 「输入」
+                    // measured 34 on the narrow face. `min-w-touch` is
+                    // what the narrow columns grow to; `w-full` spreads
+                    // the press over the whole head rather than the
+                    // word.
+                    className={cn(
+                      "inline-flex min-h-touch w-full min-w-touch items-center px-1",
+                      c.key === "model" ? "justify-start" : "justify-end",
+                    )}
+                  >
+                    {c.word}
+                    {sort.key === c.key ? (sort.dir < 0 ? " ↓" : " ↑") : ""}
+                  </button>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {listed.map((r) => (
-              <tr
-                key={keyOf(r)}
-                data-usage-row={r.model ?? ""}
-                data-usage-row-hot={hot === keyOf(r) ? "" : undefined}
-                onClick={() => onHot(hot === keyOf(r) ? null : keyOf(r))}
-                className={cn("cursor-pointer border-b", hot === keyOf(r) && "bg-accent")}
-              >
+              // **Not pressable.** The row is where an answer lands, not
+              // a control — pressing it used to toggle a lasting tint,
+              // which made the same table mean 「select」 here and
+              // 「locate」 on the machine card. The mark it wears now is
+              // put on by the effect above and takes itself off.
+              <tr key={keyOf(r)} data-usage-row={r.model ?? ""} className="border-b">
                 {cols.map((c) => (
                   <td key={c.key} className={cn("px-1 py-1", c.key === "model" ? "text-left" : "text-right")}>
                     {c.key === "model" && <i className="mr-1.5 inline-block size-2 rounded-[2px] align-[-1px]" style={{ background: bands.get(r.model) }} />}
