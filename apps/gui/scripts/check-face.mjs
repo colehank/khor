@@ -4046,12 +4046,26 @@ try {
     //   this helper being the same shape as section 10's `pick` is the
     //   point — one control, one way of pressing it.
     const pickUsage = async (which, key) => {
-      const at = `${half} [data-plot-pick="${which}"]`;
-      if ((await page.locator(`${at} [data-plot-axis]`).count()) === 0) {
-        await page.locator(`${at} [data-plot-label]`).click();
+      // **Open the settings, then pick** — the machine card's helper
+      // says why this is two presses since 2026-09-08.
+      //
+      // ⚠️ **Scoped to the zone that owns the row.** This half draws two
+      // figures and each has its own settings button, so an unscoped
+      // `[data-plot-settings]` matches both — and playwright refuses an
+      // ambiguous click rather than picking one, which is the right
+      // behaviour and the reason this is spelled out.
+      const zone = ["view", "window"].includes(which) ? "trend" : "stats";
+      const at = `${half} [data-usage-zone="${zone}"]`;
+      const panel = `${at} [data-plot-settings-open]`;
+      if ((await page.locator(panel).count()) === 0) {
+        await page.locator(`${at} [data-plot-settings]`).click();
         await wait(150);
       }
-      await page.locator(`${at} [data-plot-axis="${key}"]`).click();
+      await page.locator(`${panel} [data-plot-set="${which}"] [data-plot-axis="${key}"]`).click();
+      // Shut it again: the panel stays open across picks (three rows,
+      // one visit), so leaving it open would put an overlay over every
+      // measurement below.
+      await page.locator(`${at} [data-plot-settings]`).click();
       await wait(300);
     };
 
@@ -7087,13 +7101,20 @@ try {
     //   axis carries one word — the quantity it is drawn with — and the
     //   four candidates are one press away. Opening it when it is
     //   already open would close it again, so the count decides.
+    // **Open the settings, then pick.** Until 2026-09-08 the axis's
+    // own word was the control and this pressed it; the user moved
+    // switching into one button (「都做成一个小的设置按钮」), so the act
+    // is two presses now and the label is a word again. Opening a panel
+    // that is already open would close it, so the count still decides.
     const pick = async (which, key) => {
-      const words = page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis]`);
-      if ((await words.count()) === 0) {
-        await page.locator(`[data-machine-card] [data-plot-label="${which}"]`).click();
+      if ((await page.locator("[data-machine-card] [data-plot-settings-open]").count()) === 0) {
+        await page.locator("[data-machine-card] [data-plot-settings]").click();
         await wait(120);
       }
-      await page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${key}"]`).click();
+      await page
+        .locator(`[data-machine-card] [data-plot-settings-open] [data-plot-set="${which}"] [data-plot-axis="${key}"]`)
+        .click();
+      await page.locator("[data-machine-card] [data-plot-settings]").click();
       await wait(300);
     };
     await pick("x", "cpu");
@@ -7305,7 +7326,12 @@ try {
           //   to ask.
           chosen: (plot.dataset.plotAxes ?? "").split("x").join(","),
           off: plot.querySelector("[data-plot-off]")?.dataset.plotOff ?? null,
-          words: [...plot.querySelectorAll("[data-plot-pick] [data-plot-axis]")].length,
+          //   **The candidates live in the settings panel since
+          //   2026-09-08**, not inside the label. Counting them where
+          //   they used to be would answer 0 forever — a selector that
+          //   still matches something and never matches the thing.
+          words: [...plot.querySelectorAll("[data-plot-settings-open] [data-plot-axis]")].length,
+          rows: [...plot.querySelectorAll("[data-plot-settings-open] [data-plot-set]")].map((n) => n.dataset.plotSet).join(","),
           //   Collapsed, each axis carries one word — and it has to be
           //   the quantity that axis is *drawn with*, not a fixed
           //   caption. A label reading 「横」 would pass a check that
@@ -7343,13 +7369,20 @@ try {
     //   axis carries one word — the quantity it is drawn with — and the
     //   four candidates are one press away. Opening it when it is
     //   already open would close it again, so the count decides.
+    // **Open the settings, then pick.** Until 2026-09-08 the axis's
+    // own word was the control and this pressed it; the user moved
+    // switching into one button (「都做成一个小的设置按钮」), so the act
+    // is two presses now and the label is a word again. Opening a panel
+    // that is already open would close it, so the count still decides.
     const pick = async (which, key) => {
-      const words = page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis]`);
-      if ((await words.count()) === 0) {
-        await page.locator(`[data-machine-card] [data-plot-label="${which}"]`).click();
+      if ((await page.locator("[data-machine-card] [data-plot-settings-open]").count()) === 0) {
+        await page.locator("[data-machine-card] [data-plot-settings]").click();
         await wait(120);
       }
-      await page.locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${key}"]`).click();
+      await page
+        .locator(`[data-machine-card] [data-plot-settings-open] [data-plot-set="${which}"] [data-plot-axis="${key}"]`)
+        .click();
+      await page.locator("[data-machine-card] [data-plot-settings]").click();
       await wait(250);
     };
     const start = await read();
@@ -7370,6 +7403,21 @@ try {
     //   and the reason it does not push is that both states are a row
     //   of `min-h-touch` buttons — which is a fact about the
     //   stylesheet, not about the markup, so only the glass can say it.
+    // How many quantities a row offers — read off the page rather than
+    // written down here, so adding one to `AXES` does not make this
+    // gate red about a thing that is not wrong.
+    const AXIS_COUNT = await page.evaluate(() => {
+      const b = document.querySelector("[data-machine-card] [data-plot-settings]");
+      return b ? (b.getAttribute("aria-label") || "").split(" / ").length : 0;
+    }).then(async () => {
+      await page.locator("[data-machine-card] [data-plot-settings]").click();
+      await wait(200);
+      const n = await page.locator('[data-machine-card] [data-plot-settings-open] [data-plot-set="x"] [data-plot-axis]').count();
+      await page.locator("[data-machine-card] [data-plot-settings]").click();
+      await wait(200);
+      return n;
+    });
+    if (AXIS_COUNT < 2) fail(`probe dead: the settings offer ${AXIS_COUNT} quantities on the x row, so nothing below counted anything`);
     for (const which of start ? ["y", "x"] : []) {
       //   **Read the closed state again here, not once at the top.**
       //   The figure sizes itself from its box through a
@@ -7379,11 +7427,30 @@ try {
       //   the drawing arriving rather than anything moving.
       await wait(400);
       const shut = await read();
+      //   ⚠️ **The claim on this line changed on 2026-09-08, it was not
+      //   deleted.** It used to be 「pressing the label opens the four
+      //   candidates」 — the 2026-09-05 gesture. The user moved
+      //   switching into one button, so that sentence is false **by
+      //   design** now, and the two halves it becomes are:
+      //
+      //     - pressing the **label** opens nothing (it is a word again,
+      //       and a word that still opened a list would be the old
+      //       gesture surviving its own removal);
+      //     - pressing the **settings button** opens every row.
       await page.locator(`[data-machine-card] [data-plot-label="${which}"]`).click();
+      await wait(300);
+      const pressedLabel = await read();
+      if (pressedLabel.words !== 0) {
+        fail(`pressing the ${which} axis label opened ${pressedLabel.words} words — the label is a word now, not the control`);
+      }
+      await page.locator("[data-machine-card] [data-plot-settings]").click();
       await wait(400);
       const open = await read();
-      if (open.words !== 4) {
-        fail(`pressing the ${which} label opened ${open.words} words, not the four candidates`);
+      if (open.rows !== "x,y") {
+        fail(`the settings opened rows ${JSON.stringify(open.rows)}, and this figure sets x and y`);
+      }
+      if (open.words !== 2 * AXIS_COUNT) {
+        fail(`the settings opened ${open.words} words over ${open.rows} — two rows of ${AXIS_COUNT} quantities each`);
       }
       //   **Both measurements, because the labels sit on opposite
       //   sides.** The vertical one is above the drawing, so growing
@@ -7399,16 +7466,23 @@ try {
       }
       //   And the other axis stays shut, so 「one place, contents
       //   swapped」 is true of each axis separately.
+      //   ⚠️ **Tombstone: 「opening one label did not open the other」
+      //   was asserted here, and it cannot be any more.** The two axes
+      //   had a picker each, so 「the pickers are independent」 was a
+      //   real property; since 2026-09-08 there is **one** panel with a
+      //   row per axis, and both rows are supposed to be there at once
+      //   — which is what `open.rows === "x,y"` above now says. The
+      //   claim did not fail, it stopped existing.
+      //
+      //   Both labels still have to keep naming their own quantity
+      //   while the panel is open, and that is what this checks.
       const other = which === "x" ? "y" : "x";
       if (!new RegExp(`${other}:`).test(open.labels)) {
-        fail(`opening the ${which} label also opened the ${other} one (labels ${JSON.stringify(open.labels)})`);
+        fail(`with the settings open the ${other} axis stopped naming its quantity (labels ${JSON.stringify(open.labels)})`);
       }
       //   Put it back the way it was, by choosing what was already
       //   chosen — the rest of this section starts from cpu×mem.
-      await page
-        .locator(`[data-machine-card] [data-plot-pick="${which}"] [data-plot-axis="${which === "x" ? "cpu" : "mem"}"]`)
-        .click();
-      await wait(150);
+      await pick(which, which === "x" ? "cpu" : "mem");
     }
     if (!start) {
       // already failed above

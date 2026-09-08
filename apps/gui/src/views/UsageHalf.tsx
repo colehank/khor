@@ -66,7 +66,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccountReading } from "@/gen/bindings/AccountReading";
 import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
-import { AxisPick } from "@/components/AxisPick";
+import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { PLOT, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
 import { Panel } from "@/components/Panel";
 import { bandsFor } from "@/lib/model-band";
@@ -639,30 +639,38 @@ function Trend({
         </svg>
       )}
       </div>
-      {/* **The x axis, and its two controls sitting on it** — the view
-          at the end the axis starts from, the window at the end it
-          reaches. Both are the machine card's `AxisPick`: a word with a
-          chevron, 44 tall to a finger, opening in place so the figure
-          above never moves. */}
+      {/* **The x axis says what it is; one button changes it**
+          (2026-09-08:「都做成一个小的设置按钮,点击后进行选择」). The two
+          words were controls until that day — press 「按天」 and the
+          candidates replaced it in place. What the axis keeps is the
+          half of the 2026-09-05 ruling that still holds: **an axis
+          carries one word, and it is the right one.** */}
       <div className="flex items-baseline justify-between">
-        <AxisPick
+        <AxisLabel
           which="view"
-          chosen={view}
-          options={[
-            { key: "day", word: gui.usage_view_day },
-            { key: "model", word: gui.usage_view_model },
-          ]}
-          rulerWord=""
-          onPick={(k) => onView(k === "model" ? "model" : "day")}
+          word={view === "model" ? gui.usage_view_model : gui.usage_view_day}
+          rulerWord={win === 0 ? gui.usage_window_all : gui.usage_window_days(win)}
           align="left"
         />
-        <AxisPick
-          which="window"
-          chosen={String(win)}
-          options={WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) }))}
-          rulerWord=""
-          onPick={(k) => onWin(Number(k))}
-          align="right"
+        <PlotSettings
+          rows={[
+            {
+              key: "view",
+              word: gui.usage_view_day,
+              chosen: view,
+              options: [
+                { key: "day", word: gui.usage_view_day },
+                { key: "model", word: gui.usage_view_model },
+              ],
+            },
+            {
+              key: "window",
+              word: gui.usage_window_all,
+              chosen: String(win),
+              options: WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) })),
+            },
+          ]}
+          onPick={(row, k) => (row === "view" ? onView(k === "model" ? "model" : "day") : onWin(Number(k)))}
         />
       </div>
       {/* **The legend sits under the drawing, not over it** (2026-09-08,
@@ -881,23 +889,24 @@ function Stats({
             the ruler words already were. */}
         <span className="pointer-events-none absolute inset-0">
           <span className="pointer-events-auto absolute" style={labelSeat("y")}>
-            <AxisPick
-              which="y"
-              chosen={axes.y}
-              options={shown.map((k) => ({ key: k, word: AXES[k].word() }))}
-              rulerWord={RULER_WORD[ry.kind]()}
-              onPick={(k) => onAxes({ ...axes, y: k as AxisKey })}
-              align="left"
-            />
+            <AxisLabel which="y" word={AXES[axes.y].word()} rulerWord={RULER_WORD[ry.kind]()} align="left" />
           </span>
           <span className="pointer-events-auto absolute" style={labelSeat("x")}>
-            <AxisPick
-              which="x"
-              chosen={axes.x}
-              options={shown.map((k) => ({ key: k, word: AXES[k].word() }))}
-              rulerWord={RULER_WORD[rx.kind]()}
-              onPick={(k) => onAxes({ ...axes, x: k as AxisKey })}
-              align="right"
+            <AxisLabel which="x" word={AXES[axes.x].word()} rulerWord={RULER_WORD[rx.kind]()} align="right" />
+          </span>
+          {/* **Three rows, and the third is the one the machine card
+              cannot offer yet**: the dot's area. Every quantity here is
+              reported for every model, so a floor-sized dot means 「the
+              smallest」 and nothing else — which is exactly the property
+              `gpu_mem` does not have over there. */}
+          <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
+            <PlotSettings
+              rows={[
+                { key: "x", word: "X", chosen: axes.x, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
+                { key: "y", word: "Y", chosen: axes.y, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
+                { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
+              ]}
+              onPick={(row, k) => onAxes({ ...axes, [row]: k as AxisKey })}
             />
           </span>
         </span>
@@ -982,26 +991,15 @@ function Stats({
           })}
       </svg>
       </div>
-      {/* **The figure's foot.** The two axes name themselves on the
-          axes, so what is left here is the third quantity — the dot's
-          **area** — and it is named by the same control the axes wear,
-          because a word that decides what the picture shows is a
-          control wherever it stands. The machine card's foot says the
-          same kind of sentence about its halo (`top-plot-halo`).
+      {/* **The figure's foot: what the dot's area means, in words.**
+          ⚠️ **It was the control until 2026-09-08** — the word itself
+          opened a list. Switching lives in the settings button on the
+          figure now, so this is a sentence again, the same kind the
+          machine card's foot says about its halo (`top-plot-halo`).
           The window sits here too: it is a fact about what was drawn,
           not a title over it. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-row text-aux text-muted-foreground">
-        <span className="flex items-baseline">
-          {gui.usage_scatter_foot("")}
-          <AxisPick
-            which="area"
-            chosen={axes.z}
-            options={shown.map((k) => ({ key: k, word: AXES[k].word() }))}
-            rulerWord=""
-            onPick={(k) => onAxes({ ...axes, z: k as AxisKey })}
-            align="left"
-          />
-        </span>
+        <span data-usage-area={axes.z}>{gui.usage_scatter_foot(AXES[axes.z].word())}</span>
         <span className="flex items-baseline gap-x-row">
           {/* **How many models are not on the picture, said out loud.**
               A model with no reading on one of these two axes is not

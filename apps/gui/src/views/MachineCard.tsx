@@ -7,7 +7,7 @@ import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { hugRatio } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
-import { AxisPick } from "@/components/AxisPick";
+import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { Panel } from "@/components/Panel";
 import { PLOT, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
@@ -2324,23 +2324,43 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               label is centred on its strip and overflows it invisibly.
               What has to land in the strip is the **ink**. */}
           <span className="pointer-events-auto absolute" style={labelSeat("y")}>
-            <AxisPick
+            <AxisLabel
               which="y"
-              chosen={axes.y}
-              options={AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() }))}
+              word={AXES[axes.y].word()}
               rulerWord={ry.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-              onPick={(k) => axesStore.set({ ...axes, y: k as AxisKey })}
               align="left"
             />
           </span>
           <span className="pointer-events-auto absolute" style={labelSeat("x")}>
-            <AxisPick
+            <AxisLabel
               which="x"
-              chosen={axes.x}
-              options={AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() }))}
+              word={AXES[axes.x].word()}
               rulerWord={rx.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-              onPick={(k) => axesStore.set({ ...axes, x: k as AxisKey })}
               align="right"
+            />
+          </span>
+          {/* **One button for what this figure is set to** (2026-09-08:
+              「都做成一个小的设置按钮,点击后进行选择」).
+              ⚠️ **Two rows here, not three.** The 額度 card's figure
+              offers a third quantity as the dot's **area**; this one
+              does not yet, and the reason is a measurement rather than
+              an omission: `gpu_mem` is null on 200 of 200 rows on two
+              of the three machines (`zh.toml`'s `top-plot-off` records
+              it), and an area encoding has no 「do not draw」 — a null
+              reading can only land on the floor, which reads as 「the
+              smallest」. That is the neighbouring-value error this plot
+              is built against, and which quantities may be offered as
+              an area is an open ruling. **The halo is untouched until
+              it lands.** */}
+          <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
+            <PlotSettings
+              rows={(["x", "y"] as const).map((which) => ({
+                key: which,
+                word: which.toUpperCase(),
+                chosen: axes[which],
+                options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })),
+              }))}
+              onPick={(row, k) => axesStore.set({ ...axes, [row]: k as AxisKey })}
             />
           </span>
         </span>

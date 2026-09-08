@@ -131,8 +131,25 @@ export function usePlotBox(initial: { w: number; h: number } = { w: 900, h: 170 
  * is not, so each is centred on its strip and overflows it invisibly:
  * what has to land inside is the ink, not the hit area.
  */
-export function labelSeat(which: "x" | "y"): React.CSSProperties {
-  return which === "y"
-    ? { left: PLOT.padL, top: (PLOT.padT - PLOT.touch) / 2 }
-    : { right: PLOT.padR, bottom: (12 - PLOT.touch) / 2 };
+export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
+  // **Three corners, and the fourth is left empty on purpose.** The
+  // two labels take the corners a scatter is least likely to put a
+  // point in (min-x max-y, max-x min-y); the settings button takes the
+  // third, bottom-left, so a panel opening upward from it covers the
+  // stretch of axis nearest the origin rather than the data.
+  // ⚠️ **A label is centred on its strip; a button is centred on its
+  // own height.** Until 2026-09-08 every seat here assumed a
+  // `min-h-touch` control and offset by `(strip - 44) / 2`, which is
+  // negative — the control hung out of the strip on purpose, because
+  // what had to land inside was the ink, not the hit area. The labels
+  // stopped being controls that day and became ~18px of text, and the
+  // same negative offset put them **outside the drawing**; the gate
+  // caught it (「a label in the flow spends a row of the card on one
+  // word」). So a label gets the strip as its box and centres in it,
+  // which holds at any text size, and only the button keeps the old
+  // arithmetic.
+  const middle = { display: "flex", alignItems: "center" } as const;
+  if (which === "y") return { left: PLOT.padL, top: 0, height: PLOT.padT, ...middle };
+  if (which === "x") return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
+  return { left: PLOT.padL, bottom: (12 - PLOT.touch) / 2 };
 }
