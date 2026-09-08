@@ -56,6 +56,7 @@
 | `npm run smoke` | `smoke.mjs`,整条验收,**真连**(三个 home) | 不拿 |
 | `npm run web-face` | `web-face.mjs`,浏览器脸,**真连**(真的 `khor serve`) | 不拿 |
 | `npm run gates` | `check-gates.mjs`,守门自己够不够得着、写没写下来 | 不拿 |
+| `npm run bytes` | `check-bytes.mjs`,源码里有没有**字面**控制字符(写成转义的不算) | 不拿 |
 
 **最后那批「真连」的和上面几道之间有条分界,值得写下来**:有入口的前几道
 都是「一台机器上自己跑得起来的」,真连那三道要**真的起网**——所以跑它们
@@ -77,6 +78,12 @@
   和 `npm run face`(渲染)。**两条都要**:一条证明没人写字面量,另一条证明
   规则真落到了屏上,少任何一条另一条都只是一半;
 - **动了颜色或 `tokens.css` 的调色板** → 加 `npm run palette`;
+- **往源码里写过任何非文本的字符**(分隔符、哨兵、终端序列)→ 加 `npm run bytes`。
+  它守的不是「程序里能不能有这个字符」——`lib/model-band` 里那个分隔符运行时
+  就是它,写成转义,完全正确。**它守的是这份源码还搜不搜得动**:
+  2026-09-08 `UsageHalf.tsx` 里四个字面 NUL 让 `file` 判它是 `data`,而带 `-I`
+  的 `grep` 静默跳过整个文件,于是那一晚三条「grep 没找到」的结论全是猜的。
+  **「我没找到」和「我没看」是同一个输出**,而这条把它们分开。
 - **动了会话行那条状态条,或它背后的 `khor_node::day`** → 加 `npm run day`。
 - **动了 `cagent`/`codexagent` 往外发的 `SessionUpdate`,或 `ChatView` 那个 fold** → 加 `npm run acp`。
   它守的是**协议的状态有没有到屏幕上**:今天 khor 自己的垫片是唯一的来源,接了注册表里的 agent 之后,

@@ -13,6 +13,7 @@
     "test": "node scripts/check-px.mjs && node scripts/check-icons.mjs && tsc --noEmit",
     "rail": "node scripts/check-rail.mjs",
     "type": "node scripts/check-type.mjs",
+    "bytes": "node scripts/check-bytes.mjs",
     "face": "node scripts/check-face.mjs",
     "read": "node scripts/check-read.mjs",
     "day": "node scripts/check-day.mjs",
