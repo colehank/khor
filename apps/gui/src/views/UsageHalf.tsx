@@ -1109,7 +1109,12 @@ function Stats({
               <tr key={keyOf(r)} data-usage-row={r.model ?? ""} className="border-b">
                 {cols.map((c) => (
                   <td key={c.key} className={cn("px-1 py-1", c.key === "model" ? "text-left" : "text-right")}>
-                    {c.key === "model" && <i className="mr-1.5 inline-block size-2 align-[-1px]" style={{ background: bands.get(r.model) }} />}
+                    {/* `align-middle`, not a one-pixel nudge: `check-px` reads a
+                        literal in a class as a second source of truth, and
+                        `npm run test` was red on it from 30f6a88 (12:49) to
+                        the fix. A stock alignment word is the same idea
+                        without a number nobody owns. */}
+                    {c.key === "model" && <i className="mr-1.5 inline-block size-2 align-middle" style={{ background: bands.get(r.model) }} />}
                     {/* **「—」, never 0.** A source that does not report
                         the cache has not reported nought of it. */}
                     {c.text ? c.text(r) : cell(c.key, c.of!(r))}
