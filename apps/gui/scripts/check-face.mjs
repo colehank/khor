@@ -8820,11 +8820,34 @@ try {
   //                             390: no side to anchor to would fit it;
   //     machine@any           — fitted, and only because four
   //                             quantities make a narrower panel.
+  //                             **Not spared, just not hit**: at 218.5
+  //                             across it sits at left=46 with room to
+  //                             spare, and the day that card offers a
+  //                             few more quantities it walks the stats
+  //                             panel's road.
   //
   //   So this reads **geometry off the glass**, at every width and on
   //   every figure that has one of these — not `data-*`, which is the
   //   product's own account of itself, and not one surface, because the
   //   machine card passed while two panels next door did not.
+  //
+  //   ⚠️ **This was torn down by putting the regression back, not by
+  //   inventing a bad state** (2026-09-09 00:07:36). `PlotControls.tsx`
+  //   was replaced with the file the user actually had — checked with
+  //   `diff` against `70335e6` and byte-identical, `absolute
+  //   bottom-full left-0` and `min-w-max`, not one character moved —
+  //   and this section went red **four times, at the four places and
+  //   with the four numbers measured off his screen's shape**:
+  //   trend 172.6 at each of the three widths, stats 155.0 at 390.
+  //
+  //   The difference matters and is the reason it was done this way:
+  //   a hand-made bad position proves the section **responds**; the
+  //   shipped file proves it is on the axis a whole batch of green
+  //   assertions next door had missed. Section 10 asserted the panel's
+  //   rows, each row's offer, that the label opens nothing, and that
+  //   opening it moves no part of the figure — five teardowns, all
+  //   red, all true, **and every one of them blind to whether the
+  //   thing was on the screen.**
   {
     const seen = [];
     const panelBox = (at) =>
