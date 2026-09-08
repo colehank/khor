@@ -54,6 +54,7 @@ import type { AccountReading } from "@/gen/bindings/AccountReading";
 import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
 import { AxisPick } from "@/components/AxisPick";
+import { Panel } from "@/components/Panel";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
 import { cn } from "@/lib/utils";
@@ -325,8 +326,22 @@ export function UsageHalf({
 
   if (why) {
     return (
-      <div data-usage-half data-usage-mute className="border-t px-4 py-3 text-sm text-muted-foreground">
-        {why}
+      // **The sentence sits on the same card the chart would have.**
+      // The machine card's refusal keeps its panel and loses only the
+      // rows, and the reason carries: a block that changes *shape*
+      // when it has nothing to report reads as a block that failed to
+      // load, on top of whatever it is actually saying.
+      // ⚠️ What does **not** carry is that card's other half — it
+      // keeps its column heads because pressing one is the way out of
+      // the refusal. Nothing here is a way out, and an empty table
+      // head is a control that answers with nothing. **If this half
+      // ever grows something to press, that ruling has to be looked at
+      // again.**
+      <div data-usage-half data-usage-mute data-usage-source={source} className="flex flex-col gap-row">
+        <p data-usage-title className="text-aux font-title text-muted-foreground">{gui.usage_title}</p>
+        <Panel>
+          <p className="text-sm text-muted-foreground">{why}</p>
+        </Panel>
       </div>
     );
   }
@@ -339,7 +354,7 @@ export function UsageHalf({
   const shown = AXIS_KEYS.filter((k) => cacheKnown || !("cache" in AXES[k]));
 
   return (
-    <div data-usage-half data-usage-source={source} className="flex flex-col border-t">
+    <div data-usage-half data-usage-source={source} className="flex flex-col gap-row">
       {/* **One line, and it is the only heading in this block.**
           ⚠️ The two zone headings this replaces were control strips
           with titles on them; the strips went (see `Trend` and
@@ -352,23 +367,29 @@ export function UsageHalf({
           says what this one is, and the block above it is **money**
           while this is tokens. Delete this line and the only thing
           separating the two quantities is a horizontal rule. */}
-      <p data-usage-title className="px-4 pt-3 text-aux font-title text-muted-foreground">
-        {gui.usage_title}
-      </p>
-      <Trend days={days} agg={agg} rows={rows} bands={bands} view={view} win={win} onView={setView} onWin={setWin} />
-      <Stats
-        agg={agg}
-        days={days}
-        bands={bands}
-        axes={axes}
-        shown={shown}
-        cacheKnown={cacheKnown}
-        hot={hot}
-        sort={sort}
-        onAxes={setAxes}
-        onHot={(model) => setHot({ model, n: (hot?.n ?? 0) + 1 })}
-        onSort={setSort}
-      />
+      <p data-usage-title className="text-aux font-title text-muted-foreground">{gui.usage_title}</p>
+      {/* **One card, not two flat sections** (`components/Panel`, the
+          machine card's own). The two zones are two *parts of one
+          subject* — the same models, drawn over days and then listed —
+          so they are one panel with a seam through it, exactly the way
+          that card holds its figure and its table. Two cards would say
+          they are two subjects. */}
+      <Panel>
+        <Trend days={days} agg={agg} rows={rows} bands={bands} view={view} win={win} onView={setView} onWin={setWin} />
+        <Stats
+          agg={agg}
+          days={days}
+          bands={bands}
+          axes={axes}
+          shown={shown}
+          cacheKnown={cacheKnown}
+          hot={hot}
+          sort={sort}
+          onAxes={setAxes}
+          onHot={(model) => setHot({ model, n: (hot?.n ?? 0) + 1 })}
+          onSort={setSort}
+        />
+      </Panel>
     </div>
   );
 }
@@ -447,7 +468,7 @@ function Trend({
   const modelRuler = ruler(agg.map((r) => r.input + r.output));
 
   return (
-    <section data-usage-zone="trend" className="flex flex-col gap-in px-4 py-3">
+    <section data-usage-zone="trend" className="flex flex-col gap-in">
       {/* ⚠️ **No heading and no control strip.** Both were here until
           2026-09-08: a title beside a row of chips, above the figure.
           The machine card puts every control **on the thing it
@@ -789,7 +810,19 @@ function Stats({
   const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
 
   return (
-    <section data-usage-zone="stats" ref={box} className="flex flex-col gap-in border-t px-4 py-3">
+    <section
+      data-usage-zone="stats"
+      ref={box}
+      // **The seam, and it is `--gap-group` on both sides of a
+      // hairline** — `data-top-seam` next door is the same three
+      // classes for the same reason: these two are one block, and the
+      // token whose whole definition is 「between groups that must not
+      // read as one list」 is this one. `--gap-row` was tried there and
+      // measured 25px against an 18px row, a break narrower than twice
+      // the rhythm it breaks.
+      data-usage-seam
+      className="mt-group flex flex-col gap-in border-t pt-group"
+    >
       {/* ⚠️ **No heading, and no row of `<select>`s.** Both were here
           until 2026-09-08. The four native selects were 23px tall —
           half the finger floor — and they sat in a strip above the
@@ -914,7 +947,7 @@ function Stats({
           same kind of sentence about its halo (`top-plot-halo`).
           The window sits here too: it is a fact about what was drawn,
           not a title over it. */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-aux text-muted-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-row text-aux text-muted-foreground">
         <span className="flex items-baseline">
           {gui.usage_scatter_foot("")}
           <AxisPick
@@ -926,7 +959,7 @@ function Stats({
             align="left"
           />
         </span>
-        <span className="flex items-baseline gap-x-3">
+        <span className="flex items-baseline gap-x-row">
           {/* **How many models are not on the picture, said out loud.**
               A model with no reading on one of these two axes is not
               drawn at zero — that would turn 「not read」 into 「the
@@ -1014,7 +1047,7 @@ function Stats({
           </tbody>
         </table>
       </div>
-      <dl data-usage-sums className="grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-2 sm:grid-cols-4">
+      <dl data-usage-sums className="grid grid-cols-2 gap-x-row gap-y-in border-t pt-in sm:grid-cols-4">
         {[
           [count(sum.input + sum.output), gui.usage_axis_total],
           [cacheKnown ? pct(sum.cached_input / Math.max(sum.input + sum.cached_input + sum.cache_write, 1)) : "—", gui.usage_axis_rate],

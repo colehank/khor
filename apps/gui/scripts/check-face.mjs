@@ -4113,7 +4113,10 @@ try {
         const el = document.querySelector("[data-quota-detail] [data-usage-half]");
         if (!el) return { none: true };
         return {
-          mute: el.hasAttribute("data-usage-mute") ? el.textContent.trim() : null,
+          // The sentence, not the whole block: the mute face wears the
+          // half's title too, and a log line reading 「花掉的 token这家不
+          // 报 token」 is two sentences run together.
+          mute: el.hasAttribute("data-usage-mute") ? (el.querySelector("p:not([data-usage-title])")?.textContent ?? "").trim() : null,
           cols: [...el.querySelectorAll("[data-usage-col]")].map((c) => c.dataset.usageCol),
         };
       });
@@ -4193,6 +4196,87 @@ try {
     if ((await hotNow()).hot.length !== 0) {
       fail("pressing a row marked it — this half is 「a point locates a row」, one way, like the machine card");
     }
+
+    //   ⑩ **The two surfaces are one product, measured in one run.**
+    //
+    //   2026-09-08, from the person using it: 「和机器页的交互、元素统
+    //   一。现在看起来是两个产品。」 Measured that day, this half's
+    //   blocks were flat sections — square corners, no border, no card
+    //   ground, 16px at the sides — against the machine card's panels
+    //   at 8px radius, a hairline border, `--card`, and 12 all round.
+    //   **They shared no value.**
+    //
+    //   So this reads **the card each figure is actually drawn on** —
+    //   walking up from the drawing to the first bordered, non
+    //   transparent ancestor, rather than looking for a marker the
+    //   component would have to put there. A marker would be the
+    //   product describing itself; this is the screen.
+    //
+    //   ⚠️ **It must not be able to pass by finding nothing.** Two
+    //   surfaces that both draw no card agree perfectly, and so do two
+    //   heads that are both zero tall — the `querySelectorAll`-returns
+    //   -`[]` family. So the readings are checked for being real
+    //   before they are checked for being equal.
+    const cardOf = (sel) =>
+      page.evaluate((s) => {
+        const start = document.querySelector(s);
+        if (!start) return null;
+        let n = start;
+        while (n && n !== document.body) {
+          const cs = getComputedStyle(n);
+          if (cs.borderTopWidth !== "0px" && cs.backgroundColor !== "rgba(0, 0, 0, 0)") {
+            return {
+              radius: cs.borderTopLeftRadius,
+              border: cs.borderTopWidth,
+              pad: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].join(" "),
+              bg: cs.backgroundColor,
+            };
+          }
+          n = n.parentElement;
+        }
+        return null;
+      }, sel);
+    const headOf = (sel) =>
+      page.evaluate((s) => {
+        const b = document.querySelector(s);
+        return b ? +b.getBoundingClientRect().height.toFixed(1) : null;
+      }, sel);
+    const mine = await cardOf(`${half} [data-usage-chart]`);
+    const mineHead = await headOf(`${half} th[data-usage-col] button`);
+    await open("devices");
+    await press("[data-list] [data-row-open]");
+    await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) > 0);
+    await wait(400);
+    const theirs = await cardOf("[data-machine-card] [data-top-plot]");
+    const theirsHead = await headOf("[data-machine-card] [data-top-head] button");
+    if (!mine || !theirs || mineHead === null || theirsHead === null) {
+      fail(
+        `probe dead: cards ${JSON.stringify([mine, theirs])} heads ${JSON.stringify([mineHead, theirsHead])} — ` +
+          `two surfaces were not both measured, so 「they are one product」 compared nothing`,
+      );
+    } else if (parseFloat(theirs.radius) <= 0 || parseFloat(theirs.border) <= 0 || !(theirsHead > 0)) {
+      fail(
+        `the machine card's own block reads radius ${theirs.radius}, border ${theirs.border}, head ${theirsHead} — ` +
+          `a reference with nothing in it makes every comparison below pass by agreeing about nothing`,
+      );
+    } else {
+      for (const k of ["radius", "border", "pad", "bg"]) {
+        if (mine[k] !== theirs[k]) {
+          fail(
+            `the 額度 card's usage block has ${k} ${mine[k]} and the machine card's block has ${theirs[k]} — ` +
+              `these are one product's two surfaces, and 「看起来是两个产品」 is what a reader calls this. ` +
+              `**Both come from \`components/Panel\`; if that is meant to change, change the component** — ` +
+              `a value edited on one side is the drift this measures.`,
+          );
+        }
+      }
+      if (Math.abs(mineHead - theirsHead) > 0.5) {
+        fail(`a column head is ${mineHead} tall on the 額度 card and ${theirsHead} on the machine card — one table, two rows of controls`);
+      }
+      console.log(`one product: card ${JSON.stringify(theirs)}, column head ${theirsHead} on both`);
+    }
+    await open("quota");
+    await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
 
     console.log(
       `usage half: ${all.keys.length} models over ${all.cols.length} days (7-day window ${week.cols.length}), ` +

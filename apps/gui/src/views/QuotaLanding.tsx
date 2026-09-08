@@ -1198,7 +1198,7 @@ export function QuotaLanding({
   const list = (
     <div data-quota-list className="flex min-w-0 flex-col">
       {grouped.length === 0 && (
-        <div data-quota-none className="p-4 text-sm text-muted-foreground">
+        <div data-quota-none className="p-row text-sm text-muted-foreground">
           {gui.no_matches}
         </div>
       )}
@@ -1378,7 +1378,7 @@ export function QuotaLanding({
   const isSub = current?.kind === "sub";
   const dials = current && isSub ? subDials(current) : [];
   const subDetail = current && isSub && (
-    <div data-quota-detail={current.id} className="flex flex-col gap-4 p-4">
+    <div data-quota-detail={current.id} className="flex flex-col gap-row p-row">
       <CardHead row={current} />
       {/* **The dial, and what it is made of beside it.** Every window
           used to be a ring of its own, side by side — which drew the
@@ -1394,7 +1394,7 @@ export function QuotaLanding({
           — then it is a pip like any other; when it has none it is a
           figure below and no mark, because a mark needs an angle and an
           angle needs a denominator (`creditsPct`). */}
-      <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
+      <div data-quota-lead className="flex flex-wrap items-center gap-x-group gap-y-row">
         {/* ⚠️ **Tombstone: this dial was a button for about an hour,
             and before that there was a row of words under the list.
             Neither is here now, and the story is worth keeping because
@@ -1598,7 +1598,7 @@ export function QuotaLanding({
   );
 
   const detail = acc && current && !isSub && (
-    <div data-quota-detail={acc.reading.account} className="flex flex-col gap-4 p-4">
+    <div data-quota-detail={acc.reading.account} className="flex flex-col gap-row p-row">
       <CardHead row={current} />
       {/* **The same two columns the subscription's card has**: the dial
           on the left, this reading's own figures on the right
@@ -1608,7 +1608,7 @@ export function QuotaLanding({
           a card that failed to load something.
           **No pips**: an account is one reading and has no parts, and a
           rim with no marks is the honest drawing of that. */}
-      <div data-quota-lead className="flex flex-wrap items-center gap-x-8 gap-y-4">
+      <div data-quota-lead className="flex flex-wrap items-center gap-x-group gap-y-row">
         <Face
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
