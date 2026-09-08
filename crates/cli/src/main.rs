@@ -806,10 +806,19 @@ fn lay_out(rows: &[khor_node::TopRow], room: Option<usize>) -> Vec<String> {
         debug_assert_eq!(cols[last], Col::Cmd, "「命令」 is never optional, so it is always last");
         let fixed: usize = w[..last].iter().sum::<usize>() + 2 * last;
         let budget = room.saturating_sub(fixed);
-        // Below its own head word the fixed columns have already
-        // overrun the terminal, and no cut of the last one can rescue
-        // the line — so leave it whole and let the terminal wrap, which
-        // at least keeps the text.
+        // **Below its own head word, stop cutting and let the line
+        // wrap.** Not because a cut could not fit — measured at 62 and
+        // 60 columns on this Mac (2026-09-08 20:37), a two-column
+        // 「命令」 does bring the line inside a 60-wide window. It is
+        // that two columns hold one character and an ellipsis, which
+        // names no process; the text is worth more wrapped than
+        // truncated to nothing.
+        //
+        // (An earlier draft of this comment said 「no cut can rescue
+        // the line」. That was a confident sentence and it was false —
+        // and it was false in the direction that stops the next person
+        // from re-opening the question. The reason is a judgement about
+        // what a two-column column is worth, not an arithmetic fact.)
         if budget >= cols_of(cols[last].head()) && budget < w[last] {
             for row in grid.iter_mut().skip(1) {
                 row[last] = cut_to(&row[last], budget);
