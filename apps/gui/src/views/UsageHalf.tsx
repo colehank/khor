@@ -450,10 +450,10 @@ function Trend({
   const stack = [...agg].reverse();
   const cell = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of rows) m.set(`${r.day} ${r.model}`, (m.get(`${r.day} ${r.model}`) ?? 0) + r.input + r.output);
+    for (const r of rows) m.set(`${r.day}\u0000${r.model}`, (m.get(`${r.day}\u0000${r.model}`) ?? 0) + r.input + r.output);
     return m;
   }, [rows]);
-  const at = (day: string, model: string | null) => cell.get(`${day} ${model}`) ?? 0;
+  const at = (day: string, model: string | null) => cell.get(`${day}\u0000${model}`) ?? 0;
   const totals = days.map((d) => stack.reduce((a, b) => a + at(d, b.model), 0));
   const peak = Math.max(...totals, 1);
   const live = totals.filter((v) => v > 0).sort((a, b) => a - b);
@@ -1067,8 +1067,22 @@ function Stats({
 }
 
 /** The unnamed row has no name to key on, and `""` would collide with a
-    model actually called that. */
-const keyOf = (r: Agg) => r.model ?? " unnamed";
+    model actually called that.
+ *
+ * ⚠️ **`\u0000`, the escape — never the byte itself.** These three
+ * separators were literal NUL bytes in this file until 2026-09-08, and
+ * the runtime could not tell the difference. **Everything else could**:
+ * `file` calls a source file with a NUL in it `data`, and a `grep`
+ * running with `-I` skips binary files — so every search of this file
+ * came back **empty and said nothing about why**. It was found by a
+ * disagreement between `git grep` (which read the blob) and `grep`
+ * (which skipped the file), after two earlier runs where `grep -c ""`
+ * returned nothing at all and that was shrugged off.
+ *
+ * The same rule holds for `cell`'s composite key below. A separator
+ * that cannot occur in a model's name is the right idea; writing it as
+ * a byte instead of an escape is what made this file unsearchable. */
+const keyOf = (r: Agg) => r.model ?? "\u0000unnamed";
 const cell = (key: string, v: number) =>
   !Number.isFinite(v) ? "—" : key === "rate" ? pct(v) : key === "reuse" ? `${v.toFixed(1)}×` : key === "days" ? String(v) : count(v);
 
