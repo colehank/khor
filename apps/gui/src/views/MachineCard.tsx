@@ -6,6 +6,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
+import { AxisPick } from "@/components/AxisPick";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2314,8 +2315,9 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
             <AxisPick
               which="y"
               chosen={axes.y}
-              ruler={ry.kind}
-              onPick={(k) => axesStore.set({ ...axes, y: k })}
+              options={AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() }))}
+              rulerWord={ry.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
+              onPick={(k) => axesStore.set({ ...axes, y: k as AxisKey })}
               align="left"
             />
           </span>
@@ -2323,8 +2325,9 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
             <AxisPick
               which="x"
               chosen={axes.x}
-              ruler={rx.kind}
-              onPick={(k) => axesStore.set({ ...axes, x: k })}
+              options={AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() }))}
+              rulerWord={rx.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
+              onPick={(k) => axesStore.set({ ...axes, x: k as AxisKey })}
               align="right"
             />
           </span>
@@ -2455,124 +2458,16 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   );
 }
 
-/** **One axis's label, which is also the control that changes it**
- * (2026-09-05:「散点图搞成带X和Y label的。通过点击label,去切换X或y的值」).
- *
- * # Why it is a label and not a row of four words
- *
- * It used to be four words per axis, all eight sitting in the figure's
- * foot under a 「横」/「纵」. Two things were wrong with that and only one
- * of them was the position: **an axis with four quantities beside it
- * does not say what it is.** A reader glancing at the vertical ruler
- * saw four candidates and had to work out which one the picture was
- * drawn with; now the axis carries one word, and it is the right one.
- *
- * # Why it can be pressed, without a ground or a border
- *
- * The chevron. **Not a new mark** — it is the same one the column heads
- * next door wear to say 「this word is the control」, so the card is not
- * being taught a second vocabulary for the same idea. A capsule or a
- * bordered box would say 「button」 louder and would also be the first
- * such box on this card, which is the wrong thing to be first at.
- *
- * # Why the height cannot move
- *
- * Collapsed it is one button, open it is four, and **both are a row of
- * `min-h-touch` buttons** — so opening the picker cannot push the
- * figure down or squeeze it. That is the same rule the 24-hour block's
- * three reading words and the drawer's ⊙ title follow: one place, the
- * contents swapped, the height fixed.
- *
- * The floor is on the hit area rather than on the word: each of these
- * is 44 tall and 44 wide to a finger while the ink stays the
- * footnote's size (`day.css`'s `.sw button`, the same arrangement) —
- * which is also why the gap between the four is zero. At the floor's
- * width they are already far enough apart.
- */
-function AxisPick({
-  which,
-  chosen,
-  ruler,
-  onPick,
-  align,
-}: {
-  which: "x" | "y";
-  chosen: AxisKey;
-  /** Which ruler this axis is on, printed **beside** the label rather
-      than somewhere else on the axis.
+/* ⚠️ **Tombstone: `AxisPick` was defined here until 2026-09-08.** It is
+   `components/AxisPick` now, with its reasoning, because the 額度 page's
+   usage half needed the same control and had grown a different one —
+   a row of native `<select>`s, 23px tall, in a strip above the figure.
+   **Two controls for one idea is the thing this card's own head keeps
+   warning about**, one screen further out.
 
-      It used to be its own `<text>` inside the drawing, at the far end
-      of each axis. With the label moved into the same corner the two
-      would have sat on top of each other, so they are read as one
-      thing: 「内存 (log)」. **This is not the mark going back where it
-      came from** — it was moved off the tick numbers for a measured
-      reason (a ruler word through 「606.8M」) and it is still inside the
-      plot, on its own axis.
-
-      **Outside the button on purpose.** The button's contents are
-      replaced by the four candidates while the picker is open; a ruler
-      mark inside it would blink out exactly while somebody is choosing
-      which ruler they are about to read. */
-  ruler: "sqrt" | "log";
-  onPick: (k: AxisKey) => void;
-  /** Which corner it is tucked into — the vertical label opens
-      rightwards from the top-left, the horizontal one leftwards from
-      the bottom-right, so neither set of four words can run off the
-      drawing. */
-  align: "left" | "right";
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span
-      data-plot-pick={which}
-      data-open={open ? "" : undefined}
-      className={cn(
-        "flex items-baseline gap-0 text-aux",
-        align === "right" ? "flex-row-reverse" : "flex-row",
-      )}
-    >
-      <span
-        data-plot-ruler={which}
-        aria-hidden="true"
-        className="px-in text-muted-foreground/70"
-      >
-        {ruler === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-      </span>
-      {open
-        ? AXIS_KEYS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              data-plot-axis={k}
-              data-on={k === chosen ? "true" : "false"}
-              aria-pressed={k === chosen}
-              onClick={() => {
-                onPick(k);
-                setOpen(false);
-              }}
-              className={cn(
-                "inline-flex min-h-touch min-w-touch items-center justify-center px-in hover:text-foreground",
-                k === chosen ? "font-title text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {AXES[k].word()}
-            </button>
-          ))
-        : (
-            <button
-              type="button"
-              data-plot-label={which}
-              aria-expanded={false}
-              onClick={() => setOpen(true)}
-              className="inline-flex min-h-touch min-w-touch items-center justify-center gap-in px-in font-title text-foreground hover:text-foreground"
-            >
-              {AXES[chosen].word()}
-              <IconChevronDown className="size-3" />
-            </button>
-          )}
-    </span>
-  );
-}
+   What moved is the wording only: the option list and the ruler word
+   are arguments now. Every `data-plot-*` attribute and every class is
+   unchanged, which is deliberate — this card's gate reads them. */
 
 /**
  * The 「命令」 cell: **a process's short name and the one word that/**
