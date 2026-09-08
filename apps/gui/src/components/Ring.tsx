@@ -70,7 +70,51 @@ export const RING_SIZE = 64;
 /** The machine card's rings (2026-09-03, to the user's reference): a
     third again larger than a row's and drawn thinner, so the number
     inside leads and the arc reads as a gauge rather than a badge. */
-export const RING_SIZE_CARD = 88;
+/**
+ * ⚠️ **A reference scale, not a diameter.** Nothing on screen is
+ * `RING_SIZE_CARD` across.
+ *
+ * `Face` treats 88 as its reference and multiplies every measured
+ * length by `k = size / 88`; the rim's radius is `30k`. So:
+ *
+ *     弧的直径 = size × 60 / 88      (88 → 60, 132 → 90)
+ *     绘图宽   = 2 × reachOf(size, stroke)
+ *
+ * **The note is here because the misreading has already happened, twice
+ * in one afternoon (2026-09-08)** — once in a report that used 88 to
+ * work out a row's layout, once in the ruling that followed it. A
+ * constant named `SIZE` is read as a size, and the drawing comes out a
+ * third smaller than the arithmetic expects.
+ *
+ * # 88 → 132, and the two readings that decided it
+ *
+ * The user: 「明明可以把环绘制的更大,页面更紧凑,没有充分利用空间.」
+ *
+ * **What a bigger ring costs is width, and what pays for it is the box
+ * no longer being 1.6× the drawing** (`hugRatio`). Measured at the
+ * 1120 posture, where the row is 710 across:
+ *
+ *     盒宽@132×BOX_RATIO = 211.2  四个 + 三个 18 = 898.8  → 超出 188.8,换行
+ *     盒宽@132 贴着墨    = 123.5  四个 + 三个 18 = 548.2  → 余 161.8
+ *
+ * ⚠️ **The first of those two was measured at the 1400 posture first
+ * (row 990) and it said 132 fits.** It does not; the machine card is
+ * drawn at 1120 in the walk and the row is 710 there. Two readings from
+ * two postures compared as if they were one — the same failure this
+ * repo records for a ratio taken across two dial sizes.
+ *
+ * And the reading in the middle, both numbers at the same size, taken
+ * by putting the widest string a dial can say into the product's own
+ * `<text>` and measuring it there:
+ *
+ *     100%@88  = 57.25  vs  inner@88  = 56.00   → 溢出 1.25
+ *     100%@132 = 84.20  vs  inner@132 = 86.00   → 余 1.80
+ *
+ * **88 did not fit a four-character reading and 132 does** — a machine
+ * at three digits of CPU is ordinary, so the enlargement closes a
+ * latent overflow rather than opening one.
+ */
+export const RING_SIZE_CARD = 132;
 export const RING_STROKE_CARD = 4;
 
 /** Stroke for a single-track ring. Fixed, because the diameter is. */

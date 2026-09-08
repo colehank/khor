@@ -77,6 +77,27 @@ function reachOf(size: number, stroke: number): number {
   return 30 * k + stroke / 2 + 9 * k + 0.85 * Math.max(0.7, k);
 }
 
+/**
+ * The `ratio` whose box is exactly as wide as the drawing.
+ *
+ * **`crop` does this for the height; this is the same thing sideways**,
+ * and it is one expression rather than a number because the two have to
+ * move together — a box cut to the ink on one axis and to a guess on
+ * the other is the shape that made the machine card's dials sit 90px
+ * apart while the row said 18 (2026-09-08).
+ *
+ * ⚠️ **It reserves a pip's room whether or not this dial draws one**,
+ * because `reachOf` does: a box cut to the arc would clip a pip on the
+ * dial that has one, and four boxes of two different widths would put
+ * the arcs at four different offsets inside them. So the *boxes* come
+ * out equal and the *ink* still varies — arcs measured 60 / 75.8 / 60 /
+ * 68 across on one row, and no width can make those equal without
+ * cutting something off.
+ */
+export function hugRatio(size: number, stroke: number): number {
+  return (2 * reachOf(size, stroke)) / size;
+}
+
 /** How tall a **cropped** box comes out for a dial of this size. */
 function croppedHeight(size: number, stroke: number): number {
   const reach = reachOf(size, stroke);

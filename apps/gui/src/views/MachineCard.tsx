@@ -5,6 +5,7 @@ import { fetchLoad, setWatch } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
+import { hugRatio } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { AxisPick } from "@/components/AxisPick";
 import { Panel } from "@/components/Panel";
@@ -3228,6 +3229,18 @@ function Dial({
               size={RING_SIZE_CARD}
               stroke={RING_STROKE_CARD}
               crop
+              /* **And cut sideways too** (`hugRatio`, 2026-09-08). The
+                 default box is `size × BOX_RATIO` — 1.6, which left
+                 52.8px of empty box on each dial at size 88. Measured
+                 that day at the 1120 posture: the boxes sat the stated
+                 18 apart while **the arcs sat about 90 apart**, because
+                 each box carried its own slack. Cutting the width the
+                 way `crop` cuts the height is what makes the stated gap
+                 the gap a reader sees.
+                 **The default is not touched**: it decides the box for
+                 every caller that does not say, and that is a set we
+                 cannot see. This one says. */
+              ratio={hugRatio(RING_SIZE_CARD, RING_STROKE_CARD)}
             >
               {value === null || unknown ? "—" : value}
             </Face>

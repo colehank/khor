@@ -2281,6 +2281,26 @@ try {
           w: +(Math.max(...ink.map((b) => b.right)) - Math.min(...ink.map((b) => b.left))).toFixed(1),
           boxL: +box.left.toFixed(1),
           boxR: +box.right.toFixed(1),
+          // The empty box above the ink and below it. `crop` cuts to
+          // `reach`, so the two are related by the sweep's own angle —
+          // see the assertion.
+          // The box's own height and the arc's own radius — neither
+          // moves when a pip is drawn, which is why the expectation
+          // below is built out of these two and not out of「how much
+          // box sits above the ink」(a pip reaches higher than the arc,
+          // so that distance is smaller on the dial that has one).
+          boxH: +box.height.toFixed(2),
+          // **The rim's own radius, off the fill arc** — not the max
+          // over every path: a pip and the milestone span are arcs too,
+          // at radii of their own, and `Math.max` picked one of those
+          // (56 where the rim is 45) on the two dials that draw them.
+          r: (() => {
+            const fill = col.querySelector("[data-metric] [data-ring-fill]");
+            const m = fill && /A\s*([\d.]+)\s+([\d.]+)/.exec(fill.getAttribute("d") || "");
+            return m ? Number(m[1]) : null;
+          })(),
+          stroke: parseFloat(getComputedStyle(col.querySelector("[data-metric] path")).strokeWidth),
+          gapIn: parseFloat(getComputedStyle(col).rowGap),
           toWord: word ? +(word.getBoundingClientRect().top - Math.max(...ink.map((b) => b.bottom))).toFixed(1) : null,
         };
       };
@@ -2288,7 +2308,7 @@ try {
       const gaps = [];
       for (let i = 1; i < got.length; i += 1) gaps.push(+(got[i].boxL - got[i - 1].boxR).toFixed(1));
       const stated = parseFloat(getComputedStyle(vit).columnGap);
-      return { n: got.length, arcW: got.map((g) => g.w), toWord: got.map((g) => g.toWord), gaps, stated };
+      return { n: got.length, arcW: got.map((g) => g.w), toWord: got.map((g) => g.toWord), gaps, stated, boxH: got.map((g) => g.boxH), r: got.map((g) => g.r), stroke: got[0].stroke, gapIn: got[0].gapIn };
     });
     if (!dials || dials.n < 2) {
       fail(`probe dead: ${dials ? dials.n : "no"} dials with ink, so neither distance was measured`);
@@ -2308,11 +2328,35 @@ try {
       // clip one. Measured 2026-09-08: 5.0px of that allowance sits
       // under the ink, and `--gap-in` (8) is the rest. **Before the
       // crop the same distance was 35.4** — that is what was fixed.
-      const slack = dials.toWord.filter((v) => v === null || v > 14);
-      if (slack.length) {
+      // ⚠️ **Derived, not a number.** This assertion read `<= 14` until
+      // 2026-09-08 — measured at size 88, and it went red the moment the
+      // dial grew (14.3 at 132) while nothing was wrong. **A threshold
+      // that only holds at one size is a constant only its author can
+      // check.**
+      //
+      // What holds at every size is the crop's own geometry: it cuts to
+      // `reach`, so the empty box **above** the ink is `reach − R` and
+      // the empty box **below** it is that same slack seen at the arc's
+      // closing angle, plus half a stroke. Both are measured here, so
+      // the expectation is computed from the drawing rather than
+      // recalled from a run.
+      // `crop` makes the box `reach·(1+sin15°) + stroke/2` tall and
+      // starts it `reach` above the centre, so the empty box under the
+      // ink is `sin15°·(reach − R) + stroke/2`. **`reach` comes back
+      // out of the box's own height** and `R` off the track's `A r r`
+      // — two readings a pip cannot move.
+      const CLOSE = Math.sin((15 * Math.PI) / 180);
+      if (dials.r.some((v) => v === null)) fail(`probe dead: a dial has no [data-ring-fill] to read its rim radius from (${JSON.stringify(dials.r)})`);
+      const wants = dials.boxH.map((h, i) => {
+        const reach = (h - dials.stroke / 2) / (1 + CLOSE);
+        return dials.gapIn + CLOSE * (reach - dials.r[i]) + dials.stroke / 2;
+      });
+      const wrong = dials.toWord.map((v, i) => v === null || Math.abs(v - wants[i]) > 1);
+      if (wrong.some(Boolean)) {
         fail(
-          `a dial's arc ends ${JSON.stringify(dials.toWord)} above its own word. It is meant to be --gap-in (8) plus the ` +
-            `pip allowance the crop keeps (5.0 measured) — more than that is empty box under the ink, which is what ` +
+          `a dial's arc ends ${JSON.stringify(dials.toWord)} above its own word, and the crop's own geometry says ` +
+            `${JSON.stringify(wants.map((w) => +w.toFixed(2)))} (--gap-in ${dials.gapIn} + the pip room the crop keeps, ` +
+            `derived from boxes ${JSON.stringify(dials.boxH)} tall over arcs of radius ${JSON.stringify(dials.r)}) — anything more is empty box, which is what ` +
             `「环和下方的标题太远」 was.`,
         );
       }
@@ -2333,7 +2377,45 @@ try {
             `a gap that is not the stated one is a remainder, and a remainder moves when the window does`,
         );
       }
-      console.log(`dials: arcs ${JSON.stringify(dials.arcW)} across, ${JSON.stringify(dials.toWord)} above their words, gaps ${JSON.stringify(dials.gaps)}`);
+      //   **The reading in the middle fits inside its own ring.**
+      //
+      //   The widest a dial can say is four characters (`100%`, and a
+      //   busy box says `240%`) while this fixture only ever shows
+      //   three — so the string is put into the product's own `<text>`,
+      //   measured there, and put back. **Measured in the element that
+      //   draws it**, never in a copy: `getComputedStyle(node).font` is
+      //   empty on an SVG text, and a copy measured with the fallback
+      //   font answered 29.73 for a string the real element drew at
+      //   44.72. That first attempt was caught by its own restore check.
+      //
+      //   ⚠️ **The inner diameter comes off the rim's `A r r`, never off
+      //   a box.** Measured 2026-09-08: at the old size 88 the inner
+      //   diameter was 56 and `100%` drew 57.25 — **it did not fit**,
+      //   silently, on any machine that reached three digits.
+      const fit = await page.evaluate(() => {
+        const btn = document.querySelector("[data-machine-card] [data-metric]");
+        const node = btn && [...btn.querySelectorAll("*")].filter((n) => n.children.length === 0 && /^\d+%$/.test((n.textContent || "").trim()))[0];
+        const fill = btn && btn.querySelector("[data-ring-fill]");
+        const m = fill && /A\s*([\d.]+)\s+([\d.]+)/.exec(fill.getAttribute("d") || "");
+        if (!node || !m) return null;
+        const stroke = parseFloat(getComputedStyle(fill).strokeWidth);
+        const was = node.textContent;
+        const before = +node.getBoundingClientRect().width.toFixed(2);
+        node.textContent = "100%";
+        const widest = +node.getBoundingClientRect().width.toFixed(2);
+        node.textContent = was;
+        return { inner: +(2 * Number(m[1]) - stroke).toFixed(2), widest, restored: +node.getBoundingClientRect().width.toFixed(2) === before };
+      });
+      if (!fit) {
+        fail("probe dead: no dial reading or no rim arc, so 「the number fits its ring」 measured nothing");
+      } else if (!fit.restored) {
+        // The arm: if putting the string back did not put the width
+        // back, the two readings came from two different states.
+        fail("probe void: the dial's reading did not return to its own width after the measurement — the two readings are not one state");
+      } else if (fit.widest > fit.inner) {
+        fail(`100%@card = ${fit.widest} vs inner@card = ${fit.inner} — the widest reading a dial can say does not fit inside its own ring`);
+      }
+      console.log(`dials: arcs ${JSON.stringify(dials.arcW)} across, ${JSON.stringify(dials.toWord)} above their words, gaps ${JSON.stringify(dials.gaps)}, 100%@card ${fit ? fit.widest : "?"} vs inner ${fit ? fit.inner : "?"}`);
     }
   }
   await page.locator("[data-rail-mark]").click();
