@@ -25,9 +25,22 @@
  * window; a transcript records what an agent wrote on this machine — a
  * different population on a different clock.
  *
- * ⚠️ **The provider road has never been walked with a real admin key.**
- * The shapes it decodes come from documentation, so everything drawn
- * from `model_tokens` on this page is untested against a live answer.
+ * ⚠️ **The provider road is three roads, and only one of them has ever
+ * carried real numbers.** This comment said 「the provider road has
+ * never been walked with a real admin key」 until 2026-09-08 — a true
+ * sentence written as a universal, and it read as 「nothing here has
+ * ever run」, which is false for the one road people actually see:
+ *
+ *   - **new-api** (`fetch_newapi`) reads `{base}/api/log/token` with
+ *     the account's **own** bearer token — `TokenAuthReadOnly`, no
+ *     admin anything. It is walked every time somebody opens such an
+ *     account, and it is the only one of the three with a test against
+ *     a real socket.
+ *   - **claude** and **openai** (`claude_model_tokens`,
+ *     `openai_model_tokens`) are organisation-level usage reports on an
+ *     admin key, and **those** have never been met with a real one; the
+ *     shapes come from documentation. `khor_node::accounts` says so at
+ *     each of them, precisely — it was this file that over-generalised.
  *
  * # Three faces, and the empty one is never drawn
  *
@@ -1200,10 +1213,17 @@ export function fromUsage(
 /**
  * **The provider road**: what the vendor billed.
  *
- * ⚠️ **Nothing here has ever been run against a real admin key.** Both
- * vendors' usage reports are organisation-level calls, so the shapes
- * `khor_node::accounts` decodes come from documentation. What is drawn
- * from this is only as right as that reading.
+ * ⚠️ **Which of the three sources fed this row decides how much to
+ * trust it**, and the head of this file has the split. In short:
+ * new-api's rows come off that gateway's own log on the account's
+ * ordinary key and are real; claude's and openai's come from
+ * admin-key usage reports whose shapes were read out of documentation
+ * and have never been met with a live answer.
+ *
+ * **`cache_split` is the one field where that difference shows on the
+ * glass**: a gateway log has no cache columns to state, so it says
+ * `false` and the four cache quantities leave the page — while a
+ * vendor usage report itemises them and says `true`.
  */
 export function fromReading(
   reading: AccountReading,

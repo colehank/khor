@@ -2249,6 +2249,93 @@ try {
   } else if (peerCard.windows !== 0) {
     fail(`a peer's card draws ${peerCard.windows} quota windows`);
   }
+
+  //   ── the dials: the box follows the ink, and the air is a stated
+  //      number ────────────────────────────────────────────────────
+  //
+  //   2026-09-08, the user: 「机器页的环和下方的标题艰巨太远了.环的间距
+  //   也太远了.明明可以把环绘制的更大,页面更紧凑,没有充分利用空间.」
+  //
+  //   **Both distances are measured off the arc's own ink, never off a
+  //   box.** A dial's box is a claim about the drawing; the `path` is
+  //   the drawing. Measured that day before the fix: the box was 88
+  //   tall while the arc's ink stopped at 60.6 (it sweeps to 15°, not
+  //   to the bottom of its circle), so 27.4px of empty box sat between
+  //   the arc and the word under it — the reader saw 35.4 where 8 was
+  //   intended.
+  {
+    const dials = await page.evaluate(() => {
+      const vit = document.querySelector("[data-machine-card] [data-vitals]");
+      if (!vit) return null;
+      const cols = [...vit.children];
+      const read = (col) => {
+        const btn = col.querySelector("[data-metric]");
+        const paths = [...col.querySelectorAll("[data-metric] path")];
+        if (!btn || !paths.length) return null;
+        // The union of the arcs' ink — the track and the fill are two
+        // paths on one circle, and a pip is a path too.
+        const ink = paths.map((p) => p.getBoundingClientRect());
+        const box = btn.getBoundingClientRect();
+        const word = [...col.children].filter((n) => !n.hasAttribute("data-metric")).pop();
+        return {
+          w: +(Math.max(...ink.map((b) => b.right)) - Math.min(...ink.map((b) => b.left))).toFixed(1),
+          boxL: +box.left.toFixed(1),
+          boxR: +box.right.toFixed(1),
+          toWord: word ? +(word.getBoundingClientRect().top - Math.max(...ink.map((b) => b.bottom))).toFixed(1) : null,
+        };
+      };
+      const got = cols.map(read).filter(Boolean);
+      const gaps = [];
+      for (let i = 1; i < got.length; i += 1) gaps.push(+(got[i].boxL - got[i - 1].boxR).toFixed(1));
+      const stated = parseFloat(getComputedStyle(vit).columnGap);
+      return { n: got.length, arcW: got.map((g) => g.w), toWord: got.map((g) => g.toWord), gaps, stated };
+    });
+    if (!dials || dials.n < 2) {
+      fail(`probe dead: ${dials ? dials.n : "no"} dials with ink, so neither distance was measured`);
+    } else if (!dials.arcW.every((w) => w > 10)) {
+      // **The arm this repo keeps meeting**: two gaps between two arcs
+      // that were never drawn agree perfectly. The ink has to be there
+      // before a distance between two of them means anything.
+      fail(`the dials' arcs measure ${JSON.stringify(dials.arcW)} across — a gap between drawings that are not there is not a gap`);
+    } else {
+      // **The word sits under the *drawing's box*, and that box ends a
+      // little below the arc on purpose.**
+      //
+      // ⚠️ This assertion was written at 12 and the product measured
+      // 13.1 — and the product was right. `crop` cuts to `reachOf`,
+      // which is the rim **plus a pip's whole length plus half its cap**:
+      // a pip may sit outside the arc, so a box cut to the arc would
+      // clip one. Measured 2026-09-08: 5.0px of that allowance sits
+      // under the ink, and `--gap-in` (8) is the rest. **Before the
+      // crop the same distance was 35.4** — that is what was fixed.
+      const slack = dials.toWord.filter((v) => v === null || v > 14);
+      if (slack.length) {
+        fail(
+          `a dial's arc ends ${JSON.stringify(dials.toWord)} above its own word. It is meant to be --gap-in (8) plus the ` +
+            `pip allowance the crop keeps (5.0 measured) — more than that is empty box under the ink, which is what ` +
+            `「环和下方的标题太远」 was.`,
+        );
+      }
+      // **The air between two dials is a stated number, and the boxes
+      // are what states it.** With `justify-around` it was a remainder
+      // — 990 wide, four boxes, whatever was left divided up — so it
+      // moved whenever the box or the window did and nothing named it.
+      //
+      // ⚠️ **Measured between the boxes, not between the ink.** The
+      // arcs come out 60 / 75.8 / 60 / 68 wide because a dial with pips
+      // draws further out than one without; ink-to-ink therefore varies
+      // by design and asserting it equal would be asserting that no
+      // dial has pips.
+      const off = dials.gaps.filter((g) => Math.abs(g - dials.stated) > 0.6);
+      if (off.length) {
+        fail(
+          `the dials sit ${JSON.stringify(dials.gaps)} apart while the row states ${dials.stated} — ` +
+            `a gap that is not the stated one is a remainder, and a remainder moves when the window does`,
+        );
+      }
+      console.log(`dials: arcs ${JSON.stringify(dials.arcW)} across, ${JSON.stringify(dials.toWord)} above their words, gaps ${JSON.stringify(dials.gaps)}`);
+    }
+  }
   await page.locator("[data-rail-mark]").click();
   await wait(400);
   await page.locator('[data-seat][data-seat-me="true"]').click();

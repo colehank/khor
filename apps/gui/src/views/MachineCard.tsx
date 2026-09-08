@@ -592,7 +592,20 @@ function Readings({
   const left = (fill: { used: number; total: number }) => cli.fill_left(bytes(Math.max(0, fill.total - fill.used)));
   return (
     <Panel>
-      <div data-vitals className="flex flex-wrap justify-around gap-row">
+      {/* ⚠️ **`justify-center`, not `justify-around`, since 2026-09-08.**
+          Measured that day at 1400 wide: the row is 990 across, four
+          dials are 563.2 of it, and `justify-around` **spread the
+          remaining 426.8 as air** — 109.7px between boxes, which is
+          190.5 between one arc's edge and the next when the boxes' own
+          slack is counted, against an arc 60 wide (the user: 「环的间距
+          也太远了」).
+
+          **And the direction is the opposite of the obvious one**: a
+          narrower dial gives `justify-around` *more* to spread, so
+          shrinking the boxes would have widened the gaps. The lever is
+          the distribution, not the box. Centred with `--gap-group`, the
+          gap is a stated number instead of a remainder. */}
+      <div data-vitals className="flex flex-wrap justify-center gap-group">
         <Dial
           dial="cpu"
           open={open === "cpu"}
@@ -3172,13 +3185,41 @@ function Dial({
         // when it is already on, which reads as a stuck control.
         onClick={() => onOpen(open ? "" : dial)}
         className="rounded-md"
-        // Wider than the arc it holds, because the back has to fit a
-        // sentence: the two faces share one box, and sizing it to the
-        // circle would wrap 「内存 12.3G / 16.0G」 into four lines.
-        style={{ width: RING_SIZE_CARD * 1.6, height: RING_SIZE_CARD }}
+        /* ⚠️ **Tombstone: this button carried
+           `style={{ width: RING_SIZE_CARD * 1.6, height: RING_SIZE_CARD }}`
+           until 2026-09-08.** Its reason was 「the back has to fit a
+           sentence」 — and that back is `sr-only` now (the press opens
+           the drawer), so it occupies nothing at all: measured that
+           day, `position: absolute`, 1×1.
+
+           **But removing it changed no pixel, and that is the part
+           worth writing down.** Both numbers were duplicates of what
+           `Face` already computes: its svg is `width={size * ratio}`
+           with `ratio` defaulting to `BOX_RATIO` = 1.6, and
+           `height={boxH}` which is `size` when uncropped. **Two mirrors
+           of one number, with nothing keeping them equal** — they
+           agreed by coincidence, and a third edit to either side would
+           have moved the box without moving the drawing.
+
+           The 52.8px of air per dial is real and it is **`BOX_RATIO`'s**,
+           not this line's. Whether that ratio still earns its width is
+           a separate question, and it is `Face`'s to answer. */
       >
         <span data-metric-faces className="block h-full w-full">
           <span data-metric-face="front" className="grid h-full w-full place-items-center">
+            {/* **`crop`, since 2026-09-08.** Uncropped, the drawing's
+                box is `size` tall (88) while the arc's ink stops at
+                60.6 — it sweeps to 15°, not to the bottom of its own
+                circle. Measured that day: **27.4px of empty box under
+                the ink**, and the ring's name sits below that plus
+                `gap-in`, so the gap a reader sees between an arc and
+                its word was 35.4 where 8 was intended (the user:
+                「环和下方的标题艰巨太远了」).
+
+                Cropping is what the 額度 card's dial already did — this
+                one was the odd one out, so this is a unification as
+                much as a fix. `crop` reads the same `reachOf` the
+                drawing does, so the box follows the ink at any size. */}
             <Face
               fraction={unknown ? null : fraction}
               strain={strain}
@@ -3186,6 +3227,7 @@ function Dial({
               unknown={unknown}
               size={RING_SIZE_CARD}
               stroke={RING_STROKE_CARD}
+              crop
             >
               {value === null || unknown ? "—" : value}
             </Face>
