@@ -1452,7 +1452,7 @@ export function QuotaLanding({
             push the bar into a gutter, and the bar is the point. */}
         <dl
           data-quota-parts
-          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 text-sm"
+          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-row gap-y-1.5 text-sm"
         >
           {dials.map((d) => (
             // `contents`, so the three cells line up in the grid while
@@ -1525,7 +1525,7 @@ export function QuotaLanding({
       {current.credits && (
         <dl
           data-quota-credits
-          className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"
+          className="grid grid-cols-[auto_1fr] gap-x-row gap-y-1 text-sm"
         >
           <dt className="text-muted-foreground">{gui.quota_credits}</dt>
           <dd data-quota-credits-on={current.credits.enabled}>
@@ -1908,7 +1908,7 @@ function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: s
   if (days.length === 0) return null;
   const most = Math.max(...days.map((d) => d.spent));
   return (
-    <div data-quota-days className="flex flex-col gap-2 border-t pt-4">
+    <div data-quota-days className="flex flex-col gap-in border-t pt-row">
       <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
         <span data-quota-days-title className="text-fact">
           {gui.accounts_trend_days(days.length)}

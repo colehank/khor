@@ -4277,6 +4277,61 @@ try {
     }
     await open("quota");
     await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
+    await press('[data-quota-row="sub:local"]');
+    await wait(400);
+    //   ⑪ **Nothing on this card is spaced 16 or 32 any more.**
+    //
+    //   2026-09-08, the user: 額度's detail is to be on the machine
+    //   card's ladder. That ladder is 8 / 12 / 18 / 24 (`--gap-in`,
+    //   `-row`, `-group`, `-pane`); **16 and 32 are not rungs on it**,
+    //   and they were what this page was built out of — `p-4`, `gap-4`,
+    //   `gap-x-8`.
+    //
+    //   ⚠️ **This is a ratchet, not a ladder check.** Measured the same
+    //   day, matched scope (`[data-quota-detail]` against
+    //   `[data-machine-card]`): the machine card has **no** off-ladder
+    //   value inside it at all, while this detail still has 4px and 6px
+    //   ones — the table's `px-1 py-1` cells, mostly, because that card
+    //   has no padded cells to begin with (its rows are a grid whose
+    //   columns are separated by `--gap-in`). **Asserting the whole
+    //   ladder would demand that table be rebuilt**, which is a
+    //   different piece of work; this holds the line that was actually
+    //   crossed and drawn back.
+    {
+      const off = await page.evaluate(() => {
+        const out = [];
+        // ⚠️ **The container itself is in the list, not just its
+        // descendants.** `[data-quota-detail] *` reads only children —
+        // and the padding the user's ruling was most about sits on
+        // that very element (`p-4`). Measured 2026-09-08 by putting
+        // `p-4` back: **the gate stayed green.** An assertion blind to
+        // its own subject passes for the same reason an empty
+        // `querySelectorAll` does.
+        for (const el of document.querySelectorAll("[data-quota-detail], [data-quota-detail] *")) {
+          const cs = getComputedStyle(el);
+          const hit = [
+            ["padding-top", cs.paddingTop], ["padding-right", cs.paddingRight],
+            ["padding-bottom", cs.paddingBottom], ["padding-left", cs.paddingLeft],
+            ["row-gap", cs.rowGap], ["column-gap", cs.columnGap],
+          ].filter(([, v]) => v === "16px" || v === "32px");
+          if (hit.length) {
+            out.push(`${[...el.attributes].map((a) => a.name).find((n) => n.startsWith("data-")) ?? el.tagName}: ${hit.map(([k, v]) => `${k} ${v}`).join(", ")}`);
+          }
+        }
+        return out;
+      });
+      // The arm that says this can find anything at all: an assertion
+      // that only ever counts zero is one nobody can tell from a
+      // selector that stopped matching.
+      const seen = await page.evaluate(() => document.querySelectorAll("[data-quota-detail], [data-quota-detail] *").length);
+      if (seen < 20) fail(`probe dead: only ${seen} elements under the 額度 detail, so 「nothing is spaced 16 or 32」 measured almost nothing`);
+      else if (off.length) {
+        fail(`${off.length} places on the 額度 detail are still spaced 16 or 32 — the ladder is 8/12/18/24: ${JSON.stringify(off)}`);
+      } else {
+        console.log(`ladder: 0 of ${seen} elements under the 額度 detail are spaced 16 or 32`);
+      }
+    }
+
 
     console.log(
       `usage half: ${all.keys.length} models over ${all.cols.length} days (7-day window ${week.cols.length}), ` +
