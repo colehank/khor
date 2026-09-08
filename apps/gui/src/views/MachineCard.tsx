@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cli, gui } from "@/gen/catalog";
+import { tickSet } from "@/lib/ruler";
 import { cn } from "@/lib/utils";
 import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
@@ -1960,35 +1961,13 @@ const AXES = {
   time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000), fold: true },
 } as const;
 
-/**
- * The ticks of one axis, each with the label it can wear without
- * colliding: the fewest decimals that keep it apart from every other
- * tick's label at that same precision, and that keep a reading above
- * zero from reading as zero (a `0.00%` on an axis whose lowest reading
- * is 0.06% is a label that lies). Two ticks whose labels cannot be
- * told apart at all (时长's unit ladder) become one — the second is
- * dropped, never drawn twice.
- */
-function tickSet(
-  r: { tick: (f: number) => number },
-  a: { tick: (v: number, d: number) => string; fold?: boolean },
-  fractions: number[],
-) {
-  const vs = fractions.map((f) => r.tick(f));
-  const at = (i: number, d: number) => a.tick(vs[i], d);
-  const set = vs.map((v, i) => {
-    // Zero is 「0」, at no decimals: nothing else may read as zero (the
-    // rule below), so it cannot collide, and 「0.000%」 is a zero
-    // dressed as a measurement.
-    if (v === 0) return { v, label: at(i, 0) };
-    let d = 0;
-    const clashes = () =>
-      vs.some((_, j) => j !== i && at(j, d) === at(i, d)) || parseFloat(at(i, d)) === 0;
-    while (d < 6 && clashes()) d += 1;
-    return { v, label: at(i, d) };
-  });
-  return a.fold ? set.filter((t, i) => set.findIndex((o) => o.label === t.label) === i) : set;
-}
+/* ⚠️ **Tombstone: `tickSet` was defined here until 2026-09-08.** It is
+   `lib/ruler` now, unchanged, because the 额度 page's usage half needs
+   the same tick precision and a second copy would only be a second
+   place for one rule to rot. **The `ruler` beside it did not move** —
+   that one has a judgment in it and the two pages do not agree about
+   it yet; `lib/ruler`'s head carries the divergence and the number
+   that makes it checkable. */
 type AxisKey = keyof typeof AXES;
 const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
 
