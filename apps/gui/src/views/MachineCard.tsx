@@ -7,6 +7,7 @@ import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { AxisPick } from "@/components/AxisPick";
+import { Panel } from "@/components/Panel";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -464,9 +465,11 @@ function Hooks({
  * make a second column — a row of two boxes side by side is a row that
  * cannot line up, and 「很容易对不齐」 is exactly what the user saw when
  * one was tried. So every panel is full width and they stack. */
-function Panel({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-md border bg-card px-row py-row">{children}</div>;
-}
+/* ⚠️ **Tombstone: `Panel` was defined here until 2026-09-08.** It is
+   `components/Panel` now, with its reasoning — the 額度 card's usage
+   half had grown flat sections instead of cards, and a block of
+   readings looking like a card on one surface and like a stretch of
+   page on the other is the plainest form of 「two products」. */
 
 /**
  * What the machine is doing, and how old that answer is.
