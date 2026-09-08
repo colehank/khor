@@ -686,9 +686,19 @@ function Trend({
           分段是各个模型」 was here and is gone** (2026-09-08, the user
           did not want it). Its key went with it — see `zh.toml`. */}
       <ul data-usage-key className="flex flex-wrap gap-x-3 gap-y-0.5 text-aux text-muted-foreground">
+        {/* **A square swatch, with no corner of its own.** It carried
+            an arbitrary 2px corner until 2026-09-08, and the type gate
+            was red on it for as long (it reads that class as a radius
+            literal — including one written inside a comment, which is
+            why this sentence spells the number out instead):
+            `tokens.css` owns every radius, and the ladder's smallest
+            rung is 6px — on an 8px chip that is a
+            circle, which is a different mark, not a softer one. So it
+            wears none: the swatch is the colour, and a colour does not
+            need a corner. */}
         {agg.map((r) => (
           <li key={String(r.model)} data-usage-key-model={r.model ?? ""} className="flex items-center gap-1.5">
-            <i className="size-2 rounded-[2px]" style={{ background: bands.get(r.model) }} />
+            <i className="size-2" style={{ background: bands.get(r.model) }} />
             {r.word}
           </li>
         ))}
@@ -1099,7 +1109,7 @@ function Stats({
               <tr key={keyOf(r)} data-usage-row={r.model ?? ""} className="border-b">
                 {cols.map((c) => (
                   <td key={c.key} className={cn("px-1 py-1", c.key === "model" ? "text-left" : "text-right")}>
-                    {c.key === "model" && <i className="mr-1.5 inline-block size-2 rounded-[2px] align-[-1px]" style={{ background: bands.get(r.model) }} />}
+                    {c.key === "model" && <i className="mr-1.5 inline-block size-2 align-[-1px]" style={{ background: bands.get(r.model) }} />}
                     {/* **「—」, never 0.** A source that does not report
                         the cache has not reported nought of it. */}
                     {c.text ? c.text(r) : cell(c.key, c.of!(r))}
