@@ -8794,6 +8794,165 @@ try {
   }
   console.log(`size slot: session mark ${slotRead.mark} tall, 額度 dial ${slotRead.dial} tall`);
 
+  //   ── the settings panel opens where it can be read whole ───────
+  //
+  //   2026-09-08, the user, on his first press after this batch went
+  //   in: 「三个点点击了弹出的窗口都显示不全」.
+  //
+  //   ⚠️ **This is the hole that list called the second kind, and it
+  //   came true the same night.** Section 10 already asserted how many
+  //   rows the panel opens, how many quantities each row offers, that
+  //   the label opens nothing, and that opening it moves no part of the
+  //   figure — **all green, all torn down, and not one of them asked
+  //   whether the thing was on the screen.** The assertions were true
+  //   and would really go red; they were on a different axis from the
+  //   risk.
+  //
+  //   Measured that night, before any fix (three widths, real
+  //   `getBoundingClientRect`):
+  //
+  //     trend  @1400/1120/390 — 172.6px past the right edge at **every
+  //                             width, the same number**, because the
+  //                             button sits at the right end of its row
+  //                             and the panel grew rightwards from it;
+  //     stats  @390           — 155px past, because it is 474 across
+  //                             for eight quantities and the screen is
+  //                             390: no side to anchor to would fit it;
+  //     machine@any           — fitted, and only because four
+  //                             quantities make a narrower panel.
+  //
+  //   So this reads **geometry off the glass**, at every width and on
+  //   every figure that has one of these — not `data-*`, which is the
+  //   product's own account of itself, and not one surface, because the
+  //   machine card passed while two panels next door did not.
+  {
+    const seen = [];
+    const panelBox = (at) =>
+      page.evaluate((s) => {
+        const el = document.querySelector(s);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        //   The box it has to stay inside is **whichever is tighter**:
+        //   the nearest ancestor that clips, or the window. The 額度
+        //   detail pane is `overflow:auto`, so on that page the pane is
+        //   the real edge and the window would have said 「fits」.
+        let n = el.parentElement;
+        let left = 0;
+        let right = window.innerWidth;
+        let top = 0;
+        let bottom = window.innerHeight;
+        let by = "window";
+        while (n) {
+          const cs = getComputedStyle(n);
+          if (cs.overflowX !== "visible" || cs.overflowY !== "visible") {
+            const b = n.getBoundingClientRect();
+            left = Math.max(left, b.left);
+            right = Math.min(right, b.right);
+            top = Math.max(top, b.top);
+            bottom = Math.min(bottom, b.bottom);
+            by = `${n.tagName.toLowerCase()}(${cs.overflowX}/${cs.overflowY})`;
+            break;
+          }
+          n = n.parentElement;
+        }
+        return {
+          x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1),
+          right: +r.right.toFixed(1), bottom: +r.bottom.toFixed(1),
+          box: { left: +left.toFixed(1), right: +right.toFixed(1), top: +top.toFixed(1), bottom: +bottom.toFixed(1), by },
+          //   **Proof the panel is a panel.** A `<div>` that renders
+          //   nothing has a zero box that sits inside every edge —
+          //   「一致地什么都没有」 passing a containment test is exactly
+          //   this gate's way of being blind, so what it holds is
+          //   counted here and asserted below.
+          picks: el.querySelectorAll("[data-plot-axis]").length,
+          rows: el.querySelectorAll("[data-plot-set]").length,
+        };
+      }, at);
+    const fits = async (name, atBtn, atPanel) => {
+      const buttons = await page.locator(atBtn).count();
+      if (buttons !== 1) {
+        fail(`probe dead: ${name} has ${buttons} settings buttons, so nothing about its panel was measured`);
+        return;
+      }
+      await page.locator(atBtn).click();
+      await wait(300);
+      const p = await panelBox(atPanel);
+      if (!p) {
+        //   ⚠️ **This arm and the empty-panel one below cannot be made
+        //   to fire today, and that is written here rather than left to
+        //   look like coverage.** A panel that is not drawn satisfies
+        //   「nothing sticks out」 perfectly, so an edge-comparing gate
+        //   would go green on a component that renders nothing — the
+        //   reason both arms exist. But **every earlier section presses
+        //   into one of these panels**, so taking the panel away kills
+        //   the run before it reaches here. Measured 2026-09-08:
+        //   removing it outright dies in 8a's `pickUsage` (a 30s
+        //   `locator.click` timeout, raw throw, whole run terminated);
+        //   removing it only under 500px dies in section 10's `pick`,
+        //   because that section measures the card at 380.
+        //
+        //   So the risk **is** covered — the gate goes red, loudly —
+        //   just not by this line's words. These two arms are what
+        //   keeps *this* section from going vacuously green if those
+        //   earlier sections are ever re-ordered or dropped.
+        fail(`probe dead: ${name}'s settings were pressed and no panel was drawn — 「it fits」 would have been true of nothing`);
+        return;
+      }
+      if (p.rows === 0 || p.picks === 0 || p.w <= 0 || p.h <= 0) {
+        fail(`probe dead: ${name}'s panel measures ${p.w}x${p.h} with ${p.rows} rows and ${p.picks} quantities — an empty box fits inside anything`);
+      } else {
+        const out = [
+          p.x < p.box.left ? `left ${(p.box.left - p.x).toFixed(1)}` : "",
+          p.y < p.box.top ? `top ${(p.box.top - p.y).toFixed(1)}` : "",
+          p.right > p.box.right ? `right ${(p.right - p.box.right).toFixed(1)}` : "",
+          p.bottom > p.box.bottom ? `bottom ${(p.bottom - p.box.bottom).toFixed(1)}` : "",
+        ].filter(Boolean);
+        if (out.length) {
+          fail(
+            `${name}: the settings panel (${p.w}x${p.h} at ${p.x},${p.y}) hangs ${out.join(" and ")} outside ` +
+              `${p.box.by} ${p.box.left},${p.box.top}-${p.box.right},${p.box.bottom} — whatever is past that edge is ` +
+              `cut off with no sign of it, which is 「弹出的窗口显示不全」. **The panel measures its own room** ` +
+              `(components/PlotControls): if this is red, either that measurement stopped running or something above ` +
+              `it started clipping — do not answer it by moving the button.`,
+          );
+        }
+        seen.push(`${name} ${p.w}x${p.h}`);
+      }
+      await page.locator(atBtn).click();
+      await wait(150);
+    };
+    //   **Three widths, because the two failures had different shapes**:
+    //   one was the same at every width (an anchor on the wrong side)
+    //   and the other only appeared at the narrow stop (a panel wider
+    //   than the screen). A single width would have caught one of them.
+    for (const w of [1400, 1120, 390]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await wait(300);
+      await open("devices");
+      await pressNth("[data-list] [data-row-open]", 1);
+      await until(5_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) === 1);
+      await fits(`machine@${w}`, "[data-machine-card] [data-plot-settings]", "[data-machine-card] [data-plot-settings-open]");
+      await open("quota");
+      await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+      await press('[data-quota-row="sub:local"]');
+      await wait(500);
+      for (const zone of ["trend", "stats"]) {
+        await fits(
+          `${zone}@${w}`,
+          `[data-quota-detail] [data-usage-zone="${zone}"] [data-plot-settings]`,
+          `[data-quota-detail] [data-usage-zone="${zone}"] [data-plot-settings-open]`,
+        );
+      }
+    }
+    if (seen.length !== 9) {
+      fail(`probe dead: ${seen.length} of 9 settings panels were measured (${seen.join(", ")}) — 「they all fit」 is a claim about all of them`);
+    }
+    console.log(`settings panels: ${seen.join(" · ")}`);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+  }
+
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
       "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, the machine surfaces bare of subscription arcs, the \u989d\u5ea6 rows in all three shapes with the subscription among them and its bar narrowing them, and narrow's session tabs switching for real",

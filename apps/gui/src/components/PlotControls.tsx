@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { IconMore } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -112,6 +112,68 @@ export function PlotSettings({
   onPick: (row: string, key: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const panel = useRef<HTMLDivElement | null>(null);
+  //   **Re-fit when the contents change, not only when it opens.**
+  //   Picking a quantity re-weights one word (the chosen one is
+  //   `font-title`), and a row whose offer list changed is a different
+  //   width — both move the panel's edge while it is open.
+  const shape = rows.map((r) => `${r.key}:${r.chosen}:${r.options.length}`).join("|");
+  useLayoutEffect(() => {
+    const el = panel.current;
+    if (!open || !el) return;
+    //   **Measured, not declared.** The first version of this panel
+    //   said `left-0 min-w-max` and let the caller place the button;
+    //   the user's first press found it cut off (2026-09-08:
+    //   「三个点点击了弹出的窗口都显示不全」). Measured that night at
+    //   three widths: the 額度 trend panel hung 172.6px past the edge
+    //   **at every one of them** — the same number, because the button
+    //   sits at the right end of its row and the panel grew rightwards
+    //   from it, which has nothing to do with how wide the screen is —
+    //   and the stats panel, 474 across for eight quantities, hung
+    //   155px out at 390 where **no side to anchor to would have
+    //   fitted it**.
+    //
+    //   So two things are read off the glass rather than written down:
+    //   how wide it may be, and how far it has to come back. A caller
+    //   cannot answer either — 「which side has room」 is a fact about
+    //   this width, and the caller that got it wrong had the button on
+    //   the left when it was written.
+    el.style.maxWidth = "";
+    el.style.transform = "";
+    //   The box it must stay inside: the nearest ancestor that clips
+    //   (the 額度 detail pane is `overflow:auto`), else the window.
+    let n: HTMLElement | null = el.parentElement;
+    let left = 0;
+    let right = window.innerWidth;
+    while (n) {
+      const cs = getComputedStyle(n);
+      if (cs.overflowX !== "visible" || cs.overflowY !== "visible") {
+        const b = n.getBoundingClientRect();
+        left = Math.max(left, b.left);
+        right = Math.min(right, b.right);
+        break;
+      }
+      n = n.parentElement;
+    }
+    //   **The air beside it is the air under it**, read from the
+    //   stylesheet rather than copied into this file: `mb-in` is
+    //   already the gap between the panel and its button, and a second
+    //   number here would be a mirror nothing keeps in step.
+    const air = parseFloat(getComputedStyle(el).marginBottom) || 0;
+    const room = right - left - 2 * air;
+    if (room > 0 && el.getBoundingClientRect().width > room) {
+      //   Wider than the room: it wraps. `w-max` keeps it as narrow as
+      //   its contents when there is space, and the rows already carry
+      //   `flex-wrap` — it was `min-w-max` that made that wrap
+      //   unreachable, since a min-width outranks a max-width.
+      el.style.maxWidth = `${Math.round(room)}px`;
+    }
+    const r = el.getBoundingClientRect();
+    const past = r.right - (right - air);
+    const short = left + air - r.left;
+    const dx = past > 0 ? -past : short > 0 ? short : 0;
+    if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+  }, [open, shape]);
   return (
     <span data-plot-settings-at className="relative inline-flex">
       <button
@@ -131,8 +193,22 @@ export function PlotSettings({
         // label it replaces followed ("one place, the contents swapped,
         // the height fixed").
         <div
+          ref={panel}
           data-plot-settings-open
-          className="absolute bottom-full left-0 z-10 mb-in flex min-w-max flex-col gap-in rounded-md border bg-card px-row py-row"
+          //   ⚠️ **`w-max`, not `min-w-max`.** A min-width outranks a
+          //   max-width, so the second spelling makes the cap above
+          //   unreachable and the panel can be wider than the screen.
+          //   **Vertical is not clamped**, and that is a decision: it
+          //   has never been measured to overflow. The tallest it has
+          //   been is 306 — the narrow face's stats panel, *after* the
+          //   cap above makes it wrap — and it sat at y=109.8 in a pane
+          //   running 45 to 847. No top overflow at any of the three
+          //   widths, before or after the wrap;
+          //   and the honest answer to a panel with no room above is to
+          //   open it downwards — a different gesture, not a nudge. The
+          //   gate measures both directions, so if that day comes it
+          //   says so before a reader does.
+          className="absolute bottom-full left-0 z-10 mb-in flex w-max flex-col gap-in rounded-md border bg-card px-row py-row"
         >
           {rows.map((r) => (
             <div key={r.key} data-plot-set={r.key} className="flex items-center gap-in">
