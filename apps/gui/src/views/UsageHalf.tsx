@@ -366,7 +366,7 @@ export function UsageHalf({
   if (rows === null) return null;
   // A caller that says 「have it」 with nothing in it is a caller bug,
   // and the answer to a bug is still not an empty chart.
-  if (rows.length === 0 || agg.length === 0) return null;
+  if (rows.length === 0) return null;
 
   const shown = AXIS_KEYS.filter((k) => cacheKnown || !("cache" in AXES[k]));
 
@@ -393,6 +393,27 @@ export function UsageHalf({
           they are two subjects. */}
       <Panel>
         <Trend days={days} agg={agg} rows={rows} bands={bands} view={view} win={win} onView={setView} onWin={setWin} />
+        {/* ⚠️ **The stats zone goes when the window is empty; the trend
+            zone stays.** Not because one is above the other:
+            **the window picker is the way out of this state and the
+            axis pickers are not** — a window with no rows in it draws
+            nothing whichever quantity the scatter is set to, while
+            changing the window is what makes the rows come back. A
+            control may only disappear with its content when it could
+            not have changed that content.
+
+            ⚠️ **The picker that is the way out lives in the trend
+            zone's settings button, together with 「按天 / 按模型」** —
+            two rows, one button, so keeping the whole button is right
+            today. **If those two rows are ever split into two buttons,
+            this is the line to read**: the window one has to stay and
+            the view one does not.
+
+            Before 2026-09-09 this whole half returned `null` here, and
+            that had a worse shape than a missing sentence: the picker
+            went with it, `win` kept its value, and **the only way back
+            was to leave the account and come in again.** */}
+        {agg.length > 0 && (
         <Stats
           agg={agg}
           days={days}
@@ -406,6 +427,7 @@ export function UsageHalf({
           onHot={(model) => setHot({ model, n: (hot?.n ?? 0) + 1 })}
           onSort={setSort}
         />
+        )}
       </Panel>
     </div>
   );
@@ -506,7 +528,32 @@ function Trend({
           of labelled models — while everything inside it is
           `lib/plot`'s. */}
       <div ref={canvas} className="relative h-52 w-full">
-      {view === "day" ? (
+      {/* **The window has nothing in it, and that is a sentence, not an
+          empty chart.** The three faces this half already had are 「still
+          asking」, 「this provider publishes no token report」 and 「that
+          khor cannot cut by model」 — and each of them is about a
+          different subject (nobody yet, the provider, the answering
+          machine). **This fourth one's subject is the window**, and
+          until 2026-09-09 it had no words at all: the half returned
+          nothing, which is exactly what 「still asking」 looks like.
+          A reading that has arrived and says 「nothing here」 must not
+          wear the face of one that has not arrived.
+
+          ⚠️ **No gate reaches this state, and that is a property of the
+          fixture, not an oversight I can fix here.** `dayAxis` ends the
+          axis at the newest row unless the answering machine names a
+          later 「today」 — so on the account road (`today` is `null`
+          there) **every window contains the last row** and this face is
+          unreachable. It needs a subscription whose machine says a
+          today more than a window away from its last row: a fixture
+          with that shape would also move 「7 天窗口 7 天」 and the range
+          readings next to it, so it is one to build deliberately rather
+          than to bolt on. **Until then this is written, not tested.** */}
+      {days.length === 0 ? (
+        <p data-usage-empty className="flex h-full items-center text-sm text-muted-foreground">
+          {gui.usage_window_empty}
+        </p>
+      ) : view === "day" ? (
         <svg
           data-usage-chart="day"
           // **Printed, and it is not decoration**: the bands add up to
@@ -1073,6 +1120,16 @@ function Stats({
               has to be said. `top-plot-off` is the same sentence about
               the same silence. */}
           {off > 0 && <span data-usage-off={off}>{gui.usage_scatter_off(off)}</span>}
+          {/* **Why four columns are missing, said out loud** (2026-09-09).
+              `cache_split: false` takes 读缓存 / 写缓存 / 缓存占比 /
+              缓存复用 out of the table and out of both pickers — and
+              until this line the reader saw them gone and had nothing
+              to tell 「this provider does not report it」 from 「khor did
+              not manage to read it」. **One of those is a fact and the
+              other is a fault.**
+              Same subject as `usage-no-report` and therefore the same
+              word for it: 「这家」. */}
+          {!cacheKnown && <span data-usage-no-cache>{gui.usage_no_cache}</span>}
           <span data-usage-range>
             {days.length > 0 ? gui.usage_range(days[0], days[days.length - 1], days.length) : ""}
           </span>

@@ -4313,6 +4313,12 @@ try {
           // 报 token」 is two sentences run together.
           mute: el.hasAttribute("data-usage-mute") ? (el.querySelector("p:not([data-usage-title])")?.textContent ?? "").trim() : null,
           cols: [...el.querySelectorAll("[data-usage-col]")].map((c) => c.dataset.usageCol),
+          //   **Whether the missing columns are explained**, added
+          //   2026-09-09. Four columns vanishing on one account and not
+          //   another is visible; *why* is not, and 「this provider does
+          //   not report it」 and 「khor could not read it」 are a fact
+          //   and a fault.
+          noCache: (el.querySelector("[data-usage-no-cache]")?.textContent ?? "").trim() || null,
         };
       });
     };
@@ -4324,6 +4330,16 @@ try {
       if (plain.cols?.includes(k)) {
         fail(`acc-capped does not report its cache and the table draws a ${k} column anyway — a figure nobody reported is not a zero`);
       }
+    }
+    //   The two roads' cache answers, and the sentence that tells them
+    //   apart. **Both arms**: the account that states its cache must not
+    //   wear the sentence either, or it says nothing about `cacheKnown`
+    //   and would pass on a page that always printed it.
+    if (plain.noCache === null) {
+      fail(`acc-capped does not report its cache and the figure's foot says nothing about it — a reader sees four columns gone and cannot tell 「这家不报」 from 「khor 没读到」`);
+    }
+    if (itemised.noCache !== null) {
+      fail(`acc-number states its cache and the foot still says ${JSON.stringify(itemised.noCache)} — that sentence is about a source that does not report it`);
     }
     if (!plain.cols?.includes("total")) {
       fail(`probe dead: acc-capped drew no table at all (${JSON.stringify(plain)}), so 「the cache columns are gone」 measured nothing`);
