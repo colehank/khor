@@ -29,6 +29,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
+  fetchUsage,
   pinAccount,
   registerAccount,
   removeAccount,
@@ -37,6 +38,7 @@ import {
   type QuotaAnswer,
   type QuotaCredits,
   type QuotaWindow,
+  type Usage,
 } from "@/api";
 import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
@@ -65,6 +67,7 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
+import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
 import { QUOTA_AXES, axisOf, lasting, until, valueOf } from "@/words";
 
@@ -921,6 +924,12 @@ export function QuotaLanding({
       no round trip. */
   const [editing, setEditing] = useState<Row | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** This machine's own token spend, or `null` for 「not asked yet」.
+      **Fetched when a subscription's detail is opened, never on a
+      beat** — `api`'s `fetchUsage` carries why, and the short of it is
+      that the first pass over the transcripts is 18.5 s. `null` is the
+      state `UsageHalf` draws nothing at all for. */
+  const [usage, setUsage] = useState<Usage | null>(null);
   const hidden = useHidden();
 
   useEffect(() => {
@@ -1343,6 +1352,25 @@ export function QuotaLanding({
   // 「每个窗口各是多少」 in words beside it — one drawing, read twice,
   // instead of a second vocabulary on the second screen.
   const acc = current?.account ?? null;
+  const isSubRow = current?.kind === "sub";
+  // **Asked once, when a subscription card is on screen.** Not on the
+  // page's poll: a tally of every transcript on the machine is not a
+  // thing to run every two seconds for a chart nobody is looking at,
+  // which is exactly what got this call deleted once already.
+  //
+  // Keyed on the row's id rather than on 「is a sub open」 so that
+  // hopping between two subscriptions re-asks; the node's own cache
+  // makes the second ask a directory walk (`Meters::tally`).
+  useEffect(() => {
+    if (!isSubRow) return;
+    let live = true;
+    fetchUsage()
+      .then((u) => live && setUsage(u))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [isSubRow, current?.id]);
   // **By kind, and that is the whole change here.** 「Has an account」
   // used to mean 「is not a subscription」; a registered subscription
   // has one, so asking the old question would draw *both* cards for it
@@ -1557,6 +1585,15 @@ export function QuotaLanding({
           **Nothing was lost with them**: every window is still a line
           over there, with its own name, its own reset and its own
           number, and still a pip on the rim of the dial to the left. */}
+      {/* **The lower half — the same subscription in tokens.** The card
+          above is money and windows; this is what was spent to fill
+          them. It draws nothing while the answer is out and a sentence
+          when there is none, so the seam below never becomes an empty
+          chart (`UsageHalf`). */}
+      {(() => {
+        const u = fromUsage(usage, current.provider);
+        return <UsageHalf rows={u.rows} why={u.why} today={u.today} cacheKnown={u.cacheKnown} source="transcript" />;
+      })()}
     </div>
   );
 
@@ -1703,6 +1740,13 @@ export function QuotaLanding({
         </dl>
       </div>
       <SpendDays reading={acc.reading} mark={markOf(acc.unit)} />
+      {/* **The lower half — what the provider billed in tokens.** Most
+          accounts have no such report and say so rather than drawing an
+          empty chart; see `fromReading`. */}
+      {(() => {
+        const u = fromReading(acc.reading);
+        return <UsageHalf rows={u.rows} why={u.why} today={null} cacheKnown={u.cacheKnown} source="vendor" />;
+      })()}
       {/* ⚠️ **Tombstone: the 撤掉 button left this card on 2026-09-07**
           (「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹 置顶 /
           编辑 / 删除」). It is the row's menu now, beside 置顶 and 编辑,

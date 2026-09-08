@@ -503,6 +503,15 @@ try {
       spent_all_time: null,
       model_days: [],
       log_capped: null,
+      // ⚠️ **Added 2026-09-08, and its absence was a real hole.**
+      // `AccountReading::model_tokens` has been on the wire since
+      // `5aa036b`; this fixture never grew it, so every routed account
+      // reached the page as `undefined` — and `undefined` is not `[]`,
+      // it walks straight through a `.length` the way the block above
+      // says `undefined` walks through `!== null`. Nothing was reading
+      // it until the 额度 card's lower half did, and then it would have
+      // thrown on every account here.
+      model_tokens: [],
       // The three a **subscription's** reading carries (2026-09-07).
       // Spelled out for the reason the block above is: an omitted key
       // reaches the page as `undefined`, and `undefined` is not `null`
@@ -648,6 +657,18 @@ try {
         { at: 1_800_000_000, spent: 4.0 },
         { at: 1_800_086_400, spent: 8.34 },
       ],
+      // **The provider road, with the cache itemised** — the arm that
+      // says the four cache quantities appear when the source states
+      // them. `acc-capped` below is the same road with
+      // `cache_split: false`, and `acc-widest` reports no tokens at
+      // all: three arms, because 「the cache columns are drawn」 and
+      // 「they are not」 and 「there is no chart」 are three different
+      // screens and a fixture with one of them tests nothing.
+      model_tokens: [
+        { at: 1_800_000_000, model: "gpt-5", tokens: { input: 400, cached_input: 900, cache_write: 100, output: 1_600 }, cache_split: true },
+        { at: 1_800_086_400, model: "gpt-5", tokens: { input: 200, cached_input: 500, cache_write: 50, output: 800 }, cache_split: true },
+        { at: 1_800_086_400, model: null, tokens: { input: 10, cached_input: 0, cache_write: 0, output: 40 }, cache_split: true },
+      ],
     }),
     ring("acc-dollar", "vendor2", "claude", {
       spent: 12.34,
@@ -679,6 +700,16 @@ try {
         { at: 1_800_172_800, spent: 5.0 },
       ],
       log_capped: 1000,
+      // **`cache_split: false` is 「those two were not reported」, not
+      // 「they were nought」** (`ModelTokenDay`). new-api's log carries
+      // `prompt_tokens` and `completion_tokens` and nothing else, so
+      // this is what that road really answers — and the four
+      // cache-derived columns must leave the table rather than be
+      // drawn as zeroes.
+      model_tokens: [
+        { at: 1_800_000_000, model: "deepseek-chat", tokens: { input: 300, cached_input: 0, cache_write: 0, output: 700 }, cache_split: false },
+        { at: 1_800_086_400, model: "deepseek-chat", tokens: { input: 150, cached_input: 0, cache_write: 0, output: 350 }, cache_split: false },
+      ],
     }),
     // …and the refused one is carried from a peer, so the read-from
     // line (who read it, how long ago) is on the glass to be measured.
@@ -692,13 +723,136 @@ try {
   await page.route("**/quota_board", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(board) }),
   );
-  // **No `**/usage` route any more, and its absence is not an
-  // oversight.** This used to answer a fortnight of spending because
-  // the wall section 4 was written about only exists at that length.
-  // Nothing in the app asks for it since 2026-08-29 — the network's-now
-  // 今天 line was its last reader — so a route here would be this gate
-  // holding a fixture open for a call that is never made, which is the
-  // kind of scaffolding that later reads as evidence the call exists.
+  // ⚠️ **The `**/usage` route is back, 2026-09-08.** The tombstone that
+  // stood here said its absence was not an oversight — nothing had
+  // asked for it since 2026-08-29, so a fixture would have been
+  // scaffolding for a call nobody makes. **That is no longer true**:
+  // the 额度 detail's lower half asks for it when a subscription's card
+  // opens (`views/UsageHalf`), and the reason the old caller was
+  // deleted (a tally of every transcript, on a two-second heartbeat,
+  // for one line) is answered by *when* it is asked rather than by not
+  // asking.
+  //
+  // **What this fixture is built to tell apart**, each one a way the
+  // half could be wrong while looking right:
+  //
+  //   - `claude-opus-6` **is a model khor has never heard of**, and it
+  //     is deliberately one of the *smallest* here. It must take the
+  //     opus hue at full strength — 「the next free colour」 fails it,
+  //     and so does 「the newest is whichever spent most」, which is
+  //     what the design this was built from actually did.
+  //   - `claude-fable-5` **outspends `claude-fable-5-1`** by an order
+  //     of magnitude, so ordering generations by volume and ordering
+  //     them by name give different answers. Without that gap the two
+  //     rules cannot be told apart.
+  //   - **08-29 is exactly twice 08-28** (14,000 against 7,000), which
+  //     is what makes 「the stack's axis is linear」 measurable as a
+  //     ratio of drawn heights rather than read off an attribute the
+  //     product writes about itself.
+  //   - **09-02 is missing.** A day nobody spent on has no row
+  //     (`UsageDay`), so an axis built from the rows would skip it and
+  //     「7 天」 would quietly mean 「the last seven days that had
+  //     spend」.
+  //   - a `null` model and a one-day `haiku` — **the row a 「top five」
+  //     fold would swallow**, and a folded band is the same screen as a
+  //     model that never ran.
+  //   - ⚠️ **`claude-opus-4-8` runs on 08-30 and on no other day**, so
+  //     it is inside the whole span and outside the seven-day one. That
+  //     is what makes 「switching the window does not recolour」
+  //     falsifiable: the opus family has three generations over the
+  //     whole span and two over the week, so a colour worked out from
+  //     the window's models — the bug the design this was built from
+  //     actually had — moves `claude-opus-5` from one fade to another.
+  //     **The first draft of this fixture put it on 09-06 as well, and
+  //     that made every model present in both windows**: the teardown
+  //     was run and the gate stayed green, because the two arms of the
+  //     comparison could not come out different whatever the code did.
+  // **How much of each model's input came out of a cache**, one
+  // multiple per model so a model's rate is the same on every one of
+  // its days and the aggregate means something.
+  //
+  // ⚠️ **These vary on purpose, and the first draft's did not.** With
+  // one multiple for everybody the cache rate came out 0.833 for every
+  // model — an axis with a single reading, which the ruler answers
+  // `flat` for. **Every axis on the page then chose the same ruler**,
+  // and a fixture like that cannot tell 「the ruler is chosen by
+  // measurement」 from 「it is always this one」 — the machine page's
+  // gate has the same control arm for the same reason. Spread this way
+  // the rate axis lands on a linear ruler (readings 0.60–0.86) while
+  // the token counts land on a log one, so both are reachable in one
+  // run.
+  const cacheK = {
+    "claude-opus-5": 12,
+    "claude-fable-5": 8,
+    "claude-fable-5-1": 10,
+    "claude-opus-4-8": 5,
+    "claude-opus-6": 6,
+    "claude-haiku-4-5-20251001": 4,
+    "": 3,
+  };
+  const usageCell = (day, model, input, output) => ({
+    day,
+    category: "claude",
+    model,
+    tokens: { input, cached_input: input * cacheK[model ?? ""], cache_write: input, output },
+  });
+  const usageModels = [
+    usageCell("2026-08-28", "claude-opus-5", 1_000, 4_000),
+    usageCell("2026-08-28", "claude-fable-5", 500, 1_500),
+    usageCell("2026-08-29", "claude-opus-5", 2_000, 8_000),
+    usageCell("2026-08-29", "claude-fable-5", 1_000, 3_000),
+    usageCell("2026-08-30", "claude-opus-5", 1_000, 3_000),
+    usageCell("2026-08-30", "claude-opus-4-8", 200, 800),
+    usageCell("2026-08-31", "claude-opus-5", 1_500, 2_500),
+    usageCell("2026-09-01", "claude-fable-5", 800, 3_200),
+    usageCell("2026-09-01", null, 100, 400),
+    usageCell("2026-09-03", "claude-opus-5", 600, 1_400),
+    usageCell("2026-09-03", "claude-haiku-4-5-20251001", 10, 40),
+    usageCell("2026-09-04", "claude-opus-5", 900, 2_100),
+    usageCell("2026-09-04", "claude-fable-5-1", 50, 150),
+    usageCell("2026-09-05", "claude-opus-5", 700, 1_300),
+    // **Not equal to `claude-fable-5-1`'s 200.** They tied in the first
+    // draft, which put two dots on one spot — and two points that
+    // cannot be told apart cannot be a control for anything.
+    usageCell("2026-09-05", "claude-opus-6", 30, 120),
+    usageCell("2026-09-06", "claude-opus-5", 400, 600),
+    usageCell("2026-09-06", "claude-opus-6", 40, 90),
+  ];
+  // **A second vendor's rows, which this card must not draw.** The
+  // subscription's half asks for one category; a half that drew
+  // everything would pass every other assertion here.
+  const usageOther = [{ ...usageCell("2026-09-06", "gpt-5", 9_999, 9_999), category: "codex" }];
+  // `days` is the coarser list and it is **not** what the half reads —
+  // it is here because 「models empty beside a non-empty days」 is one
+  // of the three faces, and that state cannot be built without it.
+  const usageAnswer = {
+    days: [...new Set(usageModels.map((m) => m.day))].map((day) => ({
+      day,
+      category: "claude",
+      tokens: { input: 0, cached_input: 0, cache_write: 0, output: 0 },
+    })),
+    unreadable: 0,
+    models: [...usageModels, ...usageOther],
+    today: "2026-09-06",
+  };
+  // **Held, so that 「it has not answered yet」 is a state a probe can
+  // stand in** rather than a race it has to win. The first pass over a
+  // real machine's transcripts is 18.5 s, so this is the ordinary
+  // first sight of the card, not a corner.
+  //
+  // **Every held request is remembered, not just the last one.** An
+  // earlier section can open the subscription's card in passing, and
+  // with a single slot that first request would still be waiting when
+  // the release fires — pending forever, on a route this gate later
+  // asserts about.
+  const usageHold = { on: true, waiting: [], body: usageAnswer };
+  usageHold.release = () => {
+    for (const res of usageHold.waiting.splice(0)) res();
+  };
+  await page.route("**/usage", async (r) => {
+    if (usageHold.on) await new Promise((res) => usageHold.waiting.push(res));
+    await r.fulfill({ contentType: "application/json", body: JSON.stringify(usageHold.body) });
+  });
   // **Three windows, two lengths.** The third is a week limited to one
   // model — the shape the endpoint grew on 2026-09-06 and the parser
   // was dropping — and it is here because the gap between「three in the
@@ -3633,6 +3787,290 @@ try {
       `来源 khor → ${khorOnly.length} / gate → ${gateOnly.length}, ` +
       `groups ${JSON.stringify(byKind)} then ${JSON.stringify(byFrom)}`,
   );
+
+  // ── 8a) the detail's lower half: what was spent, in tokens ────────
+  //
+  // Six things, and each is one of the ways this could be drawn wrong
+  // while looking finished.
+  {
+    const half = "[data-quota-detail] [data-usage-half]";
+    await press('[data-quota-row="sub:local"]');
+    await wait(400);
+
+    //   ① **The empty face is never drawn.** An account whose answer
+    //   has not arrived draws *nothing*: an empty frame is not 「no
+    //   reading」, it is the picture of an account that spent nothing,
+    //   and that is a fact nobody established. The route is held, so
+    //   this is a state to stand in rather than a race to win.
+    if ((await page.locator(half).count()) !== 0) {
+      fail("the usage half drew before its answer arrived — an empty chart is the picture of an account that spent nothing");
+    }
+    usageHold.on = false;
+    usageHold.release();
+    await until(5_000, async () => (await page.locator(`${half} [data-usage-chart]`).count()) > 0);
+    if ((await page.locator(`${half} [data-usage-chart]`).count()) === 0) {
+      fail("probe dead: the usage half never drew after the answer landed, so nothing below was measured");
+    }
+
+    const read = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("[data-quota-detail] [data-usage-half]");
+        if (!el) return null;
+        const day = el.querySelector('[data-usage-chart="day"]');
+        const cols = [...el.querySelectorAll("[data-usage-day]")].map((g) => ({
+          day: g.dataset.usageDay,
+          total: Number(g.dataset.usageDayTotal),
+          // **The drawn heights, not the numbers the product printed
+          // beside them.** What is being checked is that the bands add
+          // up to the column, and only the geometry can say that.
+          heights: [...g.querySelectorAll("[data-usage-band]")].map((r) => Number(r.getAttribute("height"))),
+          bands: [...g.querySelectorAll("[data-usage-band]")].map((r) => r.dataset.usageBand),
+        }));
+        return {
+          scale: day ? day.dataset.usageScale : null,
+          cols,
+          keys: [...el.querySelectorAll("[data-usage-key-model]")].map((k) => k.dataset.usageKeyModel),
+          rows: [...el.querySelectorAll("[data-usage-row]")].map((r) => r.dataset.usageRow),
+          cols_head: [...el.querySelectorAll("[data-usage-col]")].map((c) => c.dataset.usageCol),
+          points: [...el.querySelectorAll("[data-usage-point]")].map((g) => ({
+            model: g.dataset.usagePoint,
+            r: Number(g.dataset.usagePointR),
+          })),
+          rulerX: el.querySelector("[data-usage-scatter]")?.dataset.usageRulerX ?? null,
+          rulerY: el.querySelector("[data-usage-scatter]")?.dataset.usageRulerY ?? null,
+          // The band colours **as the browser resolved them**, beside
+          // the stylesheet's own value for the opus hue — see ④.
+          paint: Object.fromEntries(
+            [...el.querySelectorAll("[data-usage-key-model]")].map((k) => [
+              k.dataset.usageKeyModel,
+              getComputedStyle(k.querySelector("i")).backgroundColor,
+            ]),
+          ),
+          opusHue: (() => {
+            const probe = document.createElement("span");
+            probe.style.background = "var(--model-opus)";
+            document.body.append(probe);
+            const c = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return c;
+          })(),
+        };
+      });
+
+    const all = await read();
+    if (all === null) fail("probe dead: no usage half to read");
+
+    //   ② **Every model gets its own band, and a band never rounds to
+    //   nothing.** A model folded into 「其余」 and a model that never
+    //   ran are the same screen, so the count on the legend, in the
+    //   table and in the drawing all have to be the fixture's own —
+    //   which includes the unnamed row and the model that ran once.
+    const want = [...new Set(usageModels.map((m) => m.model ?? ""))];
+    if (all.keys.length !== want.length || all.rows.length !== want.length) {
+      fail(
+        `the fixture has ${want.length} models (${JSON.stringify(want)}) and the half draws ${all.keys.length} in its legend, ` +
+          `${all.rows.length} in its table — a model folded away and a model that never ran are the same screen`,
+      );
+    }
+    const flat = all.cols.flatMap((c) => c.heights);
+    if (flat.length === 0 || flat.some((h) => !(h > 0))) {
+      fail(`a band was drawn ${Math.min(...flat)} tall — a segment of no height is a model that did not run`);
+    }
+
+    //   ③ **The stack's axis is linear, measured rather than read off
+    //   the product's own label.** The bands are summed to make the
+    //   column, so a bent ruler would draw segments that do not add up
+    //   to the shape they sit inside. 08-29 is exactly twice 08-28 in
+    //   the fixture, so the drawn heights have to be twice as well —
+    //   a square root would put them at √2, which this tolerance
+    //   cannot absorb.
+    const col = (d) => all.cols.find((c) => c.day === d);
+    const tall = col("2026-08-29");
+    const half2 = col("2026-08-28");
+    if (!tall || !half2) {
+      fail(`probe dead: the two days the ratio is taken between are not on the chart (${JSON.stringify(all.cols.map((c) => c.day))})`);
+    } else {
+      const sum = (c) => c.heights.reduce((a, b) => a + b, 0);
+      const drawn = sum(tall) / sum(half2);
+      const stated = tall.total / half2.total;
+      if (Math.abs(drawn - stated) > 0.02) {
+        fail(
+          `08-29 is ${stated.toFixed(2)}× 08-28 in the fixture and ${drawn.toFixed(2)}× on the glass ` +
+            `(${sum(tall).toFixed(1)}px against ${sum(half2).toFixed(1)}px) — the bands no longer add up to the column they are in`,
+        );
+      }
+      if (all.scale !== "linear") fail(`the stacked chart says it is on a ${all.scale} ruler, and a stack has no meaning on one`);
+    }
+    //   **The calendar, not the rows.** 09-02 has no spend and
+    //   therefore no row; an axis built from the rows would skip it,
+    //   and 「7 天」 would silently mean 「the last seven days that had
+    //   spend」.
+    if (!all.cols.some((c) => c.day === "2026-09-02" && c.heights.length === 0)) {
+      fail("09-02 — a day with no spend — is not on the axis as an empty column, so the axis is the rows rather than the calendar");
+    }
+
+    //   ④ **A model khor has never seen lands in the right hue the
+    //   first time it appears.** `claude-opus-6` is not in any list in
+    //   this repo and is one of the smallest readings here, so 「the
+    //   next free colour」 and 「the biggest is the newest」 both fail
+    //   it. Compared against the **stylesheet's** own value for the
+    //   hue, which is a source that does not run through the code
+    //   being tested.
+    if (all.paint["claude-opus-6"] !== all.opusHue) {
+      fail(
+        `claude-opus-6 is painted ${all.paint["claude-opus-6"]} while --model-opus resolves to ${all.opusHue} — ` +
+          `a model this face has never seen did not land in its family's hue`,
+      );
+    }
+    //   …and the arm that says the check above can fail: an older
+    //   generation of the same family must **not** be that colour, or
+    //   「everything opus is the opus hue」 would pass it too.
+    if (all.paint["claude-opus-5"] === all.opusHue) {
+      fail("claude-opus-5 wears the family hue at full strength beside claude-opus-6 — two generations drawn as one band");
+    }
+
+    //   ⑤ **Switching the range decides which days are counted and
+    //   nothing else.** The days two windows share must report the same
+    //   totals to the digit, and a model must not change colour: both
+    //   are recalculations dressed as a filter.
+    await press('[data-usage-chip="usage-window-7"]');
+    await wait(300);
+    const week = await read();
+    // **7 columns, and the 7 is only safe because of how this fixture
+    // is cut.** The axis never starts before the source's first day —
+    // 「no row」 means 「spent nothing」 inside the record and 「nobody
+    // has a reading」 before it — so a window longer than the data
+    // draws fewer columns than it names. This fixture starts on 08-28
+    // and the seven-day window starts on 08-31, so the clamp does not
+    // bite. Move the fixture's first day and this number moves with it.
+    if (week.cols.length !== 7) {
+      fail(`「7 天」 drew ${week.cols.length} columns (${JSON.stringify(week.cols.map((c) => c.day))}) — the window is a number of days`);
+    }
+    for (const c of week.cols) {
+      const was = col(c.day);
+      if (was && was.total !== c.total) {
+        fail(`${c.day} totals ${c.total} in the 7-day window and ${was.total} in the whole — switching the range recalculated something`);
+      }
+    }
+    for (const [m, paint] of Object.entries(week.paint)) {
+      if (all.paint[m] && all.paint[m] !== paint) {
+        fail(`${m} is ${all.paint[m]} over the whole span and ${paint} over seven days — a colour is a fact about a model, not about a window`);
+      }
+    }
+    await press('[data-usage-chip="usage-window-0"]');
+    await wait(300);
+
+    //   ⑥ **The area carries the value, so the radius is its square
+    //   root.** A radius read straight off the reading makes a 4× value
+    //   look 16× big. Measured as the property rather than the formula:
+    //   with a floor at both ends, what has to hold is that the
+    //   **areas** are in the readings' ratio.
+    const back = await read();
+    const R_MIN = 5;
+    const area = (p) => p.r * p.r - R_MIN * R_MIN;
+    const rowOf = (m) => usageModels.filter((x) => (x.model ?? "") === m).reduce((a, x) => a + x.tokens.input + x.tokens.output, 0);
+    const big = back.points.reduce((a, b) => (rowOf(b.model) > rowOf(a.model) ? b : a), back.points[0]);
+    //   ⚠️ **Every dot, and the tolerance is relative.** The first
+    //   draft compared only the largest against the smallest with an
+    //   absolute tolerance of 0.02 — and those two are 0.16% apart on
+    //   this fixture, so **both the right answer and the wrong one land
+    //   inside 0.02 of each other** and the teardown ran green. An
+    //   absolute tolerance on a ratio of a thousandth is an instrument
+    //   with no resolution: it agrees with whatever it is shown.
+    if (!big || rowOf(big.model) === 0 || back.points.length < 3) {
+      fail(`probe dead: the scatter has ${back.points.length} points and its biggest sums to ${big ? rowOf(big.model) : "no"} — no ratio could be taken`);
+    } else {
+      const bigRead = rowOf(big.model);
+      for (const p of back.points) {
+        if (p.model === big.model) continue;
+        const want2 = rowOf(p.model) / bigRead;
+        const got = area(p) / area(big);
+        if (Math.abs(got - want2) > 0.05 * want2 + 1e-9) {
+          fail(
+            `${p.model || "(unnamed)"} is ${(100 * want2).toFixed(3)}% of ${big.model} and its dot's area is ${(100 * got).toFixed(3)}% of it ` +
+              `(radii ${p.r.toFixed(3)} and ${big.r.toFixed(3)}) — a radius read straight off the reading makes 4× look 16×`,
+          );
+        }
+      }
+      //   **The arm that says the loop above has resolution.** It needs
+      //   a dot whose reading is a readable fraction of the biggest —
+      //   on a pair three decades apart the right and the wrong
+      //   encoding are indistinguishable at any sane tolerance. And on
+      //   that dot the radii must **not** themselves be in the
+      //   readings' ratio, which is what the bug would look like.
+      const mid = back.points
+        .filter((p) => p.model !== big.model)
+        .reduce((a, b) => (Math.abs(rowOf(b.model) / bigRead - 0.4) < Math.abs(rowOf(a.model) / bigRead - 0.4) ? b : a));
+      const midWant = rowOf(mid.model) / bigRead;
+      if (!(midWant > 0.05)) {
+        fail(`probe dead: the closest dot to the biggest is ${(100 * midWant).toFixed(2)}% of it, so 「area, not radius」 had nothing it could tell apart`);
+      } else if (Math.abs(mid.r / big.r - midWant) < 0.05 * midWant) {
+        fail(`${mid.model}'s radius is itself the readings' ratio (${(mid.r / big.r).toFixed(3)} against ${midWant.toFixed(3)}) — the area is carrying the square of the value`);
+      }
+    }
+
+    //   **The ruler is printed, and it is chosen rather than fixed.**
+    //   A bent axis that does not say so is a chart that lies quietly.
+    //   But saying so proves nothing on its own: **two different
+    //   rulers have to be reachable in one run**, or what is being
+    //   tested is 「it always answers this one」. The machine page's
+    //   gate carries the same arm, and this fixture is cut to make it
+    //   possible — token counts want a log, the cache rate (0.60–0.86)
+    //   wants a linear.
+    if (!back.rulerX || !back.rulerY) {
+      fail(`the scatter does not say which ruler each axis is on (${back.rulerX} / ${back.rulerY})`);
+    }
+    await page.selectOption('[data-quota-detail] [data-usage-pick="y"]', "rate");
+    await wait(300);
+    const bent = await read();
+    if (bent.rulerY === back.rulerY) {
+      fail(
+        `every axis in this fixture came out on the same ruler (${back.rulerY}) — ` +
+          `「it is chosen by measurement」 was not tested, only 「it is always this one」`,
+      );
+    }
+    await page.selectOption('[data-quota-detail] [data-usage-pick="y"]', "read");
+    await wait(300);
+
+    //   ⑦ **The provider road, and its three faces.** Which columns
+    //   exist is a property of the *source*, and `cache_split: false`
+    //   means those two figures were not reported — **not that they
+    //   were nought**, which a column of zeroes would claim.
+    const colsOf = async (row) => {
+      await press('[data-quota-row="' + row + '"]');
+      await wait(350);
+      return page.evaluate(() => {
+        const el = document.querySelector("[data-quota-detail] [data-usage-half]");
+        if (!el) return { none: true };
+        return {
+          mute: el.hasAttribute("data-usage-mute") ? el.textContent.trim() : null,
+          cols: [...el.querySelectorAll("[data-usage-col]")].map((c) => c.dataset.usageCol),
+        };
+      });
+    };
+    const itemised = await colsOf("acc-number");
+    const plain = await colsOf("acc-capped");
+    const silent = await colsOf("acc-widest");
+    for (const k of ["read", "write", "rate", "reuse"]) {
+      if (!itemised.cols?.includes(k)) fail(`acc-number states its cache and the table has no ${k} column (${JSON.stringify(itemised.cols)})`);
+      if (plain.cols?.includes(k)) {
+        fail(`acc-capped does not report its cache and the table draws a ${k} column anyway — a figure nobody reported is not a zero`);
+      }
+    }
+    if (!plain.cols?.includes("total")) {
+      fail(`probe dead: acc-capped drew no table at all (${JSON.stringify(plain)}), so 「the cache columns are gone」 measured nothing`);
+    }
+    if (!silent.mute) {
+      fail(`acc-widest reports no tokens at all and the half drew ${JSON.stringify(silent)} — a provider that publishes no token report is not an account that spent nothing`);
+    }
+    console.log(
+      `usage half: ${all.keys.length} models over ${all.cols.length} days (7-day window ${week.cols.length}), ` +
+        `stack ${all.scale}, scatter ${back.rulerX}×${back.rulerY} (rate axis ${bent.rulerY}), ` +
+        `cache columns ${itemised.cols.length} vs ${plain.cols.length}, no-report says ${JSON.stringify(silent.mute)}`,
+    );
+    await press('[data-quota-row="sub:local"]');
+    await wait(300);
+  }
 
   // ── 8b) narrow: the open sessions are a count and a switcher ──────
   // The wide strip's other half (`TabStrip`'s head): a phone shows one

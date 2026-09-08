@@ -261,14 +261,30 @@ export const updateAccount = (a: {
       so an empty box travels as absent rather than as `""`. */
   unit?: string;
 }) => call<null>("update_account", a);
-/* **There is no `fetchUsage` any more**, and its absence is the point.
-   It asked the node for every day there has ever been — an eighteen
-   second first pass on the machine answering (`khor_node::usage`) — for
-   one line on one screen, and that line went on 2026-08-29 (「session 页
-   这个今天输出 xx k 也不要」). The op is still there and still answered:
-   `khor usage` is the landing for 花了多少, and the type below is still
-   exported because the bindings barrel exports every binding. Adding
-   this call back means having somewhere to draw it first. */
+/** What this machine's agents have spent, by day, by vendor and by
+    model (`khor_node::usage`).
+ *
+ * ⚠️ **This was deleted on 2026-08-29 and is back on 2026-09-08.** The
+ * tombstone that stood here ended 「adding this call back means having
+ * somewhere to draw it first」, and that is the condition this change
+ * meets rather than waives: the 额度 detail's lower half draws every
+ * day and every model of it (`views/UsageHalf`). What it was removed
+ * for was **one line** — 今天输出 xx k — that the user took off the
+ * session page, and an eighteen-second first pass is not a price worth
+ * paying for one line.
+ *
+ * **So the thing that made it expensive is also the thing that is
+ * different now: when it is called.** It was on the app's heartbeat,
+ * every two seconds beside sessions and devices. It is not any more —
+ * it is asked **once, when a subscription's detail is opened**, and a
+ * poll of it would be that old mistake with a chart in front of it.
+ *
+ * The cost, from `Meters::tally`'s own note: 18.5 s cold, 0.14 s once
+ * the meters have read a tree, and one directory walk when nothing has
+ * changed. **The cold pass is a state a person sits in**, which is why
+ * `UsageHalf` draws nothing at all rather than an empty frame while
+ * this is out. */
+export const fetchUsage = () => call<Usage>("usage");
 /** What this machine's Claude subscription has left — read through the
     login Claude Code already stored here. Never rejects: every way it
     can come back empty is a reason the person might act on, so the

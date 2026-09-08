@@ -307,6 +307,69 @@
      weight, not a second hue. */
   --strain: #7a3b5e;
 
+  /* ── which model spent it ─────────────────────────────────
+   *
+   * **Hue is the family, lightness is the generation.** The names go on
+   * growing (opus-4-6, opus-4-8, opus-5, and whatever is next) while
+   * the supply of distinguishable hues does not, so the two axes are
+   * split: a family gets a hue for good, and the generations inside it
+   * are steps of lightness worked out from that hue. A model this face
+   * has never seen lands in the right hue the first time it appears,
+   * because the band is looked up by the family in its **name** rather
+   * than handed out in arrival order.
+   *
+   * **Only the hue is a token; the generations are computed.**
+   * ⚠️ This block held three fixed steps per family until 2026-09-08,
+   * and three was already wrong when it was written: `fable` has
+   * **four** generations on this machine's own transcripts (fable-5,
+   * fable-5-1, fable-5-1-medium, fable-5-medium), and a fixed ladder
+   * gives the fourth the same colour as the third — two models drawn as
+   * one band, which is the same screen a folded band gives and the
+   * thing the 「every model gets its own band」 rule exists against. So
+   * the steps are `color-mix` toward `--background`, cut by how many
+   * generations that family actually has. See `lib/model-band`, which
+   * also decides the *order* of those steps — from the name, over every
+   * day the account has, so switching the window cannot recolour a
+   * model.
+   *
+   * **Five families is the ceiling, and it was counted rather than
+   * guessed.** khor's seven avatar palettes hold 35 values, 30 of them
+   * with a definite hue — and they cluster, so the most that can be
+   * picked at 40° apart is five or six.
+   *
+   * The two hue constraints, **as measured 2026-09-08 rather than as
+   * remembered** (HSL hue, the same function `avatar.rs` judges by):
+   *
+   *   - apart from each other: the closest pair is fable/haiku at
+   *     **42.4°** here and 44.4° on the dark values. ⚠️ An earlier
+   *     draft of this comment claimed 「at least 44°」 — false for this
+   *     theme by 1.6°, and nothing would ever have gone red over it.
+   *   - away from 待批's cold blue (`#01aac6`): the floor is **35°**,
+   *     and it is not this file's to pick — `crates/core/src/avatar.rs`
+   *     owns it as `BLOCKED_KEEPOUT` with a test
+   *     (`presets_keep_off_the_blocked_hue`), because that mark and
+   *     these bands share a screen and a model wearing the colour of
+   *     「waiting for you」 is a sentence nobody wrote. The closest here
+   *     is spare at **39.6°**.
+   *
+   * So the way past five is not a sixth hue — it is what
+   * `--model-tail` does: everything outside the top few folds into one
+   * neutral band. **Neutral rather than a family colour on purpose**:
+   * that band spans several families at once, and any hue would be
+   * saying something about it that is not true.
+   *
+   * Values are the design's (liquid / monokai / okabe palettes). Each
+   * is the **newest** generation of its family at full strength; older
+   * ones are mixed toward the page from it. */
+  --model-opus: #3f4482;
+  --model-fable: #6f7d47;
+  --model-sonnet: #7d2540;
+  --model-haiku: #a5620f;
+  --model-spare: #08763d;
+  /* The long tail, folded into one band. See above for why it has no
+     hue. */
+  --model-tail: #a1a19c;
+
   /* The day strip's 不知道 — **no signal**, not a seventh word
    * (`khor_core::DayCell`). Deliberately a tint of the page's own ink
    * and not a hue: a hue here would be a colour people learn to read as
@@ -1146,6 +1209,23 @@
     --state-idle: rgba(238, 238, 231, 0.55);
 
     --strain: #d59ab8;
+
+    /* The same five hues lifted for near-black. **Not the light values
+       with a filter on them**: on this theme a band has to sit *above*
+       the card rather than below the paper, so each is lifted on its
+       own and the hue re-checked (closest pair here is fable/haiku at
+       44.4°, closest to 待批 is spare at 39.7°).
+
+       The older generations still mix toward `--background`, which is
+       this theme's near-black — so an older model fades *down* here and
+       *up* on the light theme, and either way 「fainter」 means 「older」
+       against the page it is drawn on. */
+    --model-opus: #7a7ea4;
+    --model-fable: #a8bd6f;
+    --model-sonnet: #a36979;
+    --model-haiku: #e0a15a;
+    --model-spare: #51b983;
+    --model-tail: #6d6d69;
 
     --badge: #d4756b;
     --badge-foreground: #1a1a14;
