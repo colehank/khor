@@ -8,6 +8,7 @@ import { Face, Glyph, type Pip } from "@/components/Face";
 import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
 import { AxisPick } from "@/components/AxisPick";
 import { Panel } from "@/components/Panel";
+import { PLOT, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2201,7 +2202,6 @@ function useAxes() {
  * machine that cannot see cards are different facts.
  */
 function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) => void }) {
-  const box = useRef<HTMLDivElement>(null);
   const axes = useAxes();
   // **The picture is drawn in real pixels, not in a stretched box.**
   // It used to carry `preserveAspectRatio="none"`, which stretches the
@@ -2210,18 +2210,13 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   // radius in pixels; both were false by however much the box was
   // wider than it was tall. So the viewBox tracks the element's own
   // size and one unit is one pixel.
-  const [size, setSize] = useState({ w: 900, h: 170 });
-  useEffect(() => {
-    const node = box.current;
-    if (!node) return;
-    const ro = new ResizeObserver(([e]) =>
-      setSize({ w: Math.max(1, e.contentRect.width), h: Math.max(1, e.contentRect.height) }),
-    );
-    ro.observe(node);
-    return () => ro.disconnect();
-  }, []);
-  const { w: W, h: H } = size;
-  const padL = 46;
+  //
+  // **That decision is `lib/plot` now, and so are the numbers below** —
+  // the 額度 card draws the same kind of figure and was drawing it in a
+  // scaled box with its own constants (2026-09-08:「二者统一出一个绘图
+  // 方法」). What is still this card's own is the box's *height*.
+  const { box, w: W, h: H } = usePlotBox();
+  const padL = PLOT.padL;
   // **The two label strips are paid for here.** Tucking the axis labels
   // inside the drawing put them, at first, exactly where the tick
   // numbers live — 「内存」 straight through 「3.8G」 and 「CPU」 across
@@ -2233,9 +2228,9 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   // 10px at the top for the vertical label, 12 at the bottom for the
   // horizontal one. That is 22px of the drawing's 176, against the
   // 104px those two words cost as rows in the flow.
-  const padB = 34;
-  const padT = 22;
-  const padR = 14;
+  const padB = PLOT.padB;
+  const padT = PLOT.padT;
+  const padR = PLOT.padR;
   const ax = AXES[axes.x];
   const ay = AXES[axes.y];
   // **The rows this picture can actually place.** Both readings, or the
@@ -2260,7 +2255,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   // share the margin (they are readings too), which is what keeps the
   // first tick under the leftmost point instead of eight pixels to its
   // left.
-  const inset = 8;
+  const inset = PLOT.inset;
   const sx = (v: number) => padL + inset + rx.at(v) * (W - padL - padR - 2 * inset);
   const sy = (v: number) => H - padB - inset - ry.at(v) * (H - padT - padB - 2 * inset);
   // **Ticks at round fractions of the real value**, placed where the
@@ -2268,7 +2263,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   // that crowding is itself the evidence that the ruler is not linear.
   // An axis that looks evenly spaced while a transform hides underneath
   // is the one that misleads.
-  const steps = [0, 1, 2, 3, 4, 5, 6].map((k) => k / 6);
+  const steps = tickFractions();
   const xTicks = tickSet(rx, ax, steps);
   const yTicks = tickSet(ry, ay, steps);
   const two = [...vrams].sort((a, b) => b - a).slice(0, 2);
@@ -2314,7 +2309,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           {/* The hit area is 44 tall and the strip is not, so each
               label is centred on its strip and overflows it invisibly.
               What has to land in the strip is the **ink**. */}
-          <span className="pointer-events-auto absolute" style={{ left: padL, top: (padT - 44) / 2 }}>
+          <span className="pointer-events-auto absolute" style={labelSeat("y")}>
             <AxisPick
               which="y"
               chosen={axes.y}
@@ -2324,7 +2319,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               align="left"
             />
           </span>
-          <span className="pointer-events-auto absolute" style={{ right: padR, bottom: (12 - 44) / 2 }}>
+          <span className="pointer-events-auto absolute" style={labelSeat("x")}>
             <AxisPick
               which="x"
               chosen={axes.x}
@@ -2347,7 +2342,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           {xTicks.map(({ v, label }) => (
             <g key={`x${v}`} data-plot-tick-x={Math.round(v * 10) / 10}>
               <line x1={sx(v)} y1={H - padB} x2={sx(v)} y2={H - padB + 3} stroke="currentColor" strokeOpacity={0.3} />
-              <text x={sx(v)} y={H - padB + 14} fontSize={10} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
+              <text x={sx(v)} y={H - padB + 14} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
                 {label}
               </text>
             </g>
@@ -2355,7 +2350,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           {yTicks.map(({ v, label }) => (
             <g key={`y${v}`} data-plot-tick-y={Math.round(v)}>
               <line x1={padL - 3} y1={sy(v)} x2={padL} y2={sy(v)} stroke="currentColor" strokeOpacity={0.3} />
-              <text x={padL - 6} y={sy(v) + 3} fontSize={10} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+              <text x={padL - 6} y={sy(v) + 3} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
                 {label}
               </text>
             </g>

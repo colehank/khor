@@ -4242,12 +4242,67 @@ try {
       }, sel);
     const mine = await cardOf(`${half} [data-usage-chart]`);
     const mineHead = await headOf(`${half} th[data-usage-col] button`);
+    //   **How a figure is drawn, measured off the glass on both pages.**
+    //
+    //   2026-09-08, the user: 「x和y的label和机器对不上啊,位置、样式.
+    //   …二者统一出一个绘图方法,包括样式、字号等.」 Both pages already
+    //   used the same *control* (`components/AxisPick`); what disagreed
+    //   was the coordinate system it was placed into — one figure was
+    //   drawn at one unit per pixel, the other into a scaled `viewBox`,
+    //   so the second had to approximate the first's pixel offsets as
+    //   percentages (`6.59%` is `58 / 880`).
+    //
+    //   ⚠️ **What this can and cannot prove.** It compares the two
+    //   figures with each other, so **editing `lib/plot` moves both and
+    //   stays green** — which is right, that is an intended change, not
+    //   a regression. What it catches is the thing that actually went
+    //   wrong: **one page computing its own**. The teardown for 「one
+    //   place decides」 is therefore to give one page its own number and
+    //   watch this go red, not to edit the shared one.
+    const drawnAt = (svg, tickGroup, tickText, pickSel) =>
+      page.evaluate(
+        ([svgSel, group, word, pick]) => {
+          const el = document.querySelector(svgSel);
+          if (!el) return null;
+          const frame = el.getBoundingClientRect();
+          const ticks = [...document.querySelectorAll(group)];
+          const first = document.querySelector(word);
+          const label = document.querySelector(pick);
+          return {
+            // The tick word's ink size, and where its gutter ends —
+            // both are what the reader sees, not what was imported.
+            font: first ? getComputedStyle(first).fontSize : null,
+            gutter: first ? +(first.getBoundingClientRect().right - frame.left).toFixed(1) : null,
+            ticks: ticks.length,
+            // The axis label's seat, relative to the drawing's own box.
+            label: label
+              ? {
+                  x: +(label.getBoundingClientRect().left - frame.left).toFixed(1),
+                  y: +(label.getBoundingClientRect().top - frame.top).toFixed(1),
+                }
+              : null,
+          };
+        },
+        [svg, tickGroup, tickText, pickSel],
+      );
+    const drawnMine = await drawnAt(
+      `${half} [data-usage-scatter]`,
+      `${half} [data-usage-tick-x]`,
+      `${half} [data-usage-tick-y] text`,
+      `${half} [data-plot-pick="y"]`,
+    );
     await open("devices");
     await press("[data-list] [data-row-open]");
     await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) > 0);
     await wait(400);
     const theirs = await cardOf("[data-machine-card] [data-top-plot]");
     const theirsHead = await headOf("[data-machine-card] [data-top-head] button");
+    const drawnTheirs = await drawnAt(
+      "[data-machine-card] [data-plot-svg]",
+      "[data-machine-card] [data-plot-tick-x]",
+      "[data-machine-card] [data-plot-tick-y] text",
+      '[data-machine-card] [data-plot-pick="y"]',
+    );
     if (!mine || !theirs || mineHead === null || theirsHead === null) {
       fail(
         `probe dead: cards ${JSON.stringify([mine, theirs])} heads ${JSON.stringify([mineHead, theirsHead])} — ` +
@@ -4273,6 +4328,36 @@ try {
         fail(`a column head is ${mineHead} tall on the 額度 card and ${theirsHead} on the machine card — one table, two rows of controls`);
       }
       console.log(`one product: card ${JSON.stringify(theirs)}, column head ${theirsHead} on both`);
+    }
+    //   …and the drawing itself, on the same run.
+    if (!drawnMine || !drawnTheirs) {
+      fail(`probe dead: one of the two figures was not found (${JSON.stringify([drawnMine, drawnTheirs])}), so 「one drawing method」 compared nothing`);
+    } else if (!(drawnTheirs.ticks >= 2) || !drawnTheirs.font || !drawnTheirs.label) {
+      // **The arm this repo has already been bitten by**: two figures
+      // that both drew nothing agree perfectly. The reference has to be
+      // real before the comparison means anything.
+      fail(
+        `the machine card's figure reads ${JSON.stringify(drawnTheirs)} — a reference with no ticks, no ink and no label ` +
+          `makes every comparison below pass by agreeing about nothing`,
+      );
+    } else {
+      for (const [k, mineV, theirsV] of [
+        ["tick ink", drawnMine.font, drawnTheirs.font],
+        ["tick count", drawnMine.ticks, drawnTheirs.ticks],
+        ["y-tick gutter", drawnMine.gutter, drawnTheirs.gutter],
+        ["y label x", drawnMine.label?.x, drawnTheirs.label?.x],
+        ["y label y", drawnMine.label?.y, drawnTheirs.label?.y],
+      ]) {
+        const same = typeof mineV === "number" && typeof theirsV === "number" ? Math.abs(mineV - theirsV) <= 0.6 : mineV === theirsV;
+        if (!same) {
+          fail(
+            `the two figures disagree about ${k}: 額度 ${JSON.stringify(mineV)}, machine ${JSON.stringify(theirsV)} — ` +
+              `**both draw through \`lib/plot\`; a number that differs is a page computing its own.** ` +
+              `If the drawing method is meant to change, change the module and both move together.`,
+          );
+        }
+      }
+      console.log(`one drawing: ${JSON.stringify(drawnTheirs)} on both figures`);
     }
     await open("quota");
     await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);

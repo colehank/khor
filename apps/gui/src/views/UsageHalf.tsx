@@ -54,6 +54,7 @@ import type { AccountReading } from "@/gen/bindings/AccountReading";
 import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
 import { AxisPick } from "@/components/AxisPick";
+import { PLOT, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
 import { Panel } from "@/components/Panel";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
@@ -272,7 +273,7 @@ function aggregate(rows: UsageRow[], days: string[], cacheKnown: boolean): Agg[]
  * and on an axis with decimals two ticks under one label is a broken
  * formatter it is meant to expose rather than hide.
  */
-const steps = (r: Ruler): number[] => (r.kind === "flat" ? [0.5] : [0, 0.25, 0.5, 0.75, 1]);
+const steps = (r: Ruler): number[] => (r.kind === "flat" ? [0.5] : tickFractions());
 
 const RULER_WORD: Record<Ruler["kind"], () => string> = {
   linear: () => gui.usage_ruler_linear,
@@ -397,8 +398,6 @@ export function UsageHalf({
   );
 }
 
-const W = 880;
-const TREND_H = 200;
 /** The machine day strip draws its hairlines at 0.6 in ink; a coloured
     line needs about 1.8× that to read as the same weight
     (`day/day-core.js`). */
@@ -459,13 +458,18 @@ function Trend({
   const live = totals.filter((v) => v > 0).sort((a, b) => a - b);
   const median = live.length > 2 ? live[live.length >> 1] : null;
 
-  const pad = { l: 46, r: 12, t: 12, b: 20 };
-  const iw = W - pad.l - pad.r;
-  const ih = TREND_H - pad.t - pad.b;
-  const y = (v: number) => pad.t + ih - (ih * v) / peak;
+  // **The same drawing method the scatter uses** (`lib/plot`): one unit
+  // is one pixel, and the padding, tick ink and tick words are the
+  // machine card's. This chart has no counterpart over there, but it
+  // sits beside one that does — two figures on one card drawn to two
+  // conventions is the same complaint one screen smaller.
+  const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 200 });
+  const iw = W - PLOT.padL - PLOT.padR;
+  const ih = H - PLOT.padT - PLOT.padB;
+  const y = (v: number) => PLOT.padT + ih - (ih * v) / peak;
   const stepW = iw / Math.max(days.length, 1);
   const bw = Math.min(34, Math.max(2, stepW * 0.74));
-  const cx = (i: number) => pad.l + stepW * (i + 0.5);
+  const cx = (i: number) => PLOT.padL + stepW * (i + 0.5);
   const busiest = totals.reduce((a, v, i) => (v > totals[a] ? i : a), 0);
 
   const modelRuler = ruler(agg.map((r) => r.input + r.output));
@@ -483,16 +487,11 @@ function Trend({
           that axis is**, and the window is **how far it reaches**. So
           they sit on it, at its two ends, in the same control the
           machine card's axes wear (`components/AxisPick`). */}
-      {/* The legend is the same list the table is, in the same order, so
-          a colour looked up in one place means the same in the other. */}
-      <ul data-usage-key className="flex flex-wrap gap-x-3 gap-y-0.5 text-aux text-muted-foreground">
-        {agg.map((r) => (
-          <li key={String(r.model)} data-usage-key-model={r.model ?? ""} className="flex items-center gap-1.5">
-            <i className="size-2 rounded-[2px]" style={{ background: bands.get(r.model) }} />
-            {r.word}
-          </li>
-        ))}
-      </ul>
+      {/* **The box the figure is measured into.** Its height is this
+          page's own — a stack of ten days needs less air than a scatter
+          of labelled models — while everything inside it is
+          `lib/plot`'s. */}
+      <div ref={canvas} className="relative h-52 w-full">
       {view === "day" ? (
         <svg
           data-usage-chart="day"
@@ -501,13 +500,15 @@ function Trend({
           // allowed to be anything else, and a gate reads it here.
           data-usage-scale="linear"
           data-usage-peak={peak}
-          viewBox={`0 0 ${W} ${TREND_H}`}
-          className="h-auto w-full overflow-visible text-foreground"
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          className="overflow-visible text-foreground"
         >
           {[0, 1, 2, 3].map((k) => (
             <g key={k}>
-              <line x1={pad.l} x2={W - pad.r} y1={y((peak * k) / 3)} y2={y((peak * k) / 3)} stroke="currentColor" strokeOpacity={0.1} strokeWidth={0.8} />
-              <text x={pad.l - 6} y={y((peak * k) / 3) + 3} fontSize={8} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+              <line x1={PLOT.padL} x2={W - PLOT.padR} y1={y((peak * k) / 3)} y2={y((peak * k) / 3)} stroke="currentColor" strokeOpacity={PLOT.frameInk} />
+              <text x={PLOT.padL - 6} y={y((peak * k) / 3) + 3} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
                 {k === 0 ? "0" : count((peak * k) / 3)}
               </text>
             </g>
@@ -552,15 +553,15 @@ function Trend({
           })}
           {days.map((d, i) =>
             i % Math.max(1, Math.ceil(days.length / 6)) === 0 || i === days.length - 1 ? (
-              <text key={d} x={cx(i)} y={TREND_H - 6} fontSize={7.5} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
+              <text key={d} x={cx(i)} y={H - 6} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
                 {d.slice(5)}
               </text>
             ) : null,
           )}
           {median !== null && (
             <g data-usage-median={median}>
-              <line x1={pad.l} x2={W - pad.r} y1={y(median)} y2={y(median)} stroke="currentColor" strokeOpacity={0.45} strokeWidth={0.9} strokeDasharray="4 3" />
-              <text x={W - pad.r} y={y(median) - 4} fontSize={8} textAnchor="end" fill="currentColor" fillOpacity={0.6}>
+              <line x1={PLOT.padL} x2={W - PLOT.padR} y1={y(median)} y2={y(median)} stroke="currentColor" strokeOpacity={0.45} strokeWidth={0.9} strokeDasharray="4 3" />
+              <text x={W - PLOT.padR} y={y(median) - 4} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={0.6}>
                 {gui.usage_median(count(median))}
               </text>
             </g>
@@ -586,29 +587,31 @@ function Trend({
         <svg
           data-usage-chart="model"
           data-usage-scale={modelRuler.kind}
-          viewBox={`0 0 ${W} ${TREND_H}`}
-          className="h-auto w-full overflow-visible text-foreground"
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          height={H}
+          className="overflow-visible text-foreground"
         >
           {tickSet(modelRuler, { tick: count }, steps(modelRuler)).map(({ v, label }) => (
             <g key={v}>
-              <line x1={pad.l} x2={W - pad.r} y1={pad.t + ih - ih * modelRuler.at(v)} y2={pad.t + ih - ih * modelRuler.at(v)} stroke="currentColor" strokeOpacity={0.1} strokeWidth={0.8} />
-              <text x={pad.l - 6} y={pad.t + ih - ih * modelRuler.at(v) + 3} fontSize={8} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+              <line x1={PLOT.padL} x2={W - PLOT.padR} y1={PLOT.padT + ih - ih * modelRuler.at(v)} y2={PLOT.padT + ih - ih * modelRuler.at(v)} stroke="currentColor" strokeOpacity={PLOT.frameInk} />
+              <text x={PLOT.padL - 6} y={PLOT.padT + ih - ih * modelRuler.at(v) + 3} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
                 {label}
               </text>
             </g>
           ))}
           {agg.map((r, k) => {
             const step2 = iw / agg.length;
-            const bx = pad.l + step2 * (k + 0.5);
+            const bx = PLOT.padL + step2 * (k + 0.5);
             const v = r.input + r.output;
-            const top = pad.t + ih - ih * modelRuler.at(v);
+            const top = PLOT.padT + ih - ih * modelRuler.at(v);
             return (
               <g key={String(r.model)} data-usage-bar={r.model ?? ""} data-usage-bar-value={v}>
-                <rect x={bx - Math.min(46, step2 * 0.62) / 2} y={top} width={Math.min(46, step2 * 0.62)} height={Math.max(pad.t + ih - top, 0)} fill={bands.get(r.model)} rx={2} />
-                <text x={bx} y={pad.t + ih + 12} fontSize={7.5} textAnchor="middle" fill="currentColor" fillOpacity={0.6}>
+                <rect x={bx - Math.min(46, step2 * 0.62) / 2} y={top} width={Math.min(46, step2 * 0.62)} height={Math.max(PLOT.padT + ih - top, 0)} fill={bands.get(r.model)} rx={2} />
+                <text x={bx} y={PLOT.padT + ih + 12} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={0.6}>
                   {r.word.length > 13 ? `${r.word.slice(0, 12)}…` : r.word}
                 </text>
-                <text x={bx} y={top - 4} fontSize={8} fontWeight={700} textAnchor="middle" fill="currentColor">
+                <text x={bx} y={top - 4} fontSize={PLOT.tick} fontWeight={700} textAnchor="middle" fill="currentColor">
                   {count(v)}
                 </text>
               </g>
@@ -617,11 +620,12 @@ function Trend({
           {/* **A bent axis that does not say so is a chart that lies
               quietly.** The day view has no such line because it cannot
               bend; this one can, so it says which ruler it is on. */}
-          <text x={W - pad.r} y={TREND_H - 2} fontSize={7.5} fontWeight={700} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+          <text x={W - PLOT.padR} y={H - 2} fontSize={PLOT.tick} fontWeight={700} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
             {RULER_WORD[modelRuler.kind]()}
           </text>
         </svg>
       )}
+      </div>
       {/* **The x axis, and its two controls sitting on it** — the view
           at the end the axis starts from, the window at the end it
           reaches. Both are the machine card's `AxisPick`: a word with a
@@ -648,7 +652,25 @@ function Trend({
           align="right"
         />
       </div>
-      <p className="text-aux text-muted-foreground">{gui.usage_trend_note}</p>
+      {/* **The legend sits under the drawing, not over it** (2026-09-08,
+          the user: 「模型 legend 写在柱状图的下方」). It is the same list
+          the table is, in the same order, so a colour looked up in one
+          place means the same in the other — and under the figure it is
+          read *after* the shape rather than as a preamble to it.
+          **Below the axis row on purpose**: that row is the x axis, and
+          an axis belongs against the drawing it measures.
+
+          ⚠️ **Tombstone: the sentence 「柱高是当天的输入加输出,柱里的
+          分段是各个模型」 was here and is gone** (2026-09-08, the user
+          did not want it). Its key went with it — see `zh.toml`. */}
+      <ul data-usage-key className="flex flex-wrap gap-x-3 gap-y-0.5 text-aux text-muted-foreground">
+        {agg.map((r) => (
+          <li key={String(r.model)} data-usage-key-model={r.model ?? ""} className="flex items-center gap-1.5">
+            <i className="size-2 rounded-[2px]" style={{ background: bands.get(r.model) }} />
+            {r.word}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -661,7 +683,6 @@ function Trend({
    surface, and this card had no such box before.
    The controls did not go, they moved onto the things they control. */
 
-const SCAT_H = 280;
 const R_MIN = 5;
 const R_MAX = 19;
 /**
@@ -764,11 +785,16 @@ function Stats({
   const rx = ruler(pts.map((p) => p.x));
   const ry = ruler(pts.map((p) => p.y));
   const zmax = Math.max(...pts.map((p) => (Number.isFinite(p.z) ? p.z : 0)), 0);
-  const pad = { l: 58, r: 18, t: 22, b: 34 };
-  const iw = W - pad.l - pad.r;
-  const ih = SCAT_H - pad.t - pad.b;
-  const X = (v: number) => pad.l + iw * rx.at(v);
-  const Y = (v: number) => pad.t + ih - ih * ry.at(v);
+  // **One unit is one pixel here too, since 2026-09-08.** This figure
+  // was drawn into a scaled `viewBox`, which is why its axis labels sat
+  // at `6.59%` and `2.05%` — a pixel offset divided by a viewBox width,
+  // because on a scaling canvas a pixel means nothing. The geometry is
+  // `lib/plot`'s now, and it is the machine card's.
+  const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 260 });
+  const iw = W - PLOT.padL - PLOT.padR - 2 * PLOT.inset;
+  const ih = H - PLOT.padT - PLOT.padB - 2 * PLOT.inset;
+  const X = (v: number) => PLOT.padL + PLOT.inset + iw * rx.at(v);
+  const Y = (v: number) => H - PLOT.padB - PLOT.inset - ih * ry.at(v);
 
   const cols: { key: string; word: string; of?: (r: Agg) => number; text?: (r: Agg) => string }[] = [
     { key: "model", word: gui.accounts_models, text: (r) => r.word },
@@ -834,14 +860,14 @@ function Stats({
           The window this covers moved with them: it is printed at the
           figure's foot, where it is a fact about the drawing rather
           than a title over it. */}
-      <div className="relative">
+      <div ref={canvas} className="relative h-64 w-full">
         {/* **The two quantities, each printed on its own axis, each of
             them the control that changes it** — `components/AxisPick`,
             the machine card's own. Tucked into the two corners a
             scatter is least likely to put a point, which is also where
             the ruler words already were. */}
         <span className="pointer-events-none absolute inset-0">
-          <span className="pointer-events-auto absolute" style={{ left: "6.59%", top: 0 }}>
+          <span className="pointer-events-auto absolute" style={labelSeat("y")}>
             <AxisPick
               which="y"
               chosen={axes.y}
@@ -851,7 +877,7 @@ function Stats({
               align="left"
             />
           </span>
-          <span className="pointer-events-auto absolute" style={{ right: "2.05%", bottom: "-14px" }}>
+          <span className="pointer-events-auto absolute" style={labelSeat("x")}>
             <AxisPick
               which="x"
               chosen={axes.x}
@@ -867,20 +893,22 @@ function Stats({
         data-usage-ruler-x={rx.kind}
         data-usage-ruler-y={ry.kind}
         data-usage-scatter-off={off}
-        viewBox={`0 0 ${W} ${SCAT_H}`}
-        className="h-auto w-full overflow-visible text-foreground"
+        viewBox={`0 0 ${W} ${H}`}
+        width={W}
+        height={H}
+        className="overflow-visible text-foreground"
       >
         {tickSet(ry, ay, steps(ry)).map(({ v, label }) => (
           <g key={`y${v}`} data-usage-tick-y={v}>
-            <line x1={pad.l} x2={W - pad.r} y1={Y(v)} y2={Y(v)} stroke="currentColor" strokeOpacity={0.1} strokeWidth={0.8} />
-            <text x={pad.l - 7} y={Y(v) + 3} fontSize={8} textAnchor="end" fill="currentColor" fillOpacity={0.5}>
+            <line x1={PLOT.padL} x2={W - PLOT.padR} y1={Y(v)} y2={Y(v)} stroke="currentColor" strokeOpacity={PLOT.frameInk} />
+            <text x={PLOT.padL - 6} y={Y(v) + 3} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
               {label}
             </text>
           </g>
         ))}
         {tickSet(rx, ax, steps(rx)).map(({ v, label }) => (
           <g key={`x${v}`} data-usage-tick-x={v}>
-            <text x={X(v)} y={SCAT_H - 18} fontSize={8} textAnchor="middle" fill="currentColor" fillOpacity={0.5}>
+            <text x={X(v)} y={H - PLOT.padB + 14} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
               {label}
             </text>
           </g>
@@ -892,7 +920,7 @@ function Stats({
           .map((p) => {
             const on = hot?.model === (p.r.model ?? "");
             const r = radius(Number.isFinite(p.z) ? p.z : 0, zmax);
-            const berthed = berth(X(p.x), Y(p.y), r, p.r.word.length * 5.1 + 2, taken, W, SCAT_H - 16);
+            const berthed = berth(X(p.x), Y(p.y), r, p.r.word.length * 5.1 + 2, taken, W, H - 16);
             return (
               // **It says it is a target**, the way the machine card's
               // points do: a role and a name, so a reader who cannot
