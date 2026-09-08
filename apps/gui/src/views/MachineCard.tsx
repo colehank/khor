@@ -6,7 +6,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { hugRatio } from "@/components/Face";
-import { RING_SIZE_CARD, RING_STROKE_CARD } from "@/components/Ring";
+import { RING_SIZE_CARD, RING_STROKE_CARD, dialFor } from "@/components/Ring";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { Panel } from "@/components/Panel";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox } from "@/lib/plot";
@@ -591,22 +591,76 @@ function Readings({
   const cpuPeak = day ? peak(day.buckets) : null;
   const memPeak = day ? peak(day.mem) : null;
   const left = (fill: { used: number; total: number }) => cli.fill_left(bytes(Math.max(0, fill.total - fill.used)));
+  //   `--gap-group`, and ⚠️ **this mirror is deliberately not gated,
+  //   because nothing drawn depends on it**: the gap a reader sees is
+  //   applied by the `gap-group` class, and this number only decides
+  //   *where* the four-to-two breakpoint falls. If the token moved to
+  //   20, that breakpoint would shift by a few pixels and every dial
+  //   would still be drawn correctly — which is the opposite of the
+  //   mirrored constants this repo makes gates for.
+  const GAP_GROUP = 18;
+  //   **How many dials fit on a line, and how big each one is** —
+  //   2026-09-09, the user:「机器的环,要铺平宽度,现在左右空太多。窄屏
+  //   不允许一行只有一个环。我们一共四个,窄屏就一行两个」.
+  //
+  //   ⚠️ **Declared, not left to `flex-wrap`.** Wrapping puts as many
+  //   as fit on each line, so a row between three dials wide and four
+  //   wide lands on **3 + 1** — one dial alone on the second line, the
+  //   exact thing the ruling forbids. Measured 2026-09-09 before this
+  //   changed: at 900 and 560 viewport (rows 490 and 502) the disk dial
+  //   sat by itself. Four or two, decided here, and no other count can
+  //   come out.
+  //
+  //   ⚠️ **The row's own width, never the viewport's** — and that is
+  //   measured, not preferred: the row is 642 wide on a 700 viewport
+  //   and **490 on a 900 one**, because the list pane appears in
+  //   between. A `md:` breakpoint would pick four columns for the
+  //   narrower row of the two.
+  //
+  //   The floor a column may not go under is the box the old fixed size
+  //   drew (123.5 = `RING_SIZE_CARD` hugged), so 「four across」 never
+  //   makes a dial smaller than it used to be; below that it is two.
+  const { box: vitalsBox, w: vitalsW } = usePlotBox({ w: 990, h: 106 });
+  const dialFloor = RING_SIZE_CARD * hugRatio(RING_SIZE_CARD, RING_STROKE_CARD);
+  const cols = (vitalsW - 3 * GAP_GROUP) / 4 >= dialFloor ? 4 : 2;
+  //   **A ceiling, and it is a judgment rather than a reading**: past
+  //   this a dial stops being a dial and becomes the card. It is not
+  //   reached on any posture measured (the widest, 1400, gives 234).
+  const DIAL_BOX_MAX = 260;
+  const cell = Math.min(DIAL_BOX_MAX, (vitalsW - (cols - 1) * GAP_GROUP) / cols);
+  const dial = dialFor(cell);
   return (
     <Panel>
-      {/* ⚠️ **`justify-center`, not `justify-around`, since 2026-09-08.**
-          Measured that day at 1400 wide: the row is 990 across, four
-          dials are 563.2 of it, and `justify-around` **spread the
-          remaining 426.8 as air** — 109.7px between boxes, which is
-          190.5 between one arc's edge and the next when the boxes' own
-          slack is counted, against an arc 60 wide (the user: 「环的间距
-          也太远了」).
+      {/* ⚠️ **A grid of a declared column count, since 2026-09-09** —
+          and the two rulings it replaces are worth keeping, because
+          each one was right about the row it was looking at.
 
-          **And the direction is the opposite of the obvious one**: a
-          narrower dial gives `justify-around` *more* to spread, so
-          shrinking the boxes would have widened the gaps. The lever is
-          the distribution, not the box. Centred with `--gap-group`, the
-          gap is a stated number instead of a remainder. */}
-      <div data-vitals className="flex flex-wrap justify-center gap-group">
+          First it was `justify-around`, which spread the row's leftover
+          as air: measured 2026-09-08 at 1400, four 123.5 boxes in a 990
+          row put 109.7 between boxes — about 190 between one arc's edge
+          and the next — against an arc 60 wide (the user:「环的间距也
+          太远了」). **The direction was the opposite of the obvious
+          one**: a narrower dial gives `justify-around` more to spread,
+          so shrinking the boxes would have widened the gaps.
+
+          Then it was `justify-center gap-group`, which made the gap a
+          stated number instead of a remainder — and left the leftover
+          at the two ends: **221 of air on each side at 1400** (the
+          user, 2026-09-09:「要铺平宽度,现在左右空太多」).
+
+          Now the four divide the row and fill their share, so there is
+          no leftover to place anywhere. `flex-wrap` had to go with it:
+          it packs as many as fit per line, which on a middling row is
+          **3 + 1** — and 「窄屏不允许一行只有一个环」 forbids exactly
+          that. The count is decided above and the gate holds it at six
+          widths. */}
+      <div
+        ref={vitalsBox}
+        data-vitals
+        data-vitals-cols={cols}
+        className="grid gap-group"
+        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+      >
         <Dial
           dial="cpu"
           open={open === "cpu"}
@@ -616,6 +670,8 @@ function Readings({
           fraction={v.cpu_pct / 100}
           sentence={cli.vitals_cpu(Math.round(v.cpu_pct), v.cores)}
           facts={[cli.cores_sub(v.cores), cpuPeak !== null ? cli.day_peak(`${cpuPeak}%`) : null]}
+          size={dial.size}
+          stroke={dial.stroke}
         />
         {cards.length > 0 && gpuMean !== null ? (
           <Dial
@@ -629,6 +685,8 @@ function Readings({
             facts={[
               gpuMem ? cli.vitals_vram(bytes(gpuMem.used), bytes(gpuMem.total)) : cli.gpu_sub_nomem(cards.length),
             ]}
+            size={dial.size}
+            stroke={dial.stroke}
           />
         ) : (
           v.gpu && (
@@ -657,6 +715,8 @@ function Readings({
                   cli.gpu_sub_nomem(v.gpu.cards)
                 ),
               ]}
+              size={dial.size}
+              stroke={dial.stroke}
             />
           )
         )}
@@ -670,6 +730,8 @@ function Readings({
           strain={row.vitals.mem_strain}
           sentence={cli.vitals_mem(bytes(v.mem.used), bytes(v.mem.total))}
           facts={[left(v.mem), memPeak !== null ? cli.day_peak(`${memPeak}%`) : null]}
+          size={dial.size}
+          stroke={dial.stroke}
         />
         <Dial
           dial="disk"
@@ -688,6 +750,8 @@ function Readings({
               : cli.vitals_disk_unknown
           }
           facts={[disk ? left(disk) : null]}
+          size={dial.size}
+          stroke={dial.stroke}
         />
       </div>
       {/* **One slot, one height, two things it can show.** See
@@ -3185,6 +3249,8 @@ function Dial({
   strain,
   unknown,
   pips,
+  size,
+  stroke,
 }: {
   /** **Which reading this dial is, for anything that has to find it.**
       Separate from `name`, which is the key on the wire and is absent
@@ -3194,6 +3260,12 @@ function Dial({
   dial: string;
   /** Whether this dial's drawer is the one showing. */
   open: boolean;
+  /** **How big to draw, decided by the row and not by this dial**
+      (2026-09-09:「要铺平宽度」). Handed down rather than read from a
+      constant so that four dials on one row cannot disagree about it —
+      `Vitals` divides the row and every dial gets the same share. */
+  size: number;
+  stroke: number;
   onOpen: (dial: string) => void;
   /** The reading's key on the wire, or none for a dial that is a
       picture of readings counted elsewhere (the GPU and disk dials
@@ -3285,8 +3357,8 @@ function Dial({
               strain={strain}
               pips={pips}
               unknown={unknown}
-              size={RING_SIZE_CARD}
-              stroke={RING_STROKE_CARD}
+              size={size}
+              stroke={stroke}
               crop
               /* **And cut sideways too** (`hugRatio`, 2026-09-08). The
                  default box is `size × BOX_RATIO` — 1.6, which left
@@ -3299,7 +3371,7 @@ function Dial({
                  **The default is not touched**: it decides the box for
                  every caller that does not say, and that is a set we
                  cannot see. This one says. */
-              ratio={hugRatio(RING_SIZE_CARD, RING_STROKE_CARD)}
+              ratio={hugRatio(size, stroke)}
             >
               {value === null || unknown ? "—" : value}
             </Face>

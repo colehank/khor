@@ -20,6 +20,8 @@
 //
 // The centre of a ring is the caller's: a number, a word, or nothing.
 
+import { hugRatio } from "@/components/Face";
+
 /**
  * How opaque the **unfilled** part of a track is.
  *
@@ -123,9 +125,56 @@ export const RING_SIZE = 64;
  * cannot hold the widest reading is a red rather than a thing somebody
  * notices on a busy machine. **If this constant is ever lowered, that
  * is the gate to read first.**
+ *
+ * ⚠️ **Since 2026-09-09 nothing is drawn at this size — it is the
+ * reference and the floor** (`dialFor` below, and the machine card's
+ * column count). The reading above still holds for every dial on that
+ * card **because none of them is ever drawn smaller than this**: four
+ * across is only chosen while a column is at least this wide, and two
+ * across is wider still. A change that lets a dial go under it puts the
+ * 「100% does not fit」 overflow back, and the gate named above is
+ * still the one to read.
  */
 export const RING_SIZE_CARD = 132;
 export const RING_STROKE_CARD = 4;
+
+/**
+ * **The dial that exactly fills a box this wide.**
+ *
+ * 2026-09-09, the user:「机器的环,要铺平宽度,现在左右空太多」— so the
+ * four dials divide the row between them and each one fills its share,
+ * and the size stops being a constant. `RING_SIZE_CARD` keeps its job:
+ * it is the **reference** this scales from (and the floor the column
+ * count is decided against), not a diameter anybody draws any more.
+ *
+ * **Both numbers scale together**, which is what makes this invertible
+ * in one line: with the stroke held proportional to the size, the
+ * hugged box width is a straight line through the origin, so the size
+ * for a wanted box is one ratio. Holding the stroke fixed instead would
+ * make a 250-wide dial wear the same 4px arc a 132-wide one does — the
+ * same drawing at two thicknesses, which is the sort of thing that
+ * reads as 「the big one is unfinished」.
+ *
+ * ⚠️ **The box is wider than the arc, and it stays that way** — the
+ * boxes come out equal while the ink does not, because `hugRatio`
+ * reserves a pip's room whether or not this dial has pips (`Face` says
+ * why: without it, four boxes of different widths put four arcs at four
+ * different offsets). Enlarging makes that difference **more visible**,
+ * not new: measured 2026-09-08 at the old fixed size, the arcs were
+ * 90 / 111.7 / 90 / 101 across inside four equal 123.5 boxes. **It is
+ * the same trade at a bigger scale, not a regression** — do not answer
+ * it by cutting the pip room.
+ */
+export function dialFor(box: number): { size: number; stroke: number } {
+  const strokeAt = (size: number) => (RING_STROKE_CARD * size) / RING_SIZE_CARD;
+  const boxAt = (size: number) => size * hugRatio(size, strokeAt(size));
+  //   One probe is enough: `boxAt` is linear through the origin once
+  //   `k ≥ 0.7` (size ≥ 61.6), and every size here is far above that.
+  //   Derived from `hugRatio` rather than restating its constants, so
+  //   the two cannot drift apart.
+  const size = (RING_SIZE_CARD * box) / boxAt(RING_SIZE_CARD);
+  return { size, stroke: strokeAt(size) };
+}
 
 /** Stroke for a single-track ring. Fixed, because the diameter is. */
 const STROKE = 5.5;

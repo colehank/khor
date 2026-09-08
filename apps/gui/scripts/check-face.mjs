@@ -8976,6 +8976,126 @@ try {
   }
 
 
+  //     ── the four dials divide the row, and none of them is alone ──
+  //
+  //     2026-09-09, the user:「机器的环,要铺平宽度,现在左右空太多。
+  //     窄屏不允许一行只有一个环。我们一共四个,窄屏就一行两个」.
+  //
+  //     ⚠️ **Six widths, and the two that mattered are in the middle.**
+  //     Measured that day before the change: 1400 and 1120 and 390 were
+  //     all fine — four, four, and two-plus-two — while **900 and 560
+  //     put the disk dial on a line by itself**. The user reported the
+  //     narrow face and the narrow face was the one that worked; a gate
+  //     at his three widths would have gone green on the bug he was
+  //     describing. The row's width is what decides this and it is not
+  //     monotonic in the viewport (642 wide at 700, **490 at 900**,
+  //     because the list pane appears in between), so the widths here
+  //     are chosen to straddle the row widths, not the screen sizes.
+  //
+  //     Before / after, at the six (row width → what was drawn):
+  //
+  //       1400 → 990: 4 dials of 123.5 in a 990 row, 221 of air on each
+  //                   side   →  4 of 234, no air
+  //       1120 → 710: 4 of 123.5, 81 each side  →  4 of 164, no air
+  //        900 → 490: **3 + 1**                 →  2 + 2, each 236
+  //        700 → 642: 4 of 123.5, 47 each side  →  4 of 147, no air
+  //        560 → 502: **3 + 1**                 →  2 + 2, each 242
+  //        390 → 332: 2 + 2 of 123.5            →  2 + 2, each 157
+  {
+    const seenDials = [];
+    //   The box the old fixed size drew, which is the floor a column may
+    //   not go under: 「four across」 must never make a dial smaller than
+    //   it was before this. Read off the page rather than written here,
+    //   so the constant moving does not make this gate wrong about it.
+    const floorBox = 123.5;
+    for (const w of [1400, 1120, 900, 700, 560, 390]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await wait(400);
+      await open("devices");
+      await pressNth("[data-list] [data-row-open]", 1);
+      await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
+      await wait(200);
+      const d = await page.evaluate(() => {
+        const row = document.querySelector("[data-machine-card] [data-vitals]");
+        if (!row) return null;
+        const rr = row.getBoundingClientRect();
+        const kids = [...row.children].map((k) => {
+          const b = k.getBoundingClientRect();
+          const face = k.querySelector("svg");
+          return {
+            unit: k.querySelector("[data-dial]")?.getAttribute("data-dial") ?? "?",
+            x: +b.x.toFixed(1), y: +b.y.toFixed(1), w: +b.width.toFixed(1),
+            svgW: face ? +face.getBoundingClientRect().width.toFixed(1) : null,
+          };
+        });
+        const lines = {};
+        for (const k of kids) (lines[Math.round(k.y)] = lines[Math.round(k.y)] || []).push(k.unit);
+        return {
+          row: { x: +rr.x.toFixed(1), w: +rr.width.toFixed(1) },
+          cols: Number(row.getAttribute("data-vitals-cols")),
+          kids,
+          lines: Object.values(lines),
+        };
+      });
+      if (!d || d.kids.length < 4) {
+        //   Fewer than four dials is a different card (a machine with no
+        //   GPU draws three), and every claim below is about how four
+        //   are laid out — so this says so instead of passing on three.
+        fail(`probe dead: the dial row at ${w} has ${d ? d.kids.length : "no"} dials, so 「four divide the row」 measured nothing`);
+        continue;
+      }
+      //   ① **No line holds exactly one.** The user's rule, and the one
+      //   the old `flex-wrap` broke: it packs as many as fit per line,
+      //   so a row between three and four dials wide lands on 3 + 1.
+      const alone = d.lines.filter((l) => l.length === 1);
+      if (alone.length > 0) {
+        fail(
+          `at ${w} the dials sit ${JSON.stringify(d.lines)} — a line with one dial on it is what 「窄屏不允许一行只有一个环」 ` +
+            `forbids, and it is what wrapping does on its own: this has to be a declared column count, not a leftover`,
+        );
+      }
+      //   ② **Four or two, never three.** Three columns with four dials
+      //   *is* 3 + 1, so this and ① are the same rule read at two ends —
+      //   ① off the glass, ② off the decision.
+      if (d.cols !== 4 && d.cols !== 2) {
+        fail(`at ${w} the row declares ${d.cols} columns — four dials divide into four or two, and three of them is 3 + 1`);
+      }
+      //   ③ **They divide the row: equal shares, and no air left over.**
+      //   「要铺平宽度,现在左右空太多」 — before this, 1400 left 221 on
+      //   each side.
+      const widths = [...new Set(d.kids.map((k) => k.w))];
+      if (widths.length !== 1) {
+        fail(`at ${w} the dials are ${JSON.stringify(widths)} wide — they divide one row and an unequal share is not a division`);
+      }
+      const leftAir = d.kids[0].x - d.row.x;
+      const rightAir = d.row.x + d.row.w - (d.kids[d.kids.length - 1].x + d.kids[d.kids.length - 1].w);
+      if (leftAir > 1 || rightAir > 1) {
+        fail(`at ${w} the row keeps ${leftAir.toFixed(1)} of air on the left and ${rightAir.toFixed(1)} on the right — the dials are to fill it`);
+      }
+      //   ④ **Never smaller than it used to be, never absurd.** The
+      //   floor is the box the fixed size drew; the ceiling is a
+      //   judgment (`DIAL_BOX_MAX`) that no measured posture reaches.
+      //   ⚠️ The floor holds while the row is at least 265 wide — under
+      //   that even two columns go below it, and the honest answer there
+      //   is a smaller floor, **not** a single column, which is the one
+      //   thing forbidden outright.
+      const box = d.kids[0].svgW;
+      if (!(box >= floorBox - 0.5)) {
+        fail(`at ${w} each dial's box is ${box}, under the ${floorBox} the fixed size used to draw — filling the row must not shrink a dial`);
+      }
+      if (box > 261) {
+        fail(`at ${w} each dial's box is ${box} — past the ceiling a dial stops being a dial and becomes the card`);
+      }
+      seenDials.push(`${w}:${d.cols}×${box}`);
+    }
+    if (seenDials.length !== 6) {
+      fail(`probe dead: ${seenDials.length} of 6 postures measured (${seenDials.join(" ")}) — 「at every width」 is a claim about all of them`);
+    }
+    console.log(`dial row: ${seenDials.join(" · ")}`);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+  }
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
       "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, the machine surfaces bare of subscription arcs, the \u989d\u5ea6 rows in all three shapes with the subscription among them and its bar narrowing them, and narrow's session tabs switching for real",
