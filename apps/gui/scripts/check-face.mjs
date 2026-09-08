@@ -4487,10 +4487,33 @@ try {
         }
         return null;
       }, sel);
+    //   **A column head, as the reader sees it.** Height was the only
+    //   thing compared until 2026-09-09, and the two heads differed in
+    //   three more: the ink, the padding, and **which element carries
+    //   the rule under them** (one draws it on the cell, one on the row
+    //   above the cells).
+    //
+    //   ⚠️ These are read on two screens, one after the other, and that
+    //   is only allowed because none of them is a layout reading: a
+    //   colour, a weight and a padding are properties of the element
+    //   wherever it is drawn. **The height stays a same-state reading**
+    //   — it is the one that moves with the box.
     const headOf = (sel) =>
       page.evaluate((s) => {
         const b = document.querySelector(s);
-        return b ? +b.getBoundingClientRect().height.toFixed(1) : null;
+        if (!b) return null;
+        const cs = getComputedStyle(b);
+        const cell = b.closest("th") ?? b.parentElement;
+        const cc = cell ? getComputedStyle(cell) : null;
+        const n = (v) => Math.round(parseFloat(v) * 10) / 10;
+        return {
+          h: +b.getBoundingClientRect().height.toFixed(1),
+          ink: cs.color.replace(/\s/g, ""),
+          weight: cs.fontWeight,
+          pad: `${n(cs.paddingTop)},${n(cs.paddingRight)},${n(cs.paddingBottom)},${n(cs.paddingLeft)}`,
+          cellPad: cc ? `${n(cc.paddingTop)},${n(cc.paddingRight)},${n(cc.paddingBottom)},${n(cc.paddingLeft)}` : null,
+          cellRule: cc ? n(cc.borderBottomWidth) : null,
+        };
       }, sel);
     const mine = await cardOf(`${half} [data-usage-chart]`);
     const mineHead = await headOf(`${half} th[data-usage-col] button`);
@@ -4605,12 +4628,12 @@ try {
       "[data-machine-card] [data-plot-settings]",
       '[data-machine-card] [data-plot-pick="x"]',
     );
-    if (!mine || !theirs || mineHead === null || theirsHead === null) {
+    if (!mine || !theirs || !mineHead || !theirsHead) {
       fail(
         `probe dead: cards ${JSON.stringify([mine, theirs])} heads ${JSON.stringify([mineHead, theirsHead])} — ` +
           `two surfaces were not both measured, so 「they are one product」 compared nothing`,
       );
-    } else if (parseFloat(theirs.radius) <= 0 || parseFloat(theirs.border) <= 0 || !(theirsHead > 0)) {
+    } else if (parseFloat(theirs.radius) <= 0 || parseFloat(theirs.border) <= 0 || !(theirsHead.h > 0)) {
       fail(
         `the machine card's own block reads radius ${theirs.radius}, border ${theirs.border}, head ${theirsHead} — ` +
           `a reference with nothing in it makes every comparison below pass by agreeing about nothing`,
@@ -4626,10 +4649,18 @@ try {
           );
         }
       }
-      if (Math.abs(mineHead - theirsHead) > 0.5) {
-        fail(`a column head is ${mineHead} tall on the 額度 card and ${theirsHead} on the machine card — one table, two rows of controls`);
+      if (Math.abs(mineHead.h - theirsHead.h) > 0.5) {
+        fail(`a column head is ${mineHead.h} tall on the 額度 card and ${theirsHead.h} on the machine card — one table, two rows of controls`);
       }
-      console.log(`one product: card ${JSON.stringify(theirs)}, column head ${theirsHead} on both`);
+      for (const k of ["ink", "weight", "pad", "cellPad", "cellRule"]) {
+        if (String(mineHead[k]) !== String(theirsHead[k])) {
+          fail(
+            `a column head's ${k} is ${JSON.stringify(mineHead[k])} on the 額度 card and ${JSON.stringify(theirsHead[k])} on the ` +
+              `machine card — one row of controls, drawn twice. 「看起来是两个产品」 is what a reader calls a difference this size.`,
+          );
+        }
+      }
+      console.log(`one product: card ${JSON.stringify(theirs)}, head ${JSON.stringify(theirsHead)} on both`);
     }
     //   …and the drawing itself, on the same run.
     if (!drawnMine || !drawnTheirs) {

@@ -1168,7 +1168,12 @@ function Stats({
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-aux tabular-nums">
           <thead>
-            <tr>
+            {/* **The rule goes under the row, not under each cell** —
+                the machine card draws it that way, and the difference
+                is not cosmetic: a border on every `<th>` is a border
+                that a column with no head, or a head that ever spans
+                two columns, breaks. */}
+            <tr className="border-b">
               {cols.map((c) => (
                 // **`aria-sort` on every head, `none` where it is not the
                 // one in use.** Only marking the active column says
@@ -1185,9 +1190,18 @@ function Stats({
                   key={c.key}
                   data-usage-col={c.key}
                   aria-sort={sort.key === c.key ? (sort.dir < 0 ? "descending" : "ascending") : "none"}
+                  //   ⚠️ **Four differences from the machine card's head
+                  //   were measured on 2026-09-09 and all four are
+                  //   gone here**: the ink (0.62 against that card's
+                  //   0.94), the button's own padding (4 against 0),
+                  //   the cell's right padding (0 against 8) and
+                  //   **which element carries the rule** — this drew it
+                  //   on the cell, that card draws it above the cells.
+                  //   None of them is a design of its own; they are one
+                  //   row of controls drawn twice.
                   className={cn(
-                    "whitespace-nowrap border-b p-0 font-title text-muted-foreground",
-                    sort.key === c.key && "text-foreground",
+                    "whitespace-nowrap p-0 pr-in font-title text-foreground",
+                    sort.key !== c.key && "font-title",
                   )}
                 >
                   {/* **The press is on a `<button>`, not on the cell** —
@@ -1208,7 +1222,7 @@ function Stats({
                     // the press over the whole head rather than the
                     // word.
                     className={cn(
-                      "inline-flex min-h-touch w-full min-w-touch items-center px-1",
+                      "inline-flex min-h-touch w-full min-w-touch items-center",
                       c.key === "model" ? "justify-start" : "justify-end",
                     )}
                   >
