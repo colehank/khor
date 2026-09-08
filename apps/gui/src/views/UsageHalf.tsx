@@ -143,9 +143,16 @@ type Agg = {
   reuse: number;
   /** Days this model actually ran, not days in the window. */
   days: number;
-  from: string;
-  to: string;
 };
+
+/* ⚠️ **Tombstone: the 「首 → 末」 column is gone, 2026-09-08** — the user
+   did not want it. **`from` and `to` went with it**, which is the half
+   of a removal that gets left behind: they were computed on every row
+   of every window and read by nothing else, so keeping them would have
+   been a fact this file goes on working out for a reader who no longer
+   exists. `live` still decides `days`; only its two ends stopped being
+   carried. The word `gui.usage-col-span` went too, and its key has a
+   tombstone of its own in `zh.toml`. */
 
 /** How many days back each window reaches; 0 is 「all of them」. */
 const WINDOWS = [7, 30, 0] as const;
@@ -219,8 +226,6 @@ function aggregate(rows: UsageRow[], days: string[], cacheKnown: boolean): Agg[]
         rate: 0,
         reuse: 0,
         days: 0,
-        from: r.day,
-        to: r.day,
       };
     got.input += r.input;
     got.output += r.output;
@@ -250,8 +255,6 @@ function aggregate(rows: UsageRow[], days: string[], cacheKnown: boolean): Agg[]
       rate: cacheKnown && went > 0 ? a.cached_input / went : NaN,
       reuse: cacheKnown && a.cache_write > 0 ? a.cached_input / a.cache_write : NaN,
       days: live.length,
-      from: live[0],
-      to: live[live.length - 1],
     });
   }
   return out.sort((x, y) => y.input + y.output - (x.input + x.output));
@@ -781,7 +784,6 @@ function Stats({
         ]
       : []),
     { key: "days", word: gui.usage_axis_days, of: (r) => r.days },
-    { key: "span", word: gui.usage_col_span, text: (r) => `${r.from.slice(5)} → ${r.to.slice(5)}` },
   ];
   const listed = [...agg].sort((a, b) => {
     const c = cols.find((x) => x.key === sort.key);

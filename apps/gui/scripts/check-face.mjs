@@ -3905,7 +3905,6 @@ try {
           cols,
           keys: [...el.querySelectorAll("[data-usage-key-model]")].map((k) => k.dataset.usageKeyModel),
           rows: [...el.querySelectorAll("[data-usage-row]")].map((r) => r.dataset.usageRow),
-          cols_head: [...el.querySelectorAll("[data-usage-col]")].map((c) => c.dataset.usageCol),
           points: [...el.querySelectorAll("[data-usage-point]")].map((g) => ({
             model: g.dataset.usagePoint,
             r: Number(g.dataset.usagePointR),
