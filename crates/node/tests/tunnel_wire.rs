@@ -167,6 +167,41 @@ async fn read_until(sock: &mut tokio::net::TcpStream, needle: &[u8]) -> Vec<u8> 
     got
 }
 
+/// A plain-`http` origin: reads one request head per connection, hands it
+/// back through the channel, and answers a fixed page. Stands in for the
+/// notebook, dashboard or router somebody borrows a network to reach —
+/// the things that are still `http://` and are the reason the proxy
+/// learned this shape at all.
+async fn http_server() -> (String, tokio::sync::mpsc::UnboundedReceiver<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else { break };
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while sock.read(&mut byte).await.unwrap_or(0) == 1 {
+                    head.push(byte[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let _ = tx.send(String::from_utf8_lossy(&head).into_owned());
+                let _ = sock
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
+                    )
+                    .await;
+            });
+        }
+    });
+    (addr, rx)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -221,8 +256,10 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
         .unwrap();
     assert_eq!(&back, b"ping through the exit", "bytes made the round trip");
 
-    // A non-CONNECT method is refused, not tunnelled: the proxy only
-    // speaks CONNECT (the plain-HTTP absolute-form GET is on the ledger).
+    // **Origin form is refused even now that plain http is relayed**, and
+    // it is a different case rather than a leftover: `GET /` names a path
+    // and no host, so there is nothing to route it to. Somebody has
+    // pointed a plain client at this port as if it were the web server.
     let mut plain = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     plain.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
     let refused = read_until(&mut plain, b"\r\n\r\n").await;
@@ -230,6 +267,64 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
         String::from_utf8_lossy(&refused).starts_with("HTTP/1.1 405"),
         "a non-CONNECT method is refused: {}",
         String::from_utf8_lossy(&refused)
+    );
+
+    // **The other shape: a plain-http page.** The client puts the whole
+    // URL in the request line, so the proxy has to read the head to know
+    // where to send it, and rewrites it into the origin form a server
+    // expects. This is the case campus services and self-hosted things
+    // actually are, and refusing it refused the main reason to borrow.
+    let (site, mut asked) = http_server().await;
+    let mut page = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+    page.write_all(
+        format!(
+            "GET http://{site}/wiki?q=1 HTTP/1.1\r\nHost: {site}\r\n\
+             Proxy-Connection: keep-alive\r\nX-Mine: yes\r\n\r\n"
+        )
+        .as_bytes(),
+    )
+    .await
+    .unwrap();
+    let answer = timeout(Duration::from_secs(60), read_until(&mut page, b"\r\n\r\n"))
+        .await
+        .expect("the origin's answer must not hang");
+    assert!(
+        String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200 OK"),
+        "the origin's own response comes back, not one the proxy invented: {}",
+        String::from_utf8_lossy(&answer)
+    );
+    let mut body = [0u8; 5];
+    timeout(Duration::from_secs(60), page.read_exact(&mut body))
+        .await
+        .expect("the body must not hang")
+        .unwrap();
+    assert_eq!(&body, b"hello", "and its body arrives through the exit");
+
+    let got = timeout(Duration::from_secs(60), asked.recv())
+        .await
+        .expect("the origin must be reached")
+        .expect("the origin must have read a head");
+    assert!(
+        got.starts_with("GET /wiki?q=1 HTTP/1.1\r\n"),
+        "the request line arrives in origin form, path only: {got:?}"
+    );
+    assert!(got.contains("X-Mine: yes"), "the client's own headers are kept: {got:?}");
+    assert!(
+        !got.to_ascii_lowercase().contains("proxy-connection"),
+        "a header addressed to the proxy is not forwarded to the server: {got:?}"
+    );
+
+    // **https in absolute form is refused, not relayed.** Sending it on
+    // would put the request in the clear at a port waiting for a TLS
+    // handshake; the way to an https page through here is CONNECT, which
+    // is what every browser already does.
+    let mut wrong = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+    wrong.write_all(b"GET https://example.invalid/ HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
+    let refused_tls = read_until(&mut wrong, b"\r\n\r\n").await;
+    assert!(
+        String::from_utf8_lossy(&refused_tls).starts_with("HTTP/1.1 405"),
+        "an absolute-form https request is refused: {}",
+        String::from_utf8_lossy(&refused_tls)
     );
 
     serve_a.abort();

@@ -182,21 +182,38 @@ async fn splice(mut send: SendStream, mut recv: RecvStream, tcp: tokio::net::Tcp
     tokio::join!(up, down);
 }
 
-/// The largest CONNECT request head we will buffer before giving up. A
-/// real one is a request line plus a few short headers; anything past
-/// this is a client that will never send the blank line, not a big ask.
-const CONNECT_HEAD_MAX: usize = 8 * 1024;
+/// The largest request head we will buffer before giving up. A real one
+/// is a request line plus a few short headers; anything past this is a
+/// client that will never send the blank line, not a big ask. It is also
+/// about what an ordinary origin server accepts, so a head this proxy
+/// refuses is one the server behind it would have refused too.
+const HEAD_MAX: usize = 8 * 1024;
 
-/// The local HTTP proxy half of a borrow (docs/NET.md 借网): a plain
-/// `CONNECT host:port` proxy in front of one lease. A browser (or
-/// `HTTPS_PROXY`-honouring tool) points here; every connection it makes
-/// becomes a stream through the exit to the host it named. Runs until the
-/// listener is dropped.
+/// The local HTTP proxy half of a borrow (docs/NET.md 借网): one lease
+/// behind a proxy port. A browser (or an `HTTPS_PROXY`/`HTTP_PROXY`
+/// honouring tool) points here; every connection it makes becomes a
+/// stream through the exit to the host it named. Runs until the listener
+/// is dropped.
 ///
-/// **CONNECT only, by design for this step.** It is what an HTTPS request
-/// uses and what a walled site — always HTTPS in practice — needs, and it
-/// keeps the proxy a blind byte pipe: it never sees the plaintext. The
-/// absolute-form GET a plain-HTTP request would send is on the ledger.
+/// **Two shapes, and they are not equally blind.**
+///
+/// `CONNECT host:port` is a byte pipe: the client speaks its own protocol
+/// through it (in practice TLS) and khor never sees inside. That is what
+/// an https page uses and what a walled site needs.
+///
+/// An absolute-form request (`GET http://host/path HTTP/1.1`) is what a
+/// **plain-http** page sends a proxy, and it cannot be blind — the target
+/// is inside the request, so the proxy has to read the head to know where
+/// to send it, and it rewrites that head into the origin form a server
+/// expects. Campus services and the self-hosted things people actually
+/// borrow a network to reach (a notebook, a dashboard, a router) are
+/// largely plain http, so refusing this shape refused the main case.
+///
+/// **What that costs is worth saying out loud rather than discovering:**
+/// for an `http://` page khor sees the request head in the clear. There
+/// is no version of a plain-http proxy that does not — the alternative is
+/// not privacy, it is the page not loading. `https` keeps the old
+/// property untouched, because it keeps going through CONNECT.
 pub async fn serve_proxy(
     borrow: std::sync::Arc<Borrow>,
     listener: tokio::net::TcpListener,
@@ -281,11 +298,28 @@ impl Drop for PipeGuard {
     }
 }
 
-/// One browser connection: read its `CONNECT`, open the tunnel, answer
-/// with the proxy's own status line, then splice. The status line is
-/// HTTP because the client speaks HTTP here — a `200` means "connected",
-/// a `502` means the exit could not, and the client shows its own error
-/// rather than hanging.
+/// What one client connection is asking the proxy for.
+#[derive(Debug, PartialEq)]
+enum ProxyAsk {
+    /// `CONNECT host:port`: a byte pipe. The client speaks its own
+    /// protocol through it and nothing here reads a byte of it.
+    Tunnel { target: String },
+    /// An absolute-form request (`GET http://host/path HTTP/1.1`): where
+    /// to send it, and the head rewritten into the origin form a server
+    /// expects. Plain http only — see [`absolute_http`].
+    Relay { target: String, head: Vec<u8> },
+}
+
+/// One browser connection: read its request head, open the tunnel, and
+/// splice. What goes out first differs by shape — the proxy's own status
+/// line for a CONNECT, the rewritten request for a relay.
+///
+/// **A relay gets no status line from the proxy.** The client asked for a
+/// page, and the answer to that is the origin's response; a `200` written
+/// here would be this proxy answering a question only the far server can
+/// answer, and the real response would arrive behind it as garbage. A
+/// CONNECT is the opposite: there `200` means "the pipe is up", which is
+/// a fact the proxy is the only one holding.
 async fn proxy_one(
     borrow: &Borrow,
     mut sock: tokio::net::TcpStream,
@@ -295,8 +329,9 @@ async fn proxy_one(
     use tokio::io::AsyncReadExt;
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
-    // Read only the request head (to the blank line); the tunnelled bytes
-    // that follow belong to `splice`, not to this parse.
+    // Read only the request head (to the blank line); everything after it
+    // — tunnelled bytes, or a request body — belongs to `splice`, not to
+    // this parse.
     loop {
         let n = sock.read(&mut byte).await.map_err(|e| e.to_string())?;
         if n == 0 {
@@ -306,19 +341,29 @@ async fn proxy_one(
         if head.ends_with(b"\r\n\r\n") {
             break;
         }
-        if head.len() > CONNECT_HEAD_MAX {
+        if head.len() > HEAD_MAX {
             return Ok(());
         }
     }
-    let Some(target) = connect_target(&head) else {
+    let Some(ask) = read_ask(&head) else {
         let _ = sock.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n").await;
         return Ok(());
     };
+    let target = match &ask {
+        ProxyAsk::Tunnel { target } | ProxyAsk::Relay { target, .. } => target.clone(),
+    };
     match borrow.open(&target).await {
-        Ok((send, recv)) => {
-            sock.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                .await
-                .map_err(|e| e.to_string())?;
+        Ok((mut send, recv)) => {
+            match ask {
+                ProxyAsk::Tunnel { .. } => {
+                    sock.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                ProxyAsk::Relay { head, .. } => {
+                    send.write_all(&head).await.map_err(|e| e.to_string())?;
+                }
+            }
             let _pipe = PipeGuard::open(count, activity);
             splice(send, recv, sock).await;
             Ok(())
@@ -330,22 +375,112 @@ async fn proxy_one(
     }
 }
 
-/// The authority from a `CONNECT host:port HTTP/1.1` head, or `None` if
-/// this is not a CONNECT. Only the first line matters; the headers after
-/// it are the client's and we forward nothing from them.
-fn connect_target(head: &[u8]) -> Option<String> {
+/// Reads a request head into what it is asking for, or `None` for
+/// anything this proxy will not route — which it answers with `405`
+/// rather than guessing.
+///
+/// **An origin-form request (`GET / HTTP/1.1`) is one of those**, and
+/// deliberately: it names a path and no host, so there is nothing to
+/// route it to. Somebody has pointed a plain client at this port as if it
+/// were the web server itself.
+fn read_ask(head: &[u8]) -> Option<ProxyAsk> {
     let text = std::str::from_utf8(head).ok()?;
-    let first = text.lines().next()?;
+    let (first, rest) = text.split_once("\r\n")?;
     let mut parts = first.split_whitespace();
-    if !parts.next()?.eq_ignore_ascii_case("CONNECT") {
+    let method = parts.next()?;
+    let asked = parts.next()?;
+    let version = parts.next().unwrap_or("HTTP/1.1");
+    if method.eq_ignore_ascii_case("CONNECT") {
+        // A CONNECT authority is always host:port; a bare host would leave
+        // the exit's TCP connect without a port and is not a thing
+        // browsers send.
+        return asked.contains(':').then(|| ProxyAsk::Tunnel { target: asked.to_owned() });
+    }
+    let (target, host, path) = absolute_http(asked)?;
+    Some(ProxyAsk::Relay { head: origin_form(method, &path, version, &host, rest), target })
+}
+
+/// Splits an absolute `http` URI into the target to dial (`host:port`,
+/// port defaulted to 80), the authority as written (what a missing `Host`
+/// header should say), and the path to ask the origin for.
+///
+/// **`http` only.** A client sending `https://…` in absolute form is
+/// asking the proxy to do TLS on its behalf, which this one does not do;
+/// answering would send the request in the clear at a port expecting a
+/// handshake. The way to an https page through here is CONNECT, which is
+/// what every browser already does.
+///
+/// **Userinfo is refused rather than forwarded.** `http://user:pw@host/`
+/// carries a credential, and passing it on would make this proxy a thing
+/// that copies credentials into somebody else's connection.
+fn absolute_http(uri: &str) -> Option<(String, String, String)> {
+    let (scheme, rest) = uri.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("http") {
         return None;
     }
-    let authority = parts.next()?;
-    // A CONNECT authority is always host:port; a bare host would leave the
-    // exit's TCP connect without a port and is not a thing browsers send.
-    if authority.contains(':') {
-        Some(authority.to_owned())
-    } else {
-        None
+    let (authority, path) = match rest.find('/') {
+        Some(at) => (&rest[..at], &rest[at..]),
+        None => (rest, "/"),
+    };
+    if authority.is_empty() || authority.contains('@') {
+        return None;
     }
+    // An IPv6 literal is full of colons that are not the port separator,
+    // so the port is only the one after the closing bracket.
+    let has_port = match authority.rfind(']') {
+        Some(close) => authority[close + 1..].starts_with(':'),
+        None => authority.contains(':'),
+    };
+    let target =
+        if has_port { authority.to_owned() } else { format!("{authority}:80") };
+    Some((target, authority.to_owned(), path.to_owned()))
+}
+
+/// Rewrites an absolute-form head into origin form: the request line
+/// carries the path alone, and the headers meant for this proxy are
+/// dropped rather than passed along.
+///
+/// **The dropped ones are hop-by-hop**: they are addressed to whoever
+/// handles this connection, and forwarding them puts this proxy's own
+/// connection handling into somebody else's. `Proxy-Authorization` is
+/// dropped for the reason userinfo is refused — it is a credential for
+/// the hop, not for the server.
+///
+/// **`Connection: close`, and that is a real limit, not a formality.**
+/// Keep-alive would let the client send a second request for a *different*
+/// host down a socket already committed to one tunnel stream, and this
+/// proxy would send it to the first host. Closing after one response makes
+/// the client open another connection instead — which costs one more
+/// stream on a QUIC connection that is already up, and is the honest
+/// version of the limit rather than a wrong answer.
+fn origin_form(method: &str, path: &str, version: &str, host: &str, rest: &str) -> Vec<u8> {
+    let mut out = format!("{method} {path} {version}\r\n");
+    let mut had_host = false;
+    for line in rest.split("\r\n") {
+        if line.is_empty() {
+            continue;
+        }
+        let name = line.split(':').next().unwrap_or("");
+        if name.eq_ignore_ascii_case("proxy-connection")
+            || name.eq_ignore_ascii_case("proxy-authorization")
+            || name.eq_ignore_ascii_case("connection")
+            || name.eq_ignore_ascii_case("keep-alive")
+        {
+            continue;
+        }
+        if name.eq_ignore_ascii_case("host") {
+            had_host = true;
+        }
+        out.push_str(line);
+        out.push_str("\r\n");
+    }
+    if !had_host {
+        // HTTP/1.0 clients need not send one and every modern server wants
+        // it; the authority in the absolute URI is exactly the answer.
+        out.push_str("Host: ");
+        out.push_str(host);
+        out.push_str("\r\n");
+    }
+    out.push_str("Connection: close\r\n\r\n");
+    out.into_bytes()
 }

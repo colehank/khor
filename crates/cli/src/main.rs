@@ -333,9 +333,15 @@ fn pull(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Borrows a machine's network: the serve stands up a local HTTP CONNECT
-/// proxy in front of a lease and prints where it listens. Point a browser
-/// or HTTPS_PROXY there and it goes out through the far machine.
+/// Borrows a machine's network: the serve stands up a local HTTP proxy in
+/// front of a lease and prints where it listens. Point a browser, or
+/// `HTTPS_PROXY` and `HTTP_PROXY`, there and it goes out through the far
+/// machine — `https` through CONNECT, plain `http` relayed (`tunnel`).
+///
+/// **This is the one borrow that is a session of its own**, because a
+/// person is holding the port by hand and the row is how they find it
+/// again and how they end it. A page opened in the app takes no row
+/// (docs/NET.md 可达性).
 fn borrow(rest: &[String]) -> Result<(), String> {
     let [machine] = rest else {
         return Err(USAGE.into());
