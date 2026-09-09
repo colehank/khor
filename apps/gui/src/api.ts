@@ -582,7 +582,14 @@ export type PageBox = { x: number; y: number; w: number; h: number; view: number
  */
 export const openPage = (tab: string, machine: string, url: string, at: PageBox) => {
   if (onWebFace) return Promise.reject(new Error(msg.web_borrow_needs_app));
-  return call<WebBorrow>("open_page", { tab, machine, url, at });
+  // **This page's own identity, handed over so the app can build the
+  // browsing tab a browser's one.** A webview inside an app says it is
+  // bare WebKit, and sites read the tail it is missing — measured against
+  // baidu, which answers an unrecognised client with a 227-byte page that
+  // sends itself to plain http, and spins there forever. Only this side
+  // can read `navigator.userAgent`; what to append is the app's rule
+  // (`as_a_browser`), because that is where the webview is built.
+  return call<WebBorrow>("open_page", { tab, machine, url, at, agent: navigator.userAgent });
 };
 
 /** Keeps the page over its tab body as the layout moves under it. */

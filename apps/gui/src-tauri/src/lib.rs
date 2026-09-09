@@ -464,6 +464,39 @@ fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, S
     EXITS.get_or_init(Default::default)
 }
 
+/// How a browsing tab presents itself to the sites it opens.
+///
+/// **A browser has to look like one, and this is not vanity.** A webview
+/// inside an app identifies itself as bare WebKit: the same string Safari
+/// sends, minus the `Version/… Safari/…` tail — and sites read that tail.
+///
+/// Measured 2026-09-09 against baidu through a borrow. With the tail it
+/// answers with its real homepage, 713 KB. Without it, 227 bytes whose
+/// whole body is
+/// `location.replace(location.href.replace("https://","http://"))` — a
+/// deliberate downgrade of clients it does not recognise. HSTS puts that
+/// straight back on https, which serves the same 227 bytes, and the tab
+/// spins: **2179 navigations in one sitting, white the whole time**,
+/// because that page has nothing in it. From the outside it reads as「打
+/// 不开」, and khor is not doing any of it — `open_page` was called 15
+/// times while the page navigated 1254.
+///
+/// **The build number is taken out of the string, never written down.**
+/// What Safari appends is `Safari/<the same build as AppleWebKit/…>`, and
+/// that build is already in what the face reports — so this cannot go
+/// stale the way a constant would, and it stays right on a machine whose
+/// WebKit is not this one's. A face whose agent carries no `AppleWebKit/`
+/// gets no override at all: inventing an identity for a client we cannot
+/// read is worse than presenting the honest one, and on Linux and Windows
+/// the honest one already names a browser.
+fn as_a_browser(agent: &str) -> Option<String> {
+    if agent.is_empty() || agent.contains("Safari/") {
+        return None;
+    }
+    let build = agent.split("AppleWebKit/").nth(1)?.split_whitespace().next()?;
+    Some(format!("{agent} Safari/{build}"))
+}
+
 /// A tab id as a webview label. Tab ids are minted from a timestamp and a
 /// counter so they are already tame; this is the same guard the borrow
 /// window label uses, for the same reason — a label is a key, and a key
@@ -484,6 +517,7 @@ async fn open_page(
     machine: String,
     url: String,
     at: PageBox,
+    agent: String,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
     use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
     let borrow = khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?;
@@ -521,8 +555,12 @@ async fn open_page(
     let face = window.label().to_string();
     let (t_tab, l_tab) = (tab.clone(), tab.clone());
     let (t_face, l_face) = (face.clone(), face.clone());
-    let builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target))
-        .proxy_url(proxy)
+    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target))
+        .proxy_url(proxy);
+    if let Some(seem) = as_a_browser(&agent) {
+        builder = builder.user_agent(&seem);
+    }
+    let builder = builder
         .on_document_title_changed(move |view, title| {
             let _ = view
                 .app_handle()
@@ -1027,8 +1065,9 @@ async fn open_page(
     machine: String,
     url: String,
     at: PageBox,
+    agent: String,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
-    let _ = (tab, machine, url, at);
+    let _ = (tab, machine, url, at, agent);
     Err(khor_catalog::msg::PAGE_NEEDS_DESKTOP.into())
 }
 
