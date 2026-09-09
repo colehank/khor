@@ -58,6 +58,9 @@ export type TabFace = {
   /** The whole address, for the switcher's second line and the wide
       tab's hover title. Empty on a fresh tab. */
   path: string;
+  /** Whose machine this tab is on, for the hover title. The avatar has
+      always carried this and could never spell it. */
+  machine?: string | null;
   /** Present on a session tab: the row's identity facts, drawn exactly
       as the list row draws them (`SessionFace` — the halo is the state,
       the corner is the kind; 2026-09-02:「标签页的标签头像应该和
@@ -157,11 +160,21 @@ export function TabStrip({
       // container the "+" scrolled away with the tabs — at 20 tabs on a
       // 1400 window it sat at x=1912 while the strip's visible edge was
       // 1400, **512 past the end of the world**, so the way to open a
-      // tab was to scroll right until you found it. Chrome pins it, and
-      // the only way to pin anything against a scroll container is to
-      // be outside it. The band keeps the ground and the padding; the
-      // row inside it is what scrolls; the buttons ride at the end and
-      // never move.
+      // tab was to scroll right until you found it. The band keeps the
+      // ground and the padding; the row inside it is what scrolls.
+      //
+      // ⚠️ **The new-tab button moved back inside the scroller on
+      // 2026-09-09, and this comment used to argue it out.** It said
+      // Chrome pins it and that pinning means being outside the scroll
+      // container — the second half is true and the first was wrong:
+      // Chrome puts「+」immediately after the last tab and shrinks tabs
+      // rather than scrolling them. Pinned at the far right it read as a
+      // control belonging to the row, not to the tabs. **What that costs
+      // is real and is the reason the old note existed**: once the strip
+      // scrolls, 「+」 scrolls away with the last tab. The way to a new
+      // tab when it is crowded is the switcher, which has its own — and
+      // the switcher is offered exactly when the strip has stopped
+      // showing every tab.
       className="flex flex-none items-end gap-1 bg-muted/40 px-2 pt-1"
     >
       <div
@@ -176,7 +189,10 @@ export function TabStrip({
               key={f.id}
               data-tab={f.id}
               data-on={on}
-              title={f.path || undefined}
+              // Machine first, then where on it — the same order the
+              // address bar commits them in, and the same order the
+              // sentence reads: this tab is *on* that machine.
+              title={[f.machine, f.path].filter(Boolean).join(": ") || undefined}
               className={cn(
                 // `h-touch`, not `h-ctl-md`: the tab is the target, so the
                 // tab is what has to be tall enough to land on — and it is
@@ -259,6 +275,23 @@ export function TabStrip({
             </div>
           );
         })}
+        {onNew && (
+          <Button
+            size="icon"
+            variant="ghost"
+            data-tab-new
+            aria-label={gui.new_tab}
+            // The `mb-1` it used to wear lifted a 30 button off the band's
+            // floor so it read as level with the 30 tabs. Both are the
+            // finger's floor now, and `items-end` already levels them —
+            // keeping the margin would have made the band four taller than
+            // anything in it.
+            className="min-h-touch min-w-touch flex-none"
+            onClick={onNew}
+          >
+            <IconPlus />
+          </Button>
+        )}
       </div>
       {/* Pinned against the scrolling row, in the order a hand reaches
           them: the way to see the ones that scrolled off, then the way
@@ -274,23 +307,6 @@ export function TabStrip({
           holding the button drawn on `switching` would be drawing "go
           see your tabs" over the screen that is showing them. */}
       {onSwitch && crowded && <TabCount n={faces.length} onPress={onSwitch} />}
-      {onNew && (
-        <Button
-          size="icon"
-          variant="ghost"
-          data-tab-new
-          aria-label={gui.new_tab}
-          // The `mb-1` it used to wear lifted a 30 button off the band's
-          // floor so it read as level with the 30 tabs. Both are the
-          // finger's floor now, and `items-end` already levels them —
-          // keeping the margin would have made the band four taller than
-          // anything in it.
-          className="min-h-touch min-w-touch flex-none"
-          onClick={onNew}
-        >
-          <IconPlus />
-        </Button>
-      )}
     </div>
   );
 }

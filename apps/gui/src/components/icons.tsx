@@ -245,6 +245,27 @@ export function IconBack({ className }: IconProps) {
   );
 }
 
+/** The mirror of `IconBack`, and drawn as its mirror rather than as its
+    own path so the pair cannot drift apart by a pixel. */
+export function IconForward({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M6 3.2 10.8 8 6 12.8" />
+    </Mark>
+  );
+}
+
+/** Reload: a circle open at the top with the arrowhead on the open end,
+    which is what says it comes back round rather than merely turns. */
+export function IconReload({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M13 8a5 5 0 1 1-1.5-3.6" />
+      <path d="M13 2.6V5h-2.4" />
+    </Mark>
+  );
+}
+
 export function IconSearch({ className }: IconProps) {
   return (
     <Mark className={className}>

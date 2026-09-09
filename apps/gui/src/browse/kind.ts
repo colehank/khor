@@ -72,6 +72,10 @@ export type SecondSegment = {
 
 /** What the resting address bar draws, and the two ways out of it. */
 export type RestProps = {
+  /** This tab's handle, for a resting face that has controls of its own
+      to aim. The page kind's back, forward and reload act on one tab's
+      webview, and there is nothing in an address that says which. */
+  tab: string;
   /** Where the tab actually is, in this kind's own spelling. */
   at: string;
   /** Go somewhere else on the same machine. */
@@ -82,8 +86,16 @@ export type RestProps = {
   onEdit: () => void;
 };
 
+/** One open tab, as much of it as a kind needs to sweep what it holds. */
+export type HeldTab = { id: string; device: string };
+
 /** What one tab shows. */
 export type BodyProps = {
+  /** This tab's own handle. A body that holds something per tab — a page
+      kind holds a live webview — needs to name which tab it is holding
+      for, and cannot derive it: two tabs on one machine at one place are
+      two tabs (`BrowseTab.id`). */
+  tab: string;
   machine: DeviceRow;
   /** Where to open; `""` means this kind's own starting point (for a
       disk, that machine's home). */
@@ -96,6 +108,11 @@ export type BodyProps = {
       re-reads its places. Separate from `onPlace` because the two are
       different facts: one is an intention that may still be refused. */
   onLanded: (place: string) => void;
+  /** Open a **new** tab here, on this same machine, and focus it.
+      What a page asking for a new window gets: whether a link opens
+      where you are or beside you is the page author's call, and the
+      body is where that call arrives. */
+  onPopup: (place: string) => void;
 };
 
 export type BrowseKind = {
@@ -203,8 +220,10 @@ export type BrowseKind = {
    * time somebody looked at another tab. "Is anybody still pointed at
    * this machine" is a question only the set can answer.
    *
-   * The list is device ids, blank tabs left out — a tab pointed nowhere
-   * is not pointed at a machine.
+   * The list is the open tabs that name a machine, blank ones left out.
+   * **Both fields, because a kind can hold two different things**: a page
+   * kind holds one borrow per *machine* and one webview per *tab*, and
+   * the two are swept by different questions.
    */
-  useHeld?: (devices: readonly string[]) => void;
+  useHeld?: (open: readonly HeldTab[]) => void;
 };

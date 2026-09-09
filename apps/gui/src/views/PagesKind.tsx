@@ -20,10 +20,12 @@
 //     and this one does not.
 import { useEffect } from "react";
 
-import { fetchWebPins } from "@/api";
-import type { BodyProps, BrowseKind, RestProps, SecondSegment } from "@/browse/kind";
+import { fetchWebPins, pageStep } from "@/api";
+import type { BodyProps, BrowseKind, HeldTab, RestProps, SecondSegment } from "@/browse/kind";
+import { Button } from "@/components/ui/button";
+import { IconBack, IconForward, IconReload } from "@/components/icons";
 import { gui } from "@/gen/catalog";
-import { releaseBorrows } from "@/views/borrows";
+import { releaseBorrows, releasePages } from "@/views/held";
 import { BrowserPane, normalize } from "@/views/BrowserPane";
 
 /**
@@ -60,56 +62,120 @@ export function hostOf(place: string): string {
  * It truncates from the **tail**, which is the other half of that: what
  * identifies a page is at the front.
  */
-function PageAddress({ at, onEdit }: RestProps) {
+function PageAddress({ tab, at, onEdit }: RestProps) {
   const host = hostOf(at);
   const rest = at.slice(at.indexOf(host) + host.length) || "";
   const before = at.slice(0, at.indexOf(host));
+  const step = (way: "back" | "forward" | "reload") => () => {
+    pageStep(tab, way).catch(() => {});
+  };
   return (
-    <button
-      type="button"
-      data-address-rest
-      aria-label={gui.address_page}
-      onClick={onEdit}
-      className="flex min-w-0 flex-1 cursor-text items-baseline gap-0 self-stretch text-left text-sm"
-    >
-      <span className="flex-none text-muted-foreground">{before}</span>
-      <span data-page-host className="flex-none font-label">
-        {host}
-      </span>
-      <span className="min-w-0 truncate text-muted-foreground">{rest}</span>
-    </button>
+    <div className="flex min-w-0 flex-1 items-center gap-1 self-stretch">
+      {/* **Where a browser puts them, and they belong to the kind rather
+          than to the shell**: a directory listing has no history of its
+          own to walk, so the files landing has no use for these and the
+          address bar must not grow a slot only one instance fills.
+
+          ⚠️ **The arrows do not know whether there is anywhere to go.**
+          tauri exposes no `can_go_back`, so they cannot grey out, and a
+          press at the start of a history quietly does nothing. That is a
+          gap in the platform, not a decision — the honest version of it
+          is a lit button that no-ops rather than a disabled one that
+          lies about knowing. */}
+      <Button
+        size="icon"
+        variant="ghost"
+        data-page-back
+        aria-label={gui.page_back}
+        className="min-h-touch min-w-touch flex-none text-muted-foreground"
+        onClick={step("back")}
+      >
+        <IconBack />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        data-page-forward
+        aria-label={gui.page_forward}
+        className="min-h-touch min-w-touch flex-none text-muted-foreground"
+        onClick={step("forward")}
+      >
+        <IconForward />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        data-page-reload
+        aria-label={gui.page_reload}
+        className="min-h-touch min-w-touch flex-none text-muted-foreground"
+        onClick={step("reload")}
+      >
+        <IconReload />
+      </Button>
+      <button
+        type="button"
+        data-address-rest
+        aria-label={gui.address_page}
+        onClick={onEdit}
+        // `items-baseline` lines the three spans up with each other;
+        // `self-stretch` used to also stretch this button to the row's
+        // full height, and a baseline-aligned group inside a stretched
+        // box sits at its top — so the address rode high above the three
+        // buttons beside it. Its own height, centred by the row.
+        className="flex min-w-0 flex-1 cursor-text items-baseline gap-0 text-left text-sm"
+      >
+        <span className="flex-none text-muted-foreground">{before}</span>
+        <span data-page-host className="flex-none font-label">
+          {host}
+        </span>
+        <span className="min-w-0 truncate text-muted-foreground">{rest}</span>
+      </button>
+    </div>
   );
 }
 
 /**
- * Gives back the network of every machine no tab is pointed at any more
- * (`BrowseKind.useHeld`, `views/borrows`).
+ * Gives back what no open tab needs any more (`BrowseKind.useHeld`,
+ * `views/held`): the network of a machine nothing names, and the page
+ * webview of a tab that is gone.
  *
- * **This is what "closing the tab closes the borrow" actually is.** It
- * cannot live on the pane: the shell mounts only the open tab's body, so
- * a pane unmounts on every tab switch, and the borrow is per machine
- * rather than per tab anyway. The condition worth acting on is that
- * nothing names the machine any more, and only the set of tabs knows.
+ * **Two sweeps because they are two questions.** A borrow is per exit
+ * machine and outlives any one tab; a page is per tab. Neither can live
+ * on the pane: the shell mounts only the open tab's body, so a pane
+ * unmounts on every tab switch, and releasing there would tear both down
+ * each time somebody glanced at another tab.
  *
- * Keyed on the joined list rather than the array — the shell builds a
- * fresh array every render, and an effect keyed on that would ask a
- * machine to close a session on every render. Device ids are hex, so a
- * comma cannot appear inside one.
+ * Keyed on the joined lists rather than the arrays — the shell builds
+ * fresh ones every render, and an effect keyed on those would ask a
+ * machine to close a session on every render. Tab ids and device ids are
+ * both minted from hex and a counter, so a comma cannot appear in one.
  */
-function useBorrowsHeld(devices: readonly string[]): void {
-  const key = [...devices].sort().join(",");
+function useBorrowsHeld(open: readonly HeldTab[]): void {
+  const machines = [...new Set(open.map((t) => t.device))].sort().join(",");
+  const tabs = open.map((t) => t.id).sort().join(",");
   useEffect(() => {
-    releaseBorrows(key ? key.split(",") : []);
-  }, [key]);
+    releaseBorrows(machines ? machines.split(",") : []);
+  }, [machines]);
+  useEffect(() => {
+    releasePages(tabs ? tabs.split(",") : []);
+  }, [tabs]);
 }
 
-function Surf({ machine, place, onLanded }: BodyProps) {
+function Surf({ tab, machine, place, onPlace, onLanded, onPopup }: BodyProps) {
   return (
     <BrowserPane
+      tab={tab}
       machine={machine.name}
       device={machine.id}
       url={place}
       onOpened={onLanded}
+      // Where the page went is where the tab is, so it is `onPlace` and
+      // not `onLanded`: the shell's two callbacks split on *intention*
+      // versus *arrival*, and a page that has already moved has arrived.
+      // Recording it as a visit as well would put every redirect a site
+      // passes through into 常去的地方.
+      onWent={onPlace}
+      onPopped={onPopup}
     />
   );
 }

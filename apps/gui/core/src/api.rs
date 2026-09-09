@@ -351,15 +351,22 @@ pub fn answer(
             crate::web::pin_web(root, &arg("machine")?, &arg("url")?, flag("on")?)?;
             Ok("null".to_owned())
         }
-        // The bridge answers the borrow half only — it has no webview to
-        // point at the proxy, so it returns where the proxy listens and
-        // the window half stays the tauri skin's (`web::borrow_web`).
-        "open_web" => to_json(&rt.block_on(crate::web::borrow_web(root, &arg("machine")?))?),
         // The other half of that: giving the borrow back. Both roads need
         // it — the bridge opens real borrows, so a bridge that could not
         // close them would leak a proxy port per page it ever opened.
         "close_web" => {
             rt.block_on(crate::web::drop_web_borrow(root, &arg("session")?))?;
+            Ok("null".to_owned())
+        }
+        // The page commands, for the bridge's half of them. There is no
+        // window here to parent a webview to, so `open_page` answers the
+        // borrow and stops, and the ones that only move a webview around
+        // have nothing to move. **Answering rather than refusing** keeps the bridge and
+        // the app equivalent for everything a gate can reach: a refusal
+        // would make every gate that walks the browsing landing red for
+        // a reason that is about the bridge, not about the product.
+        "open_page" => to_json(&rt.block_on(crate::web::borrow_web(root, &arg("machine")?))?),
+        "move_page" | "hide_page" | "close_page" | "show_page" | "page_step" => {
             Ok("null".to_owned())
         }
         "takeover" => {

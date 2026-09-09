@@ -1,5 +1,11 @@
-// The borrows this screen has opened, so that the last tab to stop
-// pointing at a machine is the one that gives its network back.
+// What the browsing landing is holding, and what gives each of it back.
+//
+// **Two things, swept by two different questions.** A borrow is held per
+// **exit machine** (one machine is one borrow however many tabs point at
+// it), so it goes when the last tab stops naming that machine. A page
+// webview is held per **tab**, so it goes when that tab closes. Reading
+// one rule off the other is how a page would outlive its tab, or a
+// network be given back under a page still using it.
 //
 // **Why a ledger and not a `useEffect` cleanup.** The obvious place to
 // close a borrow is where it was opened — `BrowserPane`, on unmount.
@@ -18,7 +24,7 @@
 // **Module state, deliberately.** It has to outlive every component
 // here: the landing itself unmounts when somebody walks to another
 // screen, and the browsing windows it opened do not close with it.
-import { dropWebBorrow } from "@/api";
+import { closePage, dropWebBorrow } from "@/api";
 
 /** device id → the borrow session opened for it. */
 const open = new Map<string, string>();
@@ -60,6 +66,39 @@ export function releaseBorrows(keep: readonly string[]): void {
     open.delete(device);
     dropWebBorrow(session).catch(() => {
       /* nothing holds it but the serve's own process; see above */
+    });
+  }
+}
+
+/** Tab ids that have a live page webview behind them. */
+const pages = new Set<string>();
+
+/**
+ * Remembers that a tab has a page webview.
+ *
+ * The set is the face's, not the app's: the app knows its webviews by
+ * label and would answer "which labels exist", which is not the question
+ * — the question is which of *this landing's tabs* are still open, and
+ * only this side has that list.
+ */
+export function holdPage(tab: string): void {
+  pages.add(tab);
+}
+
+/**
+ * Ends the page of every tab that is no longer open.
+ *
+ * `keep` is the whole set of open tab ids, for the reason `releaseBorrows`
+ * takes the whole set of machines: a caller that computed the difference
+ * would need to know what this ledger holds.
+ */
+export function releasePages(keep: readonly string[]): void {
+  const wanted = new Set(keep);
+  for (const tab of [...pages]) {
+    if (wanted.has(tab)) continue;
+    pages.delete(tab);
+    closePage(tab).catch(() => {
+      /* a webview whose window is gone is already the state we wanted */
     });
   }
 }

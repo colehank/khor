@@ -537,50 +537,6 @@ export const fetchWebPins = () => call<WebPinRow[]>("web_pins");
 export const pinWeb = (machine: string, url: string, on: boolean) =>
   call<null>("pin_web", { machine, url, on });
 /**
- * Opens a page through a machine's network — **except on the web face,
- * which says why it cannot.**
- *
- * In the app the tauri skin builds the proxied window and this resolves
- * once it is up; over the dev bridge there is no window, so the same
- * call answers where the proxy listens and the window half is the app's
- * alone.
- *
- * **Both roads answer with the borrow, and the session in it is what
- * the caller closes with.** One exit machine is one borrow however many
- * pages point at it, so the same session comes back for the second page
- * — closing it is closing the machine's borrow, not one page's.
- *
- * A phone has neither. What a borrow hands back is a proxy port on the
- * khor machine, and using it means pointing a whole browser at that
- * proxy — the app sets its window's `proxy_url`, and a page cannot
- * point itself at anything. **That is a browser invariant, not a gap in
- * khor**: a page that could set its own proxy could hijack the traffic
- * of every other page.
- *
- * **What the sentence says, and what it leaves out.** The paragraph
- * above is the why; the line a person reads is one clause naming the
- * place where it does work, and nothing else. It used to carry the
- * mechanism (a local proxy port), the reason (a page cannot aim
- * itself), and a consolation ("the list and the pins are useful here")
- * — all three are what docs/UX.md forbids a sentence to do. Someone
- * standing here wants one thing: where it does work.
- *
- * Two non-app roads exist and neither is free; the ledger carries them
- * (setting the proxy by hand, and a rewriting gateway) along with the
- * security question that has to be answered before the first could be
- * built at all.
- *
- * Refused before the call rather than after, because the call is not
- * free: it opens a real borrow session on the far machine, and one
- * nobody can use is one nobody thinks to close. "Started something and
- * nothing happened" is the worst of the three possible answers — the
- * other two are doing it and saying why not.
- */
-export const openWeb = (machine: string, url: string) => {
-  if (onWebFace) return Promise.reject(new Error(msg.web_borrow_needs_app));
-  return call<WebBorrow>("open_web", { machine, url });
-};
-/**
  * Gives a page's borrow back: the far machine's network stops being
  * borrowed and the local proxy port goes.
  *
@@ -592,6 +548,95 @@ export const openWeb = (machine: string, url: string) => {
  * all, silently.
  */
 export const dropWebBorrow = (session: string) => call<null>("close_web", { session });
+
+/** Where a tab's page sits in the window, in CSS pixels — which are the
+    app's logical pixels, so neither side does DPI arithmetic. */
+export type PageBox = { x: number; y: number; w: number; h: number; view: number };
+
+/**
+ * Opens (or re-points) the page one browsing tab is showing.
+ *
+ * **The page is a second webview, not part of this one.** khor's whole
+ * interface is a web page, and an arbitrary site cannot be put inside it:
+ * most refuse to be framed, a cross-origin frame reads back neither title
+ * nor address, and a webview's proxy can only be set when it is built. So
+ * the app parents a second webview to the window and lays it over the
+ * rectangle this side measures. That is why the rectangle is an argument:
+ * only this side can see the layout.
+ */
+export const openPage = (tab: string, machine: string, url: string, at: PageBox) => {
+  if (onWebFace) return Promise.reject(new Error(msg.web_borrow_needs_app));
+  return call<WebBorrow>("open_page", { tab, machine, url, at });
+};
+
+/** Keeps the page over its tab body as the layout moves under it. */
+export const movePage = (tab: string, at: PageBox) =>
+  onWebFace ? Promise.resolve(null) : call<null>("move_page", { tab, at });
+
+/** Takes a page off the screen without ending it: a tab switch, or
+    anything that has to float over it (a native child webview always
+    paints above this page's DOM). */
+export const hidePage = (tab: string) =>
+  onWebFace ? Promise.resolve(null) : call<null>("hide_page", { tab });
+
+/** Ends a tab's page. Not its borrow — that is per machine and outlives
+    any one tab (`views/held`). */
+export const closePage = (tab: string) =>
+  onWebFace ? Promise.resolve(null) : call<null>("close_page", { tab });
+
+/** Puts a page back after `hidePage`. Not `openPage`: coming back from a
+    menu must not dial a borrow or cost the page a reload. */
+export const showPage = (tab: string) =>
+  onWebFace ? Promise.resolve(null) : call<null>("show_page", { tab });
+
+/** Back, forward, reload. **The two arrows cannot know whether there is
+    anywhere to go** — tauri has no `can_go_back` — so they stay lit and
+    a press with no history behind it quietly does nothing. */
+export const pageStep = (tab: string, way: "back" | "forward" | "reload") =>
+  onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
+
+/**
+ * What a page said about itself, addressed to one tab.
+ *
+ * **Only in the app.** The events come from a webview only the app has;
+ * the other two roads have no page and nothing to hear, so this hands
+ * back a cleanup that undoes nothing rather than pretending to listen.
+ */
+export function onPageWord(
+  event: "page:went" | "page:title" | "page:load" | "page:popup",
+  tab: string,
+  said: (text: string) => void,
+): () => void {
+  if (!inApp) return () => {};
+  let drop: (() => void) | null = null;
+  let gone = false;
+  void import("@tauri-apps/api/event")
+    .then(({ listen }) =>
+      listen<{ tab: string; text: string }>(event, (e) => {
+        if (e.payload.tab === tab) said(e.payload.text);
+      }).then((un) => {
+        // Unsubscribed before the subscription landed: undo it now, or
+        // the listener outlives the tab it was speaking for and writes
+        // into a component that is gone.
+        if (gone) un();
+        else drop = un;
+      }),
+    )
+    // **Loud, and this is the whole reason it says anything.** Listening
+    // is a core-plugin command and therefore behind tauri's capability
+    // list; khor had no capabilities file at all, so every `listen` was
+    // refused and this promise rejected into nothing. The address bar
+    // stopped following the page and links asking for a new window did
+    // nothing, and **neither of them said a word** — measured 2026-09-09,
+    // and it cost three wrong diagnoses before somebody looked here.
+    .catch((e: unknown) => {
+      console.error(`khor: cannot listen for ${event}`, e);
+    });
+  return () => {
+    gone = true;
+    drop?.();
+  };
+}
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match. */
 export const termOpen = (id: string, cols: number, rows: number) =>

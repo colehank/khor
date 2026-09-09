@@ -1014,6 +1014,12 @@ serve-shielding = "[{0}] {1} 在网络盘上——keeper 搬进本地副本再�
 serve-shield-failed = "[{0}] 本地副本没做成({1}),就在原地跑"
 serve-copy-swept = "[{0}] 本地副本被清掉了(多半是 /tmp 清理器),拷一份新的交棒"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
+# A page opened in the app is a second webview parented to the window, and
+# `Window::add_child` exists on desktop alone — mobile needs a native
+# plugin adding a WKWebView or a WebView by hand (定形 单元 3/4).
+# ⚠️ Unlike the `borrow-webview-macos-only` tombstone right below, this one
+# is not reasoning from a feature flag: the API is genuinely absent there.
+page-needs-desktop = "从别台的网开网页,现在只有电脑上能用"
 # 墓碑: `borrow-webview-macos-only` ("从别台的网开网页,现在只有 mac 上能用")
 # was removed here. It refused the borrow on Linux and Windows, reasoning
 # from the Cargo feature — and the feature really is Apple-only. But the
@@ -1857,6 +1863,12 @@ files-tab = "文件"
 browser-tab = "浏览器"
 settings = "设置"
 back = "返回"
+# The browsing landing's three page controls. **They are not the rail's
+# 「返回」**: that one leaves a screen, these move one page's history —
+# same word in English, two different acts, so they get their own.
+page-back = "上一页"
+page-forward = "下一页"
+page-reload = "重新加载"
 # The mandala map's region name. No page carries a title (docs/UX.md), so
 # this is read aloud and takes no room. It names what the picture is of —
 # the machines — rather than the picture, because「坛城」 is how the layout

@@ -361,72 +361,381 @@ fn pin_web(machine: String, url: String, on: bool) -> Result<(), String> {
     khor_gui_core::web::pin_web(&Node::root_from_env(), &machine, &url, on)
 }
 
-/// Opens a browsing window whose traffic leaves through `machine`'s
-/// network (docs/NET.md 借网). The borrow gives a local proxy address;
-/// the window is built pointing its `proxy_url` at it, so every request
-/// the page makes goes out the far machine. Async because the borrow
-/// dials.
+/// Gives a page's borrow back.
 ///
-/// **Answers with the borrow**, because the face has to be able to hand
-/// it back: closing the tab that asked for it is what closes the borrow,
-/// and a face that was told nothing has nothing to close with.
-///
-/// **All three desktops.** The macOS-only gate that used to sit here was
-/// reasoning from the Cargo feature — that part is right, Apple alone
-/// needs `macos-proxy` — but `proxy_url` itself is applied in
-/// `tauri-runtime-wry` with no target gate at all: Linux hands it to
-/// WebKitGTK's proxy settings, Windows to WebView2 as a launch argument,
-/// and neither wants a feature. Gating the *feature* by target is right;
-/// gating the *function* meant two platforms refused a thing they could
-/// already do.
-///
-/// **The window is labelled by the borrow session, and that label is now
-/// stable**: one exit machine is one borrow (`Node::start_borrow`), so a
-/// second page at the same machine finds this window instead of stacking
-/// another. It also has to be *navigated* — before the borrow was
-/// reused, the label was fresh every time and this branch could never be
-/// reached, so nobody noticed it only focused.
+/// **墓碑: this used to close a window too** (2026-09-09). A borrowed page
+/// opened in a window of its own until the tab body could hold one, and
+/// `open_web` built that window with the borrow's proxy on it. The whole
+/// road is gone — the machine card's 借网 opens a browsing tab, and the
+/// tab's page is a child webview (`open_page`) — so what is left is the
+/// half that was never about windows: handing the network back.
 #[tauri::command]
-async fn open_web(
-    app: tauri::AppHandle,
+async fn close_web(session: String) -> Result<(), String> {
+    khor_gui_core::web::drop_web_borrow(&Node::root_from_env(), &session).await
+}
+
+// ── the page inside a browsing tab (docs/NET.md 借网, 单元 2) ──
+//
+// **A page cannot be drawn by the face that draws everything else.** khor's
+// whole interface is one webview rendering a React app; an arbitrary site
+// cannot be put inside that page (`iframe` is refused by most sites, reads
+// back neither title nor address, and the proxy can only be set when a
+// webview is built). So a browsing tab's page is a **second webview**, a
+// child of the same window, positioned over the rectangle the tab body
+// occupies. The frontend owns the rectangle because only it knows the
+// layout; this side owns the webview because only it can make one.
+//
+// **One child per tab, hidden rather than closed on a tab switch.** That is
+// what makes it a tab rather than a bookmark: a page keeps its scroll, its
+// half-filled form and its live connection while you look at another one.
+//
+// The upstream bug that used to rule this out — a window showing only its
+// last child — was fixed in tauri 2024-11 (#11616, `build_as_child`), and
+// the fix is in the version this builds against. The issue is still open
+// upstream; it was never triaged.
+
+/// Where a tab's page sits inside the window, in the frontend's own CSS
+/// pixels — which are tauri's logical pixels, so nothing here does DPI
+/// arithmetic and nothing can disagree about the scale factor.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+struct PageBox {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    /// The face's own viewport height, sent with every rectangle.
+    ///
+    /// **It is here to close a coordinate mismatch, measured rather than
+    /// assumed** (2026-09-09, macOS). A child webview's y is flipped by
+    /// wry against the height tauri reports for the window — and on macOS
+    /// tauri reports the **frame**, titlebar included: `inner_size` and
+    /// `outer_size` both answered 1080x720 for a window whose content
+    /// area is 688 tall. The flip therefore lands the page one titlebar
+    /// too high: the face asked for y=93 and the page painted at 61,
+    /// covering the address bar it was supposed to sit under.
+    ///
+    /// The face is the one side that knows the true content height, so it
+    /// says so and this side takes the difference. **Not a 28 or a 32
+    /// written down here**: that number is the titlebar of one window
+    /// style on one platform, and it is zero on the platforms whose two
+    /// sizes agree — a constant would be right today and wrong on the
+    /// first window that is not this one.
+    view: f64,
+}
+
+/// How much lower the page must sit than the face asked, because the two
+/// sides measure the window differently. Zero wherever they agree.
+#[cfg(desktop)]
+fn frame_lift(window: &tauri::Window, at: PageBox) -> f64 {
+    let Ok(inner) = window.inner_size() else { return 0.0 };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    if scale <= 0.0 || at.view <= 0.0 {
+        return 0.0;
+    }
+    let told = inner.height as f64 / scale;
+    // Never negative: a face that measured a viewport *taller* than the
+    // window is a face mid-resize, and pulling the page up on that would
+    // be a jump the next rectangle undoes.
+    (told - at.view).max(0.0)
+}
+
+/// One thing a page told us about itself, addressed to the tab it belongs
+/// to. The tab id rides along because the face has several and the event
+/// arrives with no other way to tell them apart.
+#[derive(Debug, Clone, serde::Serialize)]
+struct PageWord {
+    tab: String,
+    text: String,
+}
+
+/// Which exit machine each live page webview was built against, by label.
+///
+/// **This exists to make one specific failure impossible.** A webview's
+/// proxy is fixed when it is built and there is no runtime setter (checked
+/// against wry: `with_proxy_config` on the builder is the only door). So a
+/// page webview reused for a different exit machine would keep leaving
+/// through the old one — **not failing, succeeding through the wrong
+/// network**, which is the shape docs/NET.md 可达性 rules out. Knowing what
+/// each one was built against lets `open_page` rebuild instead of reuse.
+fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static EXITS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, String>>,
+    > = std::sync::OnceLock::new();
+    EXITS.get_or_init(Default::default)
+}
+
+/// A tab id as a webview label. Tab ids are minted from a timestamp and a
+/// counter so they are already tame; this is the same guard the borrow
+/// window label uses, for the same reason — a label is a key, and a key
+/// with a separator in it is a key that can collide.
+fn page_label(tab: &str) -> String {
+    format!("page-{}", tab.replace(['/', ':'], "-"))
+}
+
+/// Opens (or re-points) the page a browsing tab is showing.
+///
+/// Answers with the borrow, because the face is what closes with
+/// it. Async because the borrow dials.
+#[cfg(desktop)]
+#[tauri::command]
+async fn open_page(
+    window: tauri::Window,
+    tab: String,
     machine: String,
     url: String,
+    at: PageBox,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
-    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
     let borrow = khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?;
     let target: tauri::Url = url.parse().map_err(|_| format!("not a url: {url}"))?;
     let proxy: tauri::Url =
         format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?;
-    let label = format!("web-{}", borrow.session.replace(['/', ':'], "-"));
-    if let Some(existing) = app.get_webview_window(&label) {
-        existing.navigate(target).map_err(|e| e.to_string())?;
-        let _ = existing.set_focus();
-        return Ok(borrow);
+    let label = page_label(&tab);
+    let top = at.y + frame_lift(&window, at);
+
+    // Reuse only when it is the same exit. A different one means the
+    // webview in front of us is wired to a proxy it can no longer be
+    // talked out of, so it goes.
+    let same_exit = page_exits().lock().map(|m| m.get(&label) == Some(&machine)).unwrap_or(false);
+    if let Some(live) = window.app_handle().get_webview(&label) {
+        if same_exit {
+            // **Only navigate when it is somewhere else.** Coming back to
+            // a tab mounts its body afresh and asks again for the address
+            // it is already on; navigating to where you already are is a
+            // reload, and a reload on every tab switch is exactly the
+            // thing keeping a webview per tab exists to avoid.
+            if live.url().map(|now| now != target).unwrap_or(true) {
+                live.navigate(target).map_err(|e| e.to_string())?;
+            }
+            live.set_position(LogicalPosition::new(at.x, top)).map_err(|e| e.to_string())?;
+            live.set_size(LogicalSize::new(at.w, at.h)).map_err(|e| e.to_string())?;
+            live.show().map_err(|e| e.to_string())?;
+            return Ok(borrow);
+        }
+        let _ = live.close();
     }
-    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(target))
-        .title(machine)
+
+    // Every event goes to **this** window and no further. A page webview
+    // is somebody else's site; broadcasting khor's own events into it
+    // would be handing a stranger the app's internal traffic.
+    let face = window.label().to_string();
+    let (t_tab, l_tab) = (tab.clone(), tab.clone());
+    let (t_face, l_face) = (face.clone(), face.clone());
+    let builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target))
         .proxy_url(proxy)
-        .build()
+        .on_document_title_changed(move |view, title| {
+            let _ = view
+                .app_handle()
+                .emit_to(t_face.clone(), "page:title", PageWord { tab: t_tab.clone(), text: title });
+        })
+        .on_page_load(move |view, payload| {
+            let word = match payload.event() {
+                tauri::webview::PageLoadEvent::Started => "started",
+                tauri::webview::PageLoadEvent::Finished => "finished",
+            };
+            let app = view.app_handle();
+            let _ = app.emit_to(
+                l_face.clone(),
+                "page:load",
+                PageWord { tab: l_tab.clone(), text: word.to_owned() },
+            );
+            // **Where the tab is, taken from what actually loaded here.**
+            // This used to be reported from `on_navigation`, which fires
+            // for a `target="_blank"` link too — and that link's page
+            // never loads in *this* webview, it becomes a tab of its own.
+            // So one click moved both: the new tab opened, and the tab
+            // that was left behind followed it. Measured 2026-09-09.
+            //
+            // ⚠️ **A page that moves itself with `pushState` does not
+            // load anything**, so it does not reach here and the address
+            // stays where it was. Real browsers follow that too; the hook
+            // for it is a script in the page, not this callback.
+            let _ = app.emit_to(
+                l_face.clone(),
+                "page:went",
+                PageWord { tab: l_tab.clone(), text: payload.url().to_string() },
+            );
+        });
+    // **Kept, and deliberately silent.** `on_navigation` answers whether
+    // a navigation may happen at all, which is where a scheme allowlist
+    // would live — `file:` and whatever else a borrowed page must not be
+    // able to reach through this window. It used to also report the
+    // address, and that was wrong: it fires for a `target="_blank"` link
+    // whose page never loads here (see `on_page_load`).
+    let builder = builder.on_navigation(|_to| true);
+    // **A link that asks for a new window gets a new tab**, which is the
+    // only answer that leaves the decision where it belongs. Whether a
+    // link opens where you are or beside it is the page author's call —
+    // `target="_blank"` on one link and not another is a distinction they
+    // made on purpose — and khor's job is to carry it, not to overrule it
+    // in either direction.
+    //
+    // Without this the default answer is to deny, and **denying is
+    // silent**: measured on 2026-09-09, baidu's results are such links
+    // and pressing one looked like a page that had stopped responding.
+    // The first fix here navigated in place, which worked and was still
+    // khor deciding — corrected the same evening.
+    //
+    // `Deny` and an event, rather than `Create`: the new tab is the
+    // *face's* to mint, because the tab strip, the store and the borrow
+    // ledger are all on that side and a webview created behind their back
+    // would belong to no tab at all.
+    let popped = window.app_handle().clone();
+    let (p_tab, p_face) = (tab.clone(), face.clone());
+    let builder = builder.on_new_window(move |to, _features| {
+        let _ = popped.emit_to(
+            p_face.clone(),
+            "page:popup",
+            PageWord { tab: p_tab.clone(), text: to.to_string() },
+        );
+        tauri::webview::NewWindowResponse::Deny
+    });
+
+    window
+        .add_child(builder, LogicalPosition::new(at.x, top), LogicalSize::new(at.w, at.h))
         .map_err(|e| e.to_string())?;
+    if let Ok(mut m) = page_exits().lock() {
+        m.insert(label, machine);
+    }
     Ok(borrow)
 }
 
-/// Gives a page's borrow back, and closes the window that was riding it.
-///
-/// **The window goes first and the borrow second, in that order.** A
-/// window left open on a borrow that has been dropped is a page whose
-/// every next request leaves through *this* machine's own network — the
-/// opposite of what the person asked for, and nothing on screen would
-/// say so. Closing it first means the worst case is a window that closed
-/// while the borrow lingered, which the serve reaps anyway.
+/// Keeps a page over its tab body as the layout moves under it. Called by
+/// the side that can see the layout; there is no way for this side to know
+/// a rectangle changed.
+#[cfg(desktop)]
 #[tauri::command]
-async fn close_web(app: tauri::AppHandle, session: String) -> Result<(), String> {
+fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize, Manager};
+    let Some(view) = window.app_handle().get_webview(&page_label(&tab)) else { return Ok(()) };
+    let top = at.y + frame_lift(&window, at);
+    view.set_position(LogicalPosition::new(at.x, top)).map_err(|e| e.to_string())?;
+    view.set_size(LogicalSize::new(at.w, at.h)).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Takes a page off the screen without ending it.
+///
+/// **Two jobs, one call.** A tab switch hides the page you are leaving, and
+/// so does opening anything that has to float over it: a native child
+/// webview always paints above the DOM, so khor's own menus and the address
+/// bar's completions would otherwise be drawn underneath the site.
+#[cfg(desktop)]
+#[tauri::command]
+fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
-    let label = format!("web-{}", session.replace(['/', ':'], "-"));
-    if let Some(window) = app.get_webview_window(&label) {
-        let _ = window.close();
+    let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(()) };
+    view.hide().map_err(|e| e.to_string())
+}
+
+/// Puts a page back after `hide_page` took it away.
+///
+/// **Separate from `open_page` on purpose.** Coming back from a menu is
+/// not opening anything: it must not dial a borrow, must not navigate,
+/// and must not cost the page a frame of reload. A page that is not there
+/// is not an error here — the tab may have been closed while a menu was
+/// up, and nothing about that is worth a refusal.
+#[cfg(desktop)]
+#[tauri::command]
+fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
+    use tauri::Manager;
+    let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(()) };
+    view.show().map_err(|e| e.to_string())
+}
+
+/// Back, forward and reload for one tab's page.
+///
+/// **Two of the three are script, and that is a gap rather than a
+/// choice.** tauri has `reload` and nothing else: there is no `go_back`,
+/// no `go_forward` and — the one that shows — no `can_go_back`, so the
+/// arrows cannot grey out when there is nowhere to go. Pressing one at
+/// the start of a history does nothing and says nothing, which is the
+/// honest state of it until the platform grows the question.
+#[cfg(desktop)]
+#[tauri::command]
+fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
+    use tauri::Manager;
+    let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(()) };
+    match way.as_str() {
+        "back" => view.eval("history.back()").map_err(|e| e.to_string()),
+        "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
+        "reload" => view.reload().map_err(|e| e.to_string()),
+        // Refused by name, the `load` rule: a word this build does not
+        // know, read as one of the three, would look like a working
+        // button doing somebody else's job.
+        other => Err(format!("no such step: {other}")),
     }
-    khor_gui_core::web::drop_web_borrow(&Node::root_from_env(), &session).await
+}
+
+/// Ends a page: the webview goes and the tab stops having one.
+///
+/// **Not the borrow.** One exit machine is one borrow however many tabs
+/// point at it, so the last tab to stop naming a machine is what gives its
+/// network back (`views/borrows`), and that is a count only the face keeps.
+#[cfg(desktop)]
+#[tauri::command]
+fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
+    use tauri::Manager;
+    let label = page_label(&tab);
+    if let Ok(mut m) = page_exits().lock() {
+        m.remove(&label);
+    }
+    let Some(view) = app.get_webview(&label) else { return Ok(()) };
+    view.close().map_err(|e| e.to_string())
+}
+
+// **The mobile halves are refusals, and unlike the last one that stood
+// here they are true.** `add_child` is gated `all(desktop, feature =
+// "unstable")` and there is no mobile equivalent: a page on a phone needs a
+// native plugin adding a WKWebView or a WebView by hand (定形 单元 3/4).
+// The one this file used to carry refused Linux and Windows for a thing
+// they could already do; this one refuses a thing that genuinely is not
+// there yet.
+#[cfg(not(desktop))]
+#[tauri::command]
+async fn open_page(
+    tab: String,
+    machine: String,
+    url: String,
+    at: PageBox,
+) -> Result<khor_gui_core::web::WebBorrow, String> {
+    let _ = (tab, machine, url, at);
+    Err(khor_catalog::msg::PAGE_NEEDS_DESKTOP.into())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn move_page(tab: String, at: PageBox) -> Result<(), String> {
+    let _ = (tab, at);
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn hide_page(tab: String) -> Result<(), String> {
+    let _ = tab;
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn close_page(tab: String) -> Result<(), String> {
+    let _ = tab;
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn show_page(tab: String) -> Result<(), String> {
+    let _ = tab;
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn page_step(tab: String, way: String) -> Result<(), String> {
+    let _ = (tab, way);
+    Ok(())
 }
 
 /// Answers with the ticket **and** the window it is good for: the window
@@ -678,8 +987,13 @@ pub fn run() {
             forget_recent,
             web_pins,
             pin_web,
-            open_web,
             close_web,
+            open_page,
+            move_page,
+            hide_page,
+            close_page,
+            show_page,
+            page_step,
             open_session,
             open_on,
             machine_log,

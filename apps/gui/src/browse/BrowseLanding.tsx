@@ -24,10 +24,10 @@ import { useState } from "react";
 
 import { forgetRecent, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
-import type { BrowseKind } from "@/browse/kind";
+import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
 import { TabCount, TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
-import type { BrowseTabs } from "@/browse/use-browse-tabs";
+import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
 import { gui } from "@/gen/catalog";
 
@@ -40,11 +40,11 @@ function tabLabel(kind: BrowseKind, place: string, machine: DeviceRow | null): s
   return kind.leafOf(place);
 }
 
-/** The stand-in for a kind that holds nothing on a machine, so the shell
-    calls one hook either way (`BrowseKind.useHeld`). It takes the list
-    it is not going to read, because a signature that differed would let
-    the two drift. */
-function holdsNothing(_devices: readonly string[]): void {}
+/** The stand-in for a kind that holds nothing, so the shell calls one
+    hook either way (`BrowseKind.useHeld`). It takes the list it is not
+    going to read, because a signature that differed would let the two
+    drift. */
+function holdsNothing(_open: readonly HeldTab[]): void {}
 
 export function BrowseLanding({
   kind,
@@ -88,7 +88,11 @@ export function BrowseLanding({
   // the life of this landing (`PAGES`, `FILES` are module constants),
   // which is what lets either be called unconditionally here.
   const useHeld = kind.useHeld ?? holdsNothing;
-  useHeld(tabs.tabs.map((t) => t.device).filter((d): d is string => d !== null));
+  useHeld(
+    tabs.tabs
+      .filter((t): t is BrowseTab & { device: string } => t.device !== null)
+      .map((t) => ({ id: t.id, device: t.device })),
+  );
 
   const deviceOf = (id: string | null) => (id ? (devices.find((d) => d.id === id) ?? null) : null);
   const machine = deviceOf(tabs.current.device);
@@ -101,6 +105,11 @@ export function BrowseLanding({
       label: tabLabel(kind, t.path, d),
       face: d?.face ?? null,
       path: t.path,
+      // The exit machine's name, for the tab's hover title. **The face
+      // was already there and said which machine without saying its
+      // name** (2026-09-09) — a coloured disc is recognisable once you
+      // know it and unreadable before that.
+      machine: d?.name ?? null,
     };
   });
 
@@ -124,6 +133,7 @@ export function BrowseLanding({
 
   const address = (trailing?: React.ReactNode) => (
     <AddressBar
+      tab={tabs.current.id}
       kind={kind}
       devices={devices}
       machine={machine}
@@ -148,10 +158,15 @@ export function BrowseLanding({
         className="h-full min-h-0"
       >
         <Body
+          tab={tabs.current.id}
           machine={machine}
           place={tabs.current.path}
           narrow={narrow}
           onPlace={(place) => tabs.goTo(machine.id, place)}
+          // A new tab beside this one, on the same machine — `open`
+          // rather than `goTo`, which is the whole difference the shell
+          // draws between the two (`BrowseTabs`).
+          onPopup={(place) => tabs.open(machine.id, place)}
           onLanded={(place) => {
             // **The visit is recorded here, once, for every kind.** The
             // ledger is the node's (`khor_sync::recents`) and the body

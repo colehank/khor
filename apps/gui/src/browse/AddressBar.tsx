@@ -28,7 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DeviceRow } from "@/api";
 import type { BrowseKind, Place } from "@/browse/kind";
 import { IconFile } from "@/components/icons";
-import { Omnibox, OmniChip, type Candidate, type OmniAxis } from "@/components/Omnibox";
+import { Omnibox, type Candidate, type OmniAxis } from "@/components/Omnibox";
 import { gui } from "@/gen/catalog";
 
 /** A place offered out of memory, with the word for where it came from.
@@ -37,6 +37,7 @@ import { gui } from "@/gen/catalog";
 export type Remembered = { place: Place; hint: string };
 
 export function AddressBar({
+  tab,
   kind,
   devices,
   machine,
@@ -49,6 +50,8 @@ export function AddressBar({
 }: {
   kind: BrowseKind;
   devices: DeviceRow[];
+  /** The open tab's handle, handed to the kind's resting face. */
+  tab: string;
   /** The machine this tab is on, or null on a fresh tab. */
   machine: DeviceRow | null;
   /** Where the tab actually is — what came back, in the kind's own
@@ -165,9 +168,18 @@ export function AddressBar({
     onGo(found.id, "");
   };
 
-  const chip: Candidate | null = machine
-    ? { key: `dev:${machine.name}`, label: machine.name, face: machine.face }
-    : null;
+  // ⚠️ **The machine's chip is gone from both faces** (2026-09-09), and
+  // the shape it used to take is worth a tombstone rather than a blank:
+  // `{ key: \`dev:${machine.name}\`, label: machine.name, face }`. It sat
+  // in the resting row and in the open box, and in both places it was the
+  // same size and shape as a tab one row above — a person reading the
+  // screen saw two rows of tabs. The other half is that it stopped being
+  // true: with one exit for the whole landing (docs/NET.md 可达性) the
+  // machine is not a property of this tab's address.
+  //
+  // The machine is still on the tab, where it always was — the avatar —
+  // and the tab's hover title spells it now. Switching it is still the
+  // box, whose first axis it is.
 
   // A fresh tab has no address to draw, so the box is the whole control:
   // there is no resting state to rest in.
@@ -181,7 +193,14 @@ export function AddressBar({
           query={draft}
           onQuery={setDraft}
           axes={axes}
-          chosen={chip ? [chip.key] : []}
+          // **No chip while typing either** (2026-09-09). The machine
+          // used to ride in the box as a removable chip beside the
+          // address; with one exit for the whole landing (docs/NET.md
+          // 可达性) it is not a property of what is being typed, and it
+          // made the box read as two fields when it is one. Switching
+          // machines is still here — the machine is the box's first axis
+          // — it just is not drawn as something attached to the address.
+          chosen={[]}
           onToggle={onToggle}
           onSubmit={go}
           // Not the magnifier: this box does not look for things, it is
@@ -195,14 +214,25 @@ export function AddressBar({
         />
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-1">
-          {chip && <OmniChip candidate={chip} onRemove={() => onToggle(chip.key)} />}
-          {/* The kind's own face for an address. The chip beside it is
-              the shell's, and the `gap-1` between them is the statement
-              that they are two different kinds of thing.
+          {/* ⚠️ **The machine's chip used to sit here and no longer
+              does** (2026-09-09). It was the same shape, the same size
+              and one row under the tab strip, so it read as a second row
+              of tabs — a person looking at it saw two tabs, one named
+              after the page and one after the machine. The row at rest
+              is now the address and nothing else.
+
+              **The exit is not per tab any more either**, which is the
+              other half of why it left: docs/NET.md 可达性 settled on one
+              exit at a time for the whole landing, so a chip that sat
+              inside one tab's address was drawing it as a property of
+              that tab. Changing it is still the box — the machine is its
+              first axis — and where the landing *shows* which exit it is
+              on is open.
 
               **An element, never a call** (`BrowseKind.Rest` says what
               breaks). */}
           <Rest
+            tab={tab}
             at={at}
             onGo={(place) => machine && onGo(machine.id, place)}
             onEdit={() => {

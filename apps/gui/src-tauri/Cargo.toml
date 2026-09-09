@@ -18,10 +18,18 @@ khor-node.workspace = true
 # resident on a desktop that has one, and a face that only `khor serve`
 # could raise would be absent on exactly the machines somebody sits at.
 khor-web = { path = "../../../crates/web" }
+# Used only by the mobile halves of the page commands, which refuse in
+# words. Not target-gated: `desktop`/`mobile` are cfgs tauri-build sets,
+# and cargo's `[target.'cfg(..)']` only understands real target cfgs — so
+# gating the dependency the way the code is gated is not expressible.
+khor-catalog.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tauri = { version = "2", features = [] }
+# `unstable` is for `Window::add_child`: a browsing tab's page is a second
+# webview parented to this window, because khor's own interface is already
+# a webview and a site cannot be put inside it (docs/NET.md 借网).
+tauri = { version = "2", features = ["unstable"] }
 # The native file picker behind 发文件 (GUI 发文件批). The official v2
 # plugin and nothing homegrown, because the one thing the desktop form
 # needs is a REAL local path to hand `Node::send` — a webview's
