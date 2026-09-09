@@ -191,4 +191,20 @@ export type BrowseKind = {
   /** The tab's content, on the same footing as `Rest` and for the same
       reason — a body with state of its own is the ordinary case. */
   Body: ComponentType<BodyProps>;
+  /**
+   * What this kind is holding for the tabs that are open, told the
+   * machines they point at right now. Optional: a kind that holds
+   * nothing on a machine leaves it out, and files does — a listing is
+   * asked for and answered, and nothing survives the answer.
+   *
+   * **A hook over the whole set, and it has to be.** The shell mounts
+   * only the open tab's `Body`, so a body unmounts on every tab switch;
+   * a kind that released what it holds there would give it back each
+   * time somebody looked at another tab. "Is anybody still pointed at
+   * this machine" is a question only the set can answer.
+   *
+   * The list is device ids, blank tabs left out — a tab pointed nowhere
+   * is not pointed at a machine.
+   */
+  useHeld?: (devices: readonly string[]) => void;
 };

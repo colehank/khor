@@ -365,46 +365,50 @@ fn pin_web(machine: String, url: String, on: bool) -> Result<(), String> {
 /// network (docs/NET.md 借网). The borrow gives a local proxy address;
 /// the window is built pointing its `proxy_url` at it, so every request
 /// the page makes goes out the far machine. Async because the borrow
-/// dials. The window is labelled by the borrow session so it is unique
-/// and closing it is traceable.
+/// dials.
 ///
-/// **macOS only**, because per-window `proxy_url` is (the Cargo feature
-/// is gated to macOS). Opening one elsewhere without the proxy would leak
-/// the request out this machine's own network — the opposite of a borrow
-/// — so the other platforms refuse in words until the platform batch
-/// wires their proxy paths.
-#[cfg(target_os = "macos")]
+/// **Answers with the borrow**, because the face has to be able to hand
+/// it back: closing the tab that asked for it is what closes the borrow,
+/// and a face that was told nothing has nothing to close with.
+///
+/// **All three desktops.** The macOS-only gate that used to sit here was
+/// reasoning from the Cargo feature — that part is right, Apple alone
+/// needs `macos-proxy` — but `proxy_url` itself is applied in
+/// `tauri-runtime-wry` with no target gate at all: Linux hands it to
+/// WebKitGTK's proxy settings, Windows to WebView2 as a launch argument,
+/// and neither wants a feature. Gating the *feature* by target is right;
+/// gating the *function* meant two platforms refused a thing they could
+/// already do.
+///
+/// **The window is labelled by the borrow session, and that label is now
+/// stable**: one exit machine is one borrow (`Node::start_borrow`), so a
+/// second page at the same machine finds this window instead of stacking
+/// another. It also has to be *navigated* — before the borrow was
+/// reused, the label was fresh every time and this branch could never be
+/// reached, so nobody noticed it only focused.
 #[tauri::command]
 async fn open_web(
     app: tauri::AppHandle,
     machine: String,
     url: String,
-) -> Result<(), String> {
+) -> Result<khor_gui_core::web::WebBorrow, String> {
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
     let borrow = khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?;
     let target: tauri::Url = url.parse().map_err(|_| format!("not a url: {url}"))?;
     let proxy: tauri::Url =
         format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?;
     let label = format!("web-{}", borrow.session.replace(['/', ':'], "-"));
-    // Reuse a window already open under this label rather than stacking a
-    // second — one borrow, one window.
     if let Some(existing) = app.get_webview_window(&label) {
+        existing.navigate(target).map_err(|e| e.to_string())?;
         let _ = existing.set_focus();
-        return Ok(());
+        return Ok(borrow);
     }
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(target))
         .title(machine)
         .proxy_url(proxy)
         .build()
         .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-async fn open_web(machine: String, url: String) -> Result<(), String> {
-    let _ = (machine, url);
-    Err(khor_catalog::msg::BORROW_WEBVIEW_MACOS_ONLY.into())
+    Ok(borrow)
 }
 
 /// Answers with the ticket **and** the window it is good for: the window

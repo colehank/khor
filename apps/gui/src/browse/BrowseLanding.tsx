@@ -40,6 +40,12 @@ function tabLabel(kind: BrowseKind, place: string, machine: DeviceRow | null): s
   return kind.leafOf(place);
 }
 
+/** The stand-in for a kind that holds nothing on a machine, so the shell
+    calls one hook either way (`BrowseKind.useHeld`). It takes the list
+    it is not going to read, because a signature that differed would let
+    the two drift. */
+function holdsNothing(_devices: readonly string[]): void {}
+
 export function BrowseLanding({
   kind,
   devices,
@@ -75,6 +81,14 @@ export function BrowseLanding({
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
+  // What the kind is holding on the machines the tabs name, so it can
+  // give back what nothing points at any more (`BrowseKind.useHeld`).
+  // A kind that holds nothing gets a hook that does nothing, rather than
+  // a call the shell makes only half the time: `kind` is one object for
+  // the life of this landing (`PAGES`, `FILES` are module constants),
+  // which is what lets either be called unconditionally here.
+  const useHeld = kind.useHeld ?? holdsNothing;
+  useHeld(tabs.tabs.map((t) => t.device).filter((d): d is string => d !== null));
 
   const deviceOf = (id: string | null) => (id ? (devices.find((d) => d.id === id) ?? null) : null);
   const machine = deviceOf(tabs.current.device);

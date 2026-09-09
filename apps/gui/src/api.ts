@@ -545,6 +545,11 @@ export const pinWeb = (machine: string, url: string, on: boolean) =>
  * call answers where the proxy listens and the window half is the app's
  * alone.
  *
+ * **Both roads answer with the borrow, and the session in it is what
+ * the caller closes with.** One exit machine is one borrow however many
+ * pages point at it, so the same session comes back for the second page
+ * — closing it is closing the machine's borrow, not one page's.
+ *
  * A phone has neither. What a borrow hands back is a proxy port on the
  * khor machine, and using it means pointing a whole browser at that
  * proxy — the app sets its window's `proxy_url`, and a page cannot
@@ -573,7 +578,7 @@ export const pinWeb = (machine: string, url: string, on: boolean) =>
  */
 export const openWeb = (machine: string, url: string) => {
   if (onWebFace) return Promise.reject(new Error(msg.web_borrow_needs_app));
-  return call<WebBorrow | null>("open_web", { machine, url });
+  return call<WebBorrow>("open_web", { machine, url });
 };
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match. */

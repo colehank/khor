@@ -284,8 +284,20 @@ pub struct Node {
     /// gone (a `close` from any process removes the row), which is also
     /// what frees the port. Empty on a node that is not the resident
     /// serve.
-    pub(crate) borrows:
-        Arc<tokio::sync::Mutex<std::collections::HashMap<SessionId, tokio::task::JoinHandle<()>>>>,
+    ///
+    /// **The exit machine is in the value so a second ask for the same
+    /// one finds the first** (`start_borrow`). It is not the key because
+    /// reaping and closing both arrive holding a session id and nothing
+    /// else; a machine-keyed map would make those two walk the whole
+    /// table to answer a question the id already answers.
+    pub(crate) borrows: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<
+                SessionId,
+                (String, std::net::SocketAddr, tokio::task::JoinHandle<()>),
+            >,
+        >,
+    >,
     /// The pipes this serve holds to **other machines'** session hosts
     /// (远程 attach), keyed by the session's id over there. One pipe per
     /// session, however many faces attach through it: a terminal has one

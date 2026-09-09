@@ -18,9 +18,12 @@
 //     its tail (the leaf says where you are) and a URL from its head
 //     (the host says whose page it is), so one strip scrolls to the end
 //     and this one does not.
+import { useEffect } from "react";
+
 import { fetchWebPins } from "@/api";
 import type { BodyProps, BrowseKind, RestProps, SecondSegment } from "@/browse/kind";
 import { gui } from "@/gen/catalog";
+import { releaseBorrows } from "@/views/borrows";
 import { BrowserPane, normalize } from "@/views/BrowserPane";
 
 /**
@@ -76,6 +79,28 @@ function PageAddress({ at, onEdit }: RestProps) {
       <span className="min-w-0 truncate text-muted-foreground">{rest}</span>
     </button>
   );
+}
+
+/**
+ * Gives back the network of every machine no tab is pointed at any more
+ * (`BrowseKind.useHeld`, `views/borrows`).
+ *
+ * **This is what "closing the tab closes the borrow" actually is.** It
+ * cannot live on the pane: the shell mounts only the open tab's body, so
+ * a pane unmounts on every tab switch, and the borrow is per machine
+ * rather than per tab anyway. The condition worth acting on is that
+ * nothing names the machine any more, and only the set of tabs knows.
+ *
+ * Keyed on the joined list rather than the array — the shell builds a
+ * fresh array every render, and an effect keyed on that would ask a
+ * machine to close a session on every render. Device ids are hex, so a
+ * comma cannot appear inside one.
+ */
+function useBorrowsHeld(devices: readonly string[]): void {
+  const key = [...devices].sort().join(",");
+  useEffect(() => {
+    releaseBorrows(key ? key.split(",") : []);
+  }, [key]);
 }
 
 function Surf({ machine, place, onLanded }: BodyProps) {
@@ -139,6 +164,7 @@ export const PAGES: BrowseKind = {
   leafOf: hostOf,
   Rest: PageAddress,
   Body: Surf,
+  useHeld: useBorrowsHeld,
 };
 
 /** Re-exported so the address bar's submit and this file agree on what

@@ -274,7 +274,7 @@ async fn wait_borrow_state(node: &Node, want: khor_core::State) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
+async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() {
     let ra = root("sa");
     let rb = root("sb");
     let sa = Node::open_as(ra.clone(), "alpha").unwrap();
@@ -307,6 +307,23 @@ async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
     assert!(
         wait_borrow_state(&b, khor_core::State::Idle).await,
         "a fresh borrow row opens 空闲"
+    );
+
+    // **One borrow per exit machine.** Asking again for a machine already
+    // borrowed is answered with the borrow that is open — not a second
+    // lease, a second port and a second row. Before this, every page
+    // opened through a machine spent all three, so three pages left three
+    // rows nobody could tell apart.
+    let (again, again_addr) = timeout(Duration::from_secs(60), b.borrow("alpha"))
+        .await
+        .expect("a second borrow of a held machine must not hang")
+        .unwrap();
+    assert_eq!(again, session, "a second borrow of one machine is the first one");
+    assert_eq!(again_addr, addr, "and it answers where the first one listens");
+    assert_eq!(
+        b.sessions().unwrap().iter().filter(|v| v.session.kind.0 == "borrow").count(),
+        1,
+        "so the session list gains no second row"
     );
 
     // Borrowing your own network is refused in words, not left to dial
@@ -345,7 +362,7 @@ async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
 
     // Closing the borrow removes its row; the serve reaps the proxy task
     // on its next tick.
-    b.close(&khor_node::SessionId(session)).unwrap();
+    b.close(&khor_node::SessionId(session.clone())).unwrap();
     let gone = {
         let mut gone = false;
         for _ in 0..40 {
@@ -363,6 +380,20 @@ async fn the_serve_hosts_a_borrow_row_that_turns_busy_and_close_reaps_it() {
         gone
     };
     assert!(gone, "close removes the borrow row");
+
+    // **The other arm of the reuse: it is gated on the row still being
+    // claimed, not merely on the machine matching.** After a close there
+    // is nothing left to hand back — the proxy task was aborted and the
+    // port with it — so this must dial a fresh lease rather than answer
+    // with the session it just reaped. Without this arm, dropping the
+    // liveness half of that test would leave every assertion above green
+    // while a borrow handed out a dead port.
+    let (after, _) = timeout(Duration::from_secs(60), b.borrow("alpha"))
+        .await
+        .expect("borrowing again after a close must not hang")
+        .unwrap();
+    assert_ne!(after, session, "a closed borrow is not handed back as a live one");
+    b.close(&khor_node::SessionId(after)).unwrap();
 
     serve_a.abort();
     serve_b.abort();

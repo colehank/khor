@@ -22,6 +22,7 @@ import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { holdBorrow } from "@/views/borrows";
 
 /** A page's scheme is optional to type; a bare host means https. */
 export function normalize(raw: string): string | null {
@@ -61,17 +62,32 @@ export function BrowserPane({
   };
   useEffect(loadPins, [device]);
 
-  // **One borrow per address, and only when there is one.** The tab
-  // arriving pointed at a page is the same act as somebody pressing
-  // Enter on it — both come through as a new `url`, and neither should
-  // spend a second borrow on a page already open.
+  // **Every address asks, and the machine decides whether that costs a
+  // borrow.** The tab arriving pointed at a page is the same act as
+  // somebody pressing Enter on it — both come through as a new `url`,
+  // and both have to be asked, because a new address is a real
+  // navigation even when the network it leaves through is the one
+  // already held.
+  //
+  // This used to claim it spent one borrow per address, which read like
+  // thrift and was the leak: `start_borrow` dialled a fresh lease, port
+  // and session row on every call, so three pages on one machine left
+  // three of each and the session list filled with rows nobody could
+  // tell apart. **The count is settled where the borrows are** — one per
+  // exit machine, so the second address here is handed the first one's
+  // session and nothing new is spent.
   useEffect(() => {
     const want = normalize(url);
     if (!want) return;
     let stopped = false;
     setOpening({ url: want, state: "opening", word: gui.web_opening(machine) });
     openWeb(machine, want).then(
-      () => {
+      (borrow) => {
+        // **Written down before the unmount check, on purpose.** The
+        // borrow is open on the far machine whether or not this pane is
+        // still on screen; a record skipped because the tab was closed
+        // mid-dial is a lease nobody can give back.
+        holdBorrow(device, borrow.session);
         if (stopped) return;
         setOpening({ url: want, state: "opened", word: gui.web_opened(machine) });
         onOpened(want);

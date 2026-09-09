@@ -30,19 +30,19 @@ tauri = { version = "2", features = [] }
 # plugin directly, so no JS package and no capability grant is added.
 tauri-plugin-dialog = "2"
 
-# macos-proxy is macOS-only (it compiles for macOS 14+ alone), so the
-# feature is enabled only on macOS — enabling it everywhere would break
-# the Linux, Windows and iOS builds of this same app. A borrow opens a
-# webview window whose traffic leaves through another machine via
-# per-window proxy_url (docs/NET.md 借网); the other platforms' proxy
-# paths are on the ledger (platform batch).
+# macos-proxy is Apple-only (it compiles for macOS 14+ alone), so the
+# feature is enabled only there — enabling it everywhere would break the
+# Linux and Windows builds of this same app. A borrow opens a browsing
+# webview whose traffic leaves through another machine via proxy_url
+# (docs/NET.md 借网).
+#
+# **The feature is target-gated; the function is not.** Only Apple needs
+# a feature for it: `tauri-runtime-wry` applies proxy_url with no target
+# gate, handing it to WebKitGTK on Linux and to WebView2's launch
+# arguments on Windows. Reading this gate as "borrowing is macOS-only"
+# is what kept two platforms refusing a thing they could already do.
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2", features = ["macos-proxy"] }
-
-# Only the non-macOS `open_web` refuses in a catalog word; on macOS that
-# branch is cfg'd out, so the dependency would be dead weight there.
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-khor-catalog.workspace = true
 
 [features]
 # **On by default, and that is the whole fix for the white window.**

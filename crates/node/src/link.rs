@@ -1375,6 +1375,32 @@ impl Node {
         ep: &iroh::Endpoint,
         machine: &str,
     ) -> Result<(crate::SessionId, std::net::SocketAddr), String> {
+        // **One borrow per exit machine, however many pages point at it.**
+        // Before this, every open dialled a fresh lease, bound a fresh
+        // port and wrote a fresh session row, so three pages at one
+        // machine spent three of each and the list filled with borrows
+        // nobody could tell apart. `reaches` has kept this shape for
+        // attach pipes all along — same file, same reasoning, and its
+        // field sits beside this one in `Node`.
+        {
+            let mut held = self.borrows.lock().await;
+            let mine = held.iter().find_map(|(id, (at, addr, handle))| {
+                (at.as_str() == machine).then(|| (id.clone(), *addr, handle.is_finished()))
+            });
+            if let Some((id, addr, finished)) = mine {
+                // Alive and still claimed: the same lease answers.
+                if !finished && self.live.claims(&id) {
+                    return Ok((id, addr));
+                }
+                // The task died, or a `close` from any process took the
+                // row out from under it. Either way the port it holds is
+                // not one to hand out again — drop it here rather than
+                // wait for the serve's next tick to reap it.
+                if let Some((_, _, handle)) = held.remove(&id) {
+                    handle.abort();
+                }
+            }
+        }
         let borrow = self.tunnel_on(ep, machine).await?;
         let id = self.open_ephemeral(khor_core::kind::BORROW, &msg::borrowing_title(machine))?;
         // The lease starts with no pipes, so the row opens 空闲 rather
@@ -1397,7 +1423,7 @@ impl Node {
         let handle = tokio::spawn(async move {
             let _ = crate::tunnel::serve_proxy(std::sync::Arc::new(borrow), listener, activity).await;
         });
-        self.borrows.lock().await.insert(id.clone(), handle);
+        self.borrows.lock().await.insert(id.clone(), (machine.to_owned(), addr, handle));
         Ok((id, addr))
     }
 
@@ -1407,7 +1433,7 @@ impl Node {
     /// is reaped within one sync period.
     pub(crate) async fn reap_borrows(&self) {
         let mut held = self.borrows.lock().await;
-        held.retain(|id, handle| {
+        held.retain(|id, (_, _, handle)| {
             if handle.is_finished() || !self.live.claims(id) {
                 handle.abort();
                 false

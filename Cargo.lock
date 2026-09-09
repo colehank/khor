@@ -3394,7 +3394,6 @@ dependencies = [
 name = "khor-gui"
 version = "0.1.14"
 dependencies = [
- "khor-catalog",
  "khor-gui-core",
  "khor-node",
  "khor-web",
