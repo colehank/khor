@@ -580,6 +580,18 @@ export const openWeb = (machine: string, url: string) => {
   if (onWebFace) return Promise.reject(new Error(msg.web_borrow_needs_app));
   return call<WebBorrow>("open_web", { machine, url });
 };
+/**
+ * Gives a page's borrow back: the far machine's network stops being
+ * borrowed and the local proxy port goes.
+ *
+ * **Not `closeSession`, and the difference is not cosmetic.** A page's
+ * borrow deliberately takes no row in the session list (docs/NET.md
+ * 可达性), so there is no session to close — what it has is a handle,
+ * and this is the verb that handle answers to. Calling `closeSession`
+ * with it would name a row that was never written and do nothing at
+ * all, silently.
+ */
+export const dropWebBorrow = (session: string) => call<null>("close_web", { session });
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match. */
 export const termOpen = (id: string, cols: number, rows: number) =>

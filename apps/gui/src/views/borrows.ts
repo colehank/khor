@@ -18,7 +18,7 @@
 // **Module state, deliberately.** It has to outlive every component
 // here: the landing itself unmounts when somebody walks to another
 // screen, and the browsing windows it opened do not close with it.
-import { closeSession } from "@/api";
+import { dropWebBorrow } from "@/api";
 
 /** device id → the borrow session opened for it. */
 const open = new Map<string, string>();
@@ -42,18 +42,24 @@ export function holdBorrow(device: string, session: string): void {
  * know what this ledger holds, and then two places would have to agree
  * about it.
  *
- * **Forgets before it asks, and does not put back on failure.** A close
- * that did not land leaves a row the serve reaps on its own once the
- * face stops claiming it; a close retried forever would ask a dead
- * machine on every keystroke that changes the tabs.
+ * **Forgets before it asks, and does not put back on failure.** A drop
+ * that did not land leaves a proxy port held by the serve's own process
+ * and nothing else, so it goes when the serve does; a drop retried
+ * forever would ask a machine that is not answering on every keystroke
+ * that changes the tabs.
+ *
+ * That is the honest cost of this borrow having no row: nothing sweeps
+ * it on a tick, because there is no row to notice missing. The trade was
+ * taken deliberately (docs/NET.md 可达性) — a row that exists only so
+ * something can reap it is a session in the list that is not a session.
  */
 export function releaseBorrows(keep: readonly string[]): void {
   const wanted = new Set(keep);
   for (const [device, session] of [...open]) {
     if (wanted.has(device)) continue;
     open.delete(device);
-    closeSession(session).catch(() => {
-      /* the serve reaps a row nobody claims; see above */
+    dropWebBorrow(session).catch(() => {
+      /* nothing holds it but the serve's own process; see above */
     });
   }
 }

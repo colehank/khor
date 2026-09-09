@@ -61,9 +61,26 @@ pub struct WebBorrow {
 /// listens. The tauri skin then builds a webview window with this address
 /// as its proxy; the dev bridge gets the same answer but has no window to
 /// open, which is why the window half lives in the skin and not here.
+///
+/// **Unlisted, and that is the rule rather than a detail** (docs/NET.md
+/// 可达性, 一层不占会话列表): a page's borrow is worn by the tab that
+/// opened it, so it takes no row in the session list. Only the borrow a
+/// person holds by hand (`khor borrow`) is a session, because that one
+/// has no other face and nowhere else to hang its lifetime.
 pub async fn borrow_web(root: &Path, machine: &str) -> Result<WebBorrow, String> {
-    let (session, addr) = Node::open(root.to_path_buf())?.borrow(machine).await?;
+    let (session, addr) = Node::open(root.to_path_buf())?.borrow_unlisted(machine).await?;
     Ok(WebBorrow { session, addr })
+}
+
+/// Gives back a page's borrow: the handle `borrow_web` answered with, and
+/// the proxy port goes with it.
+///
+/// **Not `close_session`** — there is no row to close. The two verbs look
+/// interchangeable from the face's side and are not: a close names a
+/// session in the list, and this names a borrow that deliberately is not
+/// in it.
+pub async fn drop_web_borrow(root: &Path, session: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.drop_borrow(session).await
 }
 
 /// Hands a page to whatever this machine opens pages with.

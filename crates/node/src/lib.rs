@@ -247,6 +247,30 @@ pub enum NodeEvent {
     Closed(SessionId),
 }
 
+/// One borrow of another machine's network that this serve is hosting
+/// (docs/NET.md 借网): the task holding its local proxy port, plus what a
+/// second ask and the reaper each need to know about it.
+pub(crate) struct HostedBorrow {
+    /// The exit machine. A second ask for the same one is answered with
+    /// this borrow rather than a second lease.
+    pub(crate) machine: String,
+    /// Where its proxy listens — the address that second ask is given.
+    pub(crate) addr: std::net::SocketAddr,
+    /// **Whether it wears a session row** (docs/NET.md 可达性, 2026-08-17
+    /// 定形: 一层不占会话列表). True only for a borrow a person holds by
+    /// hand (`khor borrow`) — that one has no other row to show itself on
+    /// and nowhere else to hang its lifetime, which is exactly why it is
+    /// a session. A browsing tab's borrow has both, so it is unlisted.
+    ///
+    /// It is here because it decides two things that would otherwise be
+    /// guessed: whether `reap_borrows` may ask `claims` about this borrow
+    /// (an unlisted one has no row, so the answer is always "gone"), and
+    /// whether a second ask may share it (it may not across the two —
+    /// closing a row must not pull the network out from under a page).
+    pub(crate) listed: bool,
+    pub(crate) task: tokio::task::JoinHandle<()>,
+}
+
 pub struct Node {
     root: PathBuf,
     /// The identity key; also what the endpoint binds with. One live
@@ -290,14 +314,7 @@ pub struct Node {
     /// reaping and closing both arrive holding a session id and nothing
     /// else; a machine-keyed map would make those two walk the whole
     /// table to answer a question the id already answers.
-    pub(crate) borrows: Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<
-                SessionId,
-                (String, std::net::SocketAddr, tokio::task::JoinHandle<()>),
-            >,
-        >,
-    >,
+    pub(crate) borrows: Arc<tokio::sync::Mutex<std::collections::HashMap<SessionId, HostedBorrow>>>,
     /// The pipes this serve holds to **other machines'** session hosts
     /// (远程 attach), keyed by the session's id over there. One pipe per
     /// session, however many faces attach through it: a terminal has one

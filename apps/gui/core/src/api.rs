@@ -355,6 +355,13 @@ pub fn answer(
         // point at the proxy, so it returns where the proxy listens and
         // the window half stays the tauri skin's (`web::borrow_web`).
         "open_web" => to_json(&rt.block_on(crate::web::borrow_web(root, &arg("machine")?))?),
+        // The other half of that: giving the borrow back. Both roads need
+        // it — the bridge opens real borrows, so a bridge that could not
+        // close them would leak a proxy port per page it ever opened.
+        "close_web" => {
+            rt.block_on(crate::web::drop_web_borrow(root, &arg("session")?))?;
+            Ok("null".to_owned())
+        }
         "takeover" => {
             crate::takeover(root, &arg("id")?)?;
             Ok("null".to_owned())

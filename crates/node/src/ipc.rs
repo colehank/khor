@@ -71,6 +71,23 @@ pub enum Op {
         #[serde(default)]
         desc: bool,
     },
+    /// Tail-appended: a borrow that does **not** wear a session row
+    /// (docs/NET.md 可达性, 一层不占会话列表). What a browsing tab asks
+    /// for: the tab is its face and its lifetime, so a row of its own
+    /// would be a session in the list that is not a session.
+    ///
+    /// A separate op rather than a flag on [`Op::Borrow`], because a
+    /// field added inside an existing variant is a change in the middle
+    /// of the wire and everything after v1 here is tail-appended.
+    BorrowUnlisted { machine: String },
+    /// Tail-appended: ends an unlisted borrow by the handle
+    /// [`Reply::Borrowing`] answered with. The listed kind is ended by
+    /// closing its row instead, which is the row's whole job.
+    ///
+    /// **Dropping one already gone answers the same as dropping a live
+    /// one.** The caller wanted it not to exist; a refusal would only
+    /// tell it about a race it cannot do anything about.
+    DropBorrow { session: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

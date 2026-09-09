@@ -411,6 +411,24 @@ async fn open_web(
     Ok(borrow)
 }
 
+/// Gives a page's borrow back, and closes the window that was riding it.
+///
+/// **The window goes first and the borrow second, in that order.** A
+/// window left open on a borrow that has been dropped is a page whose
+/// every next request leaves through *this* machine's own network — the
+/// opposite of what the person asked for, and nothing on screen would
+/// say so. Closing it first means the worst case is a window that closed
+/// while the borrow lingered, which the serve reaps anyway.
+#[tauri::command]
+async fn close_web(app: tauri::AppHandle, session: String) -> Result<(), String> {
+    use tauri::Manager;
+    let label = format!("web-{}", session.replace(['/', ':'], "-"));
+    if let Some(window) = app.get_webview_window(&label) {
+        let _ = window.close();
+    }
+    khor_gui_core::web::drop_web_borrow(&Node::root_from_env(), &session).await
+}
+
 /// Answers with the ticket **and** the window it is good for: the window
 /// belongs to the library that enforces it, not to the dialog that
 /// prints it (`khor_gui_core::Ticket`).
@@ -661,6 +679,7 @@ pub fn run() {
             web_pins,
             pin_web,
             open_web,
+            close_web,
             open_session,
             open_on,
             machine_log,

@@ -18,8 +18,14 @@ use khor_sync::{chat, wire};
 use crate::proto::{self, Request, Response, MAX_FRAME};
 use crate::{ipc, Node};
 
-/// How often the serve loop syncs with everyone.
-const SYNC_EVERY: Duration = Duration::from_secs(5);
+/// How often the serve loop syncs with everyone — and, on the same beat,
+/// reaps borrows whose rows are gone.
+///
+/// **Public so a test can wait exactly one of these** rather than hold a
+/// number of its own. A test that slept "about long enough" would be
+/// carrying a constant only its author could check, and it would quietly
+/// stop covering the tick the day this changes.
+pub const SYNC_EVERY: Duration = Duration::from_secs(5);
 
 /// How long every road-having device must have kept failing before the
 /// serve concludes its own ears are broken. Wall clock, not rounds: a
@@ -419,10 +425,24 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::Borrow { machine } => match self.start_borrow(ep, &machine).await {
+            ipc::Op::Borrow { machine } => match self.start_borrow(ep, &machine, true).await {
                 Ok((id, addr)) => ipc::Reply::Borrowing { session: id.0, addr: addr.to_string() },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::BorrowUnlisted { machine } => {
+                match self.start_borrow(ep, &machine, false).await {
+                    Ok((id, addr)) => {
+                        ipc::Reply::Borrowing { session: id.0, addr: addr.to_string() }
+                    }
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::DropBorrow { session } => {
+                // The answer does not carry whether there was one to
+                // drop: see `Op::DropBorrow`.
+                self.drop_hosted_borrow(&crate::SessionId(session)).await;
+                ipc::Reply::Accepted { moved: 0, landed: Vec::new() }
+            }
             ipc::Op::OpenOn { machine, kind, title, cwd, cmd, cols, rows } => {
                 match self.open_on_with(ep, &machine, &kind, &title, &cwd, &cmd, (cols, rows)).await
                 {
@@ -1366,14 +1386,29 @@ impl Node {
     }
 
     /// Starts a borrow the serve hosts: dials the lease on `ep`, binds a
-    /// local proxy port, registers a borrow session, and spawns the proxy
-    /// task tracked so a later `close` can reap it. Returns the session id
-    /// and the proxy's address — the caller points a browser at the
-    /// latter. Runs only inside the serve (it is the key's one endpoint).
+    /// local proxy port, and spawns the proxy task tracked so a later
+    /// close can reap it. Returns the borrow's id and the proxy's address
+    /// — the caller points a browser at the latter. Runs only inside the
+    /// serve (it is the key's one endpoint).
+    ///
+    /// **`listed` decides whether it wears a session row**, and the rule
+    /// is docs/NET.md 可达性 (2026-08-17 定形, 一层不占会话列表): the one
+    /// borrow that is a session of its own is the one a person holds by
+    /// hand (`khor borrow`), because it has no other row to show itself
+    /// on and nowhere else to hang its lifetime. A browsing tab's borrow
+    /// has both — the tab is its face and its lifetime — so it is
+    /// unlisted, and the session list stays a list of sessions.
+    ///
+    /// The two are **not shared even on one machine**: a hand-held proxy
+    /// and a browsing tab pointed at the same exit are two leases, so
+    /// closing the row a person is looking at cannot pull the network out
+    /// from under a page, and closing the last tab cannot take away a
+    /// proxy somebody is holding by hand.
     pub async fn start_borrow(
         &self,
         ep: &iroh::Endpoint,
         machine: &str,
+        listed: bool,
     ) -> Result<(crate::SessionId, std::net::SocketAddr), String> {
         // **One borrow per exit machine, however many pages point at it.**
         // Before this, every open dialled a fresh lease, bound a fresh
@@ -1384,28 +1419,41 @@ impl Node {
         // field sits beside this one in `Node`.
         {
             let mut held = self.borrows.lock().await;
-            let mine = held.iter().find_map(|(id, (at, addr, handle))| {
-                (at.as_str() == machine).then(|| (id.clone(), *addr, handle.is_finished()))
+            let mine = held.iter().find_map(|(id, b)| {
+                (b.machine == machine && b.listed == listed)
+                    .then(|| (id.clone(), b.addr, b.task.is_finished()))
             });
             if let Some((id, addr, finished)) = mine {
-                // Alive and still claimed: the same lease answers.
-                if !finished && self.live.claims(&id) {
+                // Alive, and — if it is the kind that has a row — still
+                // claimed. An unlisted borrow has no row, so asking
+                // `claims` about it would answer "gone" about something
+                // that was never there.
+                if !finished && (!listed || self.live.claims(&id)) {
                     return Ok((id, addr));
                 }
-                // The task died, or a `close` from any process took the
-                // row out from under it. Either way the port it holds is
-                // not one to hand out again — drop it here rather than
-                // wait for the serve's next tick to reap it.
-                if let Some((_, _, handle)) = held.remove(&id) {
-                    handle.abort();
+                // The task died, or a close from any process took the row
+                // out from under it. Either way the port it holds is not
+                // one to hand out again — drop it here rather than wait
+                // for the serve's next tick to reap it.
+                if let Some(gone) = held.remove(&id) {
+                    gone.task.abort();
                 }
             }
         }
         let borrow = self.tunnel_on(ep, machine).await?;
-        let id = self.open_ephemeral(khor_core::kind::BORROW, &msg::borrowing_title(machine))?;
-        // The lease starts with no pipes, so the row opens 空闲 rather
-        // than the 忙碌 a fresh registration writes.
-        self.report_state(&id, khor_core::State::Idle)?;
+        let id = if listed {
+            let id = self.open_ephemeral(khor_core::kind::BORROW, &msg::borrowing_title(machine))?;
+            // The lease starts with no pipes, so the row opens 空闲 rather
+            // than the 忙碌 a fresh registration writes.
+            self.report_state(&id, khor_core::State::Idle)?;
+            id
+        } else {
+            // **Minted, not registered.** An unlisted borrow needs a
+            // handle to be closed by and nothing else; the same shape as
+            // `open_ephemeral`'s id so nothing downstream has to tell
+            // them apart.
+            crate::SessionId(format!("{}/{}", khor_core::kind::BORROW, fresh_leaf()?))
+        };
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .map_err(|e| e.to_string())?;
@@ -1414,28 +1462,62 @@ impl Node {
         // between busy and idle. It owns a bare registry handle (no
         // discovery — it only writes this one row's state), so the proxy
         // task can reach the registry without borrowing the node.
-        let by = crate::live::LiveKind::new(self.root().clone(), self.device());
-        let sid = id.clone();
-        let activity: crate::tunnel::Activity = std::sync::Arc::new(move |busy| {
-            let word = if busy { khor_core::State::Busy } else { khor_core::State::Idle };
-            let _ = by.report(&sid, word, crate::live::Source::Reported);
-        });
-        let handle = tokio::spawn(async move {
+        //
+        // **An unlisted borrow gets a callback that does nothing**, and
+        // that is not a stub: 忙碌 and 空闲 are words a *row* wears, and
+        // this borrow does not have one. Writing them anyway would report
+        // a state for a session that is not in the list.
+        let activity: crate::tunnel::Activity = if listed {
+            let by = crate::live::LiveKind::new(self.root().clone(), self.device());
+            let sid = id.clone();
+            std::sync::Arc::new(move |busy| {
+                let word = if busy { khor_core::State::Busy } else { khor_core::State::Idle };
+                let _ = by.report(&sid, word, crate::live::Source::Reported);
+            })
+        } else {
+            std::sync::Arc::new(|_busy| {})
+        };
+        let task = tokio::spawn(async move {
             let _ = crate::tunnel::serve_proxy(std::sync::Arc::new(borrow), listener, activity).await;
         });
-        self.borrows.lock().await.insert(id.clone(), (machine.to_owned(), addr, handle));
+        let hosted = crate::HostedBorrow { machine: machine.to_owned(), addr, listed, task };
+        self.borrows.lock().await.insert(id.clone(), hosted);
         Ok((id, addr))
     }
 
-    /// Aborts any hosted borrow whose session row is gone (a `close` from
+    /// Ends an unlisted borrow by the handle it was answered with: aborts
+    /// the proxy task, which frees the port. Answers whether there was
+    /// one — **and a caller may ignore that**: dropping a borrow already
+    /// gone is the outcome the caller wanted, not a failure.
+    ///
+    /// The listed kind is not ended here. It is ended by closing the row
+    /// a person is looking at, and `reap_borrows` picks that up on the
+    /// tick — which is the whole reason that kind has a row.
+    pub(crate) async fn drop_hosted_borrow(&self, id: &crate::SessionId) -> bool {
+        match self.borrows.lock().await.remove(id) {
+            Some(gone) => {
+                gone.task.abort();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Aborts any hosted borrow whose session row is gone (a close from
     /// any process removed it) and drops finished ones, freeing the proxy
     /// port. Called on the serve's tick, so a close from another process
     /// is reaped within one sync period.
+    ///
+    /// **An unlisted borrow is only reaped when its task ends.** It has
+    /// no row to lose, so `claims` says nothing about it — the thing that
+    /// ends it is `drop_hosted_borrow`, asked for by the face that opened
+    /// it. Testing it against `claims` would reap every one of them on
+    /// the first tick.
     pub(crate) async fn reap_borrows(&self) {
         let mut held = self.borrows.lock().await;
-        held.retain(|id, (_, _, handle)| {
-            if handle.is_finished() || !self.live.claims(id) {
-                handle.abort();
+        held.retain(|id, b| {
+            if b.task.is_finished() || (b.listed && !self.live.claims(id)) {
+                b.task.abort();
                 false
             } else {
                 true
@@ -1456,11 +1538,17 @@ impl Node {
         }
     }
 
-    /// Borrows a machine's network through the resident serve: the serve
-    /// hosts the proxy and the lease, and this returns the borrow
-    /// session's id and the local proxy address. Requires a serve — the
-    /// proxy is long-lived and must live in the process that holds the
-    /// key, so unlike ls/pull there is no bind-your-own fallback.
+    /// Borrows a machine's network through the resident serve, **as a
+    /// session of its own**: the serve hosts the proxy and the lease, and
+    /// this returns the borrow session's id and the local proxy address.
+    /// Requires a serve — the proxy is long-lived and must live in the
+    /// process that holds the key, so unlike ls/pull there is no
+    /// bind-your-own fallback.
+    ///
+    /// This is the hand-held one (`khor borrow`): a person is given a
+    /// local port to point something at, and the row is how they find it
+    /// again and how they end it. A face opening a page wants
+    /// [`Node::borrow_unlisted`] instead — see docs/NET.md 可达性.
     pub async fn borrow(&self, machine: &str) -> Result<(String, String), String> {
         match self.via_serve(ipc::Op::Borrow { machine: machine.to_owned() }).await {
             Some(reply) => match reply? {
@@ -1469,6 +1557,45 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
             None => Err(msg::BORROW_NEEDS_SERVE.into()),
+        }
+    }
+
+    /// Borrows a machine's network **without taking a row in the session
+    /// list** (docs/NET.md 可达性, 一层不占会话列表). What a browsing tab
+    /// asks for: the tab is already the face of it and already owns its
+    /// lifetime, so a row would be a session in the list that nothing
+    /// treats as a session.
+    ///
+    /// Answers the same pair as [`Node::borrow`], and the id in it is a
+    /// handle rather than a row — [`Node::drop_borrow`] is what ends it,
+    /// because there is no row to close.
+    pub async fn borrow_unlisted(&self, machine: &str) -> Result<(String, String), String> {
+        match self.via_serve(ipc::Op::BorrowUnlisted { machine: machine.to_owned() }).await {
+            Some(reply) => match reply? {
+                ipc::Reply::Borrowing { session, addr } => Ok((session, addr)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Err(msg::BORROW_NEEDS_SERVE.into()),
+        }
+    }
+
+    /// Ends an unlisted borrow by its handle. **Ending one that is
+    /// already gone is not an error** — the caller wanted it not to
+    /// exist, and that is the state either way.
+    ///
+    /// Answers `Ok(())` when there is no resident serve too, for the same
+    /// reason: no serve means no hosted borrow, so there is nothing left
+    /// holding a port. `borrow_unlisted` refuses in that case because
+    /// there it is a real failure — it could not do the thing.
+    pub async fn drop_borrow(&self, session: &str) -> Result<(), String> {
+        match self.via_serve(ipc::Op::DropBorrow { session: session.to_owned() }).await {
+            Some(reply) => match reply? {
+                ipc::Reply::Accepted { .. } => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Ok(()),
         }
     }
 

@@ -255,14 +255,21 @@ async fn connect_through(proxy: std::net::SocketAddr, target: &str) -> tokio::ne
     client
 }
 
-/// Waits up to ~4s for the borrow row to reach `want`, returning whether
-/// it did. The activity callback writes the state synchronously as pipes
-/// come and go, so this poll only rides out the tiny gap between the wire
-/// event and the disk write — no system cycle to cover.
-async fn wait_borrow_state(node: &Node, want: khor_core::State) -> bool {
+/// Waits up to ~4s for **that** borrow's row to reach `want`, returning
+/// whether it did. The activity callback writes the state synchronously
+/// as pipes come and go, so this poll only rides out the tiny gap between
+/// the wire event and the disk write — no system cycle to cover.
+///
+/// **By id, not by kind.** It used to take the first row whose kind was
+/// "borrow", which was unambiguous while a borrow row was the only thing
+/// a borrow could be. It is not any more: a page's borrow is deliberately
+/// rowless, and a teardown that wrongly gave it a row made this helper
+/// read that row instead — so a torn-down build failed here, on 忙碌,
+/// about a borrow this line was never asking about.
+async fn wait_borrow_state(node: &Node, id: &str, want: khor_core::State) -> bool {
     for _ in 0..40 {
         if let Ok(views) = node.sessions() {
-            if let Some(v) = views.iter().find(|v| v.session.kind.0 == "borrow") {
+            if let Some(v) = views.iter().find(|v| v.session.id.0 == id) {
                 if v.session.state.state == want {
                     return true;
                 }
@@ -274,7 +281,7 @@ async fn wait_borrow_state(node: &Node, want: khor_core::State) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() {
+async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
     let ra = root("sa");
     let rb = root("sb");
     let sa = Node::open_as(ra.clone(), "alpha").unwrap();
@@ -305,7 +312,7 @@ async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() 
 
     // The row is there, and idle until something uses it.
     assert!(
-        wait_borrow_state(&b, khor_core::State::Idle).await,
+        wait_borrow_state(&b, &session, khor_core::State::Idle).await,
         "a fresh borrow row opens 空闲"
     );
 
@@ -325,6 +332,28 @@ async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() 
         1,
         "so the session list gains no second row"
     );
+
+    // **A page's borrow takes no row at all** (docs/NET.md 可达性,
+    // 2026-08-17 定形: 一层不占会话列表). The tab that opened it is its
+    // face and owns its lifetime, so a row of its own would be a session
+    // in the list that nothing treats as a session. Only the hand-held
+    // borrow above is one, because that one has neither.
+    let (unlisted, unlisted_addr) = timeout(Duration::from_secs(60), b.borrow_unlisted("alpha"))
+        .await
+        .expect("an unlisted borrow must not hang")
+        .unwrap();
+    // The two kinds are not shared even on one machine, so closing the
+    // row a person is looking at cannot pull the network out from under
+    // a page. Both are alive right now, so the ports really must differ.
+    assert_ne!(unlisted, session, "the hand-held borrow is not handed to a page");
+    assert_ne!(unlisted_addr, addr, "each holds its own proxy port");
+
+    // It reuses per machine the way the listed kind does.
+    let (unlisted_again, _) = timeout(Duration::from_secs(60), b.borrow_unlisted("alpha"))
+        .await
+        .expect("a second unlisted borrow must not hang")
+        .unwrap();
+    assert_eq!(unlisted_again, unlisted, "one unlisted borrow per machine too");
 
     // Borrowing your own network is refused in words, not left to dial
     // itself and time out.
@@ -351,12 +380,12 @@ async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() 
         assert_eq!(&back, b"live", "the held pipe carries bytes");
     }
     assert!(
-        wait_borrow_state(&b, khor_core::State::Busy).await,
+        wait_borrow_state(&b, &session, khor_core::State::Busy).await,
         "a lease with a live pipe reads 忙碌"
     );
     drop(held);
     assert!(
-        wait_borrow_state(&b, khor_core::State::Idle).await,
+        wait_borrow_state(&b, &session, khor_core::State::Idle).await,
         "the lease falls back to 空闲 when the pipe closes"
     );
 
@@ -366,11 +395,10 @@ async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() 
     let gone = {
         let mut gone = false;
         for _ in 0..40 {
-            let has = b
-                .sessions()
-                .unwrap()
-                .iter()
-                .any(|v| v.session.kind.0 == "borrow");
+            // By id, for `wait_borrow_state`'s reason: "is there any
+            // borrow row" and "is this borrow's row gone" stopped being
+            // the same question the day a borrow could be rowless.
+            let has = b.sessions().unwrap().iter().any(|v| v.session.id.0 == session);
             if !has {
                 gone = true;
                 break;
@@ -380,6 +408,59 @@ async fn a_borrow_is_one_row_per_machine_that_turns_busy_and_a_close_reaps_it() 
         gone
     };
     assert!(gone, "close removes the borrow row");
+
+    // ⚠️ **This block has to stay last, and the reason is the fixture's,
+    // not the subject's.** It is the only place in this test that lets
+    // real time pass, and once a few seconds go by, beta's own row in its
+    // device table is named by this machine's hostname rather than by the
+    // `open_as` name — so `resolve("beta")` stops finding it and every
+    // assertion above that names a machine fails with 机器不存在, pointing
+    // at a subject it has nothing to do with. Measured 2026-09-09 by
+    // moving only this block: with it earlier the self-borrow refusal
+    // above failed reading `网里现在有: Mac-mini、alpha`; moved here, all
+    // green, nothing else changed. **What renames that row was not
+    // chased** — it is a fixture question, and this test is about borrows.
+    //
+    // **And it survives the serve's tick — the half with no row to be
+    // judged by.** `reap_borrows` asks the registry whether a borrow's
+    // row is still claimed; an unlisted borrow has no row, so asking
+    // would answer "gone" about something that was never there and every
+    // page's network would die within one tick, seconds after it opened.
+    tokio::time::sleep(khor_node::link::SYNC_EVERY + Duration::from_secs(1)).await;
+    let (after_tick, _) = timeout(Duration::from_secs(60), b.borrow_unlisted("alpha"))
+        .await
+        .expect("an unlisted borrow must not hang after a tick")
+        .unwrap();
+    assert_eq!(after_tick, unlisted, "a tick does not reap a borrow that has no row");
+
+    // **Zero rows, with a page's borrow alive.** Asserted here rather
+    // than beside the hand-held one because here it can fail on its own:
+    // up there the two borrows share a machine, so a flag flipped the
+    // wrong way makes them the *same* borrow and the count stays 1 —
+    // true, and proving nothing. Down here the hand-held row is closed,
+    // so anything the unlisted road registers has to show up.
+    assert_eq!(
+        b.sessions().unwrap().iter().filter(|v| v.session.kind.0 == "borrow").count(),
+        0,
+        "a live page borrow puts nothing in the session list"
+    );
+
+    // Dropping it by hand is what ends it — there is no row to close.
+    // Asking again then has to dial a fresh one.
+    timeout(Duration::from_secs(10), b.drop_borrow(&unlisted))
+        .await
+        .expect("dropping a borrow must not hang")
+        .unwrap();
+    let (regrown, _) = timeout(Duration::from_secs(60), b.borrow_unlisted("alpha"))
+        .await
+        .expect("borrowing after a drop must not hang")
+        .unwrap();
+    assert_ne!(regrown, unlisted, "a dropped borrow is not handed back as a live one");
+    timeout(Duration::from_secs(10), b.drop_borrow(&regrown))
+        .await
+        .expect("dropping a borrow must not hang")
+        .unwrap();
+
 
     // **The other arm of the reuse: it is gated on the row still being
     // claimed, not merely on the machine matching.** After a close there
