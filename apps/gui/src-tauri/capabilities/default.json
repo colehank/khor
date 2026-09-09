@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "khor's own face may hear the events the app sends it. A page opened in a browsing tab is a second webview in the same window and is NOT listed here: it is somebody else's site, and it must not be able to listen to khor's traffic or speak to khor's commands.",
-  "webviews": ["main"],
+  "description": "khor's own faces may hear the events the app sends them: the window (main) and the small window its overlays are drawn in (menu). A page opened in a browsing tab is a second webview in the same window and is NOT listed here: it is somebody else's site, and it must not be able to listen to khor's traffic.",
+  "webviews": ["main", "menu"],
   "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

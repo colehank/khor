@@ -207,6 +207,17 @@ export function AddressBar({
           // where you are (`Omnibox`'s `lead`).
           lead={<IconFile className="pointer-events-none flex-none text-muted-foreground" />}
           autoFocus={editing}
+          // **The one box in this app with something painted over it.**
+          // A browsing tab's page is a native child webview and those
+          // always paint above this page's DOM, so these completions
+          // came out underneath the site — first blanking it, then
+          // shoving it down, both judged wrong in front of somebody
+          // (「不对,应该是浮在页面上的」). Floated, they are drawn in a
+          // small window of the app's own, which is above a child view
+          // by construction. A browser tab and a phone answer no and the
+          // list is drawn here, which is right there: neither of them has
+          // a page covering it either.
+          float
           // Escape or focus elsewhere puts the resting face back — but
           // only where there is one. A fresh tab has nothing to fall
           // back to, and leaving would take its only control away.

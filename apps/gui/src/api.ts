@@ -4,6 +4,12 @@
 // was served from. Never a hand-written mock — the backend is the same
 // Rust in all three.
 import { msg } from "./gen/catalog";
+// **The menu's shape is the menu's, not the wire's.** What crosses
+// here is exactly what the list component already defines; a second
+// spelling of a row would be one restyle away from drawing two
+// different menus for one idea, which is the failure `OmniChip`'s
+// head describes about copying a token.
+import type { MenuRows } from "./components/OmniMenu";
 import type { PlaceRow } from "./gen/bindings/PlaceRow";
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
@@ -158,6 +164,16 @@ async function post<T>(url: string, headers: Record<string, string>, args?: Reco
  * its own to check.
  */
 export const onWebFace = !inApp && bridge === null;
+
+/**
+ * This page is the app's small overlay window rather than its window.
+ *
+ * **Both are this same page, told which half of itself to be** (`main.tsx`
+ * picks a root off it). A second HTML entry point was the other road and
+ * it is the worse one: the menu's look would then be defined in two
+ * places, and the two would drift the first time either was restyled.
+ */
+export const isMenuFace = params.get("face") === "menu";
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
@@ -629,6 +645,75 @@ export function onPageWord(
     // stopped following the page and links asking for a new window did
     // nothing, and **neither of them said a word** — measured 2026-09-09,
     // and it cost three wrong diagnoses before somebody looked here.
+    .catch((e: unknown) => {
+      console.error(`khor: cannot listen for ${event}`, e);
+    });
+  return () => {
+    gone = true;
+    drop?.();
+  };
+}
+
+// ── khor's own overlays, drawn in a window of their own (单元 2, 浮层) ──
+
+/** Where an overlay has to appear, in this page's own CSS pixels, with
+    the viewport it was measured in. The app subtracts that viewport from
+    the window frame to find the screen — see `on_screen`, which is the
+    side that has both numbers. */
+export type Spot = { x: number; y: number; w: number; view: number; across: number };
+
+/**
+ * Puts a menu on screen in a window of its own, over anything the app has
+ * laid over its page.
+ *
+ * **Answers whether the float took it**, and `false` is not a failure: a
+ * platform with no second window to hang a menu in draws it in the page,
+ * which is where every menu was drawn until a browsing tab started
+ * covering them. A refusal lands in the same place (`useFloatedMenu`).
+ */
+export const showMenu = (at: Spot, rows: MenuRows): Promise<boolean> =>
+  inApp ? call<boolean>("show_menu", { at, rows }) : Promise.resolve(false);
+
+/** Takes it off the screen. Hidden, not closed — the window is reused. */
+export const hideMenu = () => (inApp ? call<null>("hide_menu", {}) : Promise.resolve(null));
+
+/** How tall the list came out, said by the window that drew it — the only
+    side that can measure a laid-out list. Showing it is the app's answer
+    to this call. */
+export const sizeMenu = (h: number) =>
+  inApp ? call<null>("size_menu", { h }) : Promise.resolve(null);
+
+/** What the menu has to show right now. **Pulled on mount** because the
+    window and its first rows are decided in the same breath, and a
+    webview still loading cannot be listening yet. */
+export const menuRows = () =>
+  inApp ? call<MenuRows | null>("menu_rows", {}) : Promise.resolve(null);
+
+/** A row was pressed. Goes back to the face that opened the menu. */
+export const menuPick = (key: string) =>
+  inApp ? call<null>("menu_pick", { key }) : Promise.resolve(null);
+
+/**
+ * One of the app's own events, for a listener that wants every one of
+ * them rather than the ones addressed to a tab (`onPageWord`).
+ *
+ * **Loud on refusal, for `onPageWord`'s reason and it is not a
+ * hypothetical one**: `listen` is a core-plugin command behind tauri's
+ * capability list, khor had none at all until 2026-09-09, and every
+ * subscription in this file was being refused into a promise nobody
+ * read. Two features looked broken for a day.
+ */
+export function hear<T>(event: string, said: (payload: T) => void): () => void {
+  if (!inApp) return () => {};
+  let drop: (() => void) | null = null;
+  let gone = false;
+  void import("@tauri-apps/api/event")
+    .then(({ listen }) =>
+      listen<T>(event, (e) => said(e.payload)).then((un) => {
+        if (gone) un();
+        else drop = un;
+      }),
+    )
     .catch((e: unknown) => {
       console.error(`khor: cannot listen for ${event}`, e);
     });

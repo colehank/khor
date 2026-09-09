@@ -33,9 +33,24 @@ export function normalize(raw: string): string | null {
 
 /** Everything in this app that draws itself over the page. Radix puts
     its poppers in one wrapper; the address bar's completions and the
-    dialogs are the two that are not Radix's. */
+    dialogs are the two that are not Radix's.
+
+    ⚠️ **The completions are usually not in this document any more**
+    (2026-09-09). They are drawn in a small window of the app's own, which
+    is above a child webview by construction — that is what `float` on the
+    address bar's box buys, and it is the only way anything genuinely
+    floats over a page. They land back here when that window cannot be
+    had, so the selector stays; what it no longer describes is the common
+    case. */
 /** How far below the page's top edge an overlay may begin and still
-    count as hanging down from above it rather than floating over it. */
+    count as hanging down from above it rather than floating over it.
+
+    ⚠️ **Written for the completions, and they left** (see above). What is
+    left in this document floats in the middle of the page — dialogs,
+    poppers, tooltips — and none of it hangs from the top edge, so this
+    branch is now the fallback's and only the fallback's. It is kept
+    because the fallback needs it: pushed down is a page you can still
+    read, and taken away is a black rectangle. */
 const HANGS_FROM_ABOVE = 48;
 
 const OVERLAYS =

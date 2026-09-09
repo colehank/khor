@@ -27,55 +27,20 @@
 // would eat the choice and commit a half-typed word.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconClose, IconSearch } from "@/components/icons";
+import { OmniMenu, useFloatedMenu, type Candidate, type MenuRows, type OmniAxis } from "@/components/OmniMenu";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
-/** One thing the list can be narrowed by. `key` is the node's own group
-    key (`dev:turing`); `label` is what a person reads.
-
-    `hint` and `dim` are one judgment in two halves, and they exist for
-    a candidate that **is not a fact about right now**: a path offered
-    out of memory while the machine that owns it is not answering. The
-    hint names where it came from and the dimming says it is not a
-    listing — either alone is the failure, because a remembered path
-    that looks exactly like a live one is this box claiming to know
-    something it does not. Both are absent on an ordinary candidate,
-    which is how "no hint" stays readable as "this is live". */
-export type Candidate = {
-  key: string;
-  label: string;
-  face?: Avatar | null;
-  hint?: string;
-  dim?: boolean;
-};
-
-/**
- * One axis the box can offer, with the candidates it has right now.
- *
- * **`role` is the whole of the filter/navigation split**, and it lives
- * here rather than in the mechanism: chips, candidates and the keyboard
- * are the same either way, and what differs is only what committing one
- * *means*.
- *
- * - `chip` (the default): the candidate becomes a chip. What that chip
- *   then does — narrow a list, or name the thing the pane acts on — is
- *   the caller's `onToggle`, which is why a filter axis and a navigation
- *   axis need no different machinery here. A pane that wants one chip at
- *   a time simply replaces instead of appending.
- * - `text`: the candidate is a **completion**, not a chip. Committing it
- *   writes it into the box, because half a path is a real thing to keep
- *   typing and half a filter is not.
- */
-export type OmniAxis = {
-  key: string;
-  label: string;
-  candidates: Candidate[];
-  role?: "chip" | "text";
-};
+// **The rows live with the rows.** A menu is drawn in two places now — in
+// this page, and in a small window of the app's own when a browsing tab's
+// page would otherwise cover it — so the list, its shape and its cap moved
+// to the one file both draw from (`components/OmniMenu`). Re-exported
+// because every pane in this app names its axes from here, and a rename
+// across all of them buys nothing.
+export type { Candidate, MenuRows, OmniAxis };
 
 /**
  * One committed candidate, as a token.
@@ -142,6 +107,7 @@ export function Omnibox({
   lead,
   autoFocus,
   onLeave,
+  float,
 }: {
   /** Names the box and stands in as its placeholder — the pane's, not
       this component's, for the same reason the plain box took it. */
@@ -180,10 +146,30 @@ export function Omnibox({
    * about it changes.
    */
   onLeave?: () => void;
+  /**
+   * Draw the completions in a window of the app's own rather than in this
+   * page.
+   *
+   * **For the one box that has something painted over it.** A browsing
+   * tab's page is a native child webview and those always paint above
+   * this page's DOM, so the address bar's completions came out
+   * underneath the site — 「不对,应该是浮在页面上的」. Nowhere else in
+   * this app has that problem, and a window is not free (it is a second
+   * webview, and a click into it is a click into another window), so
+   * every other box goes on drawing its list where it always did.
+   *
+   * Asking for it is not getting it: a browser tab and a phone answer no
+   * and the list is drawn here (`useFloatedMenu`).
+   */
+  float?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState(0);
   const box = useRef<HTMLInputElement>(null);
+  // What the menu hangs under, in both places it can be drawn: the strip
+  // is the control, and a completion list narrower than the box it
+  // completes reads as belonging to something else.
+  const strip = useRef<HTMLDivElement>(null);
 
   // Everything not already on, filtered by what has been typed — matched
   // on the **label**, because that is the string the person is looking
@@ -236,6 +222,40 @@ export function Omnibox({
     box.current?.focus();
   };
 
+  /**
+   * A row was pressed, with a finger or a mouse.
+   *
+   * **Not `commit`, and the difference is Chrome's.** Tab *completes* —
+   * it writes the candidate into the box and leaves the caret to keep
+   * typing — because half a path is a real thing to go on typing. A
+   * press is not that: nobody points at a row in order to have it typed
+   * out for them, they point at it to go there. Measured 2026-09-09 with
+   * somebody pressing a suggestion and reporting 「点击内容无反应」 — the
+   * press had landed, the address had gone into the box, and nothing had
+   * happened, which from the outside is indistinguishable from a dead
+   * control.
+   *
+   * A chip axis has no such split: a chip is finished the moment it is
+   * chosen, so there the press and Tab are the same act.
+   */
+  const press = (key: string) => {
+    if (axisOfCandidate(key)?.role !== "text") {
+      commit(key);
+      return;
+    }
+    onQuery(key);
+    setPick(0);
+    onSubmit?.(key);
+  };
+
+  const shown = open && flat.length > 0;
+  const floated = useFloatedMenu(
+    strip,
+    shown ? { groups: offered, at } : null,
+    press,
+    float === true,
+  );
+
   const chips = chosen
     .map((key) => {
       for (const a of axes) {
@@ -251,7 +271,7 @@ export function Omnibox({
     .filter(Boolean);
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div ref={strip} className="relative min-w-0 flex-1">
       <div
         data-omnibox
         className={cn(
@@ -298,7 +318,29 @@ export function Omnibox({
           // fourteen.
           className="min-h-touch min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
           onFocus={() => setOpen(true)}
+          // **Focus is not the only way in, and Escape is why.** Escape
+          // with a menu up puts the menu away and leaves the caret where
+          // it is, so the next press on a box that already has focus
+          // fires no `focus` at all — and the list never came back until
+          // somebody typed or clicked away and returned. Measured
+          // 2026-09-09; it reads as a control that works once.
+          onMouseDown={() => setOpen(true)}
           onBlur={() => {
+            // **A window of khor's own is not somewhere else.** Floated,
+            // the menu is a second window, and on a platform where that
+            // window can take the pointer this field blurs between the
+            // press on a row and the answer coming back — leaving here
+            // would put the resting face up and throw away the
+            // completion that was just chosen. `hasFocus` is false only
+            // when the whole document lost focus, which a click inside
+            // this page never does.
+            //
+            // The menu window is built unable to become key, so on macOS
+            // this should not fire at all; it is here for the platforms
+            // where that lever is weaker. ⚠️ **The cost is that the box
+            // also stays open when the app is switched away from**, and
+            // the menu stays on screen with it.
+            if (floated && !document.hasFocus()) return;
             setOpen(false);
             onLeave?.();
           }}
@@ -365,60 +407,15 @@ export function Omnibox({
           }}
         />
       </div>
-      {open && flat.length > 0 && (
-        <div
-          data-omni-menu
-          className="absolute top-full left-0 z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
-        >
-          {offered.map((a) => (
-            <div key={a.key}>
-              <div data-omni-axis={a.key} className="px-2 py-1 text-xs text-muted-foreground">
-                {a.label}
-              </div>
-              {a.candidates.map((c) => {
-                const n = flat.indexOf(c);
-                return (
-                  <button
-                    key={c.key}
-                    type="button"
-                    data-omni-item={c.key}
-                    data-on={n === at}
-                    className={cn(
-                      // A menu row is chosen with a finger as often as
-                      // with the keyboard, and the two ways have to aim
-                      // at the same thing: `bg-accent` marks the picked
-                      // row and the row is the floor tall, so what the
-                      // arrow keys highlight is exactly what a press
-                      // lands on (tokens.css `--touch`).
-                      "flex min-h-touch w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-sm",
-                      n === at && "bg-accent",
-                      c.dim && "text-muted-foreground",
-                    )}
-                    // The box must not lose focus to the press, or the
-                    // chip would land in a field nobody is typing in.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => commit(c.key)}
-                  >
-                    {c.face !== undefined && c.face !== null && (
-                      <MachineAvatar face={c.face} className="size-kind-mark" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">{c.label}</span>
-                    {/* Where it came from, when it came from memory
-                        rather than from the machine. It rides the row it
-                        describes — there is nowhere else for it to be
-                        that would still be beside the thing it is
-                        about. */}
-                    {c.hint && (
-                      <span data-omni-hint className="flex-none text-xs text-muted-foreground">
-                        {c.hint}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+      {/* **Here only when it is not floating.** The floated one is the
+          same component in the app's own small window, put there by
+          `useFloatedMenu` above — one menu, two places to draw it. */}
+      {shown && !floated && (
+        <OmniMenu
+          rows={{ groups: offered, at }}
+          onPick={press}
+          className="absolute top-full left-0 z-20 mt-1 w-full rounded-md shadow-md"
+        />
       )}
     </div>
   );

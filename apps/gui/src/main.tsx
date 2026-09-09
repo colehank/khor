@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { isMenuFace } from "./api";
+import { MenuFace } from "./components/OmniMenu";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
@@ -10,8 +12,13 @@ import "./styles/app.css";
 // and this script running at all means the door already opened (a `?k=`
 // link, or the remembered cookie that same-origin fetches carry on
 // their own).
+//
+// **Two roots, one page.** The app's completions are drawn in a small
+// window of its own when a browsing tab's page would otherwise cover them
+// (`show_menu`), and that window loads this same page with `?face=menu` on
+// it. A second HTML entry point was the other road and it is the worse
+// one: the menu's look would then be defined in two places, and the two
+// would drift the first time either was restyled.
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  <React.StrictMode>{isMenuFace ? <MenuFace /> : <App />}</React.StrictMode>,
 );
