@@ -2373,21 +2373,46 @@ try {
             `「环和下方的标题太远」 was.`,
         );
       }
-      // **The air between two dials is a stated number, and the boxes
-      // are what states it.** With `justify-around` it was a remainder
-      // — 990 wide, four boxes, whatever was left divided up — so it
-      // moved whenever the box or the window did and nothing named it.
+      // ⚠️ **Tombstone: 「the air between two dials is a stated number」
+      // was asserted here, and the user overruled it on 2026-09-09.**
+      // It is not a claim that failed — it is a claim that was decided
+      // against, and the two rulings read as contradictions unless both
+      // are written down:
+      //
+      //   2026-09-08 「环的间距也太远了」 → the gap stopped being a
+      //   remainder (`justify-around` spread 426.8 of a 990 row as air)
+      //   and became `--gap-group`, a number the stylesheet states.
+      //
+      //   2026-09-09 「环之间的间距,排布,平铺屏幕宽度」 → the dials
+      //   are the 額度 card's size, the outer two sit flush with the
+      //   row's edges, and **what is left over goes between them** —
+      //   which makes the gap a remainder again, on purpose. **The user
+      //   was shown the cost first** (the gap reaching 151 at the wide
+      //   posture, against the 18 he had just asked for) and chose this
+      //   knowing it. So 「the gap grew」 is not a regression here, and
+      //   nobody should quote the 09-08 sentence to undo it.
+      //
+      // What survives is the half that was never about the number:
+      // **the gaps are equal to each other**. A row that let one gap
+      // differ from the next is the one thing neither ruling wanted.
       //
       // ⚠️ **Measured between the boxes, not between the ink.** The
-      // arcs come out 60 / 75.8 / 60 / 68 wide because a dial with pips
-      // draws further out than one without; ink-to-ink therefore varies
-      // by design and asserting it equal would be asserting that no
+      // arcs come out 115.2 / 142.9 / 115.2 / 129.2 wide because a dial
+      // with pips draws further out than one without; ink-to-ink varies
+      // by design, and asserting it equal would be asserting that no
       // dial has pips.
-      const off = dials.gaps.filter((g) => Math.abs(g - dials.stated) > 0.6);
-      if (off.length) {
+      const spread = Math.max(...dials.gaps) - Math.min(...dials.gaps);
+      if (dials.gaps.length > 0 && spread > 0.6) {
         fail(
-          `the dials sit ${JSON.stringify(dials.gaps)} apart while the row states ${dials.stated} — ` +
-            `a gap that is not the stated one is a remainder, and a remainder moves when the window does`,
+          `the dials sit ${JSON.stringify(dials.gaps)} apart — the spare width is divided between them, so the gaps are ` +
+            `equal to each other however wide the row is; ${spread.toFixed(1)} of difference means something else is ` +
+            `placing them`,
+        );
+      }
+      if (dials.gaps.some((g) => g + 0.6 < dials.stated)) {
+        fail(
+          `the dials sit ${JSON.stringify(dials.gaps)} apart while ${dials.stated} is the floor — the spare width is added ` +
+            `to that floor, never taken out of it`,
         );
       }
       //   **The reading in the middle fits inside its own ring.**
@@ -4542,6 +4567,39 @@ try {
           cellRule: cc ? n(cc.borderBottomWidth) : null,
         };
       }, sel);
+    //   ⚠️ **The ink, not the box.** The first draft compared the two
+    //   svg widths and reported 169 against 158 — **a difference that
+    //   is not the one the user is talking about**: the 額度 dial's box
+    //   is the plain square (`DIAL_CARD_RATIO` 1) and the machine
+    //   card's is cropped sideways to its ink (`hugRatio`, 2026-09-08,
+    //   so that the gap a reader sees is the gap the row states). Same
+    //   drawing, two boxes around it. 「就是现在额度页的大小」 is about
+    //   the ring, so what is compared is the arc the reader sees and
+    //   the weight it is drawn at.
+    const inkOf = (sel) =>
+      page.evaluate((s) => {
+        const el = document.querySelector(s);
+        if (!el) return null;
+        const track = el.querySelector("[data-ring-track]") ?? el.querySelector("path");
+        if (!track || !track.getBBox) return null;
+        const b = track.getBBox();
+        return {
+          arc: +b.width.toFixed(1),
+          stroke: +parseFloat(getComputedStyle(track).strokeWidth || track.getAttribute("stroke-width") || "0").toFixed(2),
+        };
+      }, sel);
+    //   **The two pages' dials are one dial** (2026-09-09, the user:
+    //   「机器卡片环的大小,就是现在额度页的大小」). Read off the glass
+    //   on both surfaces rather than by comparing two constants: the
+    //   pair that decides it is `DIAL_CARD_SIZE` / `DIAL_CARD_STROKE`,
+    //   and a machine card that took the size from there while keeping
+    //   a stroke of its own would draw the same circle at a different
+    //   weight — which is what 「一样大」 does not mean.
+    //
+    //   ⚠️ **Each read on its own screen**, and this one first: the
+    //   walk leaves this pane in a moment, and a reading taken after
+    //   that would be a reading of nothing.
+    const mineDial = await inkOf("[data-quota-detail] [data-quota-lead] svg");
     const mine = await cardOf(`${half} [data-usage-chart]`);
     const mineHead = await headOf(`${half} th[data-usage-col] button`);
     //   **How a figure is drawn, measured off the glass on both pages.**
@@ -4749,6 +4807,32 @@ try {
         fail(`probe dead: the 額度 bar chart reads ${JSON.stringify(drawnBars)} — a figure with no ticks agrees with anything`);
       }
       console.log(`one drawing: ${JSON.stringify(drawnTheirs)} · bars ${JSON.stringify(drawnBars)}`);
+    }
+    //   **The two pages' dials are one dial** (2026-09-09, the user:
+    //   「机器卡片环的大小,就是现在额度页的大小」).
+    //
+    //   ⚠️ **On the second machine, because the first one refuses.**
+    //   This section opens `[data-row-open]` at index 0 — the machine
+    //   whose answer is a sentence — and that card has no dial row at
+    //   all. The first draft read it there and got `null`, which the
+    //   probe-dead arm caught: a comparison against nothing.
+    await pressNth("[data-list] [data-row-open]", 1);
+    await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) > 0);
+    await wait(300);
+    const theirsDial = await inkOf("[data-machine-card] [data-vitals] svg");
+    if (!mineDial || !theirsDial || !(mineDial.arc > 0) || !(theirsDial.arc > 0)) {
+      fail(`probe dead: dials read ${JSON.stringify([mineDial, theirsDial])} — 「the two pages draw one dial」 compared nothing`);
+    } else {
+      for (const k of ["arc", "stroke"]) {
+        if (Math.abs((mineDial[k] ?? -1) - (theirsDial[k] ?? -2)) > 0.1) {
+          fail(
+            `a dial is ${JSON.stringify(mineDial[k])} on the 額度 card and ${JSON.stringify(theirsDial[k])} on the machine ` +
+              `card (${k}) — the user's word for these two is 「就是现在额度页的大小」, and a stroke that differs makes it ` +
+              `the same circle at a different weight`,
+          );
+        }
+      }
+      console.log(`one dial: ${JSON.stringify(theirsDial)} on both pages`);
     }
     await open("quota");
     await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
@@ -9197,11 +9281,6 @@ try {
   //        390 → 332: 2 + 2 of 123.5            →  2 + 2, each 157
   {
     const seenDials = [];
-    //   The box the old fixed size drew, which is the floor a column may
-    //   not go under: 「four across」 must never make a dial smaller than
-    //   it was before this. Read off the page rather than written here,
-    //   so the constant moving does not make this gate wrong about it.
-    const floorBox = 123.5;
     for (const w of [1400, 1120, 900, 700, 560, 390]) {
       await page.setViewportSize({ width: w, height: 900 });
       await wait(400);
@@ -9266,24 +9345,27 @@ try {
       if (leftAir > 1 || rightAir > 1) {
         fail(`at ${w} the row keeps ${leftAir.toFixed(1)} of air on the left and ${rightAir.toFixed(1)} on the right — the dials are to fill it`);
       }
-      //   ④ **Never smaller than it used to be, never absurd.** The
-      //   floor is the box the fixed size drew; the ceiling is a
-      //   judgment (`DIAL_BOX_MAX`) that no measured posture reaches.
-      //   ⚠️ The floor holds while the row is at least 265 wide — under
-      //   that even two columns go below it, and the honest answer there
-      //   is a smaller floor, **not** a single column, which is the one
-      //   thing forbidden outright.
+      //   ④ ⚠️ **The dial is the same size at every width, and that is
+      //   the 2026-09-09 ruling read as a property.** For one day the
+      //   size was a share of the row — it grew to fill its column —
+      //   and the user ruled that out:「机器卡片环的大小,就是现在额度
+      //   页的大小」. A size that is the same at 390 and at 1400 is what
+      //   「a number, not a share」 looks like from the glass, and it is
+      //   asserted across the whole loop rather than against a constant
+      //   written here.
       const box = d.kids[0].svgW;
-      if (!(box >= floorBox - 0.5)) {
-        fail(`at ${w} each dial's box is ${box}, under the ${floorBox} the fixed size used to draw — filling the row must not shrink a dial`);
-      }
-      if (box > 261) {
-        fail(`at ${w} each dial's box is ${box} — past the ceiling a dial stops being a dial and becomes the card`);
-      }
       seenDials.push(`${w}:${d.cols}×${box}`);
     }
     if (seenDials.length !== 6) {
       fail(`probe dead: ${seenDials.length} of 6 postures measured (${seenDials.join(" ")}) — 「at every width」 is a claim about all of them`);
+    } else {
+      const boxes = [...new Set(seenDials.map((r) => r.split("×")[1]))];
+      if (boxes.length !== 1) {
+        fail(
+          `the dials come out ${boxes.join(" / ")} across at the six widths — the size is the 額度 card's number and not a ` +
+            `share of this row, so it does not move when the window does`,
+        );
+      }
     }
     console.log(`dial row: ${seenDials.join(" · ")}`);
     await page.setViewportSize({ width: 1400, height: 900 });

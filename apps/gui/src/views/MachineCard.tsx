@@ -5,8 +5,15 @@ import { fetchLoad, setWatch } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
-import { hugRatio } from "@/components/Face";
-import { RING_SIZE_CARD, RING_STROKE_CARD, dialFor } from "@/components/Ring";
+import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
+/* ⚠️ **Tombstone: this card imported `RING_SIZE_CARD` / `RING_STROKE_CARD`
+   until 2026-09-09.** They were the size its dials were drawn at, then
+   the reference `dialFor` scaled from — and both are gone from here,
+   because the user's ruling is that these dials are **the 額度 card's
+   dials**: same size, same stroke, same two constants
+   (`DIAL_CARD_SIZE` / `DIAL_CARD_STROKE` in `components/Face`).
+   `components/Ring` still owns those two for the ring it draws; what
+   ended is this card reading them. */
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { Panel } from "@/components/Panel";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
@@ -617,18 +624,32 @@ function Readings({
   //   between. A `md:` breakpoint would pick four columns for the
   //   narrower row of the two.
   //
-  //   The floor a column may not go under is the box the old fixed size
-  //   drew (123.5 = `RING_SIZE_CARD` hugged), so 「four across」 never
-  //   makes a dial smaller than it used to be; below that it is two.
+  //   ⚠️ **The size is fixed now, so 「four across」 is a question about
+  //   the row, not about the dial**: four boxes and three of the
+  //   smallest gaps either fit or they do not. The rung this replaces
+  //   asked whether a *share* of the row was still wide enough — that
+  //   was the shape when the dial grew to fill its share, and the user
+  //   ruled that shape out on 2026-09-09.
   const { box: vitalsBox, w: vitalsW } = usePlotBox({ w: 990, h: 106 });
-  const dialFloor = RING_SIZE_CARD * hugRatio(RING_SIZE_CARD, RING_STROKE_CARD);
-  const cols = (vitalsW - 3 * GAP_GROUP) / 4 >= dialFloor ? 4 : 2;
-  //   **A ceiling, and it is a judgment rather than a reading**: past
-  //   this a dial stops being a dial and becomes the card. It is not
-  //   reached on any posture measured (the widest, 1400, gives 234).
-  const DIAL_BOX_MAX = 260;
-  const cell = Math.min(DIAL_BOX_MAX, (vitalsW - (cols - 1) * GAP_GROUP) / cols);
-  const dial = dialFor(cell);
+  //   **One size, and it is the 額度 card's own** (2026-09-09, the
+  //   user:「机器卡片环的大小,就是现在额度页的大小。我的意思是,环之间
+  //   的间距,排布,平铺屏幕宽度」). Not `dialFor(cell)`: a size that
+  //   filled its share made the dial a function of the window, and
+  //   「和额度页一样大」 is a statement about a number, not about a
+  //   share.
+  //
+  //   ⚠️ **The same two constants, not the same-looking pair.** The
+  //   scaled stroke this replaces would have drawn 5.12 at this size
+  //   where the 額度 card draws 5 — a 2.4% thicker arc on a dial the
+  //   user had just called the same one. `DIAL_CARD_STROKE`'s own head
+  //   says why 5 goes with 169 (it is the machine card's 4 in the
+  //   proportion the sizes are), so taking both from there is what
+  //   makes this literally the same drawing.
+  const dial = { size: DIAL_CARD_SIZE, stroke: DIAL_CARD_STROKE };
+  const dialBox = DIAL_CARD_SIZE * hugRatio(DIAL_CARD_SIZE, DIAL_CARD_STROKE);
+  //   Four across while four boxes and three of the smallest gaps fit;
+  //   otherwise two. **Still declared, never `flex-wrap`** — see below.
+  const cols = vitalsW >= 4 * dialBox + 3 * GAP_GROUP ? 4 : 2;
   return (
     <Panel>
       {/* ⚠️ **A grid of a declared column count, since 2026-09-09** —
@@ -659,7 +680,11 @@ function Readings({
         data-vitals
         data-vitals-cols={cols}
         className="grid gap-group"
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+        //   **Content-sized columns pushed to the two edges**, so the
+        //   row's spare width lands *between* the dials and the outer
+        //   two sit flush. `gap-group` stays as the floor the spare
+        //   width is added to, not as the gap itself.
+        style={{ gridTemplateColumns: `repeat(${cols}, max-content)`, justifyContent: "space-between" }}
       >
         <Dial
           dial="cpu"
