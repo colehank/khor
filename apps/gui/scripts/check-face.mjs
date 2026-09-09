@@ -9281,7 +9281,15 @@ try {
   //        390 → 332: 2 + 2 of 123.5            →  2 + 2, each 157
   {
     const seenDials = [];
-    for (const w of [1400, 1120, 900, 700, 560, 390]) {
+    const seenFits = [];
+    //   ⚠️ **360 is here because it is the phone the shrink is for.**
+    //   The five wider stops draw the full size and would let a broken
+    //   degradation pass by never reaching it: 390 gives this row 332,
+    //   which is 2px inside the last size that fits, so it shrinks by
+    //   one pixel and proves almost nothing. A 12/13 mini is 360 and
+    //   its row is 302 — **30px short**, which is where the fit reading
+    //   below has something to say.
+    for (const w of [1400, 1120, 900, 700, 560, 390, 360]) {
       await page.setViewportSize({ width: w, height: 900 });
       await wait(400);
       await open("devices");
@@ -9342,32 +9350,104 @@ try {
       }
       const leftAir = d.kids[0].x - d.row.x;
       const rightAir = d.row.x + d.row.w - (d.kids[d.kids.length - 1].x + d.kids[d.kids.length - 1].w);
-      if (leftAir > 1 || rightAir > 1) {
-        fail(`at ${w} the row keeps ${leftAir.toFixed(1)} of air on the left and ${rightAir.toFixed(1)} on the right — the dials are to fill it`);
+      //   ⚠️ **Both signs.** This read `> 1` only, and a teardown that
+      //   switched the shrink off went **green**: the dials then need
+      //   334 in a row of 302, `space-between` leaves them flush left
+      //   and lets them hang off the right, and a negative reading is
+      //   not 「more than 1 of air」. **Air and overflow are the same
+      //   axis measured from opposite ends** — a row that is exactly
+      //   filled reads zero at both edges, and anything else is one of
+      //   the two failures.
+      if (Math.abs(leftAir) > 1 || Math.abs(rightAir) > 1) {
+        fail(
+          `at ${w} the row's edges read ${leftAir.toFixed(1)} on the left and ${rightAir.toFixed(1)} on the right — ` +
+            `positive is air the dials were to fill, negative is dials hanging off the edge; the row is to be exactly filled`,
+        );
       }
-      //   ④ ⚠️ **The dial is the same size at every width, and that is
-      //   the 2026-09-09 ruling read as a property.** For one day the
-      //   size was a share of the row — it grew to fill its column —
-      //   and the user ruled that out:「机器卡片环的大小,就是现在额度
-      //   页的大小」. A size that is the same at 390 and at 1400 is what
-      //   「a number, not a share」 looks like from the glass, and it is
-      //   asserted across the whole loop rather than against a constant
-      //   written here.
+      //   ④ ⚠️ **Never bigger than the 額度 card's dial, and smaller
+      //   only where the row cannot hold it.** For one day the size was
+      //   a share of the row — it grew to fill its column — and the
+      //   user ruled that out:「机器卡片环的大小,就是现在额度页的大小」.
+      //   So the size is a number now, with **one** way down: two boxes
+      //   at that number plus the floor gap need 334.1, and a 390-wide
+      //   phone gives this row 332; a 12/13 mini is 360 and gives 302.
+      //   The dial yields there rather than the gap, and 「一行只剩一个
+      //   环」 stays forbidden.
+      //
+      //   The full size is not written here — it is read from the
+      //   widest posture in this same loop, where nothing is shrinking.
       const box = d.kids[0].svgW;
       seenDials.push(`${w}:${d.cols}×${box}`);
-    }
-    if (seenDials.length !== 6) {
-      fail(`probe dead: ${seenDials.length} of 6 postures measured (${seenDials.join(" ")}) — 「at every width」 is a claim about all of them`);
-    } else {
-      const boxes = [...new Set(seenDials.map((r) => r.split("×")[1]))];
-      if (boxes.length !== 1) {
+      //   **The centre reading still fits, at the size actually drawn.**
+      //   This is the arm that replaces 「find the size below which
+      //   `100%` overflows」: that number does not exist while the
+      //   stroke stays in proportion (measured on the three sizes this
+      //   repo has recorded), and a threshold written down here would
+      //   only go red when somebody remembered to come back and change
+      //   it. Reading the product's own `<text>` at the smallest size
+      //   it draws asks the question that has an answer.
+      const fit = await page.evaluate(() => {
+        const btn = document.querySelector("[data-machine-card] [data-metric]");
+        const node = btn && [...btn.querySelectorAll("*")].filter((n) => n.children.length === 0 && /^\d+%$/.test((n.textContent || "").trim())).pop();
+        const fill = btn && btn.querySelector("[data-ring-fill]");
+        const m = fill && /A\s*([\d.]+)\s+([\d.]+)/.exec(fill.getAttribute("d") || "");
+        if (!node || !m) return null;
+        const stroke = parseFloat(getComputedStyle(fill).strokeWidth);
+        const was = node.textContent;
+        const before = +node.getBoundingClientRect().width.toFixed(2);
+        node.textContent = "100%";
+        const widest = +node.getBoundingClientRect().width.toFixed(2);
+        node.textContent = was;
+        return { inner: +(2 * Number(m[1]) - stroke).toFixed(2), widest, restored: +node.getBoundingClientRect().width.toFixed(2) === before };
+      });
+      if (!fit || !fit.restored) {
+        fail(`probe dead: the dial's centre reading could not be measured at ${w} (${JSON.stringify(fit)})`);
+      } else if (fit.widest > fit.inner) {
         fail(
-          `the dials come out ${boxes.join(" / ")} across at the six widths — the size is the 額度 card's number and not a ` +
-            `share of this row, so it does not move when the window does`,
+          `at ${w} the dial draws ${box} across and 100%@${box} = ${fit.widest} against inner@${box} = ${fit.inner} — ` +
+            `the widest reading a dial can say does not fit inside its own ring. **The stroke has to shrink with the size**: ` +
+            `at a fixed stroke the inner diameter falls faster than the type does, which is how this overflowed at 88 (57.25 ` +
+            `against 56) before 2026-09-08.`,
         );
+      } else {
+        seenFits.push(`${w}:100%@${box}=${fit.widest}<${fit.inner}`);
+      }
+      //   ⚠️ **Where this arm can be torn, and where it cannot.**
+      //   Torn 2026-09-09, one thing at a time:
+      //
+      //     type 15% bigger than `19k`  → red at every posture
+      //                                   (123.17 against 110.23)
+      //     the shrink switched off     → red on the edges arm above,
+      //                                   not on this one
+      //     **the stroke held fixed while the size shrinks** → ⚠️ **no
+      //     red at any width this walk visits.** With a stroke of 5 the
+      //     inner falls to the type's width only below size ~109 —
+      //     about a 280-wide window, narrower than any device — so the
+      //     sentence in the failure above is *true* and this arm cannot
+      //     prove it here. It is written as the reason rather than
+      //     claimed as tested.
+    }
+    if (seenDials.length !== 7) {
+      fail(`probe dead: ${seenDials.length} of 7 postures measured (${seenDials.join(" ")}) — 「at every width」 is a claim about all of them`);
+    } else {
+      //   **The widest posture is the full size, and nothing exceeds
+      //   it.** 1400 is the first entry and has room to spare, so what
+      //   it draws is the number; every other posture is that or less.
+      const boxes = seenDials.map((r) => Number(r.split("×")[1]));
+      const full = boxes[0];
+      if (boxes.some((b) => b > full + 0.5)) {
+        fail(`the dials come out ${boxes.join(" / ")} across — none may be bigger than the ${full} the widest posture draws`);
+      }
+      //   ⚠️ **And the shrink is not free-running**: only the narrow
+      //   postures may be under it, and never by more than the room
+      //   asks. A quarter under would mean the size had gone back to
+      //   being a share of the row.
+      if (boxes.some((b) => b < full * 0.7)) {
+        fail(`the dials come out ${boxes.join(" / ")} across against a full ${full} — a dial that gives up a third of itself is a share again, not a number`);
       }
     }
     console.log(`dial row: ${seenDials.join(" · ")}`);
+    console.log(`dial fit: ${seenFits.join(" · ")}`);
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
   }

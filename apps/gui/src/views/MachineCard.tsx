@@ -645,11 +645,39 @@ function Readings({
   //   says why 5 goes with 169 (it is the machine card's 4 in the
   //   proportion the sizes are), so taking both from there is what
   //   makes this literally the same drawing.
-  const dial = { size: DIAL_CARD_SIZE, stroke: DIAL_CARD_STROKE };
   const dialBox = DIAL_CARD_SIZE * hugRatio(DIAL_CARD_SIZE, DIAL_CARD_STROKE);
   //   Four across while four boxes and three of the smallest gaps fit;
   //   otherwise two. **Still declared, never `flex-wrap`** — see below.
   const cols = vitalsW >= 4 * dialBox + 3 * GAP_GROUP ? 4 : 2;
+  //   **And where two do not fit either, the dial gives way** — the
+  //   only rung left once 「one alone on a line」 is forbidden outright
+  //   and the size is fixed. Measured 2026-09-09: two boxes plus the
+  //   floor gap need 334.1, and a 390-wide phone gives this row 332 —
+  //   **the smallest ordinary phone is already inside the last 2px of
+  //   the full size**, and a 360-wide one (12 mini, 13 mini) is 30px
+  //   short of it.
+  //
+  //   ⚠️ **The gap floor wins and the dial yields, not the other way
+  //   round.** They cannot both hold: 18 between two 158s wants 334 in
+  //   a row of 332. Giving way on the gap would make it a remainder
+  //   again on exactly the screens where things are tightest — and the
+  //   09-08 ruling that made it a stated number was about the wide
+  //   posture, where there is room to state it.
+  //
+  //   **One ratio moves both numbers**, so a shrunken dial is the same
+  //   drawing rather than a thinner one at the same diameter — see
+  //   `DIAL_CARD_STROKE`, whose 5 is the machine card's old 4 in the
+  //   proportion the sizes are. ⚠️ **That pairing is what makes the
+  //   centre reading keep fitting**: at a fixed stroke the inner
+  //   diameter falls faster than the type does, which is exactly how
+  //   `100%` came to overflow at size 88 (57.25 against 56) — and with
+  //   the stroke in proportion, an 88-sized dial's inner would have
+  //   been 57.4 and it would have fitted. **The gate reads the fit at
+  //   the smallest size this actually draws**, rather than trusting
+  //   that sentence.
+  const room = (vitalsW - (cols - 1) * GAP_GROUP) / cols;
+  const shrink = Math.min(1, room / dialBox);
+  const dial = { size: DIAL_CARD_SIZE * shrink, stroke: DIAL_CARD_STROKE * shrink };
   return (
     <Panel>
       {/* ⚠️ **A grid of a declared column count, since 2026-09-09** —
