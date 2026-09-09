@@ -337,9 +337,14 @@ export function Omnibox({
             //
             // The menu window is built unable to become key, so on macOS
             // this should not fire at all; it is here for the platforms
-            // where that lever is weaker. ⚠️ **The cost is that the box
-            // also stays open when the app is switched away from**, and
-            // the menu stays on screen with it.
+            // where that lever is weaker.
+            //
+            // The box therefore also stays open when the whole app is
+            // switched away from, which is Chrome's behaviour and is the
+            // one worth having: coming back finds the half-typed address
+            // where it was left. The *menu* does not stay on screen with
+            // it — the app takes it down when the face loses focus and
+            // puts it back when the face returns (`on_window_event`).
             if (floated && !document.hasFocus()) return;
             setOpen(false);
             onLeave?.();

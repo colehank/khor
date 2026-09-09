@@ -577,6 +577,20 @@ async fn open_page(
                 "page:load",
                 PageWord { tab: l_tab.clone(), text: word.to_owned() },
             );
+            // **On arrival, not on departure.** This used to fire for
+            // both halves of a load, so every navigation reported the
+            // tab's place twice — and the first of the two is a place the
+            // tab has not reached yet. A navigation that starts and never
+            // finishes would have left the address bar naming somewhere
+            // the tab is not, which is this repo's oldest failure shape:
+            // a step that cannot be taken does not become "no answer", it
+            // becomes the answer next to it.
+            //
+            // It is also not free. A page in a redirect loop reported
+            // 2484 times in one sitting (baidu, 2026-09-09, before
+            // `as_a_browser`), and each report is a render of khor's own
+            // face.
+            //
             // **Where the tab is, taken from what actually loaded here.**
             // This used to be reported from `on_navigation`, which fires
             // for a `target="_blank"` link too — and that link's page
@@ -588,11 +602,13 @@ async fn open_page(
             // load anything**, so it does not reach here and the address
             // stays where it was. Real browsers follow that too; the hook
             // for it is a script in the page, not this callback.
-            let _ = app.emit_to(
-                l_face.clone(),
-                "page:went",
-                PageWord { tab: l_tab.clone(), text: payload.url().to_string() },
-            );
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let _ = app.emit_to(
+                    l_face.clone(),
+                    "page:went",
+                    PageWord { tab: l_tab.clone(), text: payload.url().to_string() },
+                );
+            }
         });
     // **Kept, and deliberately silent.** `on_navigation` answers whether
     // a navigation may happen at all, which is where a scheme allowlist
@@ -1321,11 +1337,39 @@ pub fn run() {
         .on_window_event(|window, event| {
             #[cfg(desktop)]
             if window.label() == "main" {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    use tauri::Manager;
-                    if let Some(menu) = window.app_handle().get_webview_window(MENU) {
-                        let _ = menu.close();
+                use tauri::Manager;
+                let menu = || window.app_handle().get_webview_window(MENU);
+                match event {
+                    // **The overlay window has to be closed by hand.** It
+                    // has a level of its own rather than a parent
+                    // (`hang_menu_window` says why), and tauri leaves an
+                    // app running while any window is open — so without
+                    // this, closing khor's window would leave the process
+                    // alive with nothing on screen.
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        if let Some(menu) = menu() {
+                            let _ = menu.close();
+                        }
                     }
+                    // **A menu belongs to the face it hangs under, and
+                    // follows it out of the room.** The overlay floats at
+                    // its own window level, which is what keeps it above
+                    // the page — and would also have kept it above
+                    // whatever somebody switched to mid-completion. It
+                    // goes away with the face and comes back with it.
+                    //
+                    // `menu_up` is deliberately not touched: it records
+                    // whether anybody still *wants* a menu, and switching
+                    // apps is not an answer to that question. The face
+                    // asks and unasks; this only draws or stops drawing.
+                    tauri::WindowEvent::Focused(here) => {
+                        if let Some(menu) = menu() {
+                            if menu_up().load(std::sync::atomic::Ordering::Relaxed) {
+                                let _ = if *here { menu.show() } else { menu.hide() };
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             #[cfg(not(desktop))]
