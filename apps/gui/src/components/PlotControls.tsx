@@ -46,7 +46,6 @@ export function AxisLabel({
   which,
   word,
   rulerWord,
-  align,
 }: {
   which: string;
   /** The quantity this axis is drawn with — **one word, never four**. */
@@ -58,29 +57,36 @@ export function AxisLabel({
   rulerWord: string;
   /** Which corner it is tucked into — the vertical label sits at the
       top-left, the horizontal one at the bottom-right, so neither runs
-      off the drawing. */
-  align: "left" | "right";
+      off the drawing.
+
+      ⚠️ **Tombstone: `align` left this component on 2026-09-10.** It
+      flipped the two words' order so the pair would read outward from
+      whichever corner it sat in — and the brackets made the order fixed,
+      so there was nothing left for it to decide. The seat still decides
+      where the label sits; `labelSeat` was always the one doing that. */
 }) {
   return (
-    <span
-      data-plot-pick={which}
-      className={cn(
-        "flex items-baseline gap-0 text-aux",
-        align === "right" ? "flex-row-reverse" : "flex-row",
-      )}
-    >
-      {/* An empty ruler word draws nothing at all rather than an empty
-          padded box: 「linear」 prints no mark on purpose (the axis is
-          not bent), and a blank gap beside the label would read as one
-          more thing to look at. */}
-      {rulerWord !== "" && (
-        <span data-plot-ruler={which} aria-hidden="true" className="px-in text-muted-foreground/70">
-          {rulerWord}
-        </span>
-      )}
+    //   **The name first, the ruler in brackets after it** (the user,
+    //   2026-09-10:「表的单位表示方式改一下,比如总量(√)这样」). It was
+    //   two words side by side, and which came first depended on which
+    //   end of the axis the label sat at — `flex-row-reverse` on the
+    //   right-hand one — so the same pair read 「总量 √」 at one corner
+    //   and 「√ 总量」 at the other. **A bracket says 「this belongs to
+    //   that」 in a way a space cannot**, and it reads the same at
+    //   either corner, so the order stops depending on the seat.
+    <span data-plot-pick={which} className="flex items-baseline gap-0 text-aux">
       <span data-plot-label={which} className="px-in font-title text-foreground">
         {word}
       </span>
+      {/* An empty ruler prints nothing at all rather than an empty pair
+          of brackets: 「linear」 has no mark on purpose (the axis is not
+          bent), and 「总量()」 would read as a word with something
+          missing from it. */}
+      {rulerWord !== "" && (
+        <span data-plot-ruler={which} aria-hidden="true" className="pe-in text-muted-foreground/70">
+          ({rulerWord})
+        </span>
+      )}
     </span>
   );
 }

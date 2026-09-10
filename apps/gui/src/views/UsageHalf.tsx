@@ -779,7 +779,6 @@ function Trend({
             which="view"
             word={view === "model" ? gui.usage_view_model : gui.usage_view_day}
             rulerWord={win === 0 ? gui.usage_window_all : gui.usage_window_days(win)}
-            align="right"
           />
         </span>
         <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
@@ -1047,10 +1046,10 @@ function Stats({
             already were. */}
         <span className="pointer-events-none absolute inset-0">
           <span className="pointer-events-auto absolute" style={labelSeat("y")}>
-            <AxisLabel which="y" word={AXES[axes.y].word()} rulerWord={RULER_WORD[ry.kind]()} align="left" />
+            <AxisLabel which="y" word={AXES[axes.y].word()} rulerWord={RULER_WORD[ry.kind]()} />
           </span>
           <span className="pointer-events-auto absolute" style={labelSeat("x")}>
-            <AxisLabel which="x" word={AXES[axes.x].word()} rulerWord={RULER_WORD[rx.kind]()} align="right" />
+            <AxisLabel which="x" word={AXES[axes.x].word()} rulerWord={RULER_WORD[rx.kind]()} />
           </span>
           {/* **Three rows, and the third is the dot's area.** The
               machine card grew the same row on 2026-09-08, so this is

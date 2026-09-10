@@ -2459,7 +2459,6 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               which="y"
               word={AXES[axes.y].word()}
               rulerWord={ry.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-              align="left"
             />
           </span>
           <span className="pointer-events-auto absolute" style={labelSeat("x")}>
@@ -2467,7 +2466,6 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               which="x"
               word={AXES[axes.x].word()}
               rulerWord={rx.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
-              align="right"
             />
           </span>
           {/* **One button for what this figure is set to** (2026-09-08:
