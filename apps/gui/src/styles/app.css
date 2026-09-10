@@ -628,33 +628,23 @@ input[type="search"]::-webkit-search-decoration {
 [data-load-top] [data-top-heads] > * {
   color: var(--foreground);
   font-weight: var(--font-weight-title);
-  /* Two shadows on one line, and they have to share it: **the same
-     selector is declared twice in this file**, and a second
-     `box-shadow` further down replaces the first outright rather than
-     adding to it. Written as two rules, the rule under the heads won
-     and the ground above them silently became 1px — caught by the gate
-     reading it back as `reaching 1px up`, not by reading the CSS.
+  /* ⚠️ **Tombstone: a second shadow reaching 12px upward, 2026-09-11.**
+     It was aimed at a band above the head on the user's screen, with
+     the bottom sliver of a scrolled-away row showing through it. **It
+     never painted a pixel.** The head sits at exactly 0 from the scroll
+     port's top, so anything drawn above it is outside the port's clip —
+     measured by painting this shadow red and photographing it: no red,
+     anywhere. A fix that cannot reach the place it is aimed at.
 
-     ⚠️ **The second one treats a symptom, and says so.** 2026-09-10, on
-     the user's own screen (screenshot, then a crop): a band a few
-     pixels tall between the scroll port's top edge and the head, with
-     the **bottom sliver of a scrolled-away row showing through it** —
-     the digits' undersides, one per column, standing still while the
-     table stood still.
+     What the attempt did leave behind, worth keeping: **the same
+     selector is declared twice in this file, and a second `box-shadow`
+     replaces the first outright rather than adding to it.** The first
+     attempt landed in the other block and was silently dropped; the
+     gate read it back as 1px and said so. If a second shadow is ever
+     wanted here, it goes on this line, comma-separated.
 
-     Measured in Chrome at the same width, the same nine columns and
-     the same dark theme, that band does not exist: the head sits at
-     exactly 0 from the port's top and `elementsFromPoint` two pixels
-     above it finds no row. So **what opens it on WebKit is not
-     measured**, and a fix aimed at a cause I cannot see would be aimed
-     at a guess. What is not a guess: nothing may be visible above the
-     head. A shadow with no blur, in the head's own colour, reaching
-     upward — the port's `overflow-y: auto` clips whatever lands
-     outside it, so this cannot paint over the card around the table.
-     Twelve is over the widest gap the crop showed (≈8). */
-  box-shadow:
-    inset 0 calc(-1 * var(--hair)) 0 0 var(--border),
-    0 -12px 0 var(--card);
+     The band itself is still unexplained — see docs/handoff. */
+  box-shadow: inset 0 calc(-1 * var(--hair)) 0 0 var(--border);
 }
 /* ⚠️ **The rule has to be continuous, and per-cell it was not.** The
    heads are grid items with `--gap-in` between them, and a shadow drawn

@@ -6306,57 +6306,21 @@ try {
       if (rowsAfter === rowsBefore) {
         fail(`pressing 「${col}」 after scrolling changed nothing — the head is pinned and no longer a control`);
       }
-      //   ⚠️ **The one assertion in this file that cannot see what it
-      //   guards, and it is written down as such.**
+      //   ⚠️ **Tombstone: an assertion that the heads' ground reached
+      //   12px upward, 2026-09-11 — written and withdrawn the same
+      //   night.** It guarded a fix that turned out to paint nothing:
+      //   the head sits at 0 from the scroll port's top, so a shadow
+      //   above it is outside the clip. Painted red and photographed:
+      //   no red anywhere.
       //
-      //   On the user's own screen (2026-09-10, WebKit): a band a few
-      //   pixels tall above the head, with the bottom sliver of a
-      //   scrolled-away row showing through it, standing still while
-      //   the table stood still. **Here it does not exist** — measured
-      //   at the same width, the same nine columns, the same dark
-      //   theme: the head sits at 0 from the port's top and
-      //   `elementsFromPoint` two pixels above it finds no row.
-      //
-      //   So there is nothing for this gate to observe, and the fix
-      //   (`app.css`: the head's ground reaching upward, clipped by
-      //   the port) is invisible to every browser check in this repo.
-      //   What is asserted is therefore **the decision**, not its
-      //   effect: someone deleting that shadow gets a red here rather
-      //   than nothing at all, on a screen they cannot reproduce.
-      //   Tearing it down turns this red and changes nothing visible,
-      //   which is exactly what makes it worth keeping.
-      const cover = await page.evaluate(() => {
-        const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
-        if (!head) return null;
-        const shadow = getComputedStyle(head).boxShadow ?? "";
-        //   ⚠️ **Two shadows live here, and the first one is not this
-        //   one.** The head also carries the hairline rule under it,
-        //   written `inset 0 -1px …` — reading 「the first pair of
-        //   lengths」 answered `1` for a ground reaching 12, and the
-        //   assertion below went red about a fix that was in place.
-        //   So: split on the commas, drop the inset ones, and take the
-        //   furthest any remaining shadow reaches upward.
-        const ups = shadow
-          .split(/,(?![^(]*\))/)
-          .filter((part) => !part.includes("inset"))
-          .map((part) => {
-            const m = /(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px/.exec(part);
-            return m ? -Number(m[2]) : 0;
-          });
-        return { shadow, up: ups.length ? Math.max(...ups) : 0 };
-      });
-      if (!cover) {
-        fail("probe dead: no column head to read a ground off");
-      } else if (!(cover.up >= 8)) {
-        fail(
-          `the column heads' ground reaches ${cover.up}px above them (box-shadow ${JSON.stringify(cover.shadow)}) — ` +
-            `on WebKit a band opens between the scroll port's top and the head, and a scrolled-away row shows ` +
-            `through it. **This browser cannot see that band**, so this is the only thing left holding the fix.`,
-        );
-      }
+      //   **A gate over a fix that does not work is worse than no gate**
+      //   — it is the sentence 「something is holding this」 with nothing
+      //   behind it, and the next person reads it as coverage. The band
+      //   on the user's screen is unexplained and is an account in
+      //   docs/handoff, not an assertion here.
       console.log(
         `sticky heads: window scrolls ${before.scrollable}, heads ${before.top}→${after.top}, ` +
-          `first row ${before.firstRow}→${after.firstRow}, ground ${bg} reaching ${cover?.up}px up, still sorts`,
+          `first row ${before.firstRow}→${after.firstRow}, ground ${bg}, still sorts`,
       );
     }
   }
