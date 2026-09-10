@@ -31,14 +31,17 @@
 //     reading the source — which catches the line being deleted and
 //     nothing subtler. A native child webview is out of reach of every
 //     browser gate in this repo (`check-face` drives the web face, in
-//     Chrome); measuring the real thing means running the app.
-//   - **Whether `delete window.WebTransport` even takes on WebKit.**
-//     Here the globals are ordinary configurable properties, which is
-//     what WebIDL says an interface object is — but that is this file
-//     agreeing with my reading of a spec, not with WebKit. Same for
-//     whether a user script reaches an `about:blank` iframe.
+//     Chrome); measuring khor's own means running the app, and that is
+//     still **未量**.
+//   - **Whether the removals take on a real engine, and which realms
+//     the script reaches.** Both are WebKit's behaviour rather than
+//     this script's, and `npm run wk` measures them in a real
+//     `WKWebView` with a bare arm beside it. This file's realm is
+//     furnished from a reading of WebIDL; that one is furnished by
+//     WebKit.
 //
-// Both are **未量**, and neither is a thing this gate can grow into.
+// The two gates are not interchangeable: this one is static and runs
+// everywhere, that one needs macOS, `swift` and a window server.
 //
 // Run: `node scripts/check-shim.mjs` (static, no browser, no cargo lock).
 import { readFileSync } from "node:fs";
@@ -182,6 +185,6 @@ for (const [rel, needle, what] of wired) {
 console.log(`shim: ran ${SHIM.replace(fileURLToPath(repo), "")} in a furnished realm; checked ${wired.length} call sites by source text`);
 if (!bad) {
   console.log("shim gate: WebTransport and PublicKeyCredential gone, publicKey refused as NotAllowedError, password still allowed");
-  console.log("--- 未量, and not by this gate: whether WebKit delivers the script, whether the delete takes there, whether an about:blank iframe gets it ---");
+  console.log("--- this gate says the rules are right, never that a page got them: `npm run wk` measures WebKit, and khor's own webview is 未量 ---");
 }
 process.exitCode = bad ? 1 : 0;

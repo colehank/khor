@@ -58,6 +58,7 @@
 | `npm run gates` | `check-gates.mjs`,守门自己够不够得着、写没写下来 | 不拿 |
 | `npm run bytes` | `check-bytes.mjs`,源码里有没有**字面**控制字符(写成转义的不算) | 不拿 |
 | `npm run shim` | `check-shim.mjs`,借网页面里那两个漏真实 IP 的 API 还在不在(静态:把注入脚本放进一个 `vm` 里跑) | 不拿 |
+| `npm run wk` | `check-wk.mjs`,同一段注入脚本在**真 WebKit** 里到得了哪几个 realm(起一个 `WKWebView`,同一页加载两遍、一遍不带 shim)。**macOS 专有**,要 `swift` 和一个窗口服务器;别的平台上它说一句「这儿量不到」就停,不算通过 | 不拿 |
 
 **最后那批「真连」的和上面几道之间有条分界,值得写下来**:有入口的前几道
 都是「一台机器上自己跑得起来的」,真连那三道要**真的起网**——所以跑它们
@@ -108,8 +109,14 @@
   地址。所以这道门坏了不会有任何症状。它带一条对照臂(`credentials.get`
   的 `password` 分支必须放行),否则「拒绝一切」和「拒绝那条漏」在另外三条
   上出的是同一片绿。
-  **它答不了的**:WebKit 到底有没有把这段脚本交给页面。那要真的起 app——
-  这仓所有浏览器守门跑的都是网页脸,够不着原生子 webview。
+  **两道门分工不同,都要跑**:`shim` 是静态的,答「规则写对了」;`wk` 起一个
+  真 `WKWebView`,答「WebKit 拿这段脚本会怎样」——删得掉吗、进得了哪几个
+  realm。后者带一条不带 shim 的对照臂,没有它,「WebTransport 没了」和
+  「这个 WebKit 本来就没有」出的是同一片绿。
+  **两道都答不了的**:khor 自己那个 page webview 里 WebKit 有没有真把脚本
+  交出去。`wk` 建的是它自己的 `WKWebView`,不是 tauri 建的那个;tauri 那条
+  路只核到源码级。真答它要起 app,而这仓所有浏览器守门跑的都是网页脸,
+  够不着原生子 webview。
 - **动了导轨** → 加 `npm run rail`;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,

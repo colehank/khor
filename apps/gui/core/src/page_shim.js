@@ -63,16 +63,30 @@
 //
 // # ⚠️ What the two above cannot block either
 //
-// **A page that is trying.** Two ways out, neither closable from inside
-// a page script:
+// **A page that is trying.** Measured on 2026-09-10 by `npm run wk`,
+// which loads the same page twice in a real `WKWebView`, once without
+// this file. The script reaches the page, an `about:blank` iframe the
+// parser made, a real child frame, an empty iframe a script made, and a
+// `srcdoc` iframe once it has loaded — all five answer `undefined` for
+// both globals, and all five answer `function` without the shim.
+//
+// Two realms it does not reach, and both are real ways out:
 //
 //   - **Workers.** A user script is injected into documents, not into
-//     `Worker`/`SharedWorker` globals, and `WebTransport` is exposed
-//     there too. Patching `Worker` itself would break ordinary sites.
-//   - **A fresh realm.** Whether WebKit injects user scripts into an
-//     `about:blank` or `srcdoc` iframe is **not measured here** (see the
-//     gate's note); if it does not, a page can read an untouched
-//     `WebTransport` off `iframe.contentWindow`.
+//     `Worker`/`SharedWorker` globals; measured `typeof WebTransport`
+//     there is `function`, shim or no shim. Patching `Worker` itself
+//     would break ordinary sites.
+//   - **A `srcdoc` iframe read before its load event.** Setting
+//     `srcdoc` and appending gives a document the script has not run in
+//     yet, and `iframe.contentWindow.WebTransport` is a `function` in
+//     that window. After the load event the same frame answers
+//     `undefined`.
+//
+// ⚠️ **The guess this replaced was wrong in a way worth keeping.** The
+// note here used to say the open question was `about:blank` — and
+// `about:blank` turns out to be covered, both when the parser makes it
+// and when a script does. Following that guess would have meant
+// hardening a realm that was fine while the two above stayed open.
 //
 // So this blocks **the leak a site walks into**, not a site that is
 // deliberately trying to find out where you are. Saying otherwise would
