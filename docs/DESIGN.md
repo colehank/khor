@@ -44,7 +44,7 @@
 
 | 怎么跑 | 是什么 | 拿 cargo 锁吗 |
 |---|---|---|
-| `npm run test` | `pretest` → `gen` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
+| `npm run test` | `pretest` → `gen` + `check-shim` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |
 | `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
@@ -57,6 +57,7 @@
 | `npm run web-face` | `web-face.mjs`,浏览器脸,**真连**(真的 `khor serve`) | 不拿 |
 | `npm run gates` | `check-gates.mjs`,守门自己够不够得着、写没写下来 | 不拿 |
 | `npm run bytes` | `check-bytes.mjs`,源码里有没有**字面**控制字符(写成转义的不算) | 不拿 |
+| `npm run shim` | `check-shim.mjs`,借网页面里那两个漏真实 IP 的 API 还在不在(静态:把注入脚本放进一个 `vm` 里跑) | 不拿 |
 
 **最后那批「真连」的和上面几道之间有条分界,值得写下来**:有入口的前几道
 都是「一台机器上自己跑得起来的」,真连那三道要**真的起网**——所以跑它们
@@ -100,6 +101,15 @@
   它还守着那条最贵的:**问一次要起一个真进程(对真 `@claude-acp` 实测 1.5 秒,
   npm 包没缓存时 5.64 秒),读记下来的同一个答案 0.017 秒**,
   所以坐着两个轮询周期必须一次 `agent_ask` 都发不出去;
+- **动了 `apps/gui/core/src/page_shim.js`、`open_page`,或任何一端新建被浏览
+  页面的 webview** → 加 `npm run shim`。它守的是**一件不会自己喊的事**:
+  借网页面里 `WebTransport` 和 WebAuthn 走的是这台设备自己的网,不是借来
+  的那条——**不报错、页面照常用**,唯一看得出来的地方是别人日志里的一个
+  地址。所以这道门坏了不会有任何症状。它带一条对照臂(`credentials.get`
+  的 `password` 分支必须放行),否则「拒绝一切」和「拒绝那条漏」在另外三条
+  上出的是同一片绿。
+  **它答不了的**:WebKit 到底有没有把这段脚本交给页面。那要真的起 app——
+  这仓所有浏览器守门跑的都是网页脸,够不着原生子 webview。
 - **动了导轨** → 加 `npm run rail`;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,

@@ -555,8 +555,20 @@ async fn open_page(
     let face = window.label().to_string();
     let (t_tab, l_tab) = (tab.clone(), tab.clone());
     let (t_face, l_face) = (face.clone(), face.clone());
+    // **The shim rides on the builder, beside the proxy, on purpose.**
+    // Both are fixed when the webview is built and neither has a runtime
+    // setter, so they can only ever be wrong together — and a page
+    // pointed at a borrow *without* the shim is the worst of the three
+    // states: it looks borrowed and reports where the device really is.
+    // The reuse path above keeps both for the same reason it keeps the
+    // proxy: the user scripts belong to the webview, not to a load.
+    //
+    // Read `page_shim.js` before touching this. It takes two WebKit APIs
+    // away from the page and **cannot take the third**, and the third is
+    // still leaking every hostname the page prefetches.
     let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target))
-        .proxy_url(proxy);
+        .proxy_url(proxy)
+        .initialization_script_for_all_frames(khor_gui_core::web::PAGE_SHIM);
     if let Some(seem) = as_a_browser(&agent) {
         builder = builder.user_agent(&seem);
     }

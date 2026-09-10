@@ -48,6 +48,26 @@ pub fn pin_web(root: &Path, machine: &str, url: &str, on: bool) -> Result<(), St
     Node::open(root.to_path_buf())?.pin_web(machine, url, on)
 }
 
+/// The script every borrowed page runs before its own scripts do.
+///
+/// **Lives here, in the shared half, on purpose.** Each skin builds its
+/// own webview — the tauri skin today, an iOS and an Android plugin in
+/// docs/handoff/001.md's units 3 and 4 — and every one of them has to
+/// inject this. A copy per skin is a copy that goes stale on four
+/// platforms at once, and the thing going stale would be a leak nobody
+/// can see.
+///
+/// The script says what it takes away and what it cannot; read
+/// `page_shim.js` before changing what any skin does with it. The short
+/// version: two WebKit APIs leave through the device's own network
+/// rather than the borrow, and a third (`dns-prefetch`) does too and
+/// **is not blocked** — no script can reach it.
+///
+/// **Injected for all frames, not the main one.** A leak in an iframe
+/// is the same leak; `initialization_script` alone would leave every
+/// embedded frame untouched.
+pub const PAGE_SHIM: &str = include_str!("page_shim.js");
+
 /// Where a borrow's proxy listens, for a window (or a test) to point at.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct WebBorrow {
