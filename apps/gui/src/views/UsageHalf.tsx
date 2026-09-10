@@ -210,9 +210,15 @@ function dayAxis(rows: UsageRow[], today: string | null, back: number): string[]
 /**
  * **Which civil day a bucket's instant belongs to.**
  *
- * One place, because two pages read the same instants: this half draws
- * the token rows and `QuotaLanding`'s `SpendDays` draws the money ones,
- * off the same `at` from the same pass over the same log.
+ * One place, because more than one reader turns the same instants into
+ * days: this half draws the token rows, and the 額度 card names the day
+ * a reading was cut on — off the same `at` from the same pass over the
+ * same log.
+ *
+ * ⚠️ **The money chart that used to share this is gone** (2026-09-10,
+ * `QuotaLanding`'s tombstone). What is left of it here is that the two
+ * readings still come out of one `/api/log/token` answer, which is why
+ * a truncated log is said out loud beside *this* chart now.
  *
  * **An instant does not name a day on its own.** 2026-09-08 00:00 in
  * Asia/Shanghai is 2026-09-07 16:00Z, so the zone that *cut* the bucket
@@ -369,9 +375,15 @@ export function UsageHalf({
       order changes under the reader's hand. */
   const [hot, setHot] = useState<{ model: string; n: number } | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "total", dir: -1 });
+  //   **Days across, total up, total as the area** (the user,
+  //   2026-09-10). The three it opened on were `write` / `read` /
+  //   `total` — two cache quantities, which most providers do not even
+  //   report, so the figure a reader met first was often all floor-sized
+  //   dots on two empty axes. Days and total are the two every source
+  //   fills.
   const [axes, setAxes] = useState<{ x: AxisKey; y: AxisKey; z: AxisKey }>({
-    x: "write",
-    y: "read",
+    x: "days",
+    y: "total",
     z: "total",
   });
 
@@ -1175,11 +1187,12 @@ function Stats({
             {days.length > 0 ? gui.usage_range(days[0], days[days.length - 1], days.length) : ""}
           </span>
         </span>
-        {/* `data-plot-foot` and `data-plot-area-of`, the machine card's
-            own marks: both figures say this sentence from one key, so
-            the gate that holds 「one drawing method」 finds it by one
-            name on both. */}
-        <span data-plot-foot data-plot-area-of={axes.z}>{gui.plot_area_is(AXES[axes.z].word())}</span>
+        {/* ⚠️ **Tombstone: 「面积 = X」 left both figures on 2026-09-10**
+            (「所有散点,无论机器还是api,都不要有下面的面积注释」). The
+            quantity is still named — it is a row in the settings panel,
+            beside X and Y — so what went is a sentence repeating on
+            screen what a press already says. It was on both figures
+            from one key, and it leaves both the same way. */}
       </div>
       {/* **Nine columns and a phone shows three.** The other six used to
           be simply absent — no mark, no sentence — so 「there is more

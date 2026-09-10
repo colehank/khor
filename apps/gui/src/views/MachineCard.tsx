@@ -2636,11 +2636,12 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               machine. */}
           {off > 0 && <span data-plot-off={off}>{cli.top_plot_off(off)}</span>}
         </span>
-        {/* **What the dot's size means, in words** — the same sentence
-            the 額度 card's figure says, from the same key. It used to
-            name the halo and two sample radii; the halo is gone and the
-            size is the dot's own, so the sentence is one quantity. */}
-        <span data-plot-foot data-plot-area-of={axes.z}>{gui.plot_area_is(az.word())}</span>
+        {/* ⚠️ **Tombstone: 「面积 = X」 left both figures on 2026-09-10**
+            (「所有散点,无论机器还是api,都不要有下面的面积注释」). The
+            quantity is still named — it is a row in the settings panel,
+            beside X and Y — so what went is a sentence repeating on
+            screen what a press already says. It was on both figures
+            from one key, and it leaves both the same way. */}
       </div>
     </div>
   );

@@ -265,7 +265,7 @@ export function PlotSettings({
           //   The honest answer to a panel with no room is the other
           //   direction, a different gesture rather than a nudge, and
           //   the gate measures both.
-          className="absolute left-auto right-0 top-full z-10 mt-in flex w-max flex-col gap-in rounded-md border bg-card px-row py-row"
+          className="absolute left-0 right-auto top-full z-10 mt-in flex w-max flex-col gap-in rounded-md border bg-card px-row py-row"
         >
           {rows.map((r) => (
             <div key={r.key} data-plot-set={r.key} className="flex items-center gap-in">

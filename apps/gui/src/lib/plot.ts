@@ -207,14 +207,21 @@ export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   const middle = { display: "flex", alignItems: "center" } as const;
   if (which === "y") return { left: PLOT.padL, top: 0, height: PLOT.padT, ...middle };
   if (which === "x") return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
-  //   ⚠️ **Lifted clear of the plotting area, not centred on the top
-  //   strip.** Centring it there puts 11px of a 44px hit area inside
-  //   the data, and the top-right corner is where a scatter's biggest
-  //   point lives: the gate caught it immediately — the button
-  //   「intercepts pointer events」 for `claude-opus-5` and the click
-  //   never landed. So the button's box ends exactly where the data
-  //   begins (`padT`), and its ink sits in the air above the frame.
-  return { right: PLOT.padR, top: PLOT.padT - PLOT.touch };
+  //   ⚠️ **Top-left, in the column the y ticks' words own** (the user,
+  //   2026-09-10:「三个点的x、y、面积设置按钮,放在图的左上角」). It
+  //   spent one afternoon at bottom-left and one at top-right; what the
+  //   three corners taught is worth keeping:
+  //
+  //   - **Inside the data is not a seat.** Centred on the top strip,
+  //     11px of a 44px hit area reaches into the plotting area, and the
+  //     gate caught it in one run: the button 「intercepts pointer
+  //     events」 for `claude-opus-5` and the press never landed. So the
+  //     box ends exactly where the data begins (`padT`).
+  //   - **`left: 0`, not `left: padL`.** `padL` is where the y label
+  //     sits; the 46px to its left is the gutter the tick words use,
+  //     and above those words nothing is drawn at all. A 44px button
+  //     fits there without moving anything.
+  return { left: 0, top: PLOT.padT - PLOT.touch };
 }
 
 /**

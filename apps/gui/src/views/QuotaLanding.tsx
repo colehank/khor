@@ -67,8 +67,7 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
-import { PLOT, usePlotBox, xTickY } from "@/lib/plot";
-import { UsageHalf, civilDay, fromReading, fromUsage } from "@/views/UsageHalf";
+import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
 import { QUOTA_AXES, axisOf, lasting, until, valueOf } from "@/words";
 
@@ -1740,13 +1739,38 @@ export function QuotaLanding({
             carries no labels. */}
         </dl>
       </div>
-      <SpendDays reading={acc.reading} mark={markOf(acc.unit)} />
-      {/* **The lower half — what the provider billed in tokens.** Most
-          accounts have no such report and say so rather than drawing an
-          empty chart; see `fromReading`. */}
+      {/* **What the provider billed, in tokens.** Most accounts have no
+          such report and say so rather than drawing an empty chart; see
+          `fromReading`.
+
+          ⚠️ **Tombstone: the by-day *spend* chart left this card on
+          2026-09-10** (「取消现在那个多出的最近1天那的bar图.就绘制花掉的
+          token」). Two bar charts of the same shape sat here, one above
+          the other — money per day, then tokens per day — and the card
+          read as two products however carefully the second was matched
+          to the first. The money is not lost: the dial above is money
+          and the row's own column is money.
+
+          **The cut-log line stayed, and keeping it here is the point.**
+          `days` and `model_tokens` come out of the *same*
+          `/api/log/token` answer (`crates/node/src/accounts.rs`), so a
+          log the provider truncated truncates **this** chart too.
+          Dropping the sentence along with the chart it used to sit
+          under would leave a reader believing a picture of one day is a
+          picture of the window — 「看图的人不能以为自己看的是 7 天」,
+          2026-09-07. */}
       {(() => {
         const u = fromReading(acc.reading);
-        return <UsageHalf rows={u.rows} why={u.why} today={null} cacheKnown={u.cacheKnown} source="vendor" />;
+        return (
+          <>
+            {acc.reading.log_capped != null && u.rows !== null && (
+              <div data-quota-days-capped className="text-xs text-muted-foreground">
+                {gui.accounts_log_capped(acc.reading.log_capped)}
+              </div>
+            )}
+            <UsageHalf rows={u.rows} why={u.why} today={null} cacheKnown={u.cacheKnown} source="vendor" />
+          </>
+        );
       })()}
       {/* ⚠️ **Tombstone: the 撤掉 button left this card on 2026-09-07**
           (「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹 置顶 /
@@ -1873,177 +1897,6 @@ export function QuotaLanding({
         }}
       />
     </section>
-  );
-}
-
-/**
- * The card's second section: what this account spent, by day.
- *
- * # The title is the reading, not the request
- *
- * ⚠️ **It says how many days this chart *covers*, never how many were
- * asked for.** new-api's log road answers its most recent 1000 records
- * with no time window and no paging, so a busy key spends the whole
- * ceiling inside a day — and a chart labelled 「7 天」 holding half of
- * one does not error and does not look empty: **it draws a true picture
- * of the wrong stretch.** The two vendors have no such ceiling and their
- * title is just as honest, because it is the same sentence either way:
- * this is what is here.
- *
- * The cap line is the second half and only appears when the provider
- * actually cut the log (`log_capped`). **A disclaimer that is always on
- * screen is read as decoration**, and it would be false on almost every
- * account — so the title says what the chart is, and this says why it
- * is that, and both are true.
- *
- * # The bars
- *
- * One column per day the provider reported, in the order it reported
- * them, each as tall as its share of the fullest day. **Heights are
- * relative to the tallest bar, not to any budget**: this section
- * answers 「when did it go」, and the dial above already answers 「how
- * much of what I have」.
- */
-function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: string }) {
-  const days = reading.days;
-  //   **The same box the subscription's by-day chart uses** — same
-  //   initial guess, same class below. Two figures of the same kind at
-  //   two sizes is the thing 「明明都是随时间的bar图,为什么还绘制的
-  //   不一样」 names, and it was the loudest of the differences:
-  //   448×128 beside 998×208, measured 2026-09-10.
-  const { box, w: W, h: H } = usePlotBox({ w: 900, h: 200 });
-  const most = Math.max(...days.map((d) => d.spent), 0);
-  const peak = most > 0 ? most : 1;
-  //   **The median line, by the same rule as the subscription's chart**
-  //   (`UsageHalf`): the days that actually spent something, sorted,
-  //   middle one, and only once there are more than two of them — two
-  //   readings have no ordinary between them. Without it this figure
-  //   answers 「when did it go」 and leaves 「is this a lot」 to the eye,
-  //   which is the question a tall column always raises.
-  const live = days.map((d) => d.spent).filter((v) => v > 0).sort((a, b) => a - b);
-  const median = live.length > 2 ? live[live.length >> 1] : null;
-  const iw = W - PLOT.padL - PLOT.padR;
-  const ih = H - PLOT.padT - PLOT.padB;
-  const y = (v: number) => PLOT.padT + ih - (ih * v) / peak;
-  const stepW = days.length > 0 ? iw / days.length : iw;
-  const bw = Math.min(34, Math.max(2, stepW * 0.74));
-  const cx = (i: number) => PLOT.padL + stepW * (i + 0.5);
-  if (days.length === 0) return null;
-  return (
-    <div data-quota-days className="flex flex-col gap-in border-t pt-row">
-      <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
-        <span data-quota-days-title className="text-fact">
-          {gui.accounts_trend_days(days.length)}
-        </span>
-        {reading.log_capped != null && (
-          <span data-quota-days-capped>{gui.accounts_log_capped(reading.log_capped)}</span>
-        )}
-      </div>
-      {/* ⚠️ **A figure drawn through `lib/plot`, since 2026-09-09** —
-          and what it replaces is why this matters. It was a row of bare
-          `<div>`s: no axis, no scale, **no dates**, a fixed 64px tall,
-          each bar a percentage of the tallest. The user, on his first
-          look at a new-api account:「bar图也没有日期,也没有模型」 — and
-          he was right about the first half and right for the second
-          reason: **this figure is money per day and has no model layer
-          at all** (`DaySpend` carries `at` and `spent`), while the one
-          that does is the lower half's.
-
-          **It was never in the drawing rule.** 「统一出一个绘图方法」
-          reached the two scatters and then the bar chart below; this
-          one is the figure a reader meets *first* when they open an API
-          account, and it was the last one drawn by hand. Same paddings,
-          same tick ink, same `xTickY` — one place decides all of it.
-
-          ⚠️ **The cap on the box is gone, 2026-09-10.** It was put
-          there because three days at `flex-1` measured 350px each and
-          read as a diagram of something else (2026-09-07) — **and what
-          actually fixed that was `bw`**, which stops at 34 however few
-          days there are. A column cannot get fat any more; only the air
-          between columns grows, exactly as it does on the subscription's
-          chart when that one has few days. So the cap bought nothing
-          and cost the one thing the user keeps asking for: that two
-          figures of the same kind be one figure. */}
-      <div ref={box} className="relative h-52 w-full">
-        <svg data-quota-days-svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="overflow-visible text-foreground">
-          {[0, 1, 2, 3].map((k) => (
-            <g key={k}>
-              <line
-                x1={PLOT.padL}
-                x2={W - PLOT.padR}
-                y1={y((peak * k) / 3)}
-                y2={y((peak * k) / 3)}
-                stroke="currentColor"
-                strokeOpacity={PLOT.frameInk}
-              />
-              <text
-                x={PLOT.padL - 6}
-                y={y((peak * k) / 3) + 3}
-                fontSize={PLOT.tick}
-                textAnchor="end"
-                fill="currentColor"
-                fillOpacity={PLOT.tickWordInk}
-              >
-                {k === 0 ? "0" : money((peak * k) / 3, mark)}
-              </text>
-            </g>
-          ))}
-          {median !== null && (
-            <g data-quota-median={median}>
-              <line
-                x1={PLOT.padL}
-                x2={W - PLOT.padR}
-                y1={y(median)}
-                y2={y(median)}
-                stroke="currentColor"
-                strokeOpacity={0.45}
-                strokeWidth={0.9}
-                strokeDasharray="4 3"
-              />
-              <text x={W - PLOT.padR} y={y(median) - 4} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={0.6}>
-                {gui.usage_median(money(median, mark))}
-              </text>
-            </g>
-          )}
-          {days.map((d, i) => (
-            <rect
-              key={d.at}
-              data-quota-day={d.at}
-              data-quota-day-spent={d.spent.toFixed(4)}
-              // The account's own mark, handed down rather than read again —
-              // 「一个账户在这一屏上只有一个单位」 covers the tooltip too.
-              x={cx(i) - bw / 2}
-              // **A day with no spending still gets a column, half a
-              // pixel tall** — a gap would read as a day the provider
-              // did not report, and those are two different facts.
-              y={Math.min(y(d.spent), y(0) - 0.6)}
-              width={bw}
-              height={Math.max(y(0) - y(d.spent), 0.6)}
-              fill="currentColor"
-              fillOpacity={0.6}
-            >
-              <title>{`${civilDay(d.at, reading.zone)} · ${money(d.spent, mark)}`}</title>
-            </rect>
-          ))}
-          {days.map((d, i) =>
-            i % Math.max(1, Math.ceil(days.length / 6)) === 0 || i === days.length - 1 ? (
-              <text
-                key={d.at}
-                data-quota-day-word={d.at}
-                x={cx(i)}
-                y={xTickY(H)}
-                fontSize={PLOT.tick}
-                textAnchor="middle"
-                fill="currentColor"
-                fillOpacity={PLOT.tickWordInk}
-              >
-                {civilDay(d.at, reading.zone).slice(5)}
-              </text>
-            ) : null,
-          )}
-        </svg>
-      </div>
-    </div>
   );
 }
 

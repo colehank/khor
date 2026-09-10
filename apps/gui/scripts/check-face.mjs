@@ -2818,163 +2818,48 @@ try {
       );
     }
 
-    //   ── 8·the day chart, and what its title is allowed to say ──
-    //   2026-09-07:「看图的人不能以为自己看的是 7 天」. new-api's log
-    //   road answers its most recent 1000 records with no time window,
-    //   so a busy key spends the ceiling inside a day — and a chart
-    //   labelled 「7 天」 holding half of one **does not error and does
-    //   not look empty: it draws a true picture of the wrong stretch**.
+    //   ── 8·a truncated log says so, beside the chart it truncates ──
+    //   ⚠️ **Tombstone: this section used to measure the by-day *money*
+    //   chart** — its bar count, its title, the zone its dates were cut
+    //   in, its tick seat against the token chart's. That chart left
+    //   the card on 2026-09-10 (「取消现在那个多出的最近1天那的bar图.
+    //   就绘制花掉的 token」) and `accounts-trend-days` went with it.
     //
-    //   **Two accounts, and neither alone is enough.** `acc-number` has
-    //   two days and an uncut log; `acc-capped` has three days and a
-    //   cut one. So: the title is read off the fixture's own day count
-    //   (a hard-coded 「7 天」 passes on any chart), and the cap line is
-    //   present on one and **absent on the other** — a build that always
-    //   draws it, or never does, fails on one of the two.
-    const chartOf = async (row, days) => {
+    //   **What could not leave is the cut-log line.** `days` and
+    //   `model_tokens` come out of one `/api/log/token` answer
+    //   (`crates/node/src/accounts.rs`), so a provider that truncated
+    //   the log truncated the token chart too — and a reader who is not
+    //   told sees one busy day and reads it as the window
+    //   (「看图的人不能以为自己看的是 7 天」, 2026-09-07).
+    const capOf = async (row) => {
       await page.locator(`[data-quota-row="${row}"]`).click();
       await wait(300);
-      return await page.evaluate(() => {
-        const box = document.querySelector("[data-quota-days]");
-        if (!box) return null;
-        const bars = [...box.querySelectorAll("[data-quota-day]")];
-        return {
-          title: box.querySelector("[data-quota-days-title]")?.textContent?.trim() ?? null,
-          capped: box.querySelector("[data-quota-days-capped]")?.textContent?.trim() ?? null,
-          bars: bars.length,
-          // Read as ink, not as a style string: the tallest day must
-          // actually be the tallest bar on the glass.
-          heights: bars.map((b) => Math.round(b.getBoundingClientRect().height)),
-          spends: bars.map((b) => Number(b.getAttribute("data-quota-day-spent"))),
-          //   **The dates, and where they sit** (2026-09-09). This
-          //   figure had none at all — the user opened a new-api
-          //   account and said 「bar图也没有日期」 — and it was the one
-          //   figure in this app never drawn through `lib/plot`.
-          //
-          //   ⚠️ **Compared against the trend chart on the same screen
-          //   and in the same state**, because both are on an API
-          //   account's card at once. A comparison taken across two
-          //   screens is the mistake this file keeps catching; here
-          //   there is no need to take one.
-          words: [...box.querySelectorAll("[data-quota-day-word]")].map((t) => (t.textContent ?? "").trim()),
-          seat: (() => {
-            const svg = box.querySelector("[data-quota-days-svg]");
-            const word = box.querySelector("[data-quota-day-word]");
-            if (!svg || !word) return null;
-            const f = svg.getBoundingClientRect();
-            const r = word.getBoundingClientRect();
-            return { font: getComputedStyle(word).fontSize, up: +(f.bottom - r.bottom).toFixed(1) };
-          })(),
-          below: (() => {
-            const svg = document.querySelector('[data-usage-zone="trend"] [data-usage-chart]');
-            const word = document.querySelector('[data-usage-zone="trend"] [data-usage-tick-x]');
-            if (!svg || !word) return null;
-            const f = svg.getBoundingClientRect();
-            const r = word.getBoundingClientRect();
-            return { font: getComputedStyle(word).fontSize, up: +(f.bottom - r.bottom).toFixed(1) };
-          })(),
-          //   **The two by-day bar charts' own canvases**, both on this
-          //   card, so they can be compared without crossing a screen.
-          canvas: (() => {
-            const mine = box.querySelector("[data-quota-days-svg]");
-            const theirs = document.querySelector('[data-usage-zone="trend"] [data-usage-chart]');
-            const read = (n) => (n ? { w: +n.getBoundingClientRect().width.toFixed(0), h: +n.getBoundingClientRect().height.toFixed(0) } : null);
-            return { spend: read(mine), stack: read(theirs) };
-          })(),
-          //   A bar's width and the gap between bars — the rule, read
-          //   off the ink rather than off the source.
-          bar: (() => {
-            const one = box.querySelector("[data-quota-day]");
-            const two = box.querySelectorAll("[data-quota-day]")[1];
-            const theirs = document.querySelector('[data-usage-zone="trend"] [data-usage-band]');
-            const w = (n) => (n ? +(+n.getAttribute("width")).toFixed(1) : null);
-            return { spendW: w(one), stackW: w(theirs), spendStep: one && two ? +(+two.getAttribute("x") - +one.getAttribute("x")).toFixed(1) : null };
-          })(),
-        };
-      });
+      return await page.evaluate(() => ({
+        line: document.querySelector("[data-quota-days-capped]")?.textContent?.trim() ?? null,
+        //   The probe before the negative claim: with no token chart on
+        //   this card, 「no cap line」 and 「nothing drew」 are one
+        //   reading, and the assertion below would pass on an empty
+        //   screen.
+        chart: !!document.querySelector('[data-usage-zone="trend"] [data-usage-chart]'),
+      }));
     };
-    const plain = await chartOf("acc-number");
-    const cut = await chartOf("acc-capped");
-
-    //   ── 8b·the two by-day bar charts are one figure ─────────────
-    //   2026-09-10, the user:「明明都是随时间的bar图,为什么还绘制的
-    //   不一样」. Measured that day, on one card: the spend chart drew
-    //   448×128 and the token stack 998×208 — **the same kind of figure
-    //   at half the size**, which is what makes two charts read as two
-    //   products however identical their arithmetic is. Their bar
-    //   geometry was already identical (34 wide, centred in its slot);
-    //   nothing measured the canvas, so nothing said this.
-    //
-    //   Height is asserted, **width is not**: these two sit in columns
-    //   of different widths on some layouts, and a bar chart is allowed
-    //   to be as wide as its column. What it is not allowed to be is a
-    //   different height for the same reading.
-    const canvases = cut?.canvas;
-    if (!canvases?.spend || !canvases?.stack) {
-      fail(`probe dead: only one of the two by-day charts is on this card (${JSON.stringify(canvases)}) — there is nothing to compare`);
-    } else if (canvases.spend.h !== canvases.stack.h) {
+    const uncut = await capOf("acc-number");
+    const trimmed = await capOf("acc-capped");
+    if (!uncut.chart || !trimmed.chart) {
       fail(
-        `the two by-day bar charts are ${canvases.spend.h} and ${canvases.stack.h} tall on the same card — ` +
-          `same kind of figure, same card, two sizes: that is 「明明都是随时间的bar图,为什么还绘制的不一样」, ` +
-          `and it survives however identical the bar arithmetic is`,
+        `probe dead: the token chart is absent (uncut=${uncut.chart} trimmed=${trimmed.chart}) — ` +
+          `「no cap line」 below would be saying 「no card」`,
       );
-    }
-    if (cut?.bar && cut.bar.spendW !== cut.bar.stackW) {
-      fail(`a spend column is ${cut.bar.spendW} wide and a token column ${cut.bar.stackW} — one rule decides a bar's width (\`lib/plot\`)`);
-    }
-    const daysOf = (id) => board.find((r) => r.reading.account === id).reading.days;
-    if (!plain || !cut) {
-      fail(`probe dead: the day chart never drew (plain=${!!plain} cut=${!!cut})`);
-    } else if (plain.bars !== daysOf("acc-number").length || cut.bars !== daysOf("acc-capped").length) {
+    } else if (uncut.line !== null) {
       fail(
-        `the charts draw ${plain.bars} and ${cut.bars} bars for fixtures of ${daysOf("acc-number").length} and ${daysOf("acc-capped").length} days`,
+        `an uncut log says ${JSON.stringify(uncut.line)} — **a disclaimer that is always on screen is read as ` +
+          `decoration**, and this one would be false on almost every account`,
       );
-    } else if (!plain.title?.includes(String(plain.bars)) || !cut.title?.includes(String(cut.bars))) {
+    } else if (!trimmed.line?.includes("1000")) {
       fail(
-        `the titles say ${JSON.stringify([plain.title, cut.title])} for ${plain.bars} and ${cut.bars} days — the title is what the chart covers, not what was asked for`,
+        `a cut log says ${JSON.stringify(trimmed.line)} — it carries the count the provider actually answered, and ` +
+          `it sits beside the chart that count truncates`,
       );
-    } else if (plain.capped !== null) {
-      fail(`an uncut log draws a cap line (${JSON.stringify(plain.capped)}) — it would be false on almost every account`);
-    } else if (!cut.capped?.includes("1000")) {
-      fail(`a cut log says ${JSON.stringify(cut.capped)} — it carries the count the provider actually answered`);
-    } else if (JSON.stringify(cut.words) !== JSON.stringify(["09-05", "09-06", "09-07"])) {
-      //   ⚠️ **The dates are asserted by value, and the values are the
-      //   fixture's own zone.** `acc-capped`'s three instants are local
-      //   midnights in Asia/Shanghai; **reading them as UTC prints
-      //   09-04 / 09-05 / 09-06 — the whole column a day early**, which
-      //   is what real accounts were showing until 2026-09-09
-      //   (measured: seven rows out of seven). A shape check
-      //   (「they look like MM-DD」) passes on both readings and would
-      //   have said nothing about the bug this exists for.
-      fail(
-        `the money chart's day words are ${JSON.stringify(cut.words)} — this account's buckets were cut at Asia/Shanghai ` +
-          `midnight, so they are 09-05/09-06/09-07; a whole column one day early is an instant read in the wrong zone ` +
-          `(AccountReading::zone travels with them for exactly this)`,
-      );
-    } else if (cut.words.length === 0) {
-      fail(
-        `the money chart's day words are ${JSON.stringify(cut.words)} — a bar chart over days has to say which days ` +
-          `(the user, 2026-09-09:「bar图也没有日期」)`,
-      );
-    } else if (!cut.seat || !cut.below) {
-      fail(`probe dead: money chart seat ${JSON.stringify(cut.seat)}, trend seat ${JSON.stringify(cut.below)} — nothing was compared`);
-    } else if (cut.seat.font !== cut.below.font || Math.abs(cut.seat.up - cut.below.up) > 0.6) {
-      fail(
-        `the money chart writes its dates at ${JSON.stringify(cut.seat)} and the token chart on the same card writes its at ` +
-          `${JSON.stringify(cut.below)} — one drawing method (lib/plot's xTickY and PLOT.tick); a figure with its ` +
-          `own numbers is the thing 「统一出一个绘图方法」 was asked about`,
-      );
-    } else {
-      //   …and the bars are the readings: the fullest day is the tallest
-      //   column. A chart that drew equal bars would pass every count
-      //   above and say nothing.
-      const tallest = cut.heights.indexOf(Math.max(...cut.heights));
-      const richest = cut.spends.indexOf(Math.max(...cut.spends));
-      if (tallest !== richest || new Set(cut.heights).size !== cut.heights.length) {
-        fail(
-          `the cut chart's bars are ${JSON.stringify(cut.heights)} for spends ${JSON.stringify(cut.spends)} — the fullest day is the tallest, and three different days are three different heights`,
-        );
-      }
     }
 
     //   ── 8·what a ring may hold ─────────────────────────────────
@@ -4810,17 +4695,17 @@ try {
         ["y-tick gutter", drawnMine.gutter, drawnTheirs.gutter],
         ["y label x", drawnMine.label?.x, drawnTheirs.label?.x],
         ["y label y", drawnMine.label?.y, drawnTheirs.label?.y],
-        //   ⚠️ **Read from the corner the seat is anchored to.** These
-        //   two were `x` (from the left) and `up` (from the bottom)
-        //   until 2026-09-10, when the button moved from the figure's
-        //   bottom-left to its top-right. Anchored to the far corner,
-        //   distance-from-the-left is the figure's own width and
-        //   distance-from-the-bottom is its own height — so two figures
-        //   obeying the same rule read 940 vs 932 and 234 vs 154, and
-        //   this gate said they disagreed about a rule they were both
-        //   keeping. **The claim is unchanged (one seat, one module);
-        //   the axes now match where the seat is pinned.**
-        ["settings seat back", drawnMine.settings?.back, drawnTheirs.settings?.back],
+        //   ⚠️ **Read from the corner the seat is anchored to.** The
+        //   button moved twice on 2026-09-10 — bottom-left, top-right,
+        //   then top-left — and each move changes which two numbers are
+        //   the rule. Anchored to a far corner, distance-from-the-left
+        //   is the figure's own width and distance-from-the-bottom is
+        //   its own height: while it sat top-right these two read
+        //   940 vs 932 and 234 vs 154, and this gate said two figures
+        //   disagreed about a rule they were both keeping. **The claim
+        //   never changed (one seat, one module); the axes have to
+        //   match where the seat is pinned.**
+        ["settings seat x", drawnMine.settings?.x, drawnTheirs.settings?.x],
         ["settings seat y", drawnMine.settings?.y, drawnTheirs.settings?.y],
         ["x label up", drawnMine.xLabel?.up, drawnTheirs.xLabel?.up],
         //   **The third figure.** The bar chart's controls sat in a row
@@ -4831,7 +4716,7 @@ try {
         //   method has to reach the figure the reader opens first.
         ["bar tick ink", drawnBars?.font, drawnTheirs.font],
         ["bar y-tick gutter", drawnBars?.gutter, drawnTheirs.gutter],
-        ["bar settings seat back", drawnBars?.settings?.back, drawnTheirs.settings?.back],
+        ["bar settings seat x", drawnBars?.settings?.x, drawnTheirs.settings?.x],
         ["bar settings seat y", drawnBars?.settings?.y, drawnTheirs.settings?.y],
         ["bar x label up", drawnBars?.xLabel?.up, drawnTheirs.xLabel?.up],
       ]) {
@@ -4854,9 +4739,16 @@ try {
       //   the walk has left the 額度 pane, so it read `mine: false` on a
       //   card that was not on the glass. Two readings, two states, one
       //   comparison: the mistake this file keeps catching.
+      //   ⚠️ **Reversed 2026-09-10.** This asserted both figures carry
+      //   the 「面积 = X」 sentence, from one key, findable by one name.
+      //   The sentence is gone from both (「所有散点,无论机器还是api,
+      //   都不要有下面的面积注释」) — and the claim that mattered was
+      //   never 「it is there」, it was **「whatever one figure does,
+      //   the other does」**. So it stands, pointing the other way: one
+      //   of them growing a foot back alone is the drift this catches.
       const feet = { mine: mineFoot, theirs: await page.locator("[data-machine-card] [data-plot-foot]").count() > 0 };
-      if (!feet.mine || !feet.theirs) {
-        fail(`the figures' feet are marked ${JSON.stringify(feet)} — one sentence, one key, and it has to be findable by one name on both`);
+      if (feet.mine || feet.theirs) {
+        fail(`a figure still carries the area sentence ${JSON.stringify(feet)} — it left both on 2026-09-10, and one figure keeping it is the drift 「统一出一个绘图方法」 is about`);
       }
       if (!drawnBars || !(drawnBars.ticks >= 2)) {
         fail(`probe dead: the 額度 bar chart reads ${JSON.stringify(drawnBars)} — a figure with no ticks agrees with anything`);
@@ -7382,7 +7274,10 @@ try {
       points: box.querySelectorAll("[data-plot-point]").length,
       areas,
       zeros: box.querySelectorAll("[data-plot-zero]").length,
-      foot: box.querySelector("[data-plot-foot]")?.textContent?.trim() ?? "",
+      //   The area sentence is gone (2026-09-10); this reads whatever
+      //   the figure's own text is, for the message when the axes are
+      //   not named.
+      foot: box.textContent?.trim().slice(0, 60) ?? "",
       axes: box.textContent.includes("CPU") && box.textContent.includes("内存"),
     };
   });
