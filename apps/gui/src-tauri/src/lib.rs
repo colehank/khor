@@ -448,20 +448,55 @@ struct PageWord {
     text: String,
 }
 
-/// Which exit machine each live page webview was built against, by label.
+/// What each live page webview is wired to, by label: the exit machine
+/// it was built against, and where it last actually was.
 ///
-/// **This exists to make one specific failure impossible.** A webview's
+/// **The exit half makes one specific failure impossible.** A webview's
 /// proxy is fixed when it is built and there is no runtime setter (checked
 /// against wry: `with_proxy_config` on the builder is the only door). So a
 /// page webview reused for a different exit machine would keep leaving
 /// through the old one — **not failing, succeeding through the wrong
 /// network**, which is the shape docs/NET.md 可达性 rules out. Knowing what
 /// each one was built against lets `open_page` rebuild instead of reuse.
-fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+///
+/// **The address half is here because asking the webview kills the app.**
+/// `webview.url()` reaches `url_from_webview` in wry
+/// (`wkwebview/mod.rs:1349`), which does `webview.URL().unwrap()`. On
+/// 2026-09-10 the first run of a built app **panicked the whole process**
+/// there (exit 101), and this line was the only route to it. The tree had
+/// been green since `e251db9` because no gate in this repo reaches a
+/// native webview.
+///
+/// ⚠️ **What is measured, and what is not.** A `WKWebView` answers `nil`
+/// for its URL only before `load` is called on it — measured with a bare
+/// one: `nil` when fresh, and the URL is already there in the statement
+/// after `load` returns. A navigation that **fails** is not `nil` either;
+/// pointed at a dead port it ends in `didFinish` on `about:blank`. So the
+/// `nil` window is the gap between `add_child` handing the request to the
+/// event loop and wry loading in it, which is narrow — **and it happened
+/// anyway**, on a machine doing nothing unusual.
+///
+/// **The fix does not depend on knowing how wide that window is.** A
+/// panic below `url()` cannot be caught (it answers a `Result` and
+/// unwraps under it), so the address is kept on this side instead and
+/// that route stops existing. It is written when a navigation is asked
+/// for and again when one **finishes**, which is what makes it the page's
+/// real address rather than the last one requested — a page that
+/// redirects, or follows a link, ends up somewhere nobody asked for.
+fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (String, String)>> {
     static EXITS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, String>>,
+        std::sync::Mutex<std::collections::HashMap<String, (String, String)>>,
     > = std::sync::OnceLock::new();
     EXITS.get_or_init(Default::default)
+}
+
+/// Remembers where a page webview is, keeping whatever exit it is on.
+fn page_went(label: &str, to: &str) {
+    if let Ok(mut m) = page_exits().lock() {
+        if let Some(slot) = m.get_mut(label) {
+            slot.1 = to.to_owned();
+        }
+    }
 }
 
 /// How a browsing tab presents itself to the sites it opens.
@@ -525,12 +560,14 @@ async fn open_page(
     let proxy: tauri::Url =
         format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?;
     let label = page_label(&tab);
+    let going_to = target.to_string();
     let top = at.y + frame_lift(&window, at);
 
     // Reuse only when it is the same exit. A different one means the
     // webview in front of us is wired to a proxy it can no longer be
     // talked out of, so it goes.
-    let same_exit = page_exits().lock().map(|m| m.get(&label) == Some(&machine)).unwrap_or(false);
+    let wired = page_exits().lock().ok().and_then(|m| m.get(&label).cloned());
+    let same_exit = wired.as_ref().map(|(exit, _)| exit == &machine).unwrap_or(false);
     if let Some(live) = window.app_handle().get_webview(&label) {
         if same_exit {
             // **Only navigate when it is somewhere else.** Coming back to
@@ -538,7 +575,13 @@ async fn open_page(
             // it is already on; navigating to where you already are is a
             // reload, and a reload on every tab switch is exactly the
             // thing keeping a webview per tab exists to avoid.
-            if live.url().map(|now| now != target).unwrap_or(true) {
+            //
+            // Read from this side rather than from the webview: see
+            // `page_exits`. Asking a webview that has not started its
+            // navigation for its URL takes the process down with it.
+            let now = wired.as_ref().map(|(_, at)| at.as_str());
+            if now != Some(target.as_str()) {
+                page_went(&label, target.as_str());
                 live.navigate(target).map_err(|e| e.to_string())?;
             }
             live.set_position(LogicalPosition::new(at.x, top)).map_err(|e| e.to_string())?;
@@ -615,10 +658,15 @@ async fn open_page(
             // stays where it was. Real browsers follow that too; the hook
             // for it is a script in the page, not this callback.
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let at = payload.url().to_string();
+                // Kept on this side too, because the reuse path reads it
+                // from here — a page that redirected, or followed a link,
+                // is somewhere nobody asked it to go.
+                page_went(&page_label(&l_tab), &at);
                 let _ = app.emit_to(
                     l_face.clone(),
                     "page:went",
-                    PageWord { tab: l_tab.clone(), text: payload.url().to_string() },
+                    PageWord { tab: l_tab.clone(), text: at },
                 );
             }
         });
@@ -661,7 +709,7 @@ async fn open_page(
         .add_child(builder, LogicalPosition::new(at.x, top), LogicalSize::new(at.w, at.h))
         .map_err(|e| e.to_string())?;
     if let Ok(mut m) = page_exits().lock() {
-        m.insert(label, machine);
+        m.insert(label, (machine, going_to));
     }
     Ok(borrow)
 }
