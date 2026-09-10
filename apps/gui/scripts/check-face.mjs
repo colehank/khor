@@ -2873,11 +2873,55 @@ try {
             const r = word.getBoundingClientRect();
             return { font: getComputedStyle(word).fontSize, up: +(f.bottom - r.bottom).toFixed(1) };
           })(),
+          //   **The two by-day bar charts' own canvases**, both on this
+          //   card, so they can be compared without crossing a screen.
+          canvas: (() => {
+            const mine = box.querySelector("[data-quota-days-svg]");
+            const theirs = document.querySelector('[data-usage-zone="trend"] [data-usage-chart]');
+            const read = (n) => (n ? { w: +n.getBoundingClientRect().width.toFixed(0), h: +n.getBoundingClientRect().height.toFixed(0) } : null);
+            return { spend: read(mine), stack: read(theirs) };
+          })(),
+          //   A bar's width and the gap between bars — the rule, read
+          //   off the ink rather than off the source.
+          bar: (() => {
+            const one = box.querySelector("[data-quota-day]");
+            const two = box.querySelectorAll("[data-quota-day]")[1];
+            const theirs = document.querySelector('[data-usage-zone="trend"] [data-usage-band]');
+            const w = (n) => (n ? +(+n.getAttribute("width")).toFixed(1) : null);
+            return { spendW: w(one), stackW: w(theirs), spendStep: one && two ? +(+two.getAttribute("x") - +one.getAttribute("x")).toFixed(1) : null };
+          })(),
         };
       });
     };
     const plain = await chartOf("acc-number");
     const cut = await chartOf("acc-capped");
+
+    //   ── 8b·the two by-day bar charts are one figure ─────────────
+    //   2026-09-10, the user:「明明都是随时间的bar图,为什么还绘制的
+    //   不一样」. Measured that day, on one card: the spend chart drew
+    //   448×128 and the token stack 998×208 — **the same kind of figure
+    //   at half the size**, which is what makes two charts read as two
+    //   products however identical their arithmetic is. Their bar
+    //   geometry was already identical (34 wide, centred in its slot);
+    //   nothing measured the canvas, so nothing said this.
+    //
+    //   Height is asserted, **width is not**: these two sit in columns
+    //   of different widths on some layouts, and a bar chart is allowed
+    //   to be as wide as its column. What it is not allowed to be is a
+    //   different height for the same reading.
+    const canvases = cut?.canvas;
+    if (!canvases?.spend || !canvases?.stack) {
+      fail(`probe dead: only one of the two by-day charts is on this card (${JSON.stringify(canvases)}) — there is nothing to compare`);
+    } else if (canvases.spend.h !== canvases.stack.h) {
+      fail(
+        `the two by-day bar charts are ${canvases.spend.h} and ${canvases.stack.h} tall on the same card — ` +
+          `same kind of figure, same card, two sizes: that is 「明明都是随时间的bar图,为什么还绘制的不一样」, ` +
+          `and it survives however identical the bar arithmetic is`,
+      );
+    }
+    if (cut?.bar && cut.bar.spendW !== cut.bar.stackW) {
+      fail(`a spend column is ${cut.bar.spendW} wide and a token column ${cut.bar.stackW} — one rule decides a bar's width (\`lib/plot\`)`);
+    }
     const daysOf = (id) => board.find((r) => r.reading.account === id).reading.days;
     if (!plain || !cut) {
       fail(`probe dead: the day chart never drew (plain=${!!plain} cut=${!!cut})`);

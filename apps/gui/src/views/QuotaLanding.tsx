@@ -1906,9 +1906,22 @@ export function QuotaLanding({
  */
 function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: string }) {
   const days = reading.days;
-  const { box, w: W, h: H } = usePlotBox({ w: 380, h: 132 });
+  //   **The same box the subscription's by-day chart uses** — same
+  //   initial guess, same class below. Two figures of the same kind at
+  //   two sizes is the thing 「明明都是随时间的bar图,为什么还绘制的
+  //   不一样」 names, and it was the loudest of the differences:
+  //   448×128 beside 998×208, measured 2026-09-10.
+  const { box, w: W, h: H } = usePlotBox({ w: 900, h: 200 });
   const most = Math.max(...days.map((d) => d.spent), 0);
   const peak = most > 0 ? most : 1;
+  //   **The median line, by the same rule as the subscription's chart**
+  //   (`UsageHalf`): the days that actually spent something, sorted,
+  //   middle one, and only once there are more than two of them — two
+  //   readings have no ordinary between them. Without it this figure
+  //   answers 「when did it go」 and leaves 「is this a lot」 to the eye,
+  //   which is the question a tall column always raises.
+  const live = days.map((d) => d.spent).filter((v) => v > 0).sort((a, b) => a - b);
+  const median = live.length > 2 ? live[live.length >> 1] : null;
   const iw = W - PLOT.padL - PLOT.padR;
   const ih = H - PLOT.padT - PLOT.padB;
   const y = (v: number) => PLOT.padT + ih - (ih * v) / peak;
@@ -1942,11 +1955,16 @@ function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: s
           account, and it was the last one drawn by hand. Same paddings,
           same tick ink, same `xTickY` — one place decides all of it.
 
-          **The chart still grows with the data rather than stretching**
-          (2026-09-07: three days at `flex-1` measured 350px each and
-          read as a diagram of something else): the box is capped, and
-          `bw` stops at 34 however few days there are. */}
-      <div ref={box} className="relative h-32 w-full max-w-md">
+          ⚠️ **The cap on the box is gone, 2026-09-10.** It was put
+          there because three days at `flex-1` measured 350px each and
+          read as a diagram of something else (2026-09-07) — **and what
+          actually fixed that was `bw`**, which stops at 34 however few
+          days there are. A column cannot get fat any more; only the air
+          between columns grows, exactly as it does on the subscription's
+          chart when that one has few days. So the cap bought nothing
+          and cost the one thing the user keeps asking for: that two
+          figures of the same kind be one figure. */}
+      <div ref={box} className="relative h-52 w-full">
         <svg data-quota-days-svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="overflow-visible text-foreground">
           {[0, 1, 2, 3].map((k) => (
             <g key={k}>
@@ -1970,6 +1988,23 @@ function SpendDays({ reading, mark }: { reading: AccountRing["reading"]; mark: s
               </text>
             </g>
           ))}
+          {median !== null && (
+            <g data-quota-median={median}>
+              <line
+                x1={PLOT.padL}
+                x2={W - PLOT.padR}
+                y1={y(median)}
+                y2={y(median)}
+                stroke="currentColor"
+                strokeOpacity={0.45}
+                strokeWidth={0.9}
+                strokeDasharray="4 3"
+              />
+              <text x={W - PLOT.padR} y={y(median) - 4} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={0.6}>
+                {gui.usage_median(money(median, mark))}
+              </text>
+            </g>
+          )}
           {days.map((d, i) => (
             <rect
               key={d.at}
