@@ -71,6 +71,7 @@ import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlo
 import { Panel } from "@/components/Panel";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
+import { SideCut } from "@/components/SideCut";
 import { cn } from "@/lib/utils";
 
 /** One (day, model) reading, in whichever road's spelling. */
@@ -1180,7 +1181,13 @@ function Stats({
             name on both. */}
         <span data-plot-foot data-plot-area-of={axes.z}>{gui.plot_area_is(AXES[axes.z].word())}</span>
       </div>
-      <div className="overflow-x-auto">
+      {/* **Nine columns and a phone shows three.** The other six used to
+          be simply absent — no mark, no sentence — so 「there is more
+          over there」 and 「this is all there is」 looked identical, the
+          same pair `usage-no-cache` exists one line above to keep apart.
+          `SideCut` draws a veil at whichever edge is actually cut, and
+          only while it is (用户 2026-09-10 选「丁」: 一个字都不写). */}
+      <SideCut>
         <table className="w-full border-collapse text-aux tabular-nums">
           <thead>
             {/* **The rule goes under the row, not under each cell** —
@@ -1273,7 +1280,7 @@ function Stats({
             ))}
           </tbody>
         </table>
-      </div>
+      </SideCut>
       <dl data-usage-sums className="grid grid-cols-2 gap-x-row gap-y-in border-t pt-in sm:grid-cols-4">
         {[
           [count(sum.input + sum.output), gui.usage_axis_total],

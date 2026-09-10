@@ -792,3 +792,77 @@ input[type="search"]::-webkit-search-decoration {
 [data-tight] > [data-load-top] [data-top-row] > [data-c]:empty {
   display: none;
 }
+
+/* The cut edge of a sideways scroller (用户 2026-09-10 选「丁」).
+ *
+ * **A table wider than the screen says nothing about it.** The stats
+ * table on the account detail has nine columns and a phone shows three;
+ * until now the other six were simply absent, with no mark of any kind
+ * — a reader had no way to tell 「there is more over there」 from 「this
+ * is all there is」, which is the same pair of facts `usage-no-cache`
+ * exists to keep apart one line below.
+ *
+ * The user chose the wordless answer over the three that spoke. What is
+ * built into it here are the two things a plain gradient would have got
+ * wrong:
+ *
+ * - **It is only there when something is actually cut off**, and it
+ *   goes on the side it is cut off on (`SideCut` measures; this file
+ *   only draws). A veil that stayed after the last column had scrolled
+ *   into view would be saying there is more when there is not.
+ * - **Under `prefers-contrast: more` it stops being a gradient.** A
+ *   fade has no single contrast to answer for — its L* difference from
+ *   the ground is a different number at every pixel — so on a face
+ *   asking for contrast it becomes a hairline, which does have one.
+ *   That is the whole of the objection raised against this option, and
+ *   it is answered here rather than argued.
+ */
+[data-side-cut] {
+  position: relative;
+  min-width: 0;
+}
+
+[data-side-cut]::before,
+[data-side-cut]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--cut-wide);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-120) var(--ease-out);
+}
+
+/* The veil blends into whatever the scroller is sitting on. Both of
+   this app's surfaces are named, so the caller says which rather than
+   this file guessing: `--cut-into` defaults to the page. */
+[data-side-cut]::after {
+  right: 0;
+  background: linear-gradient(to left, var(--cut-into, var(--background)), transparent);
+}
+
+[data-side-cut]::before {
+  left: 0;
+  background: linear-gradient(to right, var(--cut-into, var(--background)), transparent);
+}
+
+[data-side-cut][data-cut-right]::after,
+[data-side-cut][data-cut-left]::before {
+  opacity: 1;
+}
+
+@media (prefers-contrast: more) {
+  [data-side-cut]::before,
+  [data-side-cut]::after {
+    width: var(--hair);
+    background: var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-side-cut]::before,
+  [data-side-cut]::after {
+    transition: none;
+  }
+}

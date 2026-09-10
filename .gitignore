@@ -1,2 +1,18 @@
 /target
 .DS_Store
+# Added by code-review-graph
+.code-review-graph/
+
+# 给 agent 用的工具配置,不是这个仓的东西——留在工作区,不进树。
+# 它们本来一直挂在 `git status` 的未跟踪清单里,而那份噪音差点被扫进
+# 两次提交(2026-09-09)。
+CLAUDE.md
+.mcp.json
+.claude/
+.codebuddy/
+.gemini/
+.kiro/
+.qoder/
+.vscode/
+.githooks/
+opencode.jsonc

@@ -560,6 +560,15 @@
    * inline controls beside text; this is a floor under anything a finger
    * must land on, and the two move for different reasons. */
   --touch: 44px;
+  /* How wide the veil is at the cut edge of a sideways scroller
+     (`app.css` `[data-side-cut]`).
+     **Derived from the floor above it, not picked.** The narrowest
+     column in the table this exists for is `min-w-touch` wide, so a
+     veil of half that or more would leave the outermost figure
+     unreadable while the table is sitting still — and a table whose
+     last visible number cannot be read has traded one silence for
+     another. Twenty is under half of forty-four with room to spare. */
+  --cut-wide: 20px;
 
   /* ── spacing: four gaps, named for what they separate ─
    * The one dimension this theme still left to chance. Colours, control

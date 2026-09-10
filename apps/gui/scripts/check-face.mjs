@@ -4997,6 +4997,84 @@ try {
     }
   }
 
+  // ── 8d) narrow 额度: the table says when it has cut a column off ──
+  // 用户 2026-09-10 chose the wordless answer (「丁」) out of four: no
+  // sentence, a veil at the edge that is cut. The whole risk of a
+  // wordless mark is that it says the wrong thing silently — a veil
+  // stuck on after the last column has scrolled into view is a lie
+  // nothing corrects — so this measures the marks rather than the paint.
+  //
+  // **Three arms, and the third is the one that matters.** Cut on the
+  // right, cut on the left after scrolling to the end, and **nothing
+  // cut when the table fits**: without that last one a mark that is
+  // simply always on passes the first two, which is this repo's ninth
+  // false green (对照组的两条胳膊被造得必然一致).
+  {
+    await press('[data-quota-row][data-quota-kind="sub"]');
+    await wait(400);
+    const cut = '[data-quota-detail] [data-usage-zone="stats"] [data-side-cut]';
+    if ((await page.locator(cut).count()) !== 1) {
+      fail("probe dead: the stats table is not in a side-cut frame, so nothing below measured a cut edge");
+    } else {
+      const marks = () =>
+        page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          const box = el.firstElementChild;
+          return {
+            left: el.hasAttribute("data-cut-left"),
+            right: el.hasAttribute("data-cut-right"),
+            over: box.scrollWidth - box.clientWidth,
+          };
+        }, cut);
+      const shove = (to) =>
+        page.evaluate(
+          ([sel, x]) => {
+            const box = document.querySelector(sel).firstElementChild;
+            box.scrollLeft = x === "end" ? box.scrollWidth : 0;
+          },
+          [cut, to],
+        );
+
+      const atRest = await marks();
+      if (atRest.over <= 1) {
+        fail(`probe dead: the stats table fits in 390px (${atRest.over}px over), so there is no cut edge to measure`);
+      } else if (!atRest.right || atRest.left) {
+        fail(`a table cut off on the right marks left=${atRest.left} right=${atRest.right} — the veil is on the wrong edge, and it has no words to correct itself with`);
+      } else {
+        await shove("end");
+        await wait(200);
+        const atEnd = await marks();
+        if (atEnd.right || !atEnd.left) {
+          fail(`scrolled to the last column the table still marks right=${atEnd.right} left=${atEnd.left} — a veil that stays says there is more when there is not`);
+        } else {
+          // The control arm: wide enough that nothing is cut, and
+          // **still inside the narrow face**. A mark that cannot go
+          // away passes both arms above, so this is the one that has
+          // to be reachable — and it was not, the first four ways it
+          // was torn down. 719 is the breakpoint (`use-narrow`); going
+          // out to 1400 crosses it, rebuilds the whole subtree, and
+          // remounts the very thing under test, so any stuck mark is
+          // wiped by the remount rather than caught here. 700 keeps the
+          // same mounted table and merely stops cutting it.
+          await page.setViewportSize({ width: 700, height: 900 });
+          await wait(400);
+          const wide = await marks();
+          if (wide.over > 1) {
+            fail(`probe dead: the stats table is still ${wide.over}px too wide at 700 — the control arm never got a table that fits`);
+          } else if (wide.left || wide.right) {
+            fail(`a table with nothing cut off still marks left=${wide.left} right=${wide.right} — the veil is painted on, not measured`);
+          } else {
+            console.log(
+              `side cut: 390px over by ${atRest.over} → right only; scrolled to end → left only; 700px fits → neither`,
+            );
+          }
+          await page.setViewportSize({ width: 390, height: 844 });
+          await wait(300);
+        }
+      }
+    }
+  }
+
   // ── 9) readings per volume and per card, with a whole fallback ────
   // Tied to the fixture: the peer surveys (two cards, two volumes, one
   // minted strain), elder does not (empty lists, aggregate only). An
