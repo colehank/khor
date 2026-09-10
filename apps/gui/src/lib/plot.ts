@@ -114,14 +114,41 @@ export function usePlotBox(initial: { w: number; h: number } = { w: 900, h: 170 
   useEffect(() => {
     const node = box.current;
     if (!node) return;
-    const ro = new ResizeObserver(([e]) =>
-      setSize({ w: Math.max(1, e.contentRect.width), h: Math.max(1, e.contentRect.height) }),
-    );
+    const ro = new ResizeObserver(([e]) => {
+      const { width, height } = e.contentRect;
+      // **A zero is 「I cannot see it」, not 「it is that big」.** An
+      // observer fires with 0×0 for an element that is display:none or
+      // not laid out yet, and how early that happens is the engine's
+      // business — WebKit reports it in places Chrome does not.
+      //
+      // This used to clamp to 1, and a height of 1 is worse than
+      // useless: every figure here computes `ih = H - padT - padB`, so
+      // H below 56 makes the inner height **negative** and the y axis
+      // draws upside down. Measured 2026-09-10 on a real account: the
+      // 0 tick landed 33px above the frame, on top of the title, with
+      // 0.75$ below it — a chart that had turned over. Nothing errored.
+      //
+      // So a zero is dropped and the last real size stands. There is
+      // nothing to draw for an element nobody can see, and the size it
+      // had is the size it will have when it comes back.
+      if (width <= 0 || height <= 0) return;
+      // The floor is 「enough to draw in」, not 1: below this the axis
+      // inverts, and a figure that inverts silently is the failure this
+      // whole comment is about.
+      setSize({ w: Math.max(FLOOR.w, width), h: Math.max(FLOOR.h, height) });
+    });
     ro.observe(node);
     return () => ro.disconnect();
   }, []);
   return { box, ...size };
 }
+
+/**
+ * The smallest box any figure here can be drawn in: the gutters plus a
+ * sliver of plotting area. Anything smaller inverts an axis rather than
+ * looking cramped, so it is a floor rather than a preference.
+ */
+const FLOOR = { w: PLOT.padL + PLOT.padR + 8, h: PLOT.padT + PLOT.padB + 8 };
 
 /**
  * Where an axis label sits, as an inline style.
@@ -151,11 +178,21 @@ export function xTickY(h: number): number {
 }
 
 export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
-  // **Three corners, and the fourth is left empty on purpose.** The
-  // two labels take the corners a scatter is least likely to put a
-  // point in (min-x max-y, max-x min-y); the settings button takes the
-  // third, bottom-left, so a panel opening upward from it covers the
-  // stretch of axis nearest the origin rather than the data.
+  // **Three corners of four.** The two labels take the corners a
+  // scatter is least likely to put a point in (min-x max-y, max-x
+  // min-y); the settings button takes **top-right**, the one nothing
+  // else was using.
+  //
+  // ⚠️ **It sat bottom-left until 2026-09-10**, with a note arguing
+  // that a panel opening upward from there covers the stretch of axis
+  // nearest the origin rather than the data. The user asked for the
+  // top-right corner (「设置图表绘制的三个点,放在图表的右上角」), and
+  // the old argument was answering a question nobody had: **where the
+  // panel lands matters only while it is open, and while it is open
+  // the panel is what you are reading.** Where the *button* sits
+  // matters whenever the figure is on screen — and a control in the
+  // top-right is where this app puts a thing's options everywhere
+  // else. The panel now opens downward from it.
   // ⚠️ **A label is centred on its strip; a button is centred on its
   // own height.** Until 2026-09-08 every seat here assumed a
   // `min-h-touch` control and offset by `(strip - 44) / 2`, which is
@@ -170,7 +207,14 @@ export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   const middle = { display: "flex", alignItems: "center" } as const;
   if (which === "y") return { left: PLOT.padL, top: 0, height: PLOT.padT, ...middle };
   if (which === "x") return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
-  return { left: PLOT.padL, bottom: (12 - PLOT.touch) / 2 };
+  //   ⚠️ **Lifted clear of the plotting area, not centred on the top
+  //   strip.** Centring it there puts 11px of a 44px hit area inside
+  //   the data, and the top-right corner is where a scatter's biggest
+  //   point lives: the gate caught it immediately — the button
+  //   「intercepts pointer events」 for `claude-opus-5` and the click
+  //   never landed. So the button's box ends exactly where the data
+  //   begins (`padT`), and its ink sits in the air above the frame.
+  return { right: PLOT.padR, top: PLOT.padT - PLOT.touch };
 }
 
 /**

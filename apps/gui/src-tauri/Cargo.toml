@@ -65,5 +65,20 @@ tauri = { version = "2", features = ["macos-proxy"] }
 # `/src/main.tsx?t=…` served by vite once vite happened to be up).
 # Dev mode — vite with hot reload — is the explicit opt-out:
 #   cargo build -p khor-gui --no-default-features
-default = ["custom-protocol"]
+#
+# **`devtools` is on by default too, and that is a deliberate trade.**
+# Without it a `release` webview has no inspector, and every question
+# about what the interface is actually doing — a figure that came back
+# the wrong height, a pane that redraws too often — costs an edit, a
+# three-minute build and a restart, with nothing measured at the end of
+# it. 2026-09-10: a chart drew itself upside down on a real account and
+# could not be reproduced in Chrome; there was no way to read a single
+# number off the running app.
+#
+# It costs a little binary size and it lets anyone open the inspector on
+# their own copy. **Turn it off for a public release** — one word here —
+# and say so in the same commit, because from that moment this kind of
+# question needs a special build again.
+default = ["custom-protocol", "devtools"]
 custom-protocol = ["tauri/custom-protocol"]
+devtools = ["tauri/devtools"]

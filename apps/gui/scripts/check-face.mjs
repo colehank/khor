@@ -4649,6 +4649,7 @@ try {
               x: +(r.left - frame.left).toFixed(1),
               y: +(r.top - frame.top).toFixed(1),
               up: +(frame.bottom - r.bottom).toFixed(1),
+              back: +(frame.right - r.right).toFixed(1),
             };
           };
           const xLab = xpick ? document.querySelector(xpick) : null;
@@ -4765,8 +4766,18 @@ try {
         ["y-tick gutter", drawnMine.gutter, drawnTheirs.gutter],
         ["y label x", drawnMine.label?.x, drawnTheirs.label?.x],
         ["y label y", drawnMine.label?.y, drawnTheirs.label?.y],
-        ["settings seat x", drawnMine.settings?.x, drawnTheirs.settings?.x],
-        ["settings seat up", drawnMine.settings?.up, drawnTheirs.settings?.up],
+        //   ⚠️ **Read from the corner the seat is anchored to.** These
+        //   two were `x` (from the left) and `up` (from the bottom)
+        //   until 2026-09-10, when the button moved from the figure's
+        //   bottom-left to its top-right. Anchored to the far corner,
+        //   distance-from-the-left is the figure's own width and
+        //   distance-from-the-bottom is its own height — so two figures
+        //   obeying the same rule read 940 vs 932 and 234 vs 154, and
+        //   this gate said they disagreed about a rule they were both
+        //   keeping. **The claim is unchanged (one seat, one module);
+        //   the axes now match where the seat is pinned.**
+        ["settings seat back", drawnMine.settings?.back, drawnTheirs.settings?.back],
+        ["settings seat y", drawnMine.settings?.y, drawnTheirs.settings?.y],
         ["x label up", drawnMine.xLabel?.up, drawnTheirs.xLabel?.up],
         //   **The third figure.** The bar chart's controls sat in a row
         //   under it until 2026-09-09 — the same control in the same
@@ -4776,8 +4787,8 @@ try {
         //   method has to reach the figure the reader opens first.
         ["bar tick ink", drawnBars?.font, drawnTheirs.font],
         ["bar y-tick gutter", drawnBars?.gutter, drawnTheirs.gutter],
-        ["bar settings seat x", drawnBars?.settings?.x, drawnTheirs.settings?.x],
-        ["bar settings seat up", drawnBars?.settings?.up, drawnTheirs.settings?.up],
+        ["bar settings seat back", drawnBars?.settings?.back, drawnTheirs.settings?.back],
+        ["bar settings seat y", drawnBars?.settings?.y, drawnTheirs.settings?.y],
         ["bar x label up", drawnBars?.xLabel?.up, drawnTheirs.xLabel?.up],
       ]) {
         const same = typeof mineV === "number" && typeof theirsV === "number" ? Math.abs(mineV - theirsV) <= 0.6 : mineV === theirsV;

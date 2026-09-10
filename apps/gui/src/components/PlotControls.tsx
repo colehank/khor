@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { IconMore } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -69,9 +69,15 @@ export function AxisLabel({
         align === "right" ? "flex-row-reverse" : "flex-row",
       )}
     >
-      <span data-plot-ruler={which} aria-hidden="true" className="px-in text-muted-foreground/70">
-        {rulerWord}
-      </span>
+      {/* An empty ruler word draws nothing at all rather than an empty
+          padded box: 「linear」 prints no mark on purpose (the axis is
+          not bent), and a blank gap beside the label would read as one
+          more thing to look at. */}
+      {rulerWord !== "" && (
+        <span data-plot-ruler={which} aria-hidden="true" className="px-in text-muted-foreground/70">
+          {rulerWord}
+        </span>
+      )}
       <span data-plot-label={which} className="px-in font-title text-foreground">
         {word}
       </span>
@@ -113,6 +119,32 @@ export function PlotSettings({
 }) {
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement | null>(null);
+  const here = useRef<HTMLSpanElement | null>(null);
+  //   **A press anywhere else puts it away** (2026-09-10, the user:
+  //   「点击空白区域可以关掉这三个点弹出的候选」). Without this the
+  //   only way out was the same button, which is a rule the reader has
+  //   to be told — every other menu in this app closes by looking away.
+  //
+  //   `pointerdown` in the capture phase, so it lands before whatever
+  //   was pressed acts: pressing a control behind the panel should
+  //   both close the panel and reach that control, which is what a
+  //   listener that runs first and does not swallow the event gives.
+  //   Escape too, since the panel takes focus.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!here.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", away, true);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", away, true);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open]);
   //   **Re-fit when the contents change, not only when it opens.**
   //   Picking a quantity re-weights one word (the chosen one is
   //   `font-title`), and a row whose offer list changed is a different
@@ -145,21 +177,25 @@ export function PlotSettings({
     let n: HTMLElement | null = el.parentElement;
     let left = 0;
     let right = window.innerWidth;
+    let top = 0;
+    let floor = window.innerHeight;
     while (n) {
       const cs = getComputedStyle(n);
       if (cs.overflowX !== "visible" || cs.overflowY !== "visible") {
         const b = n.getBoundingClientRect();
         left = Math.max(left, b.left);
         right = Math.min(right, b.right);
+        top = Math.max(top, b.top);
+        floor = Math.min(floor, b.bottom);
         break;
       }
       n = n.parentElement;
     }
     //   **The air beside it is the air under it**, read from the
-    //   stylesheet rather than copied into this file: `mb-in` is
+    //   stylesheet rather than copied into this file: `mt-in` is
     //   already the gap between the panel and its button, and a second
     //   number here would be a mirror nothing keeps in step.
-    const air = parseFloat(getComputedStyle(el).marginBottom) || 0;
+    const air = parseFloat(getComputedStyle(el).marginTop) || 0;
     const room = right - left - 2 * air;
     if (room > 0 && el.getBoundingClientRect().width > room) {
       //   Wider than the room: it wraps. `w-max` keeps it as narrow as
@@ -172,10 +208,31 @@ export function PlotSettings({
     const past = r.right - (right - air);
     const short = left + air - r.left;
     const dx = past > 0 ? -past : short > 0 ? short : 0;
-    if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+    //   **And the same question downward** (2026-09-10, when the button
+    //   moved to the figure's top-right and the panel started opening
+    //   down). The gate measured it the first run: 89.6 and 70.8 past
+    //   the bottom of a 390-wide pane — 「弹出的窗口显示不全」 again,
+    //   the failure this whole measurement exists for, now on the other
+    //   axis. **A cut-off panel gives no sign it is cut off**, which is
+    //   why this is arithmetic and not a guess about how much room
+    //   there usually is.
+    //
+    //   Moved with a transform rather than by re-rendering on the other
+    //   side: a state flip would re-run this effect, and a panel that
+    //   fits in neither direction would flip forever.
+    const below = r.bottom - (floor - air);
+    let dy = 0;
+    if (below > 0) {
+      //   Above the button instead, if it fits there whole. The lift is
+      //   the panel, the button and the air on both sides of it.
+      const seat = here.current?.getBoundingClientRect();
+      const lift = seat ? r.height + seat.height + 2 * air : 0;
+      dy = lift > 0 && r.top - lift >= top + air ? -lift : -Math.min(below, Math.max(0, r.top - (top + air)));
+    }
+    if (dx || dy) el.style.transform = `translate(${Math.round(dx)}px, ${Math.round(dy)}px)`;
   }, [open, shape]);
   return (
-    <span data-plot-settings-at className="relative inline-flex">
+    <span ref={here} data-plot-settings-at className="relative inline-flex">
       <button
         type="button"
         data-plot-settings
@@ -198,17 +255,17 @@ export function PlotSettings({
           //   ⚠️ **`w-max`, not `min-w-max`.** A min-width outranks a
           //   max-width, so the second spelling makes the cap above
           //   unreachable and the panel can be wider than the screen.
-          //   **Vertical is not clamped**, and that is a decision: it
-          //   has never been measured to overflow. The tallest it has
-          //   been is 306 — the narrow face's stats panel, *after* the
-          //   cap above makes it wrap — and it sat at y=109.8 in a pane
-          //   running 45 to 847. No top overflow at any of the three
-          //   widths, before or after the wrap;
-          //   and the honest answer to a panel with no room above is to
-          //   open it downwards — a different gesture, not a nudge. The
-          //   gate measures both directions, so if that day comes it
-          //   says so before a reader does.
-          className="absolute bottom-full left-0 z-10 mb-in flex w-max flex-col gap-in rounded-md border bg-card px-row py-row"
+          //   **Downward, from a button in the figure's top-right**
+          //   (2026-09-10; it opened upward from the bottom-left until
+          //   then). **Vertical is not clamped**, and that is still a
+          //   decision rather than an oversight: the tallest this has
+          //   been measured is 306 — the narrow face's stats panel,
+          //   after the width cap above makes it wrap — in a pane
+          //   running 45 to 847, so it has room below as it had above.
+          //   The honest answer to a panel with no room is the other
+          //   direction, a different gesture rather than a nudge, and
+          //   the gate measures both.
+          className="absolute left-auto right-0 top-full z-10 mt-in flex w-max flex-col gap-in rounded-md border bg-card px-row py-row"
         >
           {rows.map((r) => (
             <div key={r.key} data-plot-set={r.key} className="flex items-center gap-in">
