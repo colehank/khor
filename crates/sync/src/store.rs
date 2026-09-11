@@ -67,9 +67,48 @@ pub struct Loaded<D> {
     pub broken: Vec<PathBuf>,
 }
 
+/// How many documents this process has read back from disk, and how
+/// long those reads took in total.
+///
+/// **The same instrument `khor_node::adaptor::snapshots_taken` is**, and
+/// it exists for the same reason: 2026-09-11 a session list was found to
+/// be reading one channel's document twice per beat, and the call graph
+/// had been read twice without anyone noticing. A counter answers
+/// 「how many」 without anybody having to trace it, and the cost test
+/// prints it beside the time.
+///
+/// Nanoseconds rather than a duration so the pair is two plain atomics;
+/// the reader divides.
+static LOADS: AtomicU64 = AtomicU64::new(0);
+static LOAD_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Running count of [`load`] calls in this process.
+pub fn loads_taken() -> u64 {
+    LOADS.load(Ordering::Relaxed)
+}
+
+/// Total time spent inside [`load`] in this process, in nanoseconds.
+pub fn load_nanos() -> u64 {
+    LOAD_NANOS.load(Ordering::Relaxed)
+}
+
 /// Reads a document back from disk. No directory = empty document, not
 /// an error.
+///
+/// ⚠️ **Not a lookup — every call opens an empty document, reads every
+/// block file in `dir`, and merges each one in.** So a caller that wants
+/// two things out of one document must ask once and derive both, and a
+/// caller on a poll beat pays this per beat. [`loads_taken`] is how that
+/// gets checked rather than argued about.
 pub fn load<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+    let started = std::time::Instant::now();
+    let out = load_inner(dir, peer);
+    LOADS.fetch_add(1, Ordering::Relaxed);
+    LOAD_NANOS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    out
+}
+
+fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
     let doc = D::open(peer)?;
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);

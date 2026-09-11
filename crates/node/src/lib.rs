@@ -3253,7 +3253,16 @@ impl KindSurface for ChatKind {
         let mut out = Vec::new();
         for d in node.devices()? {
             let sid = format!("chat/{}", d.name);
-            let msgs = self.log(&d.name)?.messages;
+            // ⚠️ **One read per channel, not two** (2026-09-11). This
+            // asked for the log here and for the row below, and each of
+            // those opened the channel's document from disk in full —
+            // every block file read and merged, on the list's 2 s beat.
+            // The watermark is read before the row now for the same
+            // reason: `row_and_log` needs it, and it costs nothing to
+            // ask early.
+            let wm = seen.doc.watermark(&sid);
+            let (row, log) = self.row_and_log(&d.name, device_id_from_hex(&d.id)?, wm)?;
+            let msgs = log.messages;
             // A put-away conversation is not derived (docs/SESSION.md
             // 动作: close 对话 = 收起那一行). The mark is a watermark on
             // the senders' clocks, so the next message stamps past it
@@ -3266,8 +3275,11 @@ impl KindSurface for ChatKind {
                     continue;
                 }
             }
-            let wm = seen.doc.watermark(&sid);
-            let mut row = self.row(&d.name, device_id_from_hex(&d.id)?, wm)?;
+            // The row is derived even for a channel the check above is
+            // about to put away, and that is the cheap half: deriving it
+            // walks the message list this read already produced, while
+            // the read itself is what costs.
+            let mut row = row;
             // A file in flight presses on the machine's own row, now
             // that transfers no longer stand as rows of their own
             // (传输并入对话批 — `TransferKind::urgency` owns which seat

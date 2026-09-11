@@ -84,8 +84,13 @@ impl ChatKind {
         matches!(m.body, khor_sync::chat::MsgBody::Files(_)) && m.from.id == self.me.id
     }
 
-    fn row_from(&self, channel: &str, home: DeviceId, doc: &ChatDoc, watermark: i64) -> Session {
-        let msgs = doc.messages();
+    /// The row a channel's messages make, **taking the messages rather
+    /// than the document**: the caller that reads this document on the
+    /// list's beat wants the messages too, and one read has to serve
+    /// both (`row_and_log`). Handed a document it would re-derive the
+    /// message list a second time, which is the cheap half of the same
+    /// mistake `row` used to make with the expensive one.
+    fn row_from(&self, channel: &str, home: DeviceId, msgs: &[Message], watermark: i64) -> Session {
         let unread = msgs
             .iter()
             .filter(|m| m.at > watermark && !self.i_offered(m))
@@ -136,8 +141,37 @@ impl ChatKind {
         }
     }
 
+    /// One channel's row. For the **event** paths — after a message is
+    /// told or a file offered — where one channel is read once and the
+    /// messages are not wanted afterwards.
     pub fn row(&self, channel: &str, home: DeviceId, watermark: i64) -> Result<Session, String> {
-        Ok(self.row_from(channel, home, &self.load(channel)?.doc, watermark))
+        Ok(self.row_from(channel, home, &self.load(channel)?.doc.messages(), watermark))
+    }
+
+    /// The row **and** the messages behind it, from one read of the
+    /// document.
+    ///
+    /// ⚠️ **This is the list's path, and the list is why it exists.**
+    /// `ChatKind::rows` used to ask for the log and then for the row,
+    /// which is two calls to [`Self::load`] — and a load is not a
+    /// lookup: it opens an empty document, reads **every block file** in
+    /// the channel's directory, merges each one into it, and writes the
+    /// ledger back. Twice per machine, every 2 s, for as long as the app
+    /// is open. Measured 2026-09-11 on a real home: `ChatKind::rows` was
+    /// 37–53 ms of the session list's 95–131 ms.
+    ///
+    /// The same argument `log_faced` already makes for a different pair:
+    /// one read, one order. Here it is also one read, one cost.
+    pub fn row_and_log(
+        &self,
+        channel: &str,
+        home: DeviceId,
+        watermark: i64,
+    ) -> Result<(Session, ChannelLog), String> {
+        let loaded = self.load(channel)?;
+        let messages = loaded.doc.messages();
+        let row = self.row_from(channel, home, &messages, watermark);
+        Ok((row, ChannelLog { messages, broken: loaded.broken.len() }))
     }
 
     pub fn tell(&self, channel: &str, home: DeviceId, text: &str) -> Result<Told, String> {
@@ -175,7 +209,7 @@ impl ChatKind {
             .find(|m| m.id == msg_id)
             .map(|m| m.at)
             .unwrap_or(0);
-        let row = self.row_from(channel, home, &loaded.doc, at);
+        let row = self.row_from(channel, home, &msgs, at);
         let event = Event {
             session: row.id.clone(),
             seq: msgs.len() as u64,

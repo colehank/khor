@@ -174,3 +174,168 @@ fn what_asking_tmux_costs() {
     );
     println!("at one call per 5s poll   : {:.3}% of a core", median / 5000.0 * 100.0);
 }
+
+/// What one session list costs **in a home somebody actually uses**.
+///
+/// ⚠️ **The three tests above build their own empty home, and that is
+/// why they read as 「the list is cheap」.** On 2026-09-11 the figure
+/// they produce (7.9 ms in release) was found to be 95–131 ms in this
+/// developer's real home — twelve to sixteen times more, because what
+/// the list costs is reading documents and walking a registry, and a
+/// fixture has neither. A cost test on a fixture answers a different
+/// question than the one it gets read for.
+///
+/// This one opens the home `KHOR_HOME` names, or the default one. It
+/// prints the size of what it measured beside the time, because a
+/// duration without that is not comparable to a later run.
+///
+/// It writes: [`khor_sync::store::load`] saves a ledger on every read,
+/// so this touches the same files the running app touches every two
+/// seconds. It adds no kind of write the app does not already do.
+///
+/// ```text
+/// cargo test -p khor-node --release --test cost -- --ignored --nocapture --test-threads=1 real_home
+/// ```
+#[test]
+#[ignore]
+fn what_one_poll_costs_in_a_real_home() {
+    let root = Node::root_from_env();
+    let sessions_on_disk = std::fs::read_dir(root.join(".khor").join("sessions"))
+        .map(|d| d.flatten().count())
+        .unwrap_or(0);
+    let channels = std::fs::read_dir(root.join(".khor").join("chat"))
+        .map(|d| d.flatten().count())
+        .unwrap_or(0);
+    if sessions_on_disk == 0 && channels == 0 {
+        println!("home at {} has nothing in it — this is the fixture case", root.display());
+        println!("(nothing measured: a real reading needs a real home)");
+        return;
+    }
+    let Ok(n) = Node::open(root.clone()) else {
+        println!("could not open {} — nothing measured", root.display());
+        return;
+    };
+
+    // Warm once: the first list after opening pays for caches nobody
+    // pays for on the beat.
+    let _ = n.sessions();
+
+    let loads_before = khor_sync::store::loads_taken();
+    let nanos_before = khor_sync::store::load_nanos();
+    let scans_before = khor_node::adaptor::snapshots_taken();
+    let mut runs: Vec<f64> = (0..12).map(|_| ms(|| { let _ = n.sessions(); })).collect();
+    let loads = khor_sync::store::loads_taken() - loads_before;
+    let load_ms = (khor_sync::store::load_nanos() - nanos_before) as f64 / 1e6;
+    let scans = khor_node::adaptor::snapshots_taken() - scans_before;
+    runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = runs[runs.len() / 2];
+
+    println!("home                      : {}", root.display());
+    println!("sessions on disk          : {sessions_on_disk}");
+    println!("chat channels             : {channels}");
+    println!("rows the list produced    : {}", n.sessions().map(|v| v.len()).unwrap_or(0));
+    println!(
+        "sessions() over 12        : min {:.1} / median {median:.1} / max {:.1} ms",
+        runs[0],
+        runs[runs.len() - 1]
+    );
+    println!("document loads            : {loads} over 12 calls = {} per list", loads / 12);
+    println!("  their total time        : {load_ms:.1} ms = {:.0}% of the 12 calls", load_ms / runs.iter().sum::<f64>() * 100.0);
+    println!("process-table scans       : {scans} over 12 calls = {} per list", scans / 12);
+    println!("at the app's 2 s beat     : {:.2}% of a core", median / 2000.0 * 100.0);
+}
+
+/// What an **empty** document read costs — the floor under every one of
+/// the ten a session list does.
+///
+/// Asked because the real-home measurement above says document loads are
+/// 73% of the list, and four of them are chat channels for machines this
+/// one has never exchanged a word with: those directories do not exist.
+/// If the floor is near zero, the cost is real data and the answer is to
+/// read less often; if the floor is most of it, the cost is **opening a
+/// document at all** and the answer is somewhere else entirely.
+#[test]
+#[ignore]
+fn what_an_empty_document_read_costs() {
+    use khor_sync::chat::ChatDoc;
+    use khor_sync::store::{load, Loaded};
+
+    let nowhere = std::env::temp_dir().join("khor-cost-no-such-channel");
+    let _ = std::fs::remove_dir_all(&nowhere);
+    // Warm.
+    let _: Loaded<ChatDoc> = load(&nowhere, 1).unwrap();
+
+    let mut runs: Vec<f64> = (0..24)
+        .map(|_| ms(|| { let _: Loaded<ChatDoc> = load(&nowhere, 1).unwrap(); }))
+        .collect();
+    runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!(
+        "empty document read       : min {:.2} / median {:.2} / max {:.2} ms  (n={})",
+        runs[0],
+        runs[runs.len() / 2],
+        runs[runs.len() - 1],
+        runs.len()
+    );
+    println!("ten of these per list     : {:.1} ms", runs[runs.len() / 2] * 10.0);
+}
+
+/// What **compaction** would buy, measured on a copy so nothing real is
+/// touched.
+///
+/// ⚠️ **`BlockStore::compact` has no caller in the product.** Only the
+/// tests call it. So every document grows a block file per write and
+/// never sheds one, and [`khor_sync::store::load`] replays the whole
+/// history on every read — which is what the session list does ten times
+/// a beat. On this machine after twelve days: the device table is **545
+/// blocks**, 2.3 MB.
+///
+/// This test copies a document's directory to a temp dir, times a read,
+/// compacts the copy, and times a read again. It answers 「how much of
+/// the list's cost is history nobody compacted」 without deciding
+/// anything: compaction deletes files a concurrent reader may be part
+/// way through listing, and that is a product decision, not a
+/// measurement.
+#[test]
+#[ignore]
+fn what_compaction_would_buy() {
+    use khor_sync::devices::DeviceDoc;
+    use khor_sync::store::{load, Loaded};
+
+    let src = Node::root_from_env().join(".khor").join("devices");
+    let Ok(rd) = std::fs::read_dir(&src) else {
+        println!("no device document at {} — nothing measured", src.display());
+        return;
+    };
+    let files: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+    let dst = std::env::temp_dir().join("khor-cost-compaction");
+    let _ = std::fs::remove_dir_all(&dst);
+    std::fs::create_dir_all(&dst).unwrap();
+    for f in &files {
+        if f.is_file() {
+            let _ = std::fs::copy(f, dst.join(f.file_name().unwrap()));
+        }
+    }
+    println!("copied {} files from the device document", files.len());
+
+    let read = |n: usize| -> f64 {
+        let mut runs: Vec<f64> =
+            (0..n).map(|_| ms(|| { let _: Loaded<DeviceDoc> = load(&dst, 1).unwrap(); })).collect();
+        runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        runs[runs.len() / 2]
+    };
+
+    let before = read(12);
+    println!("read, as it is on disk    : {before:.1} ms");
+
+    let loaded: Loaded<DeviceDoc> = load(&dst, 1).unwrap();
+    let mut store = loaded.store;
+    store.compact(&loaded.doc).unwrap();
+    let left = std::fs::read_dir(&dst).map(|d| d.flatten().count()).unwrap_or(0);
+    println!("files after compaction    : {left}");
+
+    let after = read(12);
+    println!("read, compacted           : {after:.1} ms");
+    println!("saved per read            : {:.1} ms ({:.0}%)", before - after, (before - after) / before * 100.0);
+
+    let _ = std::fs::remove_dir_all(&dst);
+}
