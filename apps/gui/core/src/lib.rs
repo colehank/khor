@@ -17,7 +17,7 @@ pub mod recents;
 pub mod term;
 pub mod web;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use khor_node::list::Arrange;
@@ -452,14 +452,25 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         khor_catalog::msg::not_a_way_to_arrange(by, all.join(khor_catalog::cli::NAME_SEPARATOR))
     })?;
     let n = open(root)?;
-    // Derived once per list, not once per row: a face is a pure function
-    // of (id, reported style), and one machine owns many rows.
-    let faces = faces_by_id(&n)?;
-    // The same id→name table `Node::sessions_arranged` hands the
-    // arranger, built once here for the same reason the faces are.
-    let machines: HashMap<String, String> =
-        n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
-    Ok(n.sessions_arranged(mode)?
+    // ⚠️ **One reading of the device table, three things derived from
+    // it.** Until 2026-09-11 this line was three separate reads —
+    // `faces_by_id` called `Node::devices`, the name table below called
+    // it, and `sessions_arranged` called it a third time inside — under
+    // a comment claiming the table was 「built once here」. It was: once
+    // per *place that wanted it*. On the 2 s beat that is three reads of
+    // one doc, twelve times a minute, for one list.
+    //
+    // A face and a name are both pure functions of a row in this table,
+    // so they are derived here rather than per session row: one machine
+    // owns many rows.
+    let devices = n.devices()?;
+    let faces: HashMap<String, Avatar> = devices
+        .iter()
+        .filter_map(|d| n.face_of(d).map(|f| (d.id.clone(), f)))
+        .collect();
+    let machines: BTreeMap<String, String> =
+        devices.into_iter().map(|d| (d.id, d.name)).collect();
+    Ok(n.sessions_arranged_with(mode, &machines)?
         .into_iter()
         .map(|a| {
             let (v, group) = (a.view, a.group);
@@ -874,12 +885,13 @@ pub fn forget_device(root: &Path, machine: &str) -> Result<String, String> {
 /// Every known machine's face, keyed the way the device table keys
 /// machines. The judgment behind each one — its own reported palette,
 /// seeded by its id — belongs to the node; this only indexes them.
-fn faces_by_id(n: &Node) -> Result<HashMap<String, Avatar>, String> {
-    Ok(n.devices()?
-        .into_iter()
-        .filter_map(|d| n.face_of(&d).map(|f| (d.id, f)))
-        .collect())
-}
+/* ⚠️ **Tombstone: `faces_by_id` is gone, 2026-09-11.** It read the
+   device table to derive a face per machine, which is still what
+   happens — inline in `list_sessions`, its only caller, beside the two
+   other things derived from that same reading. As its own function it
+   held a hidden `Node::devices` call, and a caller who already had the
+   table had no way to say so. A helper that re-reads what the caller
+   just read is a helper that costs more than it saves. */
 
 pub fn seen(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.seen(&SessionId(id.to_owned()))

@@ -100,6 +100,45 @@ type Mark = boolean;
 type Sheet = "new" | "invite" | "join" | null;
 
 const POLL_MS = 2000;
+/**
+ * The beat for a reading **this screen is not drawing the changes of**.
+ *
+ * ⚠️ **Three calls on one beat was the app's whole heartbeat until
+ * 2026-09-11, and it is why the window felt heavy** (用户:「整体 app
+ * 很卡顿,不如网页版的流畅」). Measured through the web face, which
+ * runs the same `khor_gui_core` entry points the tauri commands do:
+ *
+ * ```
+ * sessions      175–250 ms
+ * devices       103–115 ms
+ * hooks_state    19–24  ms
+ * ```
+ *
+ * — about 330 ms of work every 2 s, and `top` agreed: **khor-gui 12–15 %
+ * of a core while nobody touched it, WebContent 1–3 %**. So the cost was
+ * never the rendering; it was three answers being fetched at the pace of
+ * the fastest-changing one.
+ *
+ * **What splits them is not importance, it is what the screen draws.**
+ * Away from the machines landing, `devices` feeds a face in the corner
+ * and a name in the search words — neither of which moves — while the
+ * vitals that do move are not on the glass at all.
+ *
+ * **It does not stop a landing from being wrong about itself**: a screen
+ * that starts drawing a device's vitals without saying so gets them at
+ * this pace and looks frozen. The seam is the landing, so a new reader
+ * of a fast-moving field belongs on the fast beat or on its own.
+ */
+const UNWATCHED_MS = 10_000;
+/**
+ * The hooks answer's own beat, and the slowest here on purpose: it
+ * changes when somebody runs `khor hooks install` in a terminal, which
+ * is a thing that happens approximately never and never twice. It was on
+ * the 2 s beat until 2026-09-11 for the reason above its state — a button
+ * that only learns on mount would offer to do something already done —
+ * and that reason survives a minute of lateness intact.
+ */
+const HOOKS_MS = 60_000;
 /** How often the subscription's arcs are re-asked while a surface that
     can show them is open. **Named for the spending answer it used to
     share a beat with**, which left on 2026-08-29 with the 今天 line —
@@ -454,19 +493,29 @@ export default function App() {
   const [hooks, setHooks] = useState<HooksState | null>(null);
   const [hooksFailed, setHooksFailed] = useState(false);
 
-  // Nobody looking, nobody paying: this is three calls every two
-  // seconds, and it is the app's whole heartbeat.
   const hidden = useHidden();
 
+  /* ⚠️ **Tombstone: these were one effect until 2026-09-11** — one
+     `Promise.all` of three calls on the 2 s beat, under a comment that
+     named the bargain it was not keeping:「Nobody looking, nobody
+     paying: this is three calls every two seconds, and it is the app's
+     whole heartbeat」. Nobody looking still paid for all three. The
+     readings and the split are on `UNWATCHED_MS`.
+
+     They stay three effects rather than one effect with three timers
+     because each one's dependencies are what decide its beat, and React
+     already does exactly this bookkeeping for an effect — a hand-rolled
+     scheduler here would be the same thing, written again, with the
+     re-ask-on-arrival behaviour to remember. */
+
+  // **The session rows, and nothing else, are the app's heartbeat.**
   useEffect(() => {
     let live = true;
     const tick = () => {
-      Promise.all([fetchSessions(arrangeBy), fetchDevices(), fetchHooks()])
-        .then(([s, d, h]) => {
+      fetchSessions(arrangeBy)
+        .then((rows) => {
           if (!live) return;
-          setRows(s);
-          setDevices(d);
-          setHooks(h);
+          setRows(rows);
           setStale(false);
         })
         .catch(() => live && setStale(true));
@@ -484,7 +533,71 @@ export default function App() {
     // shape: this effect already asks once before it sets its interval,
     // so coming back is a fresh answer immediately rather than after a
     // wait — no extra wiring, and nothing to remember to clear.
+    //
+    // **It carries 「后端连不上」 for all three**, and that is a claim
+    // about today's shape rather than a rule: the three answers travel
+    // the same way to the same node, and this one asks most often, so it
+    // is the one that notices first. **A road that could break for
+    // `devices` alone would go unsaid here** — if one ever exists, the
+    // sentence belongs where the failure is, not on the busiest caller.
   }, [arrangeBy, hidden]);
+
+  // **The machines, at the pace of whichever screen is up.** The vitals
+  // in a row move every few seconds and the machines landing draws them;
+  // everywhere else this answer supplies a face and a name, and those do
+  // not move (`UNWATCHED_MS`).
+  useEffect(() => {
+    let live = true;
+    const tick = () => {
+      fetchDevices()
+        .then((rows) => live && setDevices(rows))
+        // Silent on purpose: 「后端连不上」 belongs to the rows above,
+        // which asks more often and would already be saying it.
+        .catch(() => {});
+    };
+    tick();
+    const t = setInterval(
+      tick,
+      hidden ? HIDDEN_MS : landing === "devices" ? POLL_MS : UNWATCHED_MS,
+    );
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+    // **Arriving at the machines landing is a fetch, not a wait**: the
+    // landing is a dependency, so stepping onto it rebuilds this effect
+    // and the ask above the interval runs immediately. That is the same
+    // property the rows rely on for `hidden`, and it is why the slow
+    // beat is not felt on arrival — only by a card left open, which is
+    // the machines landing and therefore fast again.
+  }, [hidden, landing]);
+
+  // **Whether this machine's hooks are installed** — polled rather than
+  // read once on mount, because `khor hooks install` in a terminal is the
+  // other way this changes and a button that only learns on mount would
+  // sit there offering to do something already done. A minute late is
+  // still early enough for that (`HOOKS_MS`).
+  useEffect(() => {
+    let live = true;
+    const tick = () => {
+      fetchHooks()
+        .then((state) => live && setHooks(state))
+        .catch(() => {});
+    };
+    tick();
+    // ⚠️ **Not `hidden ? HIDDEN_MS : HOOKS_MS`**, which is what the two
+    // effects above say and what this one said first: `HIDDEN_MS` is
+    // 10 s and this beat is 60 s, so that spelling asks *more* often
+    // while nobody is looking. `hidden` stays a dependency, which is the
+    // half that was wanted — coming back to the window rebuilds the
+    // effect and re-asks at once, the one moment a stale hooks answer
+    // could be on the glass — while the beat itself stays one number.
+    const t = setInterval(tick, HOOKS_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [hidden]);
 
   // The subscription's arcs, on a beat of their own.
   //

@@ -1350,11 +1350,31 @@ impl Node {
     /// Machine names come from the device table here, once, rather than
     /// being looked up per row.
     pub fn sessions_arranged(&self, mode: list::Arrange) -> Result<Vec<list::Arranged>, String> {
-        let by_id: std::collections::BTreeMap<String, String> = self
-            .devices()?
-            .into_iter()
-            .map(|d| (d.id, d.name))
-            .collect();
+        let by_id = self.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
+        self.sessions_arranged_with(mode, &by_id)
+    }
+
+    /// The same list, for a caller that already holds the id→name table.
+    ///
+    /// **It exists because reading the table is not free and one screen
+    /// wanted it three times.** `khor_gui_core::list_sessions` builds a
+    /// face per machine, a name per machine, and then asked for this —
+    /// each of which called [`Node::devices`] on its own, so one refresh
+    /// of a list read the device doc three times. Through here it reads
+    /// it once and derives all three.
+    ///
+    /// ⚠️ **The table is the caller's, so its freshness is too.** Every
+    /// call above reads the doc at the moment it asks; this one is as
+    /// current as whatever was handed in. That is right for one screen
+    /// built from one reading — a row and its machine's name then come
+    /// from the same instant — and wrong for a caller that holds a table
+    /// across beats, which would name a machine by what it used to be
+    /// called.
+    pub fn sessions_arranged_with(
+        &self,
+        mode: list::Arrange,
+        by_id: &std::collections::BTreeMap<String, String>,
+    ) -> Result<Vec<list::Arranged>, String> {
         let views = self.sessions()?;
         Ok(list::arrange(views, mode, &|home: &DeviceId| {
             by_id.get(&home.hex()).cloned()
