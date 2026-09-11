@@ -343,6 +343,36 @@ impl Node {
                             eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
                             std::process::exit(DEAF_EXIT);
                         }
+                        // **Tidy up after the sync, never before it.**
+                        // Compaction rewrites a document that the pump
+                        // above may have just added blocks to, so doing
+                        // it second means one fewer round where the new
+                        // blocks are the ones left uncompacted. It is
+                        // also the cheap half: the scan is a handful of
+                        // `read_dir`s and only a document past
+                        // `store::PILE` is rewritten, so an ordinary
+                        // tick does nothing at all.
+                        //
+                        // ⚠️ **The resident serve is the only process
+                        // that may do this** (`Node::compact_piles`).
+                        // Off the async thread because it is file work,
+                        // and behind the same sync gate this tick
+                        // already holds, so a rewrite and a pump never
+                        // touch one document at once.
+                        let c = n.clone();
+                        let done = tokio::task::spawn_blocking(move || c.compact_piles())
+                            .await
+                            .unwrap_or_default();
+                        for (dir, c) in done {
+                            let stamp =
+                                jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                            eprintln!(
+                                "{stamp} compacted {} — {} blocks into {}",
+                                dir.display(),
+                                c.before,
+                                c.after
+                            );
+                        }
                     });
                 }
             }

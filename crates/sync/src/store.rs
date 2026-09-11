@@ -82,9 +82,22 @@ pub struct Loaded<D> {
 static LOADS: AtomicU64 = AtomicU64::new(0);
 static LOAD_NANOS: AtomicU64 = AtomicU64::new(0);
 
+static RELISTS: AtomicU64 = AtomicU64::new(0);
+
 /// Running count of [`load`] calls in this process.
 pub fn loads_taken() -> u64 {
     LOADS.load(Ordering::Relaxed)
+}
+
+/// How many reads found a listed block already deleted and listed again
+/// (see [`load_inner`]).
+///
+/// **A test that races a compaction needs this to know it raced one.**
+/// Without it, a run where the timing never overlapped passes exactly
+/// like a run where the re-listing worked, and the two are not the same
+/// claim.
+pub fn relists_after_a_vanish() -> u64 {
+    RELISTS.load(Ordering::Relaxed)
 }
 
 /// Total time spent inside [`load`] in this process, in nanoseconds.
@@ -109,9 +122,38 @@ pub fn load<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
 }
 
 fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+    let (loaded, vanished) = read_once(dir, peer)?;
+    if !vanished {
+        return Ok(loaded);
+    }
+    // **A block that was listed and then was not there is compaction,
+    // not damage**: [`BlockStore::compact`] writes the snapshot first
+    // and deletes the increments after, so a reader that listed before
+    // the delete and read after it finds holes — and every byte it
+    // missed is inside the snapshot that now sits in the same
+    // directory. Listing again is the whole fix.
+    //
+    // ⚠️ **Without this, compaction is unsafe to run at all**, which is
+    // the state this file was in until 2026-09-11: those reads landed in
+    // `broken`, which is a count and not an error, so a document would
+    // come back missing a slice of itself **and say nothing**. Anyone
+    // switching compaction on without this would see it as data that
+    // flickers.
+    //
+    // Once, not in a loop. A second miss means writes are landing faster
+    // than a read can finish, and at that point reporting what was found
+    // beats spinning — the next read is two seconds away.
+    RELISTS.fetch_add(1, Ordering::Relaxed);
+    Ok(read_once(dir, peer)?.0)
+}
+
+/// One pass over a document's blocks. The flag is 「a block on the
+/// listing was gone by the time we read it」 — see [`load_inner`].
+fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String> {
     let doc = D::open(peer)?;
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);
+    let mut vanished = false;
 
     for p in blocks(dir)? {
         match fs::read(&p) {
@@ -122,6 +164,10 @@ fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
                     ledger.insert(n);
                 }
             }
+            // Only a missing file is a compaction; anything else is a
+            // block this reader genuinely could not read, and those are
+            // what `broken` is for.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => vanished = true,
             Err(_) => broken.push(p),
         }
     }
@@ -136,7 +182,7 @@ fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
     if dir.exists() {
         store.save_ledger()?;
     }
-    Ok(Loaded { store, doc, broken })
+    Ok((Loaded { store, doc, broken }, vanished))
 }
 
 impl BlockStore {
@@ -369,3 +415,137 @@ fn read_ledger(dir: &Path) -> Ledger {
 
 #[cfg(test)]
 mod tests;
+
+/// A document of **no particular kind**.
+///
+/// Every loro-backed table in this crate exports, imports and snapshots
+/// through the same four functions (`glue`), so a job that only wants to
+/// rewrite a pile of blocks as one snapshot never needs to know which
+/// table it is looking at. That is the whole reason this exists: the
+/// alternative is a list of every document type, kept by hand, whose one
+/// failure mode is 「somebody added a table and this list did not」 —
+/// silent, and it grows worse the longer nobody notices.
+///
+/// ⚠️ **Not for reading.** It holds no accessors, so it cannot answer a
+/// question about contents; `items` is 0 because a count of nothing in
+/// particular is a number that would be read as meaning something.
+pub struct AnyDoc(loro::LoroDoc);
+
+impl Doc for AnyDoc {
+    fn open(peer: u64) -> Result<Self, String> {
+        Ok(Self(crate::glue::with_peer(peer)?))
+    }
+    fn peer_id(&self) -> u64 {
+        self.0.peer_id()
+    }
+    fn version(&self) -> VersionVector {
+        self.0.oplog_vv()
+    }
+    fn changes_since(&self, theirs: &VersionVector) -> Result<Vec<u8>, String> {
+        crate::glue::changes_since(&self.0, theirs)
+    }
+    fn snapshot(&self) -> Result<Vec<u8>, String> {
+        crate::glue::snapshot(&self.0)
+    }
+    fn merge(&self, bytes: &[u8]) -> Result<(), String> {
+        crate::glue::merge(&self.0, bytes)
+    }
+    fn items(&self) -> usize {
+        0
+    }
+}
+
+/// How many blocks a document may pile up before compacting it is worth
+/// the write.
+///
+/// **Measured, not chosen for roundness** (2026-09-11): this machine's
+/// device table had grown to 557 blocks over twelve days and took 20 ms
+/// to read; compacted to 13 files it took 4.5 ms. The session list reads
+/// ten documents on a 2 s beat, so that pile was most of what the
+/// desktop app burned sitting still. 64 is low enough that no document
+/// reaches a tenth of 557 and high enough that an ordinary day of
+/// writing does not trigger a rewrite.
+pub const PILE: usize = 64;
+
+/// What [`compact_dir`] did.
+pub struct Compacted {
+    pub before: usize,
+    pub after: usize,
+}
+
+/// Rewrite one document's pile of blocks as a single snapshot, if it has
+/// piled up past [`PILE`]. `Ok(None)` means it had not.
+///
+/// ⚠️ **Exactly one process may call this for a given directory.** Two
+/// compactors on one document destroy it: the second reads a directory
+/// the first is half way through deleting, gets an empty document, and
+/// writes an empty snapshot over everything. That is not a race that
+/// careful reading can survive — it is a lost write — and it is why this
+/// belongs to the resident serve and to nothing else
+/// (`store::tests::a_read_that_races_a_compaction_still_sees_every_line`
+/// has the measurement that found it).
+///
+/// Readers are a different matter and are safe: the snapshot is written
+/// before anything is deleted, so a reader either lists it and holds the
+/// whole document in one file, or lists before it and has `load`'s
+/// re-listing underneath.
+pub fn compact_dir(dir: &Path, peer: u64) -> Result<Option<Compacted>, String> {
+    let before = blocks(dir)?.len();
+    if before <= PILE {
+        return Ok(None);
+    }
+    let loaded: Loaded<AnyDoc> = load(dir, peer)?;
+    let mut store = loaded.store;
+    store.compact(&loaded.doc)?;
+    Ok(Some(Compacted { before, after: blocks(dir)?.len() }))
+}
+
+/// Compact every piled-up document under `home`, two directories deep.
+///
+/// Two deep because that is how this home is laid out: `devices`,
+/// `seen`, `recents` and their kind sit directly under `.khor`, while a
+/// conversation is `chat/<machine>`. A directory counts as a document
+/// when it holds a block file, so anything that is not one is skipped
+/// without having to be named.
+///
+/// Returns what it rewrote, loudest first — a caller that logs this is
+/// the only record that compaction ever ran.
+///
+/// ⚠️ **One process only** — see [`compact_dir`].
+pub fn compact_piles_under(home: &Path, peer: u64) -> Vec<(PathBuf, Compacted)> {
+    let mut out = Vec::new();
+    let Ok(top) = fs::read_dir(home) else {
+        return out;
+    };
+    for e in top.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        match compact_dir(&p, peer) {
+            Ok(Some(c)) => out.push((p.clone(), c)),
+            // A directory that is not a document, or one that has not
+            // piled up. Both are the ordinary answer.
+            Ok(None) => {}
+            // ⚠️ **Swallowed on purpose, and this is the one place in
+            // this file where that is right.** Compaction is an
+            // optimisation with no user waiting on it; a document that
+            // will not rewrite today is a document that is still read
+            // perfectly well, just slowly. Failing the caller — the
+            // resident serve's tick — would trade a slow read for a
+            // dead sync.
+            Err(_) => continue,
+        }
+        let Ok(inner) = fs::read_dir(&p) else { continue };
+        for e in inner.flatten() {
+            let q = e.path();
+            if q.is_dir() {
+                if let Ok(Some(c)) = compact_dir(&q, peer) {
+                    out.push((q, c));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|(_, c)| std::cmp::Reverse(c.before));
+    out
+}

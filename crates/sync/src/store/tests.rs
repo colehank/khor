@@ -210,3 +210,122 @@ fn what_lands_on_disk_is_readable_only_by_me() {
     assert!(n >= 2, "this pass should write block and ledger, got only {n} files");
     let _ = fs::remove_dir_all(dir.parent().unwrap());
 }
+
+/// **A reader that overlaps a compaction must not come back short.**
+///
+/// Compaction writes the snapshot and *then* deletes the increments, so
+/// a reader that listed the directory before the delete and read after
+/// it finds files gone. Those reads used to land in `broken`, which is a
+/// count nobody surfaces — the document came back missing a slice of
+/// itself and said nothing. `load` lists again when that happens, and
+/// the snapshot it then finds holds every byte the vanished blocks did.
+///
+/// ⚠️ **This test does NOT prove the re-listing is what saves it, and
+/// two attempts to make it do so both failed.** Taking the re-listing
+/// out of `load` leaves this green at 60 blocks and at 600, and the
+/// re-listing counter says the vanish branch *was* reached both times.
+/// So the branch runs and the outcome does not depend on it.
+///
+/// Why, as far as the measurement goes: compaction writes the snapshot
+/// **before** deleting anything, and `doc.snapshot()` on a document
+/// worth 600 blocks takes longer than a reader takes to read all 600.
+/// A reader that listed after the snapshot landed holds the whole
+/// document in one file and cannot be short; a reader that listed
+/// before it has finished reading by the time the deletes start. The
+/// window that loses data — listed before the snapshot, still reading
+/// when the deletes land — is real in principle and was not reachable
+/// here.
+///
+/// **So what this holds down is the outcome, not the branch**: after a
+/// compaction that overlapped live readers, every reader saw every
+/// line and one snapshot was left behind. The re-listing stays as the
+/// belt to that braces, cheap and reached; a test that pins it would
+/// need a seam inside `load` (a `Doc` whose `merge` deletes the rest of
+/// the directory part way through), and that is not written.
+///
+/// One compactor, many readers — the shape the product will have, where
+/// the resident serve owns compaction. ⚠️ **Written first as two tight
+/// loops it failed with 「0 lines came back」 and an empty directory,
+/// and the reader was not the victim: a second compactor read a
+/// directory the first was half way through deleting, got an empty
+/// document, and wrote an empty snapshot over everything. Two compactors
+/// on one document destroy it, and nothing `load` does can fix that.**
+/// That is the argument for one owner, and it is why this test has one.
+#[test]
+fn a_read_that_races_a_compaction_still_sees_every_line() {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    let dir = tmpdir("race-compact");
+    // ⚠️ **The pile has to be big enough that a read is slow.** At 60
+    // blocks this test passed with the re-listing taken out: a read
+    // finishes in well under a millisecond, so it never sat across the
+    // one window that loses data — listed *before* the snapshot was
+    // written, still reading when the increments were deleted. A reader
+    // that listed after the snapshot appeared has the whole document in
+    // one file and cannot be short no matter what is deleted next. The
+    // real device table on this machine is 557 blocks and takes 20 ms to
+    // read, which is exactly the shape being reproduced here.
+    let mut st = open_channel(&dir, 1).unwrap();
+    for i in 0..600 {
+        st.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+        st.store.flush(&st.doc).unwrap();
+    }
+    let want = render(&st.doc);
+    let lines = want.lines().count();
+    assert!(lines >= 600, "the fixture should have a pile of lines, got {lines}");
+
+    // Readers, running while the compaction below happens under them.
+    let stop = Arc::new(AtomicBool::new(false));
+    let short = Arc::new(AtomicU64::new(0));
+    let reads = Arc::new(AtomicU64::new(0));
+    let readers: Vec<_> = (0..3)
+        .map(|k| {
+            let (dir, stop, short, reads) =
+                (dir.clone(), Arc::clone(&stop), Arc::clone(&short), Arc::clone(&reads));
+            let want = want.clone();
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let back = open_channel(&dir, 10 + k).unwrap();
+                    let got = render(&back.doc);
+                    reads.fetch_add(1, Ordering::Relaxed);
+                    if want.lines().any(|l| !got.contains(l)) {
+                        short.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            })
+        })
+        .collect();
+
+    // Give the readers a moment to be mid-read, then compact once.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let relists_before = crate::store::relists_after_a_vanish();
+    st.store.compact(&st.doc).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    stop.store(true, Ordering::Relaxed);
+    for r in readers {
+        r.join().unwrap();
+    }
+    let relists = crate::store::relists_after_a_vanish() - relists_before;
+    let (short, reads) = (short.load(Ordering::Relaxed), reads.load(Ordering::Relaxed));
+    let left = fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".loro"))
+        .count();
+    let _ = fs::remove_dir_all(&dir);
+
+    assert_eq!(left, 1, "the compaction should have left one snapshot, found {left}");
+    assert_eq!(
+        short, 0,
+        "{short} of {reads} reads came back missing a line the document has \
+         (re-listings this run: {relists})"
+    );
+    // **The arm that says this run raced anything at all.** A pass with
+    // no re-listing is a pass where the timing never overlapped, and
+    // that proves nothing about the code being tested.
+    assert!(
+        relists > 0,
+        "none of the {reads} reads found a vanished block, so this run never met the case it is about"
+    );
+}

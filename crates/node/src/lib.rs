@@ -1381,6 +1381,23 @@ impl Node {
         }))
     }
 
+    /// Rewrite this home's piled-up documents as snapshots.
+    ///
+    /// ⚠️ **The resident serve calls this and nothing else may**, because
+    /// two compactors on one document destroy it
+    /// (`khor_sync::store::compact_dir` has the mechanism). The serve is
+    /// the natural owner: there is one of it, and it already holds the
+    /// tick this runs on.
+    ///
+    /// **Why it exists at all**: `BlockStore::compact` had no caller in
+    /// the product until 2026-09-11, so every document grew a block per
+    /// write and never shed one, and every read replayed the whole
+    /// history. This machine's device table was 557 blocks and 20 ms to
+    /// read; the session list reads ten documents on a 2 s beat.
+    pub fn compact_piles(&self) -> Vec<(PathBuf, khor_sync::store::Compacted)> {
+        khor_sync::store::compact_piles_under(&self.root.join(".khor"), self.peer)
+    }
+
     /// Writes one sample of the day strip: what the list says right now
     /// (`crates/node/src/day.rs`).
     ///
