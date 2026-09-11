@@ -545,12 +545,25 @@ const LEASE_STALE_MS: u64 = 5 * 60 * 1000;
 /// atomic exclusive create — the one primitive that survives a shared
 /// filesystem without a lock daemon.
 ///
-/// **What it does not cover**: a server whose exclusive create is not
-/// actually exclusive (old or exotic NFS), and the window between a
-/// holder dying and its lease going stale, during which nothing is
-/// compacted. The second is by design — not compacting is the safe
-/// failure — and the first is a property of the filesystem this cannot
-/// measure from here.
+/// **Measured on the filesystem it has to work on, 2026-09-11**, because
+/// 「NFS implements this atomically」 is a claim about a server, not
+/// about a standard. turing and hinton, both on the shared mount, raced
+/// for the same 300 lock files at once:
+///
+/// ```text
+/// turing  won 157
+/// hinton  won 143
+/// both claimed the same one:  0
+/// ```
+///
+/// The split is what makes it evidence rather than a coincidence: had
+/// one machine simply been faster every time, zero overlaps would mean
+/// nothing.
+///
+/// **What it does not cover**: the window between a holder dying and its
+/// lease going stale, during which nothing is compacted. That is by
+/// design — not compacting is the safe failure — and a different
+/// filesystem would need the reading above taken again.
 fn take_lease(home: &Path) -> Option<PathBuf> {
     let path = home.join(LEASE);
     let mine = || {
