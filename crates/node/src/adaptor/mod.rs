@@ -327,10 +327,40 @@ impl Procs {
     /// So no cache. A cache here would buy a quarter of a percent of one
     /// core and pay for it with a staleness window on the one thing the
     /// list exists to be right about — whether a process is still alive.
-    /// Re-run `cargo test -p khor-node --test cost -- --ignored
-    /// --nocapture` if the list ever feels slow, or on a machine with far
-    /// more processes than 803; the cost scales with that count, which is
-    /// why it is reported next to the times.
+    /// **That verdict still holds, and it is the only part of the
+    /// paragraph above that does** — see the correction below.
+    ///
+    /// # ⚠️ The `sessions()` figure above is not this machine's, 2026-09-11
+    ///
+    /// The snapshot numbers are sound: re-measured in release, **764
+    /// processes, 3.6 ms median**, and still **one scan per list**
+    /// (`snapshots_taken`). The scan is not what the list costs.
+    ///
+    /// **`13.2 ms` for one `Node::sessions()` is a fixture's figure**,
+    /// and `tests/cost.rs` still reports it — 7.9 ms in release today —
+    /// because that test builds its own empty home. Timed inside a real
+    /// one (this developer's, 26 rows, a dozen chat channels):
+    ///
+    /// ```text
+    /// sessions() total   95–131 ms
+    ///   ChatKind::rows    37–53 ms
+    ///   LiveKind::rows    30–58 ms   (of which the sweep is ~12: 3.6 snapshot + 7.9 tmux)
+    ///   pins + titles      6–11 ms
+    /// ```
+    ///
+    /// **So the cost is reading documents and sweeping the registry, and
+    /// it scales with how much a person has in their home — which is
+    /// exactly what a fixture has none of.** At the app's 2 s beat that
+    /// is ~6 % of a core for the list alone, and it is most of what
+    /// khor-gui burns sitting still.
+    ///
+    /// ⚠️ **A cost test on a fixture answers a different question than
+    /// the one it is read for**, and this one was read for months as
+    /// 「the list is cheap」. It is cheap on an empty home. Re-run
+    /// `cargo test -p khor-node --release --test cost -- --ignored
+    /// --nocapture` for the snapshot's cost, which is genuinely
+    /// home-independent; for the list's, time it against a home with
+    /// somebody's actual history in it.
     ///
     /// **The ledger's other worry was wrong and is corrected here**: it
     /// recorded that one `sessions()` call "might run `rows()` several
