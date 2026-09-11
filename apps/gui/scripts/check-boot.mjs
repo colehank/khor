@@ -77,8 +77,39 @@ if (found.length !== 5) {
   }
 }
 
+// **And the frame before that one.** The window itself is painted from
+// Rust, because it has to be coloured before any HTML exists and the
+// tauri config file takes one value while this app has two grounds
+// (`paint_the_window_before_the_page`). That is a third copy of
+// `--background`, on the other side of a language boundary, and it rots
+// the same way — into a quarter-second flash of last month's colour with
+// nothing anywhere to say so.
+const rust = readFileSync(
+  join(here, "..", "src-tauri", "src", "lib.rs"),
+  "utf8",
+);
+const painted = [...rust.matchAll(/Color\(0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0xff\)/g)].map(
+  (m) => `#${m[1]}${m[2]}${m[3]}`,
+);
+if (painted.length !== 2) {
+  fail(
+    `expected the window's two grounds in src-tauri/src/lib.rs, found ${painted.length}` +
+      ` — if that function was renamed or reshaped this check is now blind`,
+  );
+} else {
+  const [dark, light] = painted;
+  if (dark.toLowerCase() !== want.background.dark.toLowerCase()) {
+    fail(`the window's dark ground is ${dark}, --background is ${want.background.dark}`);
+  }
+  if (light.toLowerCase() !== want.background.light.toLowerCase()) {
+    fail(`the window's light ground is ${light}, --background is ${want.background.light}`);
+  }
+}
+
 if (bad) {
-  console.error(`boot gate: ${bad} colour(s) in index.html no longer match tokens.css`);
+  console.error(`boot gate: ${bad} colour(s) no longer match tokens.css`);
   process.exit(1);
 }
-console.log(`boot gate: the first frame's 5 colours match --background and --card`);
+console.log(
+  `boot gate: the first frame's 5 colours and the window's 2 grounds all match --background and --card`,
+);

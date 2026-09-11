@@ -757,6 +757,67 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     view.show().map_err(|e| e.to_string())
 }
 
+/// Give the window the app's own ground **before the page has one**.
+///
+/// ⚠️ **Measured 2026-09-11 by screenshotting a cold launch**: the
+/// window is on screen at ~500 ms and the first HTML paints at ~760 ms.
+/// For that quarter second the webview shows its platform default —
+/// near-white on macOS — and on a dark desktop that is a flash of the
+/// wrong colour, then a settle. `index.html` paints a first frame of its
+/// own, and it cannot help here: it has to arrive first, and this is
+/// about the time before anything arrives.
+///
+/// **Which colour is not a constant, which is why this is code and not
+/// a line in `tauri.conf.json`.** That file takes one
+/// `backgroundColor`, and this app has two grounds; a single value
+/// would trade the dark desktop's flash for a light one's. `theme()`
+/// asks the system what it is, right now, and the window is painted to
+/// match.
+///
+/// ⚠️ **These two values are `--background` from
+/// `apps/gui/src/styles/tokens.css`, light and dark.** They are
+/// checked against it by `apps/gui/scripts/check-boot.mjs`, which reads
+/// this file — the same gate that checks the ones in `index.html`, for
+/// the same reason: a palette that moves and leaves these behind is a
+/// quarter-second flash of last month's colour with nothing to say so.
+///
+/// ⚠️ **`setup` is not early enough to cover the whole gap, measured
+/// after the fact.** Reading the pixel at the centre of the window out
+/// of cold-launch screenshots:
+///
+/// ```text
+/// 528 ms   #1e1e1e   the platform default, before and after this change
+/// 709 ms   #0f0f0e   this ground
+/// 760 ms   the first HTML frame
+/// ```
+///
+/// So it moves the settle from ~760 ms to ~700 ms and leaves the first
+/// ~200 ms as it was. **Covering those needs the colour on the window
+/// *builder*, which means building the window here instead of in
+/// `tauri.conf.json`** — and that means this file owning the title, the
+/// size and the two minimums as well. Worth doing when something else
+/// already needs the window built in Rust; not worth it for 200 ms of
+/// colour on its own.
+///
+/// **It does not cover a desktop that changes theme while the app
+/// runs.** The page follows that on its own (`prefers-color-scheme`),
+/// and this ground is only ever seen at launch, so the cost of being
+/// stale is a colour nobody is looking at.
+#[cfg(desktop)]
+fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
+    use tauri::{Manager, Theme};
+    let Some(w) = app.get_webview_window("main") else { return };
+    let dark = matches!(w.theme(), Ok(Theme::Dark));
+    let ground = if dark {
+        tauri::webview::Color(0x0f, 0x0f, 0x0e, 0xff)
+    } else {
+        tauri::webview::Color(0xf4, 0xf4, 0xef, 0xff)
+    };
+    // Nothing to do if the platform refuses: the failure is the old
+    // behaviour, which is a flash rather than a fault.
+    let _ = w.set_background_color(Some(ground));
+}
+
 /// Back, forward and reload for one tab's page.
 ///
 /// **Two of the three are script, and that is a gap rather than a
@@ -1385,6 +1446,8 @@ pub fn run() {
             // (`hang_menu_window`).
             #[cfg(desktop)]
             hang_menu_window(app.handle());
+            #[cfg(desktop)]
+            paint_the_window_before_the_page(app.handle());
             #[cfg(not(desktop))]
             let _ = app;
             Ok(())
