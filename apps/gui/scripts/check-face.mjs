@@ -6406,6 +6406,10 @@ try {
       };
       const slackIn = {};
       const headRoom = {};
+      //   Cells whose ink is wider than their track **and which nothing
+      //   is clipping** — see the loop below for why that pair is the
+      //   test and why `slackIn` on its own is not.
+      const spill = {};
       for (let i = 0; i < trackEls.length && i < heads.length; i += 1) {
         const key = heads[i].dataset.topHead ?? heads[i].dataset.c;
         const cells = [...document.querySelectorAll(`[data-machine-card] [data-top-row] [data-c="${key}"]`)];
@@ -6419,6 +6423,36 @@ try {
         const btn = heads[i].querySelector("button") ?? heads[i];
         const widest = Math.max(ink(btn), ...cells.map((c) => ink(c)), 0);
         slackIn[key] = +(rects[i].width - widest).toFixed(1);
+        //   ⚠️ **A cell wider than its track is allowed; a cell wider
+        //   than its track *and not clipped* is not.** The line above
+        //   deliberately does not assert on `slackIn` — 用户 truncates
+        //   by design, so 「the ink is wider than the track」 is the
+        //   ordinary state of that column and an assertion on it would
+        //   be wrong, not strict.
+        //
+        //   What is never allowed is the third case: wide, and nothing
+        //   cutting it, so the text simply draws past its column into
+        //   the next one. That is what 「列表值超出表头」 looks like
+        //   from the reader's side.
+        //
+        //   **`scrollWidth > clientWidth` is the whole test, and it
+        //   works *because* of a trap this file has been bitten by**:
+        //   under `overflow: visible` those two are equal no matter how
+        //   much text there is (the ink escapes instead of scrolling),
+        //   while a clipped box reports the overflow honestly. So the
+        //   pair splits exactly the way this assertion needs:
+        //     · scrollWidth > clientWidth  → something is clipping it ✓
+        //     · equal, and ink > track     → it is drawing outside ✗
+        //   Range-measuring alone cannot tell those apart: it reports
+        //   the text's own width either way, truncated or not.
+        for (const c of cells) {
+          if (ink(c) <= rects[i].width + 0.5) continue;
+          const clipped = c.scrollWidth > c.clientWidth
+            || [...c.querySelectorAll("*")].some((k) => k.scrollWidth > k.clientWidth);
+          if (!clipped) {
+            (spill[key] ??= []).push(+(ink(c) - rects[i].width).toFixed(1));
+          }
+        }
         //   **The head on its own**, kept apart from the cells because
         //   the two have different rights. A *cell* may overrun its
         //   track — 用户 truncates by design, and so does 状态 when it
@@ -6495,6 +6529,7 @@ try {
         gaps,
         gap: +gap.toFixed(1),
         slackIn,
+        spill,
         cols: heads.map((h, i) => `${h.dataset.topHead ?? h.dataset.c}:${rects[i].width.toFixed(0)}`).join(" "),
       };
     });
@@ -6583,12 +6618,42 @@ try {
             `like a word nobody chose`,
         );
       }
+      //   **No cell draws outside its own column.** A cell may be
+      //   wider than its track — that is what truncation is for — but
+      //   then something must be cutting it. See the probe.
+      //
+      //   ⚠️ **This one has not been shown to fire, and two attempts
+      //   failed in the same way.** Taking `truncate` off the command
+      //   cell, and then taking only its clipping off, both turned the
+      //   whole run red — but as a *timeout* several steps earlier, not
+      //   as this message: the same truncation is already load-bearing
+      //   for 「cut command: ellipsis」 and for the expand-on-click
+      //   behaviour, so there is no build in reach where this is the
+      //   first thing to notice.
+      //
+      //   That is not the same as a gate with no failing world (the
+      //   world exists — text drawing into the next column — it is just
+      //   not reachable by removing something). What it means is that
+      //   **today this column is guarded twice and this is the second
+      //   guard**; its value is the next column somebody adds, which
+      //   will have no ellipsis assertion of its own. Reported here
+      //   rather than in the green list, per this repo's rule about
+      //   assertions that have never been seen to fail.
+      const over = Object.entries(spread.spill ?? {});
+      if (over.length) {
+        fail(
+          `cells draw past their tracks with nothing clipping them: ` +
+            over.map(([k, v]) => `${k} (${v.length} row(s), worst ${Math.max(...v)}px over)`).join(", ") +
+            ` — text that overruns its column lands on the next one, which is what 「列表值超出表头」 is`,
+        );
+      }
       console.log(
         `table at 1500: holder ${spread.boxW}, grid ${spread.gridW}, last track ${spread.slack} short of it, ` +
           `gaps ${spread.gaps.join("/")} (gap ${spread.gap}), ` +
           `head over ${Object.entries(spread.headRoom).map(([k, v]) => `${k}:${v}`).join(" ")}, ` +
           `per-share ${Object.entries(spread.share).map(([k, v]) => `${k}:${v.toFixed(1)}`).join(" ")}, ` +
-          `room beyond ink ${Object.entries(spread.slackIn).map(([k, v]) => `${k}:${v}`).join(" ")}`,
+          `room beyond ink ${Object.entries(spread.slackIn).map(([k, v]) => `${k}:${v}`).join(" ")}, ` +
+          `unclipped spill ${Object.keys(spread.spill ?? {}).length === 0 ? "none" : Object.entries(spread.spill).map(([k, v]) => `${k}:${v.length}`).join(" ")}`,
       );
     }
     await page.setViewportSize({ width: 1120, height: 1000 });
