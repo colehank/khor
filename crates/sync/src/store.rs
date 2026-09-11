@@ -608,6 +608,34 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Whether any document under `home` has piled up past [`PILE`], two
+/// directories deep — the same shape [`compact_piles_under`] walks, and
+/// reading only.
+///
+/// It exists so the ordinary tick, which finds nothing, costs directory
+/// listings and no writes at all.
+fn anything_piled(home: &Path) -> bool {
+    let piled = |d: &Path| blocks(d).map(|b| b.len() > PILE).unwrap_or(false);
+    let Ok(top) = fs::read_dir(home) else { return false };
+    for e in top.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        if piled(&p) {
+            return true;
+        }
+        let Ok(inner) = fs::read_dir(&p) else { continue };
+        for e in inner.flatten() {
+            let q = e.path();
+            if q.is_dir() && piled(&q) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Compact every piled-up document under `home`, two directories deep.
 ///
 /// Two deep because that is how this home is laid out: `devices`,
@@ -622,6 +650,19 @@ fn now_ms() -> u64 {
 /// ⚠️ **One process only** — see [`compact_dir`].
 pub fn compact_piles_under(home: &Path, peer: u64) -> Vec<(PathBuf, Compacted)> {
     let mut out = Vec::new();
+    // **Look before taking the lease.** The resident calls this on its
+    // sync tick — every five seconds, for the whole life of the
+    // process — and on an ordinary tick there is nothing piled up at
+    // all. Taking the lease first meant creating and deleting a file on
+    // every one of those ticks, and on the shared-home machines that is
+    // two NFS round trips to learn that there was no work.
+    //
+    // The window between looking and taking is harmless: whoever gets
+    // the lease re-checks each directory's count inside `compact_dir`,
+    // so a pile somebody else just flattened is simply skipped.
+    if !anything_piled(home) {
+        return out;
+    }
     // **Nobody else may be doing this right now.** See `take_lease` —
     // on the shared-home machines this is the only thing standing
     // between 「one compactor」 and a destroyed document.
