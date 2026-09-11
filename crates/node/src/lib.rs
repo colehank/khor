@@ -711,12 +711,55 @@ impl Node {
         Some(avatar(&seed, &style))
     }
 
-    /// `KHOR_HOME` if set, else the home directory. The override exists
-    /// for tests and dual-instance verification on one machine.
+    /// `KHOR_HOME` if set, else this machine's store under the home
+    /// directory. The override exists for tests and dual-instance
+    /// verification on one machine.
+    ///
+    /// **The home directory is not always the store.** A cluster mounts
+    /// one home on every machine, and a store is one machine's
+    /// (`claim_store`), so on a shared home only the machine named in
+    /// `~/.khor/owner` may use `$HOME`; every other one gets
+    /// `$HOME/.khor-hosts/<hostname>`.
+    ///
+    /// This used to be a line the installer appended to `~/.profile`,
+    /// and that line was wrong for the owner: it read
+    /// `KHOR_HOME="$HOME/.khor-hosts/$(hostname)"` unconditionally,
+    /// while `.profile` on a shared home is **one file for the whole
+    /// fleet**. Written by hinton's install, read by turing, which then
+    /// pointed its own terminals at a store that was not turing's.
+    /// Measured 2026-09-11 on that pair: `khor devices` in a turing
+    /// shell listed one machine (itself, under a second identity), and
+    /// the same command with `KHOR_HOME=$HOME` listed four.
+    ///
+    /// **The owner stamp cannot catch that one.** It refuses a machine
+    /// that opens somebody else's store; here nobody did — a fresh empty
+    /// directory was created and claimed, correctly, by the machine that
+    /// should never have been sent there.
+    ///
+    /// So the rule lives here rather than in a file anybody's login may
+    /// rewrite. `khor_root` in `scripts/onset-lib.sh` is the same rule
+    /// in sh, for the steps that need the path before khor can run.
     pub fn root_from_env() -> PathBuf {
-        std::env::var_os("KHOR_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+        if let Some(explicit) = std::env::var_os("KHOR_HOME") {
+            return PathBuf::from(explicit);
+        }
+        let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        Self::store_under(&home)
+    }
+
+    /// Which store under `home` belongs to this machine. Split out so a
+    /// test can ask about a directory it built, rather than about the
+    /// machine it happens to run on.
+    pub fn store_under(home: &std::path::Path) -> PathBuf {
+        let here = gethostname::gethostname().to_string_lossy().to_string();
+        let owner = std::fs::read_to_string(home.join(".khor").join("owner"))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if owner.is_empty() || owner == here {
+            return home.to_path_buf();
+        }
+        home.join(".khor-hosts").join(here)
     }
 
     pub fn device(&self) -> DeviceId {

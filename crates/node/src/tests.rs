@@ -1152,6 +1152,46 @@ mod store_owner_tests {
 
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    /// Which store a bare `khor` picks under a given home. The rule used
+    /// to live in a line the installer appended to `~/.profile`, and on
+    /// a shared home that file is one file for the whole fleet — the
+    /// line said `.khor-hosts/$(hostname)` for everybody, including the
+    /// machine that owns `$HOME`.
+    ///
+    /// Three arms, because only the middle one needs the rule: an empty
+    /// home and a home this machine owns both answer `$HOME`, and an
+    /// implementation that always answers `$HOME` passes those two.
+    #[test]
+    fn a_shared_home_sends_every_other_machine_to_its_own_store() {
+        let home = std::env::temp_dir().join(format!("khor-under-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".khor")).unwrap();
+        let here = gethostname::gethostname().to_string_lossy().to_string();
+
+        // Nobody has claimed it: a plain machine with a plain home.
+        assert_eq!(crate::Node::store_under(&home), home, "an unclaimed home is the store");
+
+        // This machine claimed it, so this machine keeps it.
+        std::fs::write(home.join(".khor").join("owner"), &here).unwrap();
+        assert_eq!(crate::Node::store_under(&home), home, "the owner keeps $HOME");
+
+        // Somebody else claimed it: this machine gets its own, and the
+        // path is the one `khor_root` in scripts/onset-lib.sh computes.
+        std::fs::write(home.join(".khor").join("owner"), "some-other-box").unwrap();
+        assert_eq!(
+            crate::Node::store_under(&home),
+            home.join(".khor-hosts").join(&here),
+            "a shared home sends this machine to its own store"
+        );
+
+        // The `KHOR_HOME` override is deliberately not exercised here:
+        // setting it would be a process-wide change in a suite that runs
+        // in parallel, and `root_from_env` returns it before reading
+        // anything on disk.
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }
 
 #[cfg(test)]

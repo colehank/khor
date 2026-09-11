@@ -83,3 +83,31 @@ khor_stop_serve() {
     echo "onset:   it is: $(ps -o args= -p "$_pid" 2>/dev/null | head -1)" >&2
     return 1
 }
+
+# **Takes back the `KHOR_HOME` line the installer used to append.**
+#
+# The line was `export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"`, and
+# it was written only by a machine that had found the home already
+# claimed — but `~/.profile` on a shared home is **one file for the
+# whole fleet**, so the owner read it too and was sent to a store that
+# was not its own. Measured 2026-09-11: `khor devices` in a turing shell
+# listed one machine under a second identity; the same command with
+# `KHOR_HOME=$HOME` listed four. khor works the rule out for itself now
+# (`Node::root_from_env`), and a stale line would override it.
+#
+# **Only that exact line.** A `KHOR_HOME` somebody set by hand is a
+# deliberate override — dual instances on one machine ride on it — and
+# removing it would be this function doing the very thing it exists to
+# undo.
+khor_drop_profile_line() {
+    _prof="$1"
+    [ -f "$_prof" ] || return 0
+    _line='export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"'
+    grep -qxF "$_line" "$_prof" 2>/dev/null || return 0
+    _tmp="$_prof.khor-$$"
+    grep -vxF "$_line" "$_prof" > "$_tmp" 2>/dev/null || {
+        rm -f "$_tmp"
+        return 1
+    }
+    mv -f "$_tmp" "$_prof" && echo "onset: took the stale KHOR_HOME line back out of $_prof"
+}

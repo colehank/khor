@@ -104,15 +104,49 @@ fi
 # had worked the day before from inside a khor session whose
 # environment carried KHOR_HOME. Who runs a script decides what it
 # sees, so the script now decides for itself first.
+# **A copy of `khor_drop_profile_line` from scripts/onset-lib.sh**, and
+# a copy on purpose: this file is fetched and run on its own, so it may
+# not assume anything else is on the machine. That is the same reason
+# the rest of the install story is one file.
+#
+# Takes back the line the installer used to append,
+# `export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"`. It was written
+# only by a machine that had found the home already claimed — but
+# `~/.profile` on a shared home is one file for the whole fleet, so the
+# owner read it too and was sent to a store that was not its own.
+# Measured 2026-09-11 on turing. khor works the rule out for itself now,
+# and a stale line would override it.
+#
+# **Only that exact line.** A `KHOR_HOME` somebody set by hand is a
+# deliberate override, and removing it would be this doing the very
+# thing it exists to undo.
+khor_drop_profile_line() {
+    _prof="$1"
+    [ -f "$_prof" ] || return 0
+    _line='export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"'
+    grep -qxF "$_line" "$_prof" 2>/dev/null || return 0
+    _tmp="$_prof.khor-$$"
+    grep -vxF "$_line" "$_prof" > "$_tmp" 2>/dev/null || {
+        rm -f "$_tmp"
+        return 1
+    }
+    mv -f "$_tmp" "$_prof" && echo "khor: took the stale KHOR_HOME line back out of $_prof"
+}
+
 ROOT="$HOME"
 if [ -f "$HOME/.khor/owner" ] && [ "$(cat "$HOME/.khor/owner")" != "$(hostname)" ]; then
     ROOT="$HOME/.khor-hosts/$(hostname)"
     mkdir -p "$ROOT/.khor"
     echo "khor: this home belongs to $(cat "$HOME/.khor/owner") — $(hostname) gets its own store at $ROOT"
-    if ! grep -qs 'KHOR_HOME' "$HOME/.profile" 2>/dev/null; then
-        printf 'export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"\n' >> "$HOME/.profile"
-    fi
 fi
+# **No KHOR_HOME line in ~/.profile.** khor works the rule out for
+# itself now (`Node::root_from_env`), and on a shared home that file is
+# one file for the whole fleet: the line read
+# `KHOR_HOME="$HOME/.khor-hosts/$(hostname)"` for everybody, which is
+# right for every machine except the one that owns `$HOME` — and that
+# one reads the same file. So an old line is taken back out; leaving it
+# would override the rule it was replaced by.
+khor_drop_profile_line "$HOME/.profile"
 
 KHOR_HOME="$ROOT" "$BIN_DIR/khor" id
 

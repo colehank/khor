@@ -336,16 +336,18 @@ mkdir -p "$root/.khor"
 # this block just used.
 rm -f "$HOME/.local/bin/.khor-root"
 
-# The PATH line, and KHOR_HOME when it is not the default. Written once:
-# appending on every run is how a .profile ends up with twelve copies.
+# The PATH line. Written once: appending on every run is how a .profile
+# ends up with twelve copies.
 if ! grep -qs 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null; then
     printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
     echo "onset: PATH line added to ~/.profile"
 fi
-if [ "$root" != "$HOME" ] && ! grep -qs 'KHOR_HOME' "$HOME/.profile" 2>/dev/null; then
-    printf 'export KHOR_HOME="$HOME/.khor-hosts/$(hostname)"\n' >> "$HOME/.profile"
-    echo "onset: KHOR_HOME line added to ~/.profile"
-fi
+# **No KHOR_HOME line.** There used to be one here, written by whichever
+# machine found the home already claimed — and on a shared home
+# `~/.profile` is one file for the whole fleet, so the owner read it too
+# and got sent to a store that was not its own. See
+# `khor_drop_profile_line`, which takes an old one back out.
+khor_drop_profile_line "$HOME/.profile"
 
 KHOR_HOME="$root" "$HOME/.local/bin/khor" id
 REMOTE
