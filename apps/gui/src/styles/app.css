@@ -606,6 +606,43 @@ input[type="search"]::-webkit-search-decoration {
    they are the grid's first row, and each sticks to the scroll port's
    top on its own. The ground comes with them, or the rows would slide
    through the words. */
+/* **The scroll port must clip what it paints, not only what it hit-tests.**
+
+   2026-09-11. The user reported a band above the sticky head three
+   times: the bottom sliver of a row that had been scrolled away, still
+   sitting there while the table stood still.
+
+   **Measured from inside the running app** — no browser here
+   reproduces it, so a temporary command printed the numbers to stderr.
+   Asking `elementsFromPoint` one, four and eight pixels above the head
+   answered `DIV < DIV < DIV`: containers, no row, no cell. **That
+   reading sent two fixes to the wrong place.** Walking the DOM by
+   geometry instead found it immediately:
+
+     {tag: SPAN, data: "c,topPid", top: 411, height: 18}   headTop: 427
+
+   A real PID cell, laid out 411→429 while the port's visible area
+   starts at 427: **sixteen pixels of it sit above the port**, which
+   `overflow-y: auto` is supposed to cut. Hit testing agrees they are
+   cut — which is exactly why the point queries found nothing there —
+   **and they are painted anyway**. One row, every column, the sliver
+   the user kept pointing at.
+
+   `clip-path` is not a hint and not a containment promise: it is a
+   shape every descendant's ink is cut to, and it is what finally
+   removed the band (measured: screenshot before and after).
+
+   ⚠️ **Two things that did not work, so nobody tries them again.**
+   `box-shadow` reaching up from the head (`a19dc6b`) painted nothing —
+   coloured red and photographed, there was no red: outside the clip
+   there is nothing to paint on. `will-change: transform` on the port
+   changed which layer drew the band, not whether it was clipped.
+   `contain: paint` alone left it unchanged too, measured the same way,
+   so it is not here either. */
+[data-load-top-box] {
+  clip-path: inset(0);
+}
+
 [data-load-top] [data-top-heads] > * {
   position: sticky;
   top: 0;
