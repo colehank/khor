@@ -1192,6 +1192,134 @@ mod store_owner_tests {
 
         let _ = std::fs::remove_dir_all(&home);
     }
+
+    /// A rename must not cost a machine its store — the thing the old
+    /// hostname stamp did, measured 2026-09-11 as exit 1 on turing.
+    ///
+    /// **Three arms, and only the middle one needs the fingerprint.** A
+    /// store this machine just made, and one stamped with a name it no
+    /// longer uses, must both open; a store belonging to somebody else
+    /// must not. An implementation that opened everything passes the
+    /// first two.
+    #[test]
+    fn renaming_a_machine_does_not_cost_it_its_store() {
+        let root = std::env::temp_dir().join(format!("khor-rename-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        crate::Node::open(root.clone()).expect("a fresh store opens");
+        let stamp = root.join(".khor").join("owner");
+
+        let text = std::fs::read_to_string(&stamp).unwrap();
+        let Some(fp) = crate::hardware::fingerprint() else {
+            // No fingerprint here, so there is no world in which this
+            // gate can fire — and a gate with no such world must not
+            // sit in a green list pretending (CLAUDE.md 假绿 14).
+            eprintln!("skipped: this platform will not fingerprint itself");
+            let _ = std::fs::remove_dir_all(&root);
+            return;
+        };
+        assert!(text.contains(&fp), "the stamp records the box, not just the name: {text:?}");
+
+        // Renamed: same box, a name it has never gone by.
+        std::fs::write(&stamp, format!("machine {fp}\nname the-old-name\n")).unwrap();
+        crate::Node::open(root.clone()).expect("a renamed machine still opens its own store");
+        let after = std::fs::read_to_string(&stamp).unwrap();
+        assert!(
+            !after.contains("the-old-name"),
+            "and the stamp catches up to the new name: {after:?}"
+        );
+
+        // Somebody else's box, whatever it is called.
+        std::fs::write(&stamp, "machine 00000000000000000000000000000000\nname elsewhere\n").unwrap();
+        let err = match crate::Node::open(root.clone()) {
+            Err(e) => e,
+            Ok(_) => panic!("another box's store is still refused"),
+        };
+        assert!(err.contains("elsewhere"), "and the refusal names it: {err}");
+
+        // The format every store on disk before today is in.
+        std::fs::write(&stamp, gethostname::gethostname().to_string_lossy().to_string()).unwrap();
+        crate::Node::open(root.clone()).expect("a bare-hostname stamp still opens");
+        let upgraded = std::fs::read_to_string(&stamp).unwrap();
+        assert!(upgraded.contains(&fp), "and gets its fingerprint: {upgraded:?}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The side room is found by what is stamped inside it, not by what
+    /// is written on the door — a renamed machine that recomputed the
+    /// path would land in an empty directory and mint a second identity,
+    /// which is the failure this whole batch is about.
+    #[test]
+    fn a_renamed_machine_finds_the_side_room_it_already_had() {
+        let Some(fp) = crate::hardware::fingerprint() else {
+            eprintln!("skipped: this platform will not fingerprint itself");
+            return;
+        };
+        let home = std::env::temp_dir().join(format!("khor-room-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let here = gethostname::gethostname().to_string_lossy().to_string();
+
+        // A home somebody else owns, so the side rooms are in play.
+        std::fs::create_dir_all(home.join(".khor")).unwrap();
+        std::fs::write(
+            home.join(".khor").join("owner"),
+            "machine ffffffffffffffffffffffffffffffff\nname the-owner\n",
+        )
+        .unwrap();
+
+        // No room yet: the fallback is the door with this machine's
+        // current name on it.
+        assert_eq!(
+            crate::Node::store_under(&home),
+            home.join(".khor-hosts").join(&here),
+            "with no room of its own, a machine takes the one named after it"
+        );
+
+        // A room made before the rename, plus a decoy that is nobody's.
+        let old = home.join(".khor-hosts").join("what-it-used-to-be-called");
+        std::fs::create_dir_all(old.join(".khor")).unwrap();
+        std::fs::write(old.join(".khor").join("owner"), format!("machine {fp}\nname what-it-used-to-be-called\n")).unwrap();
+        let decoy = home.join(".khor-hosts").join("aaa-somebody-else");
+        std::fs::create_dir_all(decoy.join(".khor")).unwrap();
+        std::fs::write(decoy.join(".khor").join("owner"), "machine 11111111111111111111111111111111\nname other\n").unwrap();
+        // Sorted first of the three, and blank — the walk must not read
+        // "nothing" as "yours".
+        let blank = home.join(".khor-hosts").join("aaa-blank");
+        std::fs::create_dir_all(blank.join(".khor")).unwrap();
+        std::fs::write(blank.join(".khor").join("owner"), "").unwrap();
+
+        assert_eq!(
+            crate::Node::store_under(&home),
+            old,
+            "the room is the one stamped with this box, whatever the door says"
+        );
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The channel is settled once, so renaming the host does not open
+    /// a second chat window and strand the first one's watermark.
+    #[test]
+    fn the_channel_a_store_joined_under_outlives_a_rename() {
+        let root = std::env::temp_dir().join(format!("khor-chan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let first = crate::Node::open_as(root.clone(), "before").expect("opens");
+        assert_eq!(first.name(), "before");
+        drop(first);
+
+        // Same store, a machine now calling itself something else.
+        let after = crate::Node::open_as(root.clone(), "after").expect("opens again");
+        assert_eq!(
+            after.name(),
+            "before",
+            "the channel is what the store joined under, not what the host says today"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg(test)]

@@ -1,18 +1,26 @@
 import { useEffect, useState } from "react";
 
-import { renameSession } from "@/api";
+import { renameMachine, renameSession } from "@/api";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 /**
- * A session's title, and the way to change it: double-click, type,
- * Enter. One component behind the detail header and the list row, so
- * the two cannot come to mean different things by the same gesture.
+ * A name somebody may change: double-click, type, Enter. One component
+ * behind every place a name is editable, so no two of them can come to
+ * mean different things by the same gesture.
+ *
+ * **Two subjects share it, and that is the point.** Sessions had this
+ * first; machines got it on 2026-09-11, and the machine page was told
+ * to reuse it rather than grow its own — the standing complaint that
+ * the machine page and the quota page keep re-inventing each other's
+ * parts (docs/handoff/001.md 挂账). Adding a third subject is a `kind`
+ * and a line in `WRITE`, not another file.
  *
  * The name is the user's override over whatever the row derives for
- * itself (`Node::rename_session`); an emptied box takes it back, so the
- * vendor's own name — or the title the session was opened with — shows
- * again. Esc (or clicking away) backs out without writing anything.
+ * itself (`Node::rename_session`, `Node::rename_machine`); an emptied
+ * box takes it back, so the derived name — a vendor's own title, a
+ * machine's reported channel — shows again. Esc (or clicking away)
+ * backs out without writing anything.
  *
  * **The hot zone is the title text alone.** In the list the title sits
  * inside the button that opens the row, and the row must keep behaving
@@ -56,13 +64,28 @@ import { cn } from "@/lib/utils";
  * stays open wearing the failure word, because closing it would paint
  * the exact picture a successful rename paints while nothing moved.
  */
-export function SessionTitle({
+/**
+ * Who to tell, by subject. **Both answer the name the row now shows**,
+ * or `null` when only the backend can say what it fell back to — the
+ * echo below is built on exactly that distinction, so the two writers
+ * must agree about it rather than each having its own shape.
+ */
+const WRITE = {
+  session: (id: string, name: string) => renameSession(id, name).then(() => null),
+  machine: (id: string, name: string) => renameMachine(id, name),
+} as const;
+
+export function EditableName({
+  kind = "session",
   id,
   title,
   className,
   inputClassName,
   nested,
 }: {
+  /** Which table the id belongs to. Defaults to the first subject that
+      had this, so every existing call site reads unchanged. */
+  kind?: keyof typeof WRITE;
   id: string;
   title: string;
   /** Carried by the resting text (beside its own `truncate`). */
@@ -102,7 +125,9 @@ export function SessionTitle({
     return (
       <span className={cn("truncate", className)}>
         <span
-          data-session-title
+          data-editable-name
+          data-session-title={kind === "session" ? "" : undefined}
+          data-machine-name={kind === "machine" ? "" : undefined}
           // A control only where that is well-formed (the file head).
           role={nested ? undefined : "button"}
           tabIndex={nested ? undefined : 0}
@@ -138,12 +163,13 @@ export function SessionTitle({
   }
   const submit = () => {
     const name = draft.trim();
-    renameSession(id, name).then(
-      () => {
+    WRITE[kind](id, name).then(
+      (shown) => {
         setEditing(false);
-        // An emptied box falls back to a title only the backend knows,
-        // so there is nothing honest to echo — the poll fills it in.
-        setEcho(name === "" ? null : name);
+        // An emptied box falls back to a name only the backend knows,
+        // so there is nothing honest to echo unless the write answered
+        // one — the poll fills in the rest.
+        setEcho(name === "" ? shown : name);
       },
       () => setFailed(true),
     );

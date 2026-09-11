@@ -133,6 +133,11 @@ fn rename_session(id: String, title: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rename_machine(id: String, name: String) -> Result<String, String> {
+    khor_gui_core::rename_machine(&Node::root_from_env(), &id, &name)
+}
+
+#[tauri::command]
 fn tell(machine: String, text: String) -> Result<(), String> {
     khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
 }
@@ -1512,6 +1517,7 @@ pub fn run() {
             seen,
             close_session,
             rename_session,
+            rename_machine,
             tell,
             pin_session,
             pin_device,

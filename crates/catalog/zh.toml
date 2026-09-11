@@ -1170,6 +1170,11 @@ already-a-terminal = "它已经是终端形式了: {0}"
 host-bad-convention = "宿主参数不合约定"
 no-such-session-because = "没有这个 session: {0}({1})"
 not-a-machine-id = "这不是一个机器 id: {0}"
+# A machine's name is a label, not a path segment and not a key, so it
+# takes any text — CJK, spaces, emoji. The one limit is how much of a
+# row it may eat, counted in characters rather than bytes because a CJK
+# name says far more per character than a Latin one.
+label-too-long = "名字太长了,最多 {0} 个字"
 cant-make-peers-dir = "建不了 peers 目录: {0}"
 cant-make-vitals-dir = "建不了 vitals 目录: {0}"
 cant-make-usage-dir = "建不了 usage 目录: {0}"

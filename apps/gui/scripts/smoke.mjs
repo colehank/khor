@@ -3225,6 +3225,54 @@ for line in sys.stdin:
     throw new Error("the card's id prefix is not the id it hands over");
   }
 
+  //     **改名 (2026-09-11)**: double-click the name, type, Enter — the
+  //     same gesture and the same component a session title uses
+  //     (`EditableName`), because the machine page growing its own copy
+  //     of what the rest of the app has is a standing complaint, not a
+  //     one-off (docs/handoff/001.md).
+  //
+  //     Three things asserted, and the third is the one with teeth:
+  //
+  //       1. the card wears the new name;
+  //       2. so does the list row — a rename is network-wide, not a
+  //          nickname on the screen that typed it;
+  //       3. **`[data-device="alpha"]` is still there.** That attribute
+  //          is the *channel*, and the channel is what `chat/<name>`,
+  //          the read watermark and the pin are keyed on. A rename
+  //          written into the channel would move all three, and this
+  //          line is the only one that would notice. Write the label
+  //          into `F_NAME` and it goes red; write it into `F_LABEL` and
+  //          nothing on disk moves at all.
+  const cardName = page.locator("[data-machine-card] [data-machine-name]");
+  if ((await cardName.count()) !== 1) throw new Error("probe dead: the card has no editable name");
+  if ((await cardName.innerText()).trim() !== "alpha") {
+    throw new Error(`the card names this machine "${(await cardName.innerText()).trim()}", not alpha`);
+  }
+  await cardName.dblclick();
+  const nameBox = page.locator("[data-machine-card] [data-title-input]");
+  await until("the name editor", 5_000, async () => (await nameBox.count()) === 1);
+  await nameBox.fill("北京服务器");
+  await nameBox.press("Enter");
+  await until("the card to wear the new name", 10_000, async () =>
+    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "北京服务器",
+  );
+  await until("the list row to wear it too", 15_000, async () =>
+    (await page.locator('[data-device="alpha"]').innerText()).includes("北京服务器"),
+  );
+  if ((await page.locator('[data-device="alpha"]').count()) !== 1) {
+    throw new Error("renaming a machine moved its channel — chat, seen and pins are all keyed on that");
+  }
+  //     And the eraser: an emptied box gives the machine its reported
+  //     name back. Without this arm a rename that could not be undone
+  //     would pass everything above.
+  await page.locator("[data-machine-card] [data-machine-name]").dblclick();
+  await until("the name editor again", 5_000, async () => (await nameBox.count()) === 1);
+  await nameBox.fill("");
+  await nameBox.press("Enter");
+  await until("the machine to wear its own name again", 10_000, async () =>
+    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "alpha",
+  );
+
   //     One machine, one picture — the same rule the rail and the row
   //     already answer to, now with a third place to be wrong in.
   const cardFace = page.locator("[data-machine-card] [data-face]");

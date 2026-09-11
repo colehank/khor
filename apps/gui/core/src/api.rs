@@ -198,6 +198,13 @@ pub fn answer(
             crate::rename_session(root, &arg("id")?, &arg("title")?)?;
             Ok("null".to_owned())
         }
+        // Same shape and the same reason `title` is required above: a
+        // missing argument read as "" would turn a frontend typo into a
+        // rename that quietly erases.
+        "rename_machine" => {
+            let shown = crate::rename_machine(root, &arg("id")?, &arg("name")?)?;
+            serde_json::to_string(&shown).map_err(|e| e.to_string())
+        }
         "tell" => {
             crate::tell(root, &arg("machine")?, &arg("text")?)?;
             Ok("null".to_owned())

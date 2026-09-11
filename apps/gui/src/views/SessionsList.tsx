@@ -4,7 +4,7 @@ import { takeover, takeoverTerm, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
-import { SessionTitle } from "@/components/SessionTitle";
+import { EditableName } from "@/components/EditableName";
 import { IconBack } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -264,7 +264,7 @@ export function SessionsList({
    * menus, which is the same judgment `App` makes about an empty "+".
    *
    * **Rename is deliberately not here.** It already has a way in — the
-   * title's own double-click and F2 (`SessionTitle`) — and a second
+   * title's own double-click and F2 (`EditableName`) — and a second
    * path to one action is the thing this repo keeps taking back out.
    * The two that are here had no way in that a finger could reach:
    * the pin was a hover-only button, and close lived one screen away in
@@ -522,13 +522,13 @@ export function SessionsList({
                   of the row keeps opening the row, which is also what
                   the first click of the double-click does — selecting
                   the very row being renamed. */}
-              <SessionTitle
+              <EditableName
                 id={r.id}
                 title={r.title}
                 className="block font-title"
                 inputClassName="w-full font-title"
                 // Inside the row's own button: not a control here
-                // (`SessionTitle`'s head says why the path lives in the
+                // (`EditableName`'s head says why the path lives in the
                 // detail header instead).
                 nested
               />

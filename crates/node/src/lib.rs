@@ -15,6 +15,7 @@ pub mod chat;
 pub mod day;
 pub mod files;
 pub mod gui_host;
+pub mod hardware;
 pub mod history;
 pub mod host;
 pub mod ipc;
@@ -440,6 +441,143 @@ pub fn self_exe() -> Result<PathBuf, String> {
     Err(msg::self_moved(live.display()))
 }
 
+/// What a store's `owner` file says. Two fields, either of which may
+/// be missing: the machine's stable fingerprint ([`crate::hardware`])
+/// and the name it went by when it claimed the store.
+///
+/// ```text
+/// machine 3f1a…            ← the claim
+/// name    turing           ← a note for whoever reads the file
+/// ```
+///
+/// **A bare line is the old format**, a hostname and nothing else, and
+/// it reads back as `name` alone. Every store on disk before
+/// 2026-09-11 is one of those.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct Owner {
+    pub(crate) machine: Option<String>,
+    pub(crate) name: Option<String>,
+}
+
+impl Owner {
+    fn parse(text: &str) -> Owner {
+        let text = text.trim();
+        if text.is_empty() {
+            return Owner::default();
+        }
+        if !text.contains('\n') && !text.starts_with("machine ") && !text.starts_with("name ") {
+            // The old format: one bare hostname.
+            return Owner { machine: None, name: Some(text.to_string()) };
+        }
+        let mut out = Owner::default();
+        for line in text.lines() {
+            let Some((k, v)) = line.trim().split_once(char::is_whitespace) else {
+                continue;
+            };
+            let v = v.trim();
+            if v.is_empty() {
+                continue;
+            }
+            match k {
+                "machine" => out.machine = Some(v.to_string()),
+                "name" => out.name = Some(v.to_string()),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn render(&self) -> String {
+        let mut out = String::new();
+        if let Some(m) = &self.machine {
+            out.push_str("machine ");
+            out.push_str(m);
+            out.push('\n');
+        }
+        if let Some(n) = &self.name {
+            out.push_str("name ");
+            out.push_str(n);
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Whether this stamp is **this** machine's. `here` is the current
+    /// hostname, `fp` this machine's fingerprint when it has one.
+    ///
+    /// The fingerprint decides whenever both sides have one, and only
+    /// then does a rename become free. The name is the fallback for the
+    /// two cases where it cannot: a store stamped before this existed,
+    /// and a platform that will not name its hardware. **An empty stamp
+    /// belongs to whoever asks** — that is how a half-made store from a
+    /// crashed first run gets finished instead of becoming unopenable.
+    fn is_mine(&self, here: &str, fp: Option<&str>) -> bool {
+        match (&self.machine, fp) {
+            (Some(theirs), Some(mine)) => theirs == mine,
+            _ => match &self.name {
+                Some(n) => n == here,
+                None => true,
+            },
+        }
+    }
+}
+
+/// How long a machine's label may be, in characters not bytes — the
+/// limit is about how much of a row a name may eat, and a CJK name says
+/// far more per character than a Latin one. Generous: this is a guard
+/// against a pasted paragraph, not a style rule.
+const MAX_LABEL: usize = 64;
+
+/// The channel name this store joined the network under, settled once
+/// and then read back for the life of the store.
+///
+/// # Why it is not recomputed from the hostname every time
+///
+/// `chat/<machine name>` is a **directory**, and the key that
+/// [`khor_sync::seen`] and [`khor_sync::pins`] use for that window
+/// network-wide. Derive it from the current hostname and renaming a box
+/// opens a second, empty window, leaves the conversation in the old
+/// directory, and strands the read watermark and the pin on a key
+/// nothing points at any more. Nothing errors; the history is simply
+/// somewhere else.
+///
+/// So the first open writes the name down and every later open reads it
+/// — the same shape as `identity.key`, and for the same reason: what
+/// the network calls this machine is decided once.
+///
+/// **This is the line between the two names**, and it is worth stating
+/// plainly because renaming is now a feature:
+///
+/// - **channel** — what the network files this machine under. Settled
+///   here, never edited, boring on purpose.
+/// - **label** — what people see, changed whenever they like
+///   (`Node::rename_machine`, `DeviceDoc::set_label`).
+///
+/// A rename moves the second and never the first, which is why it costs
+/// nothing. The visible cost is the other way round: renaming the *OS*
+/// hostname no longer changes what khor shows. That is the trade, and
+/// it is the right way round now that khor has a rename of its own.
+fn settled_channel(root: &std::path::Path, computed: String) -> Result<String, String> {
+    let dir = root.join(".khor");
+    let path = dir.join("channel");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let kept = text.trim();
+        // A hand-emptied or hand-broken file falls through to settling
+        // again rather than taking the store down: the worst case is
+        // the behaviour khor had before this existed.
+        if let Some(ok) = khor_sync::chat::channel_of_machine(kept) {
+            if ok == kept {
+                return Ok(ok);
+            }
+        }
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Best effort: a store that cannot write this still works, it just
+    // settles again next time — which is today's behaviour.
+    let _ = std::fs::write(&path, &computed);
+    Ok(computed)
+}
+
 /// One store, one machine.
 ///
 /// The identity key **is** the machine on this network, so two machines
@@ -453,30 +591,59 @@ pub fn self_exe() -> Result<PathBuf, String> {
 /// `~/.khor` is the *same directory* on both. That is the ordinary case
 /// there, not the exotic one.
 ///
-/// Stamped with the **hostname**, never `KHOR_NAME`: the name is a
-/// label the user may change, and renaming your machine must not lock
-/// you out of your own store. Two homes on one machine (the test
-/// fleet's three) stamp the same host and none of them refuse.
+/// # The stamp used to be the hostname, and that made a rename fatal
+///
+/// A hostname is a **label**, which is the thing people change; the
+/// claim needs to be about the **box**. Measured 2026-09-11: a store
+/// whose stamp and hostname disagreed refused to open with exit 1, and
+/// the refusal advised setting `KHOR_HOME` — advice for a shared home,
+/// which on a renamed machine produces a second store and a second
+/// identity. **A wrong diagnosis is worse than none**: it sends the
+/// person somewhere.
+///
+/// So the claim is [`crate::hardware::fingerprint`], and the name rides
+/// along only as a note for whoever opens the file. Where there is no
+/// fingerprint the old rule still applies, unchanged — see
+/// [`Owner::is_mine`].
+///
+/// **Never `KHOR_NAME`**, then or now: a store must not be reachable or
+/// unreachable depending on an environment variable.
 fn claim_store(root: &std::path::Path) -> Result<(), String> {
     let dir = root.join(".khor");
     let stamp = dir.join("owner");
     let here = gethostname::gethostname().to_string_lossy().to_string();
-    match std::fs::read_to_string(&stamp) {
-        Ok(owner) => {
-            let owner = owner.trim();
-            if !owner.is_empty() && owner != here {
-                return Err(msg::store_belongs_to(owner, &here));
-            }
-            Ok(())
-        }
-        Err(_) => {
-            // Written on the way in, before the key exists: a store that
-            // gets a key without a stamp is a store the next machine
-            // cannot tell apart from its own.
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            std::fs::write(&stamp, &here).map_err(|e| e.to_string())
-        }
+    let fp = hardware::fingerprint();
+    let mine = Owner { machine: fp.clone(), name: Some(here.clone()) };
+    let Ok(text) = std::fs::read_to_string(&stamp) else {
+        // Written on the way in, before the key exists: a store that
+        // gets a key without a stamp is a store the next machine cannot
+        // tell apart from its own.
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        return std::fs::write(&stamp, mine.render()).map_err(|e| e.to_string());
+    };
+    let owner = Owner::parse(&text);
+    if !owner.is_mine(&here, fp.as_deref()) {
+        // Essentially always a name, because this writes both; the
+        // other branch is a hand-edited file, and a fingerprint stub is
+        // at least something the person can compare against a file.
+        let theirs = owner.name.clone().unwrap_or_else(|| {
+            owner.machine.as_deref().map(|m| m[..8.min(m.len())].to_string()).unwrap_or_default()
+        });
+        return Err(msg::store_belongs_to(&theirs, &here));
     }
+    // **Mine, and the stamp has fallen behind.** An old bare-hostname
+    // file gets its fingerprint, and a renamed machine gets its new
+    // name written down — so the next reader of this file is looking at
+    // the name the machine actually goes by. Best effort on purpose:
+    // failing to freshen a note must not stop a store from opening.
+    if owner != mine && mine.machine.is_some() {
+        let tmp = stamp.with_extension(format!("tmp{}", std::process::id()));
+        if std::fs::write(&tmp, mine.render().as_bytes()).is_ok() {
+            let _ = std::fs::rename(&tmp, &stamp);
+        }
+        let _ = std::fs::remove_file(&tmp);
+    }
+    Ok(())
 }
 
 impl Node {
@@ -498,6 +665,7 @@ impl Node {
         let device_str = public.to_string();
         let name = channel_of_machine(name)
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
+        let name = settled_channel(&root, name)?;
         let chat = ChatKind::new(
             root.clone(),
             Sender { id: device_str.clone(), name: name.clone() },
@@ -750,16 +918,58 @@ impl Node {
     /// Which store under `home` belongs to this machine. Split out so a
     /// test can ask about a directory it built, rather than about the
     /// machine it happens to run on.
+    ///
+    /// **The side rooms are searched, not computed.** `.khor-hosts/<name>`
+    /// is where a machine's own store lands on a shared home, and the
+    /// name in that path is the one it went by the day it was made — so
+    /// after a rename, computing the path again lands on an empty
+    /// directory and mints a second identity, which is the exact failure
+    /// this batch is about. The stamp inside each room says whose it is
+    /// ([`Owner`]), so the rooms are read and the matching one used
+    /// **whatever it is called**.
+    ///
+    /// A stale directory name is the price, and it is the right one: the
+    /// name on the door is a note, and moving a directory a resident has
+    /// files open in is not something to do behind anybody's back.
     pub fn store_under(home: &std::path::Path) -> PathBuf {
         let here = gethostname::gethostname().to_string_lossy().to_string();
-        let owner = std::fs::read_to_string(home.join(".khor").join("owner"))
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        if owner.is_empty() || owner == here {
+        let fp = hardware::fingerprint();
+        let front = Owner::parse(&std::fs::read_to_string(home.join(".khor").join("owner")).unwrap_or_default());
+        if front.is_mine(&here, fp.as_deref()) {
             return home.to_path_buf();
         }
-        home.join(".khor-hosts").join(here)
+        let hosts = home.join(".khor-hosts");
+        // Only a fingerprint can recognise a room across a rename; with
+        // none, this walk would just re-find the room named after the
+        // current hostname, which is where the fallback lands anyway.
+        if fp.is_some() {
+            if let Ok(rd) = std::fs::read_dir(&hosts) {
+                let mut rooms: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+                // Sorted so two rooms claiming one machine (a copied
+                // store) resolve the same way on every run rather than
+                // by readdir order.
+                rooms.sort();
+                for room in rooms {
+                    let stamp = room.join(".khor").join("owner");
+                    let Ok(text) = std::fs::read_to_string(&stamp) else {
+                        continue;
+                    };
+                    let stamped = Owner::parse(&text);
+                    // **A blank stamp says nothing, and `is_mine` reads
+                    // "nothing" as "yours"** — right at the front door,
+                    // where it finishes a half-made store, and wrong
+                    // here, where it would hand this machine the first
+                    // unstamped room it walked past.
+                    if stamped == Owner::default() {
+                        continue;
+                    }
+                    if stamped.is_mine(&here, fp.as_deref()) {
+                        return room;
+                    }
+                }
+            }
+        }
+        hosts.join(here)
     }
 
     pub fn device(&self) -> DeviceId {
@@ -1825,6 +2035,38 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(list)
+    }
+
+    /// Renames a machine, or takes the rename back when `label` is
+    /// empty. Answers the name the row now shows, so a caller that just
+    /// cleared an override does not have to guess what it fell back to.
+    ///
+    /// **By device id, not by name.** Every other writer here takes the
+    /// name somebody typed and resolves it; this one must not, because
+    /// the name is the thing being changed — resolving 「rename A to B」
+    /// through a table where B may already exist is a way to rename the
+    /// wrong row. The screens all hold the id already.
+    ///
+    /// Refuses a label that is only whitespace-and-punctuation away from
+    /// nothing? No: **any text is a legal label**, including CJK, spaces
+    /// and emoji. It is never a path segment and never a key — that is
+    /// what `F_LABEL` being separate from the channel bought — so the
+    /// rules `channel_of_machine` has to enforce do not apply to it. The
+    /// one limit is length, so a row cannot be made unreadable by a
+    /// paste.
+    pub fn rename_machine(&self, device_id: &str, label: &str) -> Result<String, String> {
+        if device_id_from_hex(device_id).is_err() {
+            return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
+        }
+        let label = label.trim();
+        if label.chars().count() > MAX_LABEL {
+            return Err(msg::label_too_long(MAX_LABEL));
+        }
+        let loaded = self.devices_loaded()?;
+        loaded.doc.set_label(device_id, label)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(loaded.doc.get(device_id).map(|d| d.shown().to_string()).unwrap_or_default())
     }
 
     /// The directories a machine's row asks it to watch — the setting,

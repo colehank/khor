@@ -313,6 +313,17 @@ export const closeSession = (id: string) => call<null>("close_session", { id });
     sent, never omitted — it is the eraser, not a missing argument. */
 export const renameSession = (id: string, title: string) =>
   call<null>("rename_session", { id, title });
+/** Names a machine for the whole network; an empty name takes the
+    rename back so the row wears the name the machine reports about
+    itself again. Answers the name the row now shows — a cleared rename
+    falls back to something only the backend knows, so there is nothing
+    honest for the screen to echo without asking.
+
+    Takes the **device id**, never a name: the name is what is being
+    changed, and resolving one through a table where the new name may
+    already exist renames the wrong row. */
+export const renameMachine = (id: string, name: string) =>
+  call<string>("rename_machine", { id, name });
 export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
 /** A machine conversation's readout — what `khor log` prints, shaped
     for the pane. Takes the row's id (`chat/<channel>`); the core layer

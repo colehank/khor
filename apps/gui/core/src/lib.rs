@@ -162,7 +162,27 @@ pub struct WatchedReading {
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct DeviceRow {
     pub id: String,
+    /// **The channel, not the name on the glass.** What the network
+    /// files this machine under: the segment in `chat/<name>`, and the
+    /// key `seen` and `pins` use for that window. Settled once per
+    /// store (`Node::open_as`) and never edited, so a rename cannot
+    /// strand a directory or a watermark.
+    ///
+    /// Anything a person reads comes from [`DeviceRow::shown`]. The
+    /// split is deliberate and the failure directions are not
+    /// symmetric: a screen that reaches for `name` by mistake shows the
+    /// name khor used before renaming existed, while a key built from
+    /// `shown` would move the moment somebody renamed the machine.
     pub name: String,
+    /// The name to paint — the rename when there is one, else `name`.
+    /// Resolved here rather than on the glass, so four screens cannot
+    /// make four decisions (`DeviceInfo::shown`).
+    pub shown: String,
+    /// The rename itself, or `None` when nobody has renamed this
+    /// machine. Only the editor needs it: it must open on what the
+    /// person typed, and show an empty box on a machine wearing its own
+    /// name rather than offering that name as something to edit.
+    pub label: Option<String>,
     pub me: bool,
     /// This machine's face, in **its own** reported palette. See
     /// `khor_node::Node::face_of`.
@@ -810,7 +830,9 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
                 .vitals_of(&d.id)
                 .map(|(vitals, age_ms)| VitalsReading::of(vitals, age_ms)),
             watched: n.watched_of(&d.id).map(|(rows, age_ms)| WatchedReading { rows, age_ms }),
+            shown: d.shown().to_owned(),
             watch: d.watch,
+            label: d.label,
             id: d.id,
             name: d.name,
         })
@@ -903,6 +925,17 @@ pub fn seen(root: &Path, id: &str) -> Result<(), String> {
 /// cannot drift.
 pub fn rename_session(root: &Path, id: &str, title: &str) -> Result<(), String> {
     open(root)?.rename_session(&SessionId(id.to_owned()), title)
+}
+
+/// Renames a machine for everyone; an empty name takes the rename back
+/// so the row wears the name the machine reports about itself again.
+/// Answers the name the row now shows.
+///
+/// One function behind the double-click and any future verb — the same
+/// rule `rename_session` keeps, and the reason the two gestures cannot
+/// come to mean different things.
+pub fn rename_machine(root: &Path, id: &str, name: &str) -> Result<String, String> {
+    open(root)?.rename_machine(id, name)
 }
 
 pub fn close_session(root: &Path, id: &str) -> Result<(), String> {

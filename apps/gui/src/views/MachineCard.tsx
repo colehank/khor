@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
+import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
@@ -245,7 +246,24 @@ function Head({
       <MachineAvatar face={row.face} className="size-avatar-lg" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-row">
-          <span className="min-w-0 truncate text-title font-title">{row.name}</span>
+          {/* **The same editor sessions use** (`EditableName`), not a
+              second one — the machine page keeps growing its own copy
+              of things the rest of the app already has, and that is on
+              the ledger as a standing complaint rather than a one-off.
+              Double-click, F2, or Enter; an emptied box gives the
+              machine its reported name back.
+
+              `row.shown` and never `row.name`: the first is what this
+              machine is called, the second is what the network files it
+              under, and the whole reason renaming is safe is that the
+              two are different fields. */}
+          <EditableName
+            kind="machine"
+            id={row.id}
+            title={row.shown}
+            className="min-w-0 text-title font-title"
+            inputClassName="min-w-0 text-title font-title"
+          />
           {/* The first twelve characters — a prefix to recognise, and
               pressing it puts all sixty-four on the clipboard. */}
           <CopyId id={row.id} face="id" />

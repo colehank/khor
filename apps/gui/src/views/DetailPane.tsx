@@ -5,7 +5,7 @@ import {
   type SessionRow,
 } from "@/api";
 import { SessionFace } from "@/components/SessionFace";
-import { SessionTitle } from "@/components/SessionTitle";
+import { EditableName } from "@/components/EditableName";
 import { IconBack } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -246,14 +246,14 @@ export function DetailPane({
         {narrow && row && (
           <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} />
         )}
-        {/* `min-w-0` (inside SessionTitle) is what lets it actually
+        {/* `min-w-0` (inside EditableName) is what lets it actually
             truncate: a flex child will not shrink below its content
             without it, so on the narrow face the title would push the
             facts off the end of the header instead of clipping itself.
             Keyed by the row so switching sessions drops any half-typed
             edit — a draft belongs to the row it was typed over. */}
         {row ? (
-          <SessionTitle
+          <EditableName
             key={row.id}
             id={row.id}
             title={row.title}

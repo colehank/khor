@@ -1546,7 +1546,7 @@ export default function App() {
                     // to be the other half of a pair.)
                     <QuotaLanding
                       narrow
-                      me={devices.find((d) => d.me)?.name ?? ""}
+                      me={devices.find((d) => d.me)?.shown ?? ""}
                       quota={quota}
                       query={queries.quota}
                       onQuery={setQuery}
@@ -1578,7 +1578,7 @@ export default function App() {
             <div className="min-w-0 flex-1">
               <QuotaLanding
                 narrow={false}
-                me={devices.find((d) => d.me)?.name ?? ""}
+                me={devices.find((d) => d.me)?.shown ?? ""}
                 quota={quota}
                 query={queries.quota}
                 onQuery={setQuery}

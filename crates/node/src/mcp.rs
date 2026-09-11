@@ -221,8 +221,12 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
         "devices" => {
             let mut out = String::new();
             for d in n.devices()? {
-                let here = if d.name == n.name() { "(本机)" } else { "" };
-                out.push_str(&format!("{}\t{}…{here}\n", d.name, &d.id[..16]));
+                // By id, not by name: two machines can share a
+                // hostname, and then the name test marks both rows
+                // 「(本机)」 — the one thing on this line a reader uses
+                // to know where they are (`khor devices` says the same).
+                let here = if d.id == n.device_str() { "(本机)" } else { "" };
+                out.push_str(&format!("{}\t{}…{here}\n", d.shown(), &d.id[..16]));
             }
             Ok(out)
         }

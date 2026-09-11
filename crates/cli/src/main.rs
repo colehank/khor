@@ -408,7 +408,7 @@ fn devices(_rest: &[String]) -> Result<(), String> {
     // id → name, for the satellite lines: their road column names the
     // sponsor they speak through, and a person reads names.
     let names: std::collections::HashMap<&str, &str> =
-        all.iter().map(|d| (d.id.as_str(), d.name.as_str())).collect();
+        all.iter().map(|d| (d.id.as_str(), d.shown())).collect();
     for d in &all {
         // **By id, not by name.** Two machines on one network can carry
         // the same hostname — two homes on one box always do — and the
@@ -433,7 +433,10 @@ fn devices(_rest: &[String]) -> Result<(), String> {
         };
         println!(
             "{}\t{}…{here}{pin}\t{}\t{}",
-            d.name,
+            // **The name people gave it** (`DeviceInfo::shown`), which
+            // is what every other surface prints. The channel is not a
+            // secret, it is just not what this line is for.
+            d.shown(),
             &d.id[..16],
             road,
             vitals_line(&n, &d.id)
@@ -1397,8 +1400,8 @@ fn usage(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     for d in n.devices()? {
-        let here = if d.name == n.name() { cli::THIS_MACHINE } else { "" };
-        println!("{}{here}", d.name);
+        let here = if d.id == n.device_str() { cli::THIS_MACHINE } else { "" };
+        println!("{}{here}", d.shown());
         let Some((usage, age)) = n.usage_of(&d.id) else {
             println!("\t{}", cli::USAGE_NEVER);
             continue;
@@ -2364,7 +2367,7 @@ fn accounts(rest: &[String]) -> Result<(), String> {
     match rest.split_first() {
         None => {
             let names: std::collections::HashMap<String, String> =
-                n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
+                n.devices()?.into_iter().map(|d| (d.id.clone(), d.shown().to_owned())).collect();
             let listed = n.accounts()?;
             if listed.is_empty() {
                 println!("{}", cli::ACCOUNTS_NONE);

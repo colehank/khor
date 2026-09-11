@@ -143,6 +143,29 @@ const F_SAT_TMUX: &str = "sat_tmux";
 /// the trade `addrs` already made. An older khor replicates the register
 /// untouched and never reads it.
 const F_WATCH: &str = "watch";
+/// The name a person gave this machine, overriding the one it reports
+/// about itself (`F_NAME`).
+///
+/// **Two names, and the split is the whole point.** `F_NAME` is the
+/// channel — what the network files the machine under, settled once per
+/// store (`Node::open_as`), and the segment in `chat/<name>` that
+/// [`crate::seen`] and [`crate::pins`] key on. `F_LABEL` is what people
+/// read. Renaming moves the label and nothing else, so it cannot strand
+/// a directory, a watermark or a pin — which is exactly what renaming
+/// the *machine* used to do.
+///
+/// Anyone may write it, like `pinned` and `watch`: what a machine is
+/// called is a fact about it that whoever is looking decides, and it
+/// should read the same on every screen. Empty means「no override」and
+/// is how a label is taken back — stored rather than deleted, because a
+/// register that goes absent and a register that goes empty must not
+/// have to be told apart by every reader.
+///
+/// `upsert` never touches it. That is load-bearing: the machine
+/// re-reports its own name on every sync, and a label written into
+/// `F_NAME` would be overwritten by its owner within seconds — with
+/// nothing anywhere saying why the new name kept vanishing.
+const F_LABEL: &str = "label";
 
 fn fkey(id: &str, field: &str) -> String {
     let mut k = String::with_capacity(id.len() + 1 + field.len());
@@ -192,6 +215,27 @@ pub struct DeviceInfo {
     /// setting; the readings for it come from the machine itself
     /// (`khor_core::WatchedDir`).
     pub watch: Vec<String>,
+    /// What a person renamed it to, or `None` when nobody has
+    /// (`F_LABEL`). Read it through [`DeviceInfo::shown`] rather than
+    /// directly — every screen must make the same choice between this
+    /// and `name`.
+    pub label: Option<String>,
+}
+
+impl DeviceInfo {
+    /// The name to put on the glass: the override when there is one,
+    /// else what the machine calls itself.
+    ///
+    /// **One function, so「which name」 has one answer.** The list, the
+    /// card, the CLI table and the chat header each used `name`
+    /// directly; four readers each free to choose is four chances for
+    /// two screens to disagree about what a machine is called.
+    pub fn shown(&self) -> &str {
+        match self.label.as_deref() {
+            Some(l) if !l.trim().is_empty() => l,
+            _ => &self.name,
+        }
+    }
 }
 
 pub struct DeviceDoc {
@@ -485,10 +529,14 @@ impl DeviceDoc {
                     .str_field(&id, F_WATCH)
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
+                label: self.str_field(&id, F_LABEL).filter(|l| !l.trim().is_empty()),
                 id,
             })
             .collect();
-        out.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| a.name.cmp(&b.name)));
+        // **Ordered by the name on the glass**, not by the channel: a
+        // list sorted on a name nobody can see reads as unsorted, and
+        // renaming would move a row to a place with no rule behind it.
+        out.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| a.shown().cmp(b.shown())));
         out
     }
 
@@ -496,8 +544,39 @@ impl DeviceDoc {
         self.all().into_iter().find(|d| d.id == id)
     }
 
+    /// A machine by either of its names — what people call it, or what
+    /// it calls itself.
+    ///
+    /// **The label is tried first and the channel second**, and the
+    /// order is the answer to one real collision: rename A to 「B」 while
+    /// a machine truly channelled `B` exists. Somebody typing `B` then
+    /// means the one wearing the name, because that is the only one they
+    /// can see it on. The machine underneath is still reachable by id,
+    /// which is what every non-human path uses anyway.
     pub fn by_name(&self, name: &str) -> Option<DeviceInfo> {
-        self.all().into_iter().find(|d| d.name == name)
+        let all = self.all();
+        all.iter()
+            .find(|d| d.label.as_deref() == Some(name))
+            .or_else(|| all.iter().find(|d| d.name == name))
+            .cloned()
+    }
+
+    /// Renames a machine, or takes the rename back when `label` is
+    /// empty. Anybody may call it (`F_LABEL`).
+    pub fn set_label(&self, id: &str, label: &str) -> Result<(), String> {
+        let label = label.trim();
+        // Clearing a label nobody set must not cost an op — the same
+        // rule `set_pinned` keeps, and for the same reason: the gesture
+        // is one people make on rows they never touched.
+        if label.is_empty() && self.field(id, F_LABEL).is_none() {
+            return Ok(());
+        }
+        if self.flat_str(id, F_LABEL).as_deref() == Some(label) {
+            return Ok(());
+        }
+        self.write_field(id, F_LABEL, label)?;
+        self.inner.commit();
+        Ok(())
     }
 }
 
@@ -1014,6 +1093,77 @@ mod tests {
             (plain.sponsor, plain.ssh_host, plain.sat_tmux),
             (None, None, None),
             "an ordinary machine is no satellite"
+        );
+    }
+
+    /// The rename, and the four things that would each quietly undo it.
+    ///
+    /// **The first arm is the load-bearing one.** A machine re-reports
+    /// its own name on every sync; a label kept in `F_NAME` would be
+    /// overwritten by its owner within seconds, and nothing anywhere
+    /// would say why the new name kept vanishing. Put the label back
+    /// into `F_NAME` and this arm is the one that goes red.
+    #[test]
+    fn a_rename_survives_the_machine_re_reporting_its_own_name() {
+        let d = DeviceDoc::new(1).unwrap();
+        d.upsert("aa", "turing", &[]).unwrap();
+        assert_eq!(d.get("aa").unwrap().shown(), "turing", "no rename, no override");
+
+        d.set_label("aa", "北京服务器").unwrap();
+        assert_eq!(d.get("aa").unwrap().shown(), "北京服务器", "the rename shows");
+        assert_eq!(d.get("aa").unwrap().name, "turing", "…and the channel does not move");
+
+        // The sync that would eat it.
+        d.upsert("aa", "turing", &["1.2.3.4:1".to_string()]).unwrap();
+        assert_eq!(
+            d.get("aa").unwrap().shown(),
+            "北京服务器",
+            "the machine re-reporting its own name must not undo a rename"
+        );
+
+        // Both names find it, because both are names somebody may know
+        // it by.
+        assert_eq!(d.by_name("北京服务器").map(|x| x.id), Some("aa".to_string()));
+        assert_eq!(d.by_name("turing").map(|x| x.id), Some("aa".to_string()));
+
+        // Taking it back.
+        d.set_label("aa", "").unwrap();
+        assert_eq!(d.get("aa").unwrap().shown(), "turing", "an emptied rename falls back");
+        assert_eq!(d.get("aa").unwrap().label, None, "…and reads as no override at all");
+    }
+
+    /// A rename crosses to the other machines, like `pinned` does —
+    /// a name that only showed on the screen that typed it would be a
+    /// per-viewer nickname, which is a different feature.
+    #[test]
+    fn a_rename_crosses_to_the_other_machines() {
+        let here = DeviceDoc::new(1).unwrap();
+        here.upsert("aa", "turing", &[]).unwrap();
+        here.set_label("aa", "北京服务器").unwrap();
+
+        let there = DeviceDoc::new(2).unwrap();
+        there.upsert("aa", "turing", &[]).unwrap();
+        there.merge(&here.changes_since(&Default::default()).unwrap()).unwrap();
+        assert_eq!(there.get("aa").unwrap().shown(), "北京服务器", "the rename travelled");
+    }
+
+    /// Sorted by the name on the glass. A list ordered on a name nobody
+    /// can see reads as unsorted, and renaming would move a row to a
+    /// place with no rule behind it.
+    #[test]
+    fn the_list_is_ordered_by_the_name_people_read() {
+        let d = DeviceDoc::new(1).unwrap();
+        d.upsert("aa", "alpha", &[]).unwrap();
+        d.upsert("bb", "beta", &[]).unwrap();
+        assert_eq!(
+            d.all().iter().map(|x| x.shown().to_owned()).collect::<Vec<_>>(),
+            vec!["alpha", "beta"]
+        );
+        // Renamed to sort first, and the list follows what is readable.
+        d.set_label("bb", "aardvark").unwrap();
+        assert_eq!(
+            d.all().iter().map(|x| x.shown().to_owned()).collect::<Vec<_>>(),
+            vec!["aardvark", "alpha"]
         );
     }
 }

@@ -11,7 +11,11 @@ import { connectionWord } from "@/words";
 export function visibleDevices(rows: DeviceRow[], query: string) {
   const q = query.trim().toLowerCase();
   if (q === "") return rows;
-  return rows.filter((d) => `${d.name} ${d.id}`.toLowerCase().includes(q));
+  // **Both names are searchable.** A renamed machine must be findable
+  // by what it is called now, and one somebody else renamed must still
+  // answer to the name this person knew it by — neither is the wrong
+  // thing to type.
+  return rows.filter((d) => `${d.shown} ${d.name} ${d.id}`.toLowerCase().includes(q));
 }
 
 /**
@@ -196,7 +200,7 @@ function Identity({ row }: { row: DeviceRow }) {
     <>
       <MachineAvatar face={row.face} className="size-avatar" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-fact">{row.name}</span>
+        <span className="block truncate text-fact">{row.shown}</span>
         {/* Absent rather than an empty line when there is nothing to
             say: a machine whose road khor cannot name yet keeps a
             one-line row instead of a blank second line. */}
