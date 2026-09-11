@@ -162,6 +162,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "sync", run: sync, reach: Reach::Act },
     Verb { word: "mcp", run: mcp, reach: Reach::Act },
     Verb { word: "version", run: version, reach: Reach::Read },
+    Verb { word: "root", run: root, reach: Reach::Read },
     Verb { word: "forget", run: forget, reach: Reach::Act },
     Verb { word: "watch", run: watch, reach: Reach::Act },
     Verb { word: "--version", run: version, reach: Reach::Read },
@@ -214,6 +215,31 @@ fn dispatch(args: &[String]) -> Result<(), String> {
         Some(v) => (v.run)(rest),
         None => Err(format!("{}\n{USAGE}", msg::unknown_verb(word))),
     }
+}
+
+/// Which store on this machine is khor's — the one question the
+/// install scripts must not answer for themselves.
+///
+/// **They used to.** `khor_root` in `scripts/onset-lib.sh` reproduced
+/// the rule in sh, and the day the `owner` file grew a second line the
+/// sh half read the whole file as a hostname, decided the home belonged
+/// to somebody else, and sent onset to a directory that did not exist —
+/// measured 2026-09-11 on turing, which lost its resident for the few
+/// minutes it took to notice. **A rule in two languages is a rule that
+/// will disagree with itself**, and that is this repo's own judgment
+/// about mirrors with nothing holding them together.
+///
+/// So the sh half asks this instead, and only falls back to reading the
+/// file when there is no khor to ask (a first install, an uninstall
+/// after the binary is gone). Prints nothing else: it is consumed by
+/// `$(…)`.
+///
+/// No node is opened. Answering 「which directory」 must work on a store
+/// this machine may not be allowed to open — the uninstall path needs
+/// the answer precisely when the claim might refuse.
+fn root(_rest: &[String]) -> Result<(), String> {
+    println!("{}", Node::root_from_env().display());
+    Ok(())
 }
 
 fn id(_rest: &[String]) -> Result<(), String> {

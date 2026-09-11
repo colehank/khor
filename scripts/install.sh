@@ -133,11 +133,27 @@ khor_drop_profile_line() {
     mv -f "$_tmp" "$_prof" && echo "khor: took the stale KHOR_HOME line back out of $_prof"
 }
 
-ROOT="$HOME"
-if [ -f "$HOME/.khor/owner" ] && [ "$(cat "$HOME/.khor/owner")" != "$(hostname)" ]; then
+# The freshly-unpacked binary is the authority on which store is its
+# own (`khor root`); this block only runs when it cannot answer, and
+# reads the `name` line of the two-line owner file before falling back
+# to the bare hostname older stores carry. See `khor_root` in
+# scripts/onset-lib.sh for what reproducing the rule in sh cost.
+ROOT=$("$BIN_DIR/khor" root 2>/dev/null) || ROOT=""
+if [ -n "$ROOT" ]; then
+    mkdir -p "$ROOT/.khor"
+    [ "$ROOT" = "$HOME" ] || echo "khor: this home is somebody else's — $(hostname) uses $ROOT"
+fi
+OWNER=""
+if [ -z "$ROOT" ] && [ -f "$HOME/.khor/owner" ]; then
+    OWNER=$(sed -n 's/^name[[:space:]]\{1,\}//p' "$HOME/.khor/owner" | head -1)
+    [ -n "$OWNER" ] || OWNER=$(head -1 "$HOME/.khor/owner")
+    case "$OWNER" in machine\ *) OWNER="" ;; esac
+fi
+[ -n "$ROOT" ] || ROOT="$HOME"
+if [ -n "$OWNER" ] && [ "$OWNER" != "$(hostname)" ]; then
     ROOT="$HOME/.khor-hosts/$(hostname)"
     mkdir -p "$ROOT/.khor"
-    echo "khor: this home belongs to $(cat "$HOME/.khor/owner") — $(hostname) gets its own store at $ROOT"
+    echo "khor: this home belongs to $OWNER — $(hostname) gets its own store at $ROOT"
 fi
 # **No KHOR_HOME line in ~/.profile.** khor works the rule out for
 # itself now (`Node::root_from_env`), and on a shared home that file is

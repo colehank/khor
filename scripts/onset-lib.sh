@@ -21,9 +21,39 @@
 # The rule reproduced here is khor's own, not a third scheme: the shared
 # home belongs to whichever machine claimed it (`$HOME/.khor/owner`),
 # and every other machine gets `$HOME/.khor-hosts/<hostname>`.
+# **The installed khor is asked first, and it is the authority.**
+#
+# This used to reproduce khor's rule in sh, and the day the `owner` file
+# grew a second line (`machine <fingerprint>` above `name <hostname>`)
+# the sh half read the whole file as a hostname, concluded the home
+# belonged to somebody else, and sent onset to a directory nobody had
+# made. Measured 2026-09-11 on turing: `cannot create
+# .khor-hosts/turing/.khor/serve.pid: Directory nonexistent`, and the
+# resident stayed down until it was noticed.
+#
+# **A rule written twice is a rule that will disagree with itself.** The
+# fallback below is still the old comparison, because there are two
+# moments with no khor to ask — a first install, and an uninstall after
+# the binary is gone — and it is written to survive the new format by
+# reading the `name` line when there is one.
 khor_root() {
+    if [ -x "$HOME/.local/bin/khor" ]; then
+        _root=$("$HOME/.local/bin/khor" root 2>/dev/null) || _root=""
+        if [ -n "$_root" ]; then
+            printf '%s\n' "$_root"
+            return 0
+        fi
+    fi
     _owner=""
-    [ -f "$HOME/.khor/owner" ] && _owner=$(cat "$HOME/.khor/owner" 2>/dev/null)
+    if [ -f "$HOME/.khor/owner" ]; then
+        # The two-line format, then the bare hostname every store
+        # written before 2026-09-11 is in.
+        _owner=$(sed -n 's/^name[[:space:]]\{1,\}//p' "$HOME/.khor/owner" 2>/dev/null | head -1)
+        [ -n "$_owner" ] || _owner=$(head -1 "$HOME/.khor/owner" 2>/dev/null)
+        case "$_owner" in
+        machine\ *) _owner="" ;;
+        esac
+    fi
     if [ -n "$_owner" ] && [ "$_owner" != "$(hostname)" ]; then
         printf '%s\n' "$HOME/.khor-hosts/$(hostname)"
     else
