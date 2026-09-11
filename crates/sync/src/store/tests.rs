@@ -329,3 +329,62 @@ fn a_read_that_races_a_compaction_still_sees_every_line() {
         "none of the {reads} reads found a vanished block, so this run never met the case it is about"
     );
 }
+
+/// **A read that learns nothing must not write anything.**
+///
+/// `load` keeps the merged-blocks ledger up to date, and used to save it
+/// on every read whether or not it had changed. In the steady state —
+/// every block already listed, which is every read after the first — that
+/// is a temp file, a write and a rename to store what was already
+/// stored. Measured 2026-09-11: **4 ms a read**, which was most of what
+/// a session list cost. `chat/Mac-mini`, one block of 356 bytes, read in
+/// 4.7 ms; the same document with this write skipped, 0.0 ms.
+///
+/// The ledger only ever grows — compaction deletes blocks but keeps
+/// their lines — so 「this read added no name」 is exactly 「the file on
+/// disk is still right」.
+///
+/// Checked by the file's modification time rather than its contents: the
+/// contents were always going to be identical, and identical contents
+/// written again is the bug.
+#[test]
+fn a_read_that_learns_nothing_does_not_rewrite_the_ledger() {
+    let dir = tmpdir("ledger-quiet");
+    let mut st = open_channel(&dir, 1).unwrap();
+    st.doc.tell(&me("a"), "one").unwrap();
+    st.store.flush(&st.doc).unwrap();
+    drop(st);
+
+    let ledger = dir.join(".merged");
+    // The first read is allowed to write: it is the one that learns the
+    // block's name. **This is the arm that proves the test can tell** —
+    // without it, a ledger that is never written at all would pass.
+    let _ = fs::remove_file(&ledger);
+    let _ = open_channel(&dir, 2).unwrap();
+    assert!(ledger.exists(), "the first read should have written the ledger");
+    let after_first = fs::metadata(&ledger).unwrap().modified().unwrap();
+
+    // Far enough apart that a coarse filesystem clock still separates
+    // them: this must not pass by the two stamps being unresolvable.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    for _ in 0..5 {
+        let _ = open_channel(&dir, 3).unwrap();
+    }
+    let after_more = fs::metadata(&ledger).unwrap().modified().unwrap();
+    let quiet = after_more == after_first;
+
+    // And a read that *does* learn something still writes: a new block
+    // from somewhere else must land in the ledger.
+    let mut st = open_channel(&dir, 4).unwrap();
+    st.doc.tell(&me("b"), "two").unwrap();
+    st.store.flush(&st.doc).unwrap();
+    drop(st);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = open_channel(&dir, 5).unwrap();
+    let after_new = fs::metadata(&ledger).unwrap().modified().unwrap();
+    let noisy = after_new > after_more;
+
+    let _ = fs::remove_dir_all(&dir);
+    assert!(quiet, "five reads that learned nothing rewrote the ledger anyway");
+    assert!(noisy, "a read that met a new block must record it");
+}

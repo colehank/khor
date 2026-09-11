@@ -339,3 +339,75 @@ fn what_compaction_would_buy() {
 
     let _ = std::fs::remove_dir_all(&dst);
 }
+
+/// What each document in this home costs to read, one by one.
+///
+/// The list-level number says ten reads and 61% of the time; this says
+/// **which** ten are worth attacking. Reported with the block count
+/// beside each, because that is the thing that grows.
+#[test]
+#[ignore]
+fn what_each_document_costs_to_read() {
+    use khor_sync::store::{load, AnyDoc, Loaded};
+
+    let home = Node::root_from_env().join(".khor");
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&home) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if !p.is_dir() {
+                continue;
+            }
+            let blocks = |d: &std::path::Path| {
+                std::fs::read_dir(d)
+                    .map(|r| {
+                        r.flatten()
+                            .filter(|e| e.file_name().to_string_lossy().ends_with(".loro"))
+                            .count()
+                    })
+                    .unwrap_or(0)
+            };
+            if blocks(&p) > 0 {
+                dirs.push(p.clone());
+            }
+            if let Ok(inner) = std::fs::read_dir(&p) {
+                for e in inner.flatten() {
+                    let q = e.path();
+                    if q.is_dir() && blocks(&q) > 0 {
+                        dirs.push(q);
+                    }
+                }
+            }
+        }
+    }
+    if dirs.is_empty() {
+        println!("no documents under {} — nothing measured", home.display());
+        return;
+    }
+
+    let mut rows: Vec<(String, usize, u64, f64)> = Vec::new();
+    for d in dirs {
+        let blocks = std::fs::read_dir(&d)
+            .map(|r| {
+                r.flatten()
+                    .filter(|e| e.file_name().to_string_lossy().ends_with(".loro"))
+                    .count()
+            })
+            .unwrap_or(0);
+        let bytes: u64 = std::fs::read_dir(&d)
+            .map(|r| r.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum())
+            .unwrap_or(0);
+        let _: Loaded<AnyDoc> = load(&d, 1).unwrap();
+        let mut runs: Vec<f64> =
+            (0..8).map(|_| ms(|| { let _: Loaded<AnyDoc> = load(&d, 1).unwrap(); })).collect();
+        runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let name = d.strip_prefix(&home).unwrap_or(&d).display().to_string();
+        rows.push((name, blocks, bytes, runs[runs.len() / 2]));
+    }
+    rows.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
+    println!("{:<22} {:>7} {:>10} {:>9}", "document", "blocks", "bytes", "read");
+    for (name, blocks, bytes, t) in &rows {
+        println!("{name:<22} {blocks:>7} {bytes:>10} {t:>8.1} ms");
+    }
+    println!("{:<22} {:>7} {:>10} {:>8.1} ms", "— all of them —", "", "", rows.iter().map(|r| r.3).sum::<f64>());
+}

@@ -154,6 +154,9 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);
     let mut vanished = false;
+    // Whether anything was learned that the ledger on disk does not
+    // already say. See the write at the end.
+    let mut grew = false;
 
     for p in blocks(dir)? {
         match fs::read(&p) {
@@ -161,7 +164,7 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
                 if doc.merge(&bytes).is_err() {
                     broken.push(p);
                 } else if let Some(n) = file_name(&p) {
-                    ledger.insert(n);
+                    grew |= ledger.insert(n);
                 }
             }
             // Only a missing file is a compaction; anything else is a
@@ -177,9 +180,24 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
         on_disk,
         ledger,
     };
-    // Only write the ledger if the directory exists: an empty document
-    // should leave nothing on disk.
-    if dir.exists() {
+    // Only write the ledger if the directory exists (an empty document
+    // should leave nothing on disk) **and if this read learned a block
+    // name the file did not already hold**.
+    //
+    // ⚠️ **That second half is worth 4 ms per read, which was most of
+    // what a session list cost** (2026-09-11). A read that finds nothing
+    // new still rewrote the ledger, and `write_atomic` is a temp file, a
+    // write and a rename — so the steady state, where every block is
+    // already listed, paid three syscalls to save what was already
+    // there. Measured per document: `chat/Mac-mini`, **one block, 356
+    // bytes, 4.7 ms**, against 0.01 ms for a document whose directory
+    // does not exist and therefore skipped this write. The cost was
+    // never the data.
+    //
+    // The ledger only ever grows (compaction deletes blocks but keeps
+    // their lines, or a sync would pull them back), so 「nothing new」
+    // is exactly 「the file on disk is still right」.
+    if dir.exists() && grew {
         store.save_ledger()?;
     }
     Ok((Loaded { store, doc, broken }, vanished))
