@@ -3463,8 +3463,30 @@ for line in sys.stdin:
     (await page.locator('[data-omni-item="dev:beta"]').count()) === 1,
   );
   await filesInput.press("Enter");
-  await until("beta as a chip, and its disk open", 15_000, async () =>
-    (await page.locator('[data-chip="dev:beta"]').count()) === 1 &&
+  //      ⚠️ **This asked for a chip until 2026-09-11 and had been red
+  //      for a while.** It was not the product: the machine's chip was
+  //      taken out of this box on 2026-09-09 on purpose, and
+  //      `AddressBar` says why beside `chosen={[]}` — with one exit per
+  //      landing the machine is not a property of what is being typed,
+  //      and drawn as a chip the box read as two fields when it is one.
+  //      **The assertion outlived the thing it named**, and because it
+  //      was `chip && list` in one wait it reported both as false while
+  //      the listing had in fact opened. Split, the diagnosis was one
+  //      run: the chip was gone, the disk was there.
+  //
+  //      So what is checked now is what committing a machine *does*:
+  //      a disk is listed.
+  //
+  //      ⚠️ **This is weaker than what it replaced, and the weakness is
+  //      named rather than papered over: it does not check the disk is
+  //      *beta's*.** The chip was the only thing on this screen that
+  //      said which machine, and 「the box is empty afterwards」 does not
+  //      work as a substitute — with no text typed the box offers every
+  //      machine again, so its menu is legitimately full. Restoring the
+  //      full check needs a mark carrying the machine (the tab names the
+  //      *place*: it read 「zgh」 here, the home's leaf, on both
+  //      machines). Until then this half is on the ledger.
+  await until("a disk open", 15_000, async () =>
     (await page.locator("[data-files-list]").count()) === 1,
   );
 
@@ -3503,16 +3525,21 @@ for line in sys.stdin:
   await until("the typed path really opened", 20_000, async () =>
     (await page.locator('[data-file="omni-marker.txt"]').count()) === 1,
   );
-  //      Taking the chip off leaves the machine — the tab is a fresh
-  //      one again, which is the places list rather than somebody's
-  //      disk. (The chip is on the resting breadcrumb by now: Enter
-  //      above closed the box, which is the whole of what "submitting
-  //      means going" looks like from outside.)
-  await page.locator('[data-chip-remove="dev:beta"]').click();
-  await until("back off the machine", 10_000, async () =>
-    (await page.locator("[data-files-list]").count()) === 0 &&
-    (await page.locator('[data-chip="dev:beta"]').count()) === 0,
-  );
+  //      ⚠️ **Tombstone: 「taking the chip off leaves the machine」 was
+  //      asserted here and is gone, 2026-09-11.** There is no chip to
+  //      take off: the machine left this box on 2026-09-09 (see the
+  //      note above, and `AddressBar`'s `chosen={[]}`). The step was
+  //      clicking `[data-chip-remove="dev:beta"]`, which has not
+  //      existed since, so this section had been red for days.
+  //
+  //      **What went with it is the whole 「which machine」 axis of this
+  //      section**, and that is a real loss, not a tidy-up: every
+  //      remaining assertion here would pass just as well against the
+  //      local disk. The screen has no mark saying whose disk is
+  //      listed — the tab names the *place* (it reads 「zgh」, the
+  //      home's leaf, on either machine). **Restoring it needs a mark
+  //      on the pane carrying the machine's id**; it is on the ledger,
+  //      not silently dropped.
 
   // 24d) browser 的 omnibox (批③ 四笔): the exit is a chip, the address
   //      is text, and the candidates are the pinned pages — the one
@@ -3533,18 +3560,23 @@ for line in sys.stdin:
   await until("beta offered as an exit", 10_000, async () =>
     (await page.locator('[data-omni-item="dev:beta"]').count()) === 1,
   );
-  await webInput.press("Enter");
-  await until("beta as the exit chip", 15_000, async () =>
-    (await page.locator('[data-chip="dev:beta"]').count()) === 1,
-  );
-  //      Before any page is pinned there is nothing to complete with,
-  //      and the box says so by offering nothing — 24b pins one below,
-  //      and the candidate is asserted there where the pin provably
-  //      exists.
-  await page.locator('[data-chip-remove="dev:beta"]').click();
-  await until("off the exit again", 10_000, async () =>
-    (await page.locator('[data-chip="dev:beta"]').count()) === 0,
-  );
+  //      ⚠️ **Tombstone: the exit chip's three assertions, 2026-09-11.**
+  //      Pressing Enter here and then checking for
+  //      `[data-chip="dev:beta"]`, and then removing it — all three
+  //      named a chip that was taken out of this box on 2026-09-09
+  //      together with the files landing's (`AddressBar`'s
+  //      `chosen={[]}` carries the reasoning: with one exit per landing
+  //      the machine is not a property of the address being typed).
+  //
+  //      **Both sections went red at the same commit and neither was
+  //      noticed, which is the three-step rule in this repo's CLAUDE.md
+  //      with the third step missed**: the chip was removed, its
+  //      readers in the product were removed, and nobody grepped for
+  //      who else was pointing at it. A gate is a reader.
+  //
+  //      What survives is the assertion above — the box offers the
+  //      machine as an exit — and that is the half this section can
+  //      still prove.
 
   // 24b) the browser landing keeps pages: a pin made against the real
   //      webpins table shows up among this landing's places, survives a
@@ -6339,11 +6371,29 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   // The detail: the good ring's figures, and the CLI's own board says
   // the same number.
   await page.locator(`[data-quota-row="${goodId}"]`).click();
+  //   ⚠️ **The unit moved, the machine did not** — and the first fix
+  //   here got that backwards. Reading the card out loud (2026-09-11):
+  //
+  //       gw-good
+  //       alpha 读的,3 秒 前
+  //       45%
+  //       已用
+  //       0.90 / 2.00$
+  //
+  //   So 「alpha as the reader」 is still on the card and was never in
+  //   danger; what changed is that money wears a symbol now rather than
+  //   a currency code (`0.90 / 2.00 USD` → `0.90 / 2.00$`), from the
+  //   ruling that put the ruler in the unit's place. **The first repair
+  //   dropped the machine half on a guess about a different ruling**,
+  //   which would have quietly thrown away the one thing here that says
+  //   the reading came from alpha's own key rather than beta's — the
+  //   whole point of the bearer check a few lines up. Restored, and
+  //   both halves are asserted.
   await until("the good account's figures, and alpha as the reader", 10_000, async () => {
     const d = page.locator(`[data-quota-detail="${goodId}"]`);
     if ((await d.count()) !== 1) return false;
     const text = await d.innerText();
-    return text.includes("0.90 / 2.00 USD") && text.includes("alpha");
+    return text.includes("0.90 / 2.00$") && text.includes("alpha");
   });
   const board = cli(envB, "quota");
   if (!board.includes("gw-good") || !board.includes("45%")) {
