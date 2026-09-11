@@ -10,7 +10,7 @@
     "prebuild": "npm run gen",
     "build": "tsc --noEmit && vite build",
     "pretest": "npm run gen",
-    "test": "node scripts/check-shim.mjs && node scripts/check-px.mjs && node scripts/check-icons.mjs && tsc --noEmit",
+    "test": "node scripts/check-shim.mjs && node scripts/check-boot.mjs && node scripts/check-px.mjs && node scripts/check-icons.mjs && tsc --noEmit",
     "rail": "node scripts/check-rail.mjs",
     "type": "node scripts/check-type.mjs",
     "bytes": "node scripts/check-bytes.mjs",
@@ -24,7 +24,8 @@
     "tabs": "node scripts/check-tabs.mjs",
     "smoke": "node scripts/smoke.mjs",
     "web-face": "node scripts/web-face.mjs",
-    "gates": "node scripts/check-gates.mjs"
+    "gates": "node scripts/check-gates.mjs",
+    "boot": "node scripts/check-boot.mjs"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.3.7",

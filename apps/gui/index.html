@@ -6,7 +6,69 @@
     <title>Khor</title>
   </head>
   <body>
+    <!--
+      **The first frame, before a single line of the app has run.**
+
+      Measured 2026-09-11 by screenshotting a cold launch: the window is
+      on screen by ~500 ms and the list is drawn by ~765 ms, so for a
+      quarter of a second the app is **a black rectangle with a title
+      bar** — which is what 「每次打开都要加载一会儿很慢」 is looking at.
+      It is not waiting on data (the three calls behind the first list
+      total about 100 ms); it is the bundle being parsed and React
+      mounting for the first time.
+
+      So the ground and the shape of the room are painted here, in HTML
+      the webview has before it asks for anything. There is nothing to
+      wire up and nothing to tear down: `#root` is empty until React
+      mounts and full immediately after, so the sibling rule below hides
+      this the moment the real thing exists.
+
+      ⚠️ **The four colours here are the only place in this app where a
+      palette value is written twice.** They have to be: `tokens.css` is
+      a separate request and this frame is about what happens before any
+      request comes back. They are `--background` and `--card` from
+      `src/styles/tokens.css`, light first and dark under the same media
+      query it uses. If those change and these do not, the window
+      flashes the old colour for a quarter second and then settles — a
+      flicker with no error anywhere, which is why they are named here
+      rather than left as bare hex.
+    -->
+    <style>
+      body {
+        margin: 0;
+        background: #f4f4ef;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+      }
+      /* The icon rail and the list column, at the widths the real ones
+         take. Empty on purpose: a skeleton with fake rows in it is a
+         guess about what the list holds, and this frame knows nothing. */
+      #boot i:first-child {
+        width: 44px;
+        background: #f4f4ef;
+      }
+      #boot i:last-child {
+        width: 260px;
+        background: #fcfcfa;
+      }
+      #root:not(:empty) ~ #boot {
+        display: none;
+      }
+      @media (prefers-color-scheme: dark) {
+        body,
+        #boot i:first-child {
+          background: #0f0f0e;
+        }
+        #boot i:last-child {
+          background: #191917;
+        }
+      }
+    </style>
     <div id="root"></div>
+    <div id="boot" aria-hidden="true"><i></i><i></i></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
