@@ -41,6 +41,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
+import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { SessionFace } from "@/components/SessionFace";
 import { IconClose, IconPlus } from "@/components/icons";
@@ -67,6 +68,17 @@ export type TabFace = {
       session列表一致」). A browsing tab has none and keeps the bare
       machine face. */
   session?: { word: string; kind: string; category: string | null };
+  /** What this tab's name renames, or absent when the name is not the
+      user's to change (2026-09-11:「session 标签页不可双击重命名,我需要
+      和机器一样」).
+
+      **Opt-in per tab, because the strip carries two kinds.** A session
+      tab wears its row's title, which is a name somebody gave it; a
+      browsing tab wears a page's own name, which is the page's and not
+      anybody's to override. Handing the strip a blanket 「tabs are
+      renamable」 would put an editor on the second kind, where Enter
+      would write into a table that has no row for it. */
+  rename?: { kind: "session" | "machine"; id: string };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -227,9 +239,29 @@ export function TabStrip({
                 className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
               >
                 <TabAvatar f={f} bare="size-kind-mark flex-none" />
-                <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
-                  {f.label}
-                </span>
+                {/* `nested`: the name sits inside the button that opens
+                    the tab, so it is not a control here — the same
+                    arrangement the list rows keep, and for the same
+                    reason (`EditableName`'s head). */}
+                {f.rename ? (
+                  <EditableName
+                    kind={f.rename.kind}
+                    id={f.rename.id}
+                    title={f.label}
+                    className="min-w-0 flex-1 text-sm"
+                    inputClassName="w-full text-sm"
+                    nested
+                    // The hook the width gate measures, kept on the box
+                    // that clips rather than on a wrapper around it
+                    // (`boxData` says why that distinction is not a
+                    // detail).
+                    boxData={{ "data-tab-label": "" }}
+                  />
+                ) : (
+                  <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
+                    {f.label}
+                  </span>
+                )}
               </button>
               <Button
                 size="icon"

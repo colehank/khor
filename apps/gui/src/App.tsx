@@ -1229,6 +1229,11 @@ export default function App() {
               face: r.face,
               path: r.place ?? "",
               session: { word: r.word, kind: r.kind, category: r.category },
+              // A session tab's name is the row's title, which is a
+              // name somebody gave it — so double-click renames it
+              // here too. A browsing tab below wears a page's own
+              // name and hands none of this in.
+              rename: { kind: "session" as const, id },
             }
           : { id, label: id, face: null, path: "" };
       }),

@@ -1,4 +1,5 @@
 import type { DeviceRow } from "@/api";
+import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
@@ -168,7 +169,7 @@ export function DevicesList({
                 onClick={() => onOpen(d)}
                 className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4 text-left"
               >
-                <Identity row={d} />
+                <Identity row={d} rename />
               </button>
             </RowMenu>
           ) : (
@@ -194,13 +195,36 @@ export function DevicesList({
     the fact a person picks a row by — and this machine reaches itself
     over nothing, so its word is 本机, which is also why the name no
     longer carries the `(本机)` bracket. */
-function Identity({ row }: { row: DeviceRow }) {
+function Identity({ row, rename }: { row: DeviceRow; rename?: boolean }) {
   const connection = connectionWord(row);
   return (
     <>
       <MachineAvatar face={row.face} className="size-avatar" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-fact">{row.shown}</span>
+        {/* Double-click to rename, the same component and the same
+            gesture a session row wears (`EditableName`) — 2026-09-11:
+            「session 现在列表双击名称即可重命名,我需要机器也一样」.
+            `nested` because the name sits inside the button that opens
+            the row: a control inside a control is invalid markup and
+            worse behaviour, so the keyboard path is the card's, reached
+            by opening the row.
+
+            **Only on the branch that answers a click.** The inert
+            branch has no menu either, and for the same reason stated
+            above it: a pane with nowhere to send a row has not earned
+            actions on it. */}
+        {rename ? (
+          <EditableName
+            kind="machine"
+            id={row.id}
+            title={row.shown}
+            className="block text-fact"
+            inputClassName="w-full text-fact"
+            nested
+          />
+        ) : (
+          <span className="block truncate text-fact">{row.shown}</span>
+        )}
         {/* Absent rather than an empty line when there is nothing to
             say: a machine whose road khor cannot name yet keeps a
             one-line row instead of a blank second line. */}

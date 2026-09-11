@@ -3273,6 +3273,36 @@ for line in sys.stdin:
     (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "alpha",
   );
 
+  //     **And the list row renames too** (2026-09-11:「session 现在列表
+  //     双击名称即可重命名,我需要机器也一样」). The card above proves
+  //     the write works; this proves the *gesture* reaches the row —
+  //     two different things, and the row is the one with a trap in it:
+  //     the name sits inside the button that opens the row, so a
+  //     double-click that did not stop propagating would open the row
+  //     over and over instead of opening an editor.
+  const rowName = page.locator('[data-device="alpha"] [data-machine-name]');
+  if ((await rowName.count()) !== 1) throw new Error("probe dead: alpha's row has no editable name");
+  await rowName.dblclick();
+  const rowBox = page.locator('[data-device="alpha"] [data-title-input]');
+  await until("the row's name editor", 5_000, async () => (await rowBox.count()) === 1);
+  await rowBox.fill("从列表改的");
+  await rowBox.press("Enter");
+  await until("the row to wear it", 10_000, async () =>
+    (await page.locator('[data-device="alpha"]').innerText()).includes("从列表改的"),
+  );
+  //     The card is the other half of the same fact — one machine, one
+  //     name, wherever it is drawn.
+  await until("the card to agree", 10_000, async () =>
+    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "从列表改的",
+  );
+  await page.locator('[data-device="alpha"] [data-machine-name]').dblclick();
+  await until("the row's editor again", 5_000, async () => (await rowBox.count()) === 1);
+  await rowBox.fill("");
+  await rowBox.press("Enter");
+  await until("alpha back to its own name", 10_000, async () =>
+    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "alpha",
+  );
+
   //     One machine, one picture — the same rule the rail and the row
   //     already answer to, now with a third place to be wrong in.
   const cardFace = page.locator("[data-machine-card] [data-face]");
@@ -4781,6 +4811,52 @@ for line in sys.stdin:
     throw new Error(`the tab in front is ${tabW.on} wide for a ${longName.length}-character name — it did not grow`);
   }
   if (tabW.clipped) throw new Error("the tab in front still truncates its name");
+
+  //      (6b) 标签页改名 (2026-09-11:「session 标签页不可双击重命名,
+  //      我需要和机器一样」). Renaming from the tab, and read back from
+  //      the **list row** — one session, one name, and the list is the
+  //      surface that did not take the gesture, so agreeing there is
+  //      what says the write went to the row rather than to the strip's
+  //      own memory of a label.
+  //
+  //      **`data-tab-label` is still the hook above**, and that is the
+  //      arm with teeth: it now sits on the editor's outer box because
+  //      that is what clips. Put it on a wrapper instead and (6)'s
+  //      truncation check goes quietly dead — two nested truncating
+  //      boxes clip at the same width, so the outer can never report
+  //      clipping.
+  const tabName = page.locator(`[data-tab="${stretchRow}"] [data-session-title]`);
+  if ((await tabName.count()) !== 1) throw new Error("probe dead: the tab in front has no editable name");
+  await tabName.dblclick();
+  const tabBox = page.locator(`[data-tab="${stretchRow}"] [data-title-input]`);
+  await until("the tab's name editor", 5_000, async () => (await tabBox.count()) === 1);
+  await tabBox.fill("从标签页改的");
+  await tabBox.press("Enter");
+  await until("the list row to wear the tab's new name", 15_000, async () =>
+    (await page.locator(`[data-row="${stretchRow}"]`).innerText()).includes("从标签页改的"),
+  );
+  //      **The control arm, and it is proven alive before it is
+  //      believed.** A browsing tab hands in no rename, so it must not
+  //      grow an editor — the arm against 「tabs are renamable」, which
+  //      would put one on a name that is the page's rather than
+  //      anybody's to override. Asserted on the files landing, where
+  //      the tabs are browsing tabs; asserting it here, on a strip made
+  //      only of session tabs, would be a count of zero for a reason
+  //      that has nothing to do with the rule.
+  //
+  //      First that there *are* tabs there — a landing that drew none
+  //      answers 「no editors」 the same way a correct one does, and
+  //      that is the shape this file has been bitten by before.
+  await openLanding("files");
+  const browseTabs = await page.locator("[data-browse-landing] [data-tab]").count();
+  if (browseTabs === 0) throw new Error("probe dead: the files landing drew no tabs to check");
+  const strays = await page.locator("[data-browse-landing] [data-tab] [data-session-title]").count();
+  if (strays !== 0) throw new Error(`${strays} of ${browseTabs} browsing tab(s) grew a rename editor`);
+  await openLanding("sessions");
+  await until("back on the session strip", 15_000, async () =>
+    (await page.locator(`[data-tab="${stretchRow}"]`).count()) === 1,
+  );
+
   cli(envB, "close", stretchRow);
   await until("the stretched tab gone", 20_000, async () =>
     (await page.locator(`[data-tab="${stretchRow}"]`).count()) === 0,

@@ -82,6 +82,7 @@ export function EditableName({
   className,
   inputClassName,
   nested,
+  boxData,
 }: {
   /** Which table the id belongs to. Defaults to the first subject that
       had this, so every existing call site reads unchanged. */
@@ -98,6 +99,20 @@ export function EditableName({
    * well-formed). The list row passes it; nothing else should need to.
    */
   nested?: boolean;
+  /**
+   * Attributes for the **outer** box — the one carrying `truncate`, and
+   * therefore the one that actually clips.
+   *
+   * It exists because swapping a plain label for this component moves
+   * the clipping box: a gate measuring `scrollWidth > clientWidth` has
+   * to find the box that clips, and the inner span is exactly as wide
+   * as its text, so it can never report clipping at all. Putting the
+   * caller's hook on a wrapper *around* this component is the trap —
+   * two nested `truncate` boxes clip at the same width, the outer one
+   * then reads as never clipped, and an assertion that used to fire
+   * goes quietly dead.
+   */
+  boxData?: Record<string, string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -123,7 +138,7 @@ export function EditableName({
       setEditing(true);
     };
     return (
-      <span className={cn("truncate", className)}>
+      <span {...boxData} className={cn("truncate", className)}>
         <span
           data-editable-name
           data-session-title={kind === "session" ? "" : undefined}
