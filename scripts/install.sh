@@ -180,10 +180,12 @@ cat > "$UP" <<'SERVEUP'
 # Start this host's khor serve unless it is already running.
 set -u
 BIN="$(dirname "$0")/khor"
-R="$HOME"
-if [ -f "$HOME/.khor/owner" ] && [ "$(cat "$HOME/.khor/owner")" != "$(hostname)" ]; then
-    R="$HOME/.khor-hosts/$(hostname)"
-fi
+# **Asked, not computed.** This was the fourth copy of one rule, and the
+# day the `owner` file grew a line the copies stopped agreeing — see
+# `khor_root` in scripts/onset-lib.sh for what that cost. The binary
+# sits next to this script, so there is always one to ask.
+R=$("$BIN" root 2>/dev/null) || R=""
+[ -n "$R" ] || R="$HOME"
 PIDF="$R/.khor/serve.pid"
 mkdir -p "$R/.khor"
 if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then

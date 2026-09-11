@@ -321,19 +321,25 @@ echo "onset: khor $ver runs here"
 # keeps the open inode, and the next start picks up the new file.
 mv -f "$src" "$HOME/.local/bin/khor"
 
-root="$HOME"
-owner=""
-[ -f "$HOME/.khor/owner" ] && owner=$(cat "$HOME/.khor/owner")
-if [ -n "$owner" ] && [ "$owner" != "$(hostname)" ]; then
-    root="$HOME/.khor-hosts/$(hostname)"
-    echo "onset: this home belongs to $owner — $(hostname) gets its own store at $root"
-fi
+# **The third copy of this rule, and the one that cost a store.**
+# Until 2026-09-11 this block compared `$HOME/.khor/owner` to the
+# hostname itself. The owner file grew a `machine <fingerprint>` line
+# that day, the comparison stopped matching, and a machine that owns its
+# home was told it did not: it made `.khor-hosts/turing`, ran `khor id`
+# there, and minted a **second identity for a machine that already had
+# one** — the exact failure the fingerprint was added to prevent, walked
+# into through the back door by a script.
+#
+# So it asks `khor_root`, which asks the binary that was just installed.
+# One rule, one implementation, and the two moments with no khor to ask
+# are handled there rather than here.
+root=$(khor_root)
+[ "$root" = "$HOME" ] || echo "onset: this home is somebody else's — $(hostname) uses $root"
 mkdir -p "$root/.khor"
 # **No pointer file.** It lived at `~/.local/bin/.khor-root`, which on a
 # cluster with one shared home is one file for every machine — last
 # writer wins, and everyone else reads a path that is not theirs. The
-# root is recomputed instead (`khor_root`), from the same `owner` marker
-# this block just used.
+# root is asked for instead (`khor_root`).
 rm -f "$HOME/.local/bin/.khor-root"
 
 # The PATH line. Written once: appending on every run is how a .profile
