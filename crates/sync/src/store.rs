@@ -518,6 +518,83 @@ pub fn compact_dir(dir: &Path, peer: u64) -> Result<Option<Compacted>, String> {
     Ok(Some(Compacted { before, after: blocks(dir)?.len() }))
 }
 
+/// The lease file that makes 「one compactor」 enforceable rather than
+/// merely stated.
+const LEASE: &str = "compacting";
+
+/// How long a lease stands before it is treated as abandoned. Long
+/// enough that no honest compaction is mistaken for a corpse (the
+/// longest measured is well under a second), short enough that a machine
+/// that died mid-rewrite does not freeze compaction for an afternoon.
+const LEASE_STALE_MS: u64 = 5 * 60 * 1000;
+
+/// Take the compaction lease for `home`, or find that somebody else
+/// holds it.
+///
+/// ⚠️ **This is not belt-and-braces, it is the thing that makes
+/// compaction safe on this fleet.** Three of these machines share one
+/// `.khor` over NFS (turing, hinton, lecun), so 「the resident serve
+/// owns compaction」 is three residents owning it, and two compactors on
+/// one document destroy it — the second reads a directory the first is
+/// half way through deleting, gets an empty document, and writes an
+/// empty snapshot over everything. Measured, not feared:
+/// `store::tests::a_read_that_races_a_compaction_still_sees_every_line`
+/// was written as two tight loops first and did exactly that.
+///
+/// `create_new` is `O_EXCL`, which NFSv3 and later implement as an
+/// atomic exclusive create — the one primitive that survives a shared
+/// filesystem without a lock daemon.
+///
+/// **What it does not cover**: a server whose exclusive create is not
+/// actually exclusive (old or exotic NFS), and the window between a
+/// holder dying and its lease going stale, during which nothing is
+/// compacted. The second is by design — not compacting is the safe
+/// failure — and the first is a property of the filesystem this cannot
+/// measure from here.
+fn take_lease(home: &Path) -> Option<PathBuf> {
+    let path = home.join(LEASE);
+    let mine = || {
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map(|mut f| {
+                use std::io::Write as _;
+                // The stamp is for a person reading the directory after
+                // something went wrong; the staleness test below uses the
+                // file's own mtime, which no writer can get wrong.
+                let _ = writeln!(f, "{}", now_ms());
+            })
+            .is_ok()
+    };
+    if mine() {
+        return Some(path);
+    }
+    // Somebody holds it, or somebody died holding it. Only the second
+    // is ours to clear, and only after it has been still for long
+    // enough that no live compaction could look like it.
+    let age = fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    if age > LEASE_STALE_MS {
+        let _ = fs::remove_file(&path);
+        if mine() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Compact every piled-up document under `home`, two directories deep.
 ///
 /// Two deep because that is how this home is laid out: `devices`,
@@ -532,7 +609,14 @@ pub fn compact_dir(dir: &Path, peer: u64) -> Result<Option<Compacted>, String> {
 /// ⚠️ **One process only** — see [`compact_dir`].
 pub fn compact_piles_under(home: &Path, peer: u64) -> Vec<(PathBuf, Compacted)> {
     let mut out = Vec::new();
+    // **Nobody else may be doing this right now.** See `take_lease` —
+    // on the shared-home machines this is the only thing standing
+    // between 「one compactor」 and a destroyed document.
+    let Some(lease) = take_lease(home) else {
+        return out;
+    };
     let Ok(top) = fs::read_dir(home) else {
+        let _ = fs::remove_file(&lease);
         return out;
     };
     for e in top.flatten() {
@@ -564,6 +648,7 @@ pub fn compact_piles_under(home: &Path, peer: u64) -> Vec<(PathBuf, Compacted)> 
             }
         }
     }
+    let _ = fs::remove_file(&lease);
     out.sort_by_key(|(_, c)| std::cmp::Reverse(c.before));
     out
 }

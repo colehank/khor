@@ -388,3 +388,76 @@ fn a_read_that_learns_nothing_does_not_rewrite_the_ledger() {
     assert!(quiet, "five reads that learned nothing rewrote the ledger anyway");
     assert!(noisy, "a read that met a new block must record it");
 }
+
+/// **Two compactors must not both run**, because two compactors on one
+/// document destroy it (the test above has the mechanism, found the hard
+/// way). Three of this fleet's machines share one `.khor` over NFS, so
+/// 「the resident serve owns compaction」 is three owners unless
+/// something makes it one.
+///
+/// Two threads enter `compact_piles_under` on the same home at the same
+/// moment. Exactly one may come back having rewritten anything.
+///
+/// ⚠️ **Take `take_lease` out and this fails**, but not always on the
+/// first run: without the lease the two threads can still miss each
+/// other. So it runs the race many times and fails if *any* round had
+/// two winners — and it prints how many rounds actually overlapped, so
+/// a run where the threads never met cannot read as a pass.
+#[test]
+fn only_one_compactor_may_run_on_one_home() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    let home = tmpdir("one-compactor");
+    let winners = Arc::new(AtomicU64::new(0));
+    let rounds = 24;
+
+    for round in 0..rounds {
+        // A fresh pile each round: compaction is idempotent, so without
+        // this only the first round would have anything to win.
+        let dir = home.join(format!("doc{round}"));
+        let mut st = open_channel(&dir, 1).unwrap();
+        for i in 0..(crate::store::PILE + 4) {
+            st.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+            st.store.flush(&st.doc).unwrap();
+        }
+        let want = render(&st.doc);
+        drop(st);
+
+        let gate = Arc::new(Barrier::new(2));
+        let hands: Vec<_> = (0..2)
+            .map(|k| {
+                let (home, gate, winners) =
+                    (home.clone(), Arc::clone(&gate), Arc::clone(&winners));
+                std::thread::spawn(move || {
+                    gate.wait();
+                    let done = crate::store::compact_piles_under(&home, 100 + k);
+                    if !done.is_empty() {
+                        winners.fetch_add(1, Ordering::Relaxed);
+                    }
+                    done.len()
+                })
+            })
+            .collect();
+        let each: Vec<usize> = hands.into_iter().map(|h| h.join().unwrap()).collect();
+        let ran = each.iter().filter(|n| **n > 0).count();
+        assert!(ran <= 1, "round {round}: {ran} compactors both rewrote something");
+
+        // And the document is still whole, which is the thing the rule
+        // exists to protect.
+        let back = open_channel(&dir, 9).unwrap();
+        let got = render(&back.doc);
+        for l in want.lines() {
+            assert!(got.contains(l), "round {round}: the document lost {l:?}");
+        }
+    }
+
+    let won = winners.load(Ordering::Relaxed);
+    let _ = fs::remove_dir_all(&home);
+    // The arm that says the race was real: if no round ever compacted,
+    // the assertions above were all vacuous.
+    assert!(
+        won > 0,
+        "no round compacted anything, so nothing above was actually tested"
+    );
+}
