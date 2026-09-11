@@ -2028,6 +2028,21 @@ fn seen(rest: &[String]) -> Result<(), String> {
 /// empty tail is an argument here, not a mistake. Same node call as the
 /// GUI's double-click (docs/KHOR.md: CLI equals GUI).
 fn rename(rest: &[String]) -> Result<(), String> {
+    // `-m`, the flag `pin` already uses for the same distinction — one
+    // verb, two subjects, and the subject is named the same way in both
+    // places rather than each verb inventing its own.
+    if let [flag, machine, name @ ..] = rest {
+        if flag == "-m" || flag == "--machine" {
+            let n = node()?;
+            // Resolved to an id here, because `rename_machine` takes an
+            // id on purpose: the name is the thing being changed, and
+            // resolving 「rename A to B」 through a table that may
+            // already hold a B renames the wrong row.
+            let (_, id) = n.resolve_machine(machine)?;
+            println!("{}", n.rename_machine(&id.hex(), &name.join(" "))?);
+            return Ok(());
+        }
+    }
     let [id, name @ ..] = rest else {
         return Err(USAGE.into());
     };

@@ -1509,17 +1509,43 @@ impl Node {
 
     /// name → (channel, home). Refuses unknown machines listing what the
     /// table has — "not found" alone sends people guessing.
+    ///
+    /// **Either name works, and the rename is tried first.** What
+    /// somebody types is what they read on a screen, and after a rename
+    /// that is the label; the channel still resolves because it is what
+    /// scripts and older habits use. The order settles the one real
+    /// collision — renaming A to 「B」 while a machine is channelled `B`
+    /// — in favour of the name that is actually visible.
+    ///
+    /// **The label is matched raw, before cleaning.** `channel_of_machine`
+    /// exists to make a name safe as a path segment, and a label never
+    /// becomes one; running 「北京服务器」 through it yields a
+    /// fingerprinted stem that matches nothing, so a renamed machine
+    /// would be unreachable by the only name anybody can see.
     fn resolve(&self, machine: &str) -> Result<(String, DeviceId), String> {
+        let all = self.devices()?;
+        let typed = machine.trim();
+        if let Some(d) = all.iter().find(|d| d.label.as_deref() == Some(typed)) {
+            return Ok((d.name.clone(), device_id_from_hex(&d.id)?));
+        }
         let ch = channel_of_machine(machine)
             .ok_or_else(|| msg::machine_name_not_pathable(format_args!("{machine:?}")))?;
-        let all = self.devices()?;
         match all.iter().find(|d| d.name == ch) {
             Some(d) => Ok((ch, device_id_from_hex(&d.id)?)),
             None => {
-                let names: Vec<&str> = all.iter().map(|d| d.name.as_str()).collect();
+                // Listed by the name on the glass: a list of channels
+                // would name machines the person cannot see anywhere.
+                let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
                 Err(msg::no_such_machine(machine, names.join(khor_catalog::cli::NAME_SEPARATOR)))
             }
         }
+    }
+
+    /// [`Self::resolve`] for callers outside this module — the CLI's
+    /// `rename -m` needs an id, and turning a typed name into one is
+    /// exactly this.
+    pub fn resolve_machine(&self, machine: &str) -> Result<(String, DeviceId), String> {
+        self.resolve(machine)
     }
 
     pub(crate) fn channel_of_session(&self, id: &SessionId) -> Result<(String, DeviceId), String> {
