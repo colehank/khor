@@ -328,8 +328,25 @@ impl BlockStore {
 /// (increments commute); sorting exists so two loads behave identically
 /// and failures reproduce.
 fn blocks(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let Ok(rd) = fs::read_dir(dir) else {
-        return Ok(Vec::new()); // no directory = empty document
+    // **Absent is empty; anything else is an error**, and the two used
+    // to be one branch. A store whose directory has been replaced by a
+    // file, or whose permissions stop a read, answered「no blocks」 —
+    // and a document with no blocks is a document with nothing in it,
+    // so a damaged store read back as 「you have no recents」, 「no
+    // machines are paired」, 「there are no accounts」. Silent, and in
+    // the one direction this repo never accepts.
+    //
+    // Found by `tests/files_wire.rs`, whose control writes a file where
+    // a store's directory belongs and asserts the read refuses. That
+    // assertion had been red on `main` for long enough that it was
+    // being carried as「a pre-existing red」rather than read
+    // (2026-09-12).
+    let rd = match fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Vec::new()); // never written to = empty document
+        }
+        Err(e) => return Err(msg::cant_list_dir(dir.display(), e)),
     };
     let mut out: Vec<PathBuf> = rd
         .flatten()
