@@ -510,6 +510,64 @@ impl Node {
                 Ok(load) => ipc::Reply::Load { load },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::WorkspacesOn { machine } => {
+                match self.workspaces_on_with(ep, &machine).await {
+                    Ok(workspaces) => ipc::Reply::Workspaces { workspaces },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::ReadHead { machine, path } => {
+                match self.read_head_with(ep, &machine, &path).await {
+                    Ok((total, at_ms, bytes)) => {
+                        ipc::Reply::Head { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) }
+                    }
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::GitStatusOn { machine, root } => {
+                match self.git_status_with(ep, &machine, &root).await {
+                    Ok(s) => {
+                        ipc::Reply::GitStatus { branch: s.branch, rows: s.rows, more: s.more }
+                    }
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::GitDiffOn { machine, path } => {
+                match self.git_diff_with(ep, &machine, &path).await {
+                    Ok(d) => ipc::Reply::GitDiff { hunks: d.hunks, more: d.more },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::WritePathOn { machine, path, was, bytes } => {
+                match self.write_path_with(ep, &machine, &path, &was, &bytes).await {
+                    Ok((at_ms, digest)) => ipc::Reply::Wrote { at_ms, digest },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::CodeHereOn { machine } => match self.code_here_with(ep, &machine).await {
+                Ok(version) => ipc::Reply::CodeHere { version },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::CodeOpenOn { machine, .. } => {
+                match self.code_open_with(ep, &machine).await {
+                    Ok((addr, token)) => ipc::Reply::CodeAt { addr: addr.to_string(), token },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::ReadAt { machine, path, offset } => {
+                match self.read_at_with(ep, &machine, &path, offset).await {
+                    Ok((total, at_ms, bytes)) => {
+                        ipc::Reply::Head { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) }
+                    }
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::CodeStopOn { machine, .. } => {
+                match self.code_stop_with(ep, &machine).await {
+                    Ok(()) => ipc::Reply::Accepted { moved: 0, landed: Vec::new() },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
     }
 
@@ -975,6 +1033,96 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string())??;
                 Ok(Response::Places { places })
+            }
+            Request::Workspaces => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Reads every vendor's records (the `Ls` arm's note),
+                // through the same fold `Places` walks — one filter
+                // apart, and the filter is applied over there.
+                let root = self.root().to_path_buf();
+                let workspaces = tokio::task::spawn_blocking(move || {
+                    Ok::<_, String>(crate::Node::open(root)?.workspaces_shown())
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Workspaces { workspaces })
+            }
+            Request::GitStatus { root } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Blocking on purpose and off the reactor: the walk is
+                // three threads of stat() and object reads, measured at
+                // 54 ms on this repo's 1525 files. Not long enough to
+                // stream, far too long to hold the serve loop.
+                let dir = std::path::PathBuf::from(root);
+                let s = tokio::task::spawn_blocking(move || crate::git::status(&dir))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::GitStatus { branch: s.branch, rows: s.rows, more: s.more })
+            }
+            Request::GitDiff { path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let file = std::path::PathBuf::from(path);
+                let d = tokio::task::spawn_blocking(move || crate::git::diff(&file))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::GitDiff { hunks: d.hunks, more: d.more })
+            }
+            Request::WritePath { path, was, bytes } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Blocking: a read of the file, a write of a temporary,
+                // an fsync and a rename. The fsync is the one that can
+                // take a while, and holding the serve loop through a
+                // disk barrier is how one save makes every other
+                // machine's next question look slow.
+                let (at_ms, digest) = tokio::task::spawn_blocking(move || {
+                    crate::files::write_whole(&path, &bytes, &was)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Wrote { at_ms, digest })
+            }
+            Request::CodeHere => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // One spawn of `code --version`, ~70 ms measured. Off
+                // the reactor for the same reason every other spawn in
+                // this file is.
+                let version = tokio::task::spawn_blocking(crate::code::version)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::CodeHere { version })
+            }
+            Request::CodeServe { .. } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // **This is the one op in this file that can take
+                // minutes.** A first run fetches 643 MB from Microsoft
+                // before it prints anything, and `code::serve` waits
+                // ten minutes for that line. A blocking task is right:
+                // the serve loop must not be one of the things waiting.
+                let (port, token) = tokio::task::spawn_blocking(crate::code::serve)
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::CodeServing { port, token })
+            }
+            Request::CodeStop { .. } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                tokio::task::spawn_blocking(crate::code::stop)
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Acted { moved: 0, landed: Vec::new() })
             }
             Request::Quotas => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1851,6 +1999,597 @@ impl Node {
             Response::Refused { why } => Err(msg::load_refused(why)),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
+    }
+
+    /// The workspace landing's list from any machine. This one's
+    /// answers without a resident; another's goes through one when
+    /// there is one.
+    ///
+    /// **Unlike [`Node::places_on`], a refusal here is an error.** That
+    /// one can swallow it because the wizard's box still takes a typed
+    /// path; this list *is* the landing, and「nobody works there」and
+    /// 「that machine could not answer」are two different next moves
+    /// (`msg::workspaces_predates`).
+    pub async fn workspaces_on(
+        &self,
+        machine: &str,
+    ) -> Result<Vec<(String, String, u32, i64)>, String> {
+        if machine.is_empty() || machine == self.name() {
+            return Ok(self.workspaces_shown());
+        }
+        if let Some(reply) =
+            self.via_serve(ipc::Op::WorkspacesOn { machine: machine.to_owned() }).await
+        {
+            return match reply? {
+                ipc::Reply::Workspaces { workspaces } => Ok(workspaces),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.workspaces_on_with(&ep, machine).await;
+        ep.close().await;
+        out
+    }
+
+    async fn workspaces_on_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<Vec<(String, String, u32, i64)>, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Ok(self.workspaces_shown());
+        }
+        match self.ask(ep, &channel, &Request::Workspaces).await? {
+            Response::Workspaces { workspaces } => Ok(workspaces),
+            // Wordless means the op is unknown over there; words mean
+            // that machine answered and its answer is the one to show
+            // (the `load-*` pair's measured lesson, zh.toml).
+            Response::Refused { why } if why.trim().is_empty() => {
+                Err(msg::WORKSPACES_PREDATES.into())
+            }
+            Response::Refused { why } => Err(msg::workspaces_refused(why)),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// The **first slice** of a file on any machine, for looking at it
+    /// rather than taking it: `(total, at_ms, bytes)`.
+    ///
+    /// **One slice, never a loop.** `pull_path` loops because it is
+    /// spending this machine's disk on a whole file; this is spending a
+    /// screen on as much as fits, and one [`proto::SLICE`] is 256 KB.
+    /// Measured on this repo's neighbours (1525 tracked files): 98% are
+    /// under that, and of the 31 that are not, 27 are png/pdf/icns/mp4
+    /// — files no code view was ever going to paint. Four text files in
+    /// 1525 are cut, and `total` is what says so.
+    ///
+    /// So the caller never has to guess: `bytes.len() < total` means
+    /// there is more, and what it does about that is a question about a
+    /// screen, which is why the limit is not decided here.
+    ///
+    /// A satellite's file does not come through this road — the sponsor
+    /// serves those off a staging copy with `SatFetchPath`, which is
+    /// the account already in docs/handoff/001.md.
+    pub async fn read_head(&self, machine: &str, path: &str) -> Result<(u64, u64, Vec<u8>), String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::files::read_slice(path, 0);
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::ReadHead { machine: machine.to_owned(), path: path.to_owned() })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Head { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.read_head_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn read_head_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(u64, u64, Vec<u8>), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::files::read_slice(path, 0);
+        }
+        match self
+            .ask(ep, &channel, &Request::FetchPath { path: path.to_owned(), offset: 0 })
+            .await?
+        {
+            Response::PathSlice { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+            // A refusal here always carries words: `FetchPath` predates
+            // every khor that can be paired with, so there is no
+            // version arm to write — what comes back is that machine's
+            // own sentence about that path.
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// What differs from HEAD in one checkout on any machine
+    /// (`crate::git::status`). `root` is that machine's spelling of the
+    /// directory, which is what the workspace list handed over.
+    ///
+    /// **A refusal is an error here, never an empty list.** An empty
+    /// `rows` means「nothing differs from HEAD」— a clean tree, safe to
+    /// edit — and that is exactly the wrong thing to paint when khor
+    /// could not read the repository at all.
+    pub async fn git_status_on(
+        &self,
+        machine: &str,
+        root: &str,
+    ) -> Result<crate::git::Status, String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::git::status(std::path::Path::new(root));
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::GitStatusOn {
+                machine: machine.to_owned(),
+                root: root.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::GitStatus { branch, rows, more } => {
+                    Ok(crate::git::Status { branch, rows, more })
+                }
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.git_status_with(&ep, machine, root).await;
+        ep.close().await;
+        out
+    }
+
+    async fn git_status_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        root: &str,
+    ) -> Result<crate::git::Status, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::git::status(std::path::Path::new(root));
+        }
+        let req = Request::GitStatus { root: root.to_owned() };
+        match self.ask(ep, &channel, &req).await? {
+            Response::GitStatus { branch, rows, more } => {
+                Ok(crate::git::Status { branch, rows, more })
+            }
+            // Wordless means the op is unknown over there; words mean
+            // that machine answered and its answer is the one to show
+            // (the `load-*` pair's measured lesson, zh.toml).
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
+            Response::Refused { why } => Err(msg::git_refused(why)),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Where one file differs from HEAD on any machine
+    /// (`crate::git::diff`). Refuses out loud for [`Node::git_status_on`]'s
+    /// reason: no hunks means the file matches HEAD.
+    pub async fn git_diff_on(
+        &self,
+        machine: &str,
+        path: &str,
+    ) -> Result<crate::git::Diff, String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::git::diff(std::path::Path::new(path));
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::GitDiffOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.git_diff_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn git_diff_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<crate::git::Diff, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::git::diff(std::path::Path::new(path));
+        }
+        let req = Request::GitDiff { path: path.to_owned() };
+        match self.ask(ep, &channel, &req).await? {
+            Response::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
+            Response::Refused { why } => Err(msg::git_refused(why)),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Saves a whole file onto any machine (`crate::files::write_whole`).
+    ///
+    /// **A refusal is an error and is never softened.** Every other
+    /// asker in this file has to decide whether an empty answer is a
+    /// fact or a failure; this one does not get to — a save that
+    /// answered「fine」while writing nothing is the single worst thing
+    /// this module could do, so every path out of here either wrote the
+    /// file or says why it did not.
+    pub async fn write_path(
+        &self,
+        machine: &str,
+        path: &str,
+        was: &str,
+        bytes: &[u8],
+    ) -> Result<(u64, String), String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::files::write_whole(path, bytes, was);
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::WritePathOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+                was: was.to_owned(),
+                bytes: serde_bytes::ByteBuf::from(bytes.to_vec()),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Wrote { at_ms, digest } => Ok((at_ms, digest)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.write_path_with(&ep, machine, path, was, bytes).await;
+        ep.close().await;
+        out
+    }
+
+    async fn write_path_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+        was: &str,
+        bytes: &[u8],
+    ) -> Result<(u64, String), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::files::write_whole(path, bytes, was);
+        }
+        let req = Request::WritePath {
+            path: path.to_owned(),
+            was: was.to_owned(),
+            bytes: serde_bytes::ByteBuf::from(bytes.to_vec()),
+        };
+        match self.ask(ep, &channel, &req).await? {
+            Response::Wrote { at_ms, digest } => Ok((at_ms, digest)),
+            // Wordless means the op is unknown over there. **Said as a
+            // version fact and never as「saved」**: the file view's next
+            // move depends on it, and an old khor that cannot write is
+            // not the same as a file it refused.
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::WRITE_PREDATES.into()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Whether a machine has VS Code, and which version
+    /// (`crate::code::version`; empty means none).
+    ///
+    /// **The one asker in this file whose refusal is swallowed by its
+    /// consumer**, and the reason is written at
+    /// [`crate::proto::Request::CodeHere`]: a machine that cannot
+    /// answer and a machine with no editor are two facts with one next
+    /// move, which is to draw no button. The error still comes back
+    /// here — swallowing it is the face's decision, made where the
+    /// button would have been.
+    pub async fn code_here(&self, machine: &str) -> Result<String, String> {
+        if machine.is_empty() || machine == self.name() {
+            return Ok(crate::code::version());
+        }
+        if let Some(reply) =
+            self.via_serve(ipc::Op::CodeHereOn { machine: machine.to_owned() }).await
+        {
+            return match reply? {
+                ipc::Reply::CodeHere { version } => Ok(version),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.code_here_with(&ep, machine).await;
+        ep.close().await;
+        out
+    }
+
+    async fn code_here_with(&self, ep: &iroh::Endpoint, machine: &str) -> Result<String, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Ok(crate::code::version());
+        }
+        match self.ask(ep, &channel, &Request::CodeHere).await? {
+            Response::CodeHere { version } => Ok(version),
+            // **No version arm.** An older khor refuses wordlessly and
+            // an editor-less machine answers an empty string, and the
+            // consumer does the same thing with both — so inventing a
+            // sentence here would be inventing a difference.
+            Response::Refused { .. } => Ok(String::new()),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Opens this machine's or another's VS Code web face and hands
+    /// back an address **on this machine** plus the token it wants.
+    ///
+    /// **The pipe is this side's, not a field in the answer.** The far
+    /// machine can only say which of its own loopback ports the editor
+    /// is on; a browser here cannot point at that, so this stands a
+    /// local listener in front of a tunnel the same way
+    /// [`Node::reach`] does for a terminal (docs/NET.md 出口是一层 —
+    /// one tunnel, many consumers).
+    ///
+    /// **Needs a resident serve, even for this machine's own editor**,
+    /// and that is the difference from every other verb here. The
+    /// server is a child process that has to outlive the call: a
+    /// one-shot `khor code` that started it would hand back a link and
+    /// then exit, and on the next invocation nothing would remember the
+    /// server — measured on 2026-09-12, two orphaned server trees and a
+    /// third started for the same folder.
+    pub async fn code_open(&self, machine: &str) -> Result<(String, String), String> {
+        match self
+            .via_serve(ipc::Op::CodeOpenOn {
+                machine: machine.to_owned(),
+                root: String::new(),
+            })
+            .await
+        {
+            Some(reply) => match reply? {
+                ipc::Reply::CodeAt { addr, token } => Ok((addr, token)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Err(msg::REACH_NEEDS_SERVE.into()),
+        }
+    }
+
+    async fn code_open_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<(std::net::SocketAddr, String), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            // This machine's own editor needs no pipe at all — the
+            // browser and the server are already on one loopback.
+            let (port, token) = crate::code::serve()?;
+            return Ok((([127, 0, 0, 1], port).into(), token));
+        }
+        let (port, token) = match self
+            .ask(ep, &channel, &Request::CodeServe { root: String::new() })
+            .await?
+        {
+            Response::CodeServing { port, token } => (port, token),
+            Response::Refused { why } if why.trim().is_empty() => {
+                return Err(msg::CODE_PREDATES.into());
+            }
+            Response::Refused { why } => return Err(why),
+            other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        };
+        let key = machine.to_owned();
+        {
+            let mut held = self.codes.lock().await;
+            match held.get(&key) {
+                // **The far port is checked, like `reaches` checks
+                // its own.** `code::serve` above either handed back the
+                // server that was already running or started a new one
+                // on a new port; a pipe aimed at the old number would
+                // pipe into nothing and read as a dead editor.
+                Some((addr, far, handle)) if !handle.is_finished() && *far == port => {
+                    return Ok((*addr, token));
+                }
+                Some((_, _, handle)) => {
+                    handle.abort();
+                    held.remove(&key);
+                }
+                None => {}
+            }
+        }
+        let borrow = self.tunnel_on(ep, machine).await?;
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| e.to_string())?;
+        let addr = listener.local_addr().map_err(|e| e.to_string())?;
+        let target = format!("127.0.0.1:{port}");
+        let handle = tokio::spawn(async move {
+            let _ = crate::tunnel::serve_fixed(std::sync::Arc::new(borrow), listener, target).await;
+        });
+        self.codes.lock().await.insert(key, (addr, port, handle));
+        Ok((addr, token))
+    }
+
+    /// Stops a machine's web face and drops this side's pipe. Answers
+    /// the same whether either existed.
+    pub async fn code_stop(&self, machine: &str) -> Result<(), String> {
+        match self
+            .via_serve(ipc::Op::CodeStopOn {
+                machine: machine.to_owned(),
+                root: String::new(),
+            })
+            .await
+        {
+            Some(reply) => match reply? {
+                ipc::Reply::Accepted { .. } => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Err(msg::REACH_NEEDS_SERVE.into()),
+        }
+    }
+
+    async fn code_stop_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<(), String> {
+        // This side first, and unconditionally: the pipe is this
+        // machine's and giving it back must not depend on the far one
+        // being reachable.
+        if let Some((_, _, handle)) = self.codes.lock().await.remove(machine) {
+            handle.abort();
+        }
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::code::stop();
+        }
+        match self
+            .ask(ep, &channel, &Request::CodeStop { root: String::new() })
+            .await?
+        {
+            Response::Acted { .. } => Ok(()),
+            // Nothing to stop over there reads as done, for the same
+            // reason `DropBorrow` does: the caller wanted it gone.
+            Response::Refused { .. } => Ok(()),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// One slice of a file at `offset`, off any machine. The general
+    /// case [`Node::read_head`] is the zero-offset instance of.
+    pub async fn read_at(
+        &self,
+        machine: &str,
+        path: &str,
+        offset: u64,
+    ) -> Result<(u64, u64, Vec<u8>), String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::files::read_slice(path, offset);
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::ReadAt {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+                offset,
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Head { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.read_at_with(&ep, machine, path, offset).await;
+        ep.close().await;
+        out
+    }
+
+    async fn read_at_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+        offset: u64,
+    ) -> Result<(u64, u64, Vec<u8>), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::files::read_slice(path, offset);
+        }
+        match self
+            .ask(ep, &channel, &Request::FetchPath { path: path.to_owned(), offset })
+            .await?
+        {
+            Response::PathSlice { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// A whole file, up to `cap` bytes, for looking at rather than
+    /// taking (`Node::pull_path` is the one that spends a disk).
+    ///
+    /// Answers `(total, at_ms, bytes, cut)` — `cut` meaning the file is
+    /// bigger than `cap` and what came back is its beginning.
+    ///
+    /// **Why a loop here and not a bigger frame.** One slice is
+    /// [`crate::proto::SLICE`] and one frame is `MAX_FRAME`; a 4 MB
+    /// image in one answer would be eight frames' worth. So the asker
+    /// loops, and every reply on that road stays the size every shipped
+    /// khor already decodes.
+    ///
+    /// **The change contract is honoured here, and `pull_path` does not
+    /// honour it.** `PathSlice` carries `total` and `at_ms` on every
+    /// slice precisely so a reader can notice the file moving under it
+    /// — no digest guards this road. A file rewritten between slice 3
+    /// and slice 4 would otherwise be assembled out of two different
+    /// files and painted as one, which for an image is a picture that
+    /// never existed. That `pull_path` skips this check is an older
+    /// gap, on the ledger rather than copied.
+    pub async fn read_all(
+        &self,
+        machine: &str,
+        path: &str,
+        cap: u64,
+    ) -> Result<(u64, u64, Vec<u8>, bool), String> {
+        let (total, at_ms, first) = self.read_at(machine, path, 0).await?;
+        let want = total.min(cap);
+        let mut bytes = first;
+        if bytes.len() as u64 >= want {
+            bytes.truncate(want as usize);
+            return Ok((total, at_ms, bytes, total > cap));
+        }
+        while (bytes.len() as u64) < want {
+            let (now_total, now_ms, more) =
+                self.read_at(machine, path, bytes.len() as u64).await?;
+            if now_total != total || now_ms != at_ms {
+                return Err(msg::file_moved_while_reading(path));
+            }
+            if more.is_empty() {
+                // The far side answered nothing while claiming there is
+                // more. Refused rather than looped: a loop that cannot
+                // make progress is the one failure a reader must not
+                // turn into a hang.
+                return Err(msg::file_moved_while_reading(path));
+            }
+            bytes.extend_from_slice(&more);
+        }
+        bytes.truncate(want as usize);
+        Ok((total, at_ms, bytes, total > cap))
     }
 
     async fn places_on_with(

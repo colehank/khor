@@ -112,6 +112,96 @@ pub fn read_slice(path: &str, offset: u64) -> Result<(u64, u64, Vec<u8>), String
     Ok((total, at_ms, buf))
 }
 
+/// What a file's bytes hash to, hex. **blake3 and not the mtime**, for
+/// [`write_whole`]'s benefit: a clock has a granularity (a second, on
+/// some filesystems still in use) and two edits inside one tick are
+/// invisible to it, while a digest is a fact about the bytes and has no
+/// tick at all. It is also the answer to a question mtime cannot
+/// answer — 「is this still what I read」 — where mtime only ever
+/// answers 「has somebody touched it」, which is a different and
+/// weaker claim.
+///
+/// Already in this tree (`blake3`, workspace dependency), so naming it
+/// here costs no package.
+pub fn digest(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
+}
+
+/// Writes a whole file by absolute path, **only if it still holds what
+/// the writer last read**.
+///
+/// `was` is [`digest`] of the bytes the writer started from; `""` means
+/// 「there should be nothing here」, which is how a new file is made.
+/// Anything else on disk is a refusal, not an overwrite:
+///
+/// | on disk | `was` | what happens |
+/// |---|---|---|
+/// | nothing | `""` | created |
+/// | nothing | a digest | refused — it was deleted under the writer |
+/// | matches `was` | that digest | replaced |
+/// | anything else | anything | refused — it changed under the writer |
+///
+/// **The landing is the same dot-name-then-rename `landing` uses**, and
+/// for the same reason: a crash leaves a dotfile beside the real one,
+/// never a half-written file wearing the real name. The temporary lives
+/// in the destination's own directory because `rename` is only atomic
+/// inside one filesystem, and `/tmp` is very often another one.
+///
+/// Answers the new [`digest`] and the new mtime, so a writer can keep
+/// editing without reading the file back.
+pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String), String> {
+    use std::io::Write;
+    let p = std::path::Path::new(path);
+    if !p.is_absolute() {
+        return Err(msg::path_not_absolute(path));
+    }
+    // One frame is the ceiling and the caller is expected to know it —
+    // this is the wire's limit worn where the bytes land, so a path
+    // that reached here another way cannot get past it either.
+    if bytes.len() as u64 > crate::proto::SLICE {
+        return Err(msg::too_big_to_write(bytes.len() as u64, crate::proto::SLICE));
+    }
+    match std::fs::read(p) {
+        Ok(now) => {
+            if was.is_empty() || digest(&now) != was {
+                return Err(msg::file_changed_under_you(path));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if !was.is_empty() {
+                return Err(msg::file_changed_under_you(path));
+            }
+        }
+        Err(e) => return Err(msg::cant_list_dir(&path, e)),
+    }
+    let dir = p.parent().ok_or_else(|| msg::not_a_file_path(path))?;
+    let name = p.file_name().and_then(|n| n.to_str()).ok_or_else(|| msg::not_a_file_path(path))?;
+    let part = dir.join(format!(".khor-save-{name}"));
+    // Scoped so the handle is closed before the rename: on Windows a
+    // rename over an open file fails, and this module is compiled for
+    // five platforms.
+    {
+        let mut f = std::fs::File::create(&part).map_err(|e| msg::cant_save_file(part.display(), e))?;
+        f.write_all(bytes).map_err(|e| msg::cant_save_file(part.display(), e))?;
+        // **Before the rename, not after.** The rename is what makes the
+        // new name point at these bytes; if the bytes are not on the
+        // disk yet, a power cut between the two leaves the real name
+        // pointing at nothing.
+        f.sync_all().map_err(|e| msg::cant_save_file(part.display(), e))?;
+    }
+    std::fs::rename(&part, p).map_err(|e| {
+        let _ = std::fs::remove_file(&part);
+        msg::cant_save_file(p.display(), e)
+    })?;
+    let at_ms = std::fs::metadata(p)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    Ok((at_ms, digest(bytes)))
+}
+
 /// Where a pulled file lands and how it gets there: written beside its
 /// destination under a dot-name, renamed only when whole — a crash
 /// leaves a dotfile, never a truncated file wearing a real name. An
@@ -187,5 +277,97 @@ mod tests {
         assert_eq!(rows.len(), MOST_ENTRIES);
         assert!(truncated);
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("khor-write-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn an_empty_expectation_makes_a_file_and_refuses_to_clobber_one() {
+        let dir = tmp("new");
+        let path = dir.join("fresh.txt");
+        let p = path.to_str().unwrap();
+        let (_, d) = write_whole(p, b"one\n", "").expect("a new file");
+        assert_eq!(std::fs::read(&path).unwrap(), b"one\n");
+        assert_eq!(d, digest(b"one\n"));
+        // The same call again is now a writer who thinks the path is
+        // free while somebody has put a file there.
+        let err = write_whole(p, b"two\n", "").expect_err("not free any more");
+        assert!(err.contains("fresh.txt"), "the refusal names the path: {err}");
+        assert_eq!(std::fs::read(&path).unwrap(), b"one\n", "and nothing was written");
+    }
+
+    #[test]
+    fn writing_back_what_you_read_replaces_it() {
+        let dir = tmp("round");
+        let path = dir.join("a.rs");
+        std::fs::write(&path, b"fn main() {}\n").unwrap();
+        let was = digest(b"fn main() {}\n");
+        let (_, now) = write_whole(path.to_str().unwrap(), b"fn main() { go(); }\n", &was).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"fn main() { go(); }\n");
+        assert_eq!(now, digest(b"fn main() { go(); }\n"), "the answer is the new digest");
+    }
+
+    #[test]
+    fn a_file_that_changed_under_the_writer_is_refused_whole() {
+        let dir = tmp("race");
+        let path = dir.join("a.rs");
+        std::fs::write(&path, b"first\n").unwrap();
+        let was = digest(b"first\n");
+        // Somebody else saves between the read and the write.
+        std::fs::write(&path, b"theirs\n").unwrap();
+        let err = write_whole(path.to_str().unwrap(), b"mine\n", &was).expect_err("refused");
+        assert!(err.contains("a.rs"), "{err}");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"theirs\n",
+            "the other person's work is still there — a refusal that wrote anyway is the bug",
+        );
+    }
+
+    #[test]
+    fn a_file_deleted_under_the_writer_is_not_quietly_recreated() {
+        // The other direction of the same fact, and it is deliberately
+        // not「create it then」: the writer was editing something that
+        // existed, and somebody removing it is a thing to be told about
+        // rather than to undo by accident.
+        let dir = tmp("gone");
+        let path = dir.join("a.rs");
+        let err = write_whole(path.to_str().unwrap(), b"mine\n", &digest(b"first\n"))
+            .expect_err("refused");
+        assert!(err.contains("a.rs"), "{err}");
+        assert!(!path.exists(), "and it stayed gone");
+    }
+
+    #[test]
+    fn nothing_is_left_beside_the_file_when_it_worked() {
+        // The dot-name is a crash artefact, not a resting state.
+        let dir = tmp("clean");
+        let path = dir.join("a.rs");
+        write_whole(path.to_str().unwrap(), b"x\n", "").unwrap();
+        let left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, vec!["a.rs".to_owned()], "one file, no dotfile");
+    }
+
+    #[test]
+    fn more_than_one_frame_is_refused_before_anything_is_opened() {
+        let dir = tmp("big");
+        let path = dir.join("a.bin");
+        let big = vec![b'x'; crate::proto::SLICE as usize + 1];
+        let err = write_whole(path.to_str().unwrap(), &big, "").expect_err("over the ceiling");
+        assert!(err.contains(&crate::proto::SLICE.to_string()), "{err}");
+        assert!(!path.exists(), "and no file was started");
     }
 }

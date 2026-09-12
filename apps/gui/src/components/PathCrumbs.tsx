@@ -1,24 +1,34 @@
-// Browsing a disk, as an instance of the browsing shell
-// (`browse/kind.ts`, docs/DESIGN.md 浏览型外壳).
+// The breadcrumb: a path at rest, every step a place to go.
 //
-// **Everything here is the half that is genuinely about directories.**
-// Tabs, the strip, the switcher, the store, the machine chip, the fresh
-// tab and how a refusal is shown are all the shell's and appear nowhere
-// in this file. What is left is exactly five things: the ledger word,
-// what completes a half-typed path, what one path is called, what a
-// path looks like at rest, and what a directory listing is.
+// **Moved out of `FilesKind.tsx` on 2026-09-11** (工作区批2), which was
+// the browsing shell's disk instance and left with the landing it
+// served (工作区替代文件). Every measurement in the comments below was
+// taken while it lived there, on the address bar of a browsing tab —
+// they are about a strip of steps in a narrow row, which is what it
+// still is at the top of a workspace.
 //
-// The browser landing's sibling of this file is what the second batch
-// writes; if it needs the shell changed, that is the interface growing,
-// not this one having guessed wrong.
+// **Why a breadcrumb and not an address.** A path is a chain of real
+// containers a person can stand in, so every step is somewhere to
+// press; a URL is not that shape. That was the whole reason the
+// browsing shell made the resting face a parameter, and it is why this
+// did not survive as part of that shell.
 import { useEffect, useRef } from "react";
 
-import { fetchDirPins } from "@/api";
-import type { BodyProps, BrowseKind, RestProps, SecondSegment } from "@/browse/kind";
 import { gui } from "@/gen/catalog";
-import { usePathCandidates } from "@/hooks/use-path-candidates";
 import { cn } from "@/lib/utils";
-import { FilesPane } from "@/views/FilesPane";
+
+/** What a breadcrumb needs, which is less than a browsing tab had. */
+export type CrumbProps = {
+  /** Where it is, absolute. */
+  at: string;
+  /** Go to another step. */
+  onGo: (path: string) => void;
+  /** Press the step you are standing on. The one press on this strip
+      that is not a step — it used to open the address editor, and what
+      it does now belongs to whoever draws the bar. */
+  onEdit: () => void;
+};
+
 
 /** `/a/b/c` → the root and each step, each carrying the path pressing
     it goes to. */
@@ -37,11 +47,11 @@ function crumbs(at: string): { label: string; to: string }[] {
  *
  * **A breadcrumb is a directory's answer, not the shell's.** A path is
  * a chain of real containers a person can stand in, so every step is
- * somewhere to press; a URL is not that shape, and the browser landing
- * will draw its address some other way. That is the whole reason the
- * resting face is a parameter.
+ * somewhere to press; a URL is not that shape. That was the whole reason
+ * the browsing shell made its resting face a parameter — and why this
+ * did not follow the shell when the disk kind left it.
  */
-function PathCrumbs({ at, onGo, onEdit }: RestProps) {
+export function PathCrumbs({ at, onGo, onEdit }: CrumbProps) {
   // The strip's own scroller, held at its right end: the step you are
   // standing on is the one worth seeing, and a scroller left at 0 shows
   // the part every path on that machine has in common.
@@ -189,62 +199,3 @@ function PathCrumbs({ at, onGo, onEdit }: RestProps) {
     </div>
   );
 }
-
-function Listing({ machine, place, narrow, onPlace, onLanded }: BodyProps) {
-  return (
-    <FilesPane
-      machine={machine.name}
-      device={machine.id}
-      path={place}
-      narrow={narrow}
-      onPath={onPlace}
-      onLanded={onLanded}
-    />
-  );
-}
-
-/**
- * A disk, for the browsing shell.
- *
- * **A module constant, not something built per render.** The shell calls
- * `useSecond` as a hook, so the descriptor has to be the same object for
- * the life of the landing (`BrowseKind.useSecond` says what breaks
- * otherwise).
- */
-export const FILES: BrowseKind = {
-  // The word `khor_sync::recents` refuses by name, and the word the tab
-  // store is keyed by. One spelling, both jobs.
-  kind: "dir",
-  words: {
-    address: gui.address_dir,
-    segment: gui.files_tab,
-    pinned: gui.pinned_dirs,
-    // Shared with the browser landing: 「最近去过」 is about the going,
-    // not about what was gone to (`recent-places` in the catalog).
-    recent: gui.recent_places,
-    empty: gui.no_pinned_dirs,
-    go: gui.go_pin_a_dir,
-  },
-  pins: async () => {
-    const rows = await fetchDirPins();
-    return rows.map((r) => ({ device: r.device, name: r.name, place: r.path, at_ms: null }));
-  },
-  // `remembered` is unused here: a directory's next step is a fact only
-  // that disk knows, so this asks the disk. The pages kind is the one
-  // that completes from memory (`BrowseKind.useSecond`).
-  useSecond: (machine, typed): SecondSegment => {
-    const { dir, entries, failed } = usePathCandidates(machine?.name ?? null, typed);
-    return {
-      // Only directories complete: a file is where a path stops, so
-      // offering one as a step to continue from would be offering a
-      // step nobody can take.
-      candidates: entries
-        .filter((e) => e.dir)
-        .map((e) => ({ key: `${dir}${e.name}/`, label: `${e.name}/` })),
-      failed,
-    };
-  },
-  leafOf: (place) => place.slice(place.lastIndexOf("/") + 1) || place,
-  Rest: PathCrumbs,
-  Body: Listing,
-};

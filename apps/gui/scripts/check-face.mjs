@@ -131,6 +131,17 @@ try {
     {
       id: "e".repeat(64),
       name: "gate",
+      // ⚠️ **`shown` was missing here until 2026-09-12** and five
+      // assertions in the 額度 section had been red for it. It is the
+      // name a person reads; `name` is the channel the network files
+      // this machine under, and every screen that shows a machine to
+      // somebody reads `shown` (`DeviceRow`'s own head says the two
+      // must not be confused). With it absent the 額度 landing could
+      // not say which machine its own subscription belongs to, so
+      // grouping by 来源 collapsed to one nameless group — and the
+      // failure read as「the default grouping is wrong」, which is a
+      // sentence about the product for a fault in this file.
+      shown: "gate",
       me: true,
       face: null,
       pinned: false,
@@ -159,6 +170,7 @@ try {
     {
       id: "f".repeat(64),
       name: "peer",
+      shown: "peer",
       me: false,
       face: null,
       pinned: false,
@@ -225,6 +237,7 @@ try {
     {
       id: "d".repeat(64),
       name: "elder",
+      shown: "elder",
       me: false,
       face: null,
       pinned: false,
@@ -980,6 +993,108 @@ try {
       body: JSON.stringify([{ device: pin.device, name: pin.name, url: "https://example.invalid/" }]),
     }),
   );
+  // One workspace, so the landing has a row to press. **Asked per
+  // machine** (`views/WorkspacesList`), and this fixture answers the
+  // same list whichever machine is named — the walk below only needs a
+  // door, and which machine holds it is measured nowhere here.
+  await page.route("**/workspaces", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify([
+        { path: pin.path, shown: "~/work", sessions: 3, last_ms: Date.now() - 60_000 },
+      ]),
+    }),
+  );
+  // **The digest is what makes the fixture editable** (工作区批4): the
+  // view offers a save exactly when it was handed one, so a fixture
+  // without it would quietly turn the editor off and 4c below would
+  // report a dead probe rather than a drifting caret.
+  await page.route("**/read_text", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        total: 42,
+        at_ms: Date.now(),
+        text: "# notes\n\nthe fixture's file\n",
+        cut: false,
+        binary: false,
+        digest: "0".repeat(64),
+      }),
+    }),
+  );
+  // One marked file and one marked directory, so the tree wears both
+  // kinds of mark (工作区批3): `src` folds up a `·` from what is under
+  // it, `notes.md` wears its own letter.
+  await page.route("**/git_status", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        branch: "main",
+        rows: [
+          { path: "notes.md", mark: "M" },
+          { path: "src/one.rs", mark: "U" },
+        ],
+        more: false,
+      }),
+    }),
+  );
+  // The three shapes a gutter draws, one of each: a change that has
+  // both halves, an insertion with nothing removed, and a deletion with
+  // no current line to stand on. A fixture with only the first would
+  // leave the other two's arithmetic to be found on somebody's screen.
+  await page.route("**/git_diff", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        hunks: [
+          { at: 1, lines: 1, was: ["# old notes"] },
+          { at: 3, lines: 2, was: [] },
+          { at: 4, lines: 0, was: ["a line that went away"] },
+        ],
+        more: false,
+      }),
+    }),
+  );
+  // A machine with an editor, so the workspace head draws the switch
+  // (工作区批5). **The empty answer is the other half of that contract**
+  // and it is asserted in 4d below by turning this fixture off, so both
+  // branches are measured rather than only the interesting one.
+  // A document and a picture, answered by the one call the view makes
+  // (`khor_gui_core::files::preview`). The png is a real one — the
+  // smallest valid image there is — because a made-up base64 would draw
+  // a broken-image glyph and section 4e below would pass on it.
+  const ONE_PX_PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  await page.route("**/preview", (r) => {
+    const png = (r.request().postData() ?? "").includes(".png");
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        png
+          ? {
+              kind: "image",
+              total: 9000,
+              data: ONE_PX_PNG,
+              media: "image/png",
+              html: "",
+              cut: false,
+              empty: false,
+            }
+          : {
+              kind: "doc",
+              total: 1234,
+              data: "",
+              media: "",
+              html: "<h1>notes</h1><p>the fixture file</p><table><tr><th>a</th></tr></table>",
+              cut: false,
+              empty: false,
+            },
+      ),
+    });
+  });
+  await page.route("**/code_here", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("1.137.0") }),
+  );
   await page.route("**/recents", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify([]) }),
   );
@@ -996,6 +1111,12 @@ try {
         entries: [
           { name: "src", dir: true, size: 0, at_ms: Date.now() },
           { name: "notes.md", dir: false, size: 1234, at_ms: Date.now() },
+          // One of each road (工作区批6): a document and a picture.
+          // **`notes.md` became a document**, which is why the code
+          // view's sections now open `one.rs` — a pane that paints
+          // markdown as prose has no caret and no gutter to measure.
+          { name: "one.rs", dir: false, size: 400, at_ms: Date.now() },
+          { name: "shot.png", dir: false, size: 9000, at_ms: Date.now() },
         ],
         truncated: false,
       }),
@@ -1159,7 +1280,7 @@ try {
   // control was made to wear the width floor only under `(pointer:
   // coarse)` this section went red against a screen that has no finger
   // anywhere near it — a red that was true of nothing (the breadcrumb,
-  // `FilesKind.tsx`; 「目录显示很丑,有很多奇怪的空格」 was the same
+  // `components/PathCrumbs.tsx`; 「目录显示很丑,有很多奇怪的空格」 was the same
   // width, seen from the other side). A gate that demands a finger's
   // floor on a mouse's screen does not merely miss things: it argues
   // for the bug.
@@ -1499,15 +1620,33 @@ try {
       anchor: "[data-vitals]",
       go: async () => (await open("devices")) && pressNth("[data-list] [data-row-open]", 1),
     },
-    { name: "files", anchor: '[data-browse-landing="dir"]', go: () => press(rail("files")) },
+    // **The walk changed on 2026-09-11** (工作区替代文件): the disk is
+    // not a browsing landing any more, so the door is the workspace
+    // list and the house is one workspace open. The controls being
+    // measured — the breadcrumb, the directory rows — are the same
+    // ones, under a different owner.
+    { name: "workspaces", anchor: "[data-ws-row]", go: () => press(rail("workspaces")) },
     {
-      // …and a directory actually open, which is where that landing's
-      // controls are: the breadcrumb, the rows. The new-tab page is one
-      // button and a list of places; stopping there would have been a
-      // walk that visits the door and reports on the house.
-      name: "files · a directory open",
+      // …and a workspace actually open, which is where those controls
+      // are. Stopping at the list would be a walk that visits the door
+      // and reports on the house.
+      name: "workspaces · one open",
       anchor: "[data-crumb]",
-      go: async () => (await press(rail("files"))) && press("[data-place]"),
+      go: async () => (await press(rail("workspaces"))) && press("[data-ws-row]"),
+    },
+    {
+      // …and a file open inside it, which is where the change gutter is
+      // (工作区批3). Its own stop rather than more work inside the one
+      // above: the gutter is a column of targets and the reach and
+      // says-so sections judge what is on screen at a stop, so a gutter
+      // that only existed halfway through another stop's `go` would be
+      // measured by nothing.
+      name: "workspaces · one file",
+      anchor: "[data-gutter]",
+      go: async () =>
+        (await press(rail("workspaces"))) &&
+        (await press("[data-ws-row]")) &&
+        press('[data-file="one.rs"] button'),
     },
     {
       // Folded behind「…」on the narrow bar (App.tsx `NARROW_SHOWN`),
@@ -1696,6 +1835,46 @@ try {
         "row under it in the table — the canonical list, reachable by " +
         "keyboard, and where that reader was going anyway — so nothing is " +
         "available only through a dot. **It is not 「no problem」.**",
+    ],
+    "data-hunk": [
+      "src/views/FileView.tsx",
+      "one change bar in a workspace file's gutter. **The size is the " +
+        "reading**: a bar stands beside the lines it is about, so its " +
+        "height *is* how many lines changed — a one-line change measures " +
+        "21.6 tall because a line of code is 21.6 tall, and grown to 44 it " +
+        "would be a bar claiming two lines changed. That is WCAG 2.5.5's " +
+        "Essential carve-out in its literal form, and the width is spent " +
+        "the same way: the column is 11 across because every pixel of it " +
+        "is taken off the code beside it, and a 44-wide gutter would push " +
+        "the file two characters right on a phone to make room for a " +
+        "decoration. A deletion is smaller still (a quarter of a line, " +
+        "measured 5) because it marks a boundary between two lines rather " +
+        "than covering either, and a notch tall enough to press would sit " +
+        "on top of one of them and claim it changed. **What it does not " +
+        "buy:** a finger. On a touch screen these are read, not pressed — " +
+        "and what a bar *does* is unfold what HEAD had there, which is the " +
+        "one thing in this view available nowhere else. So unlike the " +
+        "scatter's points, this is **not** additive: a phone can see that " +
+        "a file differs and cannot see how. **It is not「no problem」** — " +
+        "the answer is a way into the diff that is not the bar (a hunk " +
+        "list, or a press anywhere on the changed lines), which is a " +
+        "bigger idea than a wider gutter.",
+    ],
+    "data-ws-seam": [
+      "src/views/WorkspacePane.tsx",
+      "a workspace's own seam — the one between the file tree and the file, and the one between " +
+        "the file and the sessions. **The same shape as `data-list-seam` below and the argument has " +
+        "to be made again rather than borrowed, because the two spend their width on different " +
+        "things.** That one takes from a list and a detail; these take from a *file* — every pixel " +
+        "the seam grows is a column of code that stops being on screen, on the one face in this app " +
+        "whose whole job is showing code. WCAG 2.5.5's Essential carve-out in the same literal form: " +
+        "the size is determined by the information being presented. **What it does not buy:** a " +
+        "finger on a wide touch screen. It is also the one place where that costs less than it " +
+        "looks — unlike the list seam, **both of these columns can be put away and brought back " +
+        "from the head above them** (`gui.workspace_tree`, `gui.workspace_sessions`), and those two " +
+        "controls do wear the floor. So a touch user loses the *width*, not the column. **It is " +
+        "still not「no problem」**: they cannot choose a width at all, and the answer to that is a " +
+        "width control that is not a two-pixel strip, not a wider strip.",
     ],
     "data-list-seam": [
       "src/App.tsx",
@@ -1936,7 +2115,7 @@ try {
           label: (el.textContent || "").trim(),
           // The last step is not a step: it takes the blank tail so
           // that pressing the empty part of the bar opens the editor
-          // (`FilesKind.tsx` says why it is one target and not two), so
+          // (`components/PathCrumbs.tsx` says why it is one target and not two), so
           // its width is about the bar, not about its name.
           rest: el.hasAttribute("data-address-rest"),
           text: Math.round(text.width * 10) / 10,
@@ -1950,10 +2129,10 @@ try {
       };
     });
   const atCrumbs = async () => {
-    await press(rail("files"));
-    // The walk left a tab open, so the new-tab page and its `[data-place]`
-    // need not be there — pressing it is an attempt, not a requirement.
-    await press("[data-place]");
+    await press(rail("workspaces"));
+    // The walk may have left a workspace open, so the list row need not
+    // be there — pressing it is an attempt, not a requirement.
+    await press("[data-ws-row]");
     return (await page.locator("[data-crumb]").count()) > 0;
   };
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -2016,7 +2195,7 @@ try {
         fail(
           `with a mouse the steps are padded unevenly — slack ${JSON.stringify(slack)}, spread ${spread}px. ` +
             `A step's gap must not depend on the length of its name; that is a touch floor being spent on a ` +
-            `screen with no finger on it (src/views/FilesKind.tsx).`,
+            `screen with no finger on it (src/components/PathCrumbs.tsx).`,
         );
       }
     }
@@ -2119,6 +2298,303 @@ try {
             ` — one listing is one rhythm, whatever the number is (src/views/FilesPane.tsx)`,
         );
       }
+    }
+  }
+
+  // ── 4b) the change gutter can be walked, and the count is the
+  //        gutter's own ─────────────────────────────────────────────
+  //
+  // **What「点开是那一处」needs that pressing a bar cannot give.** A
+  // hunk eight hundred lines down is not reachable by pressing
+  // something nobody can see, so the two steps are the half of the
+  // affordance that works off screen — and the count beside them has to
+  // be a count of *the bars*, not of anything else, or the number and
+  // the drawing are two different claims about one file.
+  //
+  // Measured rather than asserted from the fixture's own array: the
+  // number on screen is compared to the bars on screen, so a fixture
+  // edited later moves both together and this still judges something.
+  await atCrumbs();
+  await press('[data-file="one.rs"] button');
+  const walk = await page.evaluate(async () => {
+    const wait = () => new Promise((r) => setTimeout(r, 120));
+    const bars = () => document.querySelectorAll("[data-hunk]").length;
+    const said = () => {
+      const el = document.querySelector("[data-hunk-count]");
+      return el ? Number(el.dataset.hunkCount) : null;
+    };
+    const at = () => {
+      const el = document.querySelector("[data-hunk-at]");
+      return el ? Number(el.dataset.hunkAt) : null;
+    };
+    const next = document.querySelector('[data-hunk-step="1"]');
+    const prev = document.querySelector('[data-hunk-step="-1"]');
+    if (!next || !prev) return { bars: bars(), said: said(), steps: null };
+    const seen = [at()];
+    for (let i = 0; i < bars() + 1; i++) {
+      next.click();
+      await wait();
+      seen.push(at());
+    }
+    prev.click();
+    await wait();
+    const back = at();
+    // Which hunk the open panel belongs to, read off the panel rather
+    // than off the state: they are two different claims and only one of
+    // them is on screen.
+    const panel = document.querySelector("[data-was]");
+    const bar = document.querySelectorAll("[data-hunk]")[back - 1];
+    return {
+      bars: bars(),
+      said: said(),
+      steps: seen,
+      back,
+      panelAt: panel ? Number(panel.dataset.was) : null,
+      barAt: bar ? Number(bar.dataset.hunk) : null,
+    };
+  });
+  console.log(
+    `hunk walk: ${walk.bars} bars, the bar says ${walk.said}, steps ${JSON.stringify(walk.steps)}, ` +
+      `back to ${walk.back} whose panel is at line ${walk.panelAt} and whose bar is at ${walk.barAt}`,
+  );
+  if (walk.bars === 0) {
+    fail(
+      "probe void: no change bars on the open file — this section walks them and cannot do it " +
+        "with none (deepen the **/git_diff fixture)",
+    );
+  } else if (walk.steps === null) {
+    fail("probe dead: the file view drew change bars but no way to step through them (src/views/FileView.tsx)");
+  } else {
+    if (walk.said !== walk.bars) {
+      fail(`the file says ${walk.said} changes and draws ${walk.bars} bars — one file, one count (src/views/FileView.tsx)`);
+    }
+    // Nothing open, then 1, 2, … and round to 1 again: the wrap is the
+    // half that keeps the control alive on the last hunk.
+    const want = [null, ...Array.from({ length: walk.bars }, (_, i) => i + 1), 1];
+    if (JSON.stringify(walk.steps) !== JSON.stringify(want)) {
+      fail(
+        `stepping through ${walk.bars} changes counted ${JSON.stringify(walk.steps)}, wanted ` +
+          `${JSON.stringify(want)} (src/views/FileView.tsx)`,
+      );
+    }
+    if (walk.panelAt === null || walk.panelAt !== walk.barAt) {
+      fail(
+        `after stepping, the open panel is at line ${walk.panelAt} and the hunk it names is at ` +
+          `${walk.barAt} — 「点开是那一处」 is the whole claim (src/views/FileView.tsx)`,
+      );
+    }
+  }
+
+  // ── 4c) the caret sits on the ink ─────────────────────────────────
+  //
+  // **The editor is a transparent textarea laid over the painted
+  // `<pre>`** (`views/FileView`), and the whole of why that works is
+  // that the browser lays the two out identically — same font, size,
+  // line height, padding, and `white-space: pre` on both. Nothing in
+  // the language enforces that. One `className` edited on one of them
+  // and the caret drifts a character further from its letter on every
+  // column, which nobody notices in a screenshot and everybody notices
+  // while typing.
+  //
+  // So: the two boxes, corner for corner, and the typographic
+  // properties that decide where a glyph lands, read off both.
+  await atCrumbs();
+  await press('[data-file="one.rs"] button');
+  const sheet = await page.evaluate(() => {
+    const ta = document.querySelector("[data-edit]");
+    if (!ta) return null;
+    const pre = ta.parentElement.querySelector("pre");
+    const px = (n) => Math.round(n * 10) / 10;
+    const t = ta.getBoundingClientRect();
+    const p = pre.getBoundingClientRect();
+    const of = (el) => {
+      const s = getComputedStyle(el);
+      return {
+        font: `${s.fontFamily}|${s.fontSize}|${s.lineHeight}|${s.letterSpacing}|${s.tabSize}`,
+        pad: `${s.paddingTop}|${s.paddingRight}|${s.paddingBottom}|${s.paddingLeft}`,
+        ws: s.whiteSpace,
+      };
+    };
+    return {
+      dx: px(t.left - p.left),
+      dy: px(t.top - p.top),
+      dw: px(t.width - p.width),
+      dh: px(t.height - p.height),
+      ta: of(ta),
+      pre: of(pre),
+    };
+  });
+  if (sheet === null) {
+    fail(
+      "probe dead: the open file grew no editor — either the fixture stopped being savable " +
+        "(**/read_text must answer a digest) or the surface is read-only again (src/views/FileView.tsx)",
+    );
+  } else {
+    console.log(
+      `caret on ink: box off by ${sheet.dx}/${sheet.dy} at the corner, ${sheet.dw}/${sheet.dh} in size; ` +
+        `font ${sheet.ta.font === sheet.pre.font ? "same" : "DIFFERENT"}, ` +
+        `padding ${sheet.ta.pad === sheet.pre.pad ? "same" : "DIFFERENT"}`,
+    );
+    for (const [what, a, b] of [
+      ["the type", sheet.ta.font, sheet.pre.font],
+      ["the padding", sheet.ta.pad, sheet.pre.pad],
+      ["white-space", sheet.ta.ws, sheet.pre.ws],
+    ]) {
+      if (a !== b) {
+        fail(
+          `the editor and the painted copy disagree on ${what}: ${a} against ${b} — the caret is ` +
+            "laid out by one and the letters by the other (src/views/FileView.tsx)",
+        );
+      }
+    }
+    // Sub-pixel is text metrics; a drift worth catching is a whole
+    // border or a padding step.
+    for (const [axis, n] of [["x", sheet.dx], ["y", sheet.dy], ["width", sheet.dw], ["height", sheet.dh]]) {
+      if (Math.abs(n) > 0.5) {
+        fail(`the editor's box is ${n} off the painted copy's on ${axis} (src/views/FileView.tsx)`);
+      }
+    }
+  }
+
+  // ── 4d) the editor switch, and the card in front of it ────────────
+  //
+  // **Two things, and the second is why the first is a gate at all.**
+  // The switch appears only where there is an editor to open — a
+  // machine without one, and a machine that could not be asked, both
+  // answer empty and both must get nothing, because a button that
+  // fails is worse than no button. And pressing it does not launch:
+  // the first press on a machine raises a card, because what happens
+  // next is a 640 MB download onto somebody else's disk and their
+  // acceptance of Microsoft's licence (「第一个,第一次是允许的.联网也要
+  // 说一下」— the user, 2026-09-10).
+  await atCrumbs();
+  const withCode = await page.evaluate(() => {
+    const b = document.querySelector("[data-code]");
+    return b ? { on: b.dataset.code, word: b.textContent.trim() } : null;
+  });
+  if (withCode === null) {
+    fail(
+      "a machine that answered `code --version` drew no editor switch — the workspace head is where " +
+        "it belongs (src/views/WorkspacePane.tsx)",
+    );
+  } else {
+    await press("[data-code]");
+    const card = await page.evaluate(() => {
+      const c = document.querySelector("[data-code-consent]");
+      return c
+        ? {
+            lines: c.innerText.trim().split("\n").filter(Boolean).length,
+            go: !!document.querySelector("[data-code-go]"),
+            no: !!document.querySelector("[data-code-no]"),
+          }
+        : null;
+    });
+    console.log(
+      `editor switch: says ${JSON.stringify(withCode.word)} while ${withCode.on}; ` +
+        `pressing it raises ${card ? `a card of ${card.lines} lines with both answers: ${card.go && card.no}` : "nothing"}`,
+    );
+    if (card === null) {
+      fail(
+        "pressing the editor switch started something instead of asking — the first press on a machine " +
+          "downloads 640 MB onto it and accepts a licence on its behalf (src/views/WorkspacePane.tsx)",
+      );
+    } else if (!card.go || !card.no) {
+      fail("the consent card does not offer both answers — a card with one way out is not a question");
+    }
+    if (card !== null) await press("[data-code-no]");
+  }
+  // …and the other branch: a machine with no editor draws no switch.
+  // **Measured rather than reasoned**, because「draws nothing」is what
+  // a broken selector also looks like — which is why the positive half
+  // above runs first and on the same element.
+  await page.unroute("**/code_here");
+  await page.route("**/code_here", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("") }),
+  );
+  await press(rail("sessions"));
+  await atCrumbs();
+  const withoutCode = await page.locator("[data-code]").count();
+  console.log(`editor switch: a machine with no \`code\` draws ${withoutCode}`);
+  if (withoutCode !== 0) {
+    fail(
+      `a machine that answered no editor still drew ${withoutCode} switch(es) — pressing one would ` +
+        "fail, and offering nothing is the whole point (src/views/WorkspacePane.tsx)",
+    );
+  }
+  await page.unroute("**/code_here");
+  await page.route("**/code_here", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("1.137.0") }),
+  );
+
+  // ── 4e) the two screens that are not a code view ──────────────────
+  //
+  // **A picture is drawn, a document is prose, and neither is text in a
+  // `<pre>`.** The failure this catches is the quiet one: a `.png` sent
+  // down the text road comes back as「这不是文本」or as a pane of
+  // mojibake, and both look like a decision rather than a bug. The
+  // tables that decide the road are compared directly by
+  // `apps/gui/core/tests/kind_tables.rs`; this measures that the road
+  // arrives somewhere.
+  await atCrumbs();
+  await press('[data-file="shot.png"] button');
+  const pic = await page.evaluate(async () => {
+    const img = document.querySelector('[data-look="image"]');
+    if (!img) return null;
+    // **Waited for, not assumed.** A `data:` URL still decodes
+    // asynchronously, and `naturalWidth` is 0 both before it has and
+    // forever after a broken one — so a test that read it straight
+    // away would pass on a broken image half the time.
+    if (!img.complete) await img.decode().catch(() => {});
+    return { w: img.naturalWidth, h: img.naturalHeight, src: img.src.slice(0, 24) };
+  });
+  console.log(`picture: ${pic ? `${pic.w}x${pic.h} from ${pic.src}…` : "nothing drawn"}`);
+  if (pic === null) {
+    fail(
+      "a .png opened as something other than a picture — the file view's kind table and the node's " +
+        "have drifted, or the image branch is gone (src/views/FileView.tsx)",
+    );
+  } else if (pic.w === 0 || pic.h === 0) {
+    fail(
+      `the picture drew ${pic.w}x${pic.h} — the bytes reached an <img> and it could not decode them, ` +
+        "which is a broken-image glyph wearing the right attribute",
+    );
+  }
+
+  await atCrumbs();
+  await press('[data-file="notes.md"] button');
+  const doc = await page.evaluate(() => {
+    const el = document.querySelector('[data-look="doc"]');
+    if (!el) return null;
+    const h = el.querySelector("h1");
+    const box = (n) => (n ? getComputedStyle(n) : null);
+    return {
+      headings: el.querySelectorAll("h1,h2,h3").length,
+      tables: el.querySelectorAll("table").length,
+      pre: el.closest("section,div")?.querySelectorAll("pre").length ?? 0,
+      h1Size: h ? parseFloat(box(h).fontSize) : 0,
+      bodySize: parseFloat(box(el).fontSize),
+    };
+  });
+  console.log(
+    `document: ${doc ? `${doc.headings} heading(s), ${doc.tables} table(s), h1 ${doc.h1Size} over body ${doc.bodySize}` : "nothing drawn"}`,
+  );
+  if (doc === null) {
+    fail("a .md opened as something other than a document (src/views/FileView.tsx)");
+  } else {
+    if (doc.headings === 0 || doc.tables === 0) {
+      fail(
+        `the document drew ${doc.headings} headings and ${doc.tables} tables — the node's HTML ` +
+          "arrived and nothing rendered it as structure (src/styles/app.css `.prose-khor`)",
+      );
+    }
+    // **Prose, not code.** The whole point of this road is that a
+    // document is read, and a heading the same size as its body is a
+    // wall of text with markup in it.
+    if (doc.h1Size <= doc.bodySize) {
+      fail(
+        `a heading measured ${doc.h1Size} against body text at ${doc.bodySize} — the document is ` +
+          "rendered but not styled, which reads as markdown that failed to render",
+      );
     }
   }
 

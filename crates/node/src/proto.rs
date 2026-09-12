@@ -250,6 +250,107 @@ pub enum Request {
         #[serde(default)]
         desc: bool,
     },
+    /// The **checkouts** that machine has been worked in
+    /// (`crate::Node::workspaces_shown`) — the workspace landing's list,
+    /// asked of every machine on the mesh.
+    ///
+    /// **A new op rather than a filter on [`Request::Places`]**, which
+    /// is this file's first question: the asker changes words, so the
+    /// longer answer never reaches a peer that cannot read it. The two
+    /// also want different halves of one fold — 常去的地方 takes every
+    /// directory a session ran in, this takes only the projects — and
+    /// one frame carrying both would make each end re-decide a line the
+    /// answering machine had already drawn.
+    ///
+    /// Answered as [`Response::Workspaces`]; a khor that predates it
+    /// answers [`Response::Refused`], which the asker says out loud
+    /// rather than painting as an empty list: this file's rule is to
+    /// ask what the consumer's error branch paints, and an empty
+    /// workspace list reads as a machine nobody has ever worked on.
+    Workspaces,
+    /// What differs from HEAD across one checkout (`crate::git::status`)
+    /// — the marks the file tree wears and the branch its head says.
+    /// `root` is the checkout itself, absolute on the answering machine.
+    ///
+    /// **One question per workspace, not per directory.** The tree
+    /// walks and the answer does not change while it does; asking again
+    /// on every step would make a person's own walking look like a
+    /// repository churning. The cost of the whole answer was measured
+    /// on this repo — 54 ms, 35 rows — and a per-step question would
+    /// not have been cheaper, only more often.
+    ///
+    /// Answered as [`Response::GitStatus`]; a khor that predates it
+    /// answers [`Response::Refused`], which the asker says out loud
+    /// (`msg::GIT_PREDATES`) in the one place that has room for it —
+    /// where the branch would have been. **Never painted as「clean」**:
+    /// a tree with no marks and a tree khor could not read look the
+    /// same, and only one of them is safe to edit.
+    GitStatus { root: String },
+    /// Where one file differs from HEAD (`crate::git::diff`), in the
+    /// coordinates of the file as it is now. `path` is absolute on the
+    /// answering machine; **which checkout it belongs to is worked out
+    /// over there**, by the same walk that decided it was a workspace,
+    /// rather than sent along and trusted.
+    ///
+    /// Asked when a file is opened, because the gutter is part of
+    /// looking at it (「打开是当前状态,git状态显示在左侧」— the user,
+    /// 2026-09-11). Answered as [`Response::GitDiff`]; refused the same
+    /// way and with the same sentence as [`Request::GitStatus`], which
+    /// is one key rather than two because the two ops shipped together
+    /// and no khor has one without the other.
+    GitDiff { path: String },
+    /// Writes a whole file on the answering machine
+    /// (`crate::files::write_whole`) — what saving an edit is.
+    ///
+    /// **`was` is the digest of what the writer started from, and it is
+    /// the whole of the safety here.** A mismatch refuses and writes
+    /// nothing, so two people editing one file end with one of them
+    /// told rather than one of them silently gone. `""` means the
+    /// writer expects no file at that path at all.
+    ///
+    /// **Whole file, never a range.** A range would need the two ends
+    /// to agree on what the file was between them, which is the thing
+    /// this op refuses to assume; and the file view only offers to save
+    /// what fits in one slice, so the whole of it is already in hand.
+    /// [`SLICE`] is the ceiling, worn at both ends.
+    ///
+    /// Answered as [`Response::Wrote`]; a khor that predates it answers
+    /// [`Response::Refused`], which the asker says out loud
+    /// (`msg::WRITE_PREDATES`). **Never swallowed**: a save that
+    /// quietly did nothing is the worst answer this file could give.
+    WritePath { path: String, was: String, bytes: serde_bytes::ByteBuf },
+    /// Whether that machine can run VS Code's web face, and which
+    /// version (`crate::code::version`). **A probe with no side effect**
+    /// — nothing is started, nothing is downloaded — so it is safe to
+    /// ask the moment a workspace opens, which is when the answer
+    /// decides whether a button is drawn at all.
+    ///
+    /// Answered as [`Response::CodeHere`]; a khor that predates it
+    /// answers [`Response::Refused`], which the asker paints as **no
+    /// button**. That is the one place in this file where a refusal may
+    /// be swallowed, and it is because the two readings agree: a
+    /// machine that cannot say and a machine that has no editor are
+    /// both machines khor must not offer to open one on.
+    CodeHere,
+    /// Starts VS Code's web face on `root` over there, or hands back the
+    /// one already running, as `(port, token)`
+    /// (`crate::code::serve`).
+    ///
+    /// **The consent happened before this frame was built.** The first
+    /// run fetches ~640 MB from Microsoft and accepts their server
+    /// licence, which is a thing a person says yes to — this op is what
+    /// carries out the yes, and it has no way to ask.
+    ///
+    /// `port` is a loopback port **on the answering machine**; getting
+    /// bytes to it is [`Request::Reach`]'s job done over again for a
+    /// thing that is not a session, which is why the asker builds its
+    /// own pipe rather than this op returning an address.
+    CodeServe { root: String },
+    /// Stops the web face on `root` over there, if one is running.
+    /// **Answers the same whether there was one or not** — the caller
+    /// wanted it gone, and a refusal would only name a race they cannot
+    /// act on.
+    CodeStop { root: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -334,6 +435,68 @@ pub enum Response {
     Quotas { readings: Vec<khor_core::AccountReading> },
     /// [`Request::Load`]'s answer, taken when this frame was built.
     Load { load: khor_core::Load },
+    /// [`Request::Workspaces`]'s answer: the same four fields as
+    /// [`Response::Places`] per row, newest first, because a workspace
+    /// row *is* a place with a line drawn through the list. `shown` is
+    /// that machine's own spelling for the same reason it is there.
+    Workspaces { workspaces: Vec<(String, String, u32, i64)> },
+    /// [`Request::GitStatus`]'s answer. `branch` is short (`main`) and
+    /// **empty when there is no name to say** — detached, or no commit
+    /// yet — which the asker paints as nothing rather than inventing a
+    /// word for it. `rows` is `(path relative to the root, mark)`,
+    /// sorted by path: the screen paints and never re-sorts (docs/UX.md
+    /// 状态呈现), and the walk that produced them runs three threads
+    /// and is documented to have no order of its own. `more` is the
+    /// no-silent-caps rule [`Response::Dir::truncated`] already carries.
+    GitStatus { branch: String, rows: Vec<(String, String)>, more: bool },
+    /// [`Request::GitDiff`]'s answer, in file order. `more` means the
+    /// list stopped early — same rule, same reason.
+    GitDiff { hunks: Vec<Hunk>, more: bool },
+    /// [`Request::WritePath`]'s answer: the file's mtime after the
+    /// rename, and the digest of what is now there — so a writer can go
+    /// on editing without reading the file back, and the next save has
+    /// something true to compare against.
+    Wrote { at_ms: u64, digest: String },
+    /// [`Request::CodeHere`]'s answer. `version` is `code --version`'s
+    /// first line, and **empty means there is no editor there** — not
+    /// an error, just a machine without one.
+    CodeHere { version: String },
+    /// [`Request::CodeServe`]'s answer: a loopback port on the
+    /// answering machine and the connection token every request to it
+    /// must carry.
+    CodeServing { port: u16, token: String },
+}
+
+/// One place a file differs from HEAD, in the coordinates of the file
+/// **as it is now** — because that is the copy on the screen, and a
+/// gutter drawn in the old file's line numbers would point at the
+/// wrong lines of the one a person is reading.
+///
+/// The three kinds a gutter draws are told apart by which half is
+/// empty, with no fourth field able to disagree with them:
+///
+/// | kind | `lines` | `was` |
+/// |---|---|---|
+/// | inserted | > 0 | empty |
+/// | deleted | 0 | non-empty |
+/// | changed | > 0 | non-empty |
+///
+/// Every field required; whatever a later khor wants rides the tail
+/// with a serde default, never the middle (this file's field
+/// discipline).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hunk {
+    /// First line of the hunk in the current file, 1-based. When
+    /// `lines` is 0 this is the line the deletion sits **after**, so a
+    /// deletion at the very top of a file is 0. Same convention as
+    /// `git diff -U0`'s `+` side, checked against it on 14 hunks of a
+    /// real file rather than reasoned about.
+    pub at: u32,
+    /// How many current lines the hunk covers.
+    pub lines: u32,
+    /// What HEAD had in their place, one string per line, **without
+    /// terminators** — a list already says where each line ends.
+    pub was: Vec<String>,
 }
 
 /// One row of a listed directory. Every field required; whatever a
@@ -432,6 +595,20 @@ mod tests {
             (Request::Quotas, &b"Quotas"[..]),
             (Request::Load { top: 8, by: khor_core::TopBy::Busiest, desc: false }, &b"Load"[..]),
             (Request::Watched, &b"Watched"[..]),
+            (Request::Workspaces, &b"Workspaces"[..]),
+            (Request::GitStatus { root: String::new() }, &b"GitStatus"[..]),
+            (Request::GitDiff { path: String::new() }, &b"GitDiff"[..]),
+            (
+                Request::WritePath {
+                    path: String::new(),
+                    was: String::new(),
+                    bytes: serde_bytes::ByteBuf::new(),
+                },
+                &b"WritePath"[..],
+            ),
+            (Request::CodeHere, &b"CodeHere"[..]),
+            (Request::CodeServe { root: String::new() }, &b"CodeServe"[..]),
+            (Request::CodeStop { root: String::new() }, &b"CodeStop"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

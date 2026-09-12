@@ -13,9 +13,12 @@ pub mod agents;
 pub mod api;
 pub mod chat;
 pub mod files;
+pub mod code;
+pub mod git;
 pub mod recents;
 pub mod term;
 pub mod web;
+pub mod workspaces;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

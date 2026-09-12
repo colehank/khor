@@ -21,6 +21,17 @@ fn main() {
     // The wizard's first question, asked on its own beat; no row embeds
     // it.
     khor_gui_core::PlaceRow::export_all_to(&dir).expect("export PlaceRow");
+    // The workspace landing asks per machine on its own beat; no row
+    // embeds it either.
+    khor_gui_core::workspaces::WorkspaceRow::export_all_to(&dir)
+        .expect("export WorkspaceRow");
+    // One file's text, asked for when a file is opened; no row embeds it.
+    khor_gui_core::files::FileText::export_all_to(&dir).expect("export FileText");
+    khor_gui_core::git::GitStatus::export_all_to(&dir).expect("export GitStatus");
+    khor_gui_core::git::GitDiff::export_all_to(&dir).expect("export GitDiff");
+    khor_gui_core::files::Wrote::export_all_to(&dir).expect("export Wrote");
+    khor_gui_core::code::CodeAt::export_all_to(&dir).expect("export CodeAt");
+    khor_gui_core::files::Preview::export_all_to(&dir).expect("export Preview");
     // The 额度 page asks for its rings on its own beat; no row embeds
     // them. Walks into `AccountReading` and `Strain` from here.
     khor_gui_core::AccountRing::export_all_to(&dir).expect("export AccountRing");

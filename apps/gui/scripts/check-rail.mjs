@@ -216,7 +216,7 @@ function measure(read) {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const say = (n) => n.toFixed(2);
 
-const LANDINGS = ["sessions", "devices", "files", "quota", "browser"];
+const LANDINGS = ["sessions", "devices", "workspaces", "quota", "browser"];
 
 let vite;
 let browser;

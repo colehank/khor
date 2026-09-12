@@ -175,10 +175,16 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     if (DISK.test(text)) fail(`the shell knows about a disk: src/browse/${f}`);
     if (INSTANCE.test(text)) fail(`the shell imports an instance: src/browse/${f}`);
   }
-  const kindFile = readFileSync(join(gui, "src/views/FilesKind.tsx"), "utf8");
-  if (!DISK.test(kindFile)) fail("probe dead: the finder does not even match the files instance");
+  // **The positive control moved on 2026-09-11** (工作区替代文件). It
+  // used to be `FilesKind.tsx`, the shell's disk instance, which is
+  // gone with the landing it served. `FilesPane.tsx` is the same code
+  // under a different owner — a workspace's file tree rather than a
+  // browsing tab's body — and it names the same four symbols, so it
+  // proves the finder is alive for exactly the reason the old one did.
+  const kindFile = readFileSync(join(gui, "src/views/FilesPane.tsx"), "utf8");
+  if (!DISK.test(kindFile)) fail("probe dead: the finder does not even match the files pane");
   else if (fails.length === before) {
-    ok(`the shell (${shellFiles.length} files) names no disk; the instance does`);
+    ok(`the shell (${shellFiles.length} files) names no disk; the pane does`);
   }
 }
 
@@ -267,370 +273,38 @@ try {
     }
     await rail(tab).click();
   };
-  const openFiles = async () => {
-    await rail("files").click();
-    await until("the files landing", 10_000, async () =>
-      (await page.locator('[data-browse-landing="dir"]').count()) === 1,
-    );
-  };
-  const box = page.locator("[data-omni-input]");
-  /** Point the open tab at a machine and a path, through the real box. */
-  const goTo = async (machine, path) => {
-    if ((await page.locator("[data-omni-input]").count()) === 0) {
-      // Resting: the step you are standing on is the way into the box.
-      await page.locator("[data-crumb]").last().click();
-    }
-    if ((await page.locator(`[data-chip="dev:${machine}"]`).count()) === 0) {
-      await box.click();
-      await box.fill(machine);
-      await until(`${machine} offered`, 10_000, async () =>
-        (await page.locator(`[data-omni-item="dev:${machine}"]`).count()) === 1,
-      );
-      await box.press("Enter");
-      await until(`${machine} as a chip`, 15_000, async () =>
-        (await page.locator(`[data-chip="dev:${machine}"]`).count()) === 1,
-      );
-    }
-    await box.fill(path);
-    await box.press("Enter");
-  };
-  const listedNames = () =>
-    page.evaluate(() =>
-      [...document.querySelectorAll("[data-files-list] [data-dir], [data-files-list] [data-file]")]
-        .map((e) => e.dataset.dir ?? e.dataset.file)
-        .sort(),
-    );
-
-  console.log("\n5) the machine column is gone, and the width went to the content");
-  await openFiles();
-  if ((await page.locator("[data-list]").count()) !== 0) {
-    fail("the files landing still paints a list pane");
-  } else {
-    ok("no list pane on the files landing");
-  }
-  // The probe that keeps the line above from being about a renamed
-  // attribute: the same locator finds one on a landing that still has
-  // one, in the same window.
+  // ── 1–7) ⚠️ **Tombstone: the disk kind's half of this gate,
+  //        2026-09-12** (工作区批6).
   //
-  // **The comparator is `devices`, not `browser`** — the browser landing
-  // was the natural control while it still had a machine column, and it
-  // stopped having one the moment it went through this same shell
-  // (浏览器接壳批). Left pointed there, this would have measured a
-  // landing with no column against another with no column and reported
-  // a gain of zero, which reads as the whole batch not having worked.
-  // 收件箱型 landings are what still have a column, by rule.
-  await go("devices");
-  await until("the devices pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
-  const listWide = await page.locator("[data-list]").evaluate((el) => el.getBoundingClientRect().width);
-  const detailWide = await page
-    .locator("[data-list]")
-    .evaluate((el) => el.parentElement.lastElementChild.getBoundingClientRect().width);
-  await openFiles();
-  const filesWide = await page
-    .locator('[data-browse-landing="dir"]')
-    .evaluate((el) => el.getBoundingClientRect().width);
-  console.log(`     list ${listWide} | inbox-type content ${detailWide} | files content ${filesWide}`);
-  if (filesWide <= detailWide) {
-    fail(`the files content is ${filesWide} wide, no wider than the ${detailWide} a pane with a column gets`);
-  } else {
-    ok(`content gained ${Math.round(filesWide - detailWide)} (a ${Math.round(listWide)} column, less the seam)`);
-  }
-
-  console.log("\n3) a fresh tab offers the places this person keeps");
-  // A pin, made through the real path: open a directory, press its pin.
-  await goTo("beta", treeB);
-  await until("beta's tree listed", 20_000, async () =>
-    (await page.locator('[data-dir="inner-beta"]').count()) === 1,
-  );
-  await page.locator('[data-pin-dir="inner-beta"]').click();
-  await until("the pin took", 15_000, async () =>
-    (await page.locator('[data-pin-dir="inner-beta"][data-on="true"]').count()) === 1,
-  );
-  await page.locator("[data-tab-new]").click();
-  await until("a fresh tab", 10_000, async () => (await page.locator("[data-omni-input]").count()) === 1);
-  const pinnedPlace = `${treeB}/inner-beta`;
-  await until("the pinned place on the fresh tab", 20_000, async () =>
-    (await page.locator(`[data-place="${pinnedPlace}"]`).count()) === 1,
-  );
-  ok("the pin is on the fresh tab");
-  const sections = await page
-    .locator("[data-places-section]")
-    .evaluateAll((els) => els.map((e) => e.dataset.placesSection));
-  if (sections[0] !== "pinned") fail(`the fresh tab leads with ${sections[0]}, not the pins`);
-  else ok(`sections in order: ${sections.join(" → ")}`);
-  // **Photographed here, where the claim is true.** The two shots at the
-  // end of this file are of an *open* tab, which is the right picture of
-  // a strip and the wrong picture of this — and a report that pointed at
-  // one of those for evidence about the fresh tab sent a reader to a
-  // screenshot showing something else (tabs-node caught exactly that).
-  // The scratch directory is fixed and every run overwrites it, so the
-  // only durable evidence is a file this run writes for this state.
-  await page.screenshot({ path: join(SCRATCH, "new-tab.png") });
-  console.log(`     the fresh tab, photographed: ${shot("new-tab.png")}`);
-  await page.locator(`[data-place="${pinnedPlace}"]`).click();
-  await until("pressing it points the tab there", 20_000, async () =>
-    (await page.locator('[data-file="only-on-beta.txt"]').count()) === 1,
-  );
-  ok("pressing a place opens it in that tab");
-
-  console.log("\n1) two tabs, two machines, two paths — and no crossing");
-  // Tab 1 is on beta already. A second tab, on alpha.
-  await page.locator("[data-tab-new]").click();
-  await until("a second tab", 10_000, async () => (await page.locator("[data-tab]").count()) === 3);
-  await goTo("alpha", `${treeA}/inner-alpha`);
-  await until("alpha's own file", 25_000, async () =>
-    (await page.locator('[data-file="only-on-alpha.txt"]').count()) === 1,
-  );
-  const onAlpha = await listedNames();
-  if (onAlpha.includes("only-on-beta.txt")) fail(`alpha's tab shows beta's rows: ${onAlpha}`);
-  else ok(`alpha's tab: ${onAlpha.join(",")}`);
-  const tabIds = await page.locator("[data-tab]").evaluateAll((els) => els.map((e) => e.dataset.tab));
-  // Back to the beta tab — by pressing it, the way a person would.
-  await page.locator(`[data-tab-open="${tabIds[1]}"]`).click();
-  await until("beta's own file back", 20_000, async () =>
-    (await page.locator('[data-file="only-on-beta.txt"]').count()) === 1,
-  );
-  const onBeta = await listedNames();
-  if (onBeta.includes("only-on-alpha.txt")) fail(`beta's tab shows alpha's rows: ${onBeta}`);
-  else ok(`beta's tab: ${onBeta.join(",")}`);
-  const labels = await page
-    .locator("[data-tab-label]")
-    .evaluateAll((els) => els.map((e) => e.textContent));
-  console.log(`     tab titles: ${JSON.stringify(labels)}`);
-  if (labels[1] !== "inner-beta" || labels[2] !== "inner-alpha") {
-    fail(`the tabs are titled ${JSON.stringify(labels)}, not by the directory each is in`);
-  } else {
-    ok("each tab is titled by the directory it is in");
-  }
-  // Every tab wears a face, and it is the face of the machine it is on
-  // — read off the devices pane, never spelled here.
+  // Seven sections and about four hundred lines browsed a directory
+  // through tabs, a strip, a switcher and an address bar. **Their
+  // subject left on 2026-09-11** (工作区替代文件) and they were kept
+  // red on purpose for a day, throwing rather than skipping, because
+  // deleting a real-wire gate is a decision to take deliberately.
   //
-  //   **The whole markup, not its length.** Length was the first
-  //   spelling and it is a false green waiting to happen: two different
-  //   faces are the same handful of transforms with different numbers
-  //   in them, so they come out within a byte or two of each other and
-  //   land on the same count often enough to be seen — it did, on the
-  //   third run of this file.
-  const faceOf = (sel) =>
-    page.locator(sel).evaluate((el) => el.querySelector("svg")?.outerHTML ?? "");
-  const alphaTabFace = await faceOf(`[data-tab-open="${tabIds[2]}"]`);
-  const betaTabFace = await faceOf(`[data-tab-open="${tabIds[1]}"]`);
-  if (!alphaTabFace || !betaTabFace) fail("a tab has no face drawn");
-  else if (alphaTabFace === betaTabFace) fail("both tabs wear the same picture");
-  else ok(`two machines, two pictures (${betaTabFace.length} vs ${alphaTabFace.length} bytes of svg)`);
-
-  console.log("\n1b) closing one leaves the other, and a reload brings them back");
-  const before = await page.locator("[data-tab]").count();
-  await page.locator(`[data-tab-close="${tabIds[0]}"]`).click();
-  await until("one fewer tab", 10_000, async () => (await page.locator("[data-tab]").count()) === before - 1);
-  ok(`closed one: ${before} → ${before - 1}`);
-  const kept = await page.locator("[data-tab]").evaluateAll((els) => els.map((e) => e.dataset.tab));
-  await page.reload();
-  await openFiles();
-  await until("the tabs back after a reload", 15_000, async () =>
-    (await page.locator("[data-tab]").count()) === kept.length,
-  );
-  const after = await page.locator("[data-tab]").evaluateAll((els) => els.map((e) => e.dataset.tab));
-  if (after.join(",") !== kept.join(",")) fail(`after a reload the tabs are ${after}, were ${kept}`);
-  else ok(`the same ${after.length} tabs came back`);
-  await until("and one of them is pointed where it was", 20_000, async () =>
-    (await page.locator('[data-file="only-on-beta.txt"]').count()) === 1 ||
-    (await page.locator('[data-file="only-on-alpha.txt"]').count()) === 1,
-  );
-  ok("a restored tab is still pointed at its own directory");
-
-  console.log("\n2) the address bar: two segments, a paste, and a refusal");
-  await page.locator("[data-tab-new]").click();
-  await until("a fresh tab", 10_000, async () => (await page.locator("[data-omni-input]").count()) === 1);
-  await box.click();
-  await box.fill("al");
-  await until("a machine completed from two letters", 10_000, async () =>
-    (await page.locator('[data-omni-item="dev:alpha"]').count()) === 1,
-  );
-  ok("typing two letters completes the machine");
-  await box.press("Enter");
-  await until("the chip, and the caret still in the box", 15_000, async () =>
-    (await page.locator('[data-chip="dev:alpha"]').count()) === 1 &&
-    (await page.locator("[data-omni-input]").count()) === 1,
-  );
-  ok("the machine became a chip and the box stayed open for the path");
-  await box.fill(`${treeA}/`);
-  await until("the next layer completed", 20_000, async () =>
-    (await page.locator(`[data-omni-item="${treeA}/inner-alpha/"]`).count()) === 1,
-  );
-  ok("the path completes a layer at a time");
-  //   …and the layer is cached: coming back to it asks nothing.
-  await box.fill(`${treeA}/inner-alpha/`);
-  await until("the deeper layer", 20_000, async () => {
-    await page.waitForTimeout(300);
-    return true;
-  });
-  await page.evaluate(() => performance.clearResourceTimings());
-  await box.fill(`${treeA}/`);
-  await page.waitForTimeout(900);
-  const asked = await page.evaluate(
-    () => performance.getEntriesByType("resource").filter((e) => e.name.endsWith("/ls")).length,
-  );
-  console.log(`     going back a layer asked the machine ${asked} time(s)`);
-  //   A cached layer answers at once; it is still re-asked, so this is
-  //   about the candidate list never being empty in between, not about
-  //   the call count being zero.
-  await until("the cached layer offered with no wait", 3_000, async () =>
-    (await page.locator(`[data-omni-item="${treeA}/inner-alpha/"]`).count()) === 1,
-  );
-  ok("a layer already walked comes back immediately");
-  //   A whole path pasted in goes straight there.
-  await box.fill(`${treeA}/inner-alpha`);
-  await box.press("Enter");
-  await until("the pasted path really opened", 25_000, async () =>
-    (await page.locator('[data-file="only-on-alpha.txt"]').count()) === 1,
-  );
-  ok("a whole path typed in opens on Enter");
-  //   And a path that is not there says so.
-  await page.locator("[data-crumb]").last().click();
-  await box.fill(`${treeA}/no-such-place`);
-  await box.press("Enter");
-  await until("a refusal on screen", 25_000, async () =>
-    (await page.locator("[data-cannot-reach]").count()) === 1,
-  );
-  const said = (await page.locator("[data-cannot-reach]").innerText()).trim();
-  if (!said) fail("the refusal element is empty — a blank pane with an attribute on it");
-  else ok(`refused out loud: ${JSON.stringify(said.slice(0, 60))}`);
-  if ((await page.locator("[data-files-list] [data-file]").count()) !== 0) {
-    fail("a listing is still on screen under the refusal — it looks like it arrived");
-  } else {
-    ok("nothing is painted that would look like having arrived");
-  }
-
-  console.log("\n4) narrow: one screen, and a switcher that really switches");
-  await page.setViewportSize({ width: 390, height: 800 });
-  await openFiles();
-  if ((await page.locator("[data-tab-strip]").count()) !== 0) fail("the tab strip is on the narrow face");
-  else ok("no tab strip at 390");
-  const count = page.locator("[data-tab-count]");
-  if ((await count.count()) !== 1) fail("no tab count on the narrow face");
-  const narrowTabs = Number((await count.innerText()).trim());
-  await count.click();
-  await until("the switcher", 10_000, async () => (await page.locator("[data-tab-switcher]").count()) === 1);
-  const rows = await page.locator("[data-switch-tab]").count();
-  if (rows !== narrowTabs) fail(`the button counts ${narrowTabs} tabs, the switcher lists ${rows}`);
-  else ok(`the count and the switcher agree: ${rows}`);
-  const switchIds = await page
-    .locator("[data-switch-tab]")
-    .evaluateAll((els) => els.map((e) => e.dataset.switchTab));
-  await page.locator(`[data-switch-open="${switchIds[0]}"]`).click();
-  await until("the switcher put itself away", 10_000, async () =>
-    (await page.locator("[data-tab-switcher]").count()) === 0,
-  );
-  ok("picking a tab closes the switcher and shows that tab");
-  await count.click();
-  await until("the switcher again", 10_000, async () => (await page.locator("[data-tab-switcher]").count()) === 1);
-  await page.locator(`[data-switch-close="${switchIds[0]}"]`).click();
-  await until("one fewer row", 10_000, async () =>
-    (await page.locator("[data-switch-tab]").count()) === rows - 1,
-  );
-  ok(`closed one from the switcher: ${rows} → ${rows - 1}`);
-  await page.locator("[data-tab-switcher] [data-tab-new]").click();
-  await until("a fresh tab from the switcher", 10_000, async () =>
-    (await page.locator("[data-tab-switcher]").count()) === 0 &&
-    (await page.locator("[data-omni-input]").count()) === 1,
-  );
-  ok("the switcher opens a fresh tab and gets out of the way");
-  //   The one measurement a screenshot cannot fake.
-  const over390 = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  if (over390 > 0) fail(`the body scrolls ${over390} sideways at 390`);
-  else ok("no sideways scroll at 390");
-
-  console.log("\n6) a short window, and the page's own errors");
-  await page.setViewportSize({ width: 1200, height: 600 });
-  await openFiles();
-  await page.waitForTimeout(400);
-  const over600 = await page.evaluate(() => ({
-    x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-  }));
-  if (over600.x > 0 || over600.y > 0) fail(`a 600-tall window overflows by ${JSON.stringify(over600)}`);
-  else ok("a 600-tall window does not overflow");
-
-  console.log("\n6b) coming back does not flash a lie");
-  //   Leaving the landing unmounts it, so the places are asked for
-  //   again on the way in — and until that answers, "nothing is pinned"
-  //   is a statement about a request rather than about this person.
-  //   The pin made in 3 is still real, so the sentence would be false.
-  await page.setViewportSize({ width: 1200, height: 800 });
-  await go("sessions");
-  await until("the sessions pane", 10_000, async () => (await page.locator("[data-list]").count()) === 1);
-  await rail("files").click();
-  await until("the files landing", 10_000, async () =>
-    (await page.locator('[data-browse-landing="dir"]').count()) === 1,
-  );
-  const flashed = await page.locator("[data-no-places]").count();
-  if (flashed !== 0) fail("the fresh tab claims nothing is pinned before anything has answered");
-  else ok("no empty-state claim while the answer is still coming");
-  //   …and the probe is alive: the places do turn up.
-  await until("the places, once asked", 20_000, async () =>
-    (await page.locator("[data-place]").count()) > 0,
-  );
-  ok("the places arrive a moment later");
-  //   The rail says where you are. A landing whose glyph is not lit is
-  //   a person who cannot tell which of four places they are in.
-  const lit = await page
-    .locator("[data-rail-item][data-on='true']")
-    .evaluateAll((els) => els.map((e) => e.dataset.landing ?? "mark"));
-  if (lit.join(",") !== "files") fail(`on the files landing the rail lights ${JSON.stringify(lit)}`);
-  else ok("the rail lights files, and only files");
-  //   …and the attribute really reaches the paint. `data-on` is a fact
-  //   in the DOM; what a person sees is a different fact, and a
-  //   stylesheet that stopped applying would leave the first true and
-  //   the second false. **That claim is unchanged; what a person sees
-  //   is not.** Until 2026-08-31 it was a block behind the glyph and
-  //   this read `backgroundColor`; the open item wears no block now
-  //   (`app.css` carries the tombstone), and the whole statement lives
-  //   on the glyph — the body fills from `--icon-body` to solid. So
-  //   this reads the fill.
+  // **What they were waiting for did not happen, and that is the
+  // decision being recorded here.** The note said they wait for the
+  // code kind — VS Code as the browsing shell's second customer. Batch
+  // 5 built VS Code and did not make it a kind: every tab in that
+  // shell names an exit machine and an editor has none, so it lives in
+  // the workspace's middle column instead (docs/handoff/001.md 批5).
+  // The shell now has exactly one customer, and a gate proving that
+  // one shape serves two has nothing to prove.
   //
-  //   Pointer parked away first. It mattered more when hover painted
-  //   the same kind of block as being open; it still matters, because
-  //   a hover wash under the glyph moves what the fill composites
-  //   against and this is meant to be a question about the rule, not
-  //   about where the mouse is.
-  await page.mouse.move(2, 400);
-  await page.waitForTimeout(300);
-  const blocks = await page
-    .locator("[data-rail-item][data-landing]")
-    .evaluateAll((els) => {
-      // What "lit" looks like, resolved once: the on-ink as an actual
-      // colour, read off a probe span rather than compared as var text.
-      const probe = document.createElement("span");
-      probe.style.color = "var(--rail-on-ink)";
-      document.body.append(probe);
-      const litColor = getComputedStyle(probe).color;
-      probe.remove();
-      return els.map((e) => {
-        const body = e.querySelector("svg [data-body]");
-        if (body) return [e.dataset.landing, getComputedStyle(body).fillOpacity];
-        // A pictorial glyph — 额度's token art (the user's own file,
-        // 2026-09-03), the mark's rule: no two-density body, so being
-        // open is the ink itself taking `--rail-on-ink`.
-        const svg = e.querySelector("svg");
-        if (!svg) return [e.dataset.landing, "no-glyph"];
-        return [e.dataset.landing, getComputedStyle(svg).color === litColor ? "lit" : "resting"];
-      });
-    });
-  console.log(`     rail glyph fills: ${JSON.stringify(blocks)}`);
-  // The probe before the claim: every item has a glyph to read, or
-  // "only one is solid" would be satisfied by the others being absent.
-  if (blocks.some(([, fill]) => fill === "no-glyph")) {
-    fail(`a rail item has no glyph to read: ${JSON.stringify(blocks)}`);
-  }
-  const painted = blocks.filter(([, fill]) => fill === "lit" || Number(fill) === 1);
-  if (painted.length !== 1 || painted[0][0] !== "files") {
-    fail(`the rail fills the glyph on ${JSON.stringify(painted)}, with files the open landing`);
-  } else {
-    ok(`one block, on files: ${painted[0][1]}`);
-  }
+  // **What is lost, named rather than quietly dropped:**
+  //
+  //   - two tabs on two machines with two paths, and no crossing;
+  //   - closing one and finding the other, across a reload;
+  //   - the address bar's two segments, a paste, and its refusal;
+  //   - narrow: one screen and a switcher that really switches;
+  //   - a short window, the page's own errors, and not flashing a lie
+  //     on the way back.
+  //
+  // The tab machinery underneath is still exercised by section 8,
+  // which drives the same shell with pages in it — so what went is the
+  // second *instance*, not the shell. If a second kind ever arrives,
+  // this is the file it comes back to.
+
 
   console.log("\n7) the other landings are where they were");
   for (const tab of ["sessions", "devices"]) {
@@ -670,20 +344,7 @@ try {
   } catch {
     fail("a machine row no longer opens its card");
   }
-  await openFiles();
-  // With something actually listed under it: a strip photographed over
-  // an empty tab cannot show whether the open tab joins its own page.
-  await goTo("beta", treeB);
-  await until("a listing under the strip", 20_000, async () =>
-    (await page.locator('[data-dir="inner-beta"]').count()) === 1,
-  );
-  await page.mouse.move(600, 400);
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: join(SCRATCH, "files-wide.png") });
-  await page.setViewportSize({ width: 390, height: 800 });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: join(SCRATCH, "files-narrow.png") });
-  console.log(`     screenshots in ${SCRATCH} (run ${STAMP}): ${["sessions", "devices", "files-wide", "files-narrow"].join(".png, ")}.png`);
+  console.log(`     screenshots in ${SCRATCH} (run ${STAMP}): ${["sessions", "devices"].join(".png, ")}.png`);
 
   // ── 8) the same shell, a second time, with pages in it ────────────
   //
@@ -734,17 +395,47 @@ try {
       (await page.locator('[data-browse-landing="page"]').count()) === 1,
     );
   };
+  //    **The other half of this comparison moved on 2026-09-12.** It
+  //    used to be the files landing measured before and after its
+  //    machine column; that landing is gone, so the width a list pane
+  //    costs is read off one that still has one. Same claim, live
+  //    subject: a landing that browses spends none of its width on a
+  //    column, and the content is wider for it.
+  await go("devices");
+  // Waited for by the list pane, which section 7 just proved appears,
+  // rather than by the detail: `[data-screen]` is re-keyed on every
+  // screen change, so a count read mid-swap is a count of nothing.
+  await until("the devices landing", 10_000, async () =>
+    (await page.locator("[data-list]").count()) === 1,
+  );
+  // **What a list pane costs, computed rather than looked up.** The
+  // detail area is what the window has left after the rail and the
+  // list, and those two are the elements this app actually draws —
+  // `[data-screen]` is re-keyed on every screen change and is not
+  // reliably in the document to measure.
+  const detailWide = await page.evaluate(() => {
+    const w = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.getBoundingClientRect().width : 0;
+    };
+    // The rail is the nav holding the landing glyphs — found through
+    // one of its own items rather than by the tag, because `nav` is not
+    // a promise this app makes and `[data-rail-item]` is.
+    const rail = document.querySelector("[data-rail-item]")?.closest("nav");
+    const railW = rail ? rail.getBoundingClientRect().width : 0;
+    return Math.round(window.innerWidth - railW - w("[data-list]"));
+  });
   await openBrowser();
   if ((await page.locator("[data-list]").count()) !== 0) {
     fail("the browser landing still paints a list pane");
   } else ok("no list pane on the browser landing");
   const pageWide = await page
     .locator('[data-browse-landing="page"]')
-    .evaluate((el) => el.getBoundingClientRect().width);
+    .evaluate((el) => Math.round(el.getBoundingClientRect().width));
   if (pageWide <= detailWide) {
-    fail(`the browser content is ${pageWide} wide, no wider than the ${detailWide} it had with a column`);
+    fail(`the browser content is ${pageWide} wide, no wider than the ${detailWide} a landing with a list pane leaves`);
   } else {
-    ok(`content gained ${Math.round(pageWide - detailWide)} (was ${detailWide}, now ${pageWide})`);
+    ok(`content gained ${pageWide - detailWide} (a list pane leaves ${detailWide}, this has ${pageWide})`);
   }
 
   //    **The words are this landing's own.** Read off the two landings
@@ -768,13 +459,16 @@ try {
         null,
     }));
   };
+  //    ⚠️ **This compared two landings until 2026-09-12** and now reads
+  //    one. The claim was that each kind names its address bar its own
+  //    way — which needed two kinds, and there is one. What survives is
+  //    the half that can still be checked: the bar has a name at all.
+  //    **Weaker, and named as weaker**: a second kind arriving is what
+  //    makes the comparison possible again.
   const pageWords = await wordsOn(openBrowser);
-  const dirWords = await wordsOn(openFiles);
-  console.log(`     pages ${JSON.stringify(pageWords)} | files ${JSON.stringify(dirWords)}`);
-  if (!pageWords.address || !dirWords.address) fail("probe dead: an address bar with no name");
-  else if (pageWords.address === dirWords.address) {
-    fail(`both landings name their address bar ${pageWords.address}`);
-  } else ok("each landing names its address bar its own way");
+  console.log(`     pages ${JSON.stringify(pageWords)}`);
+  if (!pageWords.address) fail("probe dead: an address bar with no name");
+  else ok("the browsing landing names its address bar");
 
   //    A page kept, made through the real backend rather than by
   //    reaching into a file: the bridge is the node behind an HTTP
@@ -787,6 +481,17 @@ try {
       body: JSON.stringify(args),
     }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${cmd}: ${r.status}`))));
   await ask("pin_web", { machine: "alpha", url: KEPT, on: true });
+  // **Left and come back, because the fresh tab reads its pins once on
+  // mount** (`use-places`). This used to happen by accident: the
+  // section before it ended on the files landing, which unmounted this
+  // one. That section went on 2026-09-12 with the disk kind, and the
+  // assertion below then waited twenty seconds for a list fetched
+  // before the pin existed — a real dependency that had been met by a
+  // side effect.
+  await go("devices");
+  await until("away from the browser landing", 10_000, async () =>
+    (await page.locator('[data-browse-landing="page"]').count()) === 0,
+  );
   await openBrowser();
   await until("the kept page on the fresh tab", 20_000, async () =>
     (await page.locator(`[data-place="${KEPT}"]`).count()) === 1,
@@ -804,9 +509,19 @@ try {
     (await page.locator('[data-omni-item="dev:alpha"]').count()) === 1,
   );
   await pageBox.press("Enter");
-  await until("alpha as the exit chip", 15_000, async () =>
-    (await page.locator('[data-chip="dev:alpha"]').count()) === 1,
-  );
+  //    ⚠️ **Tombstone: 「alpha as the exit chip」, 2026-09-12.** It
+  //    waited for `[data-chip="dev:alpha"]`, and the machine's chip was
+  //    taken out of this box on 2026-09-09 — one exit per landing means
+  //    the machine is not a property of what is being typed, and drawn
+  //    as a chip the box read as two fields when it is one
+  //    (`AddressBar`'s `chosen={[]}`). The same assertion rotted in
+  //    `smoke.mjs` and was found there first; here it went unnoticed
+  //    for three days because this gate had been dying at section 5.
+  //
+  //    **What proves the commit landed is the line below.** Kept pages
+  //    are per machine, so a completion that offers alpha's pin is a
+  //    box that really is pointed at alpha — weaker than a chip anybody
+  //    could see, and it is the observable this face still has.
   await pageBox.fill("https://khor.exa");
   await until("the kept page completed from what is remembered", 15_000, async () =>
     (await page.locator(`[data-omni-item="${KEPT}"]`).count()) === 1,
@@ -833,15 +548,32 @@ try {
   //    Waited to *settle*, not merely to appear: 「正在借…」 is a real
   //    thing to say but it is not the answer, and a probe that stops at
   //    it would pass on a borrow that never comes back.
-  await until("the borrow settling", 30_000, async () =>
-    ["opened", "failed"].includes(
-      (await page.locator("[data-web-status]").getAttribute("data-web-status").catch(() => null)) ?? "",
-    ),
-  );
-  const spoke = await page.locator("[data-web-status]").innerText();
-  const how = await page.locator("[data-web-status]").getAttribute("data-web-status");
-  if (!spoke.trim()) fail("the borrow's report is an empty element");
-  else ok(`the borrow said so out loud (${how}): ${JSON.stringify(spoke.trim().slice(0, 48))}`);
+  //    ⚠️ **This waited for the element to say 「opened」 and it can
+  //    never say that.** `BrowserPane` draws the status only while the
+  //    state is *not* opened — a page that came up needs no sentence,
+  //    the page is the sentence — so success is the element leaving.
+  //    The old wait could therefore only ever be satisfied by a
+  //    failure, and it was: this run borrows alpha's network, which
+  //    used not to come up and now does. Three days of the gate dying
+  //    at section 5 is why nobody saw it.
+  //
+  //    So what is waited for is the state **leaving 「opening」**, by
+  //    either road, and each road is then judged on its own terms.
+  const settled = await until("the borrow settling", 30_000, async () => {
+    const how = await page
+      .locator("[data-web-status]")
+      .getAttribute("data-web-status")
+      .catch(() => null);
+    if (how === null) return "opened";
+    return how === "failed" ? "failed" : false;
+  });
+  if (settled === "failed") {
+    const spoke = await page.locator("[data-web-status]").innerText();
+    if (!spoke.trim()) fail("the borrow failed and said so with an empty element");
+    else ok(`the borrow failed and said why: ${JSON.stringify(spoke.trim().slice(0, 48))}`);
+  } else {
+    ok("the borrow came up, and the pane stopped talking about it");
+  }
 
   //    …and the tab wears the page's host, not its whole address — the
   //    kind's `leafOf`, which is the other thing the two do differently.

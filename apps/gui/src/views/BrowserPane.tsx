@@ -67,6 +67,7 @@ export function BrowserPane({
   onOpened,
   onWent,
   onPopped,
+  direct = false,
 }: {
   /** This tab's handle. The page webview is keyed by it on the app side,
       so every call about that page names it. */
@@ -87,6 +88,16 @@ export function BrowserPane({
   /** The page asked for a new window. **Carried, not decided**: whether
       a link opens here or beside here is the page author's call. */
   onPopped: (url: string) => void;
+  /** Open it **without borrowing anybody's network** (工作区批5).
+      The one thing that asks for this is a workspace's VS Code: the URL
+      is already a loopback address of khor's own tunnel, so there is
+      nothing to borrow and a proxy would send the request out through
+      the far machine to its own loopback, which is not where the editor
+      is. `machine` is then a name for the words on this pane and
+      nothing else — no exit is spent, none is held, and nothing is
+      pinned (a tunnel's port is different every time, so a pin would
+      be a shortcut to a port nobody is on). */
+  direct?: boolean;
 }) {
   const [opening, setOpening] = useState<Opening | null>(null);
   // This machine's pinned pages — only so the control below can show
@@ -208,17 +219,28 @@ export function BrowserPane({
     const at = boxOf();
     if (!at) return;
     let stopped = false;
-    setOpening({ url: want, state: "opening", word: gui.web_opening(machine) });
-    openPage(tab, machine, want, at).then(
+    setOpening({
+      url: want,
+      state: "opening",
+      word: direct ? gui.code_opening(machine) : gui.web_opening(machine),
+    });
+    openPage(tab, direct ? "" : machine, want, at).then(
       (borrow) => {
         // **Written down before the unmount check, on purpose.** The
         // borrow is open on the far machine whether or not this pane is
         // still on screen; a record skipped because the tab was closed
         // mid-dial is a lease nobody can give back.
-        holdBorrow(device, borrow.session);
+        // Nothing to hold when nothing was spent — `direct` opens no
+        // borrow, and a ledger entry for an empty session would be a
+        // lease the sweeper would try to give back.
+        if (!direct) holdBorrow(device, borrow.session);
         holdPage(tab);
         if (stopped) return;
-        setOpening({ url: want, state: "opened", word: gui.web_opened(machine) });
+        setOpening({
+          url: want,
+          state: "opened",
+          word: direct ? gui.code_opened(machine) : gui.web_opened(machine),
+        });
         onOpened(want);
       },
       (e) => {
@@ -329,7 +351,7 @@ export function BrowserPane({
           reported and a box that changed size with the status would
           move the page under the person reading it. */}
       <div ref={host} data-page-host className="relative min-h-0 flex-1" />
-      {here && (
+      {here && !direct && (
         // The one place a page becomes a shortcut. Two words for one
         // control, the pin's rule: it shows what pressing it will do.
         <div className="flex-none border-t p-2">

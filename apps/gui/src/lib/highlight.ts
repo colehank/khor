@@ -26,6 +26,22 @@
 // to be highlighted; everything else in the tail is under 40 and each
 // module costs bytes that ship inside khor's one binary.
 //
+// **A second consumer arrived on 2026-09-11, and it counts differently**
+// (工作区批2). The numbers above are *fenced blocks in conversations*;
+// the file view asks the same question about *files on a disk*, and the
+// two distributions disagree where it matters. Counted the same way,
+// over every tracked file in the checkouts beside this one:
+//
+//   rs 306 · py 262 · md 195 · json 129 · tsx 101 · png 94 · ts 78 ·
+//   swift 75 · sh 34 · toml 29 · mjs 28 · svg 24 · jsonl 22 · css 18 ·
+//   yaml 14
+//
+// **`md` is third here and absent up there**, because nobody fences a
+// markdown block inside a conversation — so the list below gained one
+// module and not a rewrite. `png`/`svg` are not omissions: an image is
+// not painted by colouring its bytes. The rest of the tail is under 30
+// and each module costs bytes in khor's one binary, same as before.
+//
 // **A language not on the list is not an error and not a guess.** It
 // draws exactly as it drew before this file existed. `highlightAuto` is
 // never called: it is the expensive path and it is wrong often enough
@@ -37,6 +53,7 @@ import css from "highlight.js/lib/languages/css";
 import ini from "highlight.js/lib/languages/ini";
 import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
 import python from "highlight.js/lib/languages/python";
 import rust from "highlight.js/lib/languages/rust";
 import swift from "highlight.js/lib/languages/swift";
@@ -48,6 +65,7 @@ hljs.registerLanguage("css", css);
 hljs.registerLanguage("ini", ini);
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
 hljs.registerLanguage("python", python);
 hljs.registerLanguage("rust", rust);
 hljs.registerLanguage("swift", swift);
@@ -76,6 +94,10 @@ const LANGS: Record<string, string> = {
   // otherwise paint as body ink.
   jsonc: "json",
   css: "css",
+  // Third by file count and absent by fence count — the second
+  // consumer's whole difference, in one entry.
+  markdown: "markdown",
+  md: "markdown",
   swift: "swift",
   typescript: "typescript",
   ts: "typescript",
@@ -170,6 +192,28 @@ export function paint(code: string, language: string): string | null {
  * string — that is what stops a lone `` `x` `` in prose from being read
  * as the start of a block.
  */
+/**
+ * The same painting, for a **whole file** instead of a fenced block.
+ *
+ * **Separate because of the cache, not the colours.** `paint` keys on
+ * the code itself and keeps 64 of them, which is right for a
+ * conversation: the same short block is re-rendered on every update and
+ * the keys stay small. A file is up to one slice — 256 KB — so one
+ * would evict the whole table and the key alone would be as large as
+ * the thing it caches. A file is painted once when it opens; there is
+ * nothing to cache.
+ *
+ * Everything else, including why the markup is safe to insert, is the
+ * same and is argued on `paint`.
+ */
+export function paintFile(code: string, language: string): string | null {
+  try {
+    return hljs.highlight(code, { language, ignoreIllegals: true }).value;
+  } catch {
+    return null;
+  }
+}
+
 export function openFenceAt(text: string): number | null {
   let at = 0;
   let open: { marker: string; len: number; at: number } | null = null;

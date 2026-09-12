@@ -55,9 +55,10 @@ import { useStatusBar } from "@/hooks/use-status-bar";
 import { cn } from "@/lib/utils";
 import { axisOf, groupLabel, placeLabels, valueOf, word } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
-import { FILES } from "@/views/FilesKind";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
+import { WorkspacePane } from "@/views/WorkspacePane";
+import { WorkspacesList } from "@/views/WorkspacesList";
 import { FaceSettings } from "@/views/FaceSettings";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
@@ -76,7 +77,7 @@ import { NewSessionDialog } from "@/views/NewSessionDialog";
  * card, its disk, or its network. Files opens a directory; browser
  * borrows the network and opens a page through it (docs/NET.md 借网).
  */
-type Landing = "sessions" | "devices" | "files" | "browser" | "quota";
+type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 
 /**
  * The app's mark opens a place of its own: the whole mesh, and what the
@@ -226,7 +227,7 @@ function storedWordsAll(): Record<Landing, string[]> {
   return {
     sessions: storedWords("sessions"),
     devices: storedWords("devices"),
-    files: storedWords("files"),
+    workspaces: storedWords("workspaces"),
     browser: storedWords("browser"),
     quota: storedWords("quota"),
   };
@@ -238,7 +239,11 @@ function storedWordsAll(): Record<Landing, string[]> {
 const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
   { key: "sessions", name: gui.sessions_tab, glyph: <IconSessions /> },
   { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
-  { key: "files", name: gui.files_tab, glyph: <IconFiles /> },
+  // 2026-09-11 user ruling:「工作区替代文件」. The glyph is still
+  // `IconFiles` — the landing changed, the drawing has not been
+  // redrawn yet, and a wrong-but-honest icon beats an invented one
+  // that no gate has measured (`scripts/check-icons.mjs`).
+  { key: "workspaces", name: gui.workspaces_tab, glyph: <IconFiles /> },
   // 额度: the registered API accounts as rings (`QuotaLanding`). Like
   // the browsing landings it is one region rather than a list beside a
   // detail — its list is its own, and the rail only opens it.
@@ -256,7 +261,7 @@ const NO_QUERIES: Record<Landing, string> = {
   sessions: "",
   devices: "",
   quota: "",
-  files: "",
+  workspaces: "",
   browser: "",
 };
 
@@ -434,13 +439,21 @@ export default function App() {
   // places, and one variable would have opening a machine close the
   // session you were reading.
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  // …and what the files landing has open, which is no longer *a*
-  // machine at all: it is a strip of tabs, each a machine and a path,
-  // kept on this device (`useBrowseTabs`). It lives here rather than
-  // inside the landing so that opening a directory from somewhere else
-  // — the machine card's 看它的文件 — is a tab appearing rather than a
-  // landing being told to remember something on arrival.
-  const dirTabs = useBrowseTabs(FILES.kind);
+  // …and which workspace is open. **A path and not a row**, because
+  // the two ways in do not agree on what they have: the list hands over
+  // a checkout it already knows about, and the machine card's 看它的
+  // 文件 hands over a machine and nothing else. `path` empty is that
+  // machine's home, the `Ls` contract — which is how a directory that
+  // is not a workspace at all opens in the same pane.
+  //
+  // It lives here rather than in the landing so that arriving from
+  // somewhere else is a state already set, not a landing being told to
+  // remember something after it mounts.
+  const [openWs, setOpenWs] = useState<{
+    device: string;
+    machine: string;
+    path: string;
+  } | null>(null);
   // …and the browser landing's own tabs. **A second strip, not a
   // second mechanism** (浏览器接壳批): both browsing landings are the
   // same shell with a different kind, and the two stores are kept apart
@@ -1204,7 +1217,7 @@ export default function App() {
   const sessions = landing === "sessions";
   /** Whether this landing browses (docs/UX.md 浏览型) — the two that do
       share one shell and have no list pane at all. */
-  const browses = landing === "files" || landing === "browser";
+  const browses = landing === "browser";
   // The 额度 page is one region like the browsing landings, for the
   // reason its rail entry gives.
   const quotas = landing === "quota";
@@ -1319,6 +1332,15 @@ export default function App() {
             pinFailed={pinFailed}
             closeRefused={closeRefused}
           />
+        ) : landing === "workspaces" ? (
+          <WorkspacesList
+            devices={devices}
+            selected={openWs}
+            onOpen={(r) => {
+              setOpenWs({ device: r.device, machine: r.machine, path: r.ws.path });
+              setScreen("detail");
+            }}
+          />
         ) : (
           <DevicesList
             rows={devices}
@@ -1384,6 +1406,32 @@ export default function App() {
         />
       }
     />
+  ) : landing === "workspaces" ? (
+    // One workspace's files. **`FilesPane` unchanged from when it was a
+    // browsing tab's body** (2026-09-11 工作区替代文件): what it does —
+    // list one machine's directory, step into it, take a file — is the
+    // same act whether the tree above it is a project or somebody's
+    // home. What left with the old landing is the strip and the address
+    // bar, not this.
+    //
+    // `openWs` null means the landing is on its list with nothing
+    // chosen, which on the wide face is the list beside an empty
+    // detail and on the narrow one is the list alone.
+    openWs ? (
+      <WorkspacePane
+        // Remounted per workspace: the tree's position, the open file
+        // and both switches are this workspace's, and carrying them
+        // into the next one would show somebody a path that is not
+        // under the project they just opened.
+        key={`${openWs.device} ${openWs.path}`}
+        machine={openWs.machine}
+        device={openWs.device}
+        root={openWs.path}
+        rows={rows}
+        narrow={narrow}
+        listOpen={!narrow && !listPane.collapsed}
+      />
+    ) : null
   ) : landing === "devices" && !openDevice ? (
     <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />
   ) : landing === "devices" ? (
@@ -1408,8 +1456,12 @@ export default function App() {
       // the same from the other side).
       onBrowseFiles={(row) => {
         setMark(false);
-        setLanding("files");
-        dirTabs.open(row.id, "");
+        setLanding("workspaces");
+        // Home, not a workspace: this machine may have no checkouts at
+        // all and the request is still「show me its disk」. The pane
+        // takes an empty path as that machine's home, so browsing a
+        // directory that is nobody's project needs no second door.
+        setOpenWs({ device: row.id, machine: row.name, path: "" });
         setScreen("detail");
       }}
       // This machine's network, in a new tab of the browser landing —
@@ -1493,12 +1545,22 @@ export default function App() {
    * says: the strip is every tab at once where there is room, a count
    * and a switcher where there is not (`TabStrip`).
    *
-   * **One component, two kinds, and nothing else differs** — which is
-   * the whole claim docs/DESIGN.md 浏览型外壳 makes, now with a second
-   * customer to test it against rather than one.
+   * **Tombstone (2026-09-11, 工作区替代文件).** This said "one
+   * component, two kinds, and nothing else differs — now with a second
+   * customer to test it against rather than one". The disk kind left
+   * with its landing: browsing a directory happens inside a workspace
+   * now, where the list beside it is worth watching. So the shell is
+   * back to one customer, and the claim docs/DESIGN.md 浏览型外壳 makes
+   * is back to being untested by a second one.
+   *
+   * **It is kept rather than folded back into the page landing**, and
+   * the reason is dated rather than hopeful: the VS Code tab is the
+   * next kind (a machine and a workspace, opened over a tunnel), and
+   * inlining the shell now means writing it a third time then. If that
+   * kind does not land, this abstraction has one customer and should
+   * be inlined — that is the line for whoever reads this next.
    */
-  const browsing =
-    landing === "files" ? { kind: FILES, tabs: dirTabs } : { kind: PAGES, tabs: pageTabs };
+  const browsing = { kind: PAGES, tabs: pageTabs };
   const browsingLanding = (
     <BrowseLanding
       // **Keyed by the kind, and that is load-bearing.** A kind carries

@@ -80,6 +80,66 @@ pub fn answer(
         "places" => {
             to_json(&rt.block_on(crate::places(root, &opt_str("machine")?.unwrap_or_default()))?)
         }
+        // Per machine, never folded: which machine could not answer is
+        // the fact the landing paints (`workspaces` module head).
+        "workspaces" => to_json(&rt.block_on(crate::workspaces::workspaces(
+            root,
+            &opt_str("machine")?.unwrap_or_default(),
+        ))?),
+        // One slice of a file, for reading. `pull` is the other verb
+        // and it spends a disk; this one spends a screen.
+        "read_text" => to_json(&rt.block_on(crate::files::read_text(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+        ))?),
+        // What differs from HEAD: one question per workspace, and one
+        // per file opened. Both refuse out loud rather than answering
+        // empty — an empty answer is「clean」, which is the one reading
+        // that must never be a guess (`crate::git`).
+        "git_status" => to_json(&rt.block_on(crate::git::status(
+            root,
+            &arg("machine")?,
+            &arg("dir")?,
+        ))?),
+        "git_diff" => to_json(&rt.block_on(crate::git::diff(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+        ))?),
+        // Saving an edit. **`was` is required even when empty** — same
+        // shape and the same reason as `rename_session`'s `title`
+        // above: an empty one is a real claim (「there should be no
+        // file here」), and a missing argument read as "" would turn a
+        // frontend typo into a save that clobbers.
+        // VS Code on a machine. `code_here` is a probe with no side
+        // effect; `code_open` starts a process over there and can take
+        // minutes on a first run, which is why the face asks before it
+        // calls this and never the other way round.
+        // A file shaped for a screen that is not a code view: an
+        // image, an SVG, or a document rendered to HTML. One call,
+        // because what a file turns out to be is the node's answer and
+        // not a question the face can ask first.
+        "preview" => to_json(&rt.block_on(crate::files::preview(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+        ))?),
+        "code_here" => to_json(&rt.block_on(crate::code::here(root, &arg("machine")?))?),
+        "code_open" => {
+            to_json(&rt.block_on(crate::code::open(root, &arg("machine")?, &arg("dir")?))?)
+        }
+        "code_stop" => {
+            rt.block_on(crate::code::stop(root, &arg("machine")?))?;
+            Ok("null".to_owned())
+        }
+        "write_text" => to_json(&rt.block_on(crate::files::write_text(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+            &arg("was")?,
+            &arg("text")?,
+        ))?),
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         // `top` is required, the `cells` rule: how many rows fit is the
         // screen's fact, and a default here would be this layer sizing

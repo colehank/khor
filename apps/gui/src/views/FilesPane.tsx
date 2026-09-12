@@ -27,9 +27,13 @@ import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago } from "@/words";
 
-function sizeWord(bytes: number): string {
+/** Bytes as a person reads them. **Exported because the file view
+    prints the same ladder** (工作区批2): a row saying 1.2 MB beside a
+    banner saying 1.19 MB about one file is a difference a reader has to
+    stop and resolve, and two copies of a rounding rule drift on the
+    first change to either. */
+export function sizeWord(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let v = bytes / 1024;
@@ -51,6 +55,9 @@ export function FilesPane({
   narrow,
   onPath,
   onLanded,
+  onFile,
+  open,
+  marks,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -67,6 +74,18 @@ export function FilesPane({
       are different facts: `onPath` fires for an *intention* that may
       still be refused, this one only after a listing came back. */
   onLanded: (path: string) => void;
+  /** A file was picked. The tree says which; what happens to it belongs
+      to whoever holds this pane (工作区批2). */
+  onFile: (path: string) => void;
+  /** Which file is open, so the row can say so. Absolute, or null. */
+  open: string | null;
+  /** Absolute path → git's mark for it, folded so that a directory
+      carries one when anything under it does (`WorkspacePane`).
+      **`null` is「nobody asked」or「nobody could answer」, which is not
+      the same as an empty map** — an empty map says every file here
+      matches HEAD, and a tree khor could not read must not claim that.
+      Absent entirely when this pane is not inside a workspace. */
+  marks?: Map<string, string> | null;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -223,6 +242,7 @@ export function FilesPane({
                     className="flex min-h-touch min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
                   >
                     <span className="min-w-0 flex-1 truncate">{e.name}/</span>
+                    <Mark mark={marks?.get(full)} />
                   </button>
                   {/* The two states get the two words the row action rule
                       demands; the mark stays visible once set. */}
@@ -289,7 +309,25 @@ export function FilesPane({
                     faded && "text-muted-foreground",
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate">{e.name}</span>
+                  {/* **The name is the way in now** (工作区批2). It
+                      used to be a word beside a 取下来 button, because
+                      the only thing a browsing tab could do with a file
+                      was take it. A workspace can read one, so the row
+                      opens it and taking stays where it was — pressing
+                      a file and pressing the button next to it are two
+                      different asks, and the bigger target is the one
+                      people mean. */}
+                  <button
+                    type="button"
+                    onClick={() => onFile(full)}
+                    className={cn(
+                      "min-w-0 flex-1 truncate self-stretch text-left",
+                      open === full && "font-title text-foreground",
+                    )}
+                  >
+                    {e.name}
+                  </button>
+                  <Mark mark={marks?.get(full)} />
                   {took?.path === full ? (
                     <span
                       data-took={took.state}
@@ -302,14 +340,23 @@ export function FilesPane({
                     </span>
                   ) : (
                     <>
-                      <span className="flex-none text-xs text-muted-foreground">
-                        {sizeWord(e.size)}
-                      </span>
-                      {e.at_ms > 0 && (
-                        <span className="hidden flex-none text-xs text-muted-foreground sm:inline">
-                          {ago(e.at_ms)}
-                        </span>
-                      )}
+                      {/* **The size and the mtime left this row on
+                          2026-09-11** (工作区批3), and they left because
+                          the row moved house. They were a browsing tab's
+                          facts, on a pane that had the width of a page;
+                          this pane is now a project tree in a 224-wide
+                          column, and five things had to share it — name,
+                          git mark, size, time, 取下来. Measured at 1400
+                          with the mark added: **the name button came to
+                          26 wide**, under the 44 floor, and the name is
+                          the row's whole point.
+                          Nothing was hidden to make room: a file's byte
+                          count and its mtime answer 「should I take
+                          this」, which is the browsing question, and the
+                          tree's question is 「which file」. The size is
+                          still said where taking is decided — the file
+                          view's own head says it for a binary and for a
+                          cut one. */}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -346,5 +393,21 @@ export function FilesPane({
         )}
       </div>
     </section>
+  );
+}
+
+/** git's letter on one row, or nothing.
+    **Nothing is the common case and it takes no width**: most files in
+    a checkout match HEAD, and a column of blanks reserved for the few
+    that do not would push every name left for no reader's benefit.
+
+    Drawn in the same ink as the change gutter (`--git-mark`), so the
+    two halves of「this file differs」are one colour. */
+function Mark({ mark }: { mark?: string }) {
+  if (mark === undefined) return null;
+  return (
+    <span data-git-mark={mark} className="flex-none font-mono text-xs text-git-mark">
+      {mark}
+    </span>
   );
 }

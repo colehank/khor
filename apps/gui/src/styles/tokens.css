@@ -307,6 +307,22 @@
      weight, not a second hue. */
   --strain: #7a3b5e;
 
+  /* The change gutter in a workspace's file view (工作区批3).
+     **Deliberately no hue at all**, where `--strain` above took one:
+     a bar beside a line says「这里和 HEAD 不一样」, which is a fact
+     about the file rather than a state anything is in, and every hue
+     this palette has is already spoken for — the six words own five of
+     them and strain owns the sixth. A green for「added」would be the
+     worst of the available mistakes: green in this app means 完成
+     (docs/UX.md 绿色), and lines a person has not committed yet are
+     the opposite of finished.
+
+     So it is the file's own ink at partial strength, and what makes it
+     read is width rather than colour. The same token carries both
+     themes because it is defined from `--foreground`, which already
+     flips. */
+  --git-mark: color-mix(in srgb, var(--foreground) 50%, transparent);
+
   /* ── which model spent it ─────────────────────────────────
    *
    * **Hue is the family, lightness is the generation.** The names go on
@@ -1282,6 +1298,7 @@
   --color-ring: var(--ring);
 
   --color-strain: var(--strain);
+  --color-git-mark: var(--git-mark);
 
   --color-state-busy: var(--state-busy);
   --color-state-blocked: var(--state-blocked);
@@ -1477,6 +1494,25 @@
    * moves over when it is being reworked anyway; a pass over every
    * `text-sm` in the app would put one lane's reflow into everybody
    * else's hunks for a reading nobody asked for. */
+/* ── a document's own ladder (工作区批6) ─────────────────────────
+   *
+   * **The one surface in this app where somebody else chose the
+   * structure.** Everything khor draws has one title and one body, so
+   * `--text-title` at 17 over `--text-read` at 16 is all the step the
+   * chrome ever needs. A Word file or a README arrives with three or
+   * four levels of heading already in it, and a ladder that fine would
+   * render them as four sizes nobody can tell apart.
+   *
+   * So three rungs and then a floor: h4 and below sit at body size and
+   * are told apart by weight alone. A scale that kept shrinking would
+   * be smallest exactly where the nesting is deepest, which is where a
+   * reader most needs to see where they are.
+   *
+   * Read against `--text-read`, not against each other: 1.4×, 1.2×,
+   * 1.06× of 16. */
+  --text-doc-h1: 22.4px;
+  --text-doc-h2: 19.2px;
+  --text-doc-h3: 17px;
   --text-title: 17px;
   --text-fact: 14px;
   --text-aux: 12.5px;

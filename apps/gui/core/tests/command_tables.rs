@@ -63,13 +63,33 @@ fn tauri_commands() -> BTreeSet<String> {
 fn served_commands() -> BTreeSet<String> {
     let src = repo_file("src/api.rs");
     src.lines()
-        .filter_map(|line| {
+        .flat_map(|line| {
             let t = line.trim_start();
-            let rest = t.strip_prefix('"')?;
-            let (word, after) = rest.split_once('"')?;
-            after.trim_start().starts_with("=>").then(|| word.to_owned())
+            if !t.starts_with('"') || !t.contains("=>") {
+                return Vec::new();
+            }
+            // ⚠️ **An arm may name several commands**, and until
+            // 2026-09-12 this finder could not see one that did. It read
+            // `"word"` then required `=>` immediately after, so
+            // `"move_page" | "hide_page" | … =>` matched nothing at all
+            // — and five commands that have had a shared arm for months
+            // were reported as missing from this side. The gate had been
+            // red about them the whole time, which is the good half of
+            // how it was found; the bad half is that the sentence it was
+            // red with said the wrong thing about the code.
+            //
+            // Everything before the `=>`, split on `|`, each piece a
+            // quoted word. A guard clause (`if x =>`) has no quotes and
+            // drops out.
+            let head = t.split("=>").next().unwrap_or("");
+            head.split('|')
+                .filter_map(|piece| {
+                    let p = piece.trim();
+                    p.strip_prefix('"')?.split_once('"').map(|(w, _)| w.to_owned())
+                })
+                .filter(|w| !w.is_empty())
+                .collect()
         })
-        .filter(|w| !w.is_empty())
         .collect()
 }
 
@@ -79,12 +99,35 @@ fn served_commands() -> BTreeSet<String> {
 /// somebody writes down** rather than an omission that happens
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
-const ONE_SIDED: &[(&str, &str)] = &[(
-    "pick_and_send",
-    "app-only by nature: it opens the DESKTOP's native file picker (tauri-plugin-dialog) — \
-     a browser face has its own <input type=file> and uploads bytes instead (/api/upload), \
-     so an HTTP arm for this would be a dialog on a machine nobody is looking at",
-)];
+const ONE_SIDED: &[(&str, &str)] = &[
+    (
+        "pick_and_send",
+        "app-only by nature: it opens the DESKTOP's native file picker (tauri-plugin-dialog) — \
+         a browser face has its own <input type=file> and uploads bytes instead (/api/upload), \
+         so an HTTP arm for this would be a dialog on a machine nobody is looking at",
+    ),
+    // ── the menu's five, written down 2026-09-12 ──────────────────
+    //
+    // **One reason, five commands, and it is a fact about windows.**
+    // The menu is a second native window of the app's own — the same
+    // page told to be its other half (`api.ts` `isMenuFace`) — and it
+    // exists because a popup drawn inside the document cannot float
+    // over a child webview, which is a webview-over-webview problem a
+    // browser face does not have. A browser draws its menus in its own
+    // document, where they work.
+    //
+    // So these five are not「missing on the web」: the web face has no
+    // second window to show, hide, size, read or pick from, and an
+    // HTTP arm answering `null` would be a command that reports
+    // success at doing nothing. The account is one line each so that
+    // deleting a line turns that command red, which is the point of
+    // this table.
+    ("show_menu", "the menu is a second native window; a browser face draws menus in its own document"),
+    ("hide_menu", "the other half of `show_menu`, and gone for the same reason"),
+    ("size_menu", "resizes that window to its content; nothing on the web face has a window to resize"),
+    ("menu_rows", "hands the menu window the rows it should draw — there is no such window here"),
+    ("menu_pick", "carries a choice from that window back to the face that opened it"),
+];
 
 /// **Both tables name the same commands.**
 ///

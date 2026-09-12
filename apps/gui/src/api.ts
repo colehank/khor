@@ -11,6 +11,15 @@ import { msg } from "./gen/catalog";
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
 import type { PlaceRow } from "./gen/bindings/PlaceRow";
+import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
+import type { FileText } from "./gen/bindings/FileText";
+import type { GitStatus } from "./gen/bindings/GitStatus";
+import type { GitRow } from "./gen/bindings/GitRow";
+import type { GitDiff } from "./gen/bindings/GitDiff";
+import type { GitHunk } from "./gen/bindings/GitHunk";
+import type { Wrote } from "./gen/bindings/Wrote";
+import type { CodeAt } from "./gen/bindings/CodeAt";
+import type { Preview } from "./gen/bindings/Preview";
 import type { SessionRow } from "./gen/bindings/SessionRow";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { DayRun } from "./gen/bindings/DayRun";
@@ -49,6 +58,15 @@ import type { WatchedDir } from "./gen/bindings/WatchedDir";
 export type {
   AccountRing,
   PlaceRow,
+  WorkspaceRow,
+  FileText,
+  GitStatus,
+  GitRow,
+  GitDiff,
+  GitHunk,
+  Wrote,
+  CodeAt,
+  Preview,
   SessionRow,
   DeviceRow,
   DayRun,
@@ -203,6 +221,86 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     machine, because it is where the wizard is about to start something
     (`Node::places_on`). */
 export const fetchPlaces = (machine = "") => call<PlaceRow[]>("places", { machine });
+/** The workspace landing's list for **one** machine: the checkouts its
+    own records say work happened in (`khor_node::place`, the checkout
+    half). `machine` empty is this one.
+
+    **Asked per machine and never folded.** The landing shows them all
+    in one list, but which machine could not answer is a fact about that
+    machine, and a folded call would flatten「没问过」「够不着」「那儿
+    没有」into one empty array — the same three-way collapse
+    `check-acp` 第二批 exists to catch. A refusal here is an error, not
+    an empty list. */
+export const fetchWorkspaces = (machine = "") =>
+  call<WorkspaceRow[]>("workspaces", { machine });
+/** One file off a machine, as much of it as one slice holds
+    (`khor_gui_core::files::read_text`). For reading; `pullFile` is the
+    other verb and it spends a disk. */
+export const fetchFileText = (machine: string, path: string) =>
+  call<FileText>("read_text", { machine, path });
+/** One checkout's branch and marks (`khor_gui_core::git::status`).
+    `dir` is the workspace root in that machine's own spelling.
+
+    **Asked once per workspace, not once per directory.** The tree walks
+    and this answer does not change while it does; re-asking on every
+    step would make a person's own walking look like a repository
+    churning. Measured on this repo: 54ms for 35 marked paths out of
+    1525 tracked files.
+
+    A refusal is an error, never an empty list — no rows means「nothing
+    differs from HEAD」, which is the one reading that must not be a
+    guess. */
+export const fetchGitStatus = (machine: string, dir: string) =>
+  call<GitStatus>("git_status", { machine, dir });
+/** Where one file differs from HEAD (`khor_gui_core::git::diff`), in
+    the coordinates of the file as it is now. Refuses out loud for
+    `fetchGitStatus`'s reason. */
+export const fetchGitDiff = (machine: string, path: string) =>
+  call<GitDiff>("git_diff", { machine, path });
+/** Saves a whole file back (`khor_gui_core::files::write_text`).
+
+    `was` is the `digest` that came with the text. **It is the whole of
+    the safety**: the far machine refuses unless the file still hashes
+    to it, so two people editing one file end with one of them told
+    rather than one of them silently gone. An empty `was` claims there
+    is no file at that path — which is why the view only offers to save
+    when it was handed a digest.
+
+    A refusal is an error and is never softened anywhere on this path: a
+    save that answered「fine」while writing nothing is the worst answer
+    khor could give. */
+export const saveFileText = (machine: string, path: string, was: string, text: string) =>
+  call<Wrote>("write_text", { machine, path, was, text });
+/** `code --version`'s first line on that machine, **empty when there is
+    none** (`khor_gui_core::code::here`). A machine that could not answer
+    comes back empty too, and that is deliberate: both lead to the same
+    next move, which is to draw no button. */
+/** One file shaped for a screen that is not a code view: an image, an
+    SVG, or a document rendered to HTML (`khor_gui_core::files::preview`).
+
+    **What a file turns out to be is the node's answer**, not a question
+    this side asks first — so this is one call and `kind` comes back
+    with the content. A second opinion here is exactly how `khor` and
+    the app would start disagreeing about what a `.docx` is.
+
+    It reads up to 4 MB, which is measured to cover every image and pdf
+    on this person's disk; bigger files come back `cut` with nothing to
+    draw. */
+export const fetchPreview = (machine: string, path: string) =>
+  call<Preview>("preview", { machine, path });
+export const fetchCodeHere = (machine: string) => call<string>("code_here", { machine });
+/** Starts (or reuses) that machine's VS Code web face and answers a URL
+    to point a webview at, `dir` opened as the folder.
+
+    ⚠️ **This can take minutes the first time a machine runs it** — the
+    editor fetches its own server from Microsoft, measured at 643 MB.
+    The consent for that is asked before this is called and cannot be
+    asked from inside it. */
+export const openCode = (machine: string, dir: string) =>
+  call<CodeAt>("code_open", { machine, dir });
+/** Stops it and drops this machine's pipe. Answers the same whether
+    either existed. */
+export const stopCode = (machine: string) => call<void>("code_stop", { machine });
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });

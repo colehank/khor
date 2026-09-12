@@ -124,6 +124,21 @@ const VERBS: &[Verb] = &[
     Verb { word: "ls", run: ls, reach: Reach::Read },
     // Lands a file on this machine's disk.
     Verb { word: "pull", run: pull, reach: Reach::Act },
+    // Reads a checkout on any machine; writes nothing there and nothing
+    // here, which is why it is a read and not an act like `agents`.
+    Verb { word: "git", run: git, reach: Reach::Read },
+    // Replaces a file on somebody's disk. The most irreversible read-
+    // and-write pair in this table, and the mirror of `pull`.
+    Verb { word: "put", run: put, reach: Reach::Act },
+    // Starts a process on somebody's machine and a pipe in front of
+    // it. Reading is what the editor then does; opening it is an act.
+    Verb { word: "code", run: code, reach: Reach::Act },
+    // Turns a document into words on this terminal. Reads only.
+    Verb { word: "read", run: read, reach: Reach::Read },
+    // The two lists the GUI's landings are built on. Read-only folds
+    // over the vendors' own records.
+    Verb { word: "places", run: places, reach: Reach::Read },
+    Verb { word: "workspaces", run: workspaces, reach: Reach::Read },
     Verb { word: "borrow", run: borrow, reach: Reach::Act },
     Verb { word: "usage", run: usage, reach: Reach::Read },
     Verb { word: "sessions", run: sessions, reach: Reach::Read },
@@ -196,6 +211,14 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     ("_cagent", "internal: khor's own claude ACP shim; the agent a claude GUI session runs (`cagent` module head)"),
     ("_codexagent", "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)"),
     ("_verbs", "internal: the verb table as JSON, for the gate that decides what an agent may type (`verbs`)"),
+    (
+        "root",
+        "internal: which store on this machine is khor's own, for `scripts/install.sh` — the freshly \
+         unpacked binary is the authority on that and the installer asks it rather than reproducing \
+         the rule in sh (`khor_root` in scripts/onset-lib.sh is what reproducing it costs). Not a \
+         verb a person types: the answer is a path they cannot do anything with, and the one thing \
+         they might want it for (which home am I on) is `khor id`.",
+    ),
     ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
@@ -357,6 +380,248 @@ fn pull(rest: &[String]) -> Result<(), String> {
     let (moved, dest) = rt()?.block_on(node()?.pull_path(machine, path, &dir))?;
     println!("{}", cli::pulled_to(moved, dest.display()));
     Ok(())
+}
+
+/// Where sessions have run on a machine — 常去的地方, the list the new
+/// session wizard completes from (`khor_node::Node::places_on`).
+///
+/// **Added on 2026-09-12, and it was missing from the day the GUI had
+/// it.** docs/KHOR.md's third foundation is that the two faces are
+/// equivalent, and this was one of two places that was not true; the
+/// other is below. Both were on the ledger from 工作区批1.
+fn places(rest: &[String]) -> Result<(), String> {
+    let machine = match rest {
+        [] => "",
+        [machine] => machine.as_str(),
+        _ => return Err(USAGE.into()),
+    };
+    for (path, shown, sessions, _) in rt()?.block_on(node()?.places_on(machine))? {
+        // The machine's own spelling first, the real path after: `~` is
+        // what a person recognises and the absolute one is what they
+        // paste somewhere else.
+        println!("{shown}\t{sessions}\t{path}");
+    }
+    Ok(())
+}
+
+/// The checkouts among those places — the workspace landing's list
+/// (`khor_node::Node::workspaces_on`).
+///
+/// **A refusal here is an error, not an empty list**, the same as on
+/// the screen: 「nobody works there」 and 「that machine could not
+/// answer」 are two different next moves.
+fn workspaces(rest: &[String]) -> Result<(), String> {
+    let machine = match rest {
+        [] => "",
+        [machine] => machine.as_str(),
+        _ => return Err(USAGE.into()),
+    };
+    for (path, shown, sessions, _) in rt()?.block_on(node()?.workspaces_on(machine))? {
+        println!("{shown}\t{sessions}\t{path}");
+    }
+    Ok(())
+}
+
+/// Prints a document's words: markdown, or a Word / Excel / PowerPoint
+/// file turned into markdown on the way (`khor_node::preview`).
+///
+/// **The same pipeline the workspace paints**, which is the point:
+/// every format ends as markdown, the app renders that markdown to
+/// HTML and this prints it. A `.docx` the app can show and `khor`
+/// cannot would be the third foundation broken in the place it is
+/// easiest to break it (docs/KHOR.md, CLI 与 GUI 等价).
+///
+/// **Markdown and not the HTML**, because a terminal reads markdown and
+/// a terminal does not read tags — the render is the screen's half of
+/// the pipeline, not the document's.
+fn read(rest: &[String]) -> Result<(), String> {
+    let [machine, path] = rest else {
+        return Err(USAGE.into());
+    };
+    // The same ceiling the app looks through, and **the same constant**
+    // — it lived in two places for a day (`khor_node::preview::LOOK`).
+    let look = khor_node::preview::LOOK;
+    let (total, _, bytes, cut) = rt()?.block_on(node()?.read_all(machine, path, look))?;
+    let md = khor_node::preview::markdown(path, &bytes)?;
+    if md.trim().is_empty() {
+        // A real answer, not a failure: a blank template parses
+        // perfectly and holds nothing. Said on stderr so a pipe gets
+        // the empty document it asked for.
+        eprintln!("{}", cli::READ_EMPTY);
+        return Ok(());
+    }
+    print!("{md}");
+    if cut {
+        eprintln!("{}", cli::read_cut(total, look));
+    }
+    Ok(())
+}
+
+/// Opens VS Code's web face on a machine's workspace and prints where
+/// to point a browser (`khor_node::code`).
+///
+/// **The link carries the token, and that is said rather than hidden.**
+/// The far server refuses every request without it; a person copying
+/// this line into a chat is handing over their editor, which is the
+/// same warning `khor web` already carries about its own link.
+///
+/// **Not a session, so there is no row and no `close`.** An editor
+/// cannot answer 你怎么样 with any of the six words (docs/UX.md), and a
+/// row whose state never changes is a row nobody reads. `--stop` is how
+/// it ends, and it is the only way — which is the price of not being a
+/// session, paid here where it is spent.
+fn code(rest: &[String]) -> Result<(), String> {
+    let (stop, rest) = match rest {
+        [flag, tail @ ..] if flag == "--stop" => (true, tail),
+        _ => (false, rest),
+    };
+    let (machine, root) = match rest {
+        [machine] => (machine, ""),
+        [machine, root] => (machine, root.as_str()),
+        _ => return Err(USAGE.into()),
+    };
+    let rt = rt()?;
+    let n = node()?;
+    if stop {
+        rt.block_on(n.code_stop(machine))?;
+        println!("{}", cli::code_stopped(machine));
+        return Ok(());
+    }
+    // Asked first so a machine without an editor says so in one round
+    // trip, rather than after ten minutes of a download that was never
+    // going to happen.
+    let version = rt.block_on(n.code_here(machine))?;
+    if version.is_empty() {
+        return Err(msg::NO_VSCODE.into());
+    }
+    let (addr, token) = rt.block_on(n.code_open(machine))?;
+    // **The folder rides in the link, not in the launch.** One server
+    // per machine opens whichever folder it is asked for, so a second
+    // project is a second link and not a second copy of VS Code
+    // (`khor_node::code`). No path means whatever it opened last.
+    let folder = if root.is_empty() {
+        String::new()
+    } else {
+        format!("&folder={}", enc(root))
+    };
+    println!("{}", cli::code_at(format_args!("http://{addr}/?tkn={token}{folder}"), version));
+    Ok(())
+}
+
+/// Percent-encodes a path for a query string. **Hand-rolled and tiny on
+/// purpose**: khor has no URL crate, the input is one filesystem path,
+/// and the set that must be escaped in a query value is small and
+/// fixed. Everything outside the unreserved set goes as `%XX`, which is
+/// always correct and only ever uglier than necessary.
+fn enc(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for b in path.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(*b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Writes a local file onto a machine, at a path chosen by the caller —
+/// the mirror of `pull`, and what the file view's save does
+/// (`khor_node::files::write_whole`).
+///
+/// **Read first, then write, and refuse if it moved in between.** The
+/// digest of what is there now is what the write is pinned to, so a
+/// file somebody else changed between those two moments is refused
+/// whole rather than half-overwritten. That window is small and real;
+/// what it buys is that the common case — two people with the same file
+/// open — cannot end with one of them silently gone.
+///
+/// `--new` is the other claim: **there should be nothing at that path**.
+/// It is a separate flag rather than a fallback because「create it」and
+/// 「replace it」 are two different intentions, and a verb that quietly
+/// did whichever the disk allowed would do the wrong one on the day it
+/// mattered.
+fn put(rest: &[String]) -> Result<(), String> {
+    let (fresh, rest) = match rest {
+        [flag, tail @ ..] if flag == "--new" => (true, tail),
+        _ => (false, rest),
+    };
+    let [machine, src, dest] = rest else {
+        return Err(USAGE.into());
+    };
+    let bytes = std::fs::read(src).map_err(|e| msg::cant_read(src, e))?;
+    let rt = rt()?;
+    let n = node()?;
+    let was = if fresh {
+        String::new()
+    } else {
+        // The read this write is pinned to. Its refusal is the caller's
+        // answer too — a path that cannot be read is not a path this
+        // verb should be replacing.
+        let (_, _, now) = rt.block_on(n.read_head(machine, dest))?;
+        khor_node::files::digest(&now)
+    };
+    let (_, digest) = rt.block_on(n.write_path(machine, dest, &was, &bytes))?;
+    println!("{}", cli::put_landed(dest, &digest[..8]));
+    Ok(())
+}
+
+/// What git already knows about a checkout on any machine, read over the
+/// wire (`khor_node::git`).
+///
+/// **One verb with two words rather than `khor status` and `khor diff`.**
+/// khor already has `state`, which reports a *session's* state word, and
+/// `status` beside it would be two near-identical verbs for two
+/// unrelated vocabularies — the six words belong to sessions and git's
+/// four letters belong to files (docs/UX.md). Under `git` there is no
+/// collision left to have, and the two words read exactly as they do in
+/// the tool they came from: 「git 相关操作应该用符合使用习惯的英文」.
+///
+/// **This verb is why the diff is computed in the node.** Line ranges
+/// worked out in the GUI would be a diff `khor` cannot print, and
+/// docs/KHOR.md's third foundation is that the two faces are equivalent.
+fn git(rest: &[String]) -> Result<(), String> {
+    match rest {
+        [word, machine, path] if word == "status" => {
+            let s = rt()?.block_on(node()?.git_status_on(machine, path))?;
+            // The branch first and alone, because it is the one line
+            // that is about the checkout rather than about a file — and
+            // **nothing at all when there is no name to say**: a
+            // detached HEAD would otherwise print a blank first line
+            // that reads as「no changes」.
+            if !s.branch.is_empty() {
+                println!("{}", s.branch);
+            }
+            for (path, mark) in &s.rows {
+                println!("{mark}\t{path}");
+            }
+            if s.more {
+                eprintln!("{}", cli::GIT_STATUS_MORE);
+            }
+            Ok(())
+        }
+        [word, machine, path] if word == "diff" => {
+            let d = rt()?.block_on(node()?.git_diff_on(machine, path))?;
+            for h in &d.hunks {
+                // `at,lines` in the coordinates of the file as it is
+                // now, which is the half of a unified header that is
+                // true of the copy on this machine's screen. The old
+                // side has no start line on the wire on purpose (the
+                // gutter never needed one), so printing `-?` would be
+                // inventing a number to look familiar.
+                println!("@@ {},{} @@", h.at, h.lines);
+                for line in &h.was {
+                    println!("-{line}");
+                }
+            }
+            if d.more {
+                eprintln!("{}", cli::GIT_MORE);
+            }
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
 }
 
 /// Borrows a machine's network: the serve stands up a local HTTP proxy in

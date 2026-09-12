@@ -919,3 +919,87 @@ input[type="search"]::-webkit-search-decoration {
     transition: none;
   }
 }
+
+/* A rendered document (工作区批6): markdown, or a Word/Excel/PowerPoint
+ * file that became markdown on the way (`khor_node::preview`).
+ *
+ * **Written here rather than as utilities**, and this is the exception
+ * the file's own head allows for: the HTML is generated in Rust and
+ * this side never sees the elements, so there is no call site to put a
+ * class on. Tailwind's typography plugin would do the same job and
+ * bring its own scale; every length below is a token this app already
+ * has, which is the reason not to.
+ *
+ * Sized off `--text-read`, not `--text-code`: this is prose, and the
+ * measure and leading a person reads paragraphs at are the ones
+ * `check-read` already measures on the conversation. */
+.prose-khor {
+  font-size: var(--text-read);
+  line-height: var(--text-read--line-height);
+  color: var(--foreground);
+}
+.prose-khor > * + * {
+  margin-top: 0.75em;
+}
+.prose-khor :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-title);
+  font-weight: var(--font-weight-title);
+  line-height: 1.3;
+}
+/* The step between levels is lightness and weight, never a size ladder
+   with six rungs: a document rendered from somebody's Word file uses
+   whatever depth it likes, and a scale that shrank to 0.8em by h6 would
+   be unreadable exactly where the nesting is deepest. */
+.prose-khor h1 { font-size: var(--text-doc-h1); margin-top: 1.4em; }
+.prose-khor h2 { font-size: var(--text-doc-h2); margin-top: 1.3em; }
+.prose-khor h3 { font-size: var(--text-doc-h3); margin-top: 1.2em; }
+.prose-khor h4,
+.prose-khor h5,
+.prose-khor h6 { font-size: var(--text-read); margin-top: 1.1em; }
+.prose-khor :is(h1, h2, h3, h4, h5, h6):first-child { margin-top: 0; }
+.prose-khor ul { list-style: disc; padding-left: 1.4em; }
+.prose-khor ol { list-style: decimal; padding-left: 1.4em; }
+.prose-khor li + li { margin-top: 0.25em; }
+.prose-khor a { color: var(--foreground); text-decoration: underline; }
+.prose-khor code {
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.3em;
+}
+.prose-khor pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  line-height: var(--text-code--line-height);
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+}
+.prose-khor pre code { background: none; padding: 0; }
+.prose-khor blockquote {
+  /* Twice the hairline, because this one is a mark rather than a
+     seam — a quoted block has to be visible as a block. */
+  border-left: calc(var(--hair) * 2) solid var(--border);
+  padding-left: 0.8em;
+  color: var(--muted-foreground);
+}
+.prose-khor hr { border-top: var(--hair) solid var(--border); }
+/* A spreadsheet arrives as one of these and can be very wide, so the
+   table scrolls inside the document rather than widening it — the same
+   rule the file view's code column follows. */
+.prose-khor table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--text-aux);
+}
+.prose-khor :is(th, td) {
+  border: var(--hair) solid var(--border);
+  padding: 0.3em 0.6em;
+  text-align: left;
+  white-space: nowrap;
+}
+.prose-khor th { font-weight: var(--font-weight-title); background: var(--muted); }
+.prose-khor img { max-width: 100%; }

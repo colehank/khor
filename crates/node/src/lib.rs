@@ -12,8 +12,10 @@ pub mod adaptor;
 pub mod cagent;
 pub mod codexagent;
 pub mod chat;
+pub mod code;
 pub mod day;
 pub mod files;
+pub mod git;
 pub mod gui_host;
 pub mod hardware;
 pub mod history;
@@ -25,6 +27,7 @@ pub mod list;
 pub mod mcp;
 pub mod live;
 pub mod place;
+pub mod preview;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
@@ -334,6 +337,26 @@ pub struct Node {
         tokio::sync::Mutex<
             std::collections::HashMap<
                 SessionId,
+                (std::net::SocketAddr, u16, tokio::task::JoinHandle<()>),
+            >,
+        >,
+    >,
+    /// The pipes this machine holds in front of somebody else's VS Code
+    /// (工作区批5), keyed by machine.
+    ///
+    /// **A separate map from `reaches` above, and not a generalisation
+    /// of it.** That one is keyed by a session id and reuses a pipe
+    /// when the far *port* still matches, because a host that died and
+    /// came back is the failure it was written for. This one is keyed
+    /// by a directory and its far side is a server khor started itself
+    /// — so「is it still the same port」is a question about a child
+    /// process khor is holding, answered where that child is held
+    /// (`code::serve`), not by remembering a number here. One map with
+    /// two meanings would have to carry both stories.
+    pub(crate) codes: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<
+                String,
                 (std::net::SocketAddr, u16, tokio::task::JoinHandle<()>),
             >,
         >,
@@ -703,6 +726,7 @@ impl Node {
             sync_gate: tokio::sync::Mutex::new(()),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         };
         node.register_self()?;
@@ -2933,6 +2957,23 @@ impl Node {
     pub fn places_shown(&self) -> Vec<(String, String, u32, i64)> {
         self.places()
             .into_iter()
+            .map(|p| (p.path.clone(), place::shorten(Path::new(&p.path)), p.sessions, p.last_ms))
+            .collect()
+    }
+
+    /// The **checkouts** among [`Node::places`], in the same wire shape
+    /// — the workspace landing's list.
+    ///
+    /// The two lists differ by one filter and nothing else, which is
+    /// why they share a fold rather than walking the vendors' records
+    /// twice. The line itself is argued on `place::Place::checkout`:
+    /// 常去的地方 is where a session could start, a workspace is a
+    /// project being worked on, and a glance into `~/Downloads` is the
+    /// first but not the second.
+    pub fn workspaces_shown(&self) -> Vec<(String, String, u32, i64)> {
+        self.places()
+            .into_iter()
+            .filter(|p| p.checkout)
             .map(|p| (p.path.clone(), place::shorten(Path::new(&p.path)), p.sessions, p.last_ms))
             .collect()
     }

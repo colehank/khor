@@ -39,7 +39,25 @@ import { extendTailwindMerge } from "tailwind-merge";
  * the gate holds that half too — this file changes the merge rules for
  * the whole app, so「the new ones work」is only half a claim.
  */
-const OWN_SIZES = ["title", "fact", "aux", "hero", "code", "read", "term"];
+// `doc-h1`/`doc-h2`/`doc-h3` are a rendered document's heading ladder
+// (工作区批6). **They are used only from `app.css`, never as a utility**
+// — the HTML they size is generated in Rust and has no call site to put
+// a class on — and they are listed here anyway, because the gate is
+// right that a `--text-*` token which tailwind-merge files as a colour
+// is a trap waiting for whoever first writes `text-doc-h1` in a
+// component.
+const OWN_SIZES = [
+  "title",
+  "fact",
+  "aux",
+  "hero",
+  "code",
+  "read",
+  "term",
+  "doc-h1",
+  "doc-h2",
+  "doc-h3",
+];
 
 const merge = extendTailwindMerge({
   extend: { classGroups: { "font-size": [{ text: OWN_SIZES }] } },

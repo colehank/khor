@@ -57,6 +57,7 @@
 | `npm run web-face` | `web-face.mjs`,浏览器脸,**真连**(真的 `khor serve`) | 不拿 |
 | `npm run gates` | `check-gates.mjs`,守门自己够不够得着、写没写下来 | 不拿 |
 | `npm run bytes` | `check-bytes.mjs`,源码里有没有**字面**控制字符(写成转义的不算) | 不拿 |
+| `npm run boot` | `check-boot.mjs`,第一帧的五个颜色和窗口的两块底是不是都来自 `--background` / `--card`——白屏一闪是主题还没到就画了 | 不拿 |
 | `npm run shim` | `check-shim.mjs`,借网页面里那两个漏真实 IP 的 API 还在不在(静态:把注入脚本放进一个 `vm` 里跑) | 不拿 |
 | `npm run wk` | `check-wk.mjs`,同一段注入脚本在**真 WebKit** 里到得了哪几个 realm(起一个 `WKWebView`,同一页加载两遍、一遍不带 shim)。**macOS 专有**,要 `swift` 和一个窗口服务器;别的平台上它说一句「这儿量不到」就停,不算通过 | 不拿 |
 

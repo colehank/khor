@@ -43,6 +43,15 @@ pub struct Place {
     pub sessions: u32,
     /// The newest of them, ms since the epoch.
     pub last_ms: i64,
+    /// Whether this path is a checkout rather than [`project_root`]'s
+    /// fallback to the directory itself.
+    ///
+    /// **A fact, not a policy.** The workspace list shows only the
+    /// checkouts, and the session wizard's 常去的地方 shows every
+    /// place; folding that decision in here would make one of the two
+    /// callers wrong. Deciding it at each caller means neither has to
+    /// walk the tree a second time to find out.
+    pub checkout: bool,
 }
 
 /// The project a directory belongs to — `git rev-parse --show-toplevel`
@@ -79,16 +88,34 @@ pub struct Place {
 /// the marker — and a directory under home with no checkout of its own
 /// stays itself, which is exactly the place the person was standing in.
 pub fn project_root(dir: &Path) -> PathBuf {
+    checkout_root(dir).unwrap_or_else(|| dir.to_path_buf())
+}
+
+/// The nearest enclosing checkout, or `None` when the walk found no
+/// marker at all.
+///
+/// **The same walk as [`project_root`], with the fallback withheld.**
+/// It exists because two callers want different halves of one answer.
+/// Grouping wants an answer for every session, so it takes the
+/// fallback: a shell opened in `/tmp/scratch` belongs *somewhere*, and
+/// that somewhere is `/tmp/scratch`. A list a person reads wants the
+/// other half: `~/Downloads` is not a project, and one glance at a
+/// directory should not put a row there forever.
+///
+/// Written as one walk with one wrapper on purpose. Two walks would be
+/// two places for the home-directory exception above to be remembered,
+/// and the one that forgot it would answer with a dotfiles repo.
+pub fn checkout_root(dir: &Path) -> Option<PathBuf> {
     let home = std::env::home_dir();
     for step in dir.ancestors() {
         if home.as_deref() == Some(step) {
             continue;
         }
         if step.join(".git").exists() {
-            return step.to_path_buf();
+            return Some(step.to_path_buf());
         }
     }
-    dir.to_path_buf()
+    None
 }
 
 /// A path as a person reads it: their own home written `~`.
@@ -131,6 +158,10 @@ pub fn fold(seen: impl IntoIterator<Item = (PathBuf, u32, i64)>) -> Vec<Place> {
         .into_iter()
         .filter(|(root, _)| root.is_dir())
         .map(|(root, (sessions, last_ms))| Place {
+            // Asked of the root rather than remembered from the walk
+            // that produced it: several cwds fold into one root, and
+            // they would not all have to agree.
+            checkout: checkout_root(&root).as_deref() == Some(root.as_path()),
             path: root.display().to_string(),
             sessions,
             last_ms,
@@ -196,6 +227,29 @@ mod tests {
             assert_eq!(project_root(&under), under, "a plain directory under home is itself");
         }
         assert_eq!(project_root(&home), home, "and work done in ~ still places in ~");
+    }
+
+    /// **The line the workspace list draws.** Both of these are places
+    /// a session ran, so both fold; only one of them is a project. A
+    /// glance into `~/Downloads` must not leave a row in a list of
+    /// things being worked on.
+    #[test]
+    fn a_directory_with_no_marker_folds_but_is_not_a_checkout() {
+        let tmp = root("bare");
+        let repo = tmp.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        let scratch = tmp.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+
+        let places = fold([(repo.join("src"), 1, 200), (scratch.clone(), 1, 100)]);
+        assert_eq!(places.len(), 2, "{places:?}");
+        let of = |p: &std::path::Path| {
+            places.iter().find(|q| q.path == p.display().to_string()).expect("a row").checkout
+        };
+        assert!(of(&repo), "a checkout says so");
+        assert!(!of(&scratch), "a directory with no marker does not");
+        assert_eq!(checkout_root(&scratch), None, "and the walk withholds its fallback");
     }
 
     /// A linked worktree's `.git` is a *file*. An `is_dir` test here

@@ -88,6 +88,41 @@ pub enum Op {
     /// one.** The caller wanted it not to exist; a refusal would only
     /// tell it about a race it cannot do anything about.
     DropBorrow { session: String },
+    /// Tail-appended: [`crate::proto::Request::Workspaces`] through
+    /// the resident — the checkouts that machine has been worked in.
+    WorkspacesOn { machine: String },
+    /// Tail-appended: one slice of a file, for looking at rather than
+    /// taking (`Node::read_head`). Distinct from [`Op::Pull`], which
+    /// loops every slice onto this disk; this one answers once and the
+    /// bytes never touch a file.
+    ReadHead { machine: String, path: String },
+    /// Tail-appended: [`crate::proto::Request::GitStatus`] through the
+    /// resident — what differs from HEAD across one checkout.
+    GitStatusOn { machine: String, root: String },
+    /// Tail-appended: [`crate::proto::Request::GitDiff`] through the
+    /// resident — where one file differs from HEAD.
+    GitDiffOn { machine: String, path: String },
+    /// Tail-appended: [`crate::proto::Request::WritePath`] through the
+    /// resident — saving a file back to whichever machine holds it.
+    WritePathOn { machine: String, path: String, was: String, bytes: serde_bytes::ByteBuf },
+    /// Tail-appended: whether that machine has VS Code.
+    CodeHereOn { machine: String },
+    /// Tail-appended: start (or reuse) VS Code's web face over there and
+    /// **stand a local pipe in front of it** — the reply is an address
+    /// on *this* machine, because a loopback port on somebody else's is
+    /// not something a browser here can point at.
+    CodeOpenOn { machine: String, root: String },
+    /// Tail-appended: stop it, and drop this machine's pipe with it.
+    CodeStopOn { machine: String, root: String },
+    /// Tail-appended: one slice of a file **at an offset**
+    /// (工作区批6). [`Op::ReadHead`] is this with the offset fixed at
+    /// zero; it stays because it shipped, and because「the first slice」
+    /// is what a text view wants and it should not have to say so.
+    ///
+    /// **The loop that uses this lives in the asker**, not here: one
+    /// reply is one slice, and a whole 4 MB image answered in one frame
+    /// would be eight times `proto::MAX_FRAME`.
+    ReadAt { machine: String, path: String, offset: u64 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -138,6 +173,27 @@ pub enum Reply {
     /// Tail-appended with [`Op::LoadOn`]: the machine's top and CPU
     /// day, as it answered.
     Load { load: khor_core::Load },
+    /// Tail-appended with [`Op::WorkspacesOn`]: the same four fields
+    /// as [`Reply::Places`], filtered to checkouts over there.
+    Workspaces { workspaces: Vec<(String, String, u32, i64)> },
+    /// Tail-appended with [`Op::ReadHead`]: the file's whole size, its
+    /// mtime, and as much of it as one slice holds. `bytes.len() <
+    /// total` is the only thing that says it was cut.
+    Head { total: u64, at_ms: u64, bytes: serde_bytes::ByteBuf },
+    /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
+    /// paths, and whether the list was cut.
+    GitStatus { branch: String, rows: Vec<(String, String)>, more: bool },
+    /// Tail-appended with [`Op::GitDiffOn`]: one file's hunks, in file
+    /// order, and whether the list was cut.
+    GitDiff { hunks: Vec<crate::proto::Hunk>, more: bool },
+    /// Tail-appended with [`Op::WritePathOn`]: the mtime and digest the
+    /// file has now.
+    Wrote { at_ms: u64, digest: String },
+    /// Tail-appended with [`Op::CodeHereOn`]: empty means no editor.
+    CodeHere { version: String },
+    /// Tail-appended with [`Op::CodeOpenOn`]: where to point a browser
+    /// **on this machine**, and the token the far server wants.
+    CodeAt { addr: String, token: String },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

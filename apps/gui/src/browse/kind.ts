@@ -19,12 +19,19 @@
 // the fresh tab's skeleton, and how "could not get there" is said.
 //
 // **The parameters grew from what the files landing actually needed**,
-// not from what a browser landing might. Nothing here is speculative:
-// every member below has a live caller in `views/FilesKind.tsx` today.
-// When the browser batch arrives and needs a member this does not have,
-// adding one is ordinary interface growth — the alternative, guessing
-// now, is a parameter nobody can delete later because nobody can prove
-// it is unused.
+// not from what a browser landing might. Nothing here was speculative:
+// every member below had a live caller in `views/FilesKind.tsx`.
+//
+// **That caller left on 2026-09-11** (工作区替代文件): browsing a disk
+// is not a browsing landing any more, it is what a workspace's file
+// tree does beside a list worth watching. So this contract has **one**
+// customer now, `views/PagesKind.tsx`, and the claim it was written to
+// make — that these members are the shared half of two kinds — is
+// un-tested until a second one returns. The VS Code tab is that second
+// one and is on the account (docs/handoff/001.md). **If it does not
+// land, this file has one customer and should be inlined into the one
+// that uses it** — that is the line for whoever reads this next, and it
+// is a line, not a hope.
 import type { ComponentType } from "react";
 
 import type { DeviceRow } from "@/api";

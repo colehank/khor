@@ -111,6 +111,27 @@ usage = """
   ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
   pull <机器> <文件> [目录]
                         把那台机器上的文件拉过来(默认落当前目录)
+  git [status <机器> <仓库路径> | diff <机器> <文件>]
+                        那台机器上的 git 仓库,只读。status 头一行是分支,
+                        往下每行一个和 HEAD 不一样的文件(M 改过 /
+                        A 进了索引 / D 删了 / U 没跟踪);diff 列出一个文件
+                        差在哪几处,行号是文件现在的行号,每处底下是 HEAD
+                        那边原来的那几行
+  places [机器]          那台机器上开过 session 的目录(不给机器=本机)
+  workspaces [机器]      其中是 git 仓库的那些,也就是工作区
+  read <机器> <文件>      把文档读成文字打出来:md 原样,docx/xlsx/pptx 和
+                        它们的旧格式(doc/xls/ppt)、csv/tsv 都转成
+                        markdown。读的是文字和结构,不是排版
+  code [--stop] <机器> [仓库路径]
+                        在那台机器上开 VS Code 的网页脸,打印本地链接
+                        (链接里带密钥;不给路径就是它上次开的那个)。
+                        一台机器一个服务端,换项目只是换链接。第一次会从
+                        微软下一份服务端(约 640 MB),之后不用。它不是
+                        session,没有行也不能 close,收摊用 --stop
+  put [--new] <机器> <本地文件> <远端路径>
+                        把本地文件写到那台机器的那个路径上(pull 的反向)。
+                        默认先读一遍再写,中间被人改过就整个拒绝、一个字节
+                        都不落;--new 是另一种说法:那儿本来就不该有文件
   borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
                         它那儿出去(要 serve 在跑;close 那条 session 收口)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
@@ -635,6 +656,32 @@ pulled-to = "拉了 {0} 字节,落在 {1}"
 # The no-silent-caps rule at the CLI: a listing cut at the cap must say
 # so, or a directory's first page reads as the whole of it.
 dir-truncated = "目录太大,只列出前 {0} 条"
+# What `put` says when it worked. **The digest prefix, not the byte
+# count**: what a caller does next with this is pin another write to
+# it, and the size is a number they already had.
+put-landed = "写好了 {0},现在是 {1}"
+# `khor read` on a document with no words in it. **Its own sentence
+# rather than the screen's** (`gui.doc-empty`): this one goes to stderr
+# so a pipe still gets the empty document it asked for, and a sentence
+# that travels to a terminal reads differently from one under a pane.
+read-empty = "这个文档是空的,没有文字"
+# The ceiling a look carries, said in bytes because a terminal is where
+# an exact number is the useful one.
+read-cut = "文件 {0} 字节,只读了前 {1} 字节"
+# Where to point a browser at somebody's VS Code, and which version it
+# is. **The link has the token in it and that is the point** — the far
+# server refuses everything without it, so this line is the editor:
+# pasting it somewhere shared hands the editor over, the same way
+# `khor web` 's link does.
+code-at = "{0}\n  ({1};链接里带密钥,别贴进会同步的文档。收摊: khor code --stop)"
+code-stopped = "关了 {0} 上的 VS Code"
+# The two git caps. **In [cli] rather than [gui], for `dir-truncated`'s
+# own reason**: both faces say them, and the same fact said twice in two
+# sections is two sentences to keep in step. Said at all because
+# `Response::Dir::truncated` 's rule holds here too — a list that was cut
+# and a list that was short look exactly alike.
+git-more = "改动太多,下面的没画出来"
+git-status-more = "改动太多,有些文件没标出来"
 # Borrow prints where the proxy listens because a browser or HTTPS_PROXY
 # points there, and how to collapse it because nothing else says so.
 borrowing = "借着 {0} 的网,代理口在 {1};把浏览器或 HTTPS_PROXY 指过来。收口: khor close {2}"
@@ -874,6 +921,43 @@ offered-file-changed = "出让的文件被动过(大小变了),让对方重新�
 offset-out-of-range = "起点越界: {0} > {1}"
 offered-file-wont-open = "出让的文件打不开: {0}"
 cant-read-slice = "读不完这一片: {0}"
+# Saving a file back over the wire (`khor_node::files::write_whole`).
+# **Its own sentence rather than `cant-write-file`'s**: that one is the
+# identity file's and says 写入失败, which is about this machine's own
+# store. This is about a file the person was looking at, on a machine
+# that may not be this one, and the path is the thing they need.
+cant-save-file = "存不回去 {0}: {1}"
+# The whole point of the digest. **Says what happened, not what to do**
+# — what to do depends on whether the other change was theirs, and khor
+# does not know. Nothing was written, which is the part that has to be
+# unambiguous.
+file-changed-under-you = "这个文件在你编辑期间变了,没有写回去: {0}"
+# Read in slices, and it moved between two of them. **Refused rather
+# than stitched**: `PathSlice` carries the size and the mtime on every
+# slice exactly so a reader can notice this, and an image assembled out
+# of two different files is a picture that never existed.
+file-moved-while-reading = "这个文件正在被改,读到一半对不上了: {0}"
+# A document khor can name but could not parse. **Its own sentence
+# rather than 「这不是文本」**: that one is a fact about the bytes, this
+# is a library failing on a file it should have read, and the two send
+# a reader to different places.
+# A file khor was asked to read as words and cannot. **Not the same as
+# `file-not-text`**, which is the file view's own sentence about bytes
+# on a screen; this one is the node refusing a conversion.
+not-a-text-file = "这个文件读不出文字"
+cant-read-document = "这个文档读不开: {0}"
+# A spreadsheet is a thing people keep a hundred thousand rows in and a
+# preview is a screen. Said out loud for `Response::Dir::truncated` 's
+# reason: a cut table and a short table look identical.
+table-cut = "表太长,只画了前 {0} 行"
+# What a preview says about itself, in [gui]. **「读的是文字和结构,不是
+# 排版」is the honest frame** and it is said once, under the document,
+# rather than implied by showing something that looks like Word and is
+# not.
+# One frame is the ceiling, and the ceiling is worn where the bytes
+# land rather than only at the wire — a path that got here another way
+# must not get past it either.
+too-big-to-write = "要写的内容 {0} 字节,一次最多 {1} 字节"
 recipient-not-in-table = "收文件的机器不在机器表里: {0}"
 # A dial that timed out, named. The tail this line used to carry ("收下由
 # 那台机器执行") is about accepting a transfer, and all five callers are
@@ -1419,6 +1503,52 @@ load-predates = "那边的 khor 版本旧,还报不了进程和 CPU 走势"
 # version is how a working machine gets blamed for a frame it merely
 # could not read.
 load-refused = "那台机器没接这次读数:{0}"
+# The workspace list's two refusals, split on the same line and for the
+# same reason as the `load-*` pair above: a refusal that carries words
+# repeats them, and only a wordless one gets blamed on the version.
+#
+# **Why this list refuses out loud at all**, where 常去的地方 swallows
+# the same refusal: the wizard's box still takes a typed path, so an
+# empty completion list costs a person one keystroke. A workspace list
+# is the whole landing, and「那台机器上没人干活」and「那台机器答不了」
+# are two different next moves — go work somewhere else, or go look at
+# that machine. Painted the same, the second one never gets looked at.
+workspaces-predates = "那边的 khor 版本旧,列不出工作区"
+workspaces-refused = "那台机器没接这次工作区:{0}"
+# A path that is not inside any checkout, asked a git question. **Not
+# an error about khor** — it is a fact about where the file is, and the
+# same sentence covers both「你打开的不是仓库」and「这个文件在仓库外」.
+no-checkout = "这个路径不在 git 仓库里"
+# git's two ops refuse as one pair, not four sentences. A khor old
+# enough to lack the status op lacks the diff op too — they shipped in
+# the same batch — so splitting them would be two keys for one version
+# fact, and the second one would never be the one a person sees.
+# Split from each other on the `load-*` pair's measured lesson: a
+# refusal that carries words repeats them, and only a wordless one gets
+# blamed on the version.
+git-predates = "那边的 khor 版本旧,读不了 git"
+git-refused = "那台机器没接这次 git:{0}"
+# An older khor asked to save a file. **Only the wordless refusal gets
+# this** (the `load-*` pair's measured lesson): a refusal that carries
+# words is that machine's own answer about that path, and blaming its
+# version would send somebody to upgrade a machine that was telling
+# them their file had changed.
+write-predates = "那边的 khor 版本旧,存不回去"
+# VS Code on a machine (工作区批5). **Says what is missing, not what to
+# do about it**: khor does not ship VS Code and telling somebody to go
+# install it is not khor's sentence to write — the button simply is not
+# offered where this is true.
+no-vscode = "那台机器上没有 VS Code"
+# An older khor asked to open an editor. Only the wordless refusal gets
+# this, the `load-*` pair's rule.
+code-predates = "那边的 khor 版本旧,开不了 VS Code"
+cant-start-vscode = "起不了 VS Code 的网页脸: {0}"
+# `serve-web` prints where it listens and khor reads that line. Both of
+# these are that line not arriving, and they are split because the next
+# move differs: no pipe at all is khor's own bug, a pipe that stayed
+# quiet is usually the first run still fetching 640 MB.
+no-vscode-output = "VS Code 起来了但读不到它的输出"
+vscode-never-answered = "VS Code 一直没说它听在哪儿"
 
 [gui]
 sessions-tab = "会话"
@@ -1871,12 +2001,144 @@ create = "建立"
 # and docs/UX.md says one fact, one word. 机器 is the one already living
 # in the sentences people act on, so it is the one that stays.
 devices-tab = "机器"
-# The other two landings. Both list machines today — files is "which
-# machine do I go looking on", browser is "whose network am I borrowing"
-# — and each grows its own content when that batch lands. The names are
-# the destination, not what is currently painted there.
-files-tab = "文件"
+# The other two landings. 浏览器 is "whose network am I borrowing".
+#
+# **工作区 replaces 文件 on the rail (2026-09-11, user ruling).** The
+# old landing browsed a disk: tabs, an address bar, one machine at a
+# time. This one lists the projects being worked on across the whole
+# mesh, and browsing a directory happens inside it. `files-tab` stays a
+# key for as long as anything still says 文件 — a word is retired when
+# its last caller is, not when its landing is.
+workspaces-tab = "工作区"
+# ⚠️ **`files-tab` was deleted here on 2026-09-12** (工作区批5). It was
+# the rail word for the files landing, and that landing left on
+# 2026-09-11 (工作区替代文件). Nothing had read it since; it was found
+# by a different key colliding with it, which is the duplicate-text
+# gate catching a dead key rather than a live mistake.
 browser-tab = "浏览器"
+# The workspace list when it has nothing in it, which is a real state
+# on a machine nobody has worked on yet — not an error and not a
+# loading frame.
+workspaces-empty = "还没有工作区"
+# Said under the empty list. **Names the one thing that puts a row
+# here**, which is not a create action: a workspace is derived, never
+# declared (`khor_node::place`), and what derives it is a session's own
+# record of where it ran (`Node::places` folds the vendors' files).
+#
+# ⚠️ **This said two things until 2026-09-11 (工作区批3) and one of them
+# was not true.** 「在任意一台机器上打开一个目录」 named an act khor does
+# not have: nothing in the product opens an arbitrary directory, and
+# nothing would put a row here if it did — `workspaces_shown` reads
+# session records and filters them to checkouts, so a directory nobody
+# has worked in is invisible to it whether or not somebody looked at it.
+# A 「打开一个目录」 button was drafted beside this line and never built,
+# and its key is deleted rather than left waiting: see docs/handoff/001.md
+# for what the files landing took with it when it left.
+workspaces-how = "在某台机器的 git 仓库里开一个 session,这里就会有它"
+# How many recorded sessions fold into one workspace. A count of what
+# the vendors' files remember, which is why it says 记录 and not 共.
+workspaces-sessions = "{0} 个记录"
+# A file whose bytes are not text. **Says what it is, not what went
+# wrong** — nothing went wrong, and 「打不开」 would read as a failure
+# of khor rather than as a fact about the file.
+file-not-text = "这不是文本"
+# One slice is what a look costs (`khor_node::Link::read_head` measured
+# why). Both sizes, because「开头」without the whole size does not say
+# how much is missing.
+file-cut = "只读了开头 {0},整个文件 {1}"
+# The way out of both of the above, and the one khor already has.
+file-take = "取下来"
+# The two switches in a workspace's head. **Aria names, not labels** —
+# they are icons on screen (docs/UX.md: no pane wears its name where you
+# can see it), and a screen reader still has to be told which end each
+# one acts on.
+workspace-tree = "文件树"
+workspace-sessions = "这里的会话"
+# Under a rendered document (工作区批6). **Says what this is not**,
+# because the thing it is not is what a person would otherwise assume:
+# a Word file on screen looks like a Word file, and this is its words
+# and its structure with the layout thrown away.
+doc-plain = "读的是文字和结构,不是排版"
+# The document parsed and has no words in it. A real answer — a blank
+# template does exactly this — and it needs saying, because a blank
+# pane reads as khor being broken.
+doc-empty = "这个文档里没有文字"
+# Too big to carry across for a look. **An image gets nothing rather
+# than half**: half a picture is a broken picture, where half a
+# document is still a document.
+look-too-big = "这个文件 {0},太大了,看不了。取下来再打开"
+# The third thing a workspace's middle column can be (工作区批5). **The
+# product's own name, untranslated**: it is what is written on the icon
+# in their dock, and a translated one would be khor naming somebody
+# else's program.
+code-tab = "VS Code"
+# Back to khor's own file view. Its pair, so the head reads as one
+# switch with two sides rather than a button that only goes one way.
+code-off = "文件页"
+code-opening = "正在开 {0} 的 VS Code"
+code-opened = "{0} 的 VS Code"
+# Asked once per machine, before anything is started. **Two sentences,
+# and both of them are things that happen to somebody else's machine**:
+# a download from Microsoft onto it, and their licence accepted on it.
+# What it deliberately does not say is how to undo it — the answer is
+# 「khor code --stop」and the person reading a consent card is not
+# looking for it yet.
+code-consent = "第一次要往那台机器上下一份服务端,约 640 MB,从微软下。\n同时表示接受微软的服务端许可条款。"
+code-consent-go = "下吧"
+code-consent-no = "先不"
+# The branch the workspace's head says, when git has a name to say. A
+# label, not a word of khor's — HEAD is detached often enough that the
+# absence has to be silent rather than explained.
+#
+# **The gutter's three words.** A change bar is pressable everywhere it
+# is drawn, including where nothing was removed, because two bars that
+# look the same and behave differently is worse than one extra
+# sentence — so the empty case gets its own line instead of a dead
+# target.
+git-hunk = "这一处改动"
+# The count, and the two steps through it. **A count of hunks, not of
+# lines** — the gutter draws one bar per place, and a number that said
+# 「47 行」beside eleven bars would be counting a different thing from
+# the one on screen. 处 is the word for that: a place, not an amount.
+git-hunks = "{0} 处改动"
+# Where you are in that count, once one is open. Its own sentence
+# rather than 「{0}/{1}」 built in the view: a bare fraction beside a
+# count reads as two unrelated numbers.
+git-hunk-at = "第 {0} 处"
+git-prev = "上一处改动"
+git-next = "下一处改动"
+# Editing a file (工作区批4). **不是 git 的词**, so it is 中文 — the
+# English rule the user drew is for git's own operations (commit,
+# diff, status), and saving a file is not one of them.
+#
+# 「未存」rather than 「已修改」: what a person needs to know is that
+# something is still only in this window, not that they changed it —
+# they know they changed it, they were the one typing.
+file-unsaved = "未存"
+# How many files in this workspace have something typed in them and
+# not saved. **A count of files, not a state of the one in front of
+# you** — that one says 未存 for itself; this is the half that would
+# otherwise be invisible, a draft two directories away.
+drafts-waiting = "{0} 个文件未存"
+file-save = "存"
+# Said for a moment after a save lands, then it goes. **Not a
+# permanent「已保存」**: a resting file needs no word, and a label that
+# never leaves stops being read.
+file-saved = "存好了"
+# A file khor only has the beginning of cannot be edited, because what
+# a save writes back is what is on screen. Said beside the cut line
+# rather than as a second strip — it is the same fact, and 「只读了开头」
+# already told half of it.
+file-read-only = "只能看"
+# The gutter goes quiet while a file is unsaved, and this is why.
+# **Drawn stale it would be wrong, not merely old**: the bars name line
+# numbers, and one typed line moves every line under it — so a bar that
+# stayed put would point at code it is not about. Recomputing per
+# keystroke is a round trip per keystroke, which is not a thing khor
+# will do to somebody else's machine.
+git-stale = "存了才知道改在哪儿"
+git-was = "HEAD 里原来是"
+git-added = "HEAD 里没有这几行"
 settings = "设置"
 back = "返回"
 # The browsing landing's three page controls. **They are not the rail's

@@ -13,7 +13,16 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type React from "react";
 
-const STORE = "khor.list-width";
+/** Where one seam's width is remembered. **Parameterised since
+    2026-09-12** (工作区批 收尾): the workspace has two seams of its own
+    (the file tree and the sessions column) and they must not share the
+    list pane's number — one person's narrow tree is not their narrow
+    session list.
+
+    The names are written here rather than passed as free strings, so
+    the set of seams this app has is one list somebody can read. */
+export type Seam = "list" | "ws-tree" | "ws-sessions";
+const STORE = (seam: Seam) => `khor.${seam}-width`;
 
 // Numbers live in tokens.css; these fallbacks only catch the token
 // failing to resolve at all, and mirror the values written there.
@@ -30,7 +39,18 @@ function tokenPx(name: string, fallback: number): number {
 
 type ListPref = { w: number; collapsed: boolean };
 
-export function useListWidth(narrow: boolean) {
+export function useListWidth(
+  narrow: boolean,
+  seam: Seam = "list",
+  /** Which side of the pane the seam is on. **The sessions column is
+      dragged from its left edge and grows leftwards**, so the width is
+      the distance from the pointer to the pane's *right* edge — the
+      same gesture, mirrored, rather than a second set of rules. */
+  side: "left" | "right" = "left",
+  /** Which element the width is measured against. The list pane is
+      `[data-list]`; the workspace's seams name their own. */
+  paneSel = "[data-list]",
+) {
   const bounds = useRef<{ def: number; min: number; snap: number } | null>(null);
   if (bounds.current === null) {
     bounds.current = {
@@ -43,7 +63,7 @@ export function useListWidth(narrow: boolean) {
 
   const [pref, setPref] = useState<ListPref>(() => {
     try {
-      const raw = localStorage.getItem(STORE);
+      const raw = localStorage.getItem(STORE(seam));
       if (raw) {
         const p: unknown = JSON.parse(raw);
         if (
@@ -66,7 +86,7 @@ export function useListWidth(narrow: boolean) {
 
   const persist = (p: ListPref) => {
     try {
-      localStorage.setItem(STORE, JSON.stringify(p));
+      localStorage.setItem(STORE(seam), JSON.stringify(p));
     } catch {
       /* a viewer whose storage refuses writes still gets the session */
     }
@@ -87,9 +107,13 @@ export function useListWidth(narrow: boolean) {
     // The width is measured from the pane's own left edge, read off the
     // DOM at grab time rather than assumed from the rail token — the
     // handle's box won't do, it overhangs the seam by its hit margin.
-    const pane = document.querySelector("[data-list]");
-    const left = pane ? pane.getBoundingClientRect().left : e.currentTarget.getBoundingClientRect().left;
-    drag.current = { left, origin: { ...pref }, live: { ...pref } };
+    const pane = document.querySelector(paneSel);
+    const box = (pane ?? e.currentTarget).getBoundingClientRect();
+    drag.current = {
+      left: side === "left" ? box.left : box.right,
+      origin: { ...pref },
+      live: { ...pref },
+    };
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
@@ -97,7 +121,9 @@ export function useListWidth(narrow: boolean) {
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d) return;
-    const raw = e.clientX - d.left;
+    // Mirrored for a right-hand seam: the pane grows as the pointer
+    // moves *towards* the pane's far edge either way.
+    const raw = side === "left" ? e.clientX - d.left : d.left - e.clientX;
     if (raw < b.snap) {
       // Keep the width of the grab: the comeback restores it.
       d.live = { w: d.origin.w, collapsed: true };
@@ -169,8 +195,11 @@ export function useListWidth(narrow: boolean) {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (narrow) return;
-    if (e.key === "ArrowLeft") step(-1);
-    else if (e.key === "ArrowRight") step(1);
+    // Wider is always「away from the pane's own edge」, so the two keys
+    // swap on a right-hand seam — an arrow that shrank the thing it
+    // points at would be the one gesture nobody forgives.
+    if (e.key === "ArrowLeft") step(side === "left" ? -1 : 1);
+    else if (e.key === "ArrowRight") step(side === "left" ? 1 : -1);
     else if (e.key === "Home") {
       const next = { w: b.def, collapsed: false };
       setPref(next);

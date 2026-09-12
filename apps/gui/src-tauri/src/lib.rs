@@ -30,6 +30,123 @@ async fn places(machine: Option<String>) -> Result<Vec<khor_gui_core::PlaceRow>,
     khor_gui_core::places(&Node::root_from_env(), machine.as_deref().unwrap_or("")).await
 }
 
+/// The workspace landing's list for one machine
+/// (`khor_gui_core::workspaces::workspaces`).
+#[tauri::command]
+async fn workspaces(
+    machine: Option<String>,
+) -> Result<Vec<khor_gui_core::workspaces::WorkspaceRow>, String> {
+    khor_gui_core::workspaces::workspaces(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// One file off a machine, for reading (`khor_gui_core::files::read_text`).
+#[tauri::command]
+async fn read_text(
+    machine: String,
+    path: String,
+) -> Result<khor_gui_core::files::FileText, String> {
+    khor_gui_core::files::read_text(&Node::root_from_env(), &machine, &path).await
+}
+
+/// 置顶一个账号 (`khor_gui_core::pin_account`).
+///
+/// ⚠️ **Missing from this list until 2026-09-12**, so the 額度 landing's
+/// pin did nothing at all in the shipped app while working perfectly in
+/// a browser. `command_tables` is the gate for exactly this and it was
+/// blind to it: its finder could not read an alternation arm, and these
+/// two were hidden behind that same bug.
+#[tauri::command]
+fn pin_account(id: String, on: bool) -> Result<(), String> {
+    khor_gui_core::pin_account(&Node::root_from_env(), &id, on)
+}
+
+/// 编辑一个账号 (`khor_gui_core::update_account`). `key` absent means
+/// leave the stored one alone — an edit of the name must not make
+/// somebody paste a secret again.
+#[tauri::command]
+fn update_account(
+    id: String,
+    name: String,
+    base_url: Option<String>,
+    key: Option<String>,
+    budget: Option<f64>,
+    unit: Option<String>,
+) -> Result<(), String> {
+    khor_gui_core::update_account(
+        &Node::root_from_env(),
+        &id,
+        &name,
+        base_url.as_deref(),
+        key.as_deref(),
+        budget,
+        unit.as_deref(),
+    )
+}
+
+/// One file shaped for a screen (`khor_gui_core::files::preview`).
+#[tauri::command]
+async fn preview(
+    machine: String,
+    path: String,
+) -> Result<khor_gui_core::files::Preview, String> {
+    khor_gui_core::files::preview(&Node::root_from_env(), &machine, &path).await
+}
+
+/// Whether a machine has VS Code (`khor_gui_core::code::here`).
+#[tauri::command]
+async fn code_here(machine: String) -> Result<String, String> {
+    khor_gui_core::code::here(&Node::root_from_env(), &machine).await
+}
+
+/// Where to point a webview at a machine's VS Code
+/// (`khor_gui_core::code::open`).
+#[tauri::command]
+async fn code_open(
+    machine: String,
+    dir: String,
+) -> Result<khor_gui_core::code::CodeAt, String> {
+    khor_gui_core::code::open(&Node::root_from_env(), &machine, &dir).await
+}
+
+/// Stops it (`khor_gui_core::code::stop`).
+#[tauri::command]
+async fn code_stop(machine: String) -> Result<(), String> {
+    khor_gui_core::code::stop(&Node::root_from_env(), &machine).await
+}
+
+/// Saves a whole file back (`khor_gui_core::files::write_text`).
+#[tauri::command]
+async fn write_text(
+    machine: String,
+    path: String,
+    was: String,
+    text: String,
+) -> Result<khor_gui_core::files::Wrote, String> {
+    khor_gui_core::files::write_text(&Node::root_from_env(), &machine, &path, &was, &text).await
+}
+
+/// One checkout's marks and branch (`khor_gui_core::git::status`).
+#[tauri::command]
+async fn git_status(
+    machine: String,
+    dir: String,
+) -> Result<khor_gui_core::git::GitStatus, String> {
+    khor_gui_core::git::status(&Node::root_from_env(), &machine, &dir).await
+}
+
+/// Where one file differs from HEAD (`khor_gui_core::git::diff`).
+#[tauri::command]
+async fn git_diff(
+    machine: String,
+    path: String,
+) -> Result<khor_gui_core::git::GitDiff, String> {
+    khor_gui_core::git::diff(&Node::root_from_env(), &machine, &path).await
+}
+
 #[tauri::command]
 async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
     khor_gui_core::quota_board(&Node::root_from_env()).await
@@ -560,10 +677,32 @@ async fn open_page(
     agent: String,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
     use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
-    let borrow = khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?;
+    // **An empty machine means「go direct」** (工作区批5), and the one
+    // thing that asks for it is a workspace's VS Code: the URL is
+    // already a loopback address of khor's own tunnel, so there is
+    // nothing to borrow and nothing a proxy could add.
+    //
+    // **It also means no shim, and that is a decision, not an
+    // omission.** `page_shim.js` exists because a *borrowed* page can
+    // reach the network through WebTransport and WebAuthn without
+    // passing the proxy, which reports the device's real address to
+    // somebody else's site (`scripts/check-shim.mjs`). A direct page
+    // has no proxy to escape and no exit to contradict — the far side
+    // is the person's own machine, reached through a pipe khor built.
+    // Taking APIs away there would protect nothing and could break an
+    // editor.
+    let direct = machine.is_empty();
+    let borrow = if direct {
+        khor_gui_core::web::WebBorrow { session: String::new(), addr: String::new() }
+    } else {
+        khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?
+    };
     let target: tauri::Url = url.parse().map_err(|_| format!("not a url: {url}"))?;
-    let proxy: tauri::Url =
-        format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?;
+    let proxy: Option<tauri::Url> = if direct {
+        None
+    } else {
+        Some(format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?)
+    };
     let label = page_label(&tab);
     let going_to = target.to_string();
     let top = at.y + frame_lift(&window, at);
@@ -614,11 +753,18 @@ async fn open_page(
     // Read `page_shim.js` before touching this. It takes two WebKit APIs
     // away from the page and **cannot take the third**, and the third is
     // still leaking every hostname the page prefetches.
-    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target))
-        .proxy_url(proxy)
-        .initialization_script_for_all_frames(khor_gui_core::web::PAGE_SHIM);
-    if let Some(seem) = as_a_browser(&agent) {
-        builder = builder.user_agent(&seem);
+    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target));
+    if let Some(proxy) = proxy {
+        // The two ride together or not at all — see `direct` above.
+        builder = builder
+            .proxy_url(proxy)
+            .initialization_script_for_all_frames(khor_gui_core::web::PAGE_SHIM);
+        // A user agent that says「app」is what makes a site serve its
+        // mobile face to a desktop window; an editor khor started needs
+        // no such dressing.
+        if let Some(seem) = as_a_browser(&agent) {
+            builder = builder.user_agent(&seem);
+        }
     }
     let builder = builder
         .on_document_title_changed(move |view, title| {
@@ -1507,10 +1653,21 @@ pub fn run() {
             sessions,
             day_strips,
             places,
+            workspaces,
+            read_text,
+            git_status,
+            git_diff,
+            write_text,
+            preview,
+            code_here,
+            code_open,
+            code_stop,
             devices,
             load,
             quota_board,
             register_account,
+            pin_account,
+            update_account,
             remove_account,
             usage,
             quota,

@@ -901,7 +901,13 @@ for line in sys.stdin:
   // stopped having a list pane in 06f5757 (浏览型外壳收成模板) and this
   // went on waiting for one, so every item that opened it timed out on a
   // pane that cannot exist.
-  const BROWSE_KIND = { files: "dir", browser: "page" };
+  // **Only one landing browses now** (工作区替代文件, 2026-09-11): the
+  // disk kind left the shell with the files landing, and what replaced
+  // it — 工作区 — is a list pane with a tree under it, not a tab strip
+  // over an address bar. A map with one entry is kept rather than
+  // inlined because the shape is what says「a landing may or may not
+  // browse」, and that is still true of every landing this walks.
+  const BROWSE_KIND = { browser: "page" };
   const openLanding = async (tab) => {
     // Re-clicking the open landing now collapses its list (App.tsx 再点
     // 收起, 2026-09-02) — and only sessions/devices carry a list that
@@ -989,7 +995,7 @@ for line in sys.stdin:
     const got = await page
       .locator("[data-rail-item][data-landing]")
       .evaluateAll((els) => els.map((e) => e.dataset.landing));
-    const missing = ["sessions", "devices", "files", "browser"].filter((k) => !got.includes(k));
+    const missing = ["sessions", "devices", "workspaces", "browser"].filter((k) => !got.includes(k));
     if (missing.length) {
       throw new Error(
         `the rail has ${got.length ? got.join(", ") : "nothing"}, missing ${missing.join(", ")}` +
@@ -1689,7 +1695,7 @@ for line in sys.stdin:
   //     a step on the way to a place rather than a thing to watch
   //     (docs/UX.md 浏览型), and asserting the absence is the point
   //     rather than a gap left by the deletion.
-  const LANDING_TABS = ["sessions", "devices", "files", "quota"];
+  const LANDING_TABS = ["sessions", "devices", "workspaces", "quota"];
   const machinesOn = async (tab) => {
     await openLanding(tab);
     await until(`machines on the ${tab} pane`, 10_000, async () =>
@@ -1709,7 +1715,7 @@ for line in sys.stdin:
   //     same locator, on the one landing that watches machines). Absent
   //     that, "no machine rows" and "the attribute got renamed" are one
   //     reading.
-  for (const tab of ["files", "browser"]) {
+  for (const tab of ["browser"]) {
     await openLanding(tab);
     if ((await page.locator("[data-list]").count()) !== 0) {
       throw new Error(`the ${tab} landing still has a list pane`);
@@ -1811,7 +1817,7 @@ for line in sys.stdin:
   }
   //     …measured the same way as a glyph that is known to answer, so a
   //     reading of "it changed" is not the measurement drifting.
-  const glyph = railItem("files");
+  const glyph = railItem("workspaces");
   await pointerAway();
   await settle();
   const glyphResting = await bg(glyph);
@@ -3518,106 +3524,243 @@ for line in sys.stdin:
     }
   }
 
-  // 24c) the files landing's address bar (批③ 三笔, moved off the pane
-  //      bar by 标签页一期): the machine is a chip and the rest is a path
-  //      on it.
+  // 24c) ⚠️ **Tombstone: the files landing's address bar, 2026-09-11**
+  //      (工作区批3). The whole section is gone because its subject is:
+  //      工作区替代文件 took the disk kind out of the browsing shell, so
+  //      there is no pane with a path in a box any more, and the hook
+  //      that fed it (`hooks/use-path-candidates`) has no consumer left
+  //      in the product.
   //
-  //      **Same mechanism as the sessions chips, different meaning** —
-  //      here a chip names the thing the tab is pointed at rather than
-  //      narrowing a list, and nothing in the box knows the difference:
-  //      only what happens on a commit differs.
-  const omniDir = join(SCRATCH, "omni-files");
-  mkdirSync(join(omniDir, "inner"), { recursive: true });
-  writeFileSync(join(omniDir, "inner", "omni-marker.txt"), "x");
-  await openLanding("files");
-  await until("the address bar", 10_000, async () => (await page.locator("[data-omnibox]").count()) === 1);
-  const filesInput = page.locator("[data-omni-input]");
-  await filesInput.click();
-  await until("machines offered", 10_000, async () =>
-    (await page.locator('[data-omni-item^="dev:"]').count()) > 0,
-  );
-  await filesInput.fill("beta");
-  await until("beta offered", 10_000, async () =>
-    (await page.locator('[data-omni-item="dev:beta"]').count()) === 1,
-  );
-  await filesInput.press("Enter");
-  //      ⚠️ **This asked for a chip until 2026-09-11 and had been red
-  //      for a while.** It was not the product: the machine's chip was
-  //      taken out of this box on 2026-09-09 on purpose, and
-  //      `AddressBar` says why beside `chosen={[]}` — with one exit per
-  //      landing the machine is not a property of what is being typed,
-  //      and drawn as a chip the box read as two fields when it is one.
-  //      **The assertion outlived the thing it named**, and because it
-  //      was `chip && list` in one wait it reported both as false while
-  //      the listing had in fact opened. Split, the diagnosis was one
-  //      run: the chip was gone, the disk was there.
+  //      **What went with it, named rather than quietly dropped:**
   //
-  //      So what is checked now is what committing a machine *does*:
-  //      a disk is listed.
+  //      - **Typing a path opens it.** khor's faces can no longer reach
+  //        an arbitrary directory on a far machine — only a workspace,
+  //        which is derived from where sessions ran and never declared
+  //        (`khor_node::place`). `khor ls` still does it; no screen does.
+  //      - **The anti-flicker measurement.** Candidates are keyed by
+  //        directory, so narrowing inside one asked the machine nothing;
+  //        that was counted off `performance.getEntriesByType`, four
+  //        keystrokes for zero calls, and it is now checked by nobody.
+  //      - **The real-`ls` proof.** A marker file written on beta's disk
+  //        and then found on screen was this run's one end-to-end
+  //        assertion that a typed path really crosses the wire.
   //
-  //      ⚠️ **This is weaker than what it replaced, and the weakness is
-  //      named rather than papered over: it does not check the disk is
-  //      *beta's*.** The chip was the only thing on this screen that
-  //      said which machine, and 「the box is empty afterwards」 does not
-  //      work as a substitute — with no text typed the box offers every
-  //      machine again, so its menu is legitimately full. Restoring the
-  //      full check needs a mark carrying the machine (the tab names the
-  //      *place*: it read 「zgh」 here, the home's leaf, on both
-  //      machines). Until then this half is on the ledger.
-  await until("a disk open", 15_000, async () =>
-    (await page.locator("[data-files-list]").count()) === 1,
-  );
+  //      A 「打开一个目录」 button was drafted for the workspace landing
+  //      and never built; its catalog key is deleted rather than left
+  //      waiting (zh.toml `workspaces-how`), because a workspace is not
+  //      something a person opens into existence. **If the box comes
+  //      back it belongs here again, and so does the hook.**
 
-  //      **Typing inside one directory must not ask again.** That is the
-  //      whole of the anti-flicker rule: candidates are keyed by the
-  //      directory, so narrowing within one is local and there is no
-  //      second answer to arrive late and replace the list. Counted off
-  //      the network, because "it looked smooth" is not a measurement.
-  const lsCalls = () =>
-    page.evaluate(
-      () =>
-        performance.getEntriesByType("resource").filter((e) => e.name.endsWith("/ls")).length,
-    );
-  await filesInput.fill(`${omniDir}/`);
-  await until("the inner directory offered", 15_000, async () =>
-    (await page.locator(`[data-omni-item="${omniDir}/inner/"]`).count()) === 1,
-  );
-  await page.evaluate(() => performance.clearResourceTimings());
-  for (const s of ["i", "in", "inn", "inne"]) {
-    await filesInput.fill(`${omniDir}/${s}`);
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  const asked = await lsCalls();
-  if (asked > 0) {
-    throw new Error(`typing inside one directory asked the machine ${asked} more times`);
-  }
-  //      …and the probe is alive: leaving the directory does ask.
-  await filesInput.fill(`${omniDir}/inner/`);
-  await until("a new directory being asked about", 10_000, async () => (await lsCalls()) > 0);
-
-  //      Enter opens what was typed, for real — the marker file is on
-  //      beta's actual disk, and nothing here put it on the screen but
-  //      a real `ls` of a real path.
-  await filesInput.fill(`${omniDir}/inner`);
-  await filesInput.press("Enter");
-  await until("the typed path really opened", 20_000, async () =>
-    (await page.locator('[data-file="omni-marker.txt"]').count()) === 1,
-  );
-  //      ⚠️ **Tombstone: 「taking the chip off leaves the machine」 was
-  //      asserted here and is gone, 2026-09-11.** There is no chip to
-  //      take off: the machine left this box on 2026-09-09 (see the
-  //      note above, and `AddressBar`'s `chosen={[]}`). The step was
-  //      clicking `[data-chip-remove="dev:beta"]`, which has not
-  //      existed since, so this section had been red for days.
+  // 24c-bis) git across the wire (工作区批3). **The only assertion in
+  //      this repo that the two git ops reach another machine at all**:
+  //      `khor_node::git`'s own tests read the checkout this process is
+  //      compiled inside, and `check-face` paints a fixture. Neither
+  //      puts a frame on a connection.
   //
-  //      **What went with it is the whole 「which machine」 axis of this
-  //      section**, and that is a real loss, not a tidy-up: every
-  //      remaining assertion here would pass just as well against the
-  //      local disk. The screen has no mark saying whose disk is
-  //      listed — the tab names the *place* (it reads 「zgh」, the
-  //      home's leaf, on either machine). **Restoring it needs a mark
-  //      on the pane carrying the machine's id**; it is on the ledger,
-  //      not silently dropped.
+  //      A real repository, made with real `git` — the point is that
+  //      khor's reader and git agree, so a fixture khor wrote itself
+  //      would be khor agreeing with khor. Read from **alpha**, about
+  //      **beta's** disk, so the answer crosses two nodes.
+  const gitDir = join(SCRATCH, "git-wire");
+  mkdirSync(gitDir, { recursive: true });
+  const git = (...a) =>
+    execFileSync("git", a, {
+      cwd: gitDir,
+      encoding: "utf8",
+      // Named here rather than left to whoever runs this: a machine
+      // with no `user.email` configured cannot commit, and the failure
+      // would read as khor's.
+      env: { ...process.env, GIT_AUTHOR_NAME: "smoke", GIT_AUTHOR_EMAIL: "smoke@example.invalid", GIT_COMMITTER_NAME: "smoke", GIT_COMMITTER_EMAIL: "smoke@example.invalid" },
+    });
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(gitDir, "kept.txt"), "one\ntwo\nthree\n");
+  //      Committed and then left alone. **Its absence from the answer is
+  //      an assertion, so it has to exist** — checking that a file khor
+  //      was never given is missing would pass against a reader that
+  //      answers nothing at all.
+  writeFileSync(join(gitDir, "untouched.txt"), "still\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "first");
+  //      One file edited in the middle and one file git has never seen:
+  //      two of the four letters, and the two hunk shapes that carry
+  //      old lines and no old lines.
+  writeFileSync(join(gitDir, "kept.txt"), "one\nTWO\nthree\n");
+  writeFileSync(join(gitDir, "new.txt"), "x\n");
+
+  const gitStatus = cli(envA, "git", "status", "beta", gitDir).split("\n");
+  if (gitStatus[0] !== "main") {
+    throw new Error(`the branch did not come back first: ${JSON.stringify(gitStatus.slice(0, 3))}`);
+  }
+  for (const want of ["M\tkept.txt", "U\tnew.txt"]) {
+    if (!gitStatus.includes(want)) {
+      throw new Error(`status is missing ${JSON.stringify(want)}: ${JSON.stringify(gitStatus)}`);
+    }
+  }
+  //      …and the file nobody touched is absent, which is the half that
+  //      says these are marks and not a listing.
+  if (gitStatus.some((l) => l.endsWith("\tuntouched.txt"))) {
+    throw new Error("status marked a file that matches HEAD");
+  }
+
+  //      The hunk's coordinates are the file's **current** line numbers,
+  //      and the old line rides with it. Both halves asserted, because
+  //      a reader that found the change and lost what was there is the
+  //      failure the gutter's expansion exists to rule out.
+  const gitDiff = cli(envA, "git", "diff", "beta", join(gitDir, "kept.txt")).split("\n");
+  if (!gitDiff.includes("@@ 2,1 @@") || !gitDiff.includes("-two")) {
+    throw new Error(`the diff did not find line two: ${JSON.stringify(gitDiff)}`);
+  }
+  //      A file git has never seen is one insertion with nothing
+  //      removed — not an error, and not an empty answer either.
+  const gitNew = cli(envA, "git", "diff", "beta", join(gitDir, "new.txt")).split("\n").filter(Boolean);
+  if (gitNew.length !== 1 || gitNew[0] !== "@@ 1,1 @@") {
+    throw new Error(`an untracked file did not read as one whole insertion: ${JSON.stringify(gitNew)}`);
+  }
+
+  // 24c-ter) writing a file across the wire (工作区批4), and the
+  //      refusal that protects it. Same repository 24c-bis made, so the
+  //      two halves of a workspace — reading git and writing a file —
+  //      are proved against one real checkout on beta's disk.
+  //
+  //      **The refusal is the half worth the assertion.** That a write
+  //      writes is easy to believe; that a *stale* write is refused
+  //      whole, with the other person's bytes still on disk afterwards,
+  //      is the claim the whole digest exists for, and it is the one
+  //      that would rot silently.
+  const mine = join(SCRATCH, "mine.txt");
+  writeFileSync(mine, "edited over here\n");
+  cli(envA, "put", "beta", mine, join(gitDir, "kept.txt"));
+  if (readFileSync(join(gitDir, "kept.txt"), "utf8") !== "edited over here\n") {
+    throw new Error("put did not land the bytes it was given");
+  }
+  //      …and nothing is left beside it. The dot-name is a crash
+  //      artefact, never a resting state (`khor_node::files`).
+  const beside = readdirSync(gitDir).filter((n) => n.startsWith(".khor-save-"));
+  if (beside.length) {
+    throw new Error(`put left ${JSON.stringify(beside)} beside the file it wrote`);
+  }
+  //      Now somebody changes it under the writer. `put` reads first
+  //      and pins to what it read, so the window is small — it is
+  //      opened by hand here, by pinning to a digest that is already
+  //      wrong: `--new` claims the path is free, and it is not.
+  writeFileSync(mine, "and mine on top\n");
+  let refused = null;
+  try {
+    cli(envA, "put", "--new", "beta", mine, join(gitDir, "kept.txt"));
+  } catch (e) {
+    refused = String(e.stderr || e);
+  }
+  if (refused === null) {
+    throw new Error("a write pinned to the wrong digest was allowed — nothing here protects a file");
+  }
+  if (readFileSync(join(gitDir, "kept.txt"), "utf8") !== "edited over here\n") {
+    throw new Error("the refused write changed the file anyway, which is the worst of both");
+  }
+
+  // 24c-quater) VS Code across the wire (工作区批5).
+  //
+  //      **Detection is asserted unconditionally; the launch only when
+  //      detection says there is something to launch.** A machine with
+  //      no `code` is a legitimate machine, and a run on one must not
+  //      fail — but it must not silently skip either, so which branch
+  //      ran is printed.
+  let vs = null;
+  try {
+    vs = cli(envA, "code", "beta", gitDir);
+  } catch (e) {
+    const why = String(e.stderr || e);
+    // The one refusal that is a fact about the machine rather than a
+    // failure of this run.
+    if (!why.includes("没有 VS Code")) throw new Error(`khor code failed: ${why}`);
+    console.log("vscode: beta has no `code`, so the launch half of this section did not run");
+  }
+  if (vs !== null) {
+    const url = vs.split("\n")[0].trim();
+    if (!/^http:\/\/127\.0\.0\.1:\d+\/\?tkn=[0-9a-f]+&folder=/.test(url)) {
+      throw new Error(`khor code printed something that is not a token-carrying link: ${url}`);
+    }
+    //    The link is the assertion. **Both halves**: without the token
+    //    the server must refuse, with it it must let you in — one of
+    //    those alone passes against a server that answers everything or
+    //    nothing.
+    const bare = url.slice(0, url.indexOf("?"));
+    const shut = await fetch(bare).then((r) => r.status).catch(() => 0);
+    if (shut !== 403) {
+      throw new Error(`VS Code answered ${shut} without a token, wanted 403 — the token gates nothing`);
+    }
+    const jar = [];
+    const first = await fetch(url, { redirect: "manual" });
+    for (const c of first.headers.getSetCookie?.() ?? []) jar.push(c.split(";")[0]);
+    if (first.status !== 302) {
+      throw new Error(`the token link answered ${first.status}, wanted 302`);
+    }
+    const open = await fetch(bare, { headers: { cookie: jar.join("; ") } });
+    if (open.status !== 200) {
+      throw new Error(`after the token, the editor answered ${open.status}, wanted 200`);
+    }
+    console.log(`vscode: ${bare} refuses without a token (403), redirects with one (302), then serves (200)`);
+    //    …and it stops, whole. `code` is a shell script that execs a
+    //    launcher that spawns the server, so「it stopped」 has to be
+    //    asked of the port rather than of the handle khor holds.
+    cli(envA, "code", "--stop", "beta");
+    await new Promise((r) => setTimeout(r, 1500));
+    const gone = await fetch(bare).then((r) => r.status).catch(() => 0);
+    if (gone !== 0) {
+      throw new Error(`after --stop the editor still answered ${gone} — the process tree outlived the handle`);
+    }
+    console.log("vscode: --stop took the whole tree with it");
+  }
+
+  // 24c-quinquies) documents and pictures across the wire (工作区批6).
+  //
+  //      **The read is the assertion, not the render.** What is new
+  //      here is that a file bigger than one slice arrives whole — the
+  //      slice is 256 KB and khor loops to 4 MB — so the file written
+  //      below is deliberately over that line. A preview that silently
+  //      handed back the first 256 KB of a picture would draw a
+  //      half-decoded image, and the failure would look like a corrupt
+  //      file rather than like khor.
+  //      **Few long rows, not many short ones**, and the first attempt
+  //      got that wrong: a 400 KB csv of twelve-byte rows is 33 000
+  //      rows, and the table's own 2000-row cap cut it long before the
+  //      slice did — so the assertion below went red about the read
+  //      while the read was fine. 1500 rows of 300 bytes is over one
+  //      slice and under the row cap, so only one thing is being
+  //      measured.
+  const bigCsv = join(SCRATCH, "wide.csv");
+  {
+    const pad = "x".repeat(290);
+    let rows = "a,b,c\n";
+    for (let i = 0; i < 1500; i++) rows += `${i},${pad},y\n`;
+    writeFileSync(bigCsv, rows);
+  }
+  const csvOut = cli(envA, "read", "beta", bigCsv);
+  if (!csvOut.startsWith("| a | b | c |")) {
+    throw new Error(`a csv over one slice did not come back as a table: ${csvOut.slice(0, 80)}`);
+  }
+  //      …and the far end of it arrived too, which is the half that a
+  //      one-slice read would have failed.
+  const lastRow = readFileSync(bigCsv, "utf8").trim().split("\n").pop().split(",")[0];
+  if (!csvOut.includes(`| ${lastRow} |`)) {
+    throw new Error(`the last row of a ${Math.round(statSync(bigCsv).size / 1024)} KB csv is missing — the read stopped at one slice`);
+  }
+  //      The cut is said rather than silent, on a file past the ceiling.
+  //      **Written here rather than assumed**: 4 MB is the number the
+  //      app and the verb share, and a ceiling nobody tests is a
+  //      ceiling that moves.
+  const huge = join(SCRATCH, "huge.csv");
+  writeFileSync(huge, `h\n${"0123456789,\n".repeat(400_000)}`);
+  let cutWord = "";
+  try {
+    execFileSync(KHOR, ["read", "beta", huge], { env: envA, encoding: "utf8", timeout: 60_000 });
+  } catch {
+    /* a big read may exit non-zero on a broken pipe; the word is what matters */
+  }
+  cutWord = spawnSync(KHOR, ["read", "beta", huge], { env: envA, encoding: "utf8", timeout: 60_000 }).stderr ?? "";
+  if (!cutWord.includes("只读了前")) {
+    throw new Error(`a file past the 4 MB ceiling did not say it was cut: ${JSON.stringify(cutWord.slice(0, 120))}`);
+  }
+  console.log(`preview: a ${Math.round(statSync(bigCsv).size / 1024)} KB csv came back whole as a table, and a 5 MB one says it was cut`);
 
   // 24d) browser 的 omnibox (批③ 四笔): the exit is a chip, the address
   //      is text, and the candidates are the pinned pages — the one
@@ -4839,17 +4982,23 @@ for line in sys.stdin:
   //      believed.** A browsing tab hands in no rename, so it must not
   //      grow an editor — the arm against 「tabs are renamable」, which
   //      would put one on a name that is the page's rather than
-  //      anybody's to override. Asserted on the files landing, where
+  //      anybody's to override. Asserted on the browser landing, where
   //      the tabs are browsing tabs; asserting it here, on a strip made
   //      only of session tabs, would be a count of zero for a reason
   //      that has nothing to do with the rule.
   //
+  //      **It read the files landing until 2026-09-11** (工作区替代文件).
+  //      That landing left the rail with the shell's disk kind, and the
+  //      browser is now the only one that browses — the rule being
+  //      checked is the browsing tab's, not the disk's, so it moved with
+  //      the tabs rather than going on the ledger.
+  //
   //      First that there *are* tabs there — a landing that drew none
   //      answers 「no editors」 the same way a correct one does, and
   //      that is the shape this file has been bitten by before.
-  await openLanding("files");
+  await openLanding("browser");
   const browseTabs = await page.locator("[data-browse-landing] [data-tab]").count();
-  if (browseTabs === 0) throw new Error("probe dead: the files landing drew no tabs to check");
+  if (browseTabs === 0) throw new Error("probe dead: the browser landing drew no tabs to check");
   const strays = await page.locator("[data-browse-landing] [data-tab] [data-session-title]").count();
   if (strays !== 0) throw new Error(`${strays} of ${browseTabs} browsing tab(s) grew a rename editor`);
   await openLanding("sessions");

@@ -76,7 +76,6 @@ iroh = "1.0"
 # work here.
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "system-proxy"] }
 anyhow = "1"
-thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
 # The live kind's wrapper needs real job control (tcsetpgrp): the child
 # must own the terminal so Ctrl-C reaches it and not the record-keeper.
@@ -156,7 +155,6 @@ regex = "1"
 # costs no new package either.
 # License: MIT OR Apache-2.0 (checked before use, not after).
 toml = "0.8"
-tracing = "0.1"
 
 # The release profile exists for one measured reason: **the install
 # path is a download over a slow link.** From the machines this ships

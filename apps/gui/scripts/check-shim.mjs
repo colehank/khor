@@ -182,7 +182,38 @@ for (const [rel, needle, what] of wired) {
   }
 }
 
-console.log(`shim: ran ${SHIM.replace(fileURLToPath(repo), "")} in a furnished realm; checked ${wired.length} call sites by source text`);
+// ── …and the one page that deliberately does not get it ──────────────
+//
+// **Since 工作区批5 there is a page webview with no shim**: a workspace's
+// VS Code, which is pointed at a loopback address of khor's own tunnel
+// rather than through a borrow. That is correct — there is no proxy to
+// escape and no exit to contradict, so the two removals would protect
+// nothing — but it is exactly the shape this gate exists to notice, and
+// a gate that could not tell「deliberately direct」from「the shim fell
+// off」would be green on both.
+//
+// So the source has to say which: the shim and the proxy are set
+// together inside one branch, and that branch is guarded by a name.
+// **Deleting the guard, or moving the shim out of it, fails here** —
+// which is the most a source-text reading can promise.
+const skin = readFileSync(at("apps/gui/src-tauri/src/lib.rs"), "utf8");
+const guard = skin.indexOf("let direct = machine.is_empty();");
+const shimAt = skin.indexOf(".initialization_script_for_all_frames(khor_gui_core::web::PAGE_SHIM)");
+const proxyAt = skin.indexOf(".proxy_url(proxy)");
+if (guard < 0) {
+  fail(
+    "apps/gui/src-tauri/src/lib.rs no longer names the direct page (`let direct = machine.is_empty();`) — " +
+      "either the branch went, in which case VS Code is being proxied through a borrow it does not have, " +
+      "or it was renamed and this gate can no longer tell a deliberate un-shimmed page from a broken one",
+  );
+} else if (!(proxyAt > guard && shimAt > proxyAt)) {
+  fail(
+    "the shim and the proxy are no longer set together after the `direct` guard in apps/gui/src-tauri/src/lib.rs — " +
+      "they may only ever be wrong together, and a page wired to a borrow *without* the shim is the worst of the three states",
+  );
+}
+
+console.log(`shim: ran ${SHIM.replace(fileURLToPath(repo), "")} in a furnished realm; checked ${wired.length} call sites and one deliberate omission by source text`);
 if (!bad) {
   console.log("shim gate: WebTransport and PublicKeyCredential gone, publicKey refused as NotAllowedError, password still allowed");
   console.log("--- this gate says the rules are right, never that a page got them: `npm run wk` measures WebKit, and khor's own webview is 未量 ---");
