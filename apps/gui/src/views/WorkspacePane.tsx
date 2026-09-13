@@ -28,6 +28,7 @@ import { IconFiles, IconSessions } from "@/components/icons";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
+import { useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { ago, word } from "@/words";
@@ -113,6 +114,7 @@ export function WorkspacePane({
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
+  const hidden = useHidden();
   // Kept apart from `git` rather than folded into a null: no marks and
   // no answer are two different facts, and painting an unread
   // repository as「clean」is the one reading that must never be a
@@ -150,6 +152,26 @@ export function WorkspacePane({
       live = false;
     };
   }, [machine, root, gitAt]);
+
+  // **Asked again on the way back into the window, and never on a
+  // timer** (工作区批7). The marks answer 「what differs from HEAD on
+  // that machine」, and they are re-asked when the pane opens, when the
+  // tree walks, and after khor's own save — which covers every change
+  // khor made. What it did not cover is the change somebody *else*
+  // made while this window sat in the background, and that is the one
+  // a person comes back to and reads as current.
+  //
+  // A poll was the other road and it is the worse one: every beat is a
+  // dial plus a `git status` walk on somebody else's machine, for an
+  // answer that is almost always the one already on screen. Coming
+  // back to the window is the moment the staleness starts to mislead,
+  // so it is the moment to ask. A repository still changes under a
+  // pane somebody is staring at without touching; that is left
+  // unasked on purpose rather than paid for once every few seconds.
+  useEffect(() => {
+    if (hidden) return;
+    setGitAt((n) => n + 1);
+  }, [hidden]);
 
   // **Given back when this pane stops pointing at that machine.** A
   // web face is a `node` process with an extension host on somebody

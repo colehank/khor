@@ -1025,8 +1025,12 @@ try {
   // One marked file and one marked directory, so the tree wears both
   // kinds of mark (工作区批3): `src` folds up a `·` from what is under
   // it, `notes.md` wears its own letter.
-  await page.route("**/git_status", (r) =>
-    r.fulfill({
+  // Counted, because 工作区批7 turns on the marks being asked again
+  // when somebody comes back to the window rather than on a timer.
+  let gitAsked = 0;
+  await page.route("**/git_status", (r) => {
+    gitAsked += 1;
+    return r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         branch: "main",
@@ -1036,8 +1040,8 @@ try {
         ],
         more: false,
       }),
-    }),
-  );
+    });
+  });
   // The three shapes a gutter draws, one of each: a change that has
   // both halves, an insertion with nothing removed, and a deletion with
   // no current line to stand on. A fixture with only the first would
@@ -2618,6 +2622,46 @@ try {
     await page.unroute("**/merge_text");
     await page.unroute("**/write_text");
   }
+
+  // ── 4b-ter) the marks, when somebody comes back ───────────────────
+  //
+  // **A pane that was in the background is a pane holding an answer
+  // from before.** The marks are asked when the workspace opens, when
+  // the tree walks and after khor's own save; none of those fire while
+  // the window sits behind something else and somebody else commits.
+  // So returning to the window asks again — and nothing asks on a
+  // timer, because every beat is a dial plus a `git status` walk on
+  // another machine for an answer that rarely moved.
+  const hide = (yes) =>
+    page.evaluate((v) => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => v });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, yes);
+  const quiet = gitAsked;
+  await new Promise((r) => setTimeout(r, 700));
+  const stillQuiet = gitAsked;
+  await hide(true);
+  await new Promise((r) => setTimeout(r, 80));
+  await hide(false);
+  await new Promise((r) => setTimeout(r, 200));
+  console.log(
+    `marks: ${quiet} asked so far, ${stillQuiet - quiet} while nobody touched it, ` +
+      `${gitAsked - stillQuiet} on coming back`,
+  );
+  if (stillQuiet !== quiet) {
+    fail(
+      `the marks were asked ${stillQuiet - quiet} time(s) with nobody touching the pane — that is a ` +
+        "poll, and every beat is a dial and a git walk on somebody else's machine " +
+        "(src/views/WorkspacePane.tsx)",
+    );
+  }
+  if (gitAsked === stillQuiet) {
+    fail(
+      "coming back to the window left the marks as they were — a person who was away while somebody " +
+        "else committed is reading an answer from before and cannot tell (src/views/WorkspacePane.tsx)",
+    );
+  }
+  await hide(false);
 
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //
