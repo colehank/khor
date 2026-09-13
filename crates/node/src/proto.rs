@@ -213,6 +213,21 @@ pub enum Request {
     /// [`Request::GitDiff`], off a satellite (`crate::satellite::
     /// git_diff`). A new variant for [`Request::SatLs`]'s reason.
     SatGitDiff { sat: String, path: String },
+    /// [`Request::WritePath`], off a satellite (工作区批7).
+    ///
+    /// `was` is the same blake3 digest every other save is pinned to,
+    /// and it stays blake3 across this wire: the sponsor is the one who
+    /// can turn it into something the far machine can check, because it
+    /// holds the copy those bytes came off
+    /// (`crate::satellite::write_file`). A new variant for
+    /// [`Request::SatLs`]'s reason — the sponsor's answer is the
+    /// ordinary [`Response::Wrote`].
+    SatWrite {
+        sat: String,
+        path: String,
+        was: String,
+        bytes: serde_bytes::ByteBuf,
+    },
     /// The asked machine's own day record (`khor_node::day`): what
     /// *its* list said about each of *its* sessions over the last 24
     /// hours. A reported row used to paint 没在看 for its whole strip
@@ -680,6 +695,15 @@ mod tests {
             (
                 Request::SatGitDiff { sat: String::new(), path: String::new() },
                 &b"SatGitDiff"[..],
+            ),
+            (
+                Request::SatWrite {
+                    sat: String::new(),
+                    path: String::new(),
+                    was: String::new(),
+                    bytes: serde_bytes::ByteBuf::new(),
+                },
+                &b"SatWrite"[..],
             ),
         ] {
             let bytes = encode(&op).unwrap();

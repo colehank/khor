@@ -144,6 +144,28 @@ mod tests {
         assert_eq!(three(base, mine, theirs).clashes, 2);
     }
 
+    /// **Adjacent lines, one on each side, is a clash — and that is
+    /// git's answer, not a shortcoming of this wrapper.** Changing line
+    /// 2 here and line 3 there reads like two separate edits; with no
+    /// unchanged line between them the two hunks touch, and both git
+    /// and this produce one region holding both sides. Checked against
+    /// `git merge-file -p` on exactly these three texts on 2026-09-13:
+    /// byte for byte the same, labels aside. It is written down because
+    /// the obvious expectation is the other one.
+    #[test]
+    fn two_touching_lines_clash_the_way_git_says_they_do() {
+        let m = three("one\ntwo\nthree\n", "one\nMINE\nthree\n", "one\ntwo\nTHEIRS\n");
+        assert_eq!(m.clashes, 1);
+        assert_eq!(
+            m.text,
+            format!(
+                "one\n<<<<<<< {}\nMINE\nthree\n=======\ntwo\nTHEIRS\n>>>>>>> {}\n",
+                msg::MERGE_MINE,
+                msg::MERGE_THEIRS
+            )
+        );
+    }
+
     /// Both sides typed the same thing. git calls it resolved and so
     /// does khor: one copy, no markers, nothing to decide.
     #[test]

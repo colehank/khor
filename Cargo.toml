@@ -54,6 +54,7 @@ rmp-serde = "1"
 # files, so dumb nodes (ssh-only, no process) can carry them.
 loro = "1.13"
 base64 = "0.22"
+sha2 = "0.10"
 iroh = "1.0"
 # The only outbound HTTP khor makes: Anthropic's usage endpoint, read
 # with the credential Claude Code already stored (crates/node/src/quota.rs).

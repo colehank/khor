@@ -634,6 +634,97 @@ fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
+/// Writes a whole file on the satellite, **and only if it still holds
+/// what the reader read** (工作区批7).
+///
+/// # Why this can keep khor's save promise after all
+///
+/// The promise everywhere else in khor is `files::write_whole`'s: the
+/// bytes you are replacing are still the bytes you read, or nothing is
+/// written. This road was refused on the grounds that it could not keep
+/// it — the digest khor hands out is blake3, nothing over there can
+/// compute one, and a sponsor that pulled the file, hashed it here and
+/// pushed it back would leave a window in the middle the size of
+/// somebody else's save (docs/handoff/001.md, 卫星工作区批).
+///
+/// **The window was the wrong thing to look at.** The check does not
+/// have to happen at the same moment as the read; it has to be *pinned
+/// to content*. So the comparison moves to the machine that holds the
+/// file: the sponsor computes, from the copy whose blake3 is the one
+/// the person read, that copy's sha256; the script below compares the
+/// file's own sha256 to it and writes only on a match. Whatever happens
+/// in between, a file somebody else touched hashes differently and this
+/// writes nothing. The two algorithms never have to meet — one copy of
+/// the bytes carries both.
+///
+/// `want` is that sha256, in lower-case hex. The reply is either
+/// `ok <mtime-seconds>` or one of the named refusals, never a partial
+/// write: the content lands under a dot-name in the destination's own
+/// directory and is renamed into place, which is what `write_whole`
+/// does locally and for the same reason.
+///
+/// Base64 rather than a heredoc because a heredoc's terminator can
+/// appear inside any file, and a delimiter chosen by luck is a file
+/// truncated by luck. `base64 -d` is coreutils on Linux and BSD on
+/// macOS; both take `-d`, and a machine without it answers `nob64`
+/// rather than writing something wrong.
+const WRITE_SH: &str = r#"
+set -u
+f=$KHOR_FILE
+want=$KHOR_WANT
+if [ ! -f "$f" ]; then echo "gone"; exit 0; fi
+now=$(sha256sum "$f" 2>/dev/null | cut -d' ' -f1)
+if [ -z "$now" ]; then now=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1); fi
+if [ -z "$now" ]; then echo "nosha"; exit 0; fi
+if [ "$now" != "$want" ]; then echo "moved"; exit 0; fi
+command -v base64 >/dev/null 2>&1 || { echo "nob64"; exit 0; }
+tmp=$(dirname "$f")/.khor-save-$(basename "$f")
+printf %s "$KHOR_B64" | base64 -d > "$tmp" || { rm -f "$tmp"; echo "nowrite"; exit 0; }
+mv -f "$tmp" "$f" || { rm -f "$tmp"; echo "nowrite"; exit 0; }
+at=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)
+echo "ok ${at:-0}"
+exit 0
+"#;
+
+/// [`WRITE_SH`] over the user's ssh road. Answers the file's mtime in
+/// milliseconds.
+///
+/// Every refusal is a sentence rather than a silence, because the one
+/// thing a save must never do is answer「fine」 while writing nothing.
+pub fn write_file(host: &str, path: &str, want_sha: &str, bytes: &[u8]) -> Result<u64, String> {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let script = format!(
+        "KHOR_FILE={}
+KHOR_WANT={}
+KHOR_B64={}
+{WRITE_SH}",
+        sh_quote(path),
+        sh_quote(want_sha),
+        sh_quote(&b64),
+    );
+    let out = sh_over_ssh(host, &script)?;
+    let said = out.trim();
+    match said.split_once(' ') {
+        Some(("ok", at)) => Ok(at.trim().parse::<u64>().unwrap_or(0) * 1000),
+        _ => match said {
+            "gone" | "moved" => Err(msg::file_changed_under_you(path)),
+            "nosha" | "nob64" => Err(msg::sat_no_tools(host)),
+            _ => Err(msg::cant_save_file(path, said)),
+        },
+    }
+}
+
+/// The sha256 of some bytes, in the spelling the satellite's own
+/// `sha256sum` prints — the bridge between khor's digest and the one
+/// the far machine can compute.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    let mut h = sha2::Sha256::new();
+    h.update(bytes);
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// One directory of the satellite, over ssh — the same answer shape as
 /// the local listing (`crate::files::list_dir`): the expanded path,
 /// entries sorted directories-first then case-folded, and whether the

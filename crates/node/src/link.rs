@@ -1433,6 +1433,14 @@ impl Node {
                 let (total, at_ms, bytes) = self.sat_slice(&sat, &host, &path, offset).await?;
                 Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
             }
+            Request::SatWrite { sat, path, was, bytes } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                let (at_ms, digest) = self.sat_write(&sat, &host, &path, &was, &bytes).await?;
+                Ok(Response::Wrote { at_ms, digest })
+            }
             Request::FetchPath { path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -1500,6 +1508,69 @@ impl Node {
         tokio::task::spawn_blocking(move || crate::files::read_slice(&staged_str, offset))
             .await
             .map_err(|e| e.to_string())?
+    }
+
+    /// Saves a whole file onto a satellite, keeping the same promise
+    /// every other save keeps (工作区批7).
+    ///
+    /// **The staged copy is what makes the two digests meet.** khor
+    /// hands out blake3 and a satellite can only compute sha256, so
+    /// the check would be impossible if it had to happen in one place.
+    /// It does not: the sponsor already holds the copy this file was
+    /// read off (`sat_slice` stages one per `(sat, path)`), and one
+    /// pile of bytes has both digests. If the staged copy hashes to
+    /// `was`, its sha256 is what the far machine must still see; the
+    /// script over there compares and writes, or compares and does
+    /// not.
+    ///
+    /// A staged copy that is missing or no longer hashes to `was` is
+    /// not a refusal yet — it is re-pulled once, because another
+    /// reader re-staging the same file is ordinary and has nothing to
+    /// do with this save. Only a fresh copy that still does not hash
+    /// to `was` means the file really moved.
+    async fn sat_write(
+        &self,
+        sat: &str,
+        host: &str,
+        path: &str,
+        was: &str,
+        bytes: &[u8],
+    ) -> Result<(u64, String), String> {
+        // The wire's own ceiling, worn here too: a save is one frame
+        // everywhere else in khor and a satellite is not the place to
+        // invent a second rule.
+        if bytes.len() as u64 > crate::proto::SLICE {
+            return Err(msg::too_big_to_write(bytes.len() as u64, crate::proto::SLICE));
+        }
+        let staged = self.sat_staging_path(sat, path)?;
+        let want = {
+            let (h, p, sp, was) =
+                (host.to_owned(), path.to_owned(), staged.clone(), was.to_owned());
+            tokio::task::spawn_blocking(move || -> Result<String, String> {
+                let mut now = fs::read(&sp).unwrap_or_default();
+                if now.is_empty() || crate::files::digest(&now) != was {
+                    crate::satellite::pull_file(&h, &p, &sp)?;
+                    now = fs::read(&sp).map_err(|e| msg::cant_read(sp.display(), e))?;
+                }
+                if crate::files::digest(&now) != was {
+                    return Err(msg::file_changed_under_you(&p));
+                }
+                Ok(crate::satellite::sha256_hex(&now))
+            })
+            .await
+            .map_err(|e| e.to_string())??
+        };
+        let (h, p, mine) = (host.to_owned(), path.to_owned(), bytes.to_vec());
+        let at_ms = tokio::task::spawn_blocking(move || {
+            crate::satellite::write_file(&h, &p, &want, &mine)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        // The staged copy is now a copy of something nobody holds any
+        // more. Written through so the next read off this sponsor
+        // shows what was just saved rather than what it replaced.
+        let _ = fs::write(&staged, bytes);
+        Ok((at_ms, crate::files::digest(bytes)))
     }
 
     /// Whether `channel` names a satellite, and if so its id together
@@ -2227,29 +2298,21 @@ impl Node {
         out
     }
 
+    /// **The first slice is `read_at_with`'s first slice** (工作区批7).
+    /// This used to dial the named machine itself, which for a
+    /// satellite is a row carrying no addresses on purpose — so
+    /// `khor read` and `khor put` on a satellite's file answered
+    /// 「这不是一个机器 id」 about a file ssh reads fine, while the same
+    /// file opened in the app. One routing, not two.
     async fn read_head_with(
         &self,
         ep: &iroh::Endpoint,
         machine: &str,
         path: &str,
     ) -> Result<(u64, u64, Vec<u8>), String> {
-        let (channel, home) = self.resolve(machine)?;
-        if home == self.device() {
-            return crate::files::read_slice(path, 0);
-        }
-        match self
-            .ask(ep, &channel, &Request::FetchPath { path: path.to_owned(), offset: 0 })
-            .await?
-        {
-            Response::PathSlice { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
-            // A refusal here always carries words: `FetchPath` predates
-            // every khor that can be paired with, so there is no
-            // version arm to write — what comes back is that machine's
-            // own sentence about that path.
-            Response::Refused { why } => Err(why),
-            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        }
+        self.read_at_with(ep, machine, path, 0).await
     }
+
 
     /// What differs from HEAD in one checkout on any machine
     /// (`crate::git::status`). `root` is that machine's spelling of the
@@ -2461,18 +2524,40 @@ impl Node {
         if home == self.device() {
             return crate::files::write_whole(path, bytes, was);
         }
-        // **A satellite's file is read-only, and it is said rather than
-        // attempted** (卫星工作区批). Every other save in khor keeps
-        // one promise — the file you are replacing is still the file
-        // you read, or nothing is written (`files::write_whole`) — and
-        // over ssh that promise cannot be kept: the digest is blake3,
-        // there is no khor over there to compute one, and a sponsor
-        // that pulled the file, hashed it here and pushed back would
-        // leave a gap in the middle exactly the size of somebody else's
-        // save. A quieter guarantee wearing the same word is what this
-        // refusal exists to avoid.
-        if self.sat_and_sponsor(&channel)?.is_some() {
-            return Err(msg::sat_no_write(machine));
+        // **A satellite's file can be saved, and the promise is kept on
+        // the far side** (工作区批7). This road was refused on the
+        // grounds that a sponsor pulling, hashing here and pushing back
+        // leaves a window the size of somebody else's save. That was
+        // the wrong thing to look at: the check does not have to be
+        // simultaneous with the read, it has to be pinned to content.
+        // `sat_write` sends the far machine a sha256 taken off the very
+        // bytes the person read, and that machine compares it to its
+        // own file before writing — so a window is just a window, and
+        // anything that changed in it fails the comparison.
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self
+                    .devices_loaded()?
+                    .doc
+                    .by_name(&channel)
+                    .and_then(|d| d.ssh_host.clone())
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                return self.sat_write(&sat, &host, path, was, bytes).await;
+            };
+            let req = Request::SatWrite {
+                sat,
+                path: path.to_owned(),
+                was: was.to_owned(),
+                bytes: serde_bytes::ByteBuf::from(bytes.to_vec()),
+            };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::Wrote { at_ms, digest } => Ok((at_ms, digest)),
+                Response::Refused { why } if why.trim().is_empty() => {
+                    Err(msg::WRITE_PREDATES.into())
+                }
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
         }
         let req = Request::WritePath {
             path: path.to_owned(),
@@ -2535,13 +2620,19 @@ impl Node {
             return Ok(crate::code::probe());
         }
         // **A satellite answers「no editor」without being asked**, and
-        // that is this op's own rule rather than a shortcut: a machine
-        // khor cannot open an editor on must not be offered one, and
-        // khor cannot — `code serve-web` needs a khor over there to
-        // hold the tunnel. Asked the ordinary way it would dial a
-        // machine with no addresses and spend thirteen seconds finding
-        // out, once per workspace opened, to arrive at this same
-        // answer.
+        // the reason is what a satellite is, not what ssh can do
+        // (docs/NET.md「它身上不留东西」). `ssh -L` is a tunnel and
+        // `code serve-web` is a command, so this is buildable; what it
+        // would cost is ~640 MB of Microsoft's server unpacked into
+        // that machine's home and a long-lived process left running
+        // there — the first thing khor would ever leave behind on a
+        // machine somebody deliberately did not install it on. The
+        // earlier reason given here (「needs a khor over there to hold
+        // the tunnel」) was wrong and is corrected rather than kept.
+        //
+        // Asked the ordinary way it would also dial a machine with no
+        // addresses and spend thirteen seconds finding out, once per
+        // workspace opened, to arrive at this same answer.
         if self.sat_and_sponsor(&channel)?.is_some() {
             return Ok(crate::code::Editor::default());
         }
