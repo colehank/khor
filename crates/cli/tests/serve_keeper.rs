@@ -13,6 +13,24 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+/// Every shield directory in the machine's temp dir right now. The
+/// shield's copies land in one of these, and this test is the only
+/// thing that makes one nobody will ever revisit.
+fn shield_dirs() -> std::collections::HashSet<PathBuf> {
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
+        return Default::default();
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("khor-shield-"))
+        })
+        .collect()
+}
+
 fn root(tag: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("khor-keeper-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
@@ -210,6 +228,7 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     // pid (TERM below lands on the pre-exec id, which is what serve.pid
     // holds), the disk watch, and the handover.
     let home = root("shield");
+    let before = shield_dirs();
     let bin = home.join("khor-copy");
     fs::copy(env!("CARGO_BIN_EXE_khor"), &bin).unwrap();
     let log = home.join("serve.log");
@@ -270,6 +289,23 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     wait_for("the keeper and its serve to leave", 10, || {
         keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
     });
+    // **The copy the shield made, too** (2026-09-14). It does not live
+    // under `home`: it is in the machine's temp dir, named after a hash
+    // of this install path — and this install path carries a pid, so no
+    // later khor ever opens that directory again and its own age sweep
+    // never reaches it. Measured before this line existed: 8.6 GB in
+    // ~150 MB pairs, one pair per run of this test, on a disk with 3 GB
+    // free.
+    //
+    // **By difference rather than by name.** Rebuilding the name means
+    // hashing the same spelling of the path the keeper hashed, and the
+    // first try at that deleted nothing: `temp_dir()` answers `/var/…`
+    // while the keeper resolves its own exe to `/private/var/…`, and
+    // the two hash apart. What came and went is a fact this test can
+    // read instead of derive.
+    for d in shield_dirs().difference(&before) {
+        let _ = fs::remove_dir_all(d);
+    }
     let _ = fs::remove_dir_all(&home);
 }
 

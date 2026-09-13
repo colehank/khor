@@ -145,24 +145,45 @@ fn shield_dir(watched: &std::path::Path) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("khor-shield-{uid}-{:016x}", h.finish()))
 }
 
+/// How old a copy has to be before the sweep takes it. A week is long
+/// past any upgrade it could belong to, and comfortably longer than a
+/// machine left asleep over a weekend.
+const KEEP: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
+/// Whether this entry has not been touched within [`KEEP`]. Unreadable
+/// metadata counts as fresh: the sweep's job is disk, and a file it
+/// cannot ask about is not one it should delete.
+fn stale(p: &std::path::Path) -> bool {
+    std::fs::metadata(p)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age > KEEP)
+}
+
 /// Copies the watched binary to the local disk and returns the copy's
 /// path, named after the generation's fingerprint. Copy-then-rename so
 /// a torn write never wears a finished name; the unlink first because
 /// overwriting a file in place is the very harm the shield exists to
 /// avoid (a running image survives an unlink, not a rewrite). Old
 /// generations are swept by age — running images survive that too.
+///
+/// **The sweep reaches the neighbours as well, and that is the whole
+/// of the fix** (2026-09-14). It used to look only inside the one
+/// directory this call was about to use, and the directory is named
+/// after a hash of the *install path* — so an install path that is
+/// never used again (the shield test's is `…/khor-keeper-shield-<pid>`,
+/// a new one every `cargo test`) left two ~150 MB copies that no
+/// process would ever visit, and therefore never sweep. Measured on
+/// this Mac: 32 such directories, 8.6 GB, 9月5 to 9月13, on a disk
+/// with 3 GB free. The age rule was there and was unreachable.
 fn local_copy(watched: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let dir = shield_dir(watched);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    sweep_abandoned(&dir);
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
-            let stale = e
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|age| age > std::time::Duration::from_secs(7 * 24 * 3600));
-            if stale {
+            if stale(&e.path()) {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -176,6 +197,45 @@ fn local_copy(watched: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let _ = std::fs::remove_file(&dst);
     std::fs::rename(&tmp, &dst).map_err(|e| e.to_string())?;
     Ok(dst)
+}
+
+/// Removes other installs' shield directories once everything in them
+/// is [`stale`], and empty ones outright.
+///
+/// **Never `mine`**, whatever its age: this call is about to put a
+/// fresh copy there, and a keeper that swept its own floor out from
+/// under itself would be the one bug worse than the disk.
+///
+/// Failures are ignored, every one of them. This runs on the way to
+/// starting a keeper; a permission error on somebody else's leftovers
+/// is not a reason to refuse to start.
+fn sweep_abandoned(mine: &std::path::Path) {
+    let Some(parent) = mine.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    for e in entries.flatten() {
+        let path = e.path();
+        if path == mine || !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        // Ours by name, and only ours: `temp_dir()` is shared with
+        // every other program on the machine.
+        if !name.starts_with("khor-shield-") {
+            continue;
+        }
+        let Ok(inside) = std::fs::read_dir(&path) else { continue };
+        let mut all_stale = true;
+        for f in inside.flatten() {
+            if stale(&f.path()) {
+                let _ = std::fs::remove_file(f.path());
+            } else {
+                all_stale = false;
+            }
+        }
+        if all_stale {
+            let _ = std::fs::remove_dir(&path);
+        }
+    }
 }
 
 /// #76's preventive half. Returns the path to WATCH for new
@@ -429,5 +489,63 @@ pub fn keep() -> Result<(), String> {
         eprintln!("{}", msg::serve_died_restarting(&stamp, &how, backoff));
         std::thread::sleep(std::time::Duration::from_secs(backoff));
         backoff = (backoff * 2).min(BACKOFF_MAX);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+    use std::time::{Duration, SystemTime};
+
+    /// Puts a file at `path` and backdates it by `days`. `set_modified`
+    /// rather than a crate: the age is the whole of what this test
+    /// controls, and std has carried it since 1.75.
+    fn aged(path: &std::path::Path, days: u64) {
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(b"not really a binary").unwrap();
+        f.set_modified(SystemTime::now() - Duration::from_secs(days * 24 * 3600)).unwrap();
+    }
+
+    /// The bug this sweep exists for, in one directory tree: a shield
+    /// directory belonging to an install path nobody will ever use
+    /// again. Before 2026-09-14 nothing swept it, because the sweep
+    /// only ever looked inside the directory it was about to use —
+    /// measured on one Mac as 8.6 GB across 32 of them.
+    #[test]
+    fn a_shield_directory_nobody_will_visit_again_is_swept() {
+        let base = std::env::temp_dir().join(format!("khor-sweep-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let mine = base.join("khor-shield-501-mine");
+        let gone = base.join("khor-shield-501-abandoned");
+        let empty = base.join("khor-shield-501-empty");
+        let theirs = base.join("someone-elses-tempdir");
+        for d in [&mine, &gone, &empty, &theirs] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        aged(&gone.join("khor-old"), 9);
+        aged(&theirs.join("khor-old"), 9);
+        // Fresh in an abandoned-looking directory: an upgrade from
+        // yesterday is not rubbish, and the running image may be it.
+        let busy = base.join("khor-shield-501-busy");
+        std::fs::create_dir_all(&busy).unwrap();
+        aged(&busy.join("khor-new"), 0);
+        aged(&mine.join("khor-old"), 9);
+
+        sweep_abandoned(&mine);
+
+        assert!(!gone.exists(), "a week-old copy nobody will come back for is gone");
+        assert!(!empty.exists(), "and so is the empty shell of one");
+        assert!(busy.join("khor-new").exists(), "yesterday's copy is left alone");
+        assert!(
+            mine.join("khor-old").exists(),
+            "**never the directory this call is about to write into** — the caller sweeps that one \
+             itself, after it has put the new copy there"
+        );
+        assert!(
+            theirs.join("khor-old").exists(),
+            "and nothing outside khor's own name, because temp_dir() belongs to everybody"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
