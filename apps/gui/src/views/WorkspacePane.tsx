@@ -30,8 +30,9 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useListWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
-import { word } from "@/words";
+import { ago, word } from "@/words";
 import { BrowserPane } from "@/views/BrowserPane";
+import { DetailPane } from "@/views/DetailPane";
 import { FilesPane } from "@/views/FilesPane";
 import { FileView, type Draft } from "@/views/FileView";
 import type { Editor } from "@/gen/bindings/Editor";
@@ -79,6 +80,12 @@ export function WorkspacePane({
       with no warning; now walking away and back finds it where it was,
       and the head says how many are waiting. */
   const [drafts, setDrafts] = useState<Map<string, Draft>>(new Map());
+  /** What each file held before the last save made from this face, by
+      absolute path. **Beside the drafts and for their reason**: the
+      view is remounted on every file, and an undo that evaporates when
+      you glance at the file next door is one nobody can lean on
+      (`FileView`'s `undo`). */
+  const [undos, setUndos] = useState<Map<string, string>>(new Map());
   // **Two seams of the workspace's own** (工作区批 收尾, 2026-09-12),
   // the same hook the list pane's seam uses — parameterised rather than
   // copied, so「drag, snap away, come back to the width it had, and the
@@ -96,6 +103,12 @@ export function WorkspacePane({
   const setTree = (on: boolean) => (on === treePane.collapsed ? treePane.toggle() : undefined);
   const setSessions = (on: boolean) =>
     on === sidePane.collapsed ? sidePane.toggle() : undefined;
+  /** Which session this column is standing in, by id, or `null` for
+      the list. **Dropped when the workspace changes** along with the
+      tree's position and the open file: a session belongs to one
+      project, and carrying it across would leave somebody looking at a
+      conversation about a directory that is no longer on screen. */
+  const [picked, setPicked] = useState<string | null>(null);
   const [git, setGit] = useState<GitStatus | null>(null);
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
@@ -180,6 +193,8 @@ export function WorkspacePane({
     // machine's disk, and carrying it into another project would be
     // holding a save aimed at a file nobody is looking at.
     setDrafts(new Map());
+    setUndos(new Map());
+    setPicked(null);
     // Narrow has no room for a second column at all, so the default
     // there is not about the fifth one.
     setSessions(!narrow && !listOpen);
@@ -274,6 +289,31 @@ export function WorkspacePane({
                   className="shrink-0 truncate text-aux text-muted-foreground"
                 >
                   {git.branch}
+                </span>
+              )}
+              {/* **How far from the remote, and never without when.**
+                  khor opens no connection nobody asked for, so it
+                  never fetches — which makes 领先/落后 a fact about
+                  the last time somebody else did, and a three-week-old
+                  pair the same shape as a fresh one. That is why 批3
+                  cut it and this is what brings it back: the number
+                  and its age are one sentence or neither is said.
+
+                  Nothing at all when `fetched_ms` is 0. A repository
+                  that never fetched has no date to put on the pair,
+                  and a branch with no upstream answers 0/0 — which is
+                  also what being in step answers, and both lead to the
+                  same next move, which is to draw nothing. */}
+              {git.fetched_ms > 0 && (git.ahead > 0 || git.behind > 0) && (
+                <span
+                  data-track={`${git.ahead}/${git.behind}`}
+                  className="shrink-0 truncate text-aux text-muted-foreground"
+                >
+                  {git.ahead > 0 && git.behind > 0
+                    ? cli.git_track(git.ahead, git.behind, ago(git.fetched_ms))
+                    : git.ahead > 0
+                      ? cli.git_ahead(git.ahead, ago(git.fetched_ms))
+                      : cli.git_behind(git.behind, ago(git.fetched_ms))}
                 </span>
               )}
               {/* The cap said out loud, for `Response::Dir::truncated`'s
@@ -448,6 +488,15 @@ export function WorkspacePane({
                   return now;
                 })
               }
+              undo={undos.get(file)}
+              onUndo={(t) =>
+                setUndos((was) => {
+                  const now = new Map(was);
+                  if (t === null) now.delete(file);
+                  else now.set(file, t);
+                  return now;
+                })
+              }
             />
           )}
         </div>
@@ -465,15 +514,53 @@ export function WorkspacePane({
         {sessions && (
           <div
             data-ws-sessions
-            className="shrink-0 overflow-y-auto border-l"
+            // **Scrolls as a list, does not as a pane.** `DetailPane`
+            // is `h-full` with its own scroller inside; wrapped in a
+            // second one it sizes to its content and the header stops
+            // being sticky.
+            className={cn(
+              "flex shrink-0 flex-col border-l",
+              picked === null ? "overflow-y-auto" : "min-h-0",
+            )}
             style={{ width: sidePane.width }}
           >
-            {mine.map((r) => (
-              <div key={r.id} className="flex flex-col gap-0.5 border-b px-3 py-2">
-                <span className="truncate text-aux text-foreground">{r.title}</span>
-                <span className="text-aux text-muted-foreground">{word(r.word)}</span>
-              </div>
-            ))}
+            {/* **A place to work, not a list of what exists**
+                (2026-09-13). Until now this column named the sessions
+                running on this project and did nothing with them — you
+                read a title and a state word and then went to the
+                sessions landing to actually say anything, which put the
+                project's files on one screen and its conversations on
+                another. Pressing a row now opens that session here,
+                beside its own files.
+
+                **Master and detail rather than a strip of tabs**, and
+                that is a fact about the column's width: this seam drags
+                as narrow as a person wants and its default is a third
+                of what the tree and the file leave over, which seats
+                one title comfortably and four never. A strip that
+                cannot show its tabs is a switcher you have to switch
+                to. The back arrow is the way out, the shell's own
+                gesture on its narrow face. */}
+            {picked === null ? (
+              mine.map((r) => (
+                <button
+                  type="button"
+                  key={r.id}
+                  data-ws-session={r.id}
+                  onClick={() => setPicked(r.id)}
+                  className="flex min-h-touch w-full flex-col gap-0.5 border-b px-3 py-2 text-left hover:bg-accent"
+                >
+                  <span className="truncate text-aux text-foreground">{r.title}</span>
+                  <span className="text-aux text-muted-foreground">{word(r.word)}</span>
+                </button>
+              ))
+            ) : (
+              <DetailPane
+                row={mine.find((r) => r.id === picked) ?? null}
+                narrow={narrow}
+                onBack={() => setPicked(null)}
+              />
+            )}
           </div>
         )}
       </div>

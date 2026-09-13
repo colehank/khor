@@ -438,9 +438,11 @@ fn read(rest: &[String]) -> Result<(), String> {
     let [machine, path] = rest else {
         return Err(USAGE.into());
     };
-    // The same ceiling the app looks through, and **the same constant**
-    // — it lived in two places for a day (`khor_node::preview::LOOK`).
-    let look = khor_node::preview::LOOK;
+    // The same ceiling the app looks through, and **the same
+    // function** — the constant lived in two places for a day, and the
+    // choice *between* the two constants would have been the same
+    // mistake one size up (`khor_node::preview::cap`).
+    let look = khor_node::preview::cap(path);
     let (total, _, bytes, cut) = rt()?.block_on(node()?.read_all(machine, path, look))?;
     let md = khor_node::preview::markdown(path, &bytes)?;
     if md.trim().is_empty() {
@@ -600,7 +602,37 @@ fn git(rest: &[String]) -> Result<(), String> {
             // detached HEAD would otherwise print a blank first line
             // that reads as「no changes」.
             if !s.branch.is_empty() {
-                println!("{}", s.branch);
+                // **How far from the remote rides on the branch's own
+                // line, and never without its date.** khor opens no
+                // connection nobody asked for, so it never fetches:
+                // 领先/落后 is a fact about the last time somebody
+                // else did, and a three-week-old pair looks exactly
+                // like a fresh one. Nothing is said when there is no
+                // date to say it with — no upstream, or never fetched
+                // — because 0/0 is also what being in step answers.
+                let far = if s.fetched_ms > 0 && (s.ahead > 0 || s.behind > 0) {
+                    // `lasting`, not `human_age`: this is 时长, and
+                    // 时长 has to read the way the card reads it —
+                    // the face puts the same fetch through `ago()`,
+                    // which is `span()`, which `lasting` mirrors.
+                    let since = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0)
+                        - s.fetched_ms;
+                    let age = lasting((since.max(0) / 1000) as u64);
+                    Some(match (s.ahead, s.behind) {
+                        (a, 0) => cli::git_ahead(a, &age),
+                        (0, b) => cli::git_behind(b, &age),
+                        (a, b) => cli::git_track(a, b, &age),
+                    })
+                } else {
+                    None
+                };
+                match far {
+                    Some(far) => println!("{}\t{far}", s.branch),
+                    None => println!("{}", s.branch),
+                }
             }
             for (path, mark) in &s.rows {
                 println!("{mark}\t{path}");

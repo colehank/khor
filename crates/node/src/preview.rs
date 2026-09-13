@@ -18,11 +18,24 @@
 //!
 //! # What the dependencies cost, measured off the Cargo.lock diff
 //!
-//! **11 packages**, all permissive (checked before use, not after):
+//! **15 packages**, all permissive (checked before use, not after):
 //! `office_oxide` and its seven (MIT OR Apache-2.0, except `zip` MIT
 //! and `zopfli` Apache-2.0), `pulldown-cmark` (MIT), `csv` and
-//! `csv-core` (Unlicense/MIT). One crate for six document formats is
-//! the reason that number is small.
+//! `csv-core` (Unlicense/MIT), and `pdfboss-output` with its three
+//! (MIT OR Apache-2.0). One crate per *family* rather than per format
+//! is the reason that number is small.
+//!
+//! **The PDF number is the one that was shopped for.** Reading a PDF's
+//! words needs its fonts and encodings, so it is never free — but the
+//! spread is enormous and was measured off the Cargo.lock diff rather
+//! than guessed. `pdf_oxide`, from `office_oxide`'s own author and so
+//! the first candidate on the family argument, costs **55 packages**
+//! (53 with default features off): it is a whole toolkit, and the
+//! rasteriser, the layout engine, the JPEG decoder and the font writer
+//! come along whether or not anything renders. `pdf-extract` costs 19.
+//! `pdfboss` costs **4**, because text extraction is all it claims to
+//! do — which is also all this file wants, and the reason pdf.js and
+//! its megabyte of frontend never entered the question.
 //!
 //! ⚠️ **`office_oxide` is young** — first published 2026-04-28, 0.1.x,
 //! and khor took 0.1.11. What was done about that instead of hoping:
@@ -52,6 +65,35 @@ use khor_catalog::msg;
 /// keeping them in step (工作区批6's own debt, closed 2026-09-12).
 /// Sixteen slices at [`crate::proto::SLICE`].
 pub const LOOK: u64 = 4 * 1024 * 1024;
+
+/// The same, for a picture.
+///
+/// **Bigger because the two failures are not the same failure.** A
+/// document cut at four megabytes is still a document: its first four
+/// megabytes of words are on screen and the face says the rest was
+/// left. A picture cut anywhere is not a picture — half a JPEG decodes
+/// to nothing — so the cap is the line between showing it and showing
+/// a sentence about it, and that line belongs further out.
+///
+/// **16 MB, measured rather than felt.** Across this person's
+/// directories, 265 images: p50 is 20 KB, p95 is 0.91 MB, p99 is
+/// 4.42 MB. Four exceed the document cap and one exceeds this one — a
+/// 42 MB gif, which is a download and not a preview, and still gets
+/// the sentence. Sixty-four slices at [`crate::proto::SLICE`], which
+/// is the cost this buys and the reason it is not simply enormous.
+pub const LOOK_IMAGE: u64 = 16 * 1024 * 1024;
+
+/// How much of this file a preview should carry.
+///
+/// **One question, asked in one place.** The cap and the kind were
+/// picked apart in `khor_gui_core::files::preview` and in `khor read`,
+/// which is two places to forget that a picture wants the larger one.
+pub fn cap(path: &str) -> u64 {
+    match kind(path) {
+        Kind::Image | Kind::Svg => LOOK_IMAGE,
+        _ => LOOK,
+    }
+}
 
 /// What khor will do with a file when it is opened.
 ///
@@ -93,7 +135,7 @@ const IMAGES: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "av
 /// The six `office_oxide` reads, plus the two text tables khor turns
 /// into markdown itself.
 const DOCS: &[&str] =
-    &["md", "markdown", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "csv", "tsv"];
+    &["md", "markdown", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "csv", "tsv", "pdf"];
 
 /// The media type a browser needs to be told before it will decode
 /// these bytes.
@@ -147,12 +189,61 @@ pub fn markdown(path: &str, bytes: &[u8]) -> Result<String, String> {
     if e == "csv" || e == "tsv" {
         return table(bytes, if e == "tsv" { b'\t' } else { b',' });
     }
+    if e == "pdf" {
+        return pdf(bytes);
+    }
     let Some(f) = office_oxide::DocumentFormat::from_extension(&e) else {
         return Err(msg::NOT_A_TEXT_FILE.to_owned());
     };
     let doc = office_oxide::Document::from_reader(Cursor::new(bytes.to_vec()), f)
         .map_err(|e| msg::cant_read_document(e))?;
     Ok(doc.to_markdown())
+}
+
+/// A PDF's words, as markdown.
+///
+/// **Text, not pages, and that is the same line every other document
+/// in this file is on.** A PDF renderer would be a picture of a page,
+/// which is what pdf.js would have cost a megabyte of frontend to
+/// give; what this road promises is「读的是文字和结构,不是排版」, and
+/// `pdfboss` extracts exactly that — headings ranked across the whole
+/// document rather than per page, so a title page reads as a heading
+/// instead of as its own idea of body size.
+///
+/// **A PDF with no text layer is not an empty document.** A scan and a
+/// figure both come back with nothing, and 「这个文档里没有内容」
+/// would be a lie about a twenty-page handbook — so the two are told
+/// apart here, by whether the file names a font at all, and the scan
+/// gets its own sentence. Measured on this machine: of 68 PDFs, 21
+/// carry text and 47 do not, and the 47 are matplotlib's toolbar
+/// icons, a paper's figures, and one image-only handbook whose 20
+/// pages hold ten JPEGs and no font object at all (which Spotlight
+/// also reads as empty). Nothing failed.
+fn pdf(bytes: &[u8]) -> Result<String, String> {
+    let doc = pdfboss_core::document::Document::load(bytes.to_vec())
+        .map_err(msg::cant_read_document)?;
+    // Geometric rather than Content: a PDF's content stream emits text
+    // in whatever order it was drawn, which for a two-column paper is
+    // not the order anybody reads it in.
+    let md = pdfboss_output::extract_markdown(&doc, pdfboss_output::ReadingOrder::Geometric)
+        .map_err(msg::cant_read_document)?;
+    if md.trim().is_empty() && !has_font(bytes) {
+        return Err(msg::PDF_IS_PICTURES.to_owned());
+    }
+    Ok(md)
+}
+
+/// Whether the file names a font anywhere.
+///
+/// **A coarse question answered coarsely, and deliberately.** It is
+/// asked only to choose between two sentences about a document that
+/// came back empty, so a false yes costs「没有内容」where「都是图」
+/// would have been kinder and a false no costs the reverse. Neither is
+/// a wrong reading of the file, and the alternative — walking every
+/// page's resources for a font dictionary — is a second parse of the
+/// whole document to pick a word.
+fn has_font(bytes: &[u8]) -> bool {
+    bytes.windows(5).any(|w| w == b"/Font")
 }
 
 /// How many rows of a table travel. A spreadsheet is a thing people
@@ -299,5 +390,113 @@ mod tests {
     #[test]
     fn a_markdown_file_comes_back_as_itself() {
         assert_eq!(markdown("/a/b.md", b"# hi\n").unwrap(), "# hi\n");
+    }
+
+    /// A valid PDF built here rather than a file checked in.
+    ///
+    /// **Built because the real ones are somebody's documents.** The 68
+    /// PDFs this was measured against are the user's papers, figures
+    /// and a scanned handbook, and a fixture directory is a place files
+    /// stay forever. What the two shapes below need to be is a PDF with
+    /// a font and a PDF without one, and that is short enough to write.
+    ///
+    /// The cross-reference table's offsets are computed rather than
+    /// typed: a table that disagrees with the bytes is the one thing a
+    /// lenient parser repairs silently, which would make the fixture
+    /// prove nothing about the parser reading it.
+    fn tiny_pdf(with_font: bool) -> Vec<u8> {
+        let content: &[u8] = if with_font {
+            b"BT /F1 24 Tf 20 100 Td (khor reads this) Tj ET\n"
+        } else {
+            b"0 0 1 rg 20 20 160 160 re f\n"
+        };
+        // The font object is left out entirely, not merely unreferenced
+        // — the first spelling of this always wrote it and `has_font`
+        // saw the `/Font` in it, so the picture-only case answered as
+        // an empty document and the fixture proved the opposite of what
+        // it was for.
+        let content_obj = if with_font { 5 } else { 4 };
+        let resources =
+            if with_font { "/Resources<</Font<</F1 4 0 R>>>>" } else { "/Resources<<>>" };
+        let mut objs: Vec<String> = vec![
+            "<</Type/Catalog/Pages 2 0 R>>".to_owned(),
+            "<</Type/Pages/Kids[3 0 R]/Count 1>>".to_owned(),
+            format!(
+                "<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]{resources}/Contents {content_obj} 0 R>>"
+            ),
+        ];
+        if with_font {
+            objs.push("<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>".to_owned());
+        }
+        objs.push(format!("<</Length {}>>", content.len()));
+
+        let mut out: Vec<u8> = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objs.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{body}\n", i + 1).as_bytes());
+            if i + 1 == content_obj {
+                out.extend_from_slice(b"stream\n");
+                out.extend_from_slice(content);
+                out.extend_from_slice(b"endstream\n");
+            }
+            out.extend_from_slice(b"endobj\n");
+        }
+        let xref = out.len();
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes(),
+        );
+        for off in &offsets {
+            out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!(
+                "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n",
+                objs.len() + 1
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    #[test]
+    fn a_pdfs_words_come_back_as_markdown() {
+        let md = markdown("a.pdf", &tiny_pdf(true)).expect("reads");
+        assert!(md.contains("khor reads this"), "got {md:?}");
+    }
+
+    #[test]
+    fn a_pdf_of_pictures_says_so_rather_than_saying_it_is_empty() {
+        // A scan and a figure both extract nothing. 「这个文档里没有
+        // 内容」 about a twenty-page handbook is a flat lie, so the two
+        // readings are told apart by whether the file names a font.
+        let err = markdown("a.pdf", &tiny_pdf(false)).expect_err("no text to read");
+        assert_eq!(err, msg::PDF_IS_PICTURES);
+    }
+
+    #[test]
+    fn a_pdf_is_a_document_not_a_picture_to_the_router() {
+        // The kind decides which screen opens before anything is read;
+        // a `.pdf` sent down the image road would reach an `<img>` that
+        // renders nothing (`views/FileView`'s `kindOf`).
+        assert_eq!(kind("a.pdf"), Kind::Doc);
+        assert_eq!(kind("A.PDF"), Kind::Doc);
+    }
+
+    #[test]
+    fn something_that_is_not_a_pdf_at_all_is_refused_in_words() {
+        let err = markdown("a.pdf", b"this is not a pdf").expect_err("refuses");
+        assert!(!err.is_empty());
+        assert_ne!(err, msg::PDF_IS_PICTURES, "a broken file is not a scan");
+    }
+
+    #[test]
+    fn a_picture_is_allowed_to_be_bigger_than_a_document() {
+        // Half a document still reads; half a JPEG decodes to nothing.
+        assert_eq!(cap("a.png"), LOOK_IMAGE);
+        assert_eq!(cap("a.svg"), LOOK_IMAGE);
+        assert_eq!(cap("a.docx"), LOOK);
+        assert_eq!(cap("a.rs"), LOOK);
+        assert!(LOOK_IMAGE > LOOK);
     }
 }

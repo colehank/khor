@@ -120,7 +120,7 @@ usage = """
   places [机器]          那台机器上开过 session 的目录(不给机器=本机)
   workspaces [机器]      其中是 git 仓库的那些,也就是工作区
   read <机器> <文件>      把文档读成文字打出来:md 原样,docx/xlsx/pptx 和
-                        它们的旧格式(doc/xls/ppt)、csv/tsv 都转成
+                        它们的旧格式(doc/xls/ppt)、csv/tsv、pdf 都转成
                         markdown。读的是文字和结构,不是排版
   code [--stop] <机器> [仓库路径]
                         在那台机器上开 VS Code 的网页脸,打印本地链接
@@ -692,6 +692,17 @@ code-fetching = "那台机器上还没有服务端,先下一份(约 640 MB,从�
 # and a list that was short look exactly alike.
 git-more = "改动太多,下面的没画出来"
 git-status-more = "改动太多,有些文件没标出来"
+# **The pair and its age are one sentence, never two.** khor never
+# fetches — it opens no connection nobody asked for — so 领先/落后 is
+# always「上次 fetch 的时候」, and the number alone has exactly the
+# shape of a fresh one. This is why the pair was cut in 工作区批3 and
+# what let it come back (2026-09-13). {0} 领先, {1} 落后, {2} 距上次
+# fetch 多久。
+git-track = "领先 {0} 落后 {1},按 {2}前那次 fetch"
+# Only one side has anything, which is the ordinary case: saying
+# 「落后 0」 beside it is a number nobody needs to read.
+git-ahead = "领先 {0},按 {1}前那次 fetch"
+git-behind = "落后 {0},按 {1}前那次 fetch"
 # Borrow prints where the proxy listens because a browser or HTTPS_PROXY
 # points there, and how to collapse it because nothing else says so.
 borrowing = "借着 {0} 的网,代理口在 {1};把浏览器或 HTTPS_PROXY 指过来。收口: khor close {2}"
@@ -956,6 +967,12 @@ file-moved-while-reading = "这个文件正在被改,读到一半对不上了: {
 # on a screen; this one is the node refusing a conversion.
 not-a-text-file = "这个文件读不出文字"
 cant-read-document = "这个文档读不开: {0}"
+# **A scan is not an empty document.** A PDF with no font object in it
+# carries its pages as pictures — twenty of them, in the one on this
+# machine — and 「这个文档里没有内容」 would be a flat lie about it.
+# Said as a fact about the file rather than as a failure, because
+# nothing went wrong: khor reads words, and there are none to read.
+pdf-is-pictures = "这个 PDF 里是图不是文字(扫描件或者整页插图),没有可读的文字层"
 # A spreadsheet is a thing people keep a hundred thousand rows in and a
 # preview is a screen. Said out loud for `Response::Dir::truncated` 's
 # reason: a cut table and a short table look identical.
@@ -2145,6 +2162,15 @@ file-save = "存"
 # permanent「已保存」**: a resting file needs no word, and a label that
 # never leaves stops being read.
 file-saved = "存好了"
+# **一步,在内存里,只在这个工作区开着的时候。** 存下去之前那份内容留在这
+# 边,按一下放回框里——放回框,不是替你写盘,因为 khor 不在没人按存的时候
+# 动别人的文件。工作区关掉就没了,这条说破:它接住的是「刚存完就发现存错
+# 了」那一下,不是版本历史。
+file-undo = "回到存之前"
+# 保存被拒之后的两个出口。**不是合并**:三方合并是另一批,而一个只会说
+# 「它变了」的死胡同,是这两条要替掉的东西。
+file-take-theirs = "重新读(丢掉我改的)"
+file-keep-mine = "按我的存(盖掉那边的改动)"
 # A file khor only has the beginning of cannot be edited, because what
 # a save writes back is what is on screen. Said beside the cut line
 # rather than as a second strip — it is the same fact, and 「只读了开头」

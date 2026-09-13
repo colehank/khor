@@ -316,6 +316,19 @@ cd "$KHOR_ROOT" || exit 3
 b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 [ "$b" = HEAD ] && b=
 printf 'branch=%s\n' "$b"
+# `@{u}` is the branch's own remote-tracking ref, and the command says
+# nothing at all when there is no upstream — which is the same silence
+# a detached HEAD gives, and the same one the in-process reader answers
+# `None` for.
+git rev-list --left-right --count '@{u}...HEAD' 2>/dev/null |
+  awk '{printf "behind=%s\nahead=%s\n", $1, $2}'
+# `.git/FETCH_HEAD`'s mtime dates the pair above. git writes it on
+# every fetch and touches it for nothing else; a repository that never
+# fetched has no file, and the line is simply absent.
+g=$(git rev-parse --git-dir 2>/dev/null)
+if [ -n "$g" ] && [ -f "$g/FETCH_HEAD" ]; then
+  printf 'fetched=%s\n' "$(stat -c %Y "$g/FETCH_HEAD" 2>/dev/null || stat -f %m "$g/FETCH_HEAD" 2>/dev/null || echo 0)"
+fi
 git status --porcelain=v1 -z 2>&1 | tr '\0' '\n' | sed 's/^/row=/'
 exit 0
 "#;
@@ -341,6 +354,9 @@ fn parse_status(text: &str) -> Result<crate::git::Status, String> {
     let mut marks: std::collections::BTreeMap<String, &'static str> =
         std::collections::BTreeMap::new();
     let mut more = false;
+    let mut ahead = 0u32;
+    let mut behind = 0u32;
+    let mut fetched_ms = 0i64;
     // **A rename is two fields, not two rows.** `-z` writes
     // `R<space><space>new\0old\0`, so the name it came from arrives
     // looking exactly like another row — and read as one it is a file
@@ -354,6 +370,19 @@ fn parse_status(text: &str) -> Result<crate::git::Status, String> {
     for line in text.lines() {
         if let Some(b) = line.strip_prefix("branch=") {
             branch = b.trim().to_owned();
+            continue;
+        }
+        if let Some(n) = line.strip_prefix("ahead=") {
+            ahead = n.trim().parse().unwrap_or(0);
+            continue;
+        }
+        if let Some(n) = line.strip_prefix("behind=") {
+            behind = n.trim().parse().unwrap_or(0);
+            continue;
+        }
+        if let Some(n) = line.strip_prefix("fetched=") {
+            // Seconds over there, milliseconds everywhere in khor.
+            fetched_ms = n.trim().parse::<i64>().unwrap_or(0) * 1000;
             continue;
         }
         let Some(row) = line.strip_prefix("row=") else { continue };
@@ -383,7 +412,7 @@ fn parse_status(text: &str) -> Result<crate::git::Status, String> {
         *slot = crate::git::fold(*slot, mark);
     }
     let rows = marks.into_iter().map(|(p, m)| (p, m.to_owned())).collect();
-    Ok(crate::git::Status { branch, rows, more })
+    Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
 }
 
 /// One porcelain row's two columns as one of khor's four letters.
@@ -1037,6 +1066,29 @@ row=?? untracked.txt
         // two spellings would be two different directories.
         let st = parse_status(PORCELAIN).expect("reads");
         assert!(st.rows.iter().any(|(p, m)| p == "subdir" && m == "U"));
+    }
+
+    #[test]
+    fn the_pair_and_its_date_travel_together() {
+        let st = parse_status(
+            "branch=main\nbehind=2\nahead=5\nfetched=1789274278\nrow= M a.txt\n",
+        )
+        .expect("reads");
+        assert_eq!((st.ahead, st.behind), (5, 2));
+        // Seconds over there, milliseconds in khor — a date off by a
+        // thousand reads as 1970 and the face would say the fetch was
+        // fifty-six years ago.
+        assert_eq!(st.fetched_ms, 1_789_274_278_000);
+    }
+
+    #[test]
+    fn a_branch_with_no_upstream_has_no_pair_and_no_date() {
+        // `git rev-list @{u}...` prints nothing at all without an
+        // upstream, and a repository that never fetched has no
+        // FETCH_HEAD — so both lines are simply absent, and 0/0 with a
+        // date of 0 is what the face reads as「say nothing」.
+        let st = parse_status("branch=main\nrow= M a.txt\n").expect("reads");
+        assert_eq!((st.ahead, st.behind, st.fetched_ms), (0, 0, 0));
     }
 
     #[test]

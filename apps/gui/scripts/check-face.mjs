@@ -2391,6 +2391,157 @@ try {
     }
   }
 
+  // …and the panel covers no code, which is the whole of what changed
+  // on 2026-09-13. It used to be an overlay laid at the hunk's own
+  // line, which put the removed lines where they had been and hid
+  // however many current lines it was tall — a cost carried as a known
+  // one for a day. **Measured as two boxes that do not intersect**,
+  // because「it looks fine」is exactly what an overlay looks like until
+  // the file is long enough.
+  // **Taken on the first hunk, and that is the whole of whether this
+  // check is worth anything.** The walk above ends on the last one,
+  // which in this fixture sits on the file's last line — an overlay
+  // there covers nothing, because there is nothing under it. Measured
+  // where the walk happened to stop, the check reported no overlap
+  // against the old overlay too and passed on the behaviour it exists
+  // to forbid (2026-09-13). The first hunk has three lines below it.
+  const lap = await page.evaluate(async () => {
+    const bar = document.querySelector("[data-hunk]");
+    if (!bar) return null;
+    bar.click();
+    await new Promise((r) => setTimeout(r, 60));
+    const panel = document.querySelector("[data-was]");
+    // **`[data-sheet]` and no fallback.** The first spelling fell back
+    // to `document.querySelector("pre")`, which is the line-number
+    // column. A probe that cannot find its subject must go void, never
+    // green.
+    const code = document.querySelector("[data-sheet]");
+    if (!panel || !code) return null;
+    const p = panel.getBoundingClientRect();
+    const c = code.getBoundingClientRect();
+    const over = Math.min(p.bottom, c.bottom) - Math.max(p.top, c.top);
+    return {
+      over: Math.round(Math.max(0, over)),
+      panel: Math.round(p.height),
+      code: Math.round(c.height),
+    };
+  });
+  if (lap === null) {
+    fail("probe dead: no expanded panel to measure against the code (src/views/FileView.tsx)");
+  } else {
+    console.log(
+      `hunk panel: ${lap.panel}px tall over a ${lap.code}px file, overlapping it by ${lap.over}px`,
+    );
+    if (lap.over > 1) {
+      fail(
+        `the expanded panel lies over ${lap.over}px of the file — it names the lines HEAD had and ` +
+          "hiding the ones that replaced them is the comparison losing its other half " +
+          "(src/views/FileView.tsx)",
+      );
+    }
+  }
+
+  // ── 4b-bis) saving, going back, and the two ways out ──────────────
+  //
+  // **Three things no gate could see until today**, and each one is a
+  // dead end if it is wrong rather than a wrong picture. A save that
+  // refuses used to leave a sentence standing with nothing to press:
+  // the only move left was copying the text out by hand. And a save
+  // that lands used to be the end of the previous content — khor wrote
+  // it and had no way back, which is exactly the minute somebody
+  // notices they saved the wrong thing (2026-09-13).
+  //
+  // Driven through the real buttons, never through state: what is
+  // being checked is that a person has a way out, and a way out is a
+  // thing you can press.
+  const editing = await page.$("textarea");
+  if (editing === null) {
+    fail("probe void: nothing editable on the open file, so nothing to save (src/views/FileView.tsx)");
+  } else {
+    // A save khor takes. The digest it answers is the one the next save
+    // pins to.
+    await page.route("**/write_text", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ at_ms: Date.now(), digest: "1".repeat(64) }),
+      }),
+    );
+    await editing.click();
+    await page.keyboard.type("X");
+    await press("[data-save]");
+    await new Promise((r) => setTimeout(r, 120));
+    const afterSave = await page.evaluate(() => ({
+      state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+      undo: !!document.querySelector("[data-undo]"),
+      text: document.querySelector("textarea")?.value ?? "",
+    }));
+    console.log(
+      `save: state ${afterSave.state}, a way back is ${afterSave.undo ? "offered" : "absent"}`,
+    );
+    if (afterSave.state !== "saved") {
+      fail(`a save the far machine took left the file saying ${afterSave.state} (src/views/FileView.tsx)`);
+    }
+    if (!afterSave.undo) {
+      fail(
+        "a save landed and offered no way back to what was there — khor replaced the file and kept " +
+          "nothing, which is the one minute somebody needs it (src/views/FileView.tsx)",
+      );
+    } else {
+      await press("[data-undo]");
+      await new Promise((r) => setTimeout(r, 80));
+      const back = await page.evaluate(() => document.querySelector("textarea")?.value ?? "");
+      console.log(`back: the box holds ${JSON.stringify(back.slice(0, 24))}`);
+      if (back === afterSave.text) {
+        fail(
+          "「回到存之前」 left the box exactly as the save did — it is supposed to put the replaced " +
+            "text back (src/views/FileView.tsx)",
+        );
+      }
+      // **Into the box, not onto the disk.** khor writes when somebody
+      // presses 存 and at no other moment, so the file must now read as
+      // unsaved rather than as written.
+      const nowState = await page.evaluate(
+        () => document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+      );
+      if (nowState !== "unsaved") {
+        fail(
+          `going back left the file saying ${nowState} — putting the old text in the box is not ` +
+            "writing it, and saying 存好了 about bytes nobody wrote is the worst of the three " +
+            "(src/views/FileView.tsx)",
+        );
+      }
+    }
+
+    // …and a save the far machine refuses, which is the case that had
+    // no exit at all.
+    await page.unroute("**/write_text");
+    await page.route("**/write_text", (r) =>
+      r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify("这个文件在你编辑期间变了") }),
+    );
+    await press("[data-save]");
+    await new Promise((r) => setTimeout(r, 120));
+    const refused = await page.evaluate(() => ({
+      state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+      theirs: !!document.querySelector("[data-take-theirs]"),
+      mine: !!document.querySelector("[data-keep-mine]"),
+    }));
+    console.log(
+      `refused: state ${refused.state}, exits ${[refused.theirs && "theirs", refused.mine && "mine"]
+        .filter(Boolean)
+        .join(" + ") || "none"}`,
+    );
+    if (refused.state !== "refused") {
+      fail(`a save the far machine refused left the file saying ${refused.state} (src/views/FileView.tsx)`);
+    }
+    if (!refused.theirs || !refused.mine) {
+      fail(
+        "a refused save offers no way out — the sentence says the file moved and the only move left " +
+          "is copying the text out by hand (src/views/FileView.tsx)",
+      );
+    }
+    await page.unroute("**/write_text");
+  }
+
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //
   // **The editor is a transparent textarea laid over the painted

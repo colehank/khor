@@ -59,7 +59,7 @@ import { sizeWord } from "@/views/FilesPane";
 export type Draft = { text: string; was: string };
 
 const IMAGES = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"];
-const DOCS = ["md", "markdown", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "csv", "tsv"];
+const DOCS = ["md", "markdown", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "csv", "tsv", "pdf"];
 
 export function kindOf(path: string): "image" | "svg" | "doc" | "text" {
   const name = path.split("/").pop() ?? "";
@@ -110,6 +110,8 @@ export function FileView({
   machine,
   path,
   onSaved,
+  undo,
+  onUndo,
   draft,
   onDraft,
 }: {
@@ -129,6 +131,20 @@ export function FileView({
       there. */
   draft?: Draft;
   onDraft?: (draft: Draft | null) => void;
+  /** What this file held **before the last save this face made**, if
+      there was one.
+
+      **Held by the pane for the same reason the draft is** (工作区批4
+      收尾): the view is remounted on every file, and a one-step undo
+      that evaporates when you glance at the file next door is an undo
+      nobody can rely on. Absent when nothing has been saved here.
+
+      **In memory, and the limit is said out loud** (`gui.file_undo`'s
+      comment): closing the workspace drops it. What it catches is the
+      「存完才发现存错了」 moment, which is a minute wide; a version
+      history is a different thing with a disk behind it. */
+  undo?: string;
+  onUndo?: (text: string | null) => void;
 }) {
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
@@ -157,6 +173,11 @@ export function FileView({
     [draft, onDraft],
   );
   const [saving, setSaving] = useState(false);
+  /** Bumped to read this file again without changing which file it is
+      — the way out of a refusal that keeps the person's own change
+      (`theirs`). A counter for `diffAt`'s reason: two reads of one
+      path are two questions, and a boolean cannot ask twice. */
+  const [reread, setReread] = useState(0);
   /** What the last save did — a sentence when it refused, `true` for a
       moment when it landed. */
   const [saved, setSaved] = useState<string | true | null>(null);
@@ -199,7 +220,7 @@ export function FileView({
     return () => {
       live = false;
     };
-  }, [machine, path]);
+  }, [machine, path, reread]);
 
   useEffect(() => {
     let live = true;
@@ -327,12 +348,51 @@ export function FileView({
         // keystrokes, and the digest that came back is the digest of
         // `sent` — so the text baseline moves to `sent` and whatever
         // they typed on top of it is still unsaved.
+        // What was there a moment ago, kept before it is overwritten
+        // in state. `file.text` is khor's own last reading of the
+        // file, which is exactly the thing this save replaced.
+        onUndo?.(file?.text ?? null);
         setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
         setEdit((e) => (e === null ? e : { ...e, was: w.digest }));
         setSaved(true);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
         // which this view does not hold.
+        setDiffAt((n) => n + 1);
+        onSaved?.();
+      })
+      .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
+      .finally(() => setSaving(false));
+  };
+
+  /** Throw away what is in the box and read the file again. */
+  const theirs = () => {
+    setSaved(null);
+    setEdit(null);
+    onDraft?.(null);
+    setReread((n) => n + 1);
+  };
+
+  /** Save what is in the box over whatever is there now.
+   *
+   * **Two steps, and the first one is a read.** The refusal means the
+   * digest khor is holding is not the file's any more, so a save pinned
+   * to it will be refused again; this asks the far machine what the
+   * file is *now* and pins to that. The gap between the two is real and
+   * it is the gap the person just chose to accept — the button says so.
+   */
+  const mine = () => {
+    if (edit === null || saving) return;
+    setSaving(true);
+    setSaved(null);
+    const sent = edit.text;
+    fetchFileText(machine, path)
+      .then((now) => saveFileText(machine, path, now.digest, sent))
+      .then((w) => {
+        onUndo?.(file?.text ?? null);
+        setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
+        setEdit((e) => (e === null ? e : { ...e, text: sent, was: w.digest }));
+        setSaved(true);
         setDiffAt((n) => n + 1);
         onSaved?.();
       })
@@ -482,7 +542,61 @@ export function FileView({
           >
             {typeof saved === "string" ? saved : dirty ? gui.file_unsaved : gui.file_saved}
           </span>
-          {dirty && (
+          {/* **Two ways out of a refusal, where there used to be
+              none** (2026-09-13). A save khor would not make left the
+              sentence 「这个文件在你编辑期间变了」 standing and nothing
+              to press — the person's only move was to copy their text
+              somewhere else by hand. These are not a merge: a
+              three-way merge is its own batch and needs an algorithm
+              this tree does not have. They are the two answers a
+              person actually has, each labelled with what it costs. */}
+          {typeof saved === "string" && (
+            <span className="ml-auto flex shrink-0 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                data-take-theirs
+                disabled={saving}
+                onClick={theirs}
+                className="min-h-touch min-w-touch"
+              >
+                {gui.file_take_theirs}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-keep-mine
+                disabled={saving}
+                onClick={mine}
+                className="min-h-touch min-w-touch"
+              >
+                {gui.file_keep_mine}
+              </Button>
+            </span>
+          )}
+          {/* **Only with nothing unsaved in the way.** Offered beside
+              未存 it would be two buttons that both change the box,
+              and the one that throws work away must not be the easy
+              one to hit. */}
+          {typeof saved !== "string" && !dirty && undo !== undefined && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-undo
+              onClick={() => {
+                // **Into the box, never onto the disk.** khor writes
+                // when somebody presses 存 and at no other moment, so
+                // this puts the old text back where it can be read
+                // and changed again before it becomes a file.
+                setEdit((e) => (e === null ? e : { ...e, text: undo }));
+                onUndo?.(null);
+              }}
+              className="ml-auto min-h-touch min-w-touch"
+            >
+              {gui.file_undo}
+            </Button>
+          )}
+          {dirty && typeof saved !== "string" && (
             <Button
               variant="outline"
               size="sm"
@@ -601,12 +715,27 @@ export function FileView({
               onText={(t) => setEdit((e) => (e === null ? e : { ...e, text: t }))}
               onSave={save}
             />
-            {shown !== null && diff !== null && diff.hunks[shown] !== undefined && (
-              <Was hunk={diff.hunks[shown]} onClose={() => setShown(null)} />
-            )}
           </div>
         </div>
       </div>
+      {/* **Under the code, not over it** (2026-09-13). It was an
+          overlay laid at the hunk's own line, which put the removed
+          lines exactly where they used to be — and hid however many
+          current lines it was tall. That cost was carried as a known
+          one because the alternative looked impossible: the code is a
+          single `<pre>` with a transparent `<textarea>` over it, and
+          that trick is what makes the file editable at all, so nothing
+          can be inserted *into* the flow without splitting one of them
+          and breaking the alignment of both.
+
+          Out of the flow entirely is the way through. The panel takes
+          its own height from the column, the code area gives it up, and
+          the bar in the gutter stays lit at the hunk's line — which is
+          what carried the「where」 anyway, since the panel was already
+          below the lines it described rather than on them. */}
+      {shown !== null && diff !== null && diff.hunks[shown] !== undefined && (
+        <Was hunk={diff.hunks[shown]} onClose={() => setShown(null)} />
+      )}
     </div>
   );
 }
@@ -666,6 +795,13 @@ function Sheet({
   return (
     <>
       <pre
+        // Named so a gate can find *this* `<pre>` and not the line
+        // numbers beside it. The first probe for「does the expanded
+        // panel cover any code」 fell back to `document.querySelector
+        // ("pre")`, which is the number column — and reported no
+        // overlap against the old overlay too, so the assertion passed
+        // on the behaviour it was written to forbid (2026-09-13).
+        data-sheet
         // Hidden from a screen reader when the textarea is there: the
         // two hold the same words, and read twice they are gibberish.
         aria-hidden={edit || undefined}
@@ -715,17 +851,6 @@ function Sheet({
       )}
     </>
   );
-}
-
-/** How many whole lines sit above a hunk's expansion.
-
-    A hunk that has current lines is expanded **below** them, so that
-    what HEAD had and what is there now can be read one after the other
-    — laid over the top of them instead, the comparison would have
-    nothing left to compare against. A pure deletion has no current
-    lines at all, and `at` already names the line it follows. */
-function below(h: GitHunk): number {
-  return h.lines > 0 ? h.at - 1 + h.lines : h.at;
 }
 
 /** A line count as a distance down the page.
@@ -820,13 +945,18 @@ function Was({ hunk, onClose }: { hunk: GitHunk; onClose: () => void }) {
     // `bg-muted` with a hairline top and bottom, and on the dark theme
     // that is within a few percent of the page — the panel read as the
     // removed lines having leaked into the file rather than as a thing
-    // laid over it. `bg-card` is the ground this app already uses for
-    //「a surface above the page」 (the list pane), and the shadow is
-    // what says which of the two is on top.
+    // beside it. `bg-card` is the ground this app already uses for
+    //「a surface of its own」 (the list pane). The shadow went with the
+    // overlay: a panel that sits in the column rather than over it is
+    // told apart by its border and its ground, and a shadow on it
+    // would be claiming a layer it no longer occupies.
     <div
       data-was={hunk.at}
-      className="absolute right-0 left-0 z-10 rounded-sm border bg-card px-3 py-2 shadow-lg"
-      style={{ top: down(below(hunk)) }}
+      // **A third of the pane at most**, and its own scroller past
+      // that: a hunk that replaced two hundred lines would otherwise
+      // take the whole column and leave the file it is about off
+      // screen.
+      className="max-h-[33%] shrink-0 overflow-y-auto border-t bg-card px-3 py-2"
     >
       <button
         type="button"
@@ -834,7 +964,7 @@ function Was({ hunk, onClose }: { hunk: GitHunk; onClose: () => void }) {
         aria-label={gui.git_hunk}
         className="mb-1 block text-aux text-muted-foreground"
       >
-        {hunk.was.length === 0 ? gui.git_added : gui.git_was}
+        {hunk.was.length === 0 ? gui.git_added : gui.git_was} · {hunk.at}
       </button>
       {hunk.was.length > 0 && (
         // Plain, unpainted text: what is being read here is which lines

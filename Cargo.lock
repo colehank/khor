@@ -4393,6 +4393,8 @@ dependencies = [
  "libc",
  "nvml-wrapper",
  "office_oxide",
+ "pdfboss-core",
+ "pdfboss-output",
  "portable-pty",
  "pulldown-cmark",
  "reqwest",
@@ -5711,6 +5713,45 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pdfboss-core"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b0fcbf8a7a3f25054556e70a951e42a3374f5063ef74fe0df69e9b01e27460"
+dependencies = [
+ "flate2",
+ "getrandom 0.4.3",
+ "memchr",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "pdfboss-encoding"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f51fb057564970833d4dca2d04096cb1e86bbccb836f91b2909de3a35c2ea9b2"
+
+[[package]]
+name = "pdfboss-output"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fef24f7563221c39e0e96ebaa5011dc76ceb339973d280d38be77b06a4bfa8da"
+dependencies = [
+ "pdfboss-core",
+ "pdfboss-text",
+ "serde",
+]
+
+[[package]]
+name = "pdfboss-text"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "091b29837acfc8e0358473a28087d1f162bc567ac7023956879471bb811898ef"
+dependencies = [
+ "pdfboss-core",
+ "pdfboss-encoding",
+]
 
 [[package]]
 name = "pem"
@@ -7286,9 +7327,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.15.2"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 dependencies = [
  "serde",
 ]
@@ -8648,9 +8689,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.24.1"
+version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cefc03fd367c0c6d4305de1b312cf00248c4114f4a0418ce6a6af769e3b0bd9"
+checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",

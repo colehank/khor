@@ -182,7 +182,23 @@ pub enum Reply {
     Head { total: u64, at_ms: u64, bytes: serde_bytes::ByteBuf },
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.
-    GitStatus { branch: String, rows: Vec<(String, String)>, more: bool },
+    GitStatus {
+        branch: String,
+        rows: Vec<(String, String)>,
+        more: bool,
+        /// How far the branch is from its remote, and when that was
+        /// last true. Tail-appended for `Reply::CodeHere::ready`'s
+        /// reason: the resident serve and the CLI talking to it are two
+        /// builds on one machine and upgrade separately, and an older
+        /// serve answering without them is a branch drawn with no
+        /// ahead/behind, which is what a branch in step looks like too.
+        #[serde(default)]
+        ahead: u32,
+        #[serde(default)]
+        behind: u32,
+        #[serde(default)]
+        fetched_ms: i64,
+    },
     /// Tail-appended with [`Op::GitDiffOn`]: one file's hunks, in file
     /// order, and whether the list was cut.
     GitDiff { hunks: Vec<crate::proto::Hunk>, more: bool },

@@ -40,6 +40,22 @@ pub struct GitStatus {
     pub rows: Vec<GitRow>,
     /// The list stopped early rather than being whole.
     pub more: bool,
+    /// Commits this branch has that its remote does not, and the other
+    /// way round. Both 0 when there is no upstream, which is also what
+    /// being in step looks like — the face draws nothing either way.
+    pub ahead: u32,
+    pub behind: u32,
+    /// When this repository last heard from its remote, epoch
+    /// milliseconds, **0 meaning never**.
+    ///
+    /// **The pair above is unsayable without it.** khor never fetches,
+    /// so ahead/behind is always「how far it was the last time somebody
+    /// did」— and a three-week-old number has exactly the same shape as
+    /// a fresh one. The face says the two together or says neither
+    /// (工作区批3 cut the pair for this; 2026-09-13 brought it back
+    /// with its date attached).
+    #[ts(type = "number")]
+    pub fetched_ms: i64,
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -77,6 +93,9 @@ pub async fn status(root: &Path, machine: &str, dir: &str) -> Result<GitStatus, 
         branch: s.branch,
         rows: s.rows.into_iter().map(|(path, mark)| GitRow { path, mark }).collect(),
         more: s.more,
+        ahead: s.ahead,
+        behind: s.behind,
+        fetched_ms: s.fetched_ms,
     })
 }
 

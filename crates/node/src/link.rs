@@ -527,7 +527,14 @@ impl Node {
             ipc::Op::GitStatusOn { machine, root } => {
                 match self.git_status_with(ep, &machine, &root).await {
                     Ok(s) => {
-                        ipc::Reply::GitStatus { branch: s.branch, rows: s.rows, more: s.more }
+                        ipc::Reply::GitStatus {
+                    branch: s.branch,
+                    rows: s.rows,
+                    more: s.more,
+                    ahead: s.ahead,
+                    behind: s.behind,
+                    fetched_ms: s.fetched_ms,
+                }
                     }
                     Err(why) => ipc::Reply::Refused { why },
                 }
@@ -1061,7 +1068,14 @@ impl Node {
                 let s = tokio::task::spawn_blocking(move || crate::git::status(&dir))
                     .await
                     .map_err(|e| e.to_string())??;
-                Ok(Response::GitStatus { branch: s.branch, rows: s.rows, more: s.more })
+                Ok(Response::GitStatus {
+                    branch: s.branch,
+                    rows: s.rows,
+                    more: s.more,
+                    ahead: s.ahead,
+                    behind: s.behind,
+                    fetched_ms: s.fetched_ms,
+                })
             }
             Request::GitDiff { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1390,7 +1404,14 @@ impl Node {
                 })
                 .await
                 .map_err(|e| e.to_string())??;
-                Ok(Response::GitStatus { branch: st.branch, rows: st.rows, more: st.more })
+                Ok(Response::GitStatus {
+                    branch: st.branch,
+                    rows: st.rows,
+                    more: st.more,
+                    ahead: st.ahead,
+                    behind: st.behind,
+                    fetched_ms: st.fetched_ms,
+                })
             }
             Request::SatGitDiff { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -2254,8 +2275,8 @@ impl Node {
             .await
         {
             return match reply? {
-                ipc::Reply::GitStatus { branch, rows, more } => {
-                    Ok(crate::git::Status { branch, rows, more })
+                ipc::Reply::GitStatus { branch, rows, more, ahead, behind, fetched_ms } => {
+                    Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
                 }
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
@@ -2294,8 +2315,8 @@ impl Node {
             let sponsor = sponsor.expect("checked");
             let req = Request::SatGitStatus { sat, root: root.to_owned() };
             return match self.ask(ep, &sponsor, &req).await? {
-                Response::GitStatus { branch, rows, more } => {
-                    Ok(crate::git::Status { branch, rows, more })
+                Response::GitStatus { branch, rows, more, ahead, behind, fetched_ms } => {
+                    Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
                 }
                 Response::Refused { why } if why.trim().is_empty() => {
                     Err(msg::GIT_PREDATES.into())
@@ -2306,8 +2327,8 @@ impl Node {
         }
         let req = Request::GitStatus { root: root.to_owned() };
         match self.ask(ep, &channel, &req).await? {
-            Response::GitStatus { branch, rows, more } => {
-                Ok(crate::git::Status { branch, rows, more })
+            Response::GitStatus { branch, rows, more, ahead, behind, fetched_ms } => {
+                Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
             }
             // Wordless means the op is unknown over there; words mean
             // that machine answered and its answer is the one to show

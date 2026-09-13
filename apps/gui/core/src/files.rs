@@ -239,7 +239,8 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
     use base64::Engine as _;
     let n = Node::open(root.to_path_buf())?;
     let kind = khor_node::preview::kind(path);
-    let (total, _, bytes, cut) = n.read_all(machine, path, khor_node::preview::LOOK).await?;
+    let (total, _, bytes, cut) =
+        n.read_all(machine, path, khor_node::preview::cap(path)).await?;
     let mut out = Preview {
         kind: match kind {
             khor_node::preview::Kind::Image => "image",

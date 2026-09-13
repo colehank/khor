@@ -74,6 +74,28 @@ pub struct Status {
     /// The list stopped at [`ROWS`] rather than being whole. The
     /// no-silent-caps rule `Response::Dir::truncated` already carries.
     pub more: bool,
+    /// Commits on this branch that the remote-tracking branch does not
+    /// have, and the other way round. **Both zero when there is no
+    /// upstream at all**, which is also what「in step」looks like — the
+    /// two are told apart by [`Status::fetched_ms`] being 0, and the
+    /// face draws nothing in either case.
+    pub ahead: u32,
+    pub behind: u32,
+    /// When this repository last heard from its remote, in epoch
+    /// milliseconds; **0 means never**.
+    ///
+    /// **This is why ahead/behind was cut in 批3 and is what brings it
+    /// back.** The pair is not「how far this branch is from the
+    /// remote」, it is「how far it was when somebody last fetched」, and
+    /// a number that is quietly three weeks old is worse than no
+    /// number: it is the same shape as a fresh one. khor does not fetch
+    /// — it opens no connection a person did not ask for — so the only
+    /// honest form of the number is the number *with its age*, and that
+    /// is what travels.
+    ///
+    /// Read off `.git/FETCH_HEAD`'s mtime, which is what git writes on
+    /// every fetch and touches for nothing else.
+    pub fetched_ms: i64,
 }
 
 /// Every hunk in one file, plus whether the list is whole.
@@ -137,7 +159,48 @@ pub fn status(root: &Path) -> Result<Status, String> {
         *slot = fold(*slot, mark);
     }
     let rows = marks.into_iter().map(|(p, m)| (p, m.to_owned())).collect();
-    Ok(Status { branch, rows, more })
+    let (ahead, behind) = divergence(&repo).unwrap_or((0, 0));
+    Ok(Status { branch, rows, more, ahead, behind, fetched_ms: last_fetch(&repo) })
+}
+
+/// How far HEAD is from its remote-tracking branch, `(ahead, behind)`.
+///
+/// **`None` for every shape that is not a question**: a detached HEAD,
+/// a branch with no upstream configured, an upstream ref that is not
+/// there yet. The caller reads all of them as `(0, 0)` and the face
+/// draws nothing, which is the same thing it draws when a branch is in
+/// step — and that is right, because 「no answer」 and 「zero」 lead to
+/// the same next move here, unlike a mark on a file.
+///
+/// The two walks are commit-graph walks with the other side hidden,
+/// which is `git rev-list --count --left-right A...B` by another name.
+fn divergence(repo: &gix::Repository) -> Option<(u32, u32)> {
+    let head = repo.head_ref().ok()??;
+    let local = head.id().detach();
+    let upstream = repo.branch_remote_tracking_ref_name(head.name(), gix::remote::Direction::Fetch)?.ok()?;
+    let remote = repo.find_reference(upstream.as_ref()).ok()?.into_fully_peeled_id().ok()?.detach();
+    if local == remote {
+        return Some((0, 0));
+    }
+    let count = |from, hide| -> Option<u32> {
+        Some(repo.rev_walk([from]).with_hidden([hide]).all().ok()?.count().min(u32::MAX as usize) as u32)
+    };
+    Some((count(local, remote)?, count(remote, local)?))
+}
+
+/// When `.git/FETCH_HEAD` was last written, in epoch milliseconds, or
+/// 0 when it never was.
+///
+/// **git touches it on every fetch and for nothing else**, so it dates
+/// the ahead/behind pair exactly. A repository that has never fetched
+/// — a fresh clone answers with the file, a `git init` does not — has
+/// no date, and no date is what makes the pair unsayable rather than
+/// merely old.
+fn last_fetch(repo: &gix::Repository) -> i64 {
+    let at = repo.path().join("FETCH_HEAD");
+    let Ok(meta) = std::fs::metadata(at) else { return 0 };
+    let Ok(at) = meta.modified() else { return 0 };
+    at.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 /// Which of two marks for one path survives.

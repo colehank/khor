@@ -474,7 +474,29 @@ pub enum Response {
     /// 状态呈现), and the walk that produced them runs three threads
     /// and is documented to have no order of its own. `more` is the
     /// no-silent-caps rule [`Response::Dir::truncated`] already carries.
-    GitStatus { branch: String, rows: Vec<(String, String)>, more: bool },
+    GitStatus {
+        branch: String,
+        rows: Vec<(String, String)>,
+        more: bool,
+        /// How far this branch is from its remote-tracking branch, and
+        /// when that was last true (`crate::git::Status`).
+        ///
+        /// **Tail-appended, and the consumer's error branch is the
+        /// reason that is allowed.** A khor old enough to know
+        /// `GitStatus` but not these refuses the whole frame, and
+        /// `WorkspacePane` paints a refusal as its own sentence where
+        /// the marks would be — a different screen from success, not a
+        /// default wearing the clothes of a fact. The defaults
+        /// themselves are unsayable rather than reassuring: `0` ahead
+        /// and `0` behind with `fetched_ms` at 0 is「never fetched」,
+        /// which the face draws as nothing at all.
+        #[serde(default)]
+        ahead: u32,
+        #[serde(default)]
+        behind: u32,
+        #[serde(default)]
+        fetched_ms: i64,
+    },
     /// [`Request::GitDiff`]'s answer, in file order. `more` means the
     /// list stopped early — same rule, same reason.
     GitDiff { hunks: Vec<Hunk>, more: bool },
