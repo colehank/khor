@@ -30,6 +30,8 @@ fn main() {
     khor_gui_core::git::GitStatus::export_all_to(&dir).expect("export GitStatus");
     khor_gui_core::git::GitDiff::export_all_to(&dir).expect("export GitDiff");
     khor_gui_core::files::Wrote::export_all_to(&dir).expect("export Wrote");
+    // The answer to a refused save's third exit; nothing embeds it.
+    khor_gui_core::files::Merged::export_all_to(&dir).expect("export Merged");
     khor_gui_core::code::CodeAt::export_all_to(&dir).expect("export CodeAt");
     khor_gui_core::code::Editor::export_all_to(&dir).expect("export Editor");
     khor_gui_core::files::Preview::export_all_to(&dir).expect("export Preview");

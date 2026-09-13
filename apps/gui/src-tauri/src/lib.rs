@@ -129,6 +129,14 @@ async fn write_text(
     khor_gui_core::files::write_text(&Node::root_from_env(), &machine, &path, &was, &text).await
 }
 
+/// The three sides of a refused save, merged
+/// (`khor_gui_core::files::merge_text`). Writes nothing — the save that
+/// follows is `write_text` like any other.
+#[tauri::command]
+fn merge_text(base: String, mine: String, theirs: String) -> khor_gui_core::files::Merged {
+    khor_gui_core::files::merge_text(&base, &mine, &theirs)
+}
+
 /// One checkout's marks and branch (`khor_gui_core::git::status`).
 #[tauri::command]
 async fn git_status(
@@ -1682,6 +1690,7 @@ pub fn run() {
             git_status,
             git_diff,
             write_text,
+            merge_text,
             preview,
             code_here,
             code_open,

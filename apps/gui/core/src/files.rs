@@ -304,6 +304,30 @@ pub async fn write_text(
     Ok(Wrote { at_ms, digest })
 }
 
+/// The three sides of a refused save, merged (`khor_node::merge`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct Merged {
+    /// The merged text, conflict markers and all.
+    pub text: String,
+    /// How many places khor would not choose between. `0` means there
+    /// is nothing left for the person to decide.
+    pub clashes: u32,
+}
+
+/// Merges the copy in the box over the copy on the machine, against the
+/// copy the person started from.
+///
+/// **No machine and no path, because nothing is written.** The three
+/// texts are already in front of the caller — the base and the edit are
+/// the view's own, and 「theirs」 is what `read_text` just answered —
+/// so this is a function, not a road to another machine. The save that
+/// follows is the ordinary `write_text`, pinned to the digest that came
+/// with 「theirs」, and it only happens when somebody presses save.
+pub fn merge_text(base: &str, mine: &str, theirs: &str) -> Merged {
+    let m = khor_node::merge::three(base, mine, theirs);
+    Merged { text: m.text, clashes: m.clashes }
+}
+
 #[cfg(test)]
 mod read_text_tests {
     use super::*;

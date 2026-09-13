@@ -128,10 +128,13 @@ usage = """
                         一台机器一个服务端,换项目只是换链接。第一次会从
                         微软下一份服务端(约 640 MB),之后不用。它不是
                         session,没有行也不能 close,收摊用 --stop
-  put [--new] <机器> <本地文件> <远端路径>
+  put [--new | --base 底本] <机器> <本地文件> <远端路径>
                         把本地文件写到那台机器的那个路径上(pull 的反向)。
                         默认先读一遍再写,中间被人改过就整个拒绝、一个字节
-                        都不落;--new 是另一种说法:那儿本来就不该有文件
+                        都不落;--new 是另一种说法:那儿本来就不该有文件;
+                        --base 给出你动手前那份,那边变过就三方合并:合得
+                        干净就写进去,有对不上的地方一个字节都不写,把带
+                        标记的结果打到标准输出,退出码 1
   borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
                         它那儿出去(要 serve 在跑;close 那条 session 收口)
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
@@ -660,6 +663,19 @@ dir-truncated = "目录太大,只列出前 {0} 条"
 # count**: what a caller does next with this is pin another write to
 # it, and the size is a number they already had.
 put-landed = "写好了 {0},现在是 {1}"
+# `put --base` 合干净了。**和 put-landed 分成两句**:一句说的是「照你说的
+# 写了」,这句说的是「那边在你动手期间也改了,两边都在里面了」——把后者
+# 说成前者,等于让人以为自己写上去的就是自己手里那份。
+put-merged = "那边也改过,两边合起来写好了 {0},现在是 {1}"
+# `put --base` 合不干净。**没写,而带标记的结果在标准输出上**:khor 不会
+# 把一个还在打架的文件写到别人的机器上,而人手里得有那份合到一半的东西,
+# 否则这条路的出口还是「自己抄一遍」。
+put-clashes = "有 {0} 处两边改了同一行,一个字节都没写;合到一半的结果在标准输出上"
+# `--new` 和 `--base` 是两种说法,同时说就没有一种是真的。
+put-new-and-base = "--new 说那儿不该有文件,--base 说那儿有你动过的那份,只能挑一个"
+# 合并要的是整份,而一次只读得下开头那一段。**不合,而不是拿开头当整份合**
+# ——后者写回去就是把那边的文件截断,而且看起来是成功的。
+put-cut-cannot-merge = "那边这个文件 {0} 字节,一次只读得下 {1},合并要整份,没合也没写"
 # `khor read` on a document with no words in it. **Its own sentence
 # rather than the screen's** (`gui.doc-empty`): this one goes to stderr
 # so a pipe still gets the empty document it asked for, and a sentence
@@ -953,6 +969,11 @@ cant-save-file = "存不回去 {0}: {1}"
 # does not know. Nothing was written, which is the part that has to be
 # unambiguous.
 file-changed-under-you = "这个文件在你编辑期间变了,没有写回去: {0}"
+# 三方合并的冲突标记上,两边各叫什么。**进的是人自己的文件**,所以用的是
+# 他刚在按钮上读到的那两个词,而不是 git 的 HEAD/branch——这里没有分支,
+# 只有「我」和「那边」。
+merge-mine = "我改的"
+merge-theirs = "那边的"
 # Read in slices, and it moved between two of them. **Refused rather
 # than stitched**: `PathSlice` carries the size and the mtime on every
 # slice exactly so a reader can notice this, and an image assembled out
@@ -2171,6 +2192,15 @@ file-undo = "回到存之前"
 # 「它变了」的死胡同,是这两条要替掉的东西。
 file-take-theirs = "重新读(丢掉我改的)"
 file-keep-mine = "按我的存(盖掉那边的改动)"
+# 第三个出口(工作区批7)。**按下去不写盘**:两边的改动合进框里,存还是那
+# 一下要你自己按——khor 不在没人按存的时候动文件,合并不是例外。标的代价
+# 是真的:两边改了同一行的地方,khor 不替人挑。
+file-merge = "合起来(同一行的地方你来定)"
+# 合完了,一处都没打架。**说的是「都进来了」而不是「成功」**:人接下来要
+# 做的判断是「这是不是我要的」,而框里现在有一半是他没写过的字。
+file-merged-clean = "那边的改动也合进来了,存还是你按"
+# 合完了,有打架的地方。数字要说出来:标记在文里,不数一遍人就得自己找。
+file-merged-clashes = "合进来了,{0} 处两边改了同一行,标在文里等你定"
 # A file khor only has the beginning of cannot be edited, because what
 # a save writes back is what is on screen. Said beside the cut line
 # rather than as a second strip — it is the same fact, and 「只读了开头」

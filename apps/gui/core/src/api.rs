@@ -140,6 +140,13 @@ pub fn answer(
             &arg("was")?,
             &arg("text")?,
         ))?),
+        // No machine argument: the three texts come from the caller and
+        // nothing is written (`crate::files::merge_text`).
+        "merge_text" => to_json(&crate::files::merge_text(
+            &arg("base")?,
+            &arg("mine")?,
+            &arg("theirs")?,
+        )),
         "devices" => to_json(&rt.block_on(crate::list_devices(root))?),
         // `top` is required, the `cells` rule: how many rows fit is the
         // screen's fact, and a default here would be this layer sizing

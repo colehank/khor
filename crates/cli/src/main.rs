@@ -554,16 +554,36 @@ fn enc(path: &str) -> String {
 /// did whichever the disk allowed would do the wrong one on the day it
 /// mattered.
 fn put(rest: &[String]) -> Result<(), String> {
-    let (fresh, rest) = match rest {
-        [flag, tail @ ..] if flag == "--new" => (true, tail),
-        _ => (false, rest),
-    };
+    let mut fresh = false;
+    let mut base: Option<String> = None;
+    let mut rest = rest;
+    loop {
+        match rest {
+            [flag, tail @ ..] if flag == "--new" => {
+                fresh = true;
+                rest = tail;
+            }
+            [flag, file, tail @ ..] if flag == "--base" => {
+                base = Some(file.clone());
+                rest = tail;
+            }
+            _ => break,
+        }
+    }
+    // Two claims about the same path that cannot both be true: 「there
+    // is nothing there」 and 「there is the copy I started from」.
+    if fresh && base.is_some() {
+        return Err(cli::PUT_NEW_AND_BASE.into());
+    }
     let [machine, src, dest] = rest else {
         return Err(USAGE.into());
     };
     let bytes = std::fs::read(src).map_err(|e| msg::cant_read(src, e))?;
     let rt = rt()?;
     let n = node()?;
+    if let Some(base) = base {
+        return put_over(&rt, &n, machine, dest, &bytes, &base);
+    }
     let was = if fresh {
         String::new()
     } else {
@@ -575,6 +595,70 @@ fn put(rest: &[String]) -> Result<(), String> {
     };
     let (_, digest) = rt.block_on(n.write_path(machine, dest, &was, &bytes))?;
     println!("{}", cli::put_landed(dest, &digest[..8]));
+    Ok(())
+}
+
+/// `put --base`: the same write, but pinned to the copy the caller
+/// *started from* rather than to whatever is there this second — and
+/// when those two differ, merged rather than refused (工作区批7).
+///
+/// **This is the hole plain `put` has.** Without a base, the digest it
+/// pins to is read microseconds before the write, so a change somebody
+/// made between the caller's `pull` and their `put` — minutes or hours,
+/// the whole time they were editing — is not a conflict to `put`, it is
+/// just the old file being replaced. Nothing warns. `--base` names the
+/// moment the caller's copy is from, which is the only thing that makes
+/// 「it moved under me」 a question khor can answer at all.
+///
+/// The three outcomes are the file view's three, in a terminal:
+/// unchanged over there → written; changed but nowhere the caller
+/// touched → merged and written; changed in the same lines → **nothing
+/// written**, the merged text with its markers on stdout for the caller
+/// to finish, and a non-zero exit.
+fn put_over(
+    rt: &tokio::runtime::Runtime,
+    n: &Node,
+    machine: &str,
+    dest: &str,
+    mine: &[u8],
+    base: &str,
+) -> Result<(), String> {
+    let base_bytes = std::fs::read(base).map_err(|e| msg::cant_read(base, e))?;
+    let (total, _, theirs) = rt.block_on(n.read_head(machine, dest))?;
+    // **A cut read cannot be merged.** `read_head` answers one slice,
+    // and a merge whose 「theirs」 is the first 256 KB of a longer file
+    // would write back a truncation that looks like a success.
+    if theirs.len() as u64 != total {
+        return Err(cli::put_cut_cannot_merge(total, theirs.len()));
+    }
+    let now = khor_node::files::digest(&theirs);
+    if now == khor_node::files::digest(&base_bytes) {
+        // It never moved; this is a plain pinned write and it says the
+        // plain sentence. Nothing was merged, so nothing claims to be.
+        let (_, digest) = rt.block_on(n.write_path(machine, dest, &now, mine))?;
+        println!("{}", cli::put_landed(dest, &digest[..8]));
+        return Ok(());
+    }
+    // All three sides have to be text for a line merge to mean
+    // anything. A binary that moved is a refusal, not a guess.
+    let (base_s, mine_s, theirs_s) = match (
+        String::from_utf8(base_bytes),
+        std::str::from_utf8(mine),
+        String::from_utf8(theirs),
+    ) {
+        (Ok(b), Ok(m), Ok(t)) => (b, m, t),
+        _ => return Err(msg::file_changed_under_you(dest)),
+    };
+    let merged = khor_node::merge::three(&base_s, mine_s, &theirs_s);
+    if merged.clashes > 0 {
+        // The half-merged text is the caller's, on stdout, before the
+        // refusal goes to stderr: a road that ends 「no」 with nothing
+        // in your hands is the road these exits exist to replace.
+        print!("{}", merged.text);
+        return Err(cli::put_clashes(merged.clashes));
+    }
+    let (_, digest) = rt.block_on(n.write_path(machine, dest, &now, merged.text.as_bytes()))?;
+    println!("{}", cli::put_merged(dest, &digest[..8]));
     Ok(())
 }
 

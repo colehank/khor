@@ -2524,21 +2524,98 @@ try {
       state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
       theirs: !!document.querySelector("[data-take-theirs]"),
       mine: !!document.querySelector("[data-keep-mine]"),
+      merge: !!document.querySelector("[data-merge]"),
     }));
     console.log(
-      `refused: state ${refused.state}, exits ${[refused.theirs && "theirs", refused.mine && "mine"]
+      `refused: state ${refused.state}, exits ${[refused.theirs && "theirs", refused.merge && "merge", refused.mine && "mine"]
         .filter(Boolean)
         .join(" + ") || "none"}`,
     );
     if (refused.state !== "refused") {
       fail(`a save the far machine refused left the file saying ${refused.state} (src/views/FileView.tsx)`);
     }
-    if (!refused.theirs || !refused.mine) {
+    if (!refused.theirs || !refused.mine || !refused.merge) {
       fail(
         "a refused save offers no way out — the sentence says the file moved and the only move left " +
           "is copying the text out by hand (src/views/FileView.tsx)",
       );
     }
+
+    // **The third exit, driven, and what it is asked with.** The merge
+    // itself is Rust and tested there (`khor_node::merge`); what only
+    // this side can get wrong is which text goes in which hole — and
+    // handing the box in as 「base」 is a merge that silently throws
+    // away exactly the change the person pressed the button to keep.
+    // So the request is read, not just the answer.
+    let asked = null;
+    await page.route("**/merge_text", (r) => {
+      asked = JSON.parse(r.request().postData() ?? "{}");
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ text: "merged-by-the-fixture\n", clashes: 2 }),
+      });
+    });
+    // 「theirs」 comes off a fresh read, so the file has to have moved
+    // over there for the merge to be about anything.
+    await page.unroute("**/read_text");
+    await page.route("**/read_text", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 42,
+          at_ms: Date.now(),
+          text: "# notes\n\nwhat the other person wrote\n",
+          cut: false,
+          binary: false,
+          digest: "2".repeat(64),
+        }),
+      }),
+    );
+    await press("[data-merge]");
+    await new Promise((r) => setTimeout(r, 160));
+    const merged = await page.evaluate(() => ({
+      box: document.querySelector("textarea")?.value ?? "",
+      said: document.querySelector("[data-merged]")?.dataset.merged ?? null,
+      state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+    }));
+    console.log(
+      `merge: asked with base ${JSON.stringify((asked?.base ?? "").slice(0, 18))}, ` +
+        `box now ${JSON.stringify(merged.box.slice(0, 22))}, said ${merged.said}`,
+    );
+    if (asked === null) {
+      fail("「合起来」 was pressed and khor was never asked to merge anything (src/views/FileView.tsx)");
+    } else {
+      if (asked.base === asked.mine) {
+        fail(
+          "the merge was asked with the box as its own base — that is a two-way merge wearing a " +
+            "three-way name, and it drops the other side's change every time (src/views/FileView.tsx)",
+        );
+      }
+      if (!asked.theirs?.includes("what the other person wrote")) {
+        fail(
+          "the merge's 「theirs」 is not what the machine answered just now — it is merging against " +
+            "a stale read (src/views/FileView.tsx)",
+        );
+      }
+    }
+    if (!merged.box.includes("merged-by-the-fixture")) {
+      fail("the merged text never reached the box (src/views/FileView.tsx)");
+    }
+    if (merged.said !== "2") {
+      fail(
+        `the merge left clashes in the text and the screen said ${merged.said} — a number nobody ` +
+          "sees is a number nobody settles (src/views/FileView.tsx)",
+      );
+    }
+    // **Merged is not saved.** khor writes when somebody presses 存;
+    // a merge that painted 存好了 would be claiming bytes nobody wrote.
+    if (merged.state === "saved") {
+      fail(
+        "the file read as saved straight after a merge — nothing was written, and saying otherwise " +
+          "is the worst answer khor can give (src/views/FileView.tsx)",
+      );
+    }
+    await page.unroute("**/merge_text");
     await page.unroute("**/write_text");
   }
 

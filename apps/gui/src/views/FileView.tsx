@@ -28,6 +28,7 @@ import {
   type Preview,
   fetchFileText,
   fetchGitDiff,
+  mergeFileText,
   pullFile,
   saveFileText,
   type FileText,
@@ -181,6 +182,12 @@ export function FileView({
   /** What the last save did — a sentence when it refused, `true` for a
       moment when it landed. */
   const [saved, setSaved] = useState<string | true | null>(null);
+  /** How many clashes the last merge left, or `null` when the box holds
+      nothing merged. **Its own state rather than a word inside
+      `saved`**: `saved` is what the *file* did and a merge does nothing
+      to the file — reusing it would paint 「refused」 red over a box
+      that is merely waiting to be saved. */
+  const [clashes, setClashes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [took, setTook] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitDiff | null>(null);
@@ -354,6 +361,7 @@ export function FileView({
         onUndo?.(file?.text ?? null);
         setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
         setEdit((e) => (e === null ? e : { ...e, was: w.digest }));
+        setClashes(null);
         setSaved(true);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
@@ -368,9 +376,44 @@ export function FileView({
   /** Throw away what is in the box and read the file again. */
   const theirs = () => {
     setSaved(null);
+    setClashes(null);
     setEdit(null);
     onDraft?.(null);
     setReread((n) => n + 1);
+  };
+
+  /** Keep both sides: merge the file as it is now into the box.
+   *
+   * **Three texts, none of them written.** `file.text` is what this
+   * view read (the base the digest in `edit.was` belongs to), the box
+   * is one side, and the machine is asked for the other. What comes
+   * back goes in the box pinned to the digest that came with it, so
+   * the save that follows is an ordinary one — and it is still the
+   * person who presses it.
+   *
+   * Both changes are in that text, and where they touched the same
+   * lines both are there between markers. khor does not pick; the
+   * count says how many times it did not.
+   */
+  const merge = () => {
+    if (edit === null || file === null || saving) return;
+    setSaving(true);
+    setSaved(null);
+    const base = file.text;
+    const mine_ = edit.text;
+    fetchFileText(machine, path)
+      .then((now) =>
+        mergeFileText(base, mine_, now.text).then((m) => {
+          // The base moves with the merge: a second refusal has to be
+          // measured against what this merge started from, not against
+          // the text the view first opened.
+          setFile((f) => (f === null ? f : { ...f, text: now.text, digest: now.digest, at_ms: now.at_ms }));
+          setEdit((e) => (e === null ? e : { text: m.text, was: now.digest }));
+          setClashes(m.clashes);
+        }),
+      )
+      .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
+      .finally(() => setSaving(false));
   };
 
   /** Save what is in the box over whatever is there now.
@@ -392,6 +435,7 @@ export function FileView({
         onUndo?.(file?.text ?? null);
         setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
         setEdit((e) => (e === null ? e : { ...e, text: sent, was: w.digest }));
+        setClashes(null);
         setSaved(true);
         setDiffAt((n) => n + 1);
         onSaved?.();
@@ -542,14 +586,23 @@ export function FileView({
           >
             {typeof saved === "string" ? saved : dirty ? gui.file_unsaved : gui.file_saved}
           </span>
-          {/* **Two ways out of a refusal, where there used to be
+          {/* What a merge left behind, and **only while the box still
+              holds it**: it clears on the next keystroke and on the
+              save, because a count of clashes that outlived the text it
+              counted would be a number about nothing. */}
+          {clashes !== null && (
+            <span data-merged={clashes} className="text-muted-foreground">
+              {clashes === 0 ? gui.file_merged_clean : gui.file_merged_clashes(clashes)}
+            </span>
+          )}
+          {/* **Three ways out of a refusal, where there used to be
               none** (2026-09-13). A save khor would not make left the
               sentence 「这个文件在你编辑期间变了」 standing and nothing
               to press — the person's only move was to copy their text
-              somewhere else by hand. These are not a merge: a
-              three-way merge is its own batch and needs an algorithm
-              this tree does not have. They are the two answers a
-              person actually has, each labelled with what it costs. */}
+              somewhere else by hand. Two of these throw one side away
+              and say so on the button; the third keeps both and is the
+              one a person usually wants, which is why it sits between
+              them rather than at the end. */}
           {typeof saved === "string" && (
             <span className="ml-auto flex shrink-0 gap-2">
               <Button
@@ -561,6 +614,16 @@ export function FileView({
                 className="min-h-touch min-w-touch"
               >
                 {gui.file_take_theirs}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-merge
+                disabled={saving}
+                onClick={merge}
+                className="min-h-touch min-w-touch"
+              >
+                {gui.file_merge}
               </Button>
               <Button
                 variant="outline"
@@ -712,7 +775,10 @@ export function FileView({
               text={body}
               html={html}
               edit={canEdit}
-              onText={(t) => setEdit((e) => (e === null ? e : { ...e, text: t }))}
+              onText={(t) => {
+                setClashes(null);
+                setEdit((e) => (e === null ? e : { ...e, text: t }));
+              }}
               onSave={save}
             />
           </div>

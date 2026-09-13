@@ -25,6 +25,7 @@ pub mod keeper;
 pub mod link;
 pub mod list;
 pub mod mcp;
+pub mod merge;
 pub mod live;
 pub mod place;
 pub mod preview;

@@ -19,6 +19,7 @@ import type { GitRow } from "./gen/bindings/GitRow";
 import type { GitDiff } from "./gen/bindings/GitDiff";
 import type { GitHunk } from "./gen/bindings/GitHunk";
 import type { Wrote } from "./gen/bindings/Wrote";
+import type { Merged } from "./gen/bindings/Merged";
 import type { CodeAt } from "./gen/bindings/CodeAt";
 import type { Preview } from "./gen/bindings/Preview";
 import type { SessionRow } from "./gen/bindings/SessionRow";
@@ -66,6 +67,7 @@ export type {
   GitDiff,
   GitHunk,
   Wrote,
+  Merged,
   CodeAt,
   Preview,
   SessionRow,
@@ -272,6 +274,21 @@ export const fetchGitDiff = (machine: string, path: string) =>
     khor could give. */
 export const saveFileText = (machine: string, path: string, was: string, text: string) =>
   call<Wrote>("write_text", { machine, path, was, text });
+/** The third way out of a refused save (`khor_node::merge::three`).
+
+    **Three texts in, one out, and nothing written.** `base` is what was
+    read into the box, `mine` is what is in it now, `theirs` is what the
+    file holds this second — so the answer is put back in the box and
+    the save that follows is an ordinary `saveFileText` pinned to
+    `theirs`'s digest. A merge that wrote by itself would break the one
+    rule the whole file view is built on: khor touches a file when
+    somebody presses save, and not before.
+
+    `clashes` counts the places both sides changed the same lines. They
+    are in the text between markers, and they are the person's to
+    settle — khor does not pick, and does not pretend it did. */
+export const mergeFileText = (base: string, mine: string, theirs: string) =>
+  call<Merged>("merge_text", { base, mine, theirs });
 /** `code --version`'s first line on that machine, **empty when there is
     none** (`khor_gui_core::code::here`). A machine that could not answer
     comes back empty too, and that is deliberate: both lead to the same
