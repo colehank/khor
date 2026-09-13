@@ -1380,6 +1380,30 @@ impl Node {
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Workspaces { workspaces: places })
             }
+            Request::SatGitStatus { sat, root } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                let st = tokio::task::spawn_blocking(move || {
+                    crate::satellite::git_status(&host, &root)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::GitStatus { branch: st.branch, rows: st.rows, more: st.more })
+            }
+            Request::SatGitDiff { sat, path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                let d = tokio::task::spawn_blocking(move || {
+                    crate::satellite::git_diff(&host, &path)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::GitDiff { hunks: d.hunks, more: d.more })
+            }
             Request::SatFetchPath { sat, path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -1455,6 +1479,27 @@ impl Node {
         tokio::task::spawn_blocking(move || crate::files::read_slice(&staged_str, offset))
             .await
             .map_err(|e| e.to_string())?
+    }
+
+    /// Whether `channel` names a satellite, and if so its id together
+    /// with **the sponsor to ask** — `None` for the sponsor meaning
+    /// this machine is it and there is no wire to use.
+    ///
+    /// **One reading of「is this a satellite and whose」**, because the
+    /// three roads that take it (workspaces, the file slice, git) were
+    /// three copies of the same six lines and the fourth would have
+    /// been a fourth.
+    fn sat_and_sponsor(&self, channel: &str) -> Result<Option<(String, Option<String>)>, String> {
+        let doc = self.devices_loaded()?.doc;
+        let Some(target) = doc.by_name(channel) else {
+            return Err(msg::machine_left_table(channel));
+        };
+        let Some(sp) = target.sponsor.clone() else { return Ok(None) };
+        if sp == self.device_str() {
+            return Ok(Some((target.id.clone(), None)));
+        }
+        let sponsor = doc.get(&sp).ok_or_else(|| msg::machine_left_table(channel))?;
+        Ok(Some((target.id.clone(), Some(sponsor.name.clone()))))
     }
 
     fn sat_staging_path(&self, sat: &str, path: &str) -> Result<std::path::PathBuf, String> {
@@ -2234,6 +2279,31 @@ impl Node {
         if home == self.device() {
             return crate::git::status(std::path::Path::new(root));
         }
+        // A satellite's repository is read by its sponsor over ssh
+        // (卫星工作区批): nothing can dial the satellite itself, and
+        // the ask below would spend thirteen seconds finding that out
+        // before painting 联系不上 over a checkout ssh can read.
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            if sponsor.is_none() {
+                let host = self.my_satellite_host(&sat)?;
+                let (h, r) = (host, root.to_owned());
+                return tokio::task::spawn_blocking(move || crate::satellite::git_status(&h, &r))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            let sponsor = sponsor.expect("checked");
+            let req = Request::SatGitStatus { sat, root: root.to_owned() };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::GitStatus { branch, rows, more } => {
+                    Ok(crate::git::Status { branch, rows, more })
+                }
+                Response::Refused { why } if why.trim().is_empty() => {
+                    Err(msg::GIT_PREDATES.into())
+                }
+                Response::Refused { why } => Err(msg::git_refused(why)),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
         let req = Request::GitStatus { root: root.to_owned() };
         match self.ask(ep, &channel, &req).await? {
             Response::GitStatus { branch, rows, more } => {
@@ -2289,6 +2359,24 @@ impl Node {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
             return crate::git::diff(std::path::Path::new(path));
+        }
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self.my_satellite_host(&sat)?;
+                let (h, p) = (host, path.to_owned());
+                return tokio::task::spawn_blocking(move || crate::satellite::git_diff(&h, &p))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            };
+            let req = Request::SatGitDiff { sat, path: path.to_owned() };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
+                Response::Refused { why } if why.trim().is_empty() => {
+                    Err(msg::GIT_PREDATES.into())
+                }
+                Response::Refused { why } => Err(msg::git_refused(why)),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
         }
         let req = Request::GitDiff { path: path.to_owned() };
         match self.ask(ep, &channel, &req).await? {
@@ -2352,6 +2440,19 @@ impl Node {
         if home == self.device() {
             return crate::files::write_whole(path, bytes, was);
         }
+        // **A satellite's file is read-only, and it is said rather than
+        // attempted** (卫星工作区批). Every other save in khor keeps
+        // one promise — the file you are replacing is still the file
+        // you read, or nothing is written (`files::write_whole`) — and
+        // over ssh that promise cannot be kept: the digest is blake3,
+        // there is no khor over there to compute one, and a sponsor
+        // that pulled the file, hashed it here and pushed back would
+        // leave a gap in the middle exactly the size of somebody else's
+        // save. A quieter guarantee wearing the same word is what this
+        // refusal exists to avoid.
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Err(msg::sat_no_write(machine));
+        }
         let req = Request::WritePath {
             path: path.to_owned(),
             was: was.to_owned(),
@@ -2411,6 +2512,17 @@ impl Node {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
             return Ok(crate::code::probe());
+        }
+        // **A satellite answers「no editor」without being asked**, and
+        // that is this op's own rule rather than a shortcut: a machine
+        // khor cannot open an editor on must not be offered one, and
+        // khor cannot — `code serve-web` needs a khor over there to
+        // hold the tunnel. Asked the ordinary way it would dial a
+        // machine with no addresses and spend thirteen seconds finding
+        // out, once per workspace opened, to arrive at this same
+        // answer.
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Ok(crate::code::Editor::default());
         }
         match self.ask(ep, &channel, &Request::CodeHere).await? {
             Response::CodeHere { version, ready } => Ok(crate::code::Editor { version, ready }),

@@ -289,6 +289,205 @@ fn parse_places(text: &str) -> Vec<(String, String, u32, i64)> {
     .collect()
 }
 
+/// `git status`, read on a satellite.
+///
+/// **The one place khor runs a git binary, and it is not a change of
+/// mind.** `crate::git` reads repositories in-process precisely so the
+/// user side installs nothing — and that argument is about khor's own
+/// machines. A satellite runs no khor at all: there is no process over
+/// there to link gix into, and the only thing that can read that disk
+/// is a command. A satellite without git says so in git's own words
+/// (「command not found」), which is a fact with a fix, unlike a
+/// silence.
+///
+/// `--porcelain=v1 -z` because it is the shape git promises not to
+/// change and the one that survives a newline in a path.
+///
+/// **No `-uall`**, and the first spelling had it. An untracked
+/// directory is one row in the in-process reader — gix's walk collapses
+/// it — and `-uall` made the same repository answer five rows over ssh
+/// where it answered one locally, so a tree read through a satellite
+/// marked five files where khor's own reader marked their directory
+/// (found by running both against this checkout, 2026-09-13). git's
+/// default collapses the same way; what it adds is a trailing `/` on
+/// the directory, which this side takes back off.
+const STATUS_SH: &str = r#"
+cd "$KHOR_ROOT" || exit 3
+b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+[ "$b" = HEAD ] && b=
+printf 'branch=%s\n' "$b"
+git status --porcelain=v1 -z 2>&1 | tr '\0' '\n' | sed 's/^/row=/'
+exit 0
+"#;
+
+/// [`STATUS_SH`] over ssh, in [`crate::git::Status`]'s shape.
+pub fn git_status(host: &str, root: &str) -> Result<crate::git::Status, String> {
+    let text = sh_over_ssh_in(host, root, STATUS_SH)?;
+    parse_status(&text)
+}
+
+/// `row=XY path` lines into marks, **by the same rule the in-process
+/// reader uses**.
+///
+/// The two columns are the two comparisons `crate::git::status` folds:
+/// the left is index against HEAD (gix's `Item::TreeIndex`), the right
+/// is worktree against index (`Item::IndexWorktree`). So each column
+/// becomes a mark on its own and the pair is folded with
+/// [`crate::git::fold`] — not re-decided here, because a second
+/// priority order would make one file wear two different letters
+/// depending on which machine it is on.
+fn parse_status(text: &str) -> Result<crate::git::Status, String> {
+    let mut branch = String::new();
+    let mut marks: std::collections::BTreeMap<String, &'static str> =
+        std::collections::BTreeMap::new();
+    let mut more = false;
+    // **A rename is two fields, not two rows.** `-z` writes
+    // `R<space><space>new\0old\0`, so the name it came from arrives
+    // looking exactly like another row — and read as one it is a file
+    // with the last of its letters bitten off wearing whatever its
+    // first two characters happen to mean. `ren.txt` became a modified
+    // `n.txt` that no repository has ever contained (found by running
+    // both readers over one repo built to hold every shape,
+    // 2026-09-13). The order is git's own and fixed: the field after a
+    // rename is its old name.
+    let mut skip_next = false;
+    for line in text.lines() {
+        if let Some(b) = line.strip_prefix("branch=") {
+            branch = b.trim().to_owned();
+            continue;
+        }
+        let Some(row) = line.strip_prefix("row=") else { continue };
+        if std::mem::take(&mut skip_next) {
+            continue;
+        }
+        if row.len() < 4 {
+            continue;
+        }
+        let (flags, path) = row.split_at(2);
+        // git marks an untracked *directory* with a trailing slash and
+        // the in-process reader does not; the tree folds marks by path,
+        // so one spelling has to win and it is khor's.
+        let path = path.trim_start_matches(' ').trim_end_matches('/');
+        if path.is_empty() {
+            continue;
+        }
+        let mut flags = flags.chars();
+        let (x, y) = (flags.next().unwrap_or(' '), flags.next().unwrap_or(' '));
+        skip_next = x == 'R' || x == 'C' || y == 'R' || y == 'C';
+        let Some(mark) = row_mark(x, y) else { continue };
+        if marks.len() >= crate::git::ROWS && !marks.contains_key(path) {
+            more = true;
+            break;
+        }
+        let slot = marks.entry(path.to_owned()).or_insert(mark);
+        *slot = crate::git::fold(*slot, mark);
+    }
+    let rows = marks.into_iter().map(|(p, m)| (p, m.to_owned())).collect();
+    Ok(crate::git::Status { branch, rows, more })
+}
+
+/// One porcelain row's two columns as one of khor's four letters.
+fn row_mark(x: char, y: char) -> Option<&'static str> {
+    if x == '?' || y == '?' {
+        return Some(crate::git::UNTRACKED);
+    }
+    let of = |c: char| match c {
+        ' ' => None,
+        'A' => Some(crate::git::ADDED),
+        'D' => Some(crate::git::DELETED),
+        _ => Some(crate::git::MODIFIED),
+    };
+    match (of(x), of(y)) {
+        (Some(a), Some(b)) => Some(crate::git::fold(a, b)),
+        (Some(a), None) | (None, Some(a)) => Some(a),
+        (None, None) => None,
+    }
+}
+
+/// [`sh_over_ssh`] with one directory named in `KHOR_ROOT`.
+///
+/// **The path travels as an environment value, not inside the script.**
+/// A directory pasted into a shell script is a directory that can end
+/// the string it is in; `ssh -o SendEnv` needs the far sshd's consent,
+/// so the assignment is written by this side into the pipe, quoted
+/// once, by code rather than by hand.
+fn sh_over_ssh_in(host: &str, root: &str, script: &str) -> Result<String, String> {
+    sh_over_ssh(host, &format!("KHOR_ROOT={}\n{script}", sh_quote(root)))
+}
+
+/// `git diff -U0` for one file, read on a satellite.
+///
+/// **`-U0` is not a choice here, it is the shape khor's hunk already
+/// is**: `proto::Hunk`'s `at`/`lines` are documented as「same
+/// convention as `git diff -U0`'s `+` side」and were checked against it
+/// when the in-process reader was written. So the parsing below moves
+/// the numbers across rather than deriving them again.
+///
+/// `HEAD --` rather than a bare `diff` so a file staged and then edited
+/// answers about HEAD, which is what the in-process reader compares
+/// against; `--no-color`, `--no-ext-diff` and `-M` off so a person's
+/// `~/.gitconfig` cannot change what this parses.
+const DIFF_SH: &str = r#"
+cd "$(dirname "$KHOR_ROOT")" || exit 3
+git --no-pager diff -U0 --no-color --no-ext-diff --no-renames HEAD -- "$KHOR_ROOT" 2>&1 | sed 's/^/d=/'
+exit 0
+"#;
+
+/// [`DIFF_SH`] over ssh, in [`crate::git::Diff`]'s shape.
+pub fn git_diff(host: &str, path: &str) -> Result<crate::git::Diff, String> {
+    let text = sh_over_ssh_in(host, path, DIFF_SH)?;
+    Ok(parse_diff(&text))
+}
+
+/// `d=` lines into hunks. Everything before the first `@@` is git's
+/// own header and is skipped; a `-` line under a hunk is what HEAD had
+/// there, without its terminator, which is the shape `Hunk::was`
+/// already documents.
+///
+/// The caps are `crate::git`'s own, not new numbers: the same frame
+/// carries this answer whichever reader filled it.
+fn parse_diff(text: &str) -> crate::git::Diff {
+    let mut hunks: Vec<crate::proto::Hunk> = Vec::new();
+    let mut was_bytes = 0usize;
+    let mut more = false;
+    for line in text.lines() {
+        let Some(body) = line.strip_prefix("d=") else { continue };
+        if let Some(head) = body.strip_prefix("@@ ") {
+            if hunks.len() >= crate::git::HUNKS || was_bytes >= crate::git::WAS {
+                more = true;
+                break;
+            }
+            let Some((at, lines)) = plus_side(head) else { continue };
+            hunks.push(crate::proto::Hunk { at, lines, was: Vec::new() });
+            continue;
+        }
+        let Some(old) = body.strip_prefix('-') else { continue };
+        // `---` is the file header, which only appears before the first
+        // `@@` — a hunk is already open by the time a `-` means a line.
+        let Some(h) = hunks.last_mut() else { continue };
+        was_bytes += old.len();
+        if was_bytes >= crate::git::WAS {
+            more = true;
+            break;
+        }
+        h.was.push(old.trim_end_matches(['\n', '\r']).to_owned());
+    }
+    crate::git::Diff { hunks, more }
+}
+
+/// `-a,b +c,d @@ …` → `(c, d)`. A missing count is 1, which is git's
+/// own shorthand and the reason a one-line hunk has no comma.
+fn plus_side(head: &str) -> Option<(u32, u32)> {
+    let plus = head.split_whitespace().find(|w| w.starts_with('+'))?;
+    let mut parts = plus[1..].splitn(2, ',');
+    let at = parts.next()?.parse::<u32>().ok()?;
+    let lines = match parts.next() {
+        Some(n) => n.parse::<u32>().ok()?,
+        None => 1,
+    };
+    Some((at, lines))
+}
+
 /// One reading of the satellite, taken over the user's ssh road — the
 /// same `khor_core::Vitals` shape every machine reports about itself,
 /// with `version: None`: no khor runs there, and saying so is the row's
@@ -784,5 +983,117 @@ place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
     fn a_satellite_with_no_records_answers_nothing_rather_than_a_row() {
         assert!(parse_places("").is_empty());
         assert!(parse_places("bash: line 1: stat: command not found\n").is_empty());
+    }
+
+    /// Recorded from a real `git status --porcelain=v1 -z` on a
+    /// checkout built to hold every shape at once, 2026-09-13, with the
+    /// NULs already turned into newlines the way [`STATUS_SH`] leaves
+    /// them.
+    const PORCELAIN: &str = "\
+branch=master
+row=A  added.txt
+row=MM both.txt
+row= D del.txt
+row= M mod.txt
+row=R  renamed.txt
+row=ren.txt
+row=?? subdir/
+row=?? untracked.txt
+";
+
+    #[test]
+    fn every_shape_wears_the_letter_the_in_process_reader_gives_it() {
+        let st = parse_status(PORCELAIN).expect("reads");
+        assert_eq!(st.branch, "master");
+        let got: Vec<(&str, &str)> =
+            st.rows.iter().map(|(p, m)| (p.as_str(), m.as_str())).collect();
+        // Checked against `khor git status` on the same checkout, which
+        // reads it in-process through gix: the two printed the same
+        // eight lines byte for byte.
+        assert_eq!(got, [
+            ("added.txt", "A"),
+            ("both.txt", "M"),
+            ("del.txt", "D"),
+            ("mod.txt", "M"),
+            ("renamed.txt", "M"),
+            ("subdir", "U"),
+            ("untracked.txt", "U"),
+        ]);
+    }
+
+    #[test]
+    fn a_renames_old_name_is_not_a_file() {
+        // `-z` writes `R  new\0old`, so the name it came from arrives
+        // looking like another row. Read as one, `ren.txt` became a
+        // modified `n.txt` — a path no repository has ever held.
+        let st = parse_status(PORCELAIN).expect("reads");
+        assert!(st.rows.iter().all(|(p, _)| p != "n.txt" && p != "ren.txt"));
+    }
+
+    #[test]
+    fn an_untracked_directory_is_one_row_without_its_slash() {
+        // git writes `subdir/`; gix's walk collapses the directory and
+        // names it without one. The tree folds marks by path, so the
+        // two spellings would be two different directories.
+        let st = parse_status(PORCELAIN).expect("reads");
+        assert!(st.rows.iter().any(|(p, m)| p == "subdir" && m == "U"));
+    }
+
+    #[test]
+    fn a_detached_head_has_no_branch_rather_than_the_word_head() {
+        let st = parse_status("branch=\nrow= M a.txt\n").expect("reads");
+        assert_eq!(st.branch, "");
+    }
+
+    /// Recorded from a real `git diff -U0` over the same checkout: two
+    /// deletions and one line added at the end.
+    const DIFF: &str = "\
+d=diff --git a/lines.txt b/lines.txt
+d=--- a/lines.txt
+d=+++ b/lines.txt
+d=@@ -2 +1,0 @@ a
+d=-b
+d=@@ -4 +2,0 @@ c
+d=-d
+d=@@ -5,0 +4 @@ e
+d=+f
+";
+
+    #[test]
+    fn the_numbers_are_gits_own_plus_side() {
+        let d = parse_diff(DIFF);
+        let shape: Vec<(u32, u32, usize)> =
+            d.hunks.iter().map(|h| (h.at, h.lines, h.was.len())).collect();
+        // A deletion is `+c,0` and `at` is the line it sits after —
+        // the convention `proto::Hunk` documents and the in-process
+        // reader arrives at by subtracting one. Here it is simply what
+        // git said. Checked against `khor git diff` on this file: the
+        // same three hunks and the same two old lines.
+        assert_eq!(shape, [(1, 0, 1), (2, 0, 1), (4, 1, 0)]);
+        assert_eq!(d.hunks[0].was, ["b"]);
+        assert_eq!(d.hunks[1].was, ["d"]);
+        assert!(!d.more);
+    }
+
+    #[test]
+    fn a_hunk_without_a_comma_covers_one_line() {
+        // git's own shorthand: `+7` means `+7,1`.
+        let d = parse_diff("d=@@ -7 +7 @@\nd=-old\n");
+        assert_eq!((d.hunks[0].at, d.hunks[0].lines), (7, 1));
+    }
+
+    #[test]
+    fn the_file_header_is_not_an_old_line() {
+        // `---` starts with `-` and is not something HEAD had; it only
+        // ever appears before the first `@@`, which is why no hunk is
+        // open to take it.
+        let d = parse_diff(DIFF);
+        assert!(d.hunks.iter().all(|h| h.was.iter().all(|w| !w.starts_with("--"))));
+    }
+
+    #[test]
+    fn a_file_git_says_nothing_about_has_no_hunks() {
+        assert!(parse_diff("").hunks.is_empty());
+        assert!(parse_diff("d=fatal: not a git repository\n").hunks.is_empty());
     }
 }

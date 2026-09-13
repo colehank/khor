@@ -16,3 +16,10 @@ CLAUDE.md
 .vscode/
 .githooks/
 opencode.jsonc
+
+# A khor store is never part of this repo. It lands here only by
+# accident — `KHOR_HOME=` with an empty value makes the node treat the
+# working directory as its home and mint a fresh identity in it, which
+# is how `.khor/identity.key` reached a commit on 2026-09-13. A private
+# key is not a thing to rely on noticing.
+.khor/

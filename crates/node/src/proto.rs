@@ -204,6 +204,15 @@ pub enum Request {
     /// answer about its own — the same nine checkouts under somebody
     /// else's name.
     SatWorkspaces { sat: String },
+    /// [`Request::GitStatus`], off a satellite: the sponsor runs that
+    /// machine's own `git` over ssh and answers the ordinary
+    /// [`Response::GitStatus`] (`crate::satellite::git_status`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason.
+    SatGitStatus { sat: String, root: String },
+    /// [`Request::GitDiff`], off a satellite (`crate::satellite::
+    /// git_diff`). A new variant for [`Request::SatLs`]'s reason.
+    SatGitDiff { sat: String, path: String },
     /// The asked machine's own day record (`khor_node::day`): what
     /// *its* list said about each of *its* sessions over the last 24
     /// hours. A reported row used to paint 没在看 for its whole strip
@@ -642,6 +651,14 @@ mod tests {
             (Request::CodeServe { root: String::new() }, &b"CodeServe"[..]),
             (Request::CodeStop { root: String::new() }, &b"CodeStop"[..]),
             (Request::SatWorkspaces { sat: String::new() }, &b"SatWorkspaces"[..]),
+            (
+                Request::SatGitStatus { sat: String::new(), root: String::new() },
+                &b"SatGitStatus"[..],
+            ),
+            (
+                Request::SatGitDiff { sat: String::new(), path: String::new() },
+                &b"SatGitDiff"[..],
+            ),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

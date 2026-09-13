@@ -1470,6 +1470,16 @@ sat-no-ssh-host = "{0} 是卫星,但表里没有它的 ssh 地址;在 sponsor �
 # name so the person knows exactly which machine to walk to (一期单
 # sponsor 的单点语义,说破不绕).
 sat-send-elsewhere = "{0} 是经 {1} 说话的卫星;发文件要在 {1} 那台上 khor send"
+# **Refused rather than done weakly.** Saving anywhere else in khor
+# holds one promise: the file you are replacing is still the file you
+# read, or nothing is written (`files::write_whole`). Over ssh that
+# promise cannot be kept — the digest is blake3 and a satellite has no
+# khor to compute one, so the sponsor would have to pull the file,
+# hash it here, and push back, with a gap in the middle where somebody
+# else's save fits. A quieter guarantee wearing the same word is the
+# one thing this file exists to prevent, so the answer is no and the
+# reason is said.
+sat-no-write = "{0} 是卫星,上面的文件还只能读:存下去要先确认你手里那份还是它盘上那份,而这条路上确认不了"
 # What moved, plainly — no offer, no 待批: the far side has no khor to
 # ask, so the bytes just went (to its home directory).
 sat-sent = "送到了 {0} 的主目录,{1} 字节"

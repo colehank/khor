@@ -46,17 +46,17 @@ pub const UNTRACKED: &str = "U";
 /// untracked files, and the tree that paints them shows one directory
 /// at a time — so the cut is a screen's problem, but the frame is
 /// `proto::MAX_FRAME` and that is this file's.
-const ROWS: usize = 5000;
+pub(crate) const ROWS: usize = 5000;
 
 /// How many bytes of「what HEAD had there」one diff carries, across
 /// every hunk. Under `proto::SLICE`, which is the same number the file
 /// view already lives inside.
-const WAS: usize = 256 * 1024;
+pub(crate) const WAS: usize = 256 * 1024;
 
 /// And a ceiling on the hunks themselves, for the shape the byte cap
 /// cannot catch: a file that is all insertion carries no old lines at
 /// all, so its hunks are free by that measure and still have to stop.
-const HUNKS: usize = 2000;
+pub(crate) const HUNKS: usize = 2000;
 
 /// One workspace's git state, as of the moment it was read.
 #[derive(Debug, Clone)]
@@ -146,7 +146,7 @@ pub fn status(root: &Path) -> Result<Status, String> {
 /// disk is the copy the screen is showing. A file staged as new and
 /// then deleted reads `D`, not `A`: `A` would send somebody looking for
 /// a file that is not there.
-fn fold(a: &'static str, b: &'static str) -> &'static str {
+pub(crate) fn fold(a: &'static str, b: &'static str) -> &'static str {
     for want in [DELETED, UNTRACKED, ADDED] {
         if a == want || b == want {
             return want;
