@@ -545,7 +545,7 @@ impl Node {
                 }
             }
             ipc::Op::CodeHereOn { machine } => match self.code_here_with(ep, &machine).await {
-                Ok(version) => ipc::Reply::CodeHere { version },
+                Ok(e) => ipc::Reply::CodeHere { version: e.version, ready: e.ready },
                 Err(why) => ipc::Reply::Refused { why },
             },
             ipc::Op::CodeOpenOn { machine, .. } => {
@@ -1096,10 +1096,10 @@ impl Node {
                 // One spawn of `code --version`, ~70 ms measured. Off
                 // the reactor for the same reason every other spawn in
                 // this file is.
-                let version = tokio::task::spawn_blocking(crate::code::version)
+                let e = tokio::task::spawn_blocking(crate::code::probe)
                     .await
                     .map_err(|e| e.to_string())?;
-                Ok(Response::CodeHere { version })
+                Ok(Response::CodeHere { version: e.version, ready: e.ready })
             }
             Request::CodeServe { .. } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -2304,8 +2304,9 @@ impl Node {
         }
     }
 
-    /// Whether a machine has VS Code, and which version
-    /// (`crate::code::version`; empty means none).
+    /// Whether a machine has VS Code, which version, and whether
+    /// `serve-web`'s server is already unpacked there
+    /// (`crate::code::Editor`; an empty version means none).
     ///
     /// **The one asker in this file whose refusal is swallowed by its
     /// consumer**, and the reason is written at
@@ -2314,15 +2315,17 @@ impl Node {
     /// move, which is to draw no button. The error still comes back
     /// here — swallowing it is the face's decision, made where the
     /// button would have been.
-    pub async fn code_here(&self, machine: &str) -> Result<String, String> {
+    pub async fn code_here(&self, machine: &str) -> Result<crate::code::Editor, String> {
         if machine.is_empty() || machine == self.name() {
-            return Ok(crate::code::version());
+            return Ok(crate::code::probe());
         }
         if let Some(reply) =
             self.via_serve(ipc::Op::CodeHereOn { machine: machine.to_owned() }).await
         {
             return match reply? {
-                ipc::Reply::CodeHere { version } => Ok(version),
+                ipc::Reply::CodeHere { version, ready } => {
+                    Ok(crate::code::Editor { version, ready })
+                }
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -2335,18 +2338,22 @@ impl Node {
         out
     }
 
-    async fn code_here_with(&self, ep: &iroh::Endpoint, machine: &str) -> Result<String, String> {
+    async fn code_here_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<crate::code::Editor, String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
-            return Ok(crate::code::version());
+            return Ok(crate::code::probe());
         }
         match self.ask(ep, &channel, &Request::CodeHere).await? {
-            Response::CodeHere { version } => Ok(version),
+            Response::CodeHere { version, ready } => Ok(crate::code::Editor { version, ready }),
             // **No version arm.** An older khor refuses wordlessly and
             // an editor-less machine answers an empty string, and the
             // consumer does the same thing with both — so inventing a
             // sentence here would be inventing a difference.
-            Response::Refused { .. } => Ok(String::new()),
+            Response::Refused { .. } => Ok(crate::code::Editor::default()),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }

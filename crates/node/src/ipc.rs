@@ -190,7 +190,16 @@ pub enum Reply {
     /// file has now.
     Wrote { at_ms: u64, digest: String },
     /// Tail-appended with [`Op::CodeHereOn`]: empty means no editor.
-    CodeHere { version: String },
+    /// `ready` says that machine already has `serve-web`'s server, and
+    /// is itself tail-appended — the resident serve and the CLI talking
+    /// to it are two builds on one machine and upgrade separately, so
+    /// an older serve answers without it and the face asks for consent
+    /// it may not need rather than skipping one it does.
+    CodeHere {
+        version: String,
+        #[serde(default)]
+        ready: bool,
+    },
     /// Tail-appended with [`Op::CodeOpenOn`]: where to point a browser
     /// **on this machine**, and the token the far server wants.
     CodeAt { addr: String, token: String },

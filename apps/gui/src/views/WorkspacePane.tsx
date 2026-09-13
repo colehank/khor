@@ -34,11 +34,13 @@ import { word } from "@/words";
 import { BrowserPane } from "@/views/BrowserPane";
 import { FilesPane } from "@/views/FilesPane";
 import { FileView, type Draft } from "@/views/FileView";
+import type { Editor } from "@/gen/bindings/Editor";
 import { basename } from "@/views/WorkspacesList";
 
 export function WorkspacePane({
   machine,
   device,
+  here,
   root,
   rows,
   narrow,
@@ -46,6 +48,11 @@ export function WorkspacePane({
 }: {
   machine: string;
   device: string;
+  /** Whether this workspace is on the machine khor is running on.
+      Handed down to the tree, whose 拉过来 is a direction and not an
+      action when there is nowhere to pull from (`FilesPane`'s
+      `here`). */
+  here: boolean;
   /** The workspace's own directory, absolute. Empty means that
       machine's home — what「看它的文件」hands over when the request was
       about a machine and not about a project. */
@@ -98,10 +105,10 @@ export function WorkspacePane({
   // repository as「clean」is the one reading that must never be a
   // guess (`khor_gui_core::git`).
   const [gitError, setGitError] = useState<string | null>(null);
-  /** `code --version` over there, empty when that machine has no editor
-      **or could not be asked** — the two lead to the same next move,
-      which is to draw no switch (`khor_gui_core::code::here`). */
-  const [code, setCode] = useState("");
+  /** What that machine says about its editor. `version` empty means it
+      has none **or could not be asked** — the two lead to the same next
+      move, which is to draw no switch (`khor_gui_core::code::here`). */
+  const [code, setCode] = useState<Editor>({ version: "", ready: false });
   /** The URL to point a webview at, once one has been asked for.
       `null` while khor's own file view is what the middle column shows,
       which is always how a workspace opens. */
@@ -151,15 +158,15 @@ export function WorkspacePane({
 
   useEffect(() => {
     let live = true;
-    setCode("");
+    setCode({ version: "", ready: false });
     setCodeAt(null);
     setAsking(false);
     setCodeError(null);
     fetchCodeHere(machine)
-      .then((v) => live && setCode(v))
-      // Already folded to empty on the way here; this arm is for the
-      // call itself failing, and it means the same thing.
-      .catch(() => live && setCode(""));
+      .then((e) => live && setCode(e))
+      // Already folded to the default on the way here; this arm is for
+      // the call itself failing, and it means the same thing.
+      .catch(() => live && setCode({ version: "", ready: false }));
     return () => {
       live = false;
     };
@@ -191,10 +198,18 @@ export function WorkspacePane({
     }
   };
   /** Pressing the switch: ask first if this machine has never been
-      agreed to, otherwise go straight there. */
+      agreed to, otherwise go straight there.
+      **The server already being over there is the other way past the
+      card**, and it is a stronger reason than the remembered yes: the
+      card's whole sentence is「第一次要下约 640 MB」, and on a machine
+      that has the server that sentence is false. It was shown anyway
+      until 2026-09-13, because this face only ever consulted its own
+      storage — so a fresh app profile asked to download a server that
+      had been on disk for two days, and the licence the card also names
+      was accepted when those bytes landed. */
   const want = () => {
     setCodeError(null);
-    if (agreed()) {
+    if (code.ready || agreed()) {
       go();
     } else {
       setAsking(true);
@@ -312,12 +327,12 @@ export function WorkspacePane({
             web face is not that machine, so the link would name a
             loopback it cannot reach. Offering a button that resolves to
             somewhere else's localhost is worse than offering none. */}
-        {code !== "" && root !== "" && !onWebFace && (
+        {code.version !== "" && root !== "" && !onWebFace && (
           <Button
             variant="ghost"
             size="sm"
             data-code={codeAt === null ? "off" : "on"}
-            title={code}
+            title={code.version}
             onClick={() => (codeAt === null ? want() : setCodeAt(null))}
             className="min-h-touch min-w-touch shrink-0"
           >
@@ -342,6 +357,7 @@ export function WorkspacePane({
               onLanded={setAt}
               onFile={setFile}
               open={file}
+              here={here}
               marks={marks}
             />
           </div>

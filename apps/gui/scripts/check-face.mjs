@@ -1093,7 +1093,13 @@ try {
     });
   });
   await page.route("**/code_here", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify("1.137.0") }),
+    r.fulfill({
+      contentType: "application/json",
+      // **`ready: false` is the fixture's whole point here**: it is the
+      // machine that has not fetched the server, which is the only one
+      // the consent card is for (`khor_gui_core::code::Editor`).
+      body: JSON.stringify({ version: "1.137.0", ready: false }),
+    }),
   );
   await page.route("**/recents", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify([]) }),
@@ -2503,13 +2509,51 @@ try {
     }
     if (card !== null) await press("[data-code-no]");
   }
+
+  // …and the branch where the card would be a lie. A machine that
+  // already has `serve-web`'s server has nothing to download and
+  // accepted the licence when those bytes landed, so the card's own
+  // sentence (「第一次要…约 640 MB」) is false there. It was shown
+  // anyway until 2026-09-13, because the face consulted only its own
+  // storage — a fresh profile asked in front of a server that had been
+  // on disk for two days.
+  await page.unroute("**/code_here");
+  await page.route("**/code_here", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ version: "1.137.0", ready: true }),
+    }),
+  );
+  await press(rail("sessions"));
+  await atCrumbs();
+  const readySwitch = await page.locator("[data-code]").count();
+  if (readySwitch !== 1) {
+    fail(
+      `a machine with the server already unpacked drew ${readySwitch} editor switch(es) — having the ` +
+        "server is a reason to skip the card, never a reason to hide the switch " +
+        "(src/views/WorkspacePane.tsx)",
+    );
+  } else {
+    await press("[data-code]");
+    const asked = await page.locator("[data-code-consent]").count();
+    console.log(`editor switch: a machine that already has the server raises ${asked} card(s)`);
+    if (asked !== 0) {
+      fail(
+        "the consent card came up for a machine that already has the server — its sentence says 640 MB " +
+          "is about to come down, and nothing is (src/views/WorkspacePane.tsx)",
+      );
+    }
+  }
   // …and the other branch: a machine with no editor draws no switch.
   // **Measured rather than reasoned**, because「draws nothing」is what
   // a broken selector also looks like — which is why the positive half
   // above runs first and on the same element.
   await page.unroute("**/code_here");
   await page.route("**/code_here", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify("") }),
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ version: "", ready: false }),
+    }),
   );
   await press(rail("sessions"));
   await atCrumbs();
@@ -2523,7 +2567,13 @@ try {
   }
   await page.unroute("**/code_here");
   await page.route("**/code_here", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify("1.137.0") }),
+    r.fulfill({
+      contentType: "application/json",
+      // **`ready: false` is the fixture's whole point here**: it is the
+      // machine that has not fetched the server, which is the only one
+      // the consent card is for (`khor_gui_core::code::Editor`).
+      body: JSON.stringify({ version: "1.137.0", ready: false }),
+    }),
   );
 
   // ── 4e) the two screens that are not a code view ──────────────────

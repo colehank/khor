@@ -459,8 +459,23 @@ pub enum Response {
     Wrote { at_ms: u64, digest: String },
     /// [`Request::CodeHere`]'s answer. `version` is `code --version`'s
     /// first line, and **empty means there is no editor there** — not
-    /// an error, just a machine without one.
-    CodeHere { version: String },
+    /// an error, just a machine without one. `ready` says the server
+    /// `serve-web` would fetch is already unpacked over there
+    /// (`crate::code::Editor`).
+    ///
+    /// **`ready` is tail-appended, and the consumer's error branch is
+    /// the reason that is allowed here.** A khor old enough to know
+    /// `CodeHere` but not this field refuses the whole frame, and
+    /// `Node::code_here`'s caller paints a refusal as **no VS Code
+    /// button at all** (`views/WorkspacePane`) — which is a different
+    /// screen from success, not a default wearing the clothes of a
+    /// fact. The default itself errs toward asking: `false` shows the
+    /// consent rather than skipping it.
+    CodeHere {
+        version: String,
+        #[serde(default)]
+        ready: bool,
+    },
     /// [`Request::CodeServe`]'s answer: a loopback port on the
     /// answering machine and the connection token every request to it
     /// must carry.

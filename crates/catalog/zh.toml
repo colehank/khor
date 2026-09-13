@@ -675,6 +675,16 @@ read-cut = "文件 {0} 字节,只读了前 {1} 字节"
 # `khor web` 's link does.
 code-at = "{0}\n  ({1};链接里带密钥,别贴进会同步的文档。收摊: khor code --stop)"
 code-stopped = "关了 {0} 上的 VS Code"
+# Said before the wait, not after it. **The CLI does not ask** — its
+# precedent is `close` and `forget`: typing the verb is the
+# confirmation, and the GUI is where a click is cheap enough to deserve
+# a second look (`fn forget`). What it owes the person is the sentence,
+# because the alternative is ten silent minutes and 640 MB of somebody
+# else's bandwidth with nothing on screen to explain either. Not shared
+# with [gui]'s `code-consent`: that one is a question with two answers
+# under it and this one is a statement, and one sentence doing both jobs
+# would have to be worded for neither.
+code-fetching = "那台机器上还没有服务端,先下一份(约 640 MB,从微软下,接受他们的服务端许可条款)"
 # The two git caps. **In [cli] rather than [gui], for `dir-truncated`'s
 # own reason**: both faces say them, and the same fact said twice in two
 # sections is two sentences to keep in step. Said at all because

@@ -98,7 +98,7 @@ async fn preview(
 
 /// Whether a machine has VS Code (`khor_gui_core::code::here`).
 #[tauri::command]
-async fn code_here(machine: String) -> Result<String, String> {
+async fn code_here(machine: String) -> Result<khor_gui_core::code::Editor, String> {
     khor_gui_core::code::here(&Node::root_from_env(), &machine).await
 }
 

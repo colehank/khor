@@ -29,15 +29,30 @@ pub struct CodeAt {
     pub url: String,
 }
 
-/// `code --version`'s first line on that machine, or empty when there
-/// is none (`khor_node::Node::code_here`).
+/// What a machine says about its editor, without starting anything.
+#[derive(Debug, Clone, Default, Serialize, TS)]
+pub struct Editor {
+    /// `code --version`'s first line over there. **Empty means there is
+    /// no editor** — the switch is not drawn at all.
+    pub version: String,
+    /// Whether `serve-web`'s server is already unpacked over there, so
+    /// pressing the switch downloads nothing.
+    ///
+    /// **What the face does with it is skip the consent**, because the
+    /// consent's whole sentence is about a download that is not going
+    /// to happen. False errs toward asking.
+    pub ready: bool,
+}
+
+/// [`Editor`] for that machine (`khor_node::Node::code_here`).
 ///
-/// **A refusal comes back as empty, not as an error.** A machine that
-/// cannot answer and a machine with no editor lead to the same next
-/// move — draw no button — and the node's own asker already folds the
-/// two (`proto::Request::CodeHere`).
-pub async fn here(root: &Path, machine: &str) -> Result<String, String> {
-    Ok(Node::open(root.to_path_buf())?.code_here(machine).await.unwrap_or_default())
+/// **A refusal comes back as the default, not as an error.** A machine
+/// that cannot answer and a machine with no editor lead to the same
+/// next move — draw no button — and the node's own asker already folds
+/// the two (`proto::Request::CodeHere`).
+pub async fn here(root: &Path, machine: &str) -> Result<Editor, String> {
+    let e = Node::open(root.to_path_buf())?.code_here(machine).await.unwrap_or_default();
+    Ok(Editor { version: e.version, ready: e.ready })
 }
 
 /// Starts (or reuses) that machine's web face and answers the URL to

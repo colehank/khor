@@ -1426,6 +1426,16 @@ export default function App() {
         key={`${openWs.device} ${openWs.path}`}
         machine={openWs.machine}
         device={openWs.device}
+        // **Compared by channel, never by the name on the glass**: the
+        // shown name is the user's to retype, and a machine renamed to
+        // match another's label must not start answering for it
+        // (`DeviceRow::name` against `DeviceRow::shown`).
+        //
+        // No `me` row yet is not「this is another machine」, it is「not
+        // known yet」— and the direction that errs safely is drawing a
+        // 拉过来 that is merely pointless for one poll, not hiding the
+        // one action a remote tree has.
+        here={devices.some((d) => d.me && d.name === openWs.machine)}
         root={openWs.path}
         rows={rows}
         narrow={narrow}

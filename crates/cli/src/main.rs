@@ -490,9 +490,18 @@ fn code(rest: &[String]) -> Result<(), String> {
     // Asked first so a machine without an editor says so in one round
     // trip, rather than after ten minutes of a download that was never
     // going to happen.
-    let version = rt.block_on(n.code_here(machine))?;
-    if version.is_empty() {
+    let editor = rt.block_on(n.code_here(machine))?;
+    if editor.version.is_empty() {
         return Err(msg::NO_VSCODE.into());
+    }
+    // **Said before the wait rather than after it.** This does not ask:
+    // the CLI's precedent is `forget` and `takeover`, where typing the
+    // verb is the confirmation. But a machine that has no server spends
+    // minutes fetching one, and a person watching a silent terminal has
+    // no way to tell that from a hang — nor that 640 MB is moving and a
+    // licence is being accepted on that machine's behalf.
+    if !editor.ready {
+        println!("{}", cli::CODE_FETCHING);
     }
     let (addr, token) = rt.block_on(n.code_open(machine))?;
     // **The folder rides in the link, not in the launch.** One server
@@ -504,7 +513,7 @@ fn code(rest: &[String]) -> Result<(), String> {
     } else {
         format!("&folder={}", enc(root))
     };
-    println!("{}", cli::code_at(format_args!("http://{addr}/?tkn={token}{folder}"), version));
+    println!("{}", cli::code_at(format_args!("http://{addr}/?tkn={token}{folder}"), editor.version));
     Ok(())
 }
 

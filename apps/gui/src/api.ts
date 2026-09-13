@@ -14,6 +14,7 @@ import type { PlaceRow } from "./gen/bindings/PlaceRow";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
 import type { FileText } from "./gen/bindings/FileText";
 import type { GitStatus } from "./gen/bindings/GitStatus";
+import type { Editor } from "./gen/bindings/Editor";
 import type { GitRow } from "./gen/bindings/GitRow";
 import type { GitDiff } from "./gen/bindings/GitDiff";
 import type { GitHunk } from "./gen/bindings/GitHunk";
@@ -288,7 +289,7 @@ export const saveFileText = (machine: string, path: string, was: string, text: s
     draw. */
 export const fetchPreview = (machine: string, path: string) =>
   call<Preview>("preview", { machine, path });
-export const fetchCodeHere = (machine: string) => call<string>("code_here", { machine });
+export const fetchCodeHere = (machine: string) => call<Editor>("code_here", { machine });
 /** Starts (or reuses) that machine's VS Code web face and answers a URL
     to point a webview at, `dir` opened as the folder.
 

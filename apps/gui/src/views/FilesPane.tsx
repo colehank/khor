@@ -57,6 +57,7 @@ export function FilesPane({
   onLanded,
   onFile,
   open,
+  here,
   marks,
 }: {
   /** The machine's name — what the node resolves. */
@@ -79,6 +80,22 @@ export function FilesPane({
   onFile: (path: string) => void;
   /** Which file is open, so the row can say so. Absolute, or null. */
   open: string | null;
+  /** Whether the machine this tree is reading is the one khor is
+      running on.
+
+      **拉过来 means「from that machine to this one」, so on this one it
+      has nothing to mean.** It was drawn on every row of every tree
+      until 2026-09-13, which on a local workspace offered to copy a
+      file into the downloads directory it was already reachable from
+      — an action whose whole word is a direction that does not exist
+      here. Nothing about it is specific to workspaces: browsing your
+      own machine had the same button, for the same reason.
+
+      Passed rather than worked out here: which machine is this one is
+      the shell's fact (`DeviceRow::me`), and a pane that fetched the
+      device table to answer it would be a second reading of something
+      already on screen. */
+  here: boolean;
   /** Absolute path → git's mark for it, folded so that a directory
       carries one when anything under it does (`WorkspacePane`).
       **`null` is「nobody asked」or「nobody could answer」, which is not
@@ -357,14 +374,17 @@ export function FilesPane({
                           still said where taking is decided — the file
                           view's own head says it for a binary and for a
                           cut one. */}
+                      {!here && (
                       <Button
                         size="sm"
                         variant="ghost"
                         data-take={e.name}
-                        // Always drawn, unlike the pin above: it is the
-                        // row's one action, a word rather than a repeated
-                        // glyph, and hiding it would leave a file row
-                        // with nothing to do.
+                        // Always drawn where it means anything, unlike
+                        // the pin above: it is the row's one *remote*
+                        // action, a word rather than a repeated glyph.
+                        // On this machine it is not drawn at all — see
+                        // `here`; the row still has the thing it is for,
+                        // which is opening the file.
                         //
                         // Both floors, though only the short one bites
                         // today: the `sm` height is well under it, while
@@ -377,6 +397,7 @@ export function FilesPane({
                       >
                         {gui.take_file}
                       </Button>
+                      )}
                     </>
                   )}
                 </div>

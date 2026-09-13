@@ -48,22 +48,93 @@ pub fn cli() -> Option<PathBuf> {
     if bundle.is_file() { Some(bundle.to_path_buf()) } else { None }
 }
 
-/// `code --version`'s first line, or empty when there is no `code`.
+/// What one machine can say about its editor without starting anything.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Editor {
+    /// `code --version`'s first line, or empty when there is no `code`.
+    ///
+    /// The version is what travels rather than a bare yes: `serve-web`
+    /// arrived in 1.82, and a machine older than that would answer the
+    /// probe and then fail the launch — which is a worse shape than
+    /// saying so up front.
+    pub version: String,
+    /// Whether the server `code serve-web` would otherwise fetch is
+    /// already sitting on that machine.
+    ///
+    /// **This is what the face's consent is actually about.** The
+    /// sentence it shows says ~640 MB is about to come down from
+    /// Microsoft; on a machine where it already came down that sentence
+    /// is false, and it was being shown anyway — the face only
+    /// remembered the answer in its own storage, so a fresh app profile
+    /// asked again, in front of a server that had been on disk since
+    /// 2026-09-11 (found by opening the desktop app, 2026-09-13).
+    ///
+    /// False is the safe reading, which is why nothing here guesses:
+    /// a machine that cannot be asked gets the sentence and a person
+    /// gets the choice.
+    pub ready: bool,
+}
+
+/// [`Editor`] for this machine.
 ///
 /// **One spawn, ~70 ms measured on this machine**, which is why it is
-/// asked when a workspace opens and not on the beat. The version is
-/// what travels rather than a bare yes: `serve-web` arrived in 1.82,
-/// and a machine older than that would answer the probe and then fail
-/// the launch — which is a worse shape than saying so up front.
-pub fn version() -> String {
-    let Some(exe) = cli() else { return String::new() };
+/// asked when a workspace opens and not on the beat. Both facts come
+/// out of that one spawn: the server directory is named after the
+/// commit, which is `code --version`'s second line, so asking whether
+/// the server is there means having asked the version already.
+pub fn probe() -> Editor {
+    let Some(exe) = cli() else { return Editor::default() };
     let Ok(out) = std::process::Command::new(exe).arg("--version").output() else {
-        return String::new();
+        return Editor::default();
     };
     if !out.status.success() {
-        return String::new();
+        return Editor::default();
     }
-    String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("").trim().to_owned()
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines();
+    let version = lines.next().unwrap_or("").trim().to_owned();
+    let commit = lines.next().unwrap_or("").trim();
+    Editor { ready: !version.is_empty() && server_is_here(commit), version }
+}
+
+/// Whether `serve-web`'s server for `commit` is already unpacked.
+///
+/// **Named by commit, not by version**, because that is how the CLI
+/// names it: `~/.vscode/cli/serve-web/<commit>`. A machine that
+/// upgraded VS Code has a directory there for the old commit and none
+/// for the new one, and the download ahead is real again — which is the
+/// answer a person needs and the one a version check would get wrong.
+///
+/// `VSCODE_CLI_DATA_DIR` is honoured because the CLI honours it; a
+/// machine that moved its data directory would otherwise be told it has
+/// nothing while the server sits where it was put.
+///
+/// The probe is for `node`, the one file the server cannot run without,
+/// rather than for the directory: an interrupted fetch leaves the
+/// directory behind, and a directory is not a server.
+fn server_is_here(commit: &str) -> bool {
+    let base = match std::env::var_os("VSCODE_CLI_DATA_DIR") {
+        Some(d) => PathBuf::from(d),
+        None => match std::env::home_dir() {
+            Some(h) => h.join(".vscode").join("cli"),
+            None => return false,
+        },
+    };
+    server_under(&base, commit)
+}
+
+/// The judgment half of [`server_is_here`], with the CLI's data
+/// directory handed in.
+///
+/// **Split so it can be tested against a directory built for the
+/// purpose.** The other half reads the environment and the home, which
+/// a test can only change for the whole process — and a process-wide
+/// change is a test that fails when another one runs beside it.
+fn server_under(base: &Path, commit: &str) -> bool {
+    if commit.is_empty() {
+        return false;
+    }
+    base.join("serve-web").join(commit).join("node").is_file()
 }
 
 /// A `PATH` lookup with no shell in it. `which(1)` would be a second
@@ -260,5 +331,51 @@ mod tests {
         ] {
             assert_eq!(port_in(line), None, "{line}");
         }
+    }
+
+    /// Builds what the CLI leaves behind after a finished fetch.
+    fn unpacked(base: &Path, commit: &str) {
+        let dir = base.join("serve-web").join(commit);
+        std::fs::create_dir_all(&dir).expect("make server dir");
+        std::fs::write(dir.join("node"), b"#!/bin/sh\n").expect("write node");
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("khor-code-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("make scratch");
+        dir
+    }
+
+    #[test]
+    fn a_finished_fetch_is_seen_and_a_different_commit_is_not() {
+        let base = scratch("finished");
+        unpacked(&base, "645f29cc3176500b4b5762ba887cf2a7f0ffdf2c");
+        assert!(server_under(&base, "645f29cc3176500b4b5762ba887cf2a7f0ffdf2c"));
+        // **An upgraded VS Code is a download ahead again.** The old
+        // commit's directory is still there and answers for nothing.
+        assert!(!server_under(&base, "0000000000000000000000000000000000000000"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_directory_without_the_runtime_is_not_a_server() {
+        // What an interrupted fetch leaves: the directory exists and
+        // `serve-web` will go and get the rest. Reading that as「already
+        // there」 would skip the sentence about the download that is
+        // still coming.
+        let base = scratch("half");
+        std::fs::create_dir_all(base.join("serve-web").join("abc")).expect("make dir");
+        assert!(!server_under(&base, "abc"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_machine_that_said_no_commit_is_not_ready() {
+        // `code --version` with one line, or none: nothing to name a
+        // directory with, so the answer is the asking one.
+        let base = scratch("nocommit");
+        assert!(!server_under(&base, ""));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
