@@ -654,12 +654,36 @@ fn as_a_browser(agent: &str) -> Option<String> {
     Some(format!("{agent} Safari/{build}"))
 }
 
-/// A tab id as a webview label. Tab ids are minted from a timestamp and a
-/// counter so they are already tame; this is the same guard the borrow
-/// window label uses, for the same reason — a label is a key, and a key
-/// with a separator in it is a key that can collide.
+/// A tab id as a webview label.
+///
+/// **Total, because the tab id stopped being tame.** Tab ids were minted
+/// from a timestamp and a counter, so the old guard only had to keep a
+/// separator out of a key. Then a workspace's editor column started
+/// naming its own page after a machine (工作区批5) and tauri refused the
+/// label outright — it takes only `[A-Za-z0-9-/:_]`, and a space is not
+/// in it, so every press of the VS Code switch drew `runtime error:
+/// Window labels must only include...` where the editor should have
+/// been. That shipped and stayed invisible for a day: every gate runs in
+/// a browser, and a browser builds no child webview, so the one way to
+/// see it was to open the desktop app and press the button
+/// (2026-09-13).
+///
+/// **Escaped rather than replaced, because a label is a key.** Folding
+/// the disallowed characters onto `-` makes `my mac` and `my-mac` the
+/// same label, and machine names are the user's to type — an editor
+/// column would have opened onto the neighbour's page. `_` marks an
+/// escape and is escaped itself, so the map is injective over any
+/// input, non-ASCII included, and an ordinary ASCII name still reads as
+/// itself.
 fn page_label(tab: &str) -> String {
-    format!("page-{}", tab.replace(['/', ':'], "-"))
+    let mut out = String::from("page-");
+    for b in tab.bytes() {
+        match b {
+            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' => out.push(b as char),
+            _ => out.push_str(&format!("_{b:02x}")),
+        }
+    }
+    out
 }
 
 /// Opens (or re-points) the page a browsing tab is showing.
@@ -1745,4 +1769,41 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("tauri run");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_label;
+
+    /// What tauri takes in a webview label is alphanumeric, `-`, `/`,
+    /// `:` and `_`. What this side mints keeps to a narrower set still,
+    /// because `/` and `:` read as separators in a key.
+    fn tame(label: &str) -> bool {
+        label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    }
+
+    #[test]
+    fn a_label_stays_inside_what_tauri_takes() {
+        for tab in [
+            "1757000000-3", // what a browsing tab's id has always looked like
+            "code:mac-mini",
+            "code Mac-mini", // the shape that shipped and drew a runtime error
+            "café mac",      // a machine name is the user's to type
+            "a/b:c",
+            "",
+        ] {
+            let label = page_label(tab);
+            assert!(tame(&label), "label {label:?} from tab {tab:?} is not one tauri takes");
+        }
+    }
+
+    #[test]
+    fn two_tabs_never_share_a_label() {
+        let tabs = ["my mac", "my-mac", "my_mac", "my/mac", "my:mac", "mymac"];
+        for (i, a) in tabs.iter().enumerate() {
+            for b in &tabs[i + 1..] {
+                assert_ne!(page_label(a), page_label(b), "{a:?} and {b:?} share one label");
+            }
+        }
+    }
 }

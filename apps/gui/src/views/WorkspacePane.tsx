@@ -390,7 +390,13 @@ export function WorkspacePane({
             // Not a browsing tab: every tab in that shell names an exit
             // machine and an editor has none (`BrowserPane`'s `direct`).
             <BrowserPane
-              tab={`code ${device}`}
+              // **Keyed by the machine, not by its name.** The tab id is
+              // this page's handle on the app side and a handle has to
+              // hold still: `device` is the name the user can retype
+              // (`EditableName`), and renaming a machine with its editor
+              // open would mint a second page webview and leave the
+              // first one hidden for the life of the app.
+              tab={`code:${machine}`}
               machine={machine}
               device={device}
               url={codeAt}
