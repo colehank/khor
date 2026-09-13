@@ -129,6 +129,166 @@ fi
 df -kP 2>/dev/null | awk 'NR>1 && $1 ~ /^\// {printf "vol=%s|%d|%d\n", $6, $3*1024, ($3+$4)*1024}'
 "#;
 
+/// The satellite's own recorded working directories, rooted and
+/// checked over there.
+///
+/// **One shell, and it has to be, because every question is about that
+/// disk.** Which directory a transcript was written in, whether a
+/// `.git` sits above it, whether the root is still there — a sponsor
+/// can answer none of them from its own filesystem, and a sponsor that
+/// tried would answer about *itself* and label the rows with the
+/// satellite's name. So the rooting happens on the satellite and only
+/// the merge happens here (`crate::place::merge`), which keeps one
+/// definition of 工作区 across machines that reach khor and machines
+/// that do not.
+///
+/// **The two vendors' record shapes are read the way the two adaptors
+/// read them** (`adaptor::claude::Claude::places`,
+/// `adaptor::codex::Codex::places`): claude files one directory per
+/// project and the transcripts inside carry `cwd`; codex files rollouts
+/// flat and each carries its own. Both are JSONL, so both are read by
+/// pulling the first `"cwd"` out of a file — a real parser is not
+/// available over there and is not needed: the field's value is a path,
+/// and a path containing a `"` would have broken the vendors' own files
+/// first.
+///
+/// Every section tolerates its own absence, the sampler's rule: a
+/// satellite with no claude prints nothing for it and the parser reads
+/// nothing, never a row of zeros.
+///
+/// **300 rollouts is `adaptor::codex::PLACES_SCAN`, not a number
+/// chosen here.** The cap exists because codex files rollouts flat and
+/// a long-lived home holds thousands; a different cap on this road
+/// would make the same machine list different projects depending on
+/// whether khor was running on it.
+///
+/// **What this road cannot see is khor's own live sessions**, which
+/// the local list folds in (`Node::places`). A satellite's sessions are
+/// hosted on its sponsor over ssh and their recorded place is the
+/// sponsor's, so there is nothing here to fold in — the count is what
+/// the vendors' files remember, which is what the row already says it
+/// is (`workspaces::WorkspaceRow::sessions`).
+const PLACES_SH: &str = r#"
+emit() {
+  cwd=$1; n=$2; at=$3
+  [ -d "$cwd" ] || return 0
+  root=$cwd; co=0; d=$cwd
+  while [ "$d" != "/" ] && [ -n "$d" ]; do
+    if [ "$d" != "$HOME" ] && [ -e "$d/.git" ]; then root=$d; co=1; break; fi
+    p=$(dirname "$d"); [ "$p" = "$d" ] && break; d=$p
+  done
+  printf 'place=%s|%s|%s|%s\n' "$root" "$n" "$at" "$co"
+}
+printf 'home=%s\n' "$HOME"
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+cwd_of() { sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1; }
+for d in "$HOME"/.claude/projects/*/; do
+  [ -d "$d" ] || continue
+  set -- "$d"*.jsonl
+  [ -e "$1" ] || continue
+  n=$#
+  newest=$(ls -t "$d"*.jsonl 2>/dev/null | head -3)
+  at=0; cwd=
+  for f in $newest; do
+    [ "$at" = 0 ] && at=$(mtime "$f")
+    [ -z "$cwd" ] && cwd=$(cwd_of "$f")
+  done
+  [ -n "$cwd" ] && emit "$cwd" "$n" "$at"
+done
+for f in $(ls -t "$HOME"/.codex/sessions/*.jsonl "$HOME"/.codex/sessions/*/*.jsonl "$HOME"/.codex/sessions/*/*/*.jsonl "$HOME"/.codex/sessions/*/*/*/*.jsonl 2>/dev/null | head -300); do
+  cwd=$(cwd_of "$f")
+  [ -n "$cwd" ] && emit "$cwd" 1 "$(mtime "$f")"
+done
+# **The script's own status is not a verdict.** It is whatever its last
+# line returned — an empty codex directory leaves a `[ -n "$cwd" ] &&`
+# that answered no, and the whole read would have been reported as「ssh
+# 够不着」with an empty reason (2026-09-13). A connection that really
+# failed is ssh's own 255, which this cannot overwrite.
+exit 0
+"#;
+
+/// Runs a script on the satellite **as `sh`, reading it from stdin**.
+///
+/// **`ssh host "<script>"` is not run by `sh`.** It is handed to the
+/// far user's *login* shell, and on a mac that is zsh — which, unlike
+/// sh, treats a glob that matches nothing as an error and aborts the
+/// line (`no matches found: …/*.jsonl`). The first real run of
+/// [`PLACES_SH`] died on exactly that, against a satellite whose home
+/// held a claude project directory with no transcripts left in it
+/// (2026-09-13). Every shell idiom in these scripts is POSIX sh, so the
+/// fix is to say so rather than to write around one shell at a time.
+///
+/// Piped rather than quoted for the same reason quoting is the thing
+/// that breaks: a script travelling as an argument is re-split by
+/// whatever shell receives it, and a script travelling on stdin is
+/// bytes.
+fn sh_over_ssh(host: &str, script: &str) -> Result<String, String> {
+    use std::io::Write;
+    let mut child = ssh_base(host)
+        .arg("sh")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(msg::ssh_wont_run)?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| msg::sat_cant_reach(host, "no stdin"))?
+        .write_all(script.as_bytes())
+        .map_err(|e| msg::sat_cant_reach(host, e.to_string()))?;
+    let out = child.wait_with_output().map_err(msg::ssh_wont_run)?;
+    if !out.status.success() {
+        return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// [`PLACES_SH`] over the user's ssh road, in the wire shape of
+/// [`crate::proto::Response::Workspaces`]: `(path, shown, sessions,
+/// last_ms)`, checkouts only.
+///
+/// Filtered here rather than by the caller because the filter and the
+/// shortening are the same two facts the local list applies
+/// (`Node::workspaces_shown`), and the shortening needs the home this
+/// road is the only one that can read.
+pub fn places(host: &str) -> Result<Vec<(String, String, u32, i64)>, String> {
+    Ok(parse_places(&sh_over_ssh(host, PLACES_SH)?))
+}
+
+/// `place=` lines into places. **Split from the ssh for
+/// [`parse_vitals`]'s reason**: recorded output can be fed to it, and a
+/// satellite is not needed to prove that a truncated answer yields
+/// fewer rows rather than a wrong one.
+///
+/// A line this cannot read is dropped rather than guessed at. The
+/// fields are positional and the path comes first, so a path containing
+/// the separator would shift the numbers — which is why it does not:
+/// `rsplitn` reads the three fixed fields off the **end**, and
+/// everything before them is the path, separators and all.
+fn parse_places(text: &str) -> Vec<(String, String, u32, i64)> {
+    let home = text.lines().find_map(|l| l.strip_prefix("home=")).unwrap_or("").trim();
+    crate::place::merge(text.lines().filter_map(|line| {
+        let body = line.strip_prefix("place=")?;
+        let mut back = body.rsplitn(4, '|');
+        let checkout = back.next()? == "1";
+        let last_ms = back.next()?.trim().parse::<i64>().ok()? * 1000;
+        let sessions = back.next()?.trim().parse::<u32>().ok()?;
+        let path = back.next()?;
+        if path.is_empty() {
+            return None;
+        }
+        Some((path.to_owned(), sessions, last_ms, checkout))
+    }))
+    .into_iter()
+    .filter(|p| p.checkout)
+    .map(|p| {
+        let shown = crate::place::shorten_under(&p.path, home);
+        (p.path, shown, p.sessions, p.last_ms)
+    })
+    .collect()
+}
+
 /// One reading of the satellite, taken over the user's ssh road — the
 /// same `khor_core::Vitals` shape every machine reports about itself,
 /// with `version: None`: no khor runs there, and saying so is the row's
@@ -529,5 +689,100 @@ mod tests {
             base64::engine::general_purpose::STANDARD_NO_PAD.encode([1u8; 16])
         };
         assert_eq!(sha256_b64_to_hex(&short), None, "a wrong-sized digest mints nothing");
+    }
+
+    /// Recorded from a real run of [`PLACES_SH`] on this machine,
+    /// 2026-09-13. The nine checkouts it found there were the same nine
+    /// `khor workspaces` printed, which is the only evidence this
+    /// script implements the same rule as `place::fold` rather than a
+    /// similar one; these four lines are the interesting corners of
+    /// that run.
+    const REAL: &str = "\
+home=/Users/zgh
+place=/Users/zgh/Desktop/working/khor|3|1787245509|1
+place=/Users/zgh/Desktop/working/khor|4|1789274278|1
+place=/Users/zgh|5|1788707864|0
+place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
+";
+
+    #[test]
+    fn two_records_of_one_checkout_fold_into_one_row() {
+        let rows = parse_places(REAL);
+        let khor = rows
+            .iter()
+            .find(|(path, ..)| path == "/Users/zgh/Desktop/working/khor")
+            .expect("the checkout with two records");
+        assert_eq!(khor.2, 7, "the counts add");
+        assert_eq!(khor.3, 1_789_274_278_000, "the newest wins");
+    }
+
+    #[test]
+    fn a_directory_that_is_not_a_checkout_is_not_a_workspace() {
+        // `~` itself is somewhere sessions ran and is not a project —
+        // the same line `Node::workspaces_shown` draws locally.
+        let rows = parse_places(REAL);
+        assert_eq!(rows.len(), 2, "two checkouts out of three roots");
+        assert!(rows.iter().all(|(path, ..)| path != "/Users/zgh"));
+    }
+
+    #[test]
+    fn the_satellites_home_is_the_one_written_as_a_tilde() {
+        // **Not this machine's home.** The sponsor's happens to differ
+        // here, and a row shortened with the wrong one is wrong twice:
+        // a `~` where the paths merely look alike, and a satellite's
+        // own home spelled out in full.
+        let rows = parse_places(REAL);
+        let khor = rows.iter().find(|(path, ..)| path.ends_with("/khor")).expect("khor");
+        assert_eq!(khor.1, "~/Desktop/working/khor");
+        let labsys = rows.iter().find(|(path, ..)| path.ends_with("labsys")).expect("labsys");
+        assert_eq!(labsys.1, "/Volumes/disk0/workingdir/labsys", "outside home, spelled out");
+    }
+
+    #[test]
+    fn a_satellite_that_did_not_say_its_home_shortens_nothing() {
+        let rows = parse_places("place=/Users/other/w|1|1789274278|1\n");
+        assert_eq!(rows[0].1, "/Users/other/w");
+    }
+
+    #[test]
+    fn newest_first_the_way_the_local_list_is_ordered() {
+        let rows = parse_places(REAL);
+        let order: Vec<&str> = rows.iter().map(|(path, ..)| path.as_str()).collect();
+        assert_eq!(order, ["/Users/zgh/Desktop/working/khor", "/Volumes/disk0/workingdir/labsys"]);
+    }
+
+    #[test]
+    fn seconds_become_milliseconds() {
+        // The satellite's `stat` answers in seconds and every other
+        // time in khor is a millisecond. A row off by a thousand sorts
+        // to the bottom and reads as「六个月前」.
+        let rows = parse_places("place=/w|1|1789274278|1\n");
+        assert_eq!(rows[0].3, 1_789_274_278_000);
+    }
+
+    #[test]
+    fn a_path_with_a_separator_in_it_keeps_its_numbers() {
+        // The fields are positional, so a `|` in a directory name would
+        // shift them — read off the end, it cannot.
+        let rows = parse_places("place=/w/a|b/c|2|1789274278|1\n");
+        assert_eq!(rows[0].0, "/w/a|b/c");
+        assert_eq!(rows[0].2, 2);
+    }
+
+    #[test]
+    fn a_truncated_answer_loses_rows_rather_than_inventing_them() {
+        // What a connection dropped mid-write leaves. Each line stands
+        // on its own, so the ones that arrived whole are still read and
+        // the half-line is dropped — never a row with a guessed number
+        // in it (`parse_vitals`'s rule).
+        let rows = parse_places("place=/a|1|1789274278|1\nplace=/b|1|17892");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "/a");
+    }
+
+    #[test]
+    fn a_satellite_with_no_records_answers_nothing_rather_than_a_row() {
+        assert!(parse_places("").is_empty());
+        assert!(parse_places("bash: line 1: stat: command not found\n").is_empty());
     }
 }

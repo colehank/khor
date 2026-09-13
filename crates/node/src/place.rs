@@ -126,13 +126,31 @@ pub fn checkout_root(dir: &Path) -> Option<PathBuf> {
 pub fn shorten(path: &Path) -> String {
     let shown = path.display().to_string();
     let Some(home) = std::env::home_dir() else { return shown };
-    let home = home.display().to_string();
+    shorten_under(&shown, &home.display().to_string())
+}
+
+/// [`shorten`] with the home handed in.
+///
+/// **Split because whose home a path is under is a fact about the
+/// machine holding it.** A satellite's rows are shortened with the
+/// satellite's home, read over the same ssh that read the rows
+/// (`crate::satellite::places`); shortening them here would write `~`
+/// where the *sponsor's* home happens to match and leave the
+/// satellite's own home spelled out in full — a row that is wrong in
+/// both directions at once.
+///
+/// An empty home shortens nothing, which is the honest answer when the
+/// far side did not say.
+pub fn shorten_under(shown: &str, home: &str) -> String {
+    if home.is_empty() {
+        return shown.to_owned();
+    }
     if shown == home {
         return "~".to_owned();
     }
     match shown.strip_prefix(&format!("{home}/")) {
         Some(rest) => format!("~/{rest}"),
-        None => shown,
+        None => shown.to_owned(),
     }
 }
 
@@ -148,24 +166,45 @@ pub fn shorten(path: &Path) -> String {
 /// Newest first, and ties broken by path so two machines listing the
 /// same history print it in the same order.
 pub fn fold(seen: impl IntoIterator<Item = (PathBuf, u32, i64)>) -> Vec<Place> {
-    let mut by: std::collections::HashMap<PathBuf, (u32, i64)> = std::collections::HashMap::new();
-    for (dir, count, at) in seen {
-        let entry = by.entry(project_root(&dir)).or_insert((0, i64::MIN));
+    merge(seen.into_iter().filter_map(|(dir, count, at)| {
+        let root = project_root(&dir);
+        if !root.is_dir() {
+            return None;
+        }
+        // Asked of the root rather than remembered from the walk that
+        // produced it: several cwds fold into one root, and they would
+        // not all have to agree.
+        let checkout = checkout_root(&root).as_deref() == Some(root.as_path());
+        Some((root.display().to_string(), count, at, checkout))
+    }))
+}
+
+/// The half of [`fold`] that touches no disk: rooted rows in, one row
+/// per root out, newest first.
+///
+/// **Split because a satellite's rows are rooted somewhere else.**
+/// Rooting a directory means asking whether `.git` is above it and
+/// whether the root still exists, and for a machine only ssh can reach
+/// both questions are answered over there (`crate::satellite::places`).
+/// What must not be answered twice is how duplicates combine and how
+/// the list is ordered — a satellite's list sorted by another rule
+/// would be the same landing painting two orders, and the one being
+/// read would depend on which machine a row came from.
+pub fn merge(rooted: impl IntoIterator<Item = (String, u32, i64, bool)>) -> Vec<Place> {
+    let mut by: std::collections::HashMap<String, (u32, i64, bool)> =
+        std::collections::HashMap::new();
+    for (root, count, at, checkout) in rooted {
+        let entry = by.entry(root).or_insert((0, i64::MIN, false));
         entry.0 += count;
         entry.1 = entry.1.max(at);
+        // **Any yes wins**, and it cannot disagree with itself: the
+        // flag is a fact about the root, and every row carrying one
+        // root read it from the same place.
+        entry.2 |= checkout;
     }
     let mut out: Vec<Place> = by
         .into_iter()
-        .filter(|(root, _)| root.is_dir())
-        .map(|(root, (sessions, last_ms))| Place {
-            // Asked of the root rather than remembered from the walk
-            // that produced it: several cwds fold into one root, and
-            // they would not all have to agree.
-            checkout: checkout_root(&root).as_deref() == Some(root.as_path()),
-            path: root.display().to_string(),
-            sessions,
-            last_ms,
-        })
+        .map(|(path, (sessions, last_ms, checkout))| Place { checkout, path, sessions, last_ms })
         .collect();
     out.sort_by(|a, b| b.last_ms.cmp(&a.last_ms).then_with(|| a.path.cmp(&b.path)));
     out

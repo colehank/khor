@@ -1367,30 +1367,25 @@ impl Node {
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Dir { path: at, entries, truncated })
             }
+            Request::SatWorkspaces { sat } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                // Off the reactor with SatLs, for SatLs's reason: one
+                // ssh dial and a walk over that machine's records.
+                let places =
+                    tokio::task::spawn_blocking(move || crate::satellite::places(&host))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::Workspaces { workspaces: places })
+            }
             Request::SatFetchPath { sat, path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
                 let host = self.my_satellite_host(&sat)?;
-                // Staged once per pull, on the first slice: one scp per
-                // file, then the ordinary local slice loop — a per-slice
-                // ssh would make a 100MB pull four hundred dials. The
-                // staging name is content-addressed by (sat, path), so a
-                // second pull of the same file re-stages over the same
-                // spot and PathSlice's own change contract (total/at_ms
-                // moving = start over) covers the swap.
-                let staged = self.sat_staging_path(&sat, &path)?;
-                if offset == 0 || !staged.exists() {
-                    let (h, p, s) = (host, path, staged.clone());
-                    tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &s))
-                        .await
-                        .map_err(|e| e.to_string())??;
-                }
-                let staged_str = staged.display().to_string();
-                let (total, at_ms, bytes) =
-                    tokio::task::spawn_blocking(move || crate::files::read_slice(&staged_str, offset))
-                        .await
-                        .map_err(|e| e.to_string())??;
+                let (total, at_ms, bytes) = self.sat_slice(&sat, &host, &path, offset).await?;
                 Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
             }
             Request::FetchPath { path, offset } => {
@@ -1426,6 +1421,42 @@ impl Node {
     /// Where a satellite pull stages on the sponsor: one spot per
     /// (satellite, path), content-addressed so a re-pull lands on the
     /// same file and the previous copy is simply replaced.
+    /// One slice of a satellite's file, off a copy staged on this
+    /// machine.
+    ///
+    /// Staged once per pull, on the first slice: one scp per file, then
+    /// the ordinary local slice loop — a per-slice ssh would make a
+    /// 100MB pull four hundred dials. The staging name is
+    /// content-addressed by `(sat, path)`, so a second pull of the same
+    /// file re-stages over the same spot and `PathSlice`'s own change
+    /// contract (total/at_ms moving = start over) covers the swap.
+    ///
+    /// **Two callers, and that is the point** (卫星工作区批): the
+    /// sponsor answering [`Request::SatFetchPath`] for somebody else,
+    /// and the sponsor reading its own satellite's file for its own
+    /// screen. They were one arm and a copy of it until the second
+    /// caller existed; a staging rule written twice is two rules for
+    /// where a file lands.
+    async fn sat_slice(
+        &self,
+        sat: &str,
+        host: &str,
+        path: &str,
+        offset: u64,
+    ) -> Result<(u64, u64, Vec<u8>), String> {
+        let staged = self.sat_staging_path(sat, path)?;
+        if offset == 0 || !staged.exists() {
+            let (h, p, s) = (host.to_owned(), path.to_owned(), staged.clone());
+            tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &s))
+                .await
+                .map_err(|e| e.to_string())??;
+        }
+        let staged_str = staged.display().to_string();
+        tokio::task::spawn_blocking(move || crate::files::read_slice(&staged_str, offset))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
     fn sat_staging_path(&self, sat: &str, path: &str) -> Result<std::path::PathBuf, String> {
         let dir = self.root().join(".khor").join("satpull");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -2043,6 +2074,40 @@ impl Node {
         if home == self.device() {
             return Ok(self.workspaces_shown());
         }
+        // **A satellite's list routes to its sponsor** (卫星工作区批),
+        // the road `Ls` and `FetchPath` already take: nothing can dial
+        // a satellite — its row carries no addresses on purpose — so
+        // asking it directly is a frame that goes nowhere and comes
+        // back as「联系不上」about a machine that is perfectly
+        // reachable over ssh. On the sponsor itself there is no wire to
+        // use at all.
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        if let Some(sp) = target.sponsor.clone() {
+            let sat = target.id.clone();
+            if sp == self.device_str() {
+                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                return tokio::task::spawn_blocking(move || crate::satellite::places(&host))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            let sponsor = self
+                .devices_loaded()?
+                .doc
+                .get(&sp)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            return match self.ask(ep, &sponsor.name, &Request::SatWorkspaces { sat }).await? {
+                Response::Workspaces { workspaces } => Ok(workspaces),
+                Response::Refused { why } if why.trim().is_empty() => {
+                    Err(msg::WORKSPACES_PREDATES.into())
+                }
+                Response::Refused { why } => Err(msg::workspaces_refused(why)),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
         match self.ask(ep, &channel, &Request::Workspaces).await? {
             Response::Workspaces { workspaces } => Ok(workspaces),
             // Wordless means the op is unknown over there; words mean
@@ -2536,6 +2601,37 @@ impl Node {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
             return crate::files::read_slice(path, offset);
+        }
+        // A satellite's file comes off its sponsor's staged copy, the
+        // road `pull_path` already takes (卫星工作区批). Without this
+        // the file view dialled a machine with no addresses and painted
+        // 联系不上 over a file ssh could read — so a satellite's
+        // workspace opened, its tree walked, and every file in it was
+        // unreadable.
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        if let Some(sp) = target.sponsor.clone() {
+            let sat = target.id.clone();
+            if sp == self.device_str() {
+                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                return self.sat_slice(&sat, &host, path, offset).await;
+            }
+            let sponsor = self
+                .devices_loaded()?
+                .doc
+                .get(&sp)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            let ask = Request::SatFetchPath { sat, path: path.to_owned(), offset };
+            return match self.ask(ep, &sponsor.name, &ask).await? {
+                Response::PathSlice { total, at_ms, bytes } => {
+                    Ok((total, at_ms, bytes.into_vec()))
+                }
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
         }
         match self
             .ask(ep, &channel, &Request::FetchPath { path: path.to_owned(), offset })

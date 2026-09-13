@@ -187,6 +187,23 @@ pub enum Request {
     /// the ordinary [`Response::PathSlice`], whose change contract
     /// (total/at_ms moving = start over) rides the staged copy.
     SatFetchPath { sat: String, path: String, offset: u64 },
+    /// [`Request::Workspaces`], off a satellite: the sponsor reads that
+    /// machine's own vendor records over ssh and answers the ordinary
+    /// [`Response::Workspaces`] (`crate::satellite::places`).
+    ///
+    /// **A new variant for [`Request::SatLs`]'s reason**, and the
+    /// module head's first question answered the same way: a `sat`
+    /// tail on `Workspaces` would lengthen that frame under every older
+    /// peer for the plain listings too, breaking the case with no
+    /// satellite in it. These words only ever go to a sponsor, and a
+    /// machine that sponsors anything runs code that knows them.
+    ///
+    /// **Rooted over there, merged here.** Whether a `.git` sits above
+    /// a recorded directory is a question about the satellite's disk,
+    /// so the sponsor cannot answer it and a sponsor that tried would
+    /// answer about its own — the same nine checkouts under somebody
+    /// else's name.
+    SatWorkspaces { sat: String },
     /// The asked machine's own day record (`khor_node::day`): what
     /// *its* list said about each of *its* sessions over the last 24
     /// hours. A reported row used to paint 没在看 for its whole strip
@@ -624,6 +641,7 @@ mod tests {
             (Request::CodeHere, &b"CodeHere"[..]),
             (Request::CodeServe { root: String::new() }, &b"CodeServe"[..]),
             (Request::CodeStop { root: String::new() }, &b"CodeStop"[..]),
+            (Request::SatWorkspaces { sat: String::new() }, &b"SatWorkspaces"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(
