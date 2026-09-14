@@ -89,6 +89,7 @@ import {
   type KnownAgent,
   type PlaceRow,
 } from "@/api";
+import { DirPicker } from "@/components/DirPicker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -128,6 +129,12 @@ export function NewSessionDialog({
   const [machines, setMachines] = useState<DeviceRow[]>([]);
   const [machine, setMachine] = useState("");
   const [dir, setDir] = useState("~");
+  /** The directory picker is up (工作区批②). A second dialog over this
+      one rather than a step inside it: the wizard asks four questions
+      and this is a detour from one of them, so it has to be able to end
+      without answering — and the answers already given must still be
+      here when it does. */
+  const [picking, setPicking] = useState(false);
   /** 常去的地方. Empty until the read lands, and empty is also the
       honest answer on a machine with no recorded conversations — there
       is nothing to say about it either way, so nothing is said. */
@@ -176,6 +183,7 @@ export function NewSessionDialog({
     // ever changes together with `open` (`App.openNewSession`).
     setMachine(picked);
     setDir("~");
+    setPicking(false);
     setPlaces([]);
     setTitle("");
     setKind("agent");
@@ -402,6 +410,7 @@ export function NewSessionDialog({
   const rows = answer !== null && answer.said === "sessions" ? answer.rows : [];
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-new-session-dialog>
         <DialogHeader>
@@ -744,12 +753,34 @@ export function NewSessionDialog({
           <div className="flex min-w-0 flex-col gap-1">
             <label className="flex min-w-0 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">{gui.new_session_dir}</span>
-              <Input
-                data-new-session-dir
-                value={dir}
-                onChange={(e) => setDir(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && create()}
-              />
+              {/* **The box, and a way to go and look** (工作区批②).
+                  Three roads to one field now — typing, 常去的地方
+                  below, and the picker — and that is not three ways to
+                  do one thing: the box reaches anything but needs the
+                  path known, the shortcuts reach what is already worked
+                  in, and the picker is the only one that can reach a
+                  directory nobody has been to yet, on a machine that is
+                  not this one. **Nothing is replaced**: the box is
+                  still where the answer lands, and everything else
+                  writes into it. */}
+              <div className="flex min-w-0 items-center gap-1">
+                <Input
+                  data-new-session-dir
+                  value={dir}
+                  onChange={(e) => setDir(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && create()}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  data-new-session-pick
+                  className="min-h-touch min-w-touch flex-none"
+                  onClick={() => setPicking(true)}
+                >
+                  {gui.dir_picker_open}
+                </Button>
+              </div>
             </label>
             {/* **常去的地方: the first question, answered before it is
                 asked.** A person walks into a directory and then starts
@@ -842,5 +873,25 @@ export function NewSessionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {/* **A sibling of the wizard, not a child of its content.** Both are
+        portalled, so what decides the stacking is Radix's dismissable
+        layer stack either way; a sibling keeps the wizard's own DOM the
+        shape every probe in `smoke` already walks.
+
+        **It answers into the box.** A directory on another machine is
+        two answers, so picking one that is not where the wizard is
+        pointed moves 在哪台 with it — otherwise the box would hold a
+        path that means nothing on the machine still selected, which is
+        exactly what the machine row's own reset exists to prevent. */}
+    <DirPicker
+      open={picking}
+      onOpenChange={setPicking}
+      machine={machine}
+      onPick={(pick) => {
+        if (pick.machine !== machine) setMachine(pick.machine);
+        setDir(pick.path);
+      }}
+    />
+    </>
   );
 }

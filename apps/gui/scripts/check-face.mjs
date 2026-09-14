@@ -1016,9 +1016,32 @@ try {
     { device: "d".repeat(64), machine: "elder", path: "/srv/elder/app", name: "app", pinned: false },
     { device: "c".repeat(64), machine: "", path: "/home/ghost/left", name: "left", pinned: false },
   ];
+  // **Stateful, because 4g adds a row and then looks for it.** The node
+  // answers this out of a replicated table, so a fixture that answered
+  // the same four rows after a successful `ws_add` would be asserting
+  // that the call returned — not that anything was declared.
   await page.route("**/workspaces", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(wsRows) }),
   );
+  const addedWs = [];
+  await page.route("**/ws_add", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    const machine = body.machine ?? "";
+    const path = body.path ?? "";
+    addedWs.push({ machine, path });
+    const shown = machine === "" ? "gate" : machine;
+    wsRows.push({
+      device: devs.find((d) => d.name === shown)?.id ?? "",
+      machine: shown,
+      path,
+      // The node derives this from the path (`khor_node::workspace::
+      // basename`); the fixture stands in for the node, so it derives
+      // it the same way rather than being handed a name.
+      name: path.split("/").filter(Boolean).pop() ?? path,
+      pinned: false,
+    });
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
   // Every machine the two per-row questions were asked about, so 4f can
   // assert about a question that was **never sent** — an assertion no
   // reading of the screen can make, because a nameless row's corners
@@ -1163,11 +1186,23 @@ try {
   await page.route("**/recent_visit", (r) =>
     r.fulfill({ contentType: "application/json", body: "null" }),
   );
-  await page.route("**/ls", (r) =>
-    r.fulfill({
+  // Every listing asked for, so 4g can assert that stepping into a
+  // directory really asked that machine about **that** path — the
+  // breadcrumb changing is what a person sees, and a breadcrumb can
+  // change over a listing nobody fetched.
+  const askedLs = [];
+  // **Echoes the path it was asked for**, empty meaning home (the `Ls`
+  // contract, `khor_node::files`). It answered `pin.path` for every
+  // path until 工作区批②, which no probe had noticed because none of
+  // them walked into a directory — and a picker that walks is a picker
+  // whose breadcrumb would have bounced straight back.
+  await page.route("**/ls", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    askedLs.push({ machine: body.machine ?? "", path: body.path ?? "" });
+    return r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        path: pin.path,
+        path: body.path === "" || body.path === undefined ? pin.path : body.path,
         entries: [
           { name: "src", dir: true, size: 0, at_ms: Date.now() },
           { name: "notes.md", dir: false, size: 1234, at_ms: Date.now() },
@@ -1180,8 +1215,8 @@ try {
         ],
         truncated: false,
       }),
-    }),
-  );
+    });
+  });
   // The settings dialog's body. **Without this the settings stop judged
   // one control — the dialog's own close button — while its name said
   // 「settings」**: `FaceSettings` paints nothing at all until
@@ -2866,13 +2901,191 @@ try {
         `the workspace bar has ${await plus.count()} 「+」 — a pane whose only way to add something ` +
           "is invisible reads as a pane that cannot (src/App.tsx)",
       );
-    } else if (await plus.isEnabled()) {
+    } else if (!(await plus.isEnabled())) {
       fail(
-        "the workspace 「+」 can be pressed and the picker it opens is 批② — a control that does " +
-          "nothing teaches people not to press controls (src/App.tsx)",
+        "the workspace 「+」 cannot be pressed — 批② built the picker behind it, and the empty " +
+          "state now points at it (src/App.tsx)",
       );
     }
   }
+
+  // ── 4g) the directory picker ──────────────────────────────────────
+  //
+  // **One dialog answers 哪台机器上的哪个目录, and two surfaces open
+  // it** (工作区批②): the workspace pane's 「+」 and the session
+  // wizard's 目录 box. It is the same act at both ends, so it is the
+  // same screen — and the two ends differ only in what they do with the
+  // answer.
+  //
+  // Claims:
+  //   i. the 「+」 opens it;
+  //  ii. it lists **directories only** — a picker offering files is
+  //      offering something it cannot answer with;
+  // iii. stepping into one really asks that machine about that path.
+  //      The breadcrumb alone would not prove it: a breadcrumb is drawn
+  //      from what this face believes, and what this face believes is
+  //      exactly what a picker that never asked would also show;
+  //  iv. confirming declares **what was picked**, and the row turns up;
+  //   v. the wizard's way in writes into its 目录 box — the box stays
+  //      the answer, the picker is a second road to it;
+  //  vi. and it is usable on a phone.
+  const dirPicker = async () => {
+    await press(rail("workspaces"));
+    await press("[data-ws-add]");
+    return until(5_000, async () => (await page.locator("[data-dir-picker]").count()) === 1);
+  };
+  if (!(await dirPicker())) {
+    fail("probe dead: the workspace 「+」 opened no picker (src/components/DirPicker.tsx)");
+  } else {
+    const rows = await page.$$eval("[data-dir-picker-row]", (els) =>
+      els.map((e) => e.getAttribute("data-dir-picker-row")),
+    );
+    // The fixture's listing is one directory among several files.
+    if (rows.length !== 1 || rows[0] !== "src") {
+      fail(
+        `the picker drew ${JSON.stringify(rows)} — only directories belong in a dialog whose whole ` +
+          "question is which directory (src/components/DirPicker.tsx)",
+      );
+    }
+    // A machine that is not the one it opened on, because the picker's
+    // reason to exist is that the directory may be somewhere else.
+    await press('[data-dir-picker-machine="peer"]');
+    await until(3_000, async () => askedLs.some((a) => a.machine === "peer"));
+    if (!askedLs.some((a) => a.machine === "peer" && a.path === "")) {
+      fail(
+        `picking a machine did not walk back to its home — asked ${JSON.stringify(askedLs.slice(-3))}, ` +
+          "and a path typed for one disk means nothing on another (src/components/DirPicker.tsx)",
+      );
+    }
+    const into = `${pin.path}/src`;
+    await press('[data-dir-picker-row="src"]');
+    const walked = await until(5_000, async () =>
+      askedLs.some((a) => a.machine === "peer" && a.path === into),
+    );
+    if (!walked) {
+      fail(
+        `stepping into a directory asked for ${JSON.stringify(askedLs.slice(-3))} and never for ` +
+          `${into} — the breadcrumb is drawn from what this face believes, so it moves either way ` +
+          "(src/components/DirPicker.tsx)",
+      );
+    }
+    const crumb = await page.$$eval("[data-dir-picker] [data-crumb]", (els) =>
+      els.map((e) => e.getAttribute("data-crumb")).pop(),
+    );
+    if (crumb !== into) {
+      fail(`…and the breadcrumb stayed at 「${crumb}」 rather than following (src/components/DirPicker.tsx)`);
+    }
+    const box = await page.locator("[data-dir-picker-path]").inputValue();
+    if (box !== into) {
+      fail(
+        `the box says 「${box}」 where the walk is ${into} — the box is what gets confirmed, so a ` +
+          "walk it did not follow is a click that picks somewhere else (src/components/DirPicker.tsx)",
+      );
+    }
+
+    await press("[data-dir-picker-take]");
+    const declared = await until(5_000, async () => addedWs.length > 0);
+    if (!declared) {
+      fail("probe dead: 「选这个目录」 declared nothing (src/App.tsx)");
+    } else if (addedWs[0].machine !== "peer" || addedWs[0].path !== into) {
+      fail(
+        `the 「+」 declared ${JSON.stringify(addedWs[0])} — it must be the pair the picker was ` +
+          "standing on, machine and path (src/App.tsx)",
+      );
+    }
+    console.log(`dir picker: rows ${JSON.stringify(rows)}, declared ${JSON.stringify(addedWs[0])}`);
+    // …and the list is re-read, which is the half a successful call
+    // does not prove: the pane bar lives above the list and the list
+    // owns every read it makes (`App`'s `wsAdded`).
+    const landed = await until(5_000, async () =>
+      (await page.locator("[data-ws-row] [data-ws-name]").allInnerTexts()).includes("src"),
+    );
+    if (!landed) {
+      fail(
+        "the declared workspace never turned up in the list — the pane bar declared it and nothing " +
+          "told the list to look again (src/App.tsx, src/views/WorkspacesList.tsx)",
+      );
+    }
+    if ((await page.locator("[data-dir-picker]").count()) !== 0) {
+      fail("the picker stayed open after it was answered (src/components/DirPicker.tsx)");
+    }
+  }
+
+  // The wizard's way in. **The box is still the answer** — every probe
+  // in `smoke` types into it — so this asserts the picker writes there
+  // rather than replacing it.
+  await press(rail("sessions"));
+  await press("[data-pane-new]");
+  await press('[data-new-item="new"]');
+  const wizard = await until(5_000, async () =>
+    (await page.locator("[data-new-session-pick]").count()) === 1,
+  );
+  if (!wizard) {
+    fail("probe dead: the wizard drew no way into the picker (src/views/NewSessionDialog.tsx)");
+  } else {
+    await press("[data-new-session-pick]");
+    if (!(await until(5_000, async () => (await page.locator("[data-dir-picker]").count()) === 1))) {
+      fail("the wizard's 「挑…」 opened no picker (src/views/NewSessionDialog.tsx)");
+    } else {
+      await press('[data-dir-picker-row="src"]');
+      await press("[data-dir-picker-take]");
+      const wrote = await until(
+        5_000,
+        async () => (await page.locator("[data-new-session-dir]").inputValue()) !== "~",
+      );
+      const said = await page.locator("[data-new-session-dir]").inputValue();
+      console.log(`wizard picked: ${said}`);
+      if (!wrote || !said.endsWith("/src")) {
+        fail(
+          `the picker answered into 「${said}」 — the 目录 box is where the answer lands and every ` +
+            "other road already writes there (src/views/NewSessionDialog.tsx)",
+        );
+      }
+    }
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+  }
+
+  // …and on a phone. The dialog's own shell handles the width
+  // (`ui/dialog` is `w-full max-w-[calc(100%-2rem)]`), so what is
+  // measured here is that the body still fits inside it: a picker whose
+  // list or footer hangs out of the sheet is one a finger cannot finish.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await wait(200);
+  if (!(await dirPicker())) {
+    fail("probe dead: the 「+」 opened no picker at 390 (src/components/DirPicker.tsx)");
+  } else {
+    const fit = await page.evaluate(() => {
+      const sheet = document.querySelector("[data-dir-picker]");
+      const box = sheet.getBoundingClientRect();
+      const take = sheet.querySelector("[data-dir-picker-take]").getBoundingClientRect();
+      const row = sheet.querySelector("[data-dir-picker-row]")?.getBoundingClientRect() ?? null;
+      const px = (n) => Math.round(n * 10) / 10;
+      return {
+        sheet: { w: px(box.width), h: px(box.height) },
+        over: px(Math.max(0, box.right - window.innerWidth) + Math.max(0, -box.left)),
+        takeIn: take.right <= box.right + 0.5 && take.bottom <= box.bottom + 0.5,
+        rowIn: row === null || (row.right <= box.right + 0.5 && row.left >= box.left - 0.5),
+        tall: px(Math.max(0, box.bottom - window.innerHeight)),
+      };
+    });
+    console.log(`dir picker at 390: ${JSON.stringify(fit)}`);
+    if (fit.over > 0 || fit.tall > 0) {
+      fail(
+        `the picker hangs ${fit.over} past the side and ${fit.tall} past the foot at 390 — a sheet ` +
+          "that does not fit the screen is one a finger cannot finish (src/components/DirPicker.tsx)",
+      );
+    }
+    if (!fit.takeIn || !fit.rowIn) {
+      fail(
+        `at 390 the picker's ${!fit.takeIn ? "confirm" : "listing"} sits outside its own sheet ` +
+          "(src/components/DirPicker.tsx)",
+      );
+    }
+    await page.keyboard.press("Escape");
+  }
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await wait(200);
 
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //

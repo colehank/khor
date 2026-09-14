@@ -49,6 +49,7 @@ function keyOf(r: { device: string; path: string }): string {
 
 export function WorkspacesList({
   devices,
+  reloadAt = 0,
   selected,
   onOpen,
 }: {
@@ -56,6 +57,11 @@ export function WorkspacesList({
       device table is where faces live. The list itself comes from the
       workspace table and not from here. */
   devices: DeviceRow[];
+  /** Bumped by the shell when **it** has changed the table — the pane
+      bar's 「+」 lives up there (`App`). Every other read this list
+      makes is its own; this is the one change it has no way to
+      notice. */
+  reloadAt?: number;
   /** The open workspace, or null. Two fields rather than one joined
       key, for `keyOf`'s reason. */
   selected: { device: string; path: string } | null;
@@ -97,7 +103,7 @@ export function WorkspacesList({
 
   useEffect(() => {
     void reload();
-  }, [reload, round]);
+  }, [reload, round, reloadAt]);
 
   useEffect(() => {
     if (hidden) return;

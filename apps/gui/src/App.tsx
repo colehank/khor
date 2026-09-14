@@ -12,6 +12,7 @@ import {
   pinDevice,
   pinSession,
   uninstallHooks,
+  wsAdd,
   type DeviceRow,
   type HooksState,
   type SessionRow,
@@ -26,6 +27,7 @@ import {
   IconQuota,
   IconSessions,
 } from "@/components/icons";
+import { DirPicker } from "@/components/DirPicker";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
@@ -98,7 +100,7 @@ type Mark = boolean;
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
     leaving a line is the wizard's first kind now (`NewSessionDialog`),
     one door for every kind of session. */
-type Sheet = "new" | "invite" | "join" | null;
+type Sheet = "new" | "invite" | "join" | "ws-add" | null;
 
 const POLL_MS = 2000;
 /**
@@ -479,6 +481,12 @@ export default function App() {
       sheet and never on its own, so a card's pick cannot outlive the
       opening it was made for. */
   const [newSessionOn, setNewSessionOn] = useState("");
+  /** Bumped when this shell has changed the workspace table from
+      outside the list — the pane bar's 「+」 lives up here, and the list
+      owns every read it makes. One number rather than a callback,
+      because what the list needs to know is 「something changed」 and
+      not what: it re-reads a local table, which costs nothing. */
+  const [wsAdded, setWsAdded] = useState(0);
   const openNewSession = useCallback((machine = "") => {
     setNewSessionOn(machine);
     setSheet("new");
@@ -1317,14 +1325,17 @@ export default function App() {
         // an empty "+" is worse than no "+": it is a menu that teaches
         // people not to open menus.
         actions={sessions ? sessionActions : landing === "devices" ? deviceActions : undefined}
-        // The workspace pane's one creation road. **Drawn and not
-        // pressable** (工作区批①): what it opens is the cross-machine
-        // directory picker, which is 批②, and a pane whose only way to
-        // add something is invisible reads as a pane that cannot. The
-        // empty state names the command that does work today.
+        // The workspace pane's one creation road: the cross-machine
+        // directory picker (工作区批②). It was drawn and unpressable
+        // for one batch, which is what the empty state used to point
+        // away from and now points at.
         create={
           landing === "workspaces"
-            ? { label: gui.ws_add, mark: "data-ws-add", disabled: true }
+            ? {
+                label: gui.ws_add,
+                mark: "data-ws-add",
+                onSelect: () => setSheet("ws-add"),
+              }
             : undefined
         }
       />
@@ -1345,6 +1356,7 @@ export default function App() {
         ) : landing === "workspaces" ? (
           <WorkspacesList
             devices={devices}
+            reloadAt={wsAdded}
             selected={openWs}
             onOpen={(r) => {
               // **The id stands in where there is no name.** A row whose
@@ -1521,6 +1533,20 @@ export default function App() {
           setLanding("sessions");
           sessionTabs.open(id);
           setScreen("detail");
+        }}
+      />
+      {/* 「+」 on the workspace pane. **The picker validates nothing and
+          this is where the validating happens**: `wsAdd` probes the
+          path on that machine and refuses in that machine's own words,
+          which the picker then shows without closing — the person is
+          still standing where they pressed, and the path they typed is
+          still in the box to fix (`components/DirPicker`). */}
+      <DirPicker
+        open={sheet === "ws-add"}
+        onOpenChange={(o) => setSheet(o ? "ws-add" : null)}
+        onPick={async (pick) => {
+          await wsAdd(pick.machine, pick.path);
+          setWsAdded((n) => n + 1);
         }}
       />
       <InviteDialog open={sheet === "invite"} onOpenChange={(o) => setSheet(o ? "invite" : null)} />

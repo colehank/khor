@@ -2082,27 +2082,24 @@ browser-tab = "浏览器"
 # loading frame.
 workspaces-empty = "还没有工作区"
 # Said under the empty list. **Names the one thing that puts a row
-# here**, and on 2026-09-14 that stopped being a derivation and became
-# a person: a workspace is declared (`khor_sync::workspaces`), so the
-# empty list is answered by saying how to declare one.
+# here**, and since 2026-09-14 that is a person rather than a
+# derivation: a workspace is declared (`khor_sync::workspaces`), so the
+# empty list is answered by pointing at the control that declares one.
 #
-# ⚠️ **Rewritten twice, both times because it named something untrue.**
-# Until 2026-09-11 it said 「在任意一台机器上打开一个目录」, an act khor
-# did not have; until 2026-09-14 it said 「在某台机器的 git 仓库里开一个
-# session」, which was true of the derived list and is now true of
-# nothing. **It names the command and not the 「+」 above it** because
-# the 「+」 does not work yet (批②, the cross-machine directory picker):
-# a sentence pointing at a disabled button is the same mistake a third
-# time.
-workspaces-how = "工作区是你自己定的:khor ws add <目录>"
+# ⚠️ **Three spellings, and the rule they teach is「name something that
+# works today」.** 「在任意一台机器上打开一个目录」 named an act khor did
+# not have; 「在某台机器的 git 仓库里开一个 session」 was true of the
+# derived list and then true of nothing; 「khor ws add」 was true but
+# pointed off the screen, because 批② had not built the picker behind
+# the 「+」 yet. It has now, so this points at the 「+」.
+workspaces-how = "按上面的 + 挑一台机器上的目录"
 # ⚠️ **`workspaces-sessions` was deleted here on 2026-09-14** (工作区
 # 批①). It counted the vendor records that folded into a derived row,
 # and the row is not derived any more — what a row says now is where it
 # is, what git says, and when it last changed.
 #
 # The 「+」 on the workspace pane. It opens the cross-machine directory
-# picker, which is 批②; until then it is drawn and cannot be pressed,
-# so the word is what it will do rather than what it does.
+# picker (工作区批②).
 ws-add = "加一个工作区"
 # On a row: take it off the list. **Says 移出 and not 删除** — the
 # directory is not touched (user, 2026-09-14), and 删除 beside a
@@ -2113,6 +2110,31 @@ ws-remove = "移出工作区"
 # why it is not `git-hunks` — that one counts the places inside one
 # file, and this counts the files.
 ws-marked = "{0} 个文件改过"
+# 跨机器目录选择器 (工作区批②), shared by the workspace 「+」 and the new
+# session wizard. **One dialog and one set of words**, because it
+# answers one question in both places — 哪台机器上的哪个目录 — and two
+# spellings of it would be two screens people have to learn.
+dir-picker = "挑一个目录"
+# The confirm. **Says 这个 rather than 好 or 确定**, because what is
+# being confirmed is the directory now in the box, and the box can hold
+# something the tree above it never listed: a person who typed a path
+# must be able to read the button as being about what they typed.
+dir-picker-take = "选这个目录"
+# The wizard's way in, beside the 目录 box. Short, because it sits on a
+# line with a text field and the field is the thing with the room.
+# **The box stays** — this is a second road to the same field, not a
+# replacement (`views/NewSessionDialog`).
+dir-picker-open = "挑…"
+# A directory with nothing under it the picker can step into. **Not
+# `empty-dir`**, which means 「there is nothing in here at all」: this
+# one is said over a directory that may be full of files, and only
+# directories are steppable here.
+dir-picker-none = "这里面没有下一层目录"
+# Over the path box at the foot. The tree is the shortcut; this is the
+# floor under it — any directory has to be reachable, including one
+# nobody can click to (a machine whose home is not above it, a path
+# somebody pasted from elsewhere).
+dir-picker-typed = "或者直接写路径"
 # A file whose bytes are not text. **Says what it is, not what went
 # wrong** — nothing went wrong, and 「打不开」 would read as a failure
 # of khor rather than as a fact about the file.
