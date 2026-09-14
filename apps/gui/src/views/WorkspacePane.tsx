@@ -31,9 +31,10 @@ import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
-import { ago, basename, word } from "@/words";
+import { ago, basename } from "@/words";
 import { BrowserPane } from "@/views/BrowserPane";
 import { DetailPane } from "@/views/DetailPane";
+import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
 import { FileView, type Draft } from "@/views/FileView";
 import type { Editor } from "@/gen/bindings/Editor";
@@ -44,6 +45,11 @@ export function WorkspacePane({
   here,
   root,
   rows,
+  channel,
+  onPin,
+  onClose,
+  pinFailed,
+  closeRefused,
   narrow,
   listOpen,
 }: {
@@ -63,6 +69,29 @@ export function WorkspacePane({
       this pane's subject, and the shell holds the list for its own
       reasons already. */
   rows: SessionRow[];
+  /** This workspace's machine as the **channel** name — what
+      `SessionRow.home` is spelled in — resolved from `device` by the
+      shell, which is where the device table lives (工作区批③).
+      `null` when the table has no row for that machine.
+
+      **Not `machine`, which is the name on the glass.** That one is
+      `DeviceInfo::shown()`: a label if somebody typed one, the channel
+      otherwise. Comparing it with `home` would go on matching until
+      the day a machine gets renamed and then silently match nothing —
+      the rule `App` already states where it decides whether a tree is
+      this machine's: compared by channel, never by the name on the
+      glass. */
+  channel: string | null;
+  /** The row actions, handed down from the shell unchanged (工作区批③).
+      **Not a reduced set**: the same verbs on the same rows, wherever
+      the rows are being read — a pin that works on one landing and not
+      the other is a rule nobody can hold. `App` owns the optimistic
+      state behind them, which is why they come from there rather than
+      being made here. */
+  onPin: (row: SessionRow) => Promise<void>;
+  onClose: (row: SessionRow) => Promise<void>;
+  pinFailed: Set<string>;
+  closeRefused: Map<string, string>;
   narrow: boolean;
   /** Whether the workspace list is holding a column of its own. The
       fifth column's existence is what decides the sessions' default,
@@ -265,10 +294,49 @@ export function WorkspacePane({
       .catch((e: unknown) => setCodeError(String(e instanceof Error ? e.message : e)));
   };
 
-  // A session belongs here if its own recorded place is this directory.
-  // Both sides are `khor_node::place::project_root` output, so this is
-  // one fact compared with itself and not two spellings being matched.
-  const mine = root === "" ? [] : rows.filter((r) => r.place === root);
+  // **A session belongs here if it is running on this machine, under
+  // this directory** (工作区批③). Both halves, because a workspace *is*
+  // the pair (docs/WORKSPACE.md): two machines hold `~/w/khor` and they
+  // are two workspaces, so a column that went by path alone would show
+  // the other one's work — and with the machine deliberately not
+  // repeated on these rows (`showVia`), nothing on screen would say so.
+  // That is this repo's oldest failure by name: a branch that cannot
+  // answer does not go blank, it becomes its neighbour.
+  //
+  // **The path half.** This directory itself, or anything below it.
+  // 「The same path」 was wrong in both directions against a folded
+  // `place` — a session started in `~/w/paper/data` reported
+  // `~/w/paper`, so a workspace at `~/w/paper/data` never saw it; and a
+  // workspace at a checkout root did collect everything under it, by
+  // the accident of the fold having stopped exactly there. `place` is
+  // the raw cwd now precisely so this question can be asked
+  // (`khor_node::live::place_of`). The separator is what keeps
+  // `/home/peer/workshop` out of `/home/peer/work`: a bare `startsWith`
+  // is the classic prefix collision, and sibling directories share
+  // prefixes all the time.
+  //
+  // **The machine half is a channel comparison**, resolved from the id
+  // by the shell (`channel`). A machine the device table has no row for
+  // leaves it `null` and this column empty — which is the honest
+  // answer: nothing can be shown to be running *here* when here cannot
+  // be named, and an empty column is a fact where a neighbour's rows
+  // would be a lie.
+  //
+  // Rows carry no group heading: the column *is* one directory on one
+  // machine, so there is nothing left to group by, and `SessionsList`
+  // draws a heading only where a row declares one.
+  const mine = useMemo(() => {
+    if (root === "" || channel === null) return [];
+    const under = root.endsWith("/") ? root : `${root}/`;
+    return rows
+      .filter(
+        (r) =>
+          r.home === channel &&
+          r.place !== null &&
+          (r.place === root || r.place.startsWith(under)),
+      )
+      .map((r) => ({ ...r, group: "" }));
+  }, [root, rows, channel]);
   const marks = useMemo(() => folded(root, git), [root, git]);
 
   return (
@@ -367,6 +435,7 @@ export function WorkspacePane({
             variant="ghost"
             size="icon"
             aria-label={gui.workspace_sessions}
+            data-ws-sessions-switch
             data-on={sessions}
             onClick={() => setSessions(!sessions)}
             className={cn("min-h-touch min-w-touch", !sessions && "text-muted-foreground")}
@@ -563,22 +632,43 @@ export function WorkspacePane({
                 to. The back arrow is the way out, the shell's own
                 gesture on its narrow face. */}
             {picked === null ? (
-              mine.map((r) => (
-                <button
-                  type="button"
-                  key={r.id}
-                  data-ws-session={r.id}
-                  onClick={() => setPicked(r.id)}
-                  className="flex min-h-touch w-full flex-col gap-0.5 border-b px-3 py-2 text-left hover:bg-accent"
-                >
-                  <span className="truncate text-aux text-foreground">{r.title}</span>
-                  <span className="text-aux text-muted-foreground">{word(r.word)}</span>
-                </button>
-              ))
+              // **The sessions list itself, not a second drawing of
+              // it** (工作区批③). This column used to hand-draw a title
+              // and a state word, which is three of the five questions
+              // missing and a second answer to 「what does a session
+              // row look like」 — the failure `PaneBar`'s head warns
+              // about, one list over. The only difference a project's
+              // column earns is that it does not repeat the machine
+              // (`showVia`), because the header above it just said it.
+              //
+              // Every row action comes with it. A column where a row
+              // can be opened but not pinned or closed would be the
+              // same rows with fewer verbs, which is the thing a person
+              // has to learn twice.
+              <SessionsList
+                rows={mine}
+                query=""
+                words={[]}
+                selected={picked}
+                onSelect={(r) => setPicked(r.id)}
+                onPin={onPin}
+                onClose={onClose}
+                pinFailed={pinFailed}
+                closeRefused={closeRefused}
+                showVia={false}
+              />
             ) : (
               <DetailPane
                 row={mine.find((r) => r.id === picked) ?? null}
-                narrow={narrow}
+                // **`narrow` is a fact about this column, not about the
+                // window** (工作区批③). `DetailPane` draws its back
+                // arrow and its own face only where 「the list is
+                // genuinely off-screen」 — which in a single column is
+                // true at every width, because this pane shows the list
+                // *or* the detail and never both. Passing the shell's
+                // `narrow` through left the wide face with a session
+                // open and no way out of it.
+                narrow
                 onBack={() => setPicked(null)}
               />
             )}

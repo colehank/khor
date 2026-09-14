@@ -2288,10 +2288,14 @@ pub struct Session {
     /// place at all — a conversation with another machine, a transfer —
     /// carry `None` for the same reason and are grouped as such.
     ///
-    /// **A project root and not a working directory**, decided at the
-    /// source: a shell that `cd`s inside its checkout has not changed
-    /// workspace, and the raw directory would say it had. Two depths of
-    /// one tree are one place.
+    /// **The working directory itself**, decided at the source
+    /// (`khor_node::live::place_of`). It was the enclosing checkout
+    /// until 工作区批③ (2026-09-15); a workspace is any directory a
+    /// person named now, and the pane that lists a project's sessions
+    /// asks 「which of these is running *under* this directory」 — a
+    /// question a folded answer cannot be asked. Whoever wants
+    /// something coarser folds it: a raw directory can always be
+    /// folded, a folded one cannot be unfolded.
     ///
     /// Wire: appended at the tail with a serde default, so an older
     /// peer's twelve-field frame still decodes — and its rows read as

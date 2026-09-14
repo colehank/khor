@@ -124,8 +124,50 @@ try {
     via: null,
     via_face: null,
     home: "gate",
+    // The row's own directory, raw (`khor_node::live::place_of` stopped
+    // folding it in 工作区批③). `null` is a session nobody placed.
+    place: null,
+    mux: false,
   });
-  const rows = [row(0, "idle"), row(1, "blocked")];
+  // **Four rows for the workspace column** (工作区批③), which belongs to
+  // **peer**'s `/home/peer/work`. Two belong; the other two are each
+  // wrong on exactly one axis, which is what makes either rule
+  // falsifiable on its own:
+  //
+  //   - `/home/peer/workshop` on peer — a sibling, not a child. A
+  //     `startsWith` with no separator files it under the project.
+  //   - `/home/peer/work` on **elder** — the same path on another
+  //     machine. A workspace is the pair (machine, directory), and
+  //     these rows deliberately do not repeat their machine
+  //     (`showVia`), so nothing on screen would say where this one is
+  //     really running.
+  // **`via` is set on these**, which is what lets the column's own
+  // claim be falsifiable: a row with nothing to say about a machine
+  // draws no `[data-via]` whether or not the column asked for one.
+  const wsRow = (n, word, place, kind, last, home) => ({
+    ...row(n, word),
+    id: `${kind}/ws-${n}`,
+    kind,
+    title: `ws-session-${n}`,
+    place,
+    last,
+    // **The channel name**, which is what `SessionRow.home` carries and
+    // what the column compares against — never the name on the glass
+    // (`views/WorkspacePane`'s `channel`).
+    home,
+    via: "peer",
+    via_face: null,
+  });
+  const rows = [
+    row(0, "idle"),
+    row(1, "blocked"),
+    wsRow(2, "idle", "/home/peer/work", "tui", "最近说的一句", "peer"),
+    // A shell session is one of the five-question rows like any other,
+    // drawn by the same component and not by a branch of its own.
+    wsRow(3, "busy", "/home/peer/work/src", "shell", "在跑", "peer"),
+    wsRow(4, "idle", "/home/peer/workshop", "tui", "隔壁", "peer"),
+    wsRow(5, "idle", "/home/peer/work", "tui", "别的机器上的同一个路径", "elder"),
+  ];
   const fill = (used, total) => ({ used, total });
   const devs = [
     {
@@ -3086,6 +3128,100 @@ try {
   }
   await page.setViewportSize({ width: 1400, height: 900 });
   await wait(200);
+
+  // ── 4h) the workspace's own sessions ──────────────────────────────
+  //
+  // **One project's column, drawn by the sessions list itself**
+  // (工作区批③). It used to hand-draw a title and a state word, which
+  // is three of the five questions missing and a second answer to
+  // 「what does a session row look like」.
+  //
+  // Claims:
+  //   i. a session belongs here when it is running on **this machine**
+  //      and **under** this directory. Both halves have their own
+  //      counter-example in the fixture, each wrong on one axis only:
+  //      `/home/peer/workshop` on peer (a sibling, not a child — the
+  //      prefix collision) and `/home/peer/work` on elder (the same
+  //      path, another machine — a workspace is the pair). Neither is
+  //      visible to a person reading the column, because these rows do
+  //      not repeat their machine;
+  //  ii. the rows are the list's rows — `data-title` and `[data-last]`,
+  //      not two spans this pane invented;
+  // iii. and they do **not** repeat the machine (`[data-via]`), which
+  //      the header above them already said;
+  //  iv. a shell session is a row like any other, not a branch;
+  //   v. pressing one opens it here, and there is a way back.
+  await press(rail("workspaces"));
+  await press("[data-ws-row]");
+  // Wide with the list pane open, the column starts collapsed — the
+  // fifth column's existence is what decides that (`WorkspacePane`).
+  if ((await page.locator("[data-ws-sessions]").count()) === 0) {
+    await press("[data-ws-sessions-switch]");
+  }
+  const column = await until(5_000, async () =>
+    (await page.locator("[data-ws-sessions] [data-row]").count()) > 0,
+  );
+  if (!column) {
+    fail("probe dead: the workspace drew no session column (src/views/WorkspacePane.tsx)");
+  } else {
+    const seen = await page.$$eval("[data-ws-sessions] [data-row]", (els) =>
+      els.map((e) => ({
+        title: e.getAttribute("data-title"),
+        last: e.querySelector("[data-last]")?.textContent?.trim() ?? null,
+        via: e.querySelector("[data-via]") !== null,
+      })),
+    );
+    console.log(`workspace sessions: ${JSON.stringify(seen)}`);
+    const titles = seen.map((r) => r.title).sort();
+    if (JSON.stringify(titles) !== JSON.stringify(["ws-session-2", "ws-session-3"])) {
+      fail(
+        `the workspace column holds ${JSON.stringify(titles)} — this workspace is ` +
+          "peer:/home/peer/work, so it is every session on **peer** under that directory and " +
+          "nothing else. ws-session-4 is peer:/home/peer/workshop, a sibling rather than a child; " +
+          "ws-session-5 is elder:/home/peer/work, the same path on another machine — and neither " +
+          "row says so on screen (src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (seen.some((r) => r.last === null || r.last === "")) {
+      fail(
+        `a row in the column said nothing of its last line (${JSON.stringify(seen)}) — these are the ` +
+          "sessions list's rows, and 最近一条 is one of the five questions (src/views/SessionsList.tsx)",
+      );
+    }
+    if (seen.some((r) => r.via)) {
+      fail(
+        "a row in the column repeats its machine — the header directly above it already said which " +
+          "machine this directory is on (src/views/SessionsList.tsx `showVia`)",
+      );
+    }
+    // The shell row is `shell/ws-3`; it must be one of the two, drawn
+    // by the same component rather than skipped or special-cased.
+    if ((await page.locator('[data-ws-sessions] [data-row="shell/ws-3"]').count()) !== 1) {
+      fail(
+        "the shell session is not in the column — a shell answers the same five questions as a " +
+          "conversation and is one row like any other (src/views/WorkspacePane.tsx)",
+      );
+    }
+    // …and pressing one opens it beside its own files, with a way back.
+    await press('[data-ws-sessions] [data-row="shell/ws-3"] [data-row-open]');
+    const opened = await until(5_000, async () =>
+      (await page.locator("[data-ws-sessions] [data-detail-header]").count()) === 1,
+    );
+    if (!opened) {
+      fail(
+        "pressing a row in the column opened nothing — the column is a place to work, not a list of " +
+          "what exists (src/views/WorkspacePane.tsx)",
+      );
+    } else {
+      await press("[data-ws-sessions] [data-back]");
+      const back = await until(5_000, async () =>
+        (await page.locator("[data-ws-sessions] [data-row]").count()) > 0,
+      );
+      if (!back) {
+        fail("…and there was no way back to the column (src/views/WorkspacePane.tsx)");
+      }
+    }
+  }
 
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //

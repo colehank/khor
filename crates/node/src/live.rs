@@ -61,9 +61,10 @@ pub struct Meta {
     /// `category`, and for the same reason.
     #[serde(default)]
     pub vendor_leaf: Option<String>,
-    /// The working directory khor started this session in, raw
-    /// (`khor_core::Session::place` is the folded answer). Written at
-    /// birth by whichever opener chose the directory, because that is
+    /// The working directory khor started this session in, raw — and
+    /// `khor_core::Session::place` now carries the same directory
+    /// unchanged (`place_of`). Written at birth by whichever opener
+    /// chose the directory, because that is
     /// the only moment anybody knows: a shell that has `cd`ed away
     /// cannot be asked where it began, and its project has not changed
     /// anyway.
@@ -74,20 +75,36 @@ pub struct Meta {
     pub place: Option<String>,
 }
 
-/// A recorded working directory as the row carries it: folded up to
-/// the project it belongs to (`crate::place`), and `None` when there
-/// was nothing recorded.
+/// A recorded working directory as the row carries it: **the directory
+/// itself**, and `None` when there was nothing recorded.
 ///
-/// **The fold happens here, once.** Adaptors report the directory they
-/// read; whether two of them are the same workspace is a judgment, and
-/// a judgment made in three adaptors is three judgments that can
-/// disagree.
+/// # Why this does not fold, since 工作区批③
+///
+/// It used to answer the enclosing checkout (`crate::place::
+/// project_root`), and the reason written down was that folding in
+/// three adaptors is three judgments that can disagree. That is still
+/// true, and the fold is still made exactly once — in
+/// [`crate::Node::places`], for the one list that wants it.
+///
+/// What changed is who reads this field. A workspace is now any
+/// directory a person named (docs/WORKSPACE.md), and the workspace pane
+/// asks 「which sessions are running **under** this directory」. A
+/// folded answer is wrong in both directions for that question: a
+/// session started in `~/w/paper/data` reports `~/w/paper` and misses a
+/// workspace at `~/w/paper/data`, while a workspace at the checkout
+/// root collects every session under it — which looks right, and is a
+/// coincidence, because the fold and the subtree agree only when the
+/// fold happened to stop at that directory.
+///
+/// So this says where the session actually is, and whoever needs
+/// something coarser derives it. A raw cwd can always be folded; a
+/// folded one cannot be unfolded.
 fn place_of(cwd: Option<&str>) -> Option<String> {
     let cwd = cwd?;
     if cwd.is_empty() {
         return None;
     }
-    Some(crate::place::project_root(std::path::Path::new(cwd)).display().to_string())
+    Some(cwd.to_owned())
 }
 
 /// Which address a terminal should connect to after
@@ -1461,13 +1478,18 @@ mod tests {
         pid
     }
 
-    /// **Where khor started a session reaches its row, folded up to the
-    /// project** (工作区批). Three claims in one walk, because they are
-    /// one path: the note is written at birth, the fold happens once at
-    /// the row, and a session nobody placed carries `None` rather than
-    /// a neighbour's answer.
+    /// **Where khor started a session reaches its row, as the directory
+    /// itself** (工作区批, the fold taken back out in 批③). Three claims
+    /// in one walk, because they are one path: the note is written at
+    /// birth, it arrives unfolded, and a session nobody placed carries
+    /// `None` rather than a neighbour's answer.
+    ///
+    /// The subdirectory is the assertion, and the repo above it is
+    /// there to make it one: `place` answered the checkout until
+    /// 2026-09-15, and a tree with no `.git` in it would pass either
+    /// way (`place_of` on why it stopped folding).
     #[test]
-    fn a_session_carries_the_project_it_was_started_in() {
+    fn a_session_carries_the_directory_it_was_started_in() {
         let root = tmp("place");
         let k = kind_at(&root);
         let repo = root.join("repo");
@@ -1492,8 +1514,8 @@ mod tests {
         };
         assert_eq!(
             of(&placed),
-            Some(repo.display().to_string()),
-            "the row says the project, not the subdirectory it started in",
+            Some(deep.display().to_string()),
+            "the row says where it started, not the checkout above it",
         );
         assert_eq!(of(&bare), None, "and a session nobody placed is not filed under a neighbour");
 
@@ -1501,7 +1523,7 @@ mod tests {
         // move a session that already has a birthplace.
         k.learn_place(&placed, &root.join("elsewhere")).unwrap();
         assert_eq!(k.rows(|_| 0).iter().find(|r| r.id == placed).unwrap().place,
-            Some(repo.display().to_string()), "a birth fact is not corrected later");
+            Some(deep.display().to_string()), "a birth fact is not corrected later");
     }
 
     /// **A row from before places were recorded reads its place off its
@@ -1542,7 +1564,11 @@ mod tests {
 
         let rows = k.rows(|_| 0);
         let of = |id: &SessionId| rows.iter().find(|r| &r.id == id).expect("lists").place.clone();
-        assert_eq!(of(&placed), Some(repo.display().to_string()), "read off the transcript, folded");
+        assert_eq!(
+            of(&placed),
+            Some(repo.join("src").display().to_string()),
+            "read off the transcript, and off it unchanged",
+        );
         assert_eq!(of(&bare), None, "a transcript that never said where places nothing");
     }
 

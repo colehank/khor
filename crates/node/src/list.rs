@@ -238,10 +238,16 @@ mod tests {
         rows.iter().map(|r| r.view.session.id.0.clone()).collect()
     }
 
-    /// **By place**, the 工作区 axis. Enumerated rather than asserted as
+    /// **By place**, the 地点 axis. Enumerated rather than asserted as
     /// a property, for the reason the state test gives: "grouped
     /// somehow" is true of an implementation that puts everything in
     /// one group.
+    ///
+    /// **One group per directory, not per project** (工作区批③): the
+    /// field stopped folding to the enclosing checkout, so two depths
+    /// of one repository are two headings here. That is the price of a
+    /// field a subtree question can be asked of, and it is paid on the
+    /// axis rather than in the data (`crate::live::place_of`).
     ///
     /// The rows with no place go **last**, and that is the whole point
     /// of the second band: a path sorts by its leading slash, so a
@@ -249,7 +255,7 @@ mod tests {
     /// the list — the same failure the unnamed-machine and unknown-
     /// category groups have their bands for.
     #[test]
-    fn place_groups_by_project_and_puts_the_placeless_last() {
+    fn place_groups_by_directory_and_puts_the_placeless_last() {
         let at = |id: &str, at_ms: u64, place: Option<&str>| {
             let mut v = view(id, at_ms, State::Idle, None, 1);
             v.session.place = place.map(str::to_owned);
@@ -269,7 +275,7 @@ mod tests {
         assert_eq!(
             rows.iter().map(|r| r.group.as_str()).collect::<Vec<_>>(),
             vec!["at:/w/khor", "at:/w/khor", "at:/w/tokens", "at:"],
-            "one group per project, alphabetical, and the placeless last",
+            "one group per directory, alphabetical, and the placeless last",
         );
         assert_eq!(
             ids(&rows),

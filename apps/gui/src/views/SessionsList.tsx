@@ -166,6 +166,7 @@ export function SessionsList({
   onClose,
   pinFailed,
   closeRefused,
+  showVia = true,
 }: {
   rows: SessionRow[];
   query: string;
@@ -183,6 +184,14 @@ export function SessionsList({
   pinFailed: Set<string>;
   /** What the node said when it would not close a row, by row id. */
   closeRefused: Map<string, string>;
+  /** Whether a row says which machine it came through (工作区批③).
+      **Off where the surface already said it once**: the workspace
+      pane's column is one machine's directory, named in the header
+      directly above it, and a face repeated on every row underneath is
+      the same fact said twice — which docs/UX.md spends on nothing.
+      On by default, because the sessions landing gathers rows from the
+      whole mesh and there the machine is the thing the eye scans by. */
+  showVia?: boolean;
 }) {
   /** What the node said when it would not change a row's form, by row
       id. Owned here rather than in `App` because nothing else needs
@@ -599,7 +608,7 @@ export function SessionsList({
                     {r.unread}
                   </span>
                 )}
-                {r.via && (
+                {showVia && r.via && (
                   <span data-via={r.via} className="flex flex-none">
                     <MachineAvatar face={r.via_face} className="size-kind-mark" />
                   </span>

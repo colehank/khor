@@ -1782,9 +1782,12 @@ mod tests {
     /// on a machine with hooks installed grouped as 不在任何地方 while
     /// saying where it was on every line.
     ///
-    /// Folded up to the checkout, like every other source — a hook
-    /// firing from `repo/apps/gui` is in `repo` — and write-once: a
-    /// later event from somewhere else does not move the row.
+    /// **The directory the payload names, unfolded** (工作区批③): a
+    /// hook firing from `repo/apps/gui` is in `repo/apps/gui`, because
+    /// that is where it is and the workspace pane asks 「what is running
+    /// under this directory」 (`crate::live::place_of`). Write-once
+    /// either way: a later event from somewhere else does not move the
+    /// row.
     #[test]
     fn a_hook_observed_session_is_placed_where_its_payload_says() {
         let root = std::env::temp_dir().join(format!("khor-hookplace-{}", std::process::id()));
@@ -1802,11 +1805,15 @@ mod tests {
 
         hook(&k, &payload("SessionStart", &repo.join("apps/gui"))).unwrap();
         let row = &k.rows(|_| 0)[0];
-        assert_eq!(row.place, Some(repo.display().to_string()), "the checkout, not the subdirectory");
+        assert_eq!(
+            row.place,
+            Some(repo.join("apps/gui").display().to_string()),
+            "where the hook fired, not the checkout above it",
+        );
 
         // A later event from elsewhere: the birthplace stands.
         hook(&k, &payload("UserPromptSubmit", &root.join("elsewhere"))).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].place, Some(repo.display().to_string()));
+        assert_eq!(k.rows(|_| 0)[0].place, Some(repo.join("apps/gui").display().to_string()));
 
         // **The control arm**: a payload with no cwd places nothing,
         // rather than the process's own directory or the last one seen.

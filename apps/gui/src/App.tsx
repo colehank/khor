@@ -1469,6 +1469,20 @@ export default function App() {
         here={devices.some((d) => d.me && d.name === openWs.machine)}
         root={openWs.path}
         rows={rows}
+        // **Resolved here, from the id**, because the device table is
+        // the shell's and a second copy of the id→channel lookup is a
+        // second copy that can disagree (`SessionRow::home` is derived
+        // in the node for exactly that reason). `null` where the table
+        // has no row for this machine — a workspace outlives its
+        // machine leaving the table (工作区批①), and its column then
+        // says nothing rather than somebody else's work.
+        channel={devices.find((d) => d.id === openWs.device)?.name ?? null}
+        // The same four the sessions landing gets: one project's column
+        // is the same rows with the same verbs (工作区批③).
+        onPin={onPinSession}
+        onClose={onCloseSession}
+        pinFailed={pinFailed}
+        closeRefused={closeRefused}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
       />
