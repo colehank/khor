@@ -224,6 +224,226 @@ pub fn landing(remote_path: &str, dir: &std::path::Path) -> Result<Landing, Stri
     Ok(Landing { part: dir.join(format!(".khor-pull-{name}")), dest })
 }
 
+/// **Whether this machine has a recycle bin to put things in.**
+///
+/// A compile-time fact, and it is answered here rather than guessed at
+/// the screen: a face that branched on `navigator.platform` would be
+/// deciding what khor's own binary can do from the outside, and it
+/// would be wrong on exactly the builds where it matters (the same
+/// binary runs the desktop app and the web face a phone opens).
+///
+/// The three desktops have one; iOS and Android do not, and khor ships
+/// to all five (docs/KHOR.md).
+pub const TRASH_HERE: bool =
+    cfg!(any(target_os = "macos", target_os = "windows", target_os = "linux"));
+
+/// Takes a path off this machine's disk: into the recycle bin when
+/// `trash` is asked for and this machine has one, straight off it
+/// otherwise.
+///
+/// # The recycle bin is a dependency, and here is what it cost
+///
+/// Three candidates, each measured as a `Cargo.lock` diff rather than
+/// estimated (the repo's rule for a new package):
+///
+/// 1. **`trash` 5.2.9 (MIT) — +2 packages** (`trash`, and `urlencoding`
+///    behind it; both MIT). macOS, Windows and Linux, one API.
+/// 2. **`objc2-foundation`'s `NSFileManager` — +0 packages**, because
+///    tauri already puts it in the tree. **macOS only**: Windows and
+///    Linux would fall back to deleting outright.
+/// 3. **Hand-rolled** — the freedesktop `.trashinfo` dance on Linux and
+///    `IFileOperation` on Windows. Zero packages and a specification
+///    implemented by hand, which is what「尽量用成熟库,不自写」(the
+///    user, 2026-08-16) exists to refuse.
+///
+/// (1), because the criterion is covering the three desktops and two
+/// small MIT crates is the cheapest way to. Saving them would mean
+/// telling somebody on Windows that 删除 is 不可恢复 when it did not
+/// have to be — an irreversible act is the last place to economise.
+///
+/// # A directory goes whole
+///
+/// Both kinds are taken, and a directory takes what is under it — the
+/// same thing VS Code's 删除 does, and the reason the sentence a person
+/// confirms says so out loud (`khor_catalog::gui::file_remove_dir`).
+///
+/// **A symlink is taken as itself, never followed.** `remove_file`
+/// unlinks the link; walking through it would delete somebody else's
+/// tree from a name that merely pointed at it.
+pub fn remove(path: &str, trash: bool) -> Result<(), String> {
+    if !std::path::Path::new(path).is_absolute() {
+        return Err(msg::path_not_absolute(path));
+    }
+    let p = std::path::Path::new(path);
+    // `symlink_metadata`, not `metadata`: a link whose target is gone
+    // is still a name on this disk and still removable, and a link
+    // whose target is a directory must not be recursed into.
+    let meta = std::fs::symlink_metadata(p).map_err(|e| msg::cant_remove(path, e))?;
+    if trash && TRASH_HERE {
+        return trash_it(p);
+    }
+    if meta.is_dir() {
+        std::fs::remove_dir_all(p).map_err(|e| msg::cant_remove(path, e))
+    } else {
+        std::fs::remove_file(p).map_err(|e| msg::cant_remove(path, e))
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn trash_it(p: &std::path::Path) -> Result<(), String> {
+    trash::delete(p).map_err(|e| msg::cant_remove(&p.display(), e))
+}
+
+/// Unreachable where there is no recycle bin — [`TRASH_HERE`] is false
+/// there and [`remove`] never asks. Present so the module compiles on
+/// the two platforms that have none.
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn trash_it(p: &std::path::Path) -> Result<(), String> {
+    Err(msg::cant_remove(&p.display(), "no trash on this platform"))
+}
+
+#[cfg(test)]
+mod remove_tests {
+    use super::*;
+
+    /// A scratch tree that takes itself away, however the test leaves
+    /// (工作区批①'s `Scratch` — an assertion panics past a cleanup
+    /// written at the end, a `Drop` does not).
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn tmp(tag: &str) -> Scratch {
+        let p = std::env::temp_dir().join(format!("khor-rm-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        Scratch(p)
+    }
+
+    /// A file goes, and a path that is not there is refused rather than
+    /// reported as a success — 「it is gone either way」 is true and is
+    /// not what somebody pressing 删除 asked.
+    #[test]
+    fn a_file_goes_and_a_path_that_is_not_there_is_refused() {
+        let dir = tmp("file");
+        let f = dir.join("a.rs");
+        std::fs::write(&f, "x").unwrap();
+
+        remove(f.to_str().unwrap(), false).unwrap();
+        assert!(!f.exists());
+
+        let err = remove(f.to_str().unwrap(), false).expect_err("nothing there any more");
+        assert!(err.contains("a.rs"), "the refusal names the path: {err}");
+        // …and a relative path is refused before anything is touched,
+        // for the reason `Ls` demands an absolute one.
+        assert!(remove("a.rs", false).is_err(), "a relative path names nowhere");
+    }
+
+    /// **A directory goes whole**, which is the claim the confirmation
+    /// sentence makes out loud. The control is the file beside it: a
+    /// `remove_dir` that only took empty directories would fail here
+    /// rather than take too much, and both are wrong in ways worth
+    /// telling apart.
+    #[test]
+    fn a_directory_takes_what_is_under_it() {
+        let dir = tmp("dir");
+        let sub = dir.join("src/deep");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("one.rs"), "x").unwrap();
+        let keep = dir.join("kept.rs");
+        std::fs::write(&keep, "x").unwrap();
+
+        remove(dir.join("src").to_str().unwrap(), false).unwrap();
+        assert!(!dir.join("src").exists(), "the directory and everything under it");
+        assert!(keep.exists(), "and nothing beside it");
+    }
+
+    /// **A symlink is taken as itself.** Following it would delete
+    /// somebody else's tree from a name that merely pointed at it —
+    /// the one mistake here that cannot be undone from inside khor.
+    ///
+    /// **What holds each half is worth writing down, because they are
+    /// not the same thing.** The first arm is std's: `remove_dir_all`
+    /// refuses to walk through a symlink, so swapping this module's
+    /// `symlink_metadata` for `metadata` does *not* break it — tried,
+    /// and it stayed green. The second arm is this module's own: a
+    /// dangling link is a name that really is on the disk and really
+    /// can be removed, and `metadata` cannot even see it, so a
+    /// following `stat` refuses to delete something that is plainly
+    /// there. That is the arm that goes red if the call is changed.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_goes_and_what_it_pointed_at_stays() {
+        let dir = tmp("link");
+        let real = dir.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("keep.rs"), "x").unwrap();
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        remove(link.to_str().unwrap(), false).unwrap();
+        assert!(!link.exists(), "the link is gone");
+        assert!(real.join("keep.rs").exists(), "and what it pointed at is not");
+
+        // A link pointing at nothing: still a name, still removable.
+        let dangling = dir.join("dangling");
+        std::os::unix::fs::symlink(dir.join("never-existed"), &dangling).unwrap();
+        remove(dangling.to_str().unwrap(), false).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&dangling).is_err(),
+            "a link with nothing behind it is a name on this disk and comes off it",
+        );
+    }
+
+    /// **The recycle bin really receives it**, and the landing is what
+    /// is asserted.
+    ///
+    /// 「It left the workspace」 alone would be true of a plain delete
+    /// as well, which is the one thing this road must not turn out to
+    /// be — the whole promise of 删到废纸篓 is that it can be undone.
+    /// So on macOS the file is looked for in `~/.Trash` and taken back
+    /// out again; this is also why the name carries the pid, so a real
+    /// person's bin is never the thing being read or cleaned.
+    ///
+    /// Windows and Linux compile the same road and are not checked
+    /// here: the shell's recycle bin has no path to look in, and the
+    /// freedesktop one is under a data directory this test would have
+    /// to re-derive — a second implementation of the thing being
+    /// tested. They keep the weaker half (it left), said plainly rather
+    /// than dressed up.
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn the_recycle_bin_is_where_a_trashed_file_goes() {
+        let dir = tmp("trash");
+        let name = format!("khor-trash-probe-{}.txt", std::process::id());
+        let f = dir.join(&name);
+        std::fs::write(&f, "x").unwrap();
+
+        remove(f.to_str().unwrap(), true).unwrap();
+        assert!(!f.exists(), "it left the workspace");
+        assert!(TRASH_HERE, "…and this machine was asked for the bin, not the fallback");
+
+        #[cfg(target_os = "macos")]
+        {
+            let landed = std::env::home_dir().expect("a home directory").join(".Trash").join(&name);
+            assert!(landed.is_file(), "it is in the bin at {}", landed.display());
+            let _ = std::fs::remove_file(&landed);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

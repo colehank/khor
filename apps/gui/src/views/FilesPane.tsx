@@ -22,7 +22,17 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
-import { fetchDirPins, fetchLs, pinDir, pullFile, type DirListing } from "@/api";
+import {
+  fetchDirPins,
+  fetchLs,
+  fetchTrashHere,
+  pinDir,
+  pullFile,
+  removePath,
+  type DirListing,
+} from "@/api";
+import { neverAsks, RemoveDialog, type RemoveKind } from "@/components/RemoveDialog";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -75,9 +85,11 @@ export function FilesPane({
       are different facts: `onPath` fires for an *intention* that may
       still be refused, this one only after a listing came back. */
   onLanded: (path: string) => void;
-  /** A file was picked. The tree says which; what happens to it belongs
-      to whoever holds this pane (工作区批2). */
-  onFile: (path: string) => void;
+  /** A file was picked, or the open one went away (`null`, 工作区批④
+      — deleting the file somebody is reading has to take the reading
+      with it). The tree says which; what happens to it belongs to
+      whoever holds this pane (工作区批2). */
+  onFile: (path: string | null) => void;
   /** Which file is open, so the row can say so. Absolute, or null. */
   open: string | null;
   /** Whether the machine this tree is reading is the one khor is
@@ -110,6 +122,30 @@ export function FilesPane({
   // This machine's pinned paths. Refreshed with the pins call itself:
   // each toggle answers by re-asking, so the mark never guesses.
   const [pinned, setPinned] = useState<Set<string>>(new Set());
+  /** Bumped when this pane changed the directory under itself, which is
+      the one change its own effect cannot notice: the path did not
+      move, so nothing in the deps would. */
+  const [again, setAgain] = useState(0);
+  /** What is waiting to be deleted, and what the node said if it would
+      not. `null` when nothing is being asked about. */
+  const [going, setGoing] = useState<{ path: string; kind: RemoveKind } | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+  /** Whether the machine khor runs on has a recycle bin. **Asked, not
+      guessed**: this page is also served to phones looking at a
+      desktop's face (`api.ts` `fetchTrashHere`). Starts false, which is
+      the safe direction — 「直接删」 said of something that turns out to
+      be recoverable costs a person nothing; the other way round costs
+      them a file. */
+  const [trashHere, setTrashHere] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchTrashHere()
+      .then((yes) => live && setTrashHere(yes))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const loadPins = () => {
     fetchDirPins()
@@ -131,6 +167,10 @@ export function FilesPane({
     // Already here. Clearing the refusal is part of that: coming back
     // to a directory that is on screen must not leave the sentence
     // about the one that could not be reached standing over it.
+    //
+    // **`again` gets past this on purpose**: after a removal the path
+    // is the same path and the listing on screen is the stale one, so
+    // the pane drops it (`reread`) and this sees nothing to keep.
     if (listing && listing.path === path) {
       setError(null);
       return;
@@ -156,7 +196,7 @@ export function FilesPane({
       stopped = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine, path]);
+  }, [machine, path, again]);
 
   useEffect(loadPins, [device]);
 
@@ -170,6 +210,57 @@ export function FilesPane({
     if (!listing) return;
     onPath(listing.path.slice(0, listing.path.lastIndexOf("/")) || "/");
   };
+
+  /** Read this directory again. The listing is dropped first so the
+      effect above has nothing to short-circuit on. */
+  const reread = () => {
+    setListing(null);
+    setAgain((n) => n + 1);
+  };
+
+  /** What deleting this path will actually do, in the node's terms
+      (`RemoveKind`). **Never a guess about the platform** — `here` says
+      whose disk it is and `trashHere` says whether that disk's machine
+      has a bin, and both come from outside this component. */
+  const kindOf = (isDir: boolean): RemoveKind =>
+    !here || !trashHere ? "gone" : isDir ? "trash-dir" : "trash";
+
+  /** The row's one menu item. **Its own dialog rather than `RowMenu`'s
+      two-press confirm**: the user asked for VS Code's shape — a sheet
+      that names the thing and carries a 「不再问」 tick — and a tick has
+      nowhere to live on a menu item that disappears when the menu
+      closes. */
+  const actions = (full: string, isDir: boolean): RowAction[] => [
+    {
+      key: "remove",
+      label: gui.file_remove,
+      run: () => {
+        setRefused(null);
+        const kind = kindOf(isDir);
+        // The tick only ever covered the recoverable road, so it only
+        // ever skips that one (`RemoveDialog`).
+        if (kind !== "gone" && neverAsks()) return go(full);
+        setGoing({ path: full, kind });
+      },
+    },
+  ];
+
+  /** Do it. Shared by the dialog's button and the press that skipped
+      the dialog, so there is one place that knows what happens
+      afterwards: the directory is re-read, and a file somebody was
+      reading stops being open — a view onto a file that is no longer
+      there is the one state this pane must not leave behind. */
+  const go = (full: string) =>
+    removePath(machine, full).then(
+      () => {
+        if (open === full) onFile(null);
+        reread();
+      },
+      (e: unknown) => {
+        setRefused(String(e instanceof Error ? e.message : e));
+        throw e;
+      },
+    );
 
   const take = (path: string) => {
     setTook({ path, state: "taking", word: "…" });
@@ -245,6 +336,16 @@ export function FilesPane({
                     faded && "text-muted-foreground",
                   )}
                 >
+                  {/* **The menu hangs on the button, never on the row
+                      around it.** `RowMenu`'s trigger carries an
+                      `onPointerDown` — that is the long press — and a
+                      press handler on a bare `<div>` is a target only a
+                      pointer can find, which `check-face`'s section 4
+                      catches by name (it caught this one). On the
+                      button the handler sits on something focus reaches
+                      and a keyboard's Menu key can fire `contextmenu`
+                      on — the same shape `SessionsList` uses. */}
+                  <RowMenu items={actions(full, true)}>
                   <button
                     type="button"
                     data-dir={e.name}
@@ -261,6 +362,7 @@ export function FilesPane({
                     <span className="min-w-0 flex-1 truncate">{e.name}/</span>
                     <Mark mark={marks?.get(full)} />
                   </button>
+                  </RowMenu>
                   {/* The two states get the two words the row action rule
                       demands; the mark stays visible once set. */}
                   <Button
@@ -334,6 +436,7 @@ export function FilesPane({
                       a file and pressing the button next to it are two
                       different asks, and the bigger target is the one
                       people mean. */}
+                  <RowMenu items={actions(full, false)}>
                   <button
                     type="button"
                     onClick={() => onFile(full)}
@@ -344,6 +447,7 @@ export function FilesPane({
                   >
                     {e.name}
                   </button>
+                  </RowMenu>
                   <Mark mark={marks?.get(full)} />
                   {took?.path === full ? (
                     <span
@@ -403,6 +507,22 @@ export function FilesPane({
                 </div>
               );
             })}
+            {/* One dialog for the whole listing, not one per row: what
+                is being asked about is state, and a sheet per row would
+                be one mounted component per file in the directory. */}
+            <RemoveDialog
+              open={going !== null}
+              name={going === null ? "" : (going.path.split("/").pop() ?? going.path)}
+              kind={going?.kind ?? "gone"}
+              refused={refused}
+              onOpenChange={(o) => {
+                if (!o) {
+                  setGoing(null);
+                  setRefused(null);
+                }
+              }}
+              onConfirm={() => go(going?.path ?? "")}
+            />
             {listing.truncated && (
               // The cap is however many rows actually came — the number
               // belongs to the node, and a copy here would drift.

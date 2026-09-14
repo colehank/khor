@@ -124,6 +124,10 @@ pub enum Op {
     /// resident — when a directory on that machine last changed
     /// (工作区批①).
     TouchedOn { machine: String, path: String },
+    /// Tail-appended: [`crate::proto::Request::Remove`] through the
+    /// resident — taking a path off whichever machine holds it
+    /// (工作区批④).
+    RemoveOn { machine: String, path: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -220,6 +224,8 @@ pub enum Reply {
     /// Tail-appended with [`Op::TouchedOn`]: ms since the epoch, `0`
     /// where there was nothing to date.
     Touched { at_ms: i64 },
+    /// Tail-appended with [`Op::RemoveOn`]: it is off that disk.
+    Removed,
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

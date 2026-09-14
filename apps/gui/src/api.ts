@@ -679,6 +679,20 @@ export const fetchLs = (machine: string, path: string) =>
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>
   call<string>("pull", { machine, path });
+/** Takes a path off whichever machine holds it (`khor_node::Link::
+    remove_path`). `machine` empty is this one.
+
+    **This machine's goes to the recycle bin; every other machine's is
+    deleted.** Which of the two is not a choice made here — the node
+    decides it by whose disk the path is on, and `fetchTrashHere` says
+    whether this machine has a bin at all, so the sentence a person
+    confirms is never a guess about the platform. */
+export const removePath = (machine: string, path: string) =>
+  call<null>("remove", { machine, path });
+/** Whether the machine khor's backend runs on has a recycle bin. Asked
+    rather than read off the browser: the same page is served to a phone
+    looking at a desktop's face (`khor_gui_core::files::trash_here`). */
+export const fetchTrashHere = () => call<boolean>("trash_here");
 /** Every pinned directory, machine names already looked up. */
 export const fetchDirPins = () => call<DirPinRow[]>("dir_pins");
 export const pinDir = (machine: string, path: string, on: boolean) =>

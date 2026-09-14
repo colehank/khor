@@ -130,6 +130,9 @@ const VERBS: &[Verb] = &[
     // Replaces a file on somebody's disk. The most irreversible read-
     // and-write pair in this table, and the mirror of `pull`.
     Verb { word: "put", run: put, reach: Reach::Act },
+    // Takes one off it. The only verb here that is irreversible on
+    // every machine but this one, which is what its usage line says.
+    Verb { word: "rm", run: rm, reach: Reach::Act },
     // Starts a process on somebody's machine and a pipe in front of
     // it. Reading is what the editor then does; opening it is an act.
     Verb { word: "code", run: code, reach: Reach::Act },
@@ -471,6 +474,29 @@ fn ws(rest: &[String]) -> Result<(), String> {
         }
         _ => Err(USAGE.into()),
     }
+}
+
+/// Takes a path off a machine's disk (工作区批④).
+///
+/// **This machine's goes to the recycle bin; every other machine's is
+/// deleted**, and the usage line says so rather than leaving it to be
+/// discovered. A bin on a machine nobody is sitting at is not somewhere
+/// anything can be got back from (`khor_node::Link::remove_path`).
+///
+/// No `-f`, no `-r`: a directory goes whole because that is what 删除
+/// means to the person asking, and there is no second spelling of this
+/// verb for it to be forced past. What there is instead is one refusal
+/// when the path is not there, which is the thing a flag would have
+/// silenced.
+fn rm(rest: &[String]) -> Result<(), String> {
+    let (machine, path) = match rest {
+        [flag, machine, path] if flag == "-m" || flag == "--machine" => {
+            (machine.clone(), here(path)?)
+        }
+        [path] => (String::new(), here(path)?),
+        _ => return Err(USAGE.into()),
+    };
+    rt()?.block_on(node()?.remove_path(&machine, &path))
 }
 
 /// A directory as typed, made absolute **against this terminal's own

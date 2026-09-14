@@ -91,6 +91,26 @@ pub fn dir_pins(root: &Path) -> Result<Vec<DirPinRow>, String> {
         .collect())
 }
 
+/// Takes a path off whichever machine holds it — the call `khor rm`
+/// makes (`khor_node::Link::remove_path`).
+///
+/// **This machine's goes to the recycle bin, every other machine's is
+/// deleted**, and which of the two it will be is decided in the node.
+/// The face has to say which before anybody presses, and it asks
+/// [`trash_here`] rather than reading the platform off the browser: the
+/// same page is served to a phone looking at a desktop's face.
+pub async fn remove(root: &Path, machine: &str, path: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.remove_path(machine, path).await
+}
+
+/// Whether **this** machine — the one khor's backend is running on —
+/// has a recycle bin (`khor_node::files::TRASH_HERE`). False on iOS and
+/// Android, where 删除 on a local file is as final as it is on a far
+/// one and the sentence must say so.
+pub fn trash_here() -> bool {
+    khor_node::files::TRASH_HERE
+}
+
 /// Pins or unpins a directory — the call `khor pin -d` makes. `on` is
 /// explicit for the reason every pin API's is (`api.ts`).
 pub fn pin_dir(root: &Path, machine: &str, path: &str, on: bool) -> Result<(), String> {

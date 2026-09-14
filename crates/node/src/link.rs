@@ -516,6 +516,12 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::RemoveOn { machine, path } => {
+                match self.remove_with(ep, &machine, &path).await {
+                    Ok(()) => ipc::Reply::Removed,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::ReadHead { machine, path } => {
                 match self.read_head_with(ep, &machine, &path).await {
                     Ok((total, at_ms, bytes)) => {
@@ -1044,6 +1050,21 @@ impl Node {
                 .map_err(|e| e.to_string())??;
                 Ok(Response::Places { places })
             }
+            Request::Remove { path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Off the reactor: a directory going whole is a walk,
+                // and `write` already holds that line for its own
+                // reason. **Never the recycle bin over the wire** — a
+                // bin on a machine nobody is sitting at is not a place
+                // anything can be got back from (`Request::Remove`).
+                let p = path.clone();
+                tokio::task::spawn_blocking(move || crate::files::remove(&p, false))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Removed)
+            }
             Request::Touched { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -1381,6 +1402,17 @@ impl Node {
                         .await
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Dir { path: at, entries, truncated })
+            }
+            Request::SatRemove { sat, path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                // Off the reactor with SatLs, for SatLs's reason.
+                tokio::task::spawn_blocking(move || crate::satellite::remove(&host, &path))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Removed)
             }
             Request::SatTouched { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -2214,6 +2246,91 @@ impl Node {
             store.flush(&loaded.doc)?;
         }
         Ok(())
+    }
+
+    /// Takes a path off whichever machine holds it.
+    ///
+    /// **The recycle bin is only this machine's.** `trash` is asked for
+    /// exactly where somebody could go and look in it — the machine
+    /// khor's face is running on — and nowhere else: a file put in a
+    /// far machine's bin is neither gone nor findable, which is the
+    /// worst of both (`crate::proto::Request::Remove`). So this is the
+    /// one verb whose meaning differs by machine, and the face says
+    /// which one it is about to do before anybody presses.
+    pub async fn remove_path(&self, machine: &str, path: &str) -> Result<(), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::RemoveOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Removed => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.remove_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn remove_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(), String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let p = path.to_owned();
+            // The one caller that asks for the bin.
+            return tokio::task::spawn_blocking(move || crate::files::remove(&p, true))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        // Resolve proved the name microseconds ago, but two reads of
+        // one table can straddle a removal.
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        // **A satellite routes to its sponsor**, the road `Ls` and
+        // `FetchPath` already take: nothing can dial a satellite, so
+        // asking it directly is a frame that goes nowhere.
+        if let Some(sp) = target.sponsor.clone() {
+            let sat = target.id.clone();
+            if sp == self.device_str() {
+                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let path = path.to_owned();
+                return tokio::task::spawn_blocking(move || {
+                    crate::satellite::remove(&host, &path)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            let sponsor = self
+                .devices_loaded()?
+                .doc
+                .get(&sp)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            let req = Request::SatRemove { sat, path: path.to_owned() };
+            return match self.ask(ep, &sponsor.name, &req).await? {
+                Response::Removed => Ok(()),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        match self.ask(ep, &channel, &Request::Remove { path: path.to_owned() }).await? {
+            Response::Removed => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     /// When a directory on any machine was last changed — the newest

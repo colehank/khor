@@ -321,6 +321,50 @@ printf 'at=%s\n' "${max:-0}"
 exit 0
 "#;
 
+/// Takes a path off a satellite's disk (工作区批④).
+///
+/// **Always outright, never to a recycle bin.** A satellite runs no
+/// khor and khor leaves nothing on it (docs/NET.md 它身上不留东西), so
+/// there is no bin khor could put something in and nothing that would
+/// know how to get it back out. The face says 直接删 before anybody
+/// presses, which is the same sentence every other machine's rows get.
+///
+/// **`test -e` first, and it tests the link rather than its target**
+/// (`-e` follows, `-L` does not, so both are asked): `rm -rf` on
+/// something that is not there succeeds silently, and 「it was not
+/// there」 is a different answer from 「it is gone now」 — the one
+/// khor's own `files::remove` refuses on, so this road must refuse on
+/// it too or one machine would answer differently from another.
+///
+/// The missing case answers one word rather than a sentence, because
+/// the sentence belongs to the catalog on this side: a satellite is not
+/// where khor's wording lives.
+const REMOVE_SH: &str = r#"
+if [ ! -e "$KHOR_ROOT" ] && [ ! -L "$KHOR_ROOT" ]; then
+  printf 'gone
+'
+  exit 0
+fi
+rm -rf "$KHOR_ROOT" || { printf 'kept
+'; exit 0; }
+printf 'done
+'
+exit 0
+"#;
+
+/// [`REMOVE_SH`] over the user's ssh road.
+pub fn remove(host: &str, path: &str) -> Result<(), String> {
+    let out = sh_over_ssh_in(host, path, REMOVE_SH)?;
+    let said = out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    match said {
+        "done" => Ok(()),
+        // Translated here, in khor's own words: the far side said which
+        // of the two it was and this side is where sentences live.
+        "gone" => Err(msg::cant_remove(path, "No such file or directory")),
+        _ => Err(msg::cant_remove(path, said)),
+    }
+}
+
 /// [`TOUCHED_SH`] over the user's ssh road, in ms since the epoch —
 /// `0` where there was nothing to date.
 pub fn touched(host: &str, path: &str) -> Result<i64, String> {

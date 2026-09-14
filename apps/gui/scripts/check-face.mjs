@@ -1228,6 +1228,33 @@ try {
   await page.route("**/recent_visit", (r) =>
     r.fulfill({ contentType: "application/json", body: "null" }),
   );
+  // 删掉 (工作区批④). **Stateful on purpose**: `removeRefuses` makes the
+  // next call come back as a refusal, which is how 4i gets at the one
+  // branch a person meets when something is read-only or already gone —
+  // without a second file in the listing, which sections 3c and 4b
+  // measure by shape.
+  const removed = [];
+  let removeRefuses = null;
+  await page.route("**/remove", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    if (removeRefuses !== null) {
+      const why = removeRefuses;
+      removeRefuses = null;
+      return r.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify(why),
+      });
+    }
+    removed.push({ machine: body.machine ?? "", path: body.path ?? "" });
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
+  // This machine has a recycle bin, so the local sentence is the
+  // reversible one and the tick is offered beside it. A face that read
+  // the platform off the browser instead would never consult this.
+  await page.route("**/trash_here", (r) =>
+    r.fulfill({ contentType: "application/json", body: "true" }),
+  );
   // Every listing asked for, so 4g can assert that stepping into a
   // directory really asked that machine about **that** path — the
   // breadcrumb changing is what a person sees, and a breadcrumb can
@@ -3222,6 +3249,187 @@ try {
       }
     }
   }
+
+  // ── 4i) deleting from the tree ────────────────────────────────────
+  //
+  // 「khor 可以删文件啊,用户仍然右键某个文件可以删除。但提示,跟 VS Code
+  // 一样,可以不再提醒」 — the user, 2026-09-14 (工作区批④).
+  //
+  // Claims:
+  //   i. the row's menu offers it, and pressing raises a sheet that
+  //      names the thing;
+  //  ii. confirming really asks the node, with the machine and the
+  //      path — and the directory is read again afterwards, because
+  //      the path did not change and nothing else would notice;
+  // iii. **the tick is offered only where the act can be undone.** A
+  //      far machine has no recycle bin to put anything in, so its
+  //      sheet carries no 「不再问」 — an irreversible act must not be
+  //      silenceable by a tick made once about something else;
+  //  iv. …and where it is offered, ticking it really does skip the
+  //      sheet next time;
+  //   v. deleting the file somebody is reading closes the reading — a
+  //      view onto a file that is not there is the one state this pane
+  //      must not leave behind;
+  //  vi. a refusal keeps the sheet open, in the node's own sentence.
+  const rowAt = async (name) => {
+    await press(rail("workspaces"));
+    const n = await page.$$eval(
+      "[data-ws-row]",
+      (els, want) =>
+        els.findIndex((e) => e.querySelector("[data-ws-name]")?.textContent?.trim() === want),
+      name,
+    );
+    if (n < 0) return false;
+    await page.locator("[data-ws-row]").nth(n).click();
+    return until(5_000, async () => (await page.locator("[data-file]").count()) > 0);
+  };
+  // The menu hangs on the row's **button**, never on the row around it
+  // (`FilesPane` — section 4 above is why), so the press lands there.
+  const menuOn = async (file) => {
+    // `.first()`: the name is the row's first button and 拿过来 is its
+    // second, and only the name carries the menu.
+    await page.locator(`[data-file="${file}"] > button`).first().click({ button: "right" });
+    return until(3_000, async () => (await page.locator('[data-menu-item="remove"]').count()) === 1);
+  };
+
+  // **peer's workspace first** — another machine, so the sheet is the
+  // one that cannot be taken back.
+  if (!(await rowAt("work"))) {
+    fail("probe dead: peer's workspace drew no tree (src/views/FilesPane.tsx)");
+  } else if (!(await menuOn("notes.md"))) {
+    fail("probe dead: a file row offers no way to delete it (src/views/FilesPane.tsx)");
+  } else {
+    await page.locator('[data-menu-item="remove"]').click();
+    const sheet = await until(5_000, async () =>
+      (await page.locator("[data-remove-dialog]").count()) === 1,
+    );
+    if (!sheet) {
+      fail("pressing 删掉 raised no sheet (src/components/RemoveDialog.tsx)");
+    } else {
+      const says = (await page.locator("[data-remove-says]").innerText()).trim();
+      console.log(`remove · far: ${JSON.stringify(says)}`);
+      if (!says.includes("notes.md")) {
+        fail(
+          `the sheet says 「${says}」 without naming what it is about — a confirmation that does ` +
+            "not name the thing is one people learn to press through (src/components/RemoveDialog.tsx)",
+        );
+      }
+      if ((await page.locator("[data-remove-never-ask]").count()) !== 0) {
+        fail(
+          "a file on another machine offered 「不再问」 — there is no recycle bin over there, so " +
+            "this is the act that cannot be taken back and the one that must keep asking " +
+            "(src/components/RemoveDialog.tsx)",
+        );
+      }
+      // vi) the refusal, before the success — the sheet has to survive
+      // it, and the next press is what proves it still works.
+      removeRefuses = "这个文件是只读的";
+      await page.locator("[data-remove-go]").click();
+      const kept = await until(5_000, async () =>
+        (await page.locator("[data-remove-refused]").count()) === 1,
+      );
+      const said = kept ? (await page.locator("[data-remove-refused]").innerText()).trim() : "";
+      if (!kept || said !== "这个文件是只读的") {
+        fail(
+          `a refused delete left 「${said}」 on a sheet that ${kept ? "stayed" : "closed"} — the ` +
+            "node's own sentence belongs where the press was made (src/components/RemoveDialog.tsx)",
+        );
+      }
+      const lsBefore = askedLs.length;
+      await page.locator("[data-remove-go]").click();
+      const went = await until(5_000, async () => removed.length > 0);
+      if (!went) {
+        fail("probe dead: confirming asked the node nothing (src/views/FilesPane.tsx)");
+      } else {
+        console.log(`remove · asked ${JSON.stringify(removed[0])}`);
+        if (removed[0].machine !== "peer" || !removed[0].path.endsWith("/notes.md")) {
+          fail(
+            `删掉 asked for ${JSON.stringify(removed[0])} — it must be the machine holding the ` +
+              "file and the path on it (src/views/FilesPane.tsx)",
+          );
+        }
+        const reread = await until(5_000, async () => askedLs.length > lsBefore);
+        if (!reread) {
+          fail(
+            "the directory was not read again after a delete — the path did not change, so nothing " +
+              "else would notice, and the row stays on screen over a file that is gone " +
+              "(src/views/FilesPane.tsx)",
+          );
+        }
+      }
+    }
+  }
+
+  // v) the open file closes with it.
+  if (await rowAt("work")) {
+    await press('[data-file="one.rs"] button');
+    const reading = await until(5_000, async () =>
+      (await page.locator("[data-edit]").count()) === 1,
+    );
+    if (!reading) {
+      fail("probe dead: the file never opened, so closing it proves nothing");
+    } else if (await menuOn("one.rs")) {
+      await page.locator('[data-menu-item="remove"]').click();
+      await until(5_000, async () => (await page.locator("[data-remove-dialog]").count()) === 1);
+      await page.locator("[data-remove-go]").click();
+      const shut = await until(5_000, async () =>
+        (await page.locator("[data-edit]").count()) === 0,
+      );
+      if (!shut) {
+        fail(
+          "the file somebody was reading was deleted and the reading stayed open — a view onto a " +
+            "file that is not there is the one state this pane must not leave (src/views/FilesPane.tsx)",
+        );
+      }
+    }
+  }
+
+  // iii/iv) **this machine's workspace**, where the bin exists: the
+  // tick is offered, and ticking it means the next one does not ask.
+  if (!(await rowAt("notes"))) {
+    fail("probe dead: gate's workspace drew no tree (src/views/FilesPane.tsx)");
+  } else if (await menuOn("notes.md")) {
+    await page.locator('[data-menu-item="remove"]').click();
+    await until(5_000, async () => (await page.locator("[data-remove-dialog]").count()) === 1);
+    const says = (await page.locator("[data-remove-says]").innerText()).trim();
+    console.log(`remove · here: ${JSON.stringify(says)}`);
+    if ((await page.locator("[data-remove-never-ask]").count()) !== 1) {
+      fail(
+        "a file on this machine offered no 「不再问」 — it goes to the recycle bin, which is the " +
+          "one road where a tick costs nothing (src/components/RemoveDialog.tsx)",
+      );
+    } else {
+      await page.locator("[data-remove-never-ask]").check();
+      const was = removed.length;
+      await page.locator("[data-remove-go]").click();
+      await until(5_000, async () => removed.length > was);
+      // …and now the next one goes straight through.
+      if (await menuOn("one.rs")) {
+        const before = removed.length;
+        await page.locator('[data-menu-item="remove"]').click();
+        const straight = await until(5_000, async () => removed.length > before);
+        if (!straight) {
+          fail(
+            "「不再问」 was ticked and the next delete still asked — the tick is the whole of what " +
+              "it promises (src/components/RemoveDialog.tsx)",
+          );
+        }
+        if ((await page.locator("[data-remove-dialog]").count()) !== 0) {
+          fail("…and the sheet came up anyway (src/views/FilesPane.tsx)");
+        }
+      }
+    }
+  }
+  // The tick is this browser's, and every later section shares the
+  // browser — put it back so nothing downstream inherits it.
+  await page.evaluate(() => {
+    try {
+      window.localStorage.removeItem("khor.remove-never-ask");
+    } catch {
+      // Nothing to put back if it could not be written in the first
+      // place; the sections below ask either way.
+    }
+  });
 
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //

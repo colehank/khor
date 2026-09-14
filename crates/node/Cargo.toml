@@ -36,6 +36,23 @@ pdfboss-core = "2.4.0"
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# The one road to a recycle bin, on the three platforms that have one
+# (`crates/node/src/files.rs` — the three candidates and what each cost).
+# Not on iOS/Android, which have no such place: there `files::remove`
+# answers that it cannot, and the face says 直接删 instead of guessing a
+# platform (`TRASH_HERE`).
+#
+# `default-features = false` drops `chrono`, which only dates the items
+# in a listing — khor never lists a recycle bin, only puts things in
+# one. It costs nothing either way (chrono is already in the tree), so
+# this is about compiling less, not about the count.
+# `coinit_apartmentthreaded` is the Windows COM mode the crate asks
+# callers to pick; with none chosen it does not build there.
+# License: MIT, and `urlencoding`'s (its one new neighbour) is MIT too —
+# checked before use, not after.
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
+trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
+
 # The GPU reading is the one part of vitals with no cross-platform API
 # behind it, so each platform brings its own and no other platform pays
 # for it (crates/node/src/vitals/gpu.rs).

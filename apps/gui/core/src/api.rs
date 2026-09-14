@@ -406,6 +406,19 @@ pub fn answer(
         "ls" => to_json(&rt.block_on(crate::files::ls(root, &arg("machine")?, &arg("path")?))?),
         "pull" => to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?),
         "dir_pins" => to_json(&crate::files::dir_pins(root)?),
+        // Taking a path off a disk. `machine` empty is this one, which
+        // is also the only one with a recycle bin behind it.
+        "remove" => {
+            rt.block_on(crate::files::remove(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                &arg("path")?,
+            ))?;
+            Ok("null".to_owned())
+        }
+        // Whether this machine has a bin at all — asked rather than
+        // guessed from the browser (`files::trash_here`).
+        "trash_here" => to_json(&crate::files::trash_here()),
         "pin_dir" => {
             crate::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
             Ok("null".to_owned())

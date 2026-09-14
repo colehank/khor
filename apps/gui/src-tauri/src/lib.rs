@@ -438,6 +438,20 @@ fn dir_pins() -> Result<Vec<khor_gui_core::files::DirPinRow>, String> {
     khor_gui_core::files::dir_pins(&Node::root_from_env())
 }
 
+/// Takes a path off a machine's disk. This machine's goes to the
+/// recycle bin; every other machine's is deleted (`files::remove`).
+#[tauri::command]
+async fn remove(machine: Option<String>, path: String) -> Result<(), String> {
+    khor_gui_core::files::remove(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &path)
+        .await
+}
+
+/// Whether this machine has a recycle bin at all.
+#[tauri::command]
+fn trash_here() -> bool {
+    khor_gui_core::files::trash_here()
+}
+
 #[tauri::command]
 fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
     khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
@@ -1720,6 +1734,8 @@ pub fn run() {
             ws_rm,
             ws_pin,
             touched,
+            remove,
+            trash_here,
             read_text,
             git_status,
             git_diff,

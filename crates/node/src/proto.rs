@@ -187,6 +187,11 @@ pub enum Request {
     /// the ordinary [`Response::PathSlice`], whose change contract
     /// (total/at_ms moving = start over) rides the staged copy.
     SatFetchPath { sat: String, path: String, offset: u64 },
+    /// [`Request::Remove`], off a satellite: the sponsor takes the path
+    /// off that machine's disk over ssh (`crate::satellite::remove`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason.
+    SatRemove { sat: String, path: String },
     /// [`Request::Touched`], off a satellite: the sponsor walks that
     /// machine's directory over ssh and answers the ordinary
     /// [`Response::Touched`] (`crate::satellite::touched`).
@@ -288,6 +293,20 @@ pub enum Request {
         #[serde(default)]
         desc: bool,
     },
+    /// Takes a path off that machine's disk (`crate::files::remove`).
+    /// `path` is absolute over there; a directory goes whole.
+    ///
+    /// **Never to the recycle bin.** A bin is somewhere a person can go
+    /// and look, and the person is not sitting at that machine — a file
+    /// put in another machine's bin is neither gone nor findable. So
+    /// this deletes, and the face says so before anybody presses
+    /// (`khor_catalog::gui::file_remove_far`), which is also why the
+    /// 「不再提醒」 tick cannot silence it.
+    ///
+    /// Answered as [`Response::Removed`]; a khor that predates it
+    /// answers [`Response::Refused`], which the asker shows as it came
+    /// — the same road every refusal on this screen takes.
+    Remove { path: String },
     /// When a directory on that machine was last changed: the newest
     /// file mtime under `path` (`crate::workspace::touched`). `path` is
     /// absolute over there.
@@ -469,6 +488,10 @@ pub enum Response {
     Quotas { readings: Vec<khor_core::AccountReading> },
     /// [`Request::Load`]'s answer, taken when this frame was built.
     Load { load: khor_core::Load },
+    /// [`Request::Remove`]'s answer: it is off that disk. Carries
+    /// nothing — 「gone」 has no fields, and a path echoed back would be
+    /// the asker's own argument returning as if it were news.
+    Removed,
     /// [`Request::Touched`]'s answer, ms since the epoch. `0` means
     /// there was nothing under that path to date — an empty directory,
     /// or one that machine could not read — which the asker paints as
@@ -667,6 +690,7 @@ mod tests {
             (Request::Load { top: 8, by: khor_core::TopBy::Busiest, desc: false }, &b"Load"[..]),
             (Request::Watched, &b"Watched"[..]),
             (Request::Touched { path: String::new() }, &b"Touched"[..]),
+            (Request::Remove { path: String::new() }, &b"Remove"[..]),
             (Request::GitStatus { root: String::new() }, &b"GitStatus"[..]),
             (Request::GitDiff { path: String::new() }, &b"GitDiff"[..]),
             (
@@ -683,6 +707,10 @@ mod tests {
             (
                 Request::SatTouched { sat: String::new(), path: String::new() },
                 &b"SatTouched"[..],
+            ),
+            (
+                Request::SatRemove { sat: String::new(), path: String::new() },
+                &b"SatRemove"[..],
             ),
             (
                 Request::SatGitStatus { sat: String::new(), root: String::new() },
