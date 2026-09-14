@@ -3534,9 +3534,12 @@ for line in sys.stdin:
   //      **What went with it, named rather than quietly dropped:**
   //
   //      - **Typing a path opens it.** khor's faces can no longer reach
-  //        an arbitrary directory on a far machine — only a workspace,
-  //        which is derived from where sessions ran and never declared
-  //        (`khor_node::place`). `khor ls` still does it; no screen does.
+  //        an arbitrary directory on a far machine — only a workspace.
+  //        `khor ls` still does it; no screen does. (**Updated
+  //        2026-09-14**: a workspace is now *declared* rather than
+  //        derived — `khor ws add` names one, and the cross-machine
+  //        directory picker behind the landing's 「+」 is 工作区批②,
+  //        which is where typing a path comes back.)
   //      - **The anti-flicker measurement.** Candidates are keyed by
   //        directory, so narrowing inside one asked the machine nothing;
   //        that was counted off `performance.getEntriesByType`, four
@@ -3546,10 +3549,12 @@ for line in sys.stdin:
   //        assertion that a typed path really crosses the wire.
   //
   //      A 「打开一个目录」 button was drafted for the workspace landing
-  //      and never built; its catalog key is deleted rather than left
-  //      waiting (zh.toml `workspaces-how`), because a workspace is not
-  //      something a person opens into existence. **If the box comes
-  //      back it belongs here again, and so does the hook.**
+  //      and never built, and its catalog key was deleted rather than
+  //      left waiting. **2026-09-14 reversed the reason, not the
+  //      deletion**: a workspace *is* something a person makes, so the
+  //      landing has a 「+」 again — disabled until 工作区批② builds the
+  //      picker behind it. **When it lands, the box belongs here again
+  //      and so does the hook.**
 
   // 24c-bis) git across the wire (工作区批3). **The only assertion in
   //      this repo that the two git ops reach another machine at all**:

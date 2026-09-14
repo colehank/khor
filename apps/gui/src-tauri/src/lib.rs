@@ -30,15 +30,45 @@ async fn places(machine: Option<String>) -> Result<Vec<khor_gui_core::PlaceRow>,
     khor_gui_core::places(&Node::root_from_env(), machine.as_deref().unwrap_or("")).await
 }
 
-/// The workspace landing's list for one machine
-/// (`khor_gui_core::workspaces::workspaces`).
+/// The workspace landing's whole list, off this machine's own table
+/// (`khor_gui_core::workspaces::workspaces`) — no machine is asked.
 #[tauri::command]
-async fn workspaces(
-    machine: Option<String>,
-) -> Result<Vec<khor_gui_core::workspaces::WorkspaceRow>, String> {
-    khor_gui_core::workspaces::workspaces(
+fn workspaces() -> Result<Vec<khor_gui_core::workspaces::WorkspaceRow>, String> {
+    khor_gui_core::workspaces::workspaces(&Node::root_from_env())
+}
+
+/// Declares a directory a workspace; `machine` absent is this one.
+#[tauri::command]
+async fn ws_add(machine: Option<String>, path: String) -> Result<(), String> {
+    khor_gui_core::workspaces::ws_add(
         &Node::root_from_env(),
         machine.as_deref().unwrap_or(""),
+        &path,
+    )
+    .await
+}
+
+/// Takes it off the list. The directory itself is not touched.
+/// **Keyed by `device`** — a row whose machine has left the table has
+/// no name, and it is the row that most needs taking off.
+#[tauri::command]
+fn ws_rm(device: String, path: String) -> Result<(), String> {
+    khor_gui_core::workspaces::ws_rm(&Node::root_from_env(), &device, &path)
+}
+
+#[tauri::command]
+fn ws_pin(device: String, path: String, on: bool) -> Result<(), String> {
+    khor_gui_core::workspaces::ws_pin(&Node::root_from_env(), &device, &path, on)
+}
+
+/// When that directory on that machine last changed
+/// (`khor_gui_core::workspaces::touched`).
+#[tauri::command]
+async fn touched(machine: Option<String>, path: String) -> Result<i64, String> {
+    khor_gui_core::workspaces::touched(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &path,
     )
     .await
 }
@@ -1686,6 +1716,10 @@ pub fn run() {
             day_strips,
             places,
             workspaces,
+            ws_add,
+            ws_rm,
+            ws_pin,
+            touched,
             read_text,
             git_status,
             git_diff,

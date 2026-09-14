@@ -1929,3 +1929,51 @@ fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
 
     let _ = fs::remove_dir_all(&r);
 }
+
+/// **A workspace whose machine has left the device table is still a
+/// row, and the row still comes off** (工作区批①). This is the shape
+/// `khor forget` leaves behind: the table keeps the key, the device
+/// table no longer has the machine, and the list has to answer with
+/// something a person can act on.
+///
+/// The second half is the bug this was written for. Such a row has **no
+/// name**, an empty machine name means 「this one」 to every verb here,
+/// and a write routed through a name therefore lands on a key about
+/// *this* machine's disk — the same directory on two Macs is two rows,
+/// and one of them would be quietly rewritten. So the write is keyed by
+/// the id, and this proves the name road does not reach it.
+#[test]
+fn a_workspace_whose_machine_left_the_table_keeps_its_row_and_comes_off_by_id() {
+    let r = root("ws-ghost");
+    let n = Node::open(r.clone()).unwrap();
+    let ghost = "c".repeat(64);
+    let path = "/srv/gone/project";
+    {
+        let loaded = n.workspaces_loaded().unwrap();
+        loaded
+            .doc
+            .set(&khor_sync::workspaces::key(&ghost, path), khor_sync::workspaces::State::Yes)
+            .unwrap();
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    }
+
+    let rows = n.workspaces().unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].device, ghost);
+    assert_eq!(rows[0].machine, "", "a machine that left the table has no name to print");
+    assert_eq!(rows[0].name, "project", "…and the row is still named after its directory");
+
+    // The name road cannot reach it, and must not pretend to: an empty
+    // name is this machine, so this writes an entirely different key.
+    n.ws_rm(&n.machine_id("").unwrap(), path).unwrap();
+    assert_eq!(n.workspaces().unwrap().len(), 1, "the ghost row is not this machine's to remove");
+
+    // The id road does, which is why it is the one the face and the CLI
+    // both take.
+    assert_eq!(n.machine_id(&ghost).unwrap(), ghost, "an id typed for a name is taken as itself");
+    n.ws_rm(&ghost, path).unwrap();
+    assert!(n.workspaces().unwrap().is_empty(), "the row it removed was the one shown");
+
+    let _ = fs::remove_dir_all(&r);
+}

@@ -58,6 +58,7 @@ export function PaneBar({
   actionsLabel,
   filterLabel,
   arrange,
+  create,
 }: {
   /** Names the search box and stands in as its placeholder. */
   searchLabel: string;
@@ -100,6 +101,23 @@ export function PaneBar({
    */
   actions?: PaneAction[];
   actionsLabel?: string;
+  /**
+   * The pane's **one** creation road, drawn as a plain "+" rather than
+   * a menu. Given instead of `actions`, never beside it: two plus signs
+   * on one bar is the second search box this file's head warns about.
+   *
+   * **`disabled` is allowed here and is not the judgment `actions`
+   * makes.** A *menu* that greys its items teaches people not to open
+   * menus, because finding out costs a press and a read. A single
+   * button that visibly cannot be pressed costs a glance, and it is how
+   * a pane says「这里将来能加东西」while the thing it opens is still a
+   * batch away (工作区批①: the "+" is here, the cross-machine directory
+   * picker is 批②).
+   *
+   * `mark` is a data attribute the caller hangs on it, for the
+   * verification anchors that name this pane's "+" rather than any "+".
+   */
+  create?: { label: string; mark?: string; disabled?: boolean; onSelect?: () => void };
 }) {
   return (
     <div
@@ -231,6 +249,24 @@ export function PaneBar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+      )}
+
+      {create && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={create.label}
+          data-pane-new
+          {...(create.mark ? { [create.mark]: "" } : {})}
+          disabled={create.disabled}
+          onClick={create.onSelect}
+          // The finger floor, the same spelling the menu trigger above
+          // wears — a control that cannot be pressed yet is still the
+          // size it will be, so turning it on moves nothing.
+          className="min-h-touch min-w-touch"
+        >
+          <IconPlus />
+        </Button>
       )}
     </div>
   );

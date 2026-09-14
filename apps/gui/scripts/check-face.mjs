@@ -993,18 +993,53 @@ try {
       body: JSON.stringify([{ device: pin.device, name: pin.name, url: "https://example.invalid/" }]),
     }),
   );
-  // One workspace, so the landing has a row to press. **Asked per
-  // machine** (`views/WorkspacesList`), and this fixture answers the
-  // same list whichever machine is named — the walk below only needs a
-  // door, and which machine holds it is measured nowhere here.
+  // The workspace table (工作区批①). **One read, no machine named** —
+  // the list is replicated, so this route takes no arguments and the
+  // landing has no per-machine states left to draw.
+  //
+  // Four rows, one for each thing a row can be: `peer`'s leads because
+  // it is pinned (and it is the door the walk below opens, so the
+  // controls being measured are the same ones as before); `gate`'s is
+  // not a repository, so its git corner must come out empty; `elder`
+  // answers neither question, and its row must still be here.
+  //
+  // **The fourth is the one with no machine name at all** — its machine
+  // has left the device table, which `khor_node::Node::workspaces`
+  // answers with an empty `machine` on purpose so the row stays
+  // removable. An empty machine means「this one」to every verb the node
+  // has, so a face that asked about it would paint *this* machine's
+  // branch and mtime under another machine's path. Section 4f below
+  // asserts that nothing was asked.
+  const wsRows = [
+    { device: "e".repeat(64), machine: "gate", path: "/home/gate/notes", name: "notes", pinned: false },
+    { device: pin.device, machine: "peer", path: pin.path, name: "work", pinned: true },
+    { device: "d".repeat(64), machine: "elder", path: "/srv/elder/app", name: "app", pinned: false },
+    { device: "c".repeat(64), machine: "", path: "/home/ghost/left", name: "left", pinned: false },
+  ];
   await page.route("**/workspaces", (r) =>
-    r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify([
-        { path: pin.path, shown: "~/work", sessions: 3, last_ms: Date.now() - 60_000 },
-      ]),
-    }),
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(wsRows) }),
   );
+  // Every machine the two per-row questions were asked about, so 4f can
+  // assert about a question that was **never sent** — an assertion no
+  // reading of the screen can make, because a nameless row's corners
+  // would be blank whether the ask was skipped or merely refused.
+  const askedAbout = { git_status: [], touched: [] };
+  // When each row last changed. **`elder` refuses**, the way a machine
+  // that is asleep does, and that row must keep its place with an empty
+  // corner — a row that vanished because its machine did would be the
+  // landing hiding work rather than reporting it.
+  await page.route("**/touched", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    const machine = body.machine ?? "";
+    askedAbout.touched.push({ machine, path: body.path ?? "" });
+    if (machine === "elder") {
+      return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("联系不上 elder") });
+    }
+    return r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(machine === "gate" ? Date.now() - 3_600_000 : Date.now() - 60_000),
+    });
+  });
   // **The digest is what makes the fixture editable** (工作区批4): the
   // view offers a save exactly when it was handed one, so a fixture
   // without it would quietly turn the editor off and 4c below would
@@ -1030,6 +1065,21 @@ try {
   let gitAsked = 0;
   await page.route("**/git_status", (r) => {
     gitAsked += 1;
+    // **Only `peer` is a repository.** `gate` refuses the way a
+    // directory outside every checkout does and `elder` the way a
+    // machine that cannot be reached does — two different sentences,
+    // one blank corner, which is the whole point of the corner being
+    // blank rather than saying「干净」.
+    const body = r.request().postDataJSON() ?? {};
+    const machine = body.machine ?? "";
+    askedAbout.git_status.push({ machine, path: body.dir ?? "" });
+    if (machine === "gate" || machine === "elder") {
+      return r.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify(machine === "gate" ? "这个路径不在 git 仓库里" : "联系不上 elder"),
+      });
+    }
     return r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -2662,6 +2712,167 @@ try {
     );
   }
   await hide(false);
+
+  // ── 4f) the workspace row's four corners ──────────────────────────
+  //
+  // **The list is a table now** (工作区批①, user ruling): a workspace is
+  // `(machine, directory)` that somebody declared, not a checkout khor
+  // inferred. What a row says is four facts in four corners — its name
+  // beside its machine's face, where it is, what git says, when it last
+  // changed — and two of those four come from the machine holding the
+  // files, which can refuse.
+  //
+  // Claims, in the order a wrong one costs most:
+  //   i. a machine that cannot answer loses the **corner**, never the
+  //      row — the failure this landing's whole old design was: a
+  //      refusal painted as an absence sends somebody to look somewhere
+  //      else instead of at that machine;
+  //  ii. a directory that is no repository has an **empty** git corner
+  //      — not「无 git」, which would be a word for a non-fact, and not
+  //      「干净」, which would be a lie;
+  // iii. the pinned row leads, whatever the times say;
+  //  iv. all four corners are actually drawn;
+  //   v. the 「+」 is on the bar and cannot be pressed — 批② is the
+  //      picker it opens, and a pane whose only way to add is invisible
+  //      reads as a pane that cannot;
+  //  vi. a row whose machine has **left the device table** is not asked
+  //      anything at all. Its `machine` is empty, and an empty machine
+  //      means「this one」to every verb the node has — so an ask would
+  //      come back with *this* Mac's branch and mtime for a path on
+  //      another one. **Both halves are needed**: blank corners alone
+  //      cannot tell「never asked」from「asked and refused」, and only
+  //      the first is safe, so the question that was never sent is what
+  //      this asserts.
+  await press(rail("workspaces"));
+  // **The gate is「any row at all」and not「all three」**, because a
+  // row missing is exactly what claim i is about: asserting the count
+  // here would report it as a dead probe — a sentence about this file —
+  // instead of as the product hiding a machine that went quiet.
+  const corners = await until(5_000, async () =>
+    (await page.locator("[data-ws-row]").count()) > 0,
+  );
+  if (!corners) {
+    fail("probe dead: the workspace landing drew no rows (src/views/WorkspacesList.tsx)");
+  } else {
+    // Give the two per-row questions a moment to land; the assertions
+    // below are about what arrives, not about how fast.
+    await until(5_000, async () =>
+      (await page.locator("[data-ws-touched]").first().innerText()).trim() !== "",
+    );
+    const seen = await page.$$eval("[data-ws-row]", (rows) =>
+      rows.map((el) => ({
+        pinned: el.getAttribute("data-ws-pinned"),
+        name: el.querySelector("[data-ws-name]")?.textContent?.trim() ?? null,
+        where: el.querySelector("[data-ws-where]")?.textContent?.trim() ?? null,
+        git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? null,
+        touched: el.querySelector("[data-ws-touched]")?.textContent?.trim() ?? null,
+      })),
+    );
+    console.log(`workspaces: ${JSON.stringify(seen)}`);
+    for (const corner of ["name", "where", "git", "touched"]) {
+      if (seen.some((r) => r[corner] === null)) {
+        fail(
+          `a workspace row has no ${corner} corner — the anchor is the fact, and a corner that is not ` +
+            "there cannot be read as empty either (src/views/WorkspacesList.tsx)",
+        );
+      }
+    }
+    if (seen[0]?.name !== "work" || seen[0]?.pinned !== "true") {
+      fail(
+        `the workspace list leads with ${JSON.stringify(seen[0])} — a pinned row leads, whatever the ` +
+          "times say (src/views/WorkspacesList.tsx)",
+      );
+    }
+    const gate = seen.find((r) => r.name === "notes");
+    if (gate?.git !== "") {
+      fail(
+        `a directory that is no repository drew 「${gate?.git}」 in its git corner — nothing is the ` +
+          "only honest answer there, since 干净 and 读不了 look alike (src/views/WorkspacesList.tsx)",
+      );
+    }
+    const peer = seen.find((r) => r.name === "work");
+    if (!peer?.git?.startsWith("main")) {
+      fail(
+        `the repository row drew 「${peer?.git}」 where its branch goes — without the positive half ` +
+          "the assertion above passes on a corner that never draws anything (src/views/WorkspacesList.tsx)",
+      );
+    }
+    const elder = seen.find((r) => r.name === "app");
+    if (elder === undefined) {
+      fail(
+        "the row whose machine could not answer is gone from the list — a refusal painted as an " +
+          "absence sends somebody to look anywhere but at that machine (src/views/WorkspacesList.tsx)",
+      );
+    } else if (elder.touched !== "" || elder.git !== "") {
+      fail(
+        `the unreachable machine's row drew 「${elder.git}」/「${elder.touched}」 — a machine that ` +
+          "said nothing must leave the corners blank (src/views/WorkspacesList.tsx)",
+      );
+    } else if (elder.where !== "elder:/srv/elder/app") {
+      fail(
+        `…and it must still say where it is, not 「${elder.where}」 — the row is openable and the ` +
+          "path is what makes it identifiable (src/views/WorkspacesList.tsx)",
+      );
+    }
+    const ghost = wsRows.find((w) => w.machine === "");
+    const ghostRow = seen.find((r) => r.name === "left");
+    if (ghostRow === undefined) {
+      fail(
+        "the row whose machine has left the device table is gone from the list — it is the one row " +
+          "that can only be taken off from here, and hiding it makes it permanent " +
+          "(src/views/WorkspacesList.tsx)",
+      );
+    } else if (ghostRow.git !== "" || ghostRow.touched !== "") {
+      fail(
+        `the nameless row drew 「${ghostRow.git}」/「${ghostRow.touched}」 — there is no machine to ` +
+          "have answered, so whatever is in those corners came from the wrong disk " +
+          "(src/views/WorkspacesList.tsx)",
+      );
+    } else if (ghostRow.where !== ghost.path) {
+      fail(
+        `…and with no machine to name it must say just the path, not 「${ghostRow.where}」 ` +
+          "(src/views/WorkspacesList.tsx)",
+      );
+    }
+    console.log(
+      `workspaces asked: git ${JSON.stringify(askedAbout.git_status.map((a) => a.machine))}, ` +
+        `touched ${JSON.stringify(askedAbout.touched.map((a) => a.machine))}`,
+    );
+    for (const [op, asks] of Object.entries(askedAbout)) {
+      const nameless = asks.filter((a) => a.machine === "");
+      if (nameless.length) {
+        fail(
+          `${op} was asked ${nameless.length} time(s) with no machine named — the node reads that ` +
+            "as 「this one」, so the answer is this machine's and the row it lands on is another " +
+            "machine's (src/views/WorkspacesList.tsx)",
+        );
+      }
+      const atGhost = asks.filter((a) => a.path === ghost.path);
+      if (atGhost.length) {
+        fail(
+          `${op} was asked about ${ghost.path}, whose machine is not in the device table — ` +
+            `as ${JSON.stringify(atGhost)} (src/views/WorkspacesList.tsx)`,
+        );
+      }
+      // The positive half: without it both assertions above would pass
+      // on a landing that asked nothing at all.
+      if (!asks.some((a) => a.machine === "peer")) {
+        fail(`probe dead: ${op} was never asked about peer either, so nothing above means anything`);
+      }
+    }
+    const plus = page.locator("[data-ws-add]");
+    if ((await plus.count()) !== 1) {
+      fail(
+        `the workspace bar has ${await plus.count()} 「+」 — a pane whose only way to add something ` +
+          "is invisible reads as a pane that cannot (src/App.tsx)",
+      );
+    } else if (await plus.isEnabled()) {
+      fail(
+        "the workspace 「+」 can be pressed and the picker it opens is 批② — a control that does " +
+          "nothing teaches people not to press controls (src/App.tsx)",
+      );
+    }
+  }
 
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //

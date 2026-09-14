@@ -38,6 +38,7 @@ pub mod transfer;
 pub mod tunnel;
 pub mod usage;
 pub mod vitals;
+pub mod workspace;
 
 pub use khor_core::avatar::{
     avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
@@ -97,6 +98,7 @@ pub use crate::cagent::replayed as replayed_update;
 /// protocol crate is a second place to keep in step.
 pub use khor_acp::{Listing, Recorded};
 use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
+use khor_sync::workspaces::{workspaces_dir, State as WsState, WorkspaceDoc};
 use khor_sync::webpins::{webpins_dir, WebPinDoc};
 /// What sort of place a recorded visit was to
 /// (`khor_sync::recents::Kind`). Re-exported because `Node::recents`
@@ -1043,6 +1045,10 @@ impl Node {
         load(&dirpins_dir(&self.root), self.peer)
     }
 
+    pub(crate) fn workspaces_loaded(&self) -> Result<Loaded<WorkspaceDoc>, String> {
+        load(&workspaces_dir(&self.root), self.peer)
+    }
+
     pub(crate) fn webpins_loaded(&self) -> Result<Loaded<WebPinDoc>, String> {
         load(&webpins_dir(&self.root), self.peer)
     }
@@ -1566,6 +1572,41 @@ impl Node {
         }
     }
 
+    /// [`Self::resolve`] with the empty name meaning **this machine**,
+    /// which is the spelling every `machine` argument in this file
+    /// already uses (`places_on`, the GUI's `machine: Option<String>`).
+    ///
+    /// Answered without reading the device table on purpose: a write
+    /// about this machine's own disk must not depend on this machine
+    /// having a row in its own table, which is true after pairing and
+    /// not before.
+    fn resolve_or_here(&self, machine: &str) -> Result<(String, DeviceId), String> {
+        if machine.is_empty() {
+            return Ok((self.name().to_owned(), self.device()));
+        }
+        self.resolve(machine)
+    }
+
+    /// A typed machine name as an id, hex, with the empty name meaning
+    /// this machine — the spelling every `machine` argument uses. The
+    /// workspace verbs are keyed by id ([`Node::ws_write`]) and the CLI
+    /// is handed names, so this is the one place the two meet.
+    ///
+    /// **An id typed in place of a name is taken as itself**, and it is
+    /// not a second grammar for its own sake: a workspace row whose
+    /// machine has left the device table has no name at all, and that
+    /// row is exactly the one somebody needs to take off the list
+    /// ([`Node::workspaces`]). Its id is the only name left, which is
+    /// why `khor ws ls` prints it in the machine column for such a row.
+    /// The table is tried first, so a machine that is present always
+    /// wins over this fallback.
+    pub fn machine_id(&self, machine: &str) -> Result<String, String> {
+        match self.resolve_or_here(machine) {
+            Ok((_, id)) => Ok(id.hex()),
+            Err(no_such) => device_id_from_hex(machine).map(|id| id.hex()).map_err(|_| no_such),
+        }
+    }
+
     /// [`Self::resolve`] for callers outside this module — the CLI's
     /// `rename -m` needs an id, and turning a typed name into one is
     /// exactly this.
@@ -1947,6 +1988,102 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         self.emit_row_of(id)
+    }
+
+    /// The workspaces, read off this machine's copy of the table and
+    /// **never off the network**: a workspace is a decision, decisions
+    /// replicate, so the list is already here (`khor_sync::workspaces`).
+    /// That is what lets this landing answer instantly and have no
+    /// 「那台机器答不了」state at all — the two things that do need
+    /// that machine (its git marks, its mtimes) are asked per row and
+    /// paint nothing when they cannot be had.
+    ///
+    /// A row whose machine is no longer in the device table keeps its
+    /// place with an empty `machine`: the directory is still on that
+    /// disk, and dropping the row would make it unremovable.
+    ///
+    /// **Pinned first, then by path.** The screen re-sorts the rest by
+    /// when each was last changed — a fact this call does not have and
+    /// will not go and get.
+    pub fn workspaces(&self) -> Result<Vec<workspace::WorkspaceInfo>, String> {
+        let devices = self.devices()?;
+        let mut out: Vec<workspace::WorkspaceInfo> = self
+            .workspaces_loaded()?
+            .doc
+            .all()
+            .into_iter()
+            .filter_map(|(k, state)| {
+                let (device, path) = khor_sync::workspaces::split(&k)?;
+                Some(workspace::WorkspaceInfo {
+                    machine: devices
+                        .iter()
+                        .find(|d| d.id == device)
+                        .map(|d| d.shown().to_owned())
+                        .unwrap_or_default(),
+                    device: device.to_owned(),
+                    name: workspace::basename(path),
+                    path: path.to_owned(),
+                    pinned: state == WsState::Pinned,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.pinned
+                .cmp(&a.pinned)
+                .then_with(|| a.path.cmp(&b.path))
+                .then_with(|| a.device.cmp(&b.device))
+        });
+        Ok(out)
+    }
+
+    /// Takes a workspace off the list, for everyone. **The directory is
+    /// not touched** (user, 2026-09-14): this list says what somebody
+    /// is working on, and stopping working on something is not deleting
+    /// it.
+    pub fn ws_rm(&self, device_hex: &str, path: &str) -> Result<(), String> {
+        self.ws_write(device_hex, path, WsState::No)
+    }
+
+    /// Floats a workspace to the top of the list, or lets it back down.
+    /// `on` is explicit rather than a toggle for the reason every pin
+    /// in this file is: a toggle typed twice is a no-op nobody can see.
+    ///
+    /// **Unpinning leaves it a workspace** — the two are one register
+    /// with three states, so this can never take a row off the list by
+    /// accident (`khor_sync::workspaces` module head).
+    pub fn ws_pin(&self, device_hex: &str, path: &str, on: bool) -> Result<(), String> {
+        self.ws_write(device_hex, path, if on { WsState::Pinned } else { WsState::Yes })
+    }
+
+    /// The one place a workspace row is written.
+    ///
+    /// **Keyed by the machine's id and never by its name**, unlike
+    /// every other verb in this file. The list can hold a row whose
+    /// machine has left the device table — it must, or that row could
+    /// never be taken off ([`Node::workspaces`]) — and such a row has
+    /// no name at all. A name would have to be resolved, an *empty* one
+    /// resolves to this machine ([`Self::resolve_or_here`]), and the
+    /// write would land on a key about a different disk: the same
+    /// directory on two Macs is two rows, and one of them would be
+    /// quietly rewritten. Callers holding a name turn it into an id
+    /// first ([`Node::machine_id`]).
+    ///
+    /// The path must be absolute for the reason `Ls` demands it — a
+    /// relative path names a different directory on every machine that
+    /// reads the row.
+    fn ws_write(&self, device_hex: &str, path: &str, state: WsState) -> Result<(), String> {
+        if !std::path::Path::new(path).is_absolute() {
+            return Err(msg::path_not_absolute(path));
+        }
+        // Parsed rather than trusted: a key written under something
+        // that is not an id is a row no reader can ever match, and the
+        // write would look like it took. A machine that has left the
+        // table still parses — that is the whole case this exists for.
+        let id = device_id_from_hex(device_hex)?;
+        let loaded = self.workspaces_loaded()?;
+        loaded.doc.set(&khor_sync::workspaces::key(&id.hex(), path), state)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
     }
 
     /// Pins or unpins a directory on a machine, for everyone. The key
@@ -2958,23 +3095,6 @@ impl Node {
     pub fn places_shown(&self) -> Vec<(String, String, u32, i64)> {
         self.places()
             .into_iter()
-            .map(|p| (p.path.clone(), place::shorten(Path::new(&p.path)), p.sessions, p.last_ms))
-            .collect()
-    }
-
-    /// The **checkouts** among [`Node::places`], in the same wire shape
-    /// — the workspace landing's list.
-    ///
-    /// The two lists differ by one filter and nothing else, which is
-    /// why they share a fold rather than walking the vendors' records
-    /// twice. The line itself is argued on `place::Place::checkout`:
-    /// 常去的地方 is where a session could start, a workspace is a
-    /// project being worked on, and a glance into `~/Downloads` is the
-    /// first but not the second.
-    pub fn workspaces_shown(&self) -> Vec<(String, String, u32, i64)> {
-        self.places()
-            .into_iter()
-            .filter(|p| p.checkout)
             .map(|p| (p.path.clone(), place::shorten(Path::new(&p.path)), p.sessions, p.last_ms))
             .collect()
     }

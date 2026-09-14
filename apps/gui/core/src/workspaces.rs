@@ -1,19 +1,20 @@
-//! The workspace landing's data layer: one machine's checkouts, shaped
-//! for the screen. The line between a checkout and any other directory
-//! is drawn in the node (`khor_node::place`); this layer renames fields
-//! for TS and decides nothing.
+//! The workspace landing's data layer: the declared workspaces, shaped
+//! for the screen. What a workspace *is* is decided in the node
+//! (`khor_node::workspace`, `khor_sync::workspaces`); this layer
+//! renames fields for TS and decides nothing.
 //!
-//! # Why one machine at a time
+//! # One read, not one question per machine
 //!
-//! The landing shows every machine's workspaces in one list, but it
-//! asks for them one machine at a time on purpose. A machine that is
-//! slow does not hold up the rest, and — the reason that matters — a
-//! machine that cannot answer is a fact about *that machine*. Folded
-//! into one call, four different answers (not asked yet / cannot be
-//! reached / has none / here they are) would arrive as one list and one
-//! error, and the first three would be indistinguishable
-//! (`scripts/check-acp.mjs` 第二批 holds the same line for the agent
-//! registry).
+//! This used to ask every machine for its own list, because the list
+//! was derived from records that lived on each disk. It is a
+//! replicated table now, so the whole list is on this disk and the
+//! landing reads it once — there is no 「那台机器答不了」state to
+//! paint, because no machine was asked.
+//!
+//! What still needs a far machine is what a row *shows*: its git marks
+//! and when it last changed. Those are asked per row, by the face, and
+//! a machine that cannot answer leaves those two corners blank while
+//! the row stays exactly where it is.
 
 use std::path::Path;
 
@@ -21,47 +22,75 @@ use khor_node::Node;
 use serde::Serialize;
 use ts_rs::TS;
 
-/// One project on one machine.
+/// One workspace: a directory on a machine, and whether it leads the
+/// list.
 ///
-/// **Not [`crate::PlaceRow`], though the four fields are the same
-/// today.** That one answers 「where could a session start」 for the
-/// wizard and takes every directory one ever ran in; this one answers
-/// 「what is being worked on」 and takes only checkouts. They also grow
-/// apart from here: a workspace row is where a branch and a count of
-/// uncommitted files will land, and neither belongs in a wizard's
-/// completion list.
+/// **No `shown` (the `~`-spelled path) and no session count.** The row
+/// prints `machine:path` because that pair *is* the identity, and a
+/// count of vendor records was a number from the derived list that
+/// nothing here derives any more.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct WorkspaceRow {
-    /// Absolute, in the far machine's own spelling.
+    /// The machine's id, hex.
+    pub device: String,
+    /// That machine's current display name, empty when the device table
+    /// has no row for it — the row is still shown, and still removable
+    /// (`khor_node::workspace::WorkspaceInfo`).
+    pub machine: String,
+    /// Absolute, on that machine.
     pub path: String,
-    /// The same path as that machine's user reads it, home written `~`.
-    /// Shortened over there, because whose home a path is under is a
-    /// fact about the machine and not about this screen.
-    pub shown: String,
-    /// How many recorded sessions fold into it. A count of what the
-    /// vendors' own files remember, never a total.
-    pub sessions: u32,
-    #[ts(type = "number")]
-    pub last_ms: i64,
+    /// The path's last component.
+    pub name: String,
+    pub pinned: bool,
 }
 
-/// One machine's workspaces, newest first (`khor_node::Node::
-/// workspaces_on`; empty names this machine).
-///
-/// **Uncapped, unlike the wizard's places.** That list is a completion
-/// popup, where a cap costs a keystroke; this one is the landing
-/// itself, and a project silently missing from it is a project a person
-/// concludes they never worked on. The number of checkouts on a disk is
-/// bounded by how many a person made.
-///
-/// A khor over there that predates the op refuses, and that refusal
-/// arrives here as an error rather than as an empty list — the two mean
-/// different next moves (`khor_catalog::msg::WORKSPACES_PREDATES`).
-pub async fn workspaces(root: &Path, machine: &str) -> Result<Vec<WorkspaceRow>, String> {
+/// Every workspace, pinned first then by path — this machine's copy of
+/// the table, no network (`khor_node::Node::workspaces`).
+pub fn workspaces(root: &Path) -> Result<Vec<WorkspaceRow>, String> {
     let n = Node::open(root.to_path_buf())?;
-    Ok(n.workspaces_on(machine)
-        .await?
+    Ok(n.workspaces()?
         .into_iter()
-        .map(|(path, shown, sessions, last_ms)| WorkspaceRow { path, shown, sessions, last_ms })
+        .map(|w| WorkspaceRow {
+            device: w.device,
+            machine: w.machine,
+            path: w.path,
+            name: w.name,
+            pinned: w.pinned,
+        })
         .collect())
+}
+
+/// Declares a directory a workspace. `machine` empty is this one.
+/// **The one call here that goes out on the wire**, and only to ask
+/// whether that path is a directory (`Node::ws_add`).
+pub async fn ws_add(root: &Path, machine: &str, path: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.ws_add(machine, path).await
+}
+
+/// Takes it off the list. **The directory is not touched** (user,
+/// 2026-09-14).
+///
+/// **`device` and not `machine`**, for both of these and for
+/// `khor_node::Node::ws_write`'s reason: a row whose machine has left
+/// the device table has no name, and it is exactly the row somebody
+/// needs to take off. The face has the id on every row, so it hands
+/// over the id.
+pub fn ws_rm(root: &Path, device: &str, path: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.ws_rm(device, path)
+}
+
+/// Floats it to the top, or lets it back down. `on` is explicit for the
+/// reason every pin API's is (`api.ts`).
+pub fn ws_pin(root: &Path, device: &str, path: &str, on: bool) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.ws_pin(device, path, on)
+}
+
+/// When that directory last changed, ms since the epoch; `0` where
+/// there was nothing to date (`khor_node::workspace::touched`).
+///
+/// Asked per row, of the machine holding the files. A machine that
+/// cannot answer refuses, and the face paints no time rather than a
+/// wrong one.
+pub async fn touched(root: &Path, machine: &str, path: &str) -> Result<i64, String> {
+    Node::open(root.to_path_buf())?.touched(machine, path).await
 }

@@ -20,6 +20,7 @@ pub mod seen;
 pub mod store;
 pub mod titles;
 pub mod webpins;
+pub mod workspaces;
 pub mod wire;
 
 #[cfg(test)]

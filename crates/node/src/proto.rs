@@ -187,23 +187,20 @@ pub enum Request {
     /// the ordinary [`Response::PathSlice`], whose change contract
     /// (total/at_ms moving = start over) rides the staged copy.
     SatFetchPath { sat: String, path: String, offset: u64 },
-    /// [`Request::Workspaces`], off a satellite: the sponsor reads that
-    /// machine's own vendor records over ssh and answers the ordinary
-    /// [`Response::Workspaces`] (`crate::satellite::places`).
+    /// [`Request::Touched`], off a satellite: the sponsor walks that
+    /// machine's directory over ssh and answers the ordinary
+    /// [`Response::Touched`] (`crate::satellite::touched`).
     ///
-    /// **A new variant for [`Request::SatLs`]'s reason**, and the
-    /// module head's first question answered the same way: a `sat`
-    /// tail on `Workspaces` would lengthen that frame under every older
-    /// peer for the plain listings too, breaking the case with no
-    /// satellite in it. These words only ever go to a sponsor, and a
-    /// machine that sponsors anything runs code that knows them.
+    /// **A new variant for [`Request::SatLs`]'s reason**: a `sat` tail
+    /// on `Touched` would lengthen that frame under every older peer
+    /// for the ordinary case too. These words only ever go to a
+    /// sponsor, and a machine that sponsors anything runs code that
+    /// knows them.
     ///
-    /// **Rooted over there, merged here.** Whether a `.git` sits above
-    /// a recorded directory is a question about the satellite's disk,
-    /// so the sponsor cannot answer it and a sponsor that tried would
-    /// answer about its own — the same nine checkouts under somebody
-    /// else's name.
-    SatWorkspaces { sat: String },
+    /// **Walked over there.** The mtimes are on the satellite's disk;
+    /// a sponsor that answered from its own would date somebody else's
+    /// files.
+    SatTouched { sat: String, path: String },
     /// [`Request::GitStatus`], off a satellite: the sponsor runs that
     /// machine's own `git` over ssh and answers the ordinary
     /// [`Response::GitStatus`] (`crate::satellite::git_status`).
@@ -291,24 +288,20 @@ pub enum Request {
         #[serde(default)]
         desc: bool,
     },
-    /// The **checkouts** that machine has been worked in
-    /// (`crate::Node::workspaces_shown`) — the workspace landing's list,
-    /// asked of every machine on the mesh.
+    /// When a directory on that machine was last changed: the newest
+    /// file mtime under `path` (`crate::workspace::touched`). `path` is
+    /// absolute over there.
     ///
-    /// **A new op rather than a filter on [`Request::Places`]**, which
-    /// is this file's first question: the asker changes words, so the
-    /// longer answer never reaches a peer that cannot read it. The two
-    /// also want different halves of one fold — 常去的地方 takes every
-    /// directory a session ran in, this takes only the projects — and
-    /// one frame carrying both would make each end re-decide a line the
-    /// answering machine had already drawn.
+    /// **Asked per workspace row, and the machine that holds the files
+    /// is the only one that can answer.** A workspace list spans the
+    /// mesh, and every row's date is a walk of somebody else's disk.
     ///
-    /// Answered as [`Response::Workspaces`]; a khor that predates it
-    /// answers [`Response::Refused`], which the asker says out loud
-    /// rather than painting as an empty list: this file's rule is to
-    /// ask what the consumer's error branch paints, and an empty
-    /// workspace list reads as a machine nobody has ever worked on.
-    Workspaces,
+    /// Answered as [`Response::Touched`]; a khor that predates it
+    /// answers [`Response::Refused`], and the row simply shows no time.
+    /// **That is the consumer's error branch and it is deliberate**:
+    /// unlike git marks, a missing date paints nothing rather than
+    /// something false, and the row is still there to open.
+    Touched { path: String },
     /// What differs from HEAD across one checkout (`crate::git::status`)
     /// — the marks the file tree wears and the branch its head says.
     /// `root` is the checkout itself, absolute on the answering machine.
@@ -476,11 +469,11 @@ pub enum Response {
     Quotas { readings: Vec<khor_core::AccountReading> },
     /// [`Request::Load`]'s answer, taken when this frame was built.
     Load { load: khor_core::Load },
-    /// [`Request::Workspaces`]'s answer: the same four fields as
-    /// [`Response::Places`] per row, newest first, because a workspace
-    /// row *is* a place with a line drawn through the list. `shown` is
-    /// that machine's own spelling for the same reason it is there.
-    Workspaces { workspaces: Vec<(String, String, u32, i64)> },
+    /// [`Request::Touched`]'s answer, ms since the epoch. `0` means
+    /// there was nothing under that path to date — an empty directory,
+    /// or one that machine could not read — which the asker paints as
+    /// no time rather than as 1970.
+    Touched { at_ms: i64 },
     /// [`Request::GitStatus`]'s answer. `branch` is short (`main`) and
     /// **empty when there is no name to say** — detached, or no commit
     /// yet — which the asker paints as nothing rather than inventing a
@@ -673,7 +666,7 @@ mod tests {
             (Request::Quotas, &b"Quotas"[..]),
             (Request::Load { top: 8, by: khor_core::TopBy::Busiest, desc: false }, &b"Load"[..]),
             (Request::Watched, &b"Watched"[..]),
-            (Request::Workspaces, &b"Workspaces"[..]),
+            (Request::Touched { path: String::new() }, &b"Touched"[..]),
             (Request::GitStatus { root: String::new() }, &b"GitStatus"[..]),
             (Request::GitDiff { path: String::new() }, &b"GitDiff"[..]),
             (
@@ -687,7 +680,10 @@ mod tests {
             (Request::CodeHere, &b"CodeHere"[..]),
             (Request::CodeServe { root: String::new() }, &b"CodeServe"[..]),
             (Request::CodeStop { root: String::new() }, &b"CodeStop"[..]),
-            (Request::SatWorkspaces { sat: String::new() }, &b"SatWorkspaces"[..]),
+            (
+                Request::SatTouched { sat: String::new(), path: String::new() },
+                &b"SatTouched"[..],
+            ),
             (
                 Request::SatGitStatus { sat: String::new(), root: String::new() },
                 &b"SatGitStatus"[..],

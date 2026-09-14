@@ -139,8 +139,8 @@ df -kP 2>/dev/null | awk 'NR>1 && $1 ~ /^\// {printf "vol=%s|%d|%d\n", $6, $3*10
 /// tried would answer about *itself* and label the rows with the
 /// satellite's name. So the rooting happens on the satellite and only
 /// the merge happens here (`crate::place::merge`), which keeps one
-/// definition of 工作区 across machines that reach khor and machines
-/// that do not.
+/// definition of 常去的地方 across machines that reach khor and
+/// machines that do not.
 ///
 /// **The two vendors' record shapes are read the way the two adaptors
 /// read them** (`adaptor::claude::Claude::places`,
@@ -172,12 +172,12 @@ const PLACES_SH: &str = r#"
 emit() {
   cwd=$1; n=$2; at=$3
   [ -d "$cwd" ] || return 0
-  root=$cwd; co=0; d=$cwd
+  root=$cwd; d=$cwd
   while [ "$d" != "/" ] && [ -n "$d" ]; do
-    if [ "$d" != "$HOME" ] && [ -e "$d/.git" ]; then root=$d; co=1; break; fi
+    if [ "$d" != "$HOME" ] && [ -e "$d/.git" ]; then root=$d; break; fi
     p=$(dirname "$d"); [ "$p" = "$d" ] && break; d=$p
   done
-  printf 'place=%s|%s|%s|%s\n' "$root" "$n" "$at" "$co"
+  printf 'place=%s|%s|%s\n' "$root" "$n" "$at"
 }
 printf 'home=%s\n' "$HOME"
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
@@ -245,13 +245,12 @@ fn sh_over_ssh(host: &str, script: &str) -> Result<String, String> {
 }
 
 /// [`PLACES_SH`] over the user's ssh road, in the wire shape of
-/// [`crate::proto::Response::Workspaces`]: `(path, shown, sessions,
-/// last_ms)`, checkouts only.
+/// [`crate::proto::Response::Places`]: `(path, shown, sessions,
+/// last_ms)`.
 ///
-/// Filtered here rather than by the caller because the filter and the
-/// shortening are the same two facts the local list applies
-/// (`Node::workspaces_shown`), and the shortening needs the home this
-/// road is the only one that can read.
+/// Shortened here rather than by the caller, because whose home a path
+/// is under is a fact about the satellite and this road is the only one
+/// that can read it.
 pub fn places(host: &str) -> Result<Vec<(String, String, u32, i64)>, String> {
     Ok(parse_places(&sh_over_ssh(host, PLACES_SH)?))
 }
@@ -270,23 +269,73 @@ fn parse_places(text: &str) -> Vec<(String, String, u32, i64)> {
     let home = text.lines().find_map(|l| l.strip_prefix("home=")).unwrap_or("").trim();
     crate::place::merge(text.lines().filter_map(|line| {
         let body = line.strip_prefix("place=")?;
-        let mut back = body.rsplitn(4, '|');
-        let checkout = back.next()? == "1";
+        let mut back = body.rsplitn(3, '|');
         let last_ms = back.next()?.trim().parse::<i64>().ok()? * 1000;
         let sessions = back.next()?.trim().parse::<u32>().ok()?;
         let path = back.next()?;
         if path.is_empty() {
             return None;
         }
-        Some((path.to_owned(), sessions, last_ms, checkout))
+        Some((path.to_owned(), sessions, last_ms))
     }))
     .into_iter()
-    .filter(|p| p.checkout)
     .map(|p| {
         let shown = crate::place::shorten_under(&p.path, home);
         (p.path, shown, p.sessions, p.last_ms)
     })
     .collect()
+}
+
+/// When a directory on a satellite was last changed — the same question
+/// [`crate::workspace::touched`] answers locally, and it has to be the
+/// same answer: one workspace list shows rows from both kinds of
+/// machine, and a column ordered by two different rules is a column
+/// nobody can read.
+///
+/// **The skip list is spelled twice and must not drift.** There is no
+/// way to hand a Rust constant to a shell without pasting it in, and a
+/// script built by string-joining `workspace::SKIP` would be a script
+/// nobody can read in the file. What holds the two together is
+/// `a_satellites_skip_list_is_the_same_one_the_local_walk_uses` below.
+///
+/// **`stat -c %Y` or `stat -f %m`**: GNU and BSD spell the same
+/// question differently and neither accepts the other's flag, so it is
+/// tried in that order — the idiom [`PLACES_SH`] already uses.
+///
+/// **`-exec … +` and not one `stat` per file**: a project tree is
+/// thousands of files and a satellite is reached over a link, not a
+/// bus. The cap is `head` on the pipe rather than a count in the walk;
+/// `find` dying of SIGPIPE when it closes is why the script ends
+/// `exit 0` ([`PLACES_SH`] on why the last command's status is not a
+/// verdict).
+///
+/// Nothing is written on the satellite — no temp file, no marker — for
+/// the reason the whole module is built this way: 「它身上不留东西」.
+const TOUCHED_SH: &str = r#"
+[ -d "$KHOR_ROOT" ] || { printf 'at=0\n'; exit 0; }
+max=$(find "$KHOR_ROOT" \( -type d \( -name .git -o -name node_modules -o -name target \
+  -o -name .venv -o -name __pycache__ -o -name dist -o -name build \) \) -prune \
+  -o -type f -exec sh -c 'stat -c %Y "$@" 2>/dev/null || stat -f %m "$@" 2>/dev/null' _ {} + \
+  2>/dev/null | head -n 20000 | sort -n | tail -1)
+printf 'at=%s\n' "${max:-0}"
+exit 0
+"#;
+
+/// [`TOUCHED_SH`] over the user's ssh road, in ms since the epoch —
+/// `0` where there was nothing to date.
+pub fn touched(host: &str, path: &str) -> Result<i64, String> {
+    Ok(parse_touched(&sh_over_ssh_in(host, path, TOUCHED_SH)?))
+}
+
+/// The `at=` line, in ms. **Split from the ssh for [`parse_vitals`]'s
+/// reason**, and unreadable output answers `0` rather than guessing:
+/// this orders a list, and a guessed date would reorder it.
+fn parse_touched(text: &str) -> i64 {
+    text.lines()
+        .find_map(|l| l.strip_prefix("at="))
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(0)
+        * 1000
 }
 
 /// `git status`, read on a satellite.
@@ -1011,37 +1060,35 @@ mod tests {
     }
 
     /// Recorded from a real run of [`PLACES_SH`] on this machine,
-    /// 2026-09-13. The nine checkouts it found there were the same nine
-    /// `khor workspaces` printed, which is the only evidence this
-    /// script implements the same rule as `place::fold` rather than a
-    /// similar one; these four lines are the interesting corners of
-    /// that run.
+    /// 2026-09-13, with the trailing checkout bit dropped where the
+    /// script stopped printing it (工作区批①). The rows it found were
+    /// the same ones `khor places` printed, which is the only evidence
+    /// this script implements the same rule as `place::fold` rather
+    /// than a similar one; these four lines are the interesting corners
+    /// of that run.
     const REAL: &str = "\
 home=/Users/zgh
-place=/Users/zgh/Desktop/working/khor|3|1787245509|1
-place=/Users/zgh/Desktop/working/khor|4|1789274278|1
-place=/Users/zgh|5|1788707864|0
-place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
+place=/Users/zgh/Desktop/working/khor|3|1787245509
+place=/Users/zgh/Desktop/working/khor|4|1789274278
+place=/Users/zgh|5|1788707864
+place=/Volumes/disk0/workingdir/labsys|2|1789273465
 ";
 
     #[test]
-    fn two_records_of_one_checkout_fold_into_one_row() {
+    fn two_records_of_one_root_fold_into_one_row() {
         let rows = parse_places(REAL);
         let khor = rows
             .iter()
             .find(|(path, ..)| path == "/Users/zgh/Desktop/working/khor")
-            .expect("the checkout with two records");
+            .expect("the root with two records");
         assert_eq!(khor.2, 7, "the counts add");
         assert_eq!(khor.3, 1_789_274_278_000, "the newest wins");
-    }
-
-    #[test]
-    fn a_directory_that_is_not_a_checkout_is_not_a_workspace() {
-        // `~` itself is somewhere sessions ran and is not a project —
-        // the same line `Node::workspaces_shown` draws locally.
-        let rows = parse_places(REAL);
-        assert_eq!(rows.len(), 2, "two checkouts out of three roots");
-        assert!(rows.iter().all(|(path, ..)| path != "/Users/zgh"));
+        assert_eq!(rows.len(), 3, "three roots out of four records");
+        // **`~` stays.** It is a place a session ran, and 常去的地方
+        // offers every one of those; the checkout filter that used to
+        // drop it belonged to the workspace list, which no longer
+        // derives anything (`crate::place` module head).
+        assert!(rows.iter().any(|(path, ..)| path == "/Users/zgh"));
     }
 
     #[test]
@@ -1059,15 +1106,106 @@ place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
 
     #[test]
     fn a_satellite_that_did_not_say_its_home_shortens_nothing() {
-        let rows = parse_places("place=/Users/other/w|1|1789274278|1\n");
+        let rows = parse_places("place=/Users/other/w|1|1789274278\n");
         assert_eq!(rows[0].1, "/Users/other/w");
+    }
+
+    /// **Two spellings of one skip list, held together.** The names
+    /// live in `workspace::SKIP` for the local walk and are pasted into
+    /// [`TOUCHED_SH`] for the satellite's; a name added to one and not
+    /// the other is a column ordered by two rules, which is the one
+    /// failure this pair can have.
+    #[test]
+    fn a_satellites_skip_list_is_the_same_one_the_local_walk_uses() {
+        for name in crate::workspace::SKIP {
+            assert!(
+                TOUCHED_SH.contains(&format!("-name {name} ")),
+                "{name} is skipped locally and not over ssh"
+            );
+        }
+        assert_eq!(
+            TOUCHED_SH.matches("-name ").count(),
+            crate::workspace::SKIP.len(),
+            "the script skips something the local walk does not"
+        );
+    }
+
+    /// **The script run as `sh`, against a real tree, answering what
+    /// the local walk answers.** No ssh: what is being checked is the
+    /// script's portability and its arithmetic, and `sh` on this
+    /// machine is the same `sh` the far side pipes it into
+    /// (`sh_over_ssh` on why it is never the login shell).
+    #[test]
+    fn the_touched_script_answers_what_the_local_walk_answers() {
+        // Takes itself away however this test leaves — an assertion
+        // panics past a cleanup written at the end, and a machine's
+        // temp directory should not grow one tree per run.
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let scratch = Scratch(
+            std::env::temp_dir().join(format!("khor-sat-touched-{}", std::process::id())),
+        );
+        let tmp = scratch.0.clone();
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("src/deep")).unwrap();
+        std::fs::create_dir_all(tmp.join("target/debug")).unwrap();
+        std::fs::write(tmp.join("src/deep/one.rs"), "x").unwrap();
+        std::fs::write(tmp.join("README.md"), "x").unwrap();
+        // Newer than everything, and inside a skipped directory — the
+        // arm that tells a walk from a build clock. **Dated by hand**,
+        // because three files written in one second cannot tell a
+        // pruned walk from an unpruned one.
+        std::fs::write(tmp.join("target/debug/fresh"), "x").unwrap();
+        let stamp = |p: std::path::PathBuf, secs: u64| {
+            let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+            std::fs::File::open(p).unwrap().set_modified(t).unwrap();
+        };
+        stamp(tmp.join("README.md"), 1_000);
+        stamp(tmp.join("src/deep/one.rs"), 2_000);
+        stamp(tmp.join("target/debug/fresh"), 9_000);
+
+        let script = format!("KHOR_ROOT={}\n{TOUCHED_SH}", sh_quote(&tmp.display().to_string()));
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .expect("sh runs");
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let said = parse_touched(&String::from_utf8_lossy(&out.stdout));
+
+        // To the second, because the far side's `stat` answers seconds
+        // and the local walk answers milliseconds.
+        let here = crate::workspace::touched(&tmp) / 1000;
+        assert_eq!(said / 1000, here, "the script and the local walk must date one tree alike");
+        assert_eq!(here, 2_000, "…and both must have skipped the build output");
+
+        let empty = tmp.join("src/deep/nothing");
+        std::fs::create_dir_all(&empty).unwrap();
+        let script = format!("KHOR_ROOT={}\n{TOUCHED_SH}", sh_quote(&empty.display().to_string()));
+        let out = std::process::Command::new("sh").arg("-c").arg(&script).output().unwrap();
+        assert_eq!(
+            parse_touched(&String::from_utf8_lossy(&out.stdout)),
+            0,
+            "nothing to date answers 0, not 1970-plus-noise"
+        );
     }
 
     #[test]
     fn newest_first_the_way_the_local_list_is_ordered() {
         let rows = parse_places(REAL);
         let order: Vec<&str> = rows.iter().map(|(path, ..)| path.as_str()).collect();
-        assert_eq!(order, ["/Users/zgh/Desktop/working/khor", "/Volumes/disk0/workingdir/labsys"]);
+        assert_eq!(
+            order,
+            [
+                "/Users/zgh/Desktop/working/khor",
+                "/Volumes/disk0/workingdir/labsys",
+                "/Users/zgh"
+            ]
+        );
     }
 
     #[test]
@@ -1075,7 +1213,7 @@ place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
         // The satellite's `stat` answers in seconds and every other
         // time in khor is a millisecond. A row off by a thousand sorts
         // to the bottom and reads as「六个月前」.
-        let rows = parse_places("place=/w|1|1789274278|1\n");
+        let rows = parse_places("place=/w|1|1789274278\n");
         assert_eq!(rows[0].3, 1_789_274_278_000);
     }
 
@@ -1083,7 +1221,7 @@ place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
     fn a_path_with_a_separator_in_it_keeps_its_numbers() {
         // The fields are positional, so a `|` in a directory name would
         // shift them — read off the end, it cannot.
-        let rows = parse_places("place=/w/a|b/c|2|1789274278|1\n");
+        let rows = parse_places("place=/w/a|b/c|2|1789274278\n");
         assert_eq!(rows[0].0, "/w/a|b/c");
         assert_eq!(rows[0].2, 2);
     }
@@ -1094,7 +1232,7 @@ place=/Volumes/disk0/workingdir/labsys|2|1789273465|1
         // on its own, so the ones that arrived whole are still read and
         // the half-line is dropped — never a row with a guessed number
         // in it (`parse_vitals`'s rule).
-        let rows = parse_places("place=/a|1|1789274278|1\nplace=/b|1|17892");
+        let rows = parse_places("place=/a|1|1789274278\nplace=/b|1");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0, "/a");
     }

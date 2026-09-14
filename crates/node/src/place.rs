@@ -1,19 +1,19 @@
-//! **工作区: the directory a session lives in, taken up to the project
-//! it belongs to.**
+//! **常去的地方: the directories this machine's own records say work
+//! happened in, folded to the project each belongs to.**
 //!
-//! # Why this is derived and not declared
+//! # This is a suggestion list, not the workspace list
 //!
-//! People do not start a session and then decide where it is; they walk
-//! into a directory and start something there. That fact is already
-//! true of every session on this machine — the vendors record it, and
-//! khor hands it to every host it spawns — so khor has nothing to ask
-//! for and nothing to keep in step.
+//! It used to be both — the workspace landing was this fold with a
+//! checkout filter over it. The user ended that on 2026-09-14:
+//! 「用户有agent记录的目录不一定是工作区.可能只是随手打开的」. A
+//! directory a session once ran in is a fine thing to *offer* when
+//! somebody is about to start another one, and a poor thing to assert
+//! somebody works in. Workspaces are declared and live in a replicated
+//! table now (`crate::workspace`, `khor_sync::workspaces`); this stays
+//! exactly what it always was underneath — the wizard's completions.
 //!
-//! A *declared* workspace (one a person creates, names and deletes)
-//! would be a fifth thing to maintain, and it would drift the first
-//! time somebody `cd`s or resumes a conversation somewhere else. This
-//! module reads the answer instead, which is why nothing here can be
-//! stale.
+//! Nothing here is stale, because nothing here is kept: the vendors
+//! record where each session ran, and this reads that.
 //!
 //! # Why the project root and not the working directory
 //!
@@ -43,15 +43,6 @@ pub struct Place {
     pub sessions: u32,
     /// The newest of them, ms since the epoch.
     pub last_ms: i64,
-    /// Whether this path is a checkout rather than [`project_root`]'s
-    /// fallback to the directory itself.
-    ///
-    /// **A fact, not a policy.** The workspace list shows only the
-    /// checkouts, and the session wizard's 常去的地方 shows every
-    /// place; folding that decision in here would make one of the two
-    /// callers wrong. Deciding it at each caller means neither has to
-    /// walk the tree a second time to find out.
-    pub checkout: bool,
 }
 
 /// The project a directory belongs to — `git rev-parse --show-toplevel`
@@ -98,9 +89,9 @@ pub fn project_root(dir: &Path) -> PathBuf {
 /// It exists because two callers want different halves of one answer.
 /// Grouping wants an answer for every session, so it takes the
 /// fallback: a shell opened in `/tmp/scratch` belongs *somewhere*, and
-/// that somewhere is `/tmp/scratch`. A list a person reads wants the
-/// other half: `~/Downloads` is not a project, and one glance at a
-/// directory should not put a row there forever.
+/// that somewhere is `/tmp/scratch`. A git question wants the other
+/// half: a file outside every checkout has no repository to be read
+/// against, and `None` is the honest answer (`crate::git::repo_root`).
 ///
 /// Written as one walk with one wrapper on purpose. Two walks would be
 /// two places for the home-directory exception above to be remembered,
@@ -171,11 +162,7 @@ pub fn fold(seen: impl IntoIterator<Item = (PathBuf, u32, i64)>) -> Vec<Place> {
         if !root.is_dir() {
             return None;
         }
-        // Asked of the root rather than remembered from the walk that
-        // produced it: several cwds fold into one root, and they would
-        // not all have to agree.
-        let checkout = checkout_root(&root).as_deref() == Some(root.as_path());
-        Some((root.display().to_string(), count, at, checkout))
+        Some((root.display().to_string(), count, at))
     }))
 }
 
@@ -190,21 +177,16 @@ pub fn fold(seen: impl IntoIterator<Item = (PathBuf, u32, i64)>) -> Vec<Place> {
 /// the list is ordered — a satellite's list sorted by another rule
 /// would be the same landing painting two orders, and the one being
 /// read would depend on which machine a row came from.
-pub fn merge(rooted: impl IntoIterator<Item = (String, u32, i64, bool)>) -> Vec<Place> {
-    let mut by: std::collections::HashMap<String, (u32, i64, bool)> =
-        std::collections::HashMap::new();
-    for (root, count, at, checkout) in rooted {
-        let entry = by.entry(root).or_insert((0, i64::MIN, false));
+pub fn merge(rooted: impl IntoIterator<Item = (String, u32, i64)>) -> Vec<Place> {
+    let mut by: std::collections::HashMap<String, (u32, i64)> = std::collections::HashMap::new();
+    for (root, count, at) in rooted {
+        let entry = by.entry(root).or_insert((0, i64::MIN));
         entry.0 += count;
         entry.1 = entry.1.max(at);
-        // **Any yes wins**, and it cannot disagree with itself: the
-        // flag is a fact about the root, and every row carrying one
-        // root read it from the same place.
-        entry.2 |= checkout;
     }
     let mut out: Vec<Place> = by
         .into_iter()
-        .map(|(path, (sessions, last_ms, checkout))| Place { checkout, path, sessions, last_ms })
+        .map(|(path, (sessions, last_ms))| Place { path, sessions, last_ms })
         .collect();
     out.sort_by(|a, b| b.last_ms.cmp(&a.last_ms).then_with(|| a.path.cmp(&b.path)));
     out
@@ -268,12 +250,14 @@ mod tests {
         assert_eq!(project_root(&home), home, "and work done in ~ still places in ~");
     }
 
-    /// **The line the workspace list draws.** Both of these are places
-    /// a session ran, so both fold; only one of them is a project. A
-    /// glance into `~/Downloads` must not leave a row in a list of
-    /// things being worked on.
+    /// **No line is drawn here any more.** Both of these are places a
+    /// session ran and both fold — 常去的地方 offers every directory
+    /// somebody stood in. The checkout filter that used to sit on top
+    /// of this list was the workspace landing's, and the user ended it
+    /// on 2026-09-14 (module head); what stays is the walk, whose
+    /// withheld fallback is still what `git` asks for.
     #[test]
-    fn a_directory_with_no_marker_folds_but_is_not_a_checkout() {
+    fn a_directory_with_no_marker_folds_like_any_other_place() {
         let tmp = root("bare");
         let repo = tmp.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -283,11 +267,9 @@ mod tests {
 
         let places = fold([(repo.join("src"), 1, 200), (scratch.clone(), 1, 100)]);
         assert_eq!(places.len(), 2, "{places:?}");
-        let of = |p: &std::path::Path| {
-            places.iter().find(|q| q.path == p.display().to_string()).expect("a row").checkout
-        };
-        assert!(of(&repo), "a checkout says so");
-        assert!(!of(&scratch), "a directory with no marker does not");
+        let has = |p: &std::path::Path| places.iter().any(|q| q.path == p.display().to_string());
+        assert!(has(&repo), "the checkout folded to its root");
+        assert!(has(&scratch), "and the directory with no marker is here too");
         assert_eq!(checkout_root(&scratch), None, "and the walk withholds its fallback");
     }
 

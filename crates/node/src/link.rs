@@ -510,9 +510,9 @@ impl Node {
                 Ok(load) => ipc::Reply::Load { load },
                 Err(why) => ipc::Reply::Refused { why },
             },
-            ipc::Op::WorkspacesOn { machine } => {
-                match self.workspaces_on_with(ep, &machine).await {
-                    Ok(workspaces) => ipc::Reply::Workspaces { workspaces },
+            ipc::Op::TouchedOn { machine, path } => {
+                match self.touched_with(ep, &machine, &path).await {
+                    Ok(at_ms) => ipc::Reply::Touched { at_ms },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -959,6 +959,9 @@ impl Node {
                 } else if doc == "dirpins" {
                     let mut loaded = self.dirpins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "workspaces" {
+                    let mut loaded = self.workspaces_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if doc == "webpins" {
                     let mut loaded = self.webpins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
@@ -1041,20 +1044,18 @@ impl Node {
                 .map_err(|e| e.to_string())??;
                 Ok(Response::Places { places })
             }
-            Request::Workspaces => {
+            Request::Touched { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
-                // Reads every vendor's records (the `Ls` arm's note),
-                // through the same fold `Places` walks — one filter
-                // apart, and the filter is applied over there.
-                let root = self.root().to_path_buf();
-                let workspaces = tokio::task::spawn_blocking(move || {
-                    Ok::<_, String>(crate::Node::open(root)?.workspaces_shown())
-                })
-                .await
-                .map_err(|e| e.to_string())??;
-                Ok(Response::Workspaces { workspaces })
+                // Off the reactor: a walk of somebody's project tree is
+                // thousands of stat() calls, and the cap is 20_000 of
+                // them (`crate::workspace::MOST_ENTRIES`).
+                let dir = std::path::PathBuf::from(path);
+                let at_ms = tokio::task::spawn_blocking(move || crate::workspace::touched(&dir))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Touched { at_ms })
             }
             Request::GitStatus { root } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1381,18 +1382,18 @@ impl Node {
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Dir { path: at, entries, truncated })
             }
-            Request::SatWorkspaces { sat } => {
+            Request::SatTouched { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 // Off the reactor with SatLs, for SatLs's reason: one
-                // ssh dial and a walk over that machine's records.
-                let places =
-                    tokio::task::spawn_blocking(move || crate::satellite::places(&host))
+                // ssh dial and a walk of that machine's disk.
+                let at_ms =
+                    tokio::task::spawn_blocking(move || crate::satellite::touched(&host, &path))
                         .await
                         .map_err(|e| e.to_string())??;
-                Ok(Response::Workspaces { workspaces: places })
+                Ok(Response::Touched { at_ms })
             }
             Request::SatGitStatus { sat, root } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -2169,27 +2170,70 @@ impl Node {
         }
     }
 
-    /// The workspace landing's list from any machine. This one's
-    /// answers without a resident; another's goes through one when
-    /// there is one.
+    /// Declares a directory on some machine a workspace, for everyone.
+    /// `machine` empty is this one.
     ///
-    /// **Unlike [`Node::places_on`], a refusal here is an error.** That
-    /// one can swallow it because the wizard's box still takes a typed
-    /// path; this list *is* the landing, and「nobody works there」and
-    /// 「that machine could not answer」are two different next moves
-    /// (`msg::workspaces_predates`).
-    pub async fn workspaces_on(
-        &self,
-        machine: &str,
-    ) -> Result<Vec<(String, String, u32, i64)>, String> {
-        if machine.is_empty() || machine == self.name() {
-            return Ok(self.workspaces_shown());
+    /// **Adding is the one workspace verb that goes out on the wire**,
+    /// and only to ask one question: is that a directory? The list
+    /// itself is local ([`Node::workspaces`]) because it is a set of
+    /// decisions, but a decision about a path nobody can stand in is a
+    /// row that will never open, made at the one moment somebody is
+    /// there to be told. A machine that cannot be reached refuses the
+    /// add rather than taking it on faith — the alternative is a list
+    /// that fills up with typos.
+    ///
+    /// This machine answers from its own filesystem; another machine
+    /// answers through `Ls`, which is also the road a satellite's
+    /// listing already takes through its sponsor ([`Node::ls_of`]), so
+    /// all three kinds of machine are checked by one call.
+    ///
+    /// **Adding something already on the list changes nothing** — in
+    /// particular it does not unpin it. `add` means 「be on the list」,
+    /// and it is the same word whether or not it already was.
+    pub async fn ws_add(&self, machine: &str, path: &str) -> Result<(), String> {
+        if !std::path::Path::new(path).is_absolute() {
+            return Err(msg::path_not_absolute(path));
         }
-        if let Some(reply) =
-            self.via_serve(ipc::Op::WorkspacesOn { machine: machine.to_owned() }).await
+        let (_, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            if !std::path::Path::new(path).is_dir() {
+                return Err(msg::ws_not_a_dir(path));
+            }
+        } else {
+            // That machine's own sentence about why it could not list
+            // the path is the one to show — it already says whether the
+            // path is a file, is missing, or the machine is unreachable
+            // (the `load-*` pair's lesson, zh.toml).
+            self.ls_of(machine, path).await?;
+        }
+        let loaded = self.workspaces_loaded()?;
+        let key = khor_sync::workspaces::key(&home.hex(), path);
+        if loaded.doc.state(&key) == khor_sync::workspaces::State::No {
+            loaded.doc.set(&key, khor_sync::workspaces::State::Yes)?;
+            let mut store = loaded.store;
+            store.flush(&loaded.doc)?;
+        }
+        Ok(())
+    }
+
+    /// When a directory on any machine was last changed — the newest
+    /// file mtime under it (`crate::workspace::touched`).
+    ///
+    /// **One question per row, asked of the machine holding the
+    /// files.** Nothing here is cached and nothing is on a beat: the
+    /// landing asks when it draws and again when somebody comes back to
+    /// the window, which is `WorkspacePane`'s rule for the git marks
+    /// and for the same reason.
+    pub async fn touched(&self, machine: &str, path: &str) -> Result<i64, String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::TouchedOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
         {
             return match reply? {
-                ipc::Reply::Workspaces { workspaces } => Ok(workspaces),
+                ipc::Reply::Touched { at_ms } => Ok(at_ms),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -2197,63 +2241,63 @@ impl Node {
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
-        let out = self.workspaces_on_with(&ep, machine).await;
+        let out = self.touched_with(&ep, machine, path).await;
         ep.close().await;
         out
     }
 
-    async fn workspaces_on_with(
+    async fn touched_with(
         &self,
         ep: &iroh::Endpoint,
         machine: &str,
-    ) -> Result<Vec<(String, String, u32, i64)>, String> {
-        let (channel, home) = self.resolve(machine)?;
+        path: &str,
+    ) -> Result<i64, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
         if home == self.device() {
-            return Ok(self.workspaces_shown());
+            let dir = std::path::PathBuf::from(path);
+            return tokio::task::spawn_blocking(move || crate::workspace::touched(&dir))
+                .await
+                .map_err(|e| e.to_string());
         }
-        // **A satellite's list routes to its sponsor** (卫星工作区批),
-        // the road `Ls` and `FetchPath` already take: nothing can dial
-        // a satellite — its row carries no addresses on purpose — so
-        // asking it directly is a frame that goes nowhere and comes
-        // back as「联系不上」about a machine that is perfectly
-        // reachable over ssh. On the sponsor itself there is no wire to
-        // use at all.
+        // Resolve proved the name microseconds ago, but two reads of
+        // one table can straddle a removal.
         let target = self
             .devices_loaded()?
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
+        // **A satellite routes to its sponsor**, the road `Ls` and
+        // `FetchPath` already take: nothing can dial a satellite — its
+        // row carries no addresses on purpose — so asking it directly
+        // is a frame that goes nowhere and comes back as「联系不上」
+        // about a machine ssh can reach. On the sponsor itself there is
+        // no wire to use at all.
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
                 let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
-                return tokio::task::spawn_blocking(move || crate::satellite::places(&host))
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let path = path.to_owned();
+                return tokio::task::spawn_blocking(move || {
+                    crate::satellite::touched(&host, &path)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
             }
             let sponsor = self
                 .devices_loaded()?
                 .doc
                 .get(&sp)
                 .ok_or_else(|| msg::machine_left_table(&channel))?;
-            return match self.ask(ep, &sponsor.name, &Request::SatWorkspaces { sat }).await? {
-                Response::Workspaces { workspaces } => Ok(workspaces),
-                Response::Refused { why } if why.trim().is_empty() => {
-                    Err(msg::WORKSPACES_PREDATES.into())
-                }
-                Response::Refused { why } => Err(msg::workspaces_refused(why)),
+            let req = Request::SatTouched { sat, path: path.to_owned() };
+            return match self.ask(ep, &sponsor.name, &req).await? {
+                Response::Touched { at_ms } => Ok(at_ms),
+                Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        match self.ask(ep, &channel, &Request::Workspaces).await? {
-            Response::Workspaces { workspaces } => Ok(workspaces),
-            // Wordless means the op is unknown over there; words mean
-            // that machine answered and its answer is the one to show
-            // (the `load-*` pair's measured lesson, zh.toml).
-            Response::Refused { why } if why.trim().is_empty() => {
-                Err(msg::WORKSPACES_PREDATES.into())
-            }
-            Response::Refused { why } => Err(msg::workspaces_refused(why)),
+        match self.ask(ep, &channel, &Request::Touched { path: path.to_owned() }).await? {
+            Response::Touched { at_ms } => Ok(at_ms),
+            Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
@@ -3809,6 +3853,17 @@ impl Node {
         {
             let mut loaded = self.dirpins_loaded()?;
             if let Ok(n) = self.rounds(&conn, "dirpins", &mut loaded).await {
+                moved += n;
+            }
+        }
+        // The workspaces, on the same best-effort footing: a workspace
+        // declared on the desk must be on the phone's list, and a peer
+        // that predates the table refuses the doc by name — which must
+        // not cost the rounds behind it. What it costs instead is a
+        // shorter list over there, never a wrong one.
+        {
+            let mut loaded = self.workspaces_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "workspaces", &mut loaded).await {
                 moved += n;
             }
         }

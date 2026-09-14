@@ -1317,6 +1317,16 @@ export default function App() {
         // an empty "+" is worse than no "+": it is a menu that teaches
         // people not to open menus.
         actions={sessions ? sessionActions : landing === "devices" ? deviceActions : undefined}
+        // The workspace pane's one creation road. **Drawn and not
+        // pressable** (工作区批①): what it opens is the cross-machine
+        // directory picker, which is 批②, and a pane whose only way to
+        // add something is invisible reads as a pane that cannot. The
+        // empty state names the command that does work today.
+        create={
+          landing === "workspaces"
+            ? { label: gui.ws_add, mark: "data-ws-add", disabled: true }
+            : undefined
+        }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {stale && <div className="p-4 text-sm text-muted-foreground">{gui.backend_unreachable}</div>}
@@ -1337,7 +1347,16 @@ export default function App() {
             devices={devices}
             selected={openWs}
             onOpen={(r) => {
-              setOpenWs({ device: r.device, machine: r.machine, path: r.ws.path });
+              // **The id stands in where there is no name.** A row whose
+              // machine has left the device table carries an empty
+              // `machine`, and an empty machine means「this one」to
+              // every verb the node has — so the pane would browse
+              // *this* disk under another machine's path. The hex
+              // resolves to no machine at all, so every question the
+              // pane asks refuses by name and it paints refusals, which
+              // is the true answer (`views/WorkspacesList` holds the
+              // same line for the row's two corners).
+              setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
               setScreen("detail");
             }}
           />

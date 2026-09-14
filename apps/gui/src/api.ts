@@ -224,18 +224,45 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     machine, because it is where the wizard is about to start something
     (`Node::places_on`). */
 export const fetchPlaces = (machine = "") => call<PlaceRow[]>("places", { machine });
-/** The workspace landing's list for **one** machine: the checkouts its
-    own records say work happened in (`khor_node::place`, the checkout
-    half). `machine` empty is this one.
+/** Every workspace, pinned first then by path
+    (`khor_gui_core::workspaces`).
 
-    **Asked per machine and never folded.** The landing shows them all
-    in one list, but which machine could not answer is a fact about that
-    machine, and a folded call would flatten「没问过」「够不着」「那儿
-    没有」into one empty array — the same three-way collapse
-    `check-acp` 第二批 exists to catch. A refusal here is an error, not
-    an empty list. */
-export const fetchWorkspaces = (machine = "") =>
-  call<WorkspaceRow[]>("workspaces", { machine });
+    **One read and no machine named.** A workspace is a decision and
+    decisions replicate, so the whole list is on this disk — there is no
+    「那台机器答不了」state here, because no machine is asked. What does
+    need a far machine is what a row *shows*: `fetchGitStatus` and
+    `fetchTouched`, asked per row, each leaving its corner blank when
+    that machine cannot answer. */
+export const fetchWorkspaces = () => call<WorkspaceRow[]>("workspaces");
+/** Declares a directory on a machine a workspace; `machine` empty is
+    this one. **The one workspace call that goes out on the wire**, and
+    only to ask whether that path is a directory — a path nobody can
+    stand in is refused while somebody is here to be told. */
+export const wsAdd = (machine: string, path: string) =>
+  call<null>("ws_add", { machine, path });
+/** Takes it off the list. **The directory is not touched** (user,
+    2026-09-14).
+
+    **Keyed by `device` and not by a machine name**, this one and
+    `wsPin`: a row whose machine has left the device table carries no
+    name, and it is precisely the row somebody needs to take off. An
+    empty name would mean「this machine」to the node and the write would
+    land on a key about another disk (`khor_node::Node::ws_write`). */
+export const wsRm = (device: string, path: string) =>
+  call<null>("ws_rm", { device, path });
+/** Floats it to the top, or lets it back down — still a workspace
+    either way. `on` is explicit for the reason every pin API's is. */
+export const wsPin = (device: string, path: string, on: boolean) =>
+  call<null>("ws_pin", { device, path, on });
+/** When that directory last changed: the newest file mtime under it,
+    ms, `0` where there was nothing to date
+    (`khor_node::workspace::touched`).
+
+    Asked per row, of the machine holding the files. It refuses out
+    loud; the row paints no time rather than a wrong one, and stays
+    exactly where it is. */
+export const fetchTouched = (machine: string, path: string) =>
+  call<number>("touched", { machine, path });
 /** One file off a machine, as much of it as one slice holds
     (`khor_gui_core::files::read_text`). For reading; `pullFile` is the
     other verb and it spends a disk. */

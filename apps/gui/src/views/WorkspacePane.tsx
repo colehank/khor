@@ -31,13 +31,12 @@ import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
-import { ago, word } from "@/words";
+import { ago, basename, word } from "@/words";
 import { BrowserPane } from "@/views/BrowserPane";
 import { DetailPane } from "@/views/DetailPane";
 import { FilesPane } from "@/views/FilesPane";
 import { FileView, type Draft } from "@/views/FileView";
 import type { Editor } from "@/gen/bindings/Editor";
-import { basename } from "@/views/WorkspacesList";
 
 export function WorkspacePane({
   machine,

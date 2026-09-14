@@ -8,6 +8,20 @@ export function word(key: string): string {
 }
 
 /**
+ * `/a/b/khor` → `khor`. The last real component, so a trailing slash
+ * does not answer with an empty name, and a path with no component at
+ * all answers with itself.
+ *
+ * **The same rule the node applies** when it names a workspace row
+ * (`khor_node::workspace::basename`); it is spelled here too because
+ * one caller has a path and no row — the workspace pane's header, whose
+ * `root` is a string handed down by the shell.
+ */
+export function basename(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path;
+}
+
+/**
  * The word for which road a machine is being reached over
  * (`khor_core::Hop`), from the key the node sent.
  *

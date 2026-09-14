@@ -118,7 +118,13 @@ usage = """
                         差在哪几处,行号是文件现在的行号,每处底下是 HEAD
                         那边原来的那几行
   places [机器]          那台机器上开过 session 的目录(不给机器=本机)
-  workspaces [机器]      其中是 git 仓库的那些,也就是工作区
+  ws ls | add [-m 机器] <目录> | rm [-m 机器] <目录> |
+     pin [-m 机器] <目录> | unpin [-m 机器] <目录>
+                        工作区:你自己指定的「哪台机器上的哪个目录」,
+                        不由 git 或者 session 记录推出来。ls 每行是
+                        置顶标记、名字、机器:路径;add 加一个(不给 -m
+                        就是本机,可以写 . );rm 移出这张表,目录本身
+                        一个字节都不动;pin/unpin 让它排在最前面
   read <机器> <文件>      把文档读成文字打出来:md 原样,docx/xlsx/pptx 和
                         它们的旧格式(doc/xls/ppt)、csv/tsv、pdf 都转成
                         markdown。读的是文字和结构,不是排版
@@ -1558,18 +1564,18 @@ load-predates = "那边的 khor 版本旧,还报不了进程和 CPU 走势"
 # version is how a working machine gets blamed for a frame it merely
 # could not read.
 load-refused = "那台机器没接这次读数:{0}"
-# The workspace list's two refusals, split on the same line and for the
-# same reason as the `load-*` pair above: a refusal that carries words
-# repeats them, and only a wordless one gets blamed on the version.
+# ⚠️ **`workspaces-predates` / `workspaces-refused` were deleted here on
+# 2026-09-14** (工作区批①). They said a machine could not list its
+# workspaces, and nothing asks a machine that any more: the list is a
+# replicated table read off this disk (`khor_sync::workspaces`), so
+# there is no refusal to translate.
 #
-# **Why this list refuses out loud at all**, where 常去的地方 swallows
-# the same refusal: the wizard's box still takes a typed path, so an
-# empty completion list costs a person one keystroke. A workspace list
-# is the whole landing, and「那台机器上没人干活」and「那台机器答不了」
-# are two different next moves — go work somewhere else, or go look at
-# that machine. Painted the same, the second one never gets looked at.
-workspaces-predates = "那边的 khor 版本旧,列不出工作区"
-workspaces-refused = "那台机器没接这次工作区:{0}"
+# Refused by `khor ws add`: the path on that machine is not a directory.
+# **Only this machine's own filesystem answers with this sentence** — a
+# path on another machine is probed with `Ls`, and that machine's own
+# words about why it could not list it are better than this one
+# (the `load-*` pair's lesson above).
+ws-not-a-dir = "这不是一个目录:{0}"
 # A path that is not inside any checkout, asked a git question. **Not
 # an error about khor** — it is a fact about where the file is, and the
 # same sentence covers both「你打开的不是仓库」and「这个文件在仓库外」.
@@ -2076,23 +2082,37 @@ browser-tab = "浏览器"
 # loading frame.
 workspaces-empty = "还没有工作区"
 # Said under the empty list. **Names the one thing that puts a row
-# here**, which is not a create action: a workspace is derived, never
-# declared (`khor_node::place`), and what derives it is a session's own
-# record of where it ran (`Node::places` folds the vendors' files).
+# here**, and on 2026-09-14 that stopped being a derivation and became
+# a person: a workspace is declared (`khor_sync::workspaces`), so the
+# empty list is answered by saying how to declare one.
 #
-# ⚠️ **This said two things until 2026-09-11 (工作区批3) and one of them
-# was not true.** 「在任意一台机器上打开一个目录」 named an act khor does
-# not have: nothing in the product opens an arbitrary directory, and
-# nothing would put a row here if it did — `workspaces_shown` reads
-# session records and filters them to checkouts, so a directory nobody
-# has worked in is invisible to it whether or not somebody looked at it.
-# A 「打开一个目录」 button was drafted beside this line and never built,
-# and its key is deleted rather than left waiting: see docs/handoff/001.md
-# for what the files landing took with it when it left.
-workspaces-how = "在某台机器的 git 仓库里开一个 session,这里就会有它"
-# How many recorded sessions fold into one workspace. A count of what
-# the vendors' files remember, which is why it says 记录 and not 共.
-workspaces-sessions = "{0} 个记录"
+# ⚠️ **Rewritten twice, both times because it named something untrue.**
+# Until 2026-09-11 it said 「在任意一台机器上打开一个目录」, an act khor
+# did not have; until 2026-09-14 it said 「在某台机器的 git 仓库里开一个
+# session」, which was true of the derived list and is now true of
+# nothing. **It names the command and not the 「+」 above it** because
+# the 「+」 does not work yet (批②, the cross-machine directory picker):
+# a sentence pointing at a disabled button is the same mistake a third
+# time.
+workspaces-how = "工作区是你自己定的:khor ws add <目录>"
+# ⚠️ **`workspaces-sessions` was deleted here on 2026-09-14** (工作区
+# 批①). It counted the vendor records that folded into a derived row,
+# and the row is not derived any more — what a row says now is where it
+# is, what git says, and when it last changed.
+#
+# The 「+」 on the workspace pane. It opens the cross-machine directory
+# picker, which is 批②; until then it is drawn and cannot be pressed,
+# so the word is what it will do rather than what it does.
+ws-add = "加一个工作区"
+# On a row: take it off the list. **Says 移出 and not 删除** — the
+# directory is not touched (user, 2026-09-14), and 删除 beside a
+# directory name is the one word that must not be a guess.
+ws-remove = "移出工作区"
+# The workspace row's git corner, beside the branch: how many files
+# differ from HEAD on that machine. **Files and not hunks**, which is
+# why it is not `git-hunks` — that one counts the places inside one
+# file, and this counts the files.
+ws-marked = "{0} 个文件改过"
 # A file whose bytes are not text. **Says what it is, not what went
 # wrong** — nothing went wrong, and 「打不开」 would read as a failure
 # of khor rather than as a fact about the file.

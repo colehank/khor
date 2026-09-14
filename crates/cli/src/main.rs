@@ -135,10 +135,13 @@ const VERBS: &[Verb] = &[
     Verb { word: "code", run: code, reach: Reach::Act },
     // Turns a document into words on this terminal. Reads only.
     Verb { word: "read", run: read, reach: Reach::Read },
-    // The two lists the GUI's landings are built on. Read-only folds
-    // over the vendors' own records.
+    // The wizard's completion list: a read-only fold over the vendors'
+    // own records.
     Verb { word: "places", run: places, reach: Reach::Read },
-    Verb { word: "workspaces", run: workspaces, reach: Reach::Read },
+    // `ls` reads and the other four write the workspace table, so the
+    // word is an act: the rule is per word, not per invocation (`face`
+    // above).
+    Verb { word: "ws", run: ws, reach: Reach::Act },
     Verb { word: "borrow", run: borrow, reach: Reach::Act },
     Verb { word: "usage", run: usage, reach: Reach::Read },
     Verb { word: "sessions", run: sessions, reach: Reach::Read },
@@ -404,22 +407,90 @@ fn places(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// The checkouts among those places — the workspace landing's list
-/// (`khor_node::Node::workspaces_on`).
+/// The workspaces — the directories a person declared they work in
+/// (`khor_node::Node::workspaces`), and the four verbs that change the
+/// list.
 ///
-/// **A refusal here is an error, not an empty list**, the same as on
-/// the screen: 「nobody works there」 and 「that machine could not
-/// answer」 are two different next moves.
-fn workspaces(rest: &[String]) -> Result<(), String> {
-    let machine = match rest {
-        [] => "",
-        [machine] => machine.as_str(),
-        _ => return Err(USAGE.into()),
+/// **Nothing here asks the network for the list.** A workspace is a
+/// decision and decisions replicate, so `ls` reads this machine's own
+/// copy of the table; the one call that does go out is `add`, and only
+/// to ask whether that path over there is a directory.
+///
+/// `-m` is the flag `pin`/`rename` already use for the same
+/// distinction — one verb, several subjects, and the subject is named
+/// the same way everywhere rather than each verb inventing its own.
+fn ws(rest: &[String]) -> Result<(), String> {
+    let (verb, rest) = rest.split_first().ok_or_else(|| String::from(USAGE))?;
+    // `-m <机器> <目录>` or a bare `<目录>`, which is this machine.
+    let target = |rest: &[String]| -> Result<(String, String), String> {
+        match rest {
+            [flag, machine, dir] if flag == "-m" || flag == "--machine" => {
+                Ok((machine.clone(), here(dir)?))
+            }
+            [dir] => Ok((String::new(), here(dir)?)),
+            _ => Err(USAGE.into()),
+        }
     };
-    for (path, shown, sessions, _) in rt()?.block_on(node()?.workspaces_on(machine))? {
-        println!("{shown}\t{sessions}\t{path}");
+    let n = node()?;
+    match (verb.as_str(), rest) {
+        ("ls", []) => {
+            for w in n.workspaces()? {
+                let pin = if w.pinned { cli::PINNED_MARK } else { "" };
+                // **The id stands in where the machine has no name** —
+                // it has left the device table, and this column has to
+                // stay something a person can paste back into `ws rm`
+                // (`Node::machine_id`). The screen leaves it blank
+                // instead, which is the difference between a row you
+                // read and a row you type at.
+                let at = if w.machine.is_empty() { &w.device } else { &w.machine };
+                // The name first because it is what a person recognises,
+                // then where it actually is — one row, the same facts
+                // the landing's row wears.
+                println!("{pin}\t{}\t{at}:{}", w.name, w.path);
+            }
+            Ok(())
+        }
+        ("add", rest) => {
+            let (machine, dir) = target(rest)?;
+            rt()?.block_on(n.ws_add(&machine, &dir))
+        }
+        // The three writes are keyed by the machine's **id**, not its
+        // name (`Node::ws_write` says why), so a typed name becomes one
+        // here — the one place the CLI's grammar meets the table's key.
+        ("rm", rest) => {
+            let (machine, dir) = target(rest)?;
+            n.ws_rm(&n.machine_id(&machine)?, &dir)
+        }
+        ("pin", rest) => {
+            let (machine, dir) = target(rest)?;
+            n.ws_pin(&n.machine_id(&machine)?, &dir, true)
+        }
+        ("unpin", rest) => {
+            let (machine, dir) = target(rest)?;
+            n.ws_pin(&n.machine_id(&machine)?, &dir, false)
+        }
+        _ => Err(USAGE.into()),
     }
-    Ok(())
+}
+
+/// A directory as typed, made absolute **against this terminal's own
+/// cwd**.
+///
+/// `khor ws add .` is the shape a person actually types, and `.` names
+/// nothing on any other machine — so only a local path is resolved
+/// here, and a path meant for another machine must already be absolute
+/// (`Node::ws_add` refuses it otherwise, in the same words `Ls` uses).
+fn here(dir: &str) -> Result<String, String> {
+    let p = std::path::Path::new(dir);
+    if p.is_absolute() {
+        return Ok(dir.to_owned());
+    }
+    match std::fs::canonicalize(p) {
+        Ok(abs) => Ok(abs.display().to_string()),
+        // Not this machine's path, or not there: handed on as typed so
+        // the refusal comes from the one place that knows which.
+        Err(_) => Ok(dir.to_owned()),
+    }
 }
 
 /// Prints a document's words: markdown, or a Word / Excel / PowerPoint

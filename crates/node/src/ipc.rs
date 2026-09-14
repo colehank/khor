@@ -88,9 +88,6 @@ pub enum Op {
     /// one.** The caller wanted it not to exist; a refusal would only
     /// tell it about a race it cannot do anything about.
     DropBorrow { session: String },
-    /// Tail-appended: [`crate::proto::Request::Workspaces`] through
-    /// the resident — the checkouts that machine has been worked in.
-    WorkspacesOn { machine: String },
     /// Tail-appended: one slice of a file, for looking at rather than
     /// taking (`Node::read_head`). Distinct from [`Op::Pull`], which
     /// loops every slice onto this disk; this one answers once and the
@@ -123,6 +120,10 @@ pub enum Op {
     /// reply is one slice, and a whole 4 MB image answered in one frame
     /// would be eight times `proto::MAX_FRAME`.
     ReadAt { machine: String, path: String, offset: u64 },
+    /// Tail-appended: [`crate::proto::Request::Touched`] through the
+    /// resident — when a directory on that machine last changed
+    /// (工作区批①).
+    TouchedOn { machine: String, path: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -173,9 +174,6 @@ pub enum Reply {
     /// Tail-appended with [`Op::LoadOn`]: the machine's top and CPU
     /// day, as it answered.
     Load { load: khor_core::Load },
-    /// Tail-appended with [`Op::WorkspacesOn`]: the same four fields
-    /// as [`Reply::Places`], filtered to checkouts over there.
-    Workspaces { workspaces: Vec<(String, String, u32, i64)> },
     /// Tail-appended with [`Op::ReadHead`]: the file's whole size, its
     /// mtime, and as much of it as one slice holds. `bytes.len() <
     /// total` is the only thing that says it was cut.
@@ -219,6 +217,9 @@ pub enum Reply {
     /// Tail-appended with [`Op::CodeOpenOn`]: where to point a browser
     /// **on this machine**, and the token the far server wants.
     CodeAt { addr: String, token: String },
+    /// Tail-appended with [`Op::TouchedOn`]: ms since the epoch, `0`
+    /// where there was nothing to date.
+    Touched { at_ms: i64 },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

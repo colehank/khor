@@ -80,11 +80,39 @@ pub fn answer(
         "places" => {
             to_json(&rt.block_on(crate::places(root, &opt_str("machine")?.unwrap_or_default()))?)
         }
-        // Per machine, never folded: which machine could not answer is
-        // the fact the landing paints (`workspaces` module head).
-        "workspaces" => to_json(&rt.block_on(crate::workspaces::workspaces(
+        // One read of one local table, no arguments: a workspace is a
+        // decision and decisions replicate, so there is no machine to
+        // ask (`workspaces` module head).
+        "workspaces" => to_json(&crate::workspaces::workspaces(root)?),
+        // `machine` empty is this one, the way every path verb here
+        // spells it.
+        "ws_add" => {
+            rt.block_on(crate::workspaces::ws_add(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                &arg("path")?,
+            ))?;
+            Ok("null".to_owned())
+        }
+        // **The two writes take a `device`, not a `machine`**: a row
+        // whose machine has left the table has no name and is exactly
+        // the row that has to stay removable (`workspaces::ws_rm`).
+        "ws_rm" => {
+            crate::workspaces::ws_rm(root, &arg("device")?, &arg("path")?)?;
+            Ok("null".to_owned())
+        }
+        // `on` is explicit rather than a toggle, for `pin_dir`'s reason.
+        "ws_pin" => {
+            crate::workspaces::ws_pin(root, &arg("device")?, &arg("path")?, flag("on")?)?;
+            Ok("null".to_owned())
+        }
+        // When that directory last changed. Refuses out loud; the face
+        // paints nothing where the time would have been, which is a
+        // blank corner and not a wrong date.
+        "touched" => to_json(&rt.block_on(crate::workspaces::touched(
             root,
             &opt_str("machine")?.unwrap_or_default(),
+            &arg("path")?,
         ))?),
         // One slice of a file, for reading. `pull` is the other verb
         // and it spends a disk; this one spends a screen.
