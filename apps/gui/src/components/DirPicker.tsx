@@ -197,11 +197,18 @@ export function DirPicker({
           so what is left here is keeping the body from growing past one
           screen: the list is the only part that can, and it is the part
           that scrolls. */}
-      <DialogContent data-dir-picker className="max-h-[90vh]">
+      {/* **A flex column with a ceiling, not the dialog's default grid.**
+          Under `grid` the body is content-sized, so forty directories
+          make a list forty rows tall and the path box and the confirm
+          fall off the foot of the sheet (measured by `check-face` with
+          a long listing, 2026-09-15). As a column capped at 90vh the
+          listing is the one part that yields (`min-h-0 flex-1`) and the
+          foot stays where a finger can reach it. */}
+      <DialogContent data-dir-picker className="flex max-h-[90vh] flex-col">
         <DialogHeader>
           <DialogTitle>{gui.dir_picker}</DialogTitle>
         </DialogHeader>
-        <div className="flex min-h-0 min-w-0 flex-col gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           {/* 在哪台, first — the directory is a fact about the machine
               (the wizard's order, and its heading).
 
@@ -251,11 +258,19 @@ export function DirPicker({
               box instead of going nowhere — `PathCrumbs` reserves that
               press for whoever draws the bar, and here the box is what
               it is for. */}
-          <PathCrumbs
-            at={here}
-            onGo={go}
-            onEdit={() => document.querySelector<HTMLInputElement>("[data-dir-picker-path]")?.focus()}
-          />
+          {/* **Boxed, `flex-none`.** `PathCrumbs` grows (`flex-1`) because
+              it was born on an address bar, where growing sideways is
+              the point; in this column it grew *down*, took the whole
+              sheet, and pushed the list and the path box out of sight
+              (2026-09-15, on the desktop face — the narrow probe measured
+              only left/right and missed it). */}
+          <div className="flex min-w-0 flex-none">
+            <PathCrumbs
+              at={here}
+              onGo={go}
+              onEdit={() => document.querySelector<HTMLInputElement>("[data-dir-picker-path]")?.focus()}
+            />
+          </div>
 
           {/* 常去的地方 as a jump and not a pick: pressing one lands the
               walk there so it can be looked at, the same as pressing a

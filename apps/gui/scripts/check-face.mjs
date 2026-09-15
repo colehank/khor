@@ -3159,40 +3159,72 @@ try {
   // (`ui/dialog` is `w-full max-w-[calc(100%-2rem)]`), so what is
   // measured here is that the body still fits inside it: a picker whose
   // list or footer hangs out of the sheet is one a finger cannot finish.
-  await page.setViewportSize({ width: 390, height: 844 });
-  await wait(200);
-  if (!(await dirPicker())) {
-    fail("probe dead: the 「+」 opened no picker at 390 (src/components/DirPicker.tsx)");
-  } else {
+  // **Both faces, and all four edges.** The first spelling measured
+  // 390 only and only left/right; on the desktop face the breadcrumb
+  // (born `flex-1` on an address bar) grew *down*, took the sheet, and
+  // pushed the listing and the path box below its foot — every box was
+  // inside the sheet sideways and the person saw nothing (2026-09-15).
+  // **A long listing, or the sheet never reaches its cap.** With one
+  // subdirectory the dialog is content-sized and every layout looks
+  // right; the desk's home has forty, the sheet hits `max-h-[90vh]`,
+  // and only then does a part that grows steal the room from the
+  // parts that do not. Answered here on top of the shared `ls` route
+  // (later registrations match first) and taken off again below.
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    name: `dir-${String(i).padStart(2, "0")}`,
+    dir: true,
+    size: 0,
+    at_ms: Date.now(),
+  }));
+  const longLs = (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    return r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ path: body.path || "/home/peer", entries: many, truncated: false }),
+    });
+  };
+  await page.route("**/ls", longLs);
+  for (const [width, height] of [[1400, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await wait(200);
+    if (!(await dirPicker())) {
+      fail(`probe dead: the 「+」 opened no picker at ${width} (src/components/DirPicker.tsx)`);
+      continue;
+    }
     const fit = await page.evaluate(() => {
       const sheet = document.querySelector("[data-dir-picker]");
       const box = sheet.getBoundingClientRect();
-      const take = sheet.querySelector("[data-dir-picker-take]").getBoundingClientRect();
-      const row = sheet.querySelector("[data-dir-picker-row]")?.getBoundingClientRect() ?? null;
+      const inside = (r) =>
+        r === null ||
+        (r.right <= box.right + 0.5 && r.left >= box.left - 0.5 && r.bottom <= box.bottom + 0.5 && r.top >= box.top - 0.5);
+      const rect = (sel) => sheet.querySelector(sel)?.getBoundingClientRect() ?? null;
       const px = (n) => Math.round(n * 10) / 10;
       return {
         sheet: { w: px(box.width), h: px(box.height) },
         over: px(Math.max(0, box.right - window.innerWidth) + Math.max(0, -box.left)),
-        takeIn: take.right <= box.right + 0.5 && take.bottom <= box.bottom + 0.5,
-        rowIn: row === null || (row.right <= box.right + 0.5 && row.left >= box.left - 0.5),
+        takeIn: inside(rect("[data-dir-picker-take]")),
+        rowIn: inside(rect("[data-dir-picker-row]")),
+        pathIn: inside(rect("[data-dir-picker-path]")),
         tall: px(Math.max(0, box.bottom - window.innerHeight)),
       };
     });
-    console.log(`dir picker at 390: ${JSON.stringify(fit)}`);
+    console.log(`dir picker at ${width}: ${JSON.stringify(fit)}`);
     if (fit.over > 0 || fit.tall > 0) {
       fail(
-        `the picker hangs ${fit.over} past the side and ${fit.tall} past the foot at 390 — a sheet ` +
+        `the picker hangs ${fit.over} past the side and ${fit.tall} past the foot at ${width} — a sheet ` +
           "that does not fit the screen is one a finger cannot finish (src/components/DirPicker.tsx)",
       );
     }
-    if (!fit.takeIn || !fit.rowIn) {
+    if (!fit.takeIn || !fit.rowIn || !fit.pathIn) {
       fail(
-        `at 390 the picker's ${!fit.takeIn ? "confirm" : "listing"} sits outside its own sheet ` +
+        `at ${width} the picker's ${!fit.rowIn ? "listing" : !fit.pathIn ? "path box" : "confirm"} sits outside its own sheet ` +
           "(src/components/DirPicker.tsx)",
       );
     }
     await page.keyboard.press("Escape");
+    await wait(150);
   }
+  await page.unroute("**/ls", longLs);
   await page.setViewportSize({ width: 1400, height: 900 });
   await wait(200);
 
@@ -3697,6 +3729,29 @@ try {
         `the source of a .rs file carries no highlighting — 「要有语法高亮」, and what is there is ` +
           `${JSON.stringify(html)} (src/lib/highlight.ts)`,
       );
+    } else {
+      // **A class is not a colour.** Every token wore its class before
+      // 2026-09-15 and the sheet was one colour anyway, because no rule
+      // reached `[data-sheet]` — 「我说的语法高亮，是有颜色的」. So the
+      // keyword's painted ink must differ from the sheet's, and so must
+      // a string's from the keyword's: two roles, two colours, or it is
+      // a bold-and-plain theme wearing the word.
+      const inks = await page.evaluate(() => {
+        const sheet = document.querySelector("[data-sheet]");
+        const ink = (el) => (el ? getComputedStyle(el).color : null);
+        return {
+          body: ink(sheet),
+          keyword: ink(sheet.querySelector(".hljs-keyword")),
+          string: ink(sheet.querySelector(".hljs-string")),
+        };
+      });
+      console.log(`sheet inks: ${JSON.stringify(inks)}`);
+      if (!inks.keyword || inks.keyword === inks.body) {
+        fail(`a keyword on the sheet is painted in the body ink (${inks.keyword}) — the class landed and no colour did (src/styles/app.css)`);
+      }
+      if (inks.string && inks.string === inks.keyword) {
+        fail(`a string and a keyword share one ink (${inks.string}) — one colour is not a highlighting (src/styles/tokens.css)`);
+      }
     }
   }
 

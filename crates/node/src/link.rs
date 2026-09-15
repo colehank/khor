@@ -3219,7 +3219,11 @@ impl Node {
         machine: &str,
         path: &str,
     ) -> Result<(String, Vec<proto::DirEntry>, bool), String> {
-        let (channel, home) = self.resolve(machine)?;
+        // `""` is this machine, the spelling every other verb takes
+        // (`resolve_or_here`); through `resolve` alone it was refused as
+        // 「这个机器名进不了路径」 — the directory picker's 本机 row
+        // asked exactly that and drew nothing (2026-09-15).
+        let (channel, home) = self.resolve_or_here(machine)?;
         if home == self.device() {
             let path = path.to_owned();
             let (at, entries, truncated) =

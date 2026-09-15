@@ -6875,6 +6875,15 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   await until("the directory picker", 10_000, async () =>
     (await page.locator("[data-dir-picker]").count()) === 1,
   );
+  // **This machine first, then alpha.** `""` is what the picker sends
+  // for 本机, and `ls_with` refused it as 「这个机器名进不了路径」 until
+  // 2026-09-15 — the row on the desk drew nothing while the far ones
+  // worked, which no fixture could see.
+  await page.locator('[data-dir-picker-machine="beta"]').click();
+  await until("the picker listing this machine's own home", 20_000, async () =>
+    (await page.locator("[data-dir-picker-row]").count()) > 0 &&
+    (await page.locator("[data-dir-picker-cannot]").count()) === 0,
+  );
   await page.locator('[data-dir-picker-machine="alpha"]').click();
   //      Typed rather than walked from the home the picker opens on:
   //      that home is this developer's own, and the path below is under

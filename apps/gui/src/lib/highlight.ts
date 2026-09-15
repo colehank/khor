@@ -1,14 +1,19 @@
-// Syntax colouring for the conversation's code blocks, at the one
-// intensity this app has room for.
+// Syntax colouring for the conversation's code blocks and the file
+// sheet.
 //
-// **Three roles, not six.** Comments take the aux ink they already
-// mean; string literals take one new colour; everything else — keywords,
-// types, function names, numbers, operators — stays body ink. A
-// six-role theme would have to either reuse the state words' colours or
-// invent four or five more, and this app's palette is fully spoken for
-// (the six words, `--strain`, the brand green). The mapping itself is in
-// `styles/app.css`, because these are class names a stylesheet has to
-// name; this file only produces them.
+// **Nine roles, in colour (2026-09-15).** This file used to argue for
+// three — comments, strings, and body ink for everything else — on the
+// ground that the palette was spoken for. The user opened a .py file on
+// the sheet and ruled 「我说的语法高亮，是有颜色的」; the palette grew
+// seven `--code-*` tokens (`styles/tokens.css`, GitHub's values in both
+// themes) and the mapping is in `styles/app.css`, because these are
+// class names a stylesheet has to name; this file only produces them.
+//
+// **The tool is highlight.js, not Shiki.** Shiki paints VS Code's exact
+// colours but ships TextMate grammars plus an oniguruma wasm, over a
+// megabyte and async; highlight.js is already in the tree, synchronous,
+// and a grammar here is 5–30 KB. Per-language modules rather than the
+// all-languages bundle (~1 MB) for the same reason.
 //
 // **The whitelist is counted, not guessed.** 1089 real agent transcripts
 // on this machine (2026-08-30), 7066 fenced blocks that named a
@@ -59,6 +64,46 @@ import rust from "highlight.js/lib/languages/rust";
 import swift from "highlight.js/lib/languages/swift";
 import typescript from "highlight.js/lib/languages/typescript";
 import yaml from "highlight.js/lib/languages/yaml";
+// **The long tail, added 2026-09-15 with the colours**: a file sheet is
+// opened on whatever is on the disk, and a .c or .sql that opened in
+// body ink beside a coloured .py would read as「this one khor does not
+// understand」. Each is one small module; the whole set is measured on
+// the built face below, not guessed.
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import csharp from "highlight.js/lib/languages/csharp";
+import java from "highlight.js/lib/languages/java";
+import kotlin from "highlight.js/lib/languages/kotlin";
+import go from "highlight.js/lib/languages/go";
+import ruby from "highlight.js/lib/languages/ruby";
+import php from "highlight.js/lib/languages/php";
+import sql from "highlight.js/lib/languages/sql";
+import xml from "highlight.js/lib/languages/xml";
+import makefile from "highlight.js/lib/languages/makefile";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import r from "highlight.js/lib/languages/r";
+import matlab from "highlight.js/lib/languages/matlab";
+import latex from "highlight.js/lib/languages/latex";
+import lua from "highlight.js/lib/languages/lua";
+import perl from "highlight.js/lib/languages/perl";
+import scss from "highlight.js/lib/languages/scss";
+import less from "highlight.js/lib/languages/less";
+import diff from "highlight.js/lib/languages/diff";
+import scala from "highlight.js/lib/languages/scala";
+import julia from "highlight.js/lib/languages/julia";
+import dart from "highlight.js/lib/languages/dart";
+import objectivec from "highlight.js/lib/languages/objectivec";
+import cmake from "highlight.js/lib/languages/cmake";
+import protobuf from "highlight.js/lib/languages/protobuf";
+import graphql from "highlight.js/lib/languages/graphql";
+import powershell from "highlight.js/lib/languages/powershell";
+import nginx from "highlight.js/lib/languages/nginx";
+import haskell from "highlight.js/lib/languages/haskell";
+import elixir from "highlight.js/lib/languages/elixir";
+import erlang from "highlight.js/lib/languages/erlang";
+import clojure from "highlight.js/lib/languages/clojure";
+import vim from "highlight.js/lib/languages/vim";
+import http from "highlight.js/lib/languages/http";
 
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("css", css);
@@ -71,6 +116,41 @@ hljs.registerLanguage("rust", rust);
 hljs.registerLanguage("swift", swift);
 hljs.registerLanguage("typescript", typescript);
 hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("c", c);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("csharp", csharp);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("kotlin", kotlin);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("ruby", ruby);
+hljs.registerLanguage("php", php);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("makefile", makefile);
+hljs.registerLanguage("dockerfile", dockerfile);
+hljs.registerLanguage("r", r);
+hljs.registerLanguage("matlab", matlab);
+hljs.registerLanguage("latex", latex);
+hljs.registerLanguage("lua", lua);
+hljs.registerLanguage("perl", perl);
+hljs.registerLanguage("scss", scss);
+hljs.registerLanguage("less", less);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("scala", scala);
+hljs.registerLanguage("julia", julia);
+hljs.registerLanguage("dart", dart);
+hljs.registerLanguage("objectivec", objectivec);
+hljs.registerLanguage("cmake", cmake);
+hljs.registerLanguage("protobuf", protobuf);
+hljs.registerLanguage("graphql", graphql);
+hljs.registerLanguage("powershell", powershell);
+hljs.registerLanguage("nginx", nginx);
+hljs.registerLanguage("haskell", haskell);
+hljs.registerLanguage("elixir", elixir);
+hljs.registerLanguage("erlang", erlang);
+hljs.registerLanguage("clojure", clojure);
+hljs.registerLanguage("vim", vim);
+hljs.registerLanguage("http", http);
 
 /**
  * What an agent writes after the fence, to the module that reads it.
@@ -114,6 +194,64 @@ const LANGS: Record<string, string> = {
   // near enough that the comment and string roles land correctly.
   toml: "ini",
   ini: "ini",
+  // The tail (2026-09-15). `m` is Objective-C and not MATLAB: counted
+  // on this disk, .m files beside a .xcodeproj outnumber the other kind.
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  hh: "cpp",
+  cs: "csharp",
+  java: "java",
+  kt: "kotlin",
+  kts: "kotlin",
+  go: "go",
+  rb: "ruby",
+  php: "php",
+  sql: "sql",
+  xml: "xml",
+  html: "xml",
+  htm: "xml",
+  svg: "xml",
+  plist: "xml",
+  xib: "xml",
+  storyboard: "xml",
+  makefile: "makefile",
+  mk: "makefile",
+  dockerfile: "dockerfile",
+  r: "r",
+  m: "objectivec",
+  mm: "objectivec",
+  tex: "latex",
+  sty: "latex",
+  bib: "latex",
+  lua: "lua",
+  pl: "perl",
+  pm: "perl",
+  scss: "scss",
+  less: "less",
+  diff: "diff",
+  patch: "diff",
+  scala: "scala",
+  jl: "julia",
+  dart: "dart",
+  cmake: "cmake",
+  proto: "protobuf",
+  graphql: "graphql",
+  gql: "graphql",
+  ps1: "powershell",
+  hs: "haskell",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  clj: "clojure",
+  cljs: "clojure",
+  vim: "vim",
+  http: "http",
+  conf: "nginx",
+  matlab: "matlab",
 };
 
 /** The module for an info string, or `null` to leave the block plain. */

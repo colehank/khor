@@ -139,6 +139,20 @@
    * that apply it name highlight.js's own class names, which only a
    * stylesheet can reach (`styles/app.css`). */
   --code-string: #321c71;
+  /* The rest of the code palette (2026-09-15, 「我说的语法高亮，是有
+     颜色的」). Until then the sheet had one colour beside the string:
+     the palette was held to three roles on purpose (`lib/highlight.ts`
+     head), and the person reading a .py file called that 「没有任何
+     语法高亮」. Seven roles, GitHub's light values — chosen because
+     they are the ones most eyes already know from a diff page, and
+     none of them lands on a state word or the brand green. */
+  --code-keyword: #cf222e;
+  --code-number: #0550ae;
+  --code-type: #953800;
+  --code-function: #6639ba;
+  --code-attr: #116329;
+  --code-variable: #24292f;
+  --code-meta: #8250df;
   --accent: rgba(147, 176, 77, 0.16);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
@@ -1162,6 +1176,14 @@
        strain .126, done .194, the brand green .196, errored .197. The
        reasoning is on the light value. */
     --code-string: #c8c7fe;
+    /* GitHub's dark values for the same seven roles (light block). */
+    --code-keyword: #ff7b72;
+    --code-number: #79c0ff;
+    --code-type: #ffa657;
+    --code-function: #d2a8ff;
+    --code-attr: #7ee787;
+    --code-variable: #e6edf3;
+    --code-meta: #d2a8ff;
     --accent: rgba(183, 207, 117, 0.14);
     --accent-foreground: rgba(238, 238, 231, 0.96);
     --destructive: #d4756b;
