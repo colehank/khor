@@ -36,6 +36,8 @@ import { BrowserPane } from "@/views/BrowserPane";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
+import { FileTree } from "@/views/FileTree";
+import { heavier } from "@/views/fileRow";
 import { FileView, type Draft } from "@/views/FileView";
 import type { Editor } from "@/gen/bindings/Editor";
 
@@ -143,11 +145,6 @@ export function WorkspacePane({
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
   const hidden = useHidden();
-  // Kept apart from `git` rather than folded into a null: no marks and
-  // no answer are two different facts, and painting an unread
-  // repository as「clean」is the one reading that must never be a
-  // guess (`khor_gui_core::git`).
-  const [gitError, setGitError] = useState<string | null>(null);
   /** What that machine says about its editor. `version` empty means it
       has none **or could not be asked** — the two lead to the same next
       move, which is to draw no switch (`khor_gui_core::code::here`). */
@@ -168,14 +165,22 @@ export function WorkspacePane({
   // answer covers the whole checkout and does not change while a person
   // walks it; re-asking on every directory would spend 54 ms of somebody
   // else's machine to redraw marks that did not move.
+  //
+  // **A refusal is not kept and not said** (工作区批⑦). 「文件打开不是
+  // git 就不用显示,不必显示这个『这个路径不在 git 仓库里』」— the user,
+  // 2026-09-15. Until then the sentence the node sent back lived beside
+  // the branch, which meant a directory that is simply not a checkout
+  // wore a line of apology every time it was opened. Both roads end in
+  // `git === null`, the tree paints no marks, and that is the whole of
+  // what khor has to say: 「不是 checkout」 and 「读不了」 look the same
+  // on the glass because neither of them is a fact about a file.
   useEffect(() => {
     setGit(null);
-    setGitError(null);
     if (root === "") return;
     let live = true;
     fetchGitStatus(machine, root)
       .then((g) => live && setGit(g))
-      .catch((e: unknown) => live && setGitError(String(e instanceof Error ? e.message : e)));
+      .catch(() => live && setGit(null));
     return () => {
       live = false;
     };
@@ -367,10 +372,7 @@ export function WorkspacePane({
             {gui.drafts_waiting(drafts.size)}
           </span>
         )}
-        {gitError !== null ? (
-          <span className="shrink-0 truncate text-aux text-muted-foreground">{gitError}</span>
-        ) : (
-          git !== null && (
+        {git !== null && (
             <>
               {git.branch !== "" && (
                 <span
@@ -414,9 +416,14 @@ export function WorkspacePane({
                 </span>
               )}
             </>
-          )
-        )}
-        <PathCrumbs at={at} onGo={setAt} onEdit={() => setAt(at)} />
+          )}
+        {/* **The address bar belongs to the browsing face and not to a
+            project** (工作区批⑦: 「取消面包屑」). `root === ""` is what
+            看它的文件 hands over — a whole machine's disk, where
+            「where am I」 is the question — and that face keeps its
+            crumbs. A workspace has a ceiling instead, so there is
+            nothing for a step above the root to say. */}
+        {root === "" && <PathCrumbs at={at} onGo={setAt} onEdit={() => setAt(at)} />}
         <div className="flex shrink-0 items-center gap-0.5">
           <Button
             variant="ghost"
@@ -478,18 +485,42 @@ export function WorkspacePane({
             className="flex shrink-0 flex-col border-r"
             style={{ width: treePane.width }}
           >
-            <FilesPane
-              machine={machine}
-              device={device}
-              path={at}
-              narrow={narrow}
-              onPath={setAt}
-              onLanded={setAt}
-              onFile={setFile}
-              open={file}
-              here={here}
-              marks={marks}
-            />
+            {/* **Two trees, one ruling apart** (工作区批⑦). A project
+                gets `FileTree`: rooted, expandable, with no way above
+                itself. A machine's whole disk (`root === ""`, what
+                看它的文件 opens) keeps `FilesPane`, where 上一级 and the
+                address bar are the point — docs/WORKSPACE.md 第二轮 says
+                so in the user's own terms. */}
+            {root === "" ? (
+              <FilesPane
+                machine={machine}
+                device={device}
+                path={at}
+                narrow={narrow}
+                onPath={setAt}
+                onLanded={setAt}
+                onFile={setFile}
+                open={file}
+                here={here}
+                marks={marks}
+              />
+            ) : (
+              <FileTree
+                // Remounted per workspace, which is what lets the tree
+                // read its remembered branches straight out of storage
+                // at birth rather than resetting itself afterwards.
+                key={`${machine} ${root}`}
+                machine={machine}
+                root={root}
+                here={here}
+                marks={marks}
+                open={file}
+                onOpen={(path) => setFile(path)}
+                onGone={(path) => {
+                  if (file === path) setFile(null);
+                }}
+              />
+            )}
           </div>
         )}
         {/* The seam, drawn the way the list pane's is (App.tsx): a
@@ -688,8 +719,15 @@ export function WorkspacePane({
     true and the only thing worth walking for: something under here
     differs from HEAD. The letter waits until you get to the file.
 
+    **The letter stored against a directory is the heaviest one below
+    it** (工作区批⑦: C > D > M > A/U, `fileRow.heavier`); the row turns
+    that into the dot and paints the dot in its ink. Stored rather than
+    painted here because two different trees draw these rows — this
+    hands over the fact, and 「a directory draws it as a dot」 stays one
+    decision in one place.
+
     Null when there is no answer, which the tree paints as no marks at
-    all — the same distinction the head makes above. */
+    all. Since 工作区批⑦ that is the whole of it: no sentence either. */
 function folded(root: string, git: GitStatus | null): Map<string, string> | null {
   if (git === null) return null;
   const out = new Map<string, string>();
@@ -700,13 +738,11 @@ function folded(root: string, git: GitStatus | null): Map<string, string> | null
     // root itself is the head of the pane and never a row in it.
     let cut = full.lastIndexOf("/");
     while (cut > root.length) {
-      out.set(full.slice(0, cut), DOT);
+      const dir = full.slice(0, cut);
+      const had = out.get(dir);
+      out.set(dir, had === undefined ? r.mark : heavier(had, r.mark));
       cut = full.lastIndexOf("/", cut - 1);
     }
   }
   return out;
 }
-
-/** What a directory wears. Not a catalog string: it is a glyph, and the
-    catalog holds sentences a person reads. */
-const DOT = "\u00b7";

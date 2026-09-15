@@ -766,7 +766,9 @@ fn put_over(
 /// khor already has `state`, which reports a *session's* state word, and
 /// `status` beside it would be two near-identical verbs for two
 /// unrelated vocabularies — the six words belong to sessions and git's
-/// four letters belong to files (docs/UX.md). Under `git` there is no
+/// six letters belong to files (docs/UX.md; M A D U C R — `khor_node::
+/// git`, and `khor git status` prints whichever of them came back,
+/// so the two new ones need no verb of their own). Under `git` there is no
 /// collision left to have, and the two words read exactly as they do in
 /// the tool they came from: 「git 相关操作应该用符合使用习惯的英文」.
 ///

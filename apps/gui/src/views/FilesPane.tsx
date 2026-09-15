@@ -22,21 +22,14 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
-import {
-  fetchDirPins,
-  fetchLs,
-  fetchTrashHere,
-  pinDir,
-  pullFile,
-  removePath,
-  type DirListing,
-} from "@/api";
-import { neverAsks, RemoveDialog, type RemoveKind } from "@/components/RemoveDialog";
-import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { fetchDirPins, fetchLs, pinDir, type DirListing } from "@/api";
+import { RemoveDialog } from "@/components/RemoveDialog";
+import { RowMenu } from "@/components/RowMenu";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
 
 /** Bytes as a person reads them. **Exported because the file view
     prints the same ladder** (工作区批2): a row saying 1.2 MB beside a
@@ -54,9 +47,6 @@ export function sizeWord(bytes: number): string {
   }
   return `${v >= 100 ? Math.round(v) : Math.round(v * 10) / 10} ${units[u]}`;
 }
-
-/** What one pressed row is doing or has done. */
-type Took = { path: string; state: "taking" | "landed" | "failed"; word: string };
 
 export function FilesPane({
   machine,
@@ -118,7 +108,7 @@ export function FilesPane({
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [took, setTook] = useState<Took | null>(null);
+  const { took, take } = useTake(machine);
   // This machine's pinned paths. Refreshed with the pins call itself:
   // each toggle answers by re-asking, so the mark never guesses.
   const [pinned, setPinned] = useState<Set<string>>(new Set());
@@ -126,26 +116,6 @@ export function FilesPane({
       the one change its own effect cannot notice: the path did not
       move, so nothing in the deps would. */
   const [again, setAgain] = useState(0);
-  /** What is waiting to be deleted, and what the node said if it would
-      not. `null` when nothing is being asked about. */
-  const [going, setGoing] = useState<{ path: string; kind: RemoveKind } | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
-  /** Whether the machine khor runs on has a recycle bin. **Asked, not
-      guessed**: this page is also served to phones looking at a
-      desktop's face (`api.ts` `fetchTrashHere`). Starts false, which is
-      the safe direction — 「直接删」 said of something that turns out to
-      be recoverable costs a person nothing; the other way round costs
-      them a file. */
-  const [trashHere, setTrashHere] = useState(false);
-  useEffect(() => {
-    let live = true;
-    fetchTrashHere()
-      .then((yes) => live && setTrashHere(yes))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, []);
 
   const loadPins = () => {
     fetchDirPins()
@@ -218,58 +188,19 @@ export function FilesPane({
     setAgain((n) => n + 1);
   };
 
-  /** What deleting this path will actually do, in the node's terms
-      (`RemoveKind`). **Never a guess about the platform** — `here` says
-      whose disk it is and `trashHere` says whether that disk's machine
-      has a bin, and both come from outside this component. */
-  const kindOf = (isDir: boolean): RemoveKind =>
-    !here || !trashHere ? "gone" : isDir ? "trash-dir" : "trash";
-
-  /** The row's one menu item. **Its own dialog rather than `RowMenu`'s
-      two-press confirm**: the user asked for VS Code's shape — a sheet
-      that names the thing and carries a 「不再问」 tick — and a tick has
-      nowhere to live on a menu item that disappears when the menu
-      closes. */
-  const actions = (full: string, isDir: boolean): RowAction[] => [
-    {
-      key: "remove",
-      label: gui.file_remove,
-      run: () => {
-        setRefused(null);
-        const kind = kindOf(isDir);
-        // The tick only ever covered the recoverable road, so it only
-        // ever skips that one (`RemoveDialog`).
-        if (kind !== "gone" && neverAsks()) return go(full);
-        setGoing({ path: full, kind });
-      },
+  // 删掉, shared with the workspace's tree (`views/fileRow`). What this
+  // pane adds is what happens afterwards: the directory is re-read, and
+  // a file somebody was reading stops being open — a view onto a file
+  // that is no longer there is the one state neither tree may leave
+  // behind.
+  const { actions, dialog } = useRemoveFlow({
+    machine,
+    here,
+    onGone: (full) => {
+      if (open === full) onFile(null);
+      reread();
     },
-  ];
-
-  /** Do it. Shared by the dialog's button and the press that skipped
-      the dialog, so there is one place that knows what happens
-      afterwards: the directory is re-read, and a file somebody was
-      reading stops being open — a view onto a file that is no longer
-      there is the one state this pane must not leave behind. */
-  const go = (full: string) =>
-    removePath(machine, full).then(
-      () => {
-        if (open === full) onFile(null);
-        reread();
-      },
-      (e: unknown) => {
-        setRefused(String(e instanceof Error ? e.message : e));
-        throw e;
-      },
-    );
-
-  const take = (path: string) => {
-    setTook({ path, state: "taking", word: "…" });
-    pullFile(machine, path)
-      .then((dest) => setTook({ path, state: "landed", word: gui.took_file(dest) }))
-      .catch((e) =>
-        setTook({ path, state: "failed", word: String(e instanceof Error ? e.message : e) }),
-      );
-  };
+  });
 
   // No header: which machine and where on it are the address bar's, and
   // a second copy of them here would be two spellings of one fact one
@@ -360,7 +291,7 @@ export function FilesPane({
                     className="flex min-h-touch min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
                   >
                     <span className="min-w-0 flex-1 truncate">{e.name}/</span>
-                    <Mark mark={marks?.get(full)} />
+                    <Mark mark={marks?.get(full)} dir />
                   </button>
                   </RowMenu>
                   {/* The two states get the two words the row action rule
@@ -440,9 +371,18 @@ export function FilesPane({
                   <button
                     type="button"
                     onClick={() => onFile(full)}
+                    // **The name wears the letter's ink** (工作区批⑦):
+                    // 「颜色与字符表示」 is one decoration in two
+                    // places, and a coloured letter beside a grey name
+                    // is the half of VS Code's arrangement that does
+                    // not survive being read from across the column.
+                    // Last in the list so it wins the open row's
+                    // `text-foreground` — a file's git state does not
+                    // stop being true because somebody is reading it.
                     className={cn(
                       "min-w-0 flex-1 truncate self-stretch text-left",
                       open === full && "font-title text-foreground",
+                      markInk(marks?.get(full)),
                     )}
                   >
                     {e.name}
@@ -510,19 +450,7 @@ export function FilesPane({
             {/* One dialog for the whole listing, not one per row: what
                 is being asked about is state, and a sheet per row would
                 be one mounted component per file in the directory. */}
-            <RemoveDialog
-              open={going !== null}
-              name={going === null ? "" : (going.path.split("/").pop() ?? going.path)}
-              kind={going?.kind ?? "gone"}
-              refused={refused}
-              onOpenChange={(o) => {
-                if (!o) {
-                  setGoing(null);
-                  setRefused(null);
-                }
-              }}
-              onConfirm={() => go(going?.path ?? "")}
-            />
+            <RemoveDialog {...dialog} />
             {listing.truncated && (
               // The cap is however many rows actually came — the number
               // belongs to the node, and a copy here would drift.
@@ -537,18 +465,3 @@ export function FilesPane({
   );
 }
 
-/** git's letter on one row, or nothing.
-    **Nothing is the common case and it takes no width**: most files in
-    a checkout match HEAD, and a column of blanks reserved for the few
-    that do not would push every name left for no reader's benefit.
-
-    Drawn in the same ink as the change gutter (`--git-mark`), so the
-    two halves of「this file differs」are one colour. */
-function Mark({ mark }: { mark?: string }) {
-  if (mark === undefined) return null;
-  return (
-    <span data-git-mark={mark} className="flex-none font-mono text-xs text-git-mark">
-      {mark}
-    </span>
-  );
-}

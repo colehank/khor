@@ -102,7 +102,22 @@ export function RemoveDialog({
     Promise.resolve()
       .then(() => onConfirm(never))
       .then(
-        () => onOpenChange(false),
+        () => {
+          // **Let go of the press before closing.** `onOpenChange(false)`
+          // shuts this from the outside, which does not run the
+          // `Dialog`'s own change handler below — so the flag set on the
+          // press would still be set the next time the sheet opened, and
+          // 删掉 would come up dead.
+          //
+          // It was live from 工作区批④ and invisible, because
+          // `FilesPane` dropped its listing on a successful delete and
+          // took this component down with it: a reset nobody wrote and
+          // nothing guaranteed. The workspace's tree keeps its sheet
+          // mounted, and the second delete in `check-face` 4i found it.
+          setGoing(false);
+          setNever(false);
+          onOpenChange(false);
+        },
         () => setGoing(false),
       );
   };

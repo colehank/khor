@@ -392,15 +392,28 @@ fn parse_status(text: &str) -> Result<crate::git::Status, String> {
     Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
 }
 
-/// One porcelain row's two columns as one of khor's four letters.
+/// One porcelain row's two columns as one of khor's six letters.
 fn row_mark(x: char, y: char) -> Option<&'static str> {
     if x == '?' || y == '?' {
         return Some(crate::git::UNTRACKED);
     }
+    // **Unmerged is read before the columns are read apart.** porcelain
+    // v1 spells it as a `U` in either column *or* one of `DD`/`AA`/`UU`,
+    // and those doubled letters are one fact about one file — folded
+    // column by column they would come out as an ordinary deletion or
+    // an ordinary addition, which is the reading that sends somebody to
+    // commit a file git will not take (crate::git::CONFLICT).
+    if x == 'U' || y == 'U' || (x == y && (x == 'D' || x == 'A')) {
+        return Some(crate::git::CONFLICT);
+    }
     let of = |c: char| match c {
         ' ' => None,
-        'A' => Some(crate::git::ADDED),
+        // A copy makes a file that was not there, which is what `A`
+        // already means; only the rename gets a letter of its own,
+        // because only the rename leaves HEAD holding another path.
+        'A' | 'C' => Some(crate::git::ADDED),
         'D' => Some(crate::git::DELETED),
+        'R' => Some(crate::git::RENAMED),
         _ => Some(crate::git::MODIFIED),
     };
     match (of(x), of(y)) {
@@ -1083,6 +1096,8 @@ row= D del.txt
 row= M mod.txt
 row=R  renamed.txt
 row=ren.txt
+row=UU clash.txt
+row=DD gone-both-ways.txt
 row=?? subdir/
 row=?? untracked.txt
 ";
@@ -1099,9 +1114,15 @@ row=?? untracked.txt
         assert_eq!(got, [
             ("added.txt", "A"),
             ("both.txt", "M"),
+            // Unmerged in its two porcelain spellings (工作区批⑦). `DD`
+            // folded column by column is an ordinary deletion, which is
+            // the reading that tells somebody a file is gone when what
+            // is true is that git will not take it either way.
+            ("clash.txt", "C"),
             ("del.txt", "D"),
+            ("gone-both-ways.txt", "C"),
             ("mod.txt", "M"),
-            ("renamed.txt", "M"),
+            ("renamed.txt", "R"),
             ("subdir", "U"),
             ("untracked.txt", "U"),
         ]);

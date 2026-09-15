@@ -1129,6 +1129,13 @@ try {
   // One marked file and one marked directory, so the tree wears both
   // kinds of mark (工作区批3): `src` folds up a `·` from what is under
   // it, `notes.md` wears its own letter.
+  //
+  // **All four inks and the fold's ranking** (工作区批⑦). One file per
+  // colour at the root (`M` 黄, `D` 红, `R` — which shares 修改's ink
+  // and is told apart by its letter), and two under `src` whose letters
+  // disagree: `U` 绿 and `C` 红. The directory's dot has to come out `C`,
+  // because the fold is 「the heaviest thing below」 (C > D > M > A/U)
+  // and not 「the first one in the list」.
   // Counted, because 工作区批7 turns on the marks being asked again
   // when somebody comes back to the window rather than on a timer.
   let gitAsked = 0;
@@ -1155,7 +1162,10 @@ try {
         branch: "main",
         rows: [
           { path: "notes.md", mark: "M" },
+          { path: "one.rs", mark: "D" },
+          { path: "data.csv", mark: "R" },
           { path: "src/one.rs", mark: "U" },
+          { path: "src/notes.md", mark: "C" },
         ],
         more: false,
       }),
@@ -1834,8 +1844,14 @@ try {
       // …and a workspace actually open, which is where those controls
       // are. Stopping at the list would be a walk that visits the door
       // and reports on the house.
+      //
+      // **The anchor was `[data-crumb]` until 工作区批⑦**, and it had to
+      // move because the thing it anchored on is gone by ruling:
+      // 「取消面包屑」. The tree itself is what a workspace being open
+      // means now, so a drifted `FileTree` says probe dead here rather
+      // than passing an empty column.
       name: "workspaces · one open",
-      anchor: "[data-crumb]",
+      anchor: "[data-file-tree]",
       go: async () => (await press(rail("workspaces"))) && press("[data-ws-row]"),
     },
     {
@@ -2332,12 +2348,30 @@ try {
         crumbs,
       };
     });
+  // **Where a breadcrumb still lives** (工作区批⑦). A workspace's tree
+  // has no address bar any more — 「取消面包屑。工作区不允许回退到工作区
+  // 之外的地方」 — so the crumbs this section is about are the directory
+  // picker's, which is the surface left whose whole question is 「which
+  // directory」. Same component, same rule, and a screen somebody
+  // actually reaches; the alternative was measuring a control the
+  // product no longer draws.
   const atCrumbs = async () => {
+    await page.keyboard.press("Escape");
+    await wait(150);
+    await press(rail("workspaces"));
+    await press("[data-ws-add]");
+    return until(3_000, async () => (await page.locator("[data-crumb]").count()) > 0);
+  };
+  /** One workspace open, on its tree — the door every section below
+      opens a file through. */
+  const atTree = async () => {
+    await page.keyboard.press("Escape");
+    await wait(150);
     await press(rail("workspaces"));
     // The walk may have left a workspace open, so the list row need not
     // be there — pressing it is an attempt, not a requirement.
     await press("[data-ws-row]");
-    return (await page.locator("[data-crumb]").count()) > 0;
+    return until(5_000, async () => (await page.locator("[data-file]").count()) > 0);
   };
   await page.setViewportSize({ width: 1400, height: 900 });
   const spend = {};
@@ -2348,7 +2382,7 @@ try {
     await cdp.send("Emulation.setTouchEmulationEnabled", coarse ? { enabled: true, maxTouchPoints: 1 } : { enabled: false });
     await wait(300);
     if (!(await atCrumbs())) {
-      fail(`probe dead: no breadcrumb on the files landing under a ${posture}`);
+      fail(`probe dead: no breadcrumb in the directory picker under a ${posture}`);
       continue;
     }
     const seen = await crumbSpend();
@@ -2438,7 +2472,7 @@ try {
   // size, the date and the verb drifting apart inside a row whose two
   // edges are right), and a listing whose rows agree with each other
   // and with nothing else on the face.
-  await atCrumbs();
+  await atTree();
   const listing = await page.evaluate(() => {
     const px = (n) => Math.round(n * 10) / 10;
     const rows = [];
@@ -2471,6 +2505,11 @@ try {
       rows.push({
         what: el.getAttribute("data-dir") ?? el.getAttribute("data-file") ?? "上一级",
         kind: el.hasAttribute("data-dir") ? "dir" : el.hasAttribute("data-file") ? "file" : "up",
+        // Which level of the tree this row is on (工作区批⑦). A child
+        // is indented from its parent on purpose, so「one listing, one
+        // rhythm」is a claim about one *level* — comparing across
+        // levels would fail on the indentation, which is the design.
+        depth: el.closest("[data-depth]")?.getAttribute("data-depth") ?? "0",
         h: px(r.height),
         left,
         right,
@@ -2479,7 +2518,7 @@ try {
     return rows;
   });
   console.log(
-    `listing: ${listing.map((r) => `${r.kind} ${JSON.stringify(r.what)} h${r.h} ⊢${r.left} ${r.right}⊣`).join(", ")}`,
+    `listing: ${listing.map((r) => `${r.kind} ${JSON.stringify(r.what)} @${r.depth} h${r.h} ⊢${r.left} ${r.right}⊣`).join(", ")}`,
   );
   const kinds = new Set(listing.map((r) => r.kind));
   if (!kinds.has("dir") || !kinds.has("file")) {
@@ -2488,19 +2527,23 @@ try {
         `directory row against a file row and cannot do it with one kind (deepen the **/ls fixture)`,
     );
   } else {
-    for (const [axis, of] of [
-      ["height", (r) => r.h],
-      ["left gutter", (r) => r.left],
-      ["right gutter", (r) => r.right],
-    ]) {
-      const seen = listing.map(of);
-      // Sub-pixel is text metrics; this bug is whole steps of padding.
-      if (Math.max(...seen) - Math.min(...seen) > 0.5) {
-        fail(
-          `the rows of one listing disagree on ${axis}: ` +
-            listing.map((r) => `${r.kind} ${JSON.stringify(r.what)} ${of(r)}`).join(", ") +
-            ` — one listing is one rhythm, whatever the number is (src/views/FilesPane.tsx)`,
-        );
+    for (const depth of new Set(listing.map((r) => r.depth))) {
+      const level = listing.filter((r) => r.depth === depth);
+      if (new Set(level.map((r) => r.kind)).size < 2) continue;
+      for (const [axis, of] of [
+        ["height", (r) => r.h],
+        ["left gutter", (r) => r.left],
+        ["right gutter", (r) => r.right],
+      ]) {
+        const seen = level.map(of);
+        // Sub-pixel is text metrics; this bug is whole steps of padding.
+        if (Math.max(...seen) - Math.min(...seen) > 0.5) {
+          fail(
+            `the rows of one listing disagree on ${axis} at level ${depth}: ` +
+              level.map((r) => `${r.kind} ${JSON.stringify(r.what)} ${of(r)}`).join(", ") +
+              ` — one level is one rhythm, whatever the number is (src/views/FileTree.tsx)`,
+          );
+        }
       }
     }
   }
@@ -2518,7 +2561,7 @@ try {
   // Measured rather than asserted from the fixture's own array: the
   // number on screen is compared to the bars on screen, so a fixture
   // edited later moves both together and this still judges something.
-  await atCrumbs();
+  await atTree();
   await press('[data-file="one.rs"] button');
   const walk = await page.evaluate(async () => {
     const wait = () => new Promise((r) => setTimeout(r, 120));
@@ -2856,6 +2899,179 @@ try {
     );
   }
   await hide(false);
+
+  // ── 4k) the workspace's tree: a ceiling, a chevron, four inks ─────
+  //
+  // 「目录树不要有上一级。工作区不允许回退到工作区之外的地方。」
+  // 「取消面包屑。」「目录的打开同 vscode,是点击后展开。目录有类似 `>` 的
+  // 符号表示可展开。」「文件列表中,git 状态如 vscode,颜色与字符表示,
+  // 黄色是已修改。list 最右侧末尾加一个 M;还有 U 等状态,使用对应的颜色
+  // 与标识。」— the user, 2026-09-15 (工作区批⑦).
+  //
+  // Claims, in the order a wrong one costs most:
+  //   i. **nothing inside a workspace goes above its root.** No 上一级
+  //      row and no address bar — and this is a negative claim, so it
+  //      is asserted against the tree being on screen at all, or it
+  //      would pass on a blank column;
+  //  ii. a directory is **shut** and opens on a press, and opening it
+  //      is what asks that machine for that path — a chevron that
+  //      turned over a listing nobody fetched is a tree drawn from what
+  //      this face believes;
+  // iii. shutting it again asks **nothing**: one directory, one `ls`;
+  //  iv. the four letters land in four different inks, none of them the
+  //      body's — which is what「颜色与字符表示」 asks for and what a
+  //      class name cannot prove (the highlighting's rule: read the
+  //      colour off the glass);
+  //   v. a directory wears `·` in the ink of the **heaviest** letter
+  //      under it, not the first one it met;
+  //  vi. and the file's **name** wears the letter's ink, which is the
+  //      half of VS Code's arrangement that reads from across a column.
+  if (!(await atTree())) {
+    fail("probe dead: the workspace drew no tree (src/views/FileTree.tsx)");
+  } else {
+    const shape = await page.evaluate(() => {
+      const tree = document.querySelector("[data-file-tree]");
+      return {
+        up: document.querySelectorAll("[data-up]").length,
+        crumbs: document.querySelectorAll("[data-crumb]").length,
+        dirs: [...tree.querySelectorAll("[data-dir]")].map((e) => ({
+          name: e.getAttribute("data-dir"),
+          on: e.getAttribute("data-on"),
+          twisty: e.querySelector("svg") !== null,
+        })),
+      };
+    });
+    console.log(
+      `tree: ${shape.dirs.length} director(ies) ${JSON.stringify(shape.dirs)}, ` +
+        `${shape.up} 上一级 row(s), ${shape.crumbs} crumb(s)`,
+    );
+    if (shape.dirs.length === 0) {
+      fail("probe void: the tree listed no directory, so neither the chevron nor the ceiling is about anything");
+    }
+    if (shape.up !== 0 || shape.crumbs !== 0) {
+      fail(
+        `a workspace drew ${shape.up} 上一级 row(s) and ${shape.crumbs} breadcrumb step(s) — the root is the ` +
+          "ceiling and 「工作区不允许回退到工作区之外的地方」 (src/views/FileTree.tsx)",
+      );
+    }
+    if (shape.dirs.some((d) => !d.twisty)) {
+      fail(
+        "a directory row carries no chevron — 「目录有类似 `>` 的符号表示可展开」, and a row that can be " +
+          "opened with nothing saying so is a row nobody opens (src/views/FileTree.tsx)",
+      );
+    }
+    if (shape.dirs.some((d) => d.on !== "false")) {
+      fail(
+        `a directory opened by itself (${JSON.stringify(shape.dirs)}) — a tree that listed itself whole is a ` +
+          "walk of somebody else's disk for rows nobody asked to see (src/views/FileTree.tsx)",
+      );
+    }
+    // …and opening one asks that machine for that path, once.
+    const into = `${pin.path}/src`;
+    const before = askedLs.filter((a) => a.path === into).length;
+    await press('[data-dir="src"]');
+    const opened = await until(5_000, async () =>
+      (await page.locator('[data-file-tree] [data-depth="1"]').count()) > 0,
+    );
+    const asked = askedLs.filter((a) => a.path === into).length;
+    console.log(`tree: opening src asked for ${into} ${asked - before} time(s)`);
+    if (!opened) {
+      fail(
+        "pressing a directory listed nothing under it — 「目录的打开同 vscode,是点击后展开」 " +
+          "(src/views/FileTree.tsx)",
+      );
+    }
+    if (asked === before) {
+      fail(
+        `the chevron turned and nothing was asked of ${JSON.stringify(pin.name)} about ${into} — the rows ` +
+          "under it were drawn from what this face already believed (src/views/FileTree.tsx)",
+      );
+    }
+    // Shutting it and opening it again costs no second question: the
+    // answer is cached per directory, which is the half of 「一个目录
+    // 一次」 that a press cannot show by itself.
+    await press('[data-dir="src"]');
+    await wait(200);
+    await press('[data-dir="src"]');
+    await until(3_000, async () =>
+      (await page.locator('[data-file-tree] [data-depth="1"]').count()) > 0,
+    );
+    const again = askedLs.filter((a) => a.path === into).length;
+    if (again > asked) {
+      fail(
+        `shutting and reopening a directory asked for it ${again - asked} more time(s) — one directory, ` +
+          "one `ls` (src/views/FileTree.tsx)",
+      );
+    }
+
+    // ── the inks, read off the glass ───────────────────────────────
+    const inks = await page.evaluate(() => {
+      const tree = document.querySelector("[data-file-tree]");
+      const body = getComputedStyle(tree).color;
+      const out = [];
+      for (const el of tree.querySelectorAll("[data-git-mark]")) {
+        const row = el.closest("[data-file],[data-depth]");
+        const name = row?.querySelector("[data-file-name]");
+        out.push({
+          glyph: el.getAttribute("data-git-mark"),
+          weight: el.getAttribute("data-git-weight"),
+          ink: getComputedStyle(el).color,
+          on: row?.getAttribute("data-file") ?? row?.querySelector("[data-dir]")?.getAttribute("data-dir") ?? "?",
+          nameInk: name ? getComputedStyle(name).color : null,
+        });
+      }
+      return { body, out };
+    });
+    console.log(`tree marks: body ${inks.body}, ${JSON.stringify(inks.out)}`);
+    const letters = inks.out.filter((m) => m.glyph !== "·");
+    if (letters.length < 4) {
+      fail(
+        `probe void: ${letters.length} lettered mark(s) on screen — this section compares four inks and ` +
+          "cannot do it with fewer (widen the **/git_status fixture)",
+      );
+    } else {
+      const byWeight = new Map(letters.map((m) => [m.weight, m.ink]));
+      const hues = new Set(byWeight.values());
+      if (hues.size < 3) {
+        fail(
+          `the letters ${JSON.stringify([...byWeight])} are painted in ${hues.size} colour(s) — ` +
+            "「颜色与字符表示」 asks for both, and a column of one colour tells M from D by reading " +
+            "every letter (src/styles/tokens.css --git-*)",
+        );
+      }
+      for (const [mark, ink] of byWeight) {
+        if (ink === inks.body) {
+          fail(`the letter ${mark} is painted in the body's own ink (${ink}) — that is no mark at all`);
+        }
+      }
+      // …and the name beside it is the same colour, which is the half a
+      // letter alone cannot do from across a 224-wide column.
+      for (const m of letters) {
+        if (m.nameInk !== null && m.nameInk !== m.ink) {
+          fail(
+            `${m.on} wears a ${m.weight} in ${m.ink} and its own name in ${m.nameInk} — 「文件名同色」 ` +
+              "(src/views/fileRow.tsx markInk)",
+          );
+        }
+      }
+    }
+    // The dot, and that it is the heaviest letter below rather than the
+    // first: `src` holds a `U` and a `C`, and C outranks everything.
+    const dot = inks.out.find((m) => m.glyph === "·");
+    if (dot === undefined) {
+      fail(
+        "no directory wore a dot — git has no opinion about directories, and 「something under here " +
+          "differs」 is the one thing that is true and worth walking for (src/views/fileRow.tsx)",
+      );
+    } else if (dot.weight !== "C") {
+      fail(
+        `the dot on a directory folded up ${dot.weight} where the heaviest letter under it is C — the ` +
+          "fold is C > D > M > A/U, not whichever row came first (src/views/WorkspacePane.tsx folded)",
+      );
+    } else if (dot.ink === inks.body) {
+      fail(`the dot is painted in the body's own ink (${dot.ink}) — it carries the colour of what is below it`);
+    }
+  }
 
   // ── 4f) the workspace row's four corners ──────────────────────────
   //
@@ -3367,9 +3583,9 @@ try {
   // **peer's workspace first** — another machine, so the sheet is the
   // one that cannot be taken back.
   if (!(await rowAt("work"))) {
-    fail("probe dead: peer's workspace drew no tree (src/views/FilesPane.tsx)");
+    fail("probe dead: peer's workspace drew no tree (src/views/FileTree.tsx)");
   } else if (!(await menuOn("notes.md"))) {
-    fail("probe dead: a file row offers no way to delete it (src/views/FilesPane.tsx)");
+    fail("probe dead: a file row offers no way to delete it (src/views/FileTree.tsx)");
   } else {
     await page.locator('[data-menu-item="remove"]').click();
     const sheet = await until(5_000, async () =>
@@ -3411,13 +3627,13 @@ try {
       await page.locator("[data-remove-go]").click();
       const went = await until(5_000, async () => removed.length > 0);
       if (!went) {
-        fail("probe dead: confirming asked the node nothing (src/views/FilesPane.tsx)");
+        fail("probe dead: confirming asked the node nothing (src/views/FileTree.tsx)");
       } else {
         console.log(`remove · asked ${JSON.stringify(removed[0])}`);
         if (removed[0].machine !== "peer" || !removed[0].path.endsWith("/notes.md")) {
           fail(
             `删掉 asked for ${JSON.stringify(removed[0])} — it must be the machine holding the ` +
-              "file and the path on it (src/views/FilesPane.tsx)",
+              "file and the path on it (src/views/FileTree.tsx)",
           );
         }
         const reread = await until(5_000, async () => askedLs.length > lsBefore);
@@ -3425,7 +3641,7 @@ try {
           fail(
             "the directory was not read again after a delete — the path did not change, so nothing " +
               "else would notice, and the row stays on screen over a file that is gone " +
-              "(src/views/FilesPane.tsx)",
+              "(src/views/FileTree.tsx)",
           );
         }
       }
@@ -3450,7 +3666,7 @@ try {
       if (!shut) {
         fail(
           "the file somebody was reading was deleted and the reading stayed open — a view onto a " +
-            "file that is not there is the one state this pane must not leave (src/views/FilesPane.tsx)",
+            "file that is not there is the one state this pane must not leave (src/views/FileTree.tsx)",
         );
       }
     }
@@ -3459,7 +3675,7 @@ try {
   // iii/iv) **this machine's workspace**, where the bin exists: the
   // tick is offered, and ticking it means the next one does not ask.
   if (!(await rowAt("notes"))) {
-    fail("probe dead: gate's workspace drew no tree (src/views/FilesPane.tsx)");
+    fail("probe dead: gate's workspace drew no tree (src/views/FileTree.tsx)");
   } else if (await menuOn("notes.md")) {
     await page.locator('[data-menu-item="remove"]').click();
     await until(5_000, async () => (await page.locator("[data-remove-dialog]").count()) === 1);
@@ -3487,7 +3703,7 @@ try {
           );
         }
         if ((await page.locator("[data-remove-dialog]").count()) !== 0) {
-          fail("…and the sheet came up anyway (src/views/FilesPane.tsx)");
+          fail("…and the sheet came up anyway (src/views/FileTree.tsx)");
         }
       }
     }
@@ -3768,7 +3984,7 @@ try {
   //
   // So: the two boxes, corner for corner, and the typographic
   // properties that decide where a glyph lands, read off both.
-  await atCrumbs();
+  await atTree();
   await press('[data-file="one.rs"] button');
   const sheet = await page.evaluate(() => {
     const ta = document.querySelector("[data-edit]");
@@ -3837,7 +4053,7 @@ try {
   // next is a 640 MB download onto somebody else's disk and their
   // acceptance of Microsoft's licence (「第一个,第一次是允许的.联网也要
   // 说一下」— the user, 2026-09-10).
-  await atCrumbs();
+  await atTree();
   const withCode = await page.evaluate(() => {
     const b = document.querySelector("[data-code]");
     return b ? { on: b.dataset.code, word: b.textContent.trim() } : null;
@@ -3889,7 +4105,7 @@ try {
     }),
   );
   await press(rail("sessions"));
-  await atCrumbs();
+  await atTree();
   const readySwitch = await page.locator("[data-code]").count();
   if (readySwitch !== 1) {
     fail(
@@ -3920,7 +4136,7 @@ try {
     }),
   );
   await press(rail("sessions"));
-  await atCrumbs();
+  await atTree();
   const withoutCode = await page.locator("[data-code]").count();
   console.log(`editor switch: a machine with no \`code\` draws ${withoutCode}`);
   if (withoutCode !== 0) {
@@ -3949,7 +4165,7 @@ try {
   // tables that decide the road are compared directly by
   // `apps/gui/core/tests/kind_tables.rs`; this measures that the road
   // arrives somewhere.
-  await atCrumbs();
+  await atTree();
   await press('[data-file="shot.png"] > button');
   const pic = await page.evaluate(async () => {
     const img = document.querySelector('[data-look="image"]');
@@ -3980,7 +4196,7 @@ try {
   // formats are still on. The claim below is unchanged; only the file
   // that exercises it moved, because the old one stopped being a
   // document.
-  await atCrumbs();
+  await atTree();
   await press('[data-file="sheet.docx"] > button');
   const doc = await page.evaluate(() => {
     const el = document.querySelector('[data-look="doc"]');

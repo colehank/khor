@@ -40,6 +40,14 @@ pub const MODIFIED: &str = "M";
 pub const ADDED: &str = "A";
 pub const DELETED: &str = "D";
 pub const UNTRACKED: &str = "U";
+/// 「还有 U 等状态,使用对应的颜色与标识」— the user, 2026-09-15. These
+/// two were folded into `M` until then, which is the shape this repo
+/// keeps naming: a fact that cannot be said does not go blank, it
+/// becomes its neighbour. A conflicted file and an edited one lead to
+/// completely different next moves, and a rename is the one change
+/// where the path on screen is not the path in HEAD.
+pub const CONFLICT: &str = "C";
+pub const RENAMED: &str = "R";
 
 /// How many marked paths one answer carries. A repository whose
 /// `.gitignore` misses a build directory can have tens of thousands of
@@ -209,8 +217,15 @@ fn last_fetch(repo: &gix::Repository) -> i64 {
 /// disk is the copy the screen is showing. A file staged as new and
 /// then deleted reads `D`, not `A`: `A` would send somebody looking for
 /// a file that is not there.
+///
+/// **[`CONFLICT`] is first and that is not the same kind of rule.** The
+/// others rank by 「which copy is the one on screen」; this one ranks by
+/// what is being said. Every other letter says 「differs from HEAD」,
+/// and `C` says 「nothing here can be committed until somebody
+/// chooses」 — a file that is both conflicted and edited is still a file
+/// nobody can commit, so the letter that survives has to be that one.
 pub(crate) fn fold(a: &'static str, b: &'static str) -> &'static str {
-    for want in [DELETED, UNTRACKED, ADDED] {
+    for want in [CONFLICT, DELETED, UNTRACKED, ADDED, RENAMED] {
         if a == want || b == want {
             return want;
         }
@@ -229,12 +244,13 @@ fn mark_of(item: &gix::status::Item) -> Option<&'static str> {
         Item::TreeIndex(change) => Some(match change {
             gix::diff::index::Change::Addition { .. } => ADDED,
             gix::diff::index::Change::Deletion { .. } => DELETED,
+            gix::diff::index::Change::Rewrite { .. } => RENAMED,
             _ => MODIFIED,
         }),
         Item::IndexWorktree(Work::Modification { status, .. }) => match status {
             EntryStatus::Change(Change::Removed) => Some(DELETED),
             EntryStatus::Change(_) => Some(MODIFIED),
-            EntryStatus::Conflict { .. } => Some(MODIFIED),
+            EntryStatus::Conflict { .. } => Some(CONFLICT),
             // `IntentToAdd` is a promise, not a change; `NeedsUpdate`
             // is the walk telling itself to refresh a stat. Neither is
             // a difference a person made.
@@ -247,7 +263,7 @@ fn mark_of(item: &gix::status::Item) -> Option<&'static str> {
                 _ => None,
             }
         }
-        Item::IndexWorktree(Work::Rewrite { .. }) => Some(MODIFIED),
+        Item::IndexWorktree(Work::Rewrite { .. }) => Some(RENAMED),
     }
 }
 
@@ -409,14 +425,35 @@ mod status_tests {
     }
 
     #[test]
-    fn every_marked_row_carries_one_of_the_four_letters() {
+    fn every_marked_row_carries_one_of_the_six_letters() {
         let s = status(&here()).expect("status");
         for (path, mark) in &s.rows {
             assert!(
-                [MODIFIED, ADDED, DELETED, UNTRACKED].contains(&mark.as_str()),
+                [MODIFIED, ADDED, DELETED, UNTRACKED, CONFLICT, RENAMED].contains(&mark.as_str()),
                 "{path} got {mark}"
             );
         }
+    }
+
+    /// Which letter survives when one path arrives twice, for the two
+    /// that joined the alphabet in 工作区批⑦.
+    ///
+    /// **A unit test rather than a fixture**: making a conflicted index
+    /// needs gix's worktree-mutation half, which khor does not compile
+    /// in ([`here`] says the same about creating a repository at all) —
+    /// and the ranking is the part that can be got wrong silently.
+    #[test]
+    fn a_conflict_outranks_every_other_letter_for_one_path() {
+        assert_eq!(fold(CONFLICT, MODIFIED), CONFLICT);
+        assert_eq!(fold(DELETED, CONFLICT), CONFLICT);
+        assert_eq!(fold(CONFLICT, UNTRACKED), CONFLICT);
+        // …and a rename beats a plain edit, because the path on screen
+        // is not the path HEAD has and that is the bigger fact about
+        // the row.
+        assert_eq!(fold(RENAMED, MODIFIED), RENAMED);
+        // The old ranking is untouched by the two new letters.
+        assert_eq!(fold(ADDED, DELETED), DELETED);
+        assert_eq!(fold(MODIFIED, MODIFIED), MODIFIED);
     }
 
     #[test]

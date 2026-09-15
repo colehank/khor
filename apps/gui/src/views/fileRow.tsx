@@ -1,0 +1,201 @@
+// The parts a row of files is made of, wherever the row is standing.
+//
+// **Two trees read the same disk** (工作区批⑦): `FilesPane` is the one
+// that browses a whole machine — it has 上一级 and an address bar,
+// because「where am I」is the question there — and `FileTree` is the one
+// inside a workspace, rooted at the project with no way above it. What
+// they share is not the walking, which is exactly what the user ruled
+// apart; it is what a *row* is: git's letter, the way to delete, the way
+// to pull a file over.
+//
+// So those three live here rather than in either pane. A second copy of
+// the delete flow is how 「本机进废纸篓,远端直删」 ends up true on one
+// tree and not the other, and neither screen would say so.
+import { useEffect, useState } from "react";
+
+import { fetchTrashHere, pullFile, removePath } from "@/api";
+import { neverAsks, type RemoveKind } from "@/components/RemoveDialog";
+import { type RowAction } from "@/components/RowMenu";
+import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
+
+/** What a directory wears instead of a letter. Not a catalog string: it
+    is a glyph, and the catalog holds sentences a person reads. */
+export const DOT = "·";
+
+/** How heavy one letter is, for the dot a directory wears: **C > D > M
+    > A/U** (docs/WORKSPACE.md 第二轮). A folder's dot can only say one
+    thing about a whole subtree, so it says the thing that would be read
+    first if the subtree were open. `R` ranks with `M`: a rename is a
+    change to a file that is still there. Anything unknown ranks lowest
+    rather than throwing — a letter this face has not met is still a
+    letter the node meant. */
+const WEIGHT: Record<string, number> = { C: 4, D: 3, M: 2, R: 2, A: 1, U: 1 };
+
+/** The heavier of two letters. */
+export function heavier(a: string, b: string): string {
+  return (WEIGHT[b] ?? 0) > (WEIGHT[a] ?? 0) ? b : a;
+}
+
+/** The ink one letter is drawn in (tokens.css `--git-*`).
+    **Returned as a class rather than painted here**, because the row's
+    *name* wears the same ink — 「颜色与字符表示」 is one decoration in
+    two places, and a function that painted only the letter would leave
+    the other half to be remembered. */
+export function markInk(mark: string | undefined): string {
+  switch (mark) {
+    case "M":
+    // A rename shares 修改's ink: the file is still there and still
+    // differs from HEAD, which is what the colour says; `R` is what
+    // says the path moved, and that is the letter's job.
+    case "R":
+      return "text-git-modified";
+    case "A":
+    case "U":
+      return "text-git-added";
+    case "D":
+      return "text-git-deleted";
+    case "C":
+      return "text-git-conflict";
+    default:
+      return "";
+  }
+}
+
+/** git's letter on one row, or nothing.
+    **Nothing is the common case and it takes no width**: most files in
+    a checkout match HEAD, and a column of blanks reserved for the few
+    that do not would push every name left for no reader's benefit.
+
+    A directory wears [`DOT`] in the ink of the heaviest letter under it
+    — git has no opinion about directories, so any letter on a folder
+    would be khor inventing a claim, while「something under here
+    differs」is both true and the only thing worth walking for. */
+export function Mark({ mark, dir = false }: { mark?: string; dir?: boolean }) {
+  if (mark === undefined) return null;
+  return (
+    <span
+      data-git-mark={dir ? DOT : mark}
+      data-git-weight={mark}
+      className={cn("flex-none font-mono text-xs", markInk(mark))}
+    >
+      {dir ? DOT : mark}
+    </span>
+  );
+}
+
+/** Whether the machine khor runs on has a recycle bin. **Asked, not
+    guessed**: this page is also served to phones looking at a desktop's
+    face (`api.ts` `fetchTrashHere`). Starts false, which is the safe
+    direction — 「直接删」 said of something that turns out to be
+    recoverable costs a person nothing; the other way round costs them a
+    file. */
+export function useTrashHere(): boolean {
+  const [yes, setYes] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchTrashHere()
+      .then((has) => live && setYes(has))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return yes;
+}
+
+/** The row's one menu item and the state the sheet behind it needs.
+ *
+ * **Its own dialog rather than `RowMenu`'s two-press confirm**: the
+ * user asked for VS Code's shape — a sheet that names the thing and
+ * carries a 「不再问」 tick — and a tick has nowhere to live on a menu
+ * item that disappears when the menu closes.
+ */
+export function useRemoveFlow({
+  machine,
+  here,
+  onGone,
+}: {
+  machine: string;
+  /** Whether the files are on the machine khor runs on. */
+  here: boolean;
+  /** It really went. The caller re-reads whatever listing held it and
+      closes a view onto it — a pane showing a file that is no longer
+      there is the one state neither tree may leave behind. */
+  onGone: (path: string) => void;
+}) {
+  const trashHere = useTrashHere();
+  const [going, setGoing] = useState<{ path: string; kind: RemoveKind } | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+
+  /** What deleting this path will actually do, in the node's terms.
+      **Never a guess about the platform** — `here` says whose disk it
+      is and `trashHere` says whether that disk's machine has a bin. */
+  const kindOf = (isDir: boolean): RemoveKind =>
+    !here || !trashHere ? "gone" : isDir ? "trash-dir" : "trash";
+
+  /** Do it. Shared by the dialog's button and the press that skipped
+      the dialog, so there is one place that knows what happens after. */
+  const go = (full: string) =>
+    removePath(machine, full).then(
+      () => onGone(full),
+      (e: unknown) => {
+        setRefused(String(e instanceof Error ? e.message : e));
+        throw e;
+      },
+    );
+
+  const actions = (full: string, isDir: boolean): RowAction[] => [
+    {
+      key: "remove",
+      label: gui.file_remove,
+      run: () => {
+        setRefused(null);
+        const kind = kindOf(isDir);
+        // The tick only ever covered the recoverable road, so it only
+        // ever skips that one (`RemoveDialog`).
+        if (kind !== "gone" && neverAsks()) return go(full);
+        setGoing({ path: full, kind });
+      },
+    },
+  ];
+
+  return {
+    actions,
+    go,
+    /** What the sheet needs, spread straight onto `RemoveDialog`. */
+    dialog: {
+      open: going !== null,
+      name: going === null ? "" : (going.path.split("/").pop() ?? going.path),
+      kind: going?.kind ?? ("gone" as RemoveKind),
+      refused,
+      onOpenChange: (o: boolean) => {
+        if (!o) {
+          setGoing(null);
+          setRefused(null);
+        }
+      },
+      onConfirm: () => go(going?.path ?? ""),
+    },
+  };
+}
+
+/** What one pressed row is doing or has done. */
+export type Took = { path: string; state: "taking" | "landed" | "failed"; word: string };
+
+/** 拉过来 — copy a file from that machine to this one. The landing (the
+    downloads directory) was chosen silently, so the row says where the
+    file went; a failure wears its words on the same row, the pin's rule,
+    because this app has nowhere that collects messages. */
+export function useTake(machine: string) {
+  const [took, setTook] = useState<Took | null>(null);
+  const take = (path: string) => {
+    setTook({ path, state: "taking", word: "…" });
+    pullFile(machine, path)
+      .then((dest) => setTook({ path, state: "landed", word: gui.took_file(dest) }))
+      .catch((e: unknown) =>
+        setTook({ path, state: "failed", word: String(e instanceof Error ? e.message : e) }),
+      );
+  };
+  return { took, take };
+}

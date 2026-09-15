@@ -333,6 +333,33 @@ export function IconChevronDown({ className }: IconProps) {
   );
 }
 
+/** The twisty on a directory row (工作区批⑦): 「目录有类似 `>` 的符号表示
+    可展开」. **The same chevron turned**, not a second glyph — one form
+    rotating is what says the open row and the shut row are one control
+    in two positions; two drawings would have to be learned as two. */
+export function IconChevronRight({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M6 4l4 4-4 4" />
+    </Mark>
+  );
+}
+
+/** An editor — the way to VS Code, on the workspace's tab strip
+    (工作区批⑧: 「vscode 换成 icon 显示」).
+    **Angle brackets and a slash, not Microsoft's mark.** A vendor's logo
+    is their drawing, at their stroke ratio, and this family has one
+    (icons.tsx's head); what the button opens is said out loud by its
+    name, which a screen reader gets and a hover gives. */
+export function IconCode({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M5.5 4.5L2 8l3.5 3.5" />
+      <path d="M10.5 4.5L14 8l-3.5 3.5" />
+    </Mark>
+  );
+}
+
 /** Paperclip — attach a file to the conversation. One continuous line,
     the family's density; drawn for the 16 canvas, not scaled in. */
 export function IconAttach({ className }: IconProps) {

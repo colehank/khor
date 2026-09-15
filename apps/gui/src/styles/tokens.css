@@ -298,6 +298,45 @@
      flips. */
   --git-mark: color-mix(in srgb, var(--foreground) 50%, transparent);
 
+  /* ── the letter on a file row (工作区批⑦) ──────────────────────
+   *
+   * 「文件列表中,git 状态如 vscode,颜色与字符表示,黄色是已修改。list
+   * 最右侧末尾加一个 M;还有 U 等状态,使用对应的颜色与标识」— the user,
+   * 2026-09-15. So a hue here after all, and the paragraph above is not
+   * contradicted: that one is about the *gutter*, a bar beside a line
+   * that says only 「different」. These say **which way** different, and
+   * a letter is what a person actually reads — the colour is the half
+   * that can be seen from across the list.
+   *
+   * **Not the six state words and not the brand green.** The words
+   * belong to sessions (docs/UX.md) and green here would mean 完成 on a
+   * file nobody has committed. These are VS Code's own git decoration
+   * colours — the ones a person already reads in that explorer — lifted
+   * where khor's grounds need it, exactly as the highlighting took
+   * GitHub's published themes rather than inventing nine roles.
+   *
+   * Worst contrast of each against the three grounds a row can land on
+   * (card, paper, selected), measured by `npm run palette`:
+   *
+   *            light  dark
+   *   modified  5.36  7.54
+   *   added     5.27  6.51
+   *   deleted   6.42  5.32
+   *   conflict  5.30  5.74
+   *
+   * VS Code's own light 添加 (#587c0c) measures 4.19 on this paper and
+   * its dark 删除 (#c74e39) measures 2.84 — under the 4.5 a word answers
+   * to here, which is why those two are its hue at khor's weight rather
+   * than its value.
+   *
+   * **Two reds and they are not one token.** `D` is a file that is gone
+   * and `C` is a file nobody can commit past; they lead to different
+   * next moves, so they are told apart by weight as well as by letter. */
+  --git-modified: #895503;
+  --git-added: #4d6b0a;
+  --git-deleted: #ad0707;
+  --git-conflict: #c0143c;
+
   /* ── which model spent it ─────────────────────────────────
    *
    * **Hue is the family, lightness is the generation.** The names go on
@@ -599,6 +638,13 @@
    * rail, and the app's mark was shrunk to nothing. */
   --gap-in: 8px;     /* inside one thing: glyphs in a group, a control's parts */
   --gap-row: 12px;   /* between the parts of one row */
+  /* One level of the workspace tree (工作区批⑦). **Its own number
+     rather than `--gap-row`**: what this spaces is depth, and a step
+     that borrowed the row's gap would move the whole tree the next time
+     somebody retunes a row. 12 is the smallest step where a child's
+     name still reads as sitting under its parent's rather than beside
+     it, on the 224-wide column the tree opens at. */
+  --tree-step: 12px;
   --gap-group: 18px; /* between groups that must not read as one list */
   --gap-pane: 24px;  /* a region's own breathing room, against its edge */
 
@@ -1202,6 +1248,17 @@
        ceiling is 待批 at 4.70 rather than 忙碌, so this sits under it. */
     --state-idle: rgba(238, 238, 231, 0.55);
 
+    /* The four git letters lifted for near-black, the same way the five
+       hues below are: each one raised on its own against this theme's
+       card rather than the light values put through a filter. VS Code's
+       own dark values are the starting point and two of them are it
+       exactly (修改 #e2c08d, 添加 #73c991); 删除 and 冲突 are its hues
+       lifted until they clear 4.5 here. */
+    --git-modified: #e2c08d;
+    --git-added: #73c991;
+    --git-deleted: #ef8a76;
+    --git-conflict: #ff8a8a;
+
     --strain: #d59ab8;
 
     /* The same five hues lifted for near-black. **Not the light values
@@ -1268,6 +1325,10 @@
 
   --color-strain: var(--strain);
   --color-git-mark: var(--git-mark);
+  --color-git-modified: var(--git-modified);
+  --color-git-added: var(--git-added);
+  --color-git-deleted: var(--git-deleted);
+  --color-git-conflict: var(--git-conflict);
 
   --color-state-busy: var(--state-busy);
   --color-state-blocked: var(--state-blocked);
@@ -1317,6 +1378,7 @@
   --spacing-row: var(--gap-row);
   --spacing-group: var(--gap-group);
   --spacing-pane: var(--gap-pane);
+  --spacing-tree-step: var(--tree-step);
 
   /* mandala-adjacent type scale, each size with its one line-height:
    * a size that floats between leadings is two sizes wearing one name.
