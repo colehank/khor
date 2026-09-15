@@ -135,8 +135,10 @@
 //      deleted across the wire really gone from the disk, behind the
 //      sheet that says 直接删 and offers no 「不再问」; the sessions
 //      column holding the one started under that directory and not the
-//      one started beside it; and 移出 replicating back while the
-//      directory stays;
+//      one started beside it; a 400-character line in a real file
+//      folding into its column with the numbers still on their lines
+//      (工作区批⑨); and 移出 replicating back while the directory
+//      stays;
 //  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
@@ -6858,9 +6860,17 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   const wsDir = join(realpathSync(SCRATCH), "alpha-workspace");
   const wsFile = join(wsDir, "notes.md");
   const wsOutside = join(realpathSync(SCRATCH), "alpha-elsewhere");
+  const wsLong = join(wsDir, "long.txt");
   mkdirSync(join(wsDir, "sub"), { recursive: true });
   mkdirSync(wsOutside, { recursive: true });
   writeFileSync(wsFile, "# a note\n");
+  //      A line no column can hold, in a real file on a real disk
+  //      (工作区批⑨). **No extension khor has a grammar for**, on
+  //      purpose: the painted road and the plain one have to fold the
+  //      same way, and only the plain one is reachable without the
+  //      Shiki chunk landing first.
+  writeFileSync(wsLong, `short\n${"x".repeat(400)}\nafter\n`);
+
   //      **Deliberately not a checkout**: the git corner has to come out
   //      empty, and a directory with a `.git` in it would fill it.
   //      Dated old so 31b can tell 「alpha answered a fresh mtime」 from
@@ -6977,6 +6987,63 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   await until("and gone from the tree", 20_000, async () =>
     (await page.locator('[data-file="notes.md"]').count()) === 0,
   );
+
+  // 31g) a long line folds into the column, on a real file (工作区批⑨).
+  //
+  //      「文件显示,要随屏幕宽度自动换行。」「不做换行开关,我们显示行号
+  //      的作用就是这个啊」— the user, 2026-09-15. `check-face` measures
+  //      this against routed bytes and a 1400 window; here it is alpha's
+  //      own file, read over the wire, in the four-column shape a real
+  //      desktop actually shows.
+  await page.locator('[data-file="long.txt"] > button').first().click();
+  await until("alpha's long file on the sheet", 30_000, async () =>
+    (await page.locator('[data-sheet] [data-line="3"]').count()) === 1,
+  );
+  const folded = await page.evaluate(() => {
+    const round = (n) => Math.round(n * 10) / 10;
+    const pre = document.querySelector("[data-sheet]");
+    const box = document.querySelector("[data-file-scroll]");
+    const tall = (n) => {
+      const el = document.querySelector(`[data-sheet] [data-line="${n}"]`);
+      return el === null ? null : round(el.getBoundingClientRect().height);
+    };
+    const top = (sel) => {
+      const el = document.querySelector(sel);
+      return el === null ? null : round(el.getBoundingClientRect().top);
+    };
+    return {
+      row: tall(1),
+      long: tall(2),
+      sheet: round(pre.getBoundingClientRect().width),
+      column: round(pre.parentElement.getBoundingClientRect().width),
+      box: box === null ? null : [box.scrollWidth, box.clientWidth],
+      page: [document.scrollingElement.scrollWidth, document.scrollingElement.clientWidth],
+      line3: top('[data-sheet] [data-line="3"]'),
+      num3: top('[data-num="3"]'),
+    };
+  });
+  console.log(`workspaces · wrap: ${JSON.stringify(folded)}`);
+  if (folded.row === null || folded.long === null || folded.long < folded.row * 1.5) {
+    throw new Error(
+      `a 400-character line came out ${folded.long} tall against a ${folded.row} row — it did not ` +
+        "wrap, and there is no switch to turn wrapping on with",
+    );
+  }
+  if (folded.page[0] > folded.page[1] || (folded.box && folded.box[0] > folded.box[1])) {
+    throw new Error(
+      `the file scrolls sideways (page ${folded.page}, its own box ${folded.box}) — the ruling is ` +
+        "that it folds into the column instead",
+    );
+  }
+  if (folded.sheet > folded.column + 1) {
+    throw new Error(`the sheet is ${folded.sheet} wide inside a ${folded.column} column`);
+  }
+  if (folded.num3 === null || Math.abs(folded.num3 - folded.line3) > 0.5) {
+    throw new Error(
+      `line 3's number sits ${folded.num3} against its first character at ${folded.line3} — the ` +
+        "numbers are what the ruling spent the wrap switch on",
+    );
+  }
 
   // 31e) the sessions column: what is running under this directory on
   //      this machine, and nothing else.

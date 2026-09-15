@@ -21,7 +21,7 @@
 // elsewhere, scroll what is here and take the rest if you need it, or
 // nothing. Folded into one「打不开」they would all read as khor being
 // broken, which is the failure `check-acp` 第二批 names.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchPreview,
@@ -40,7 +40,7 @@ import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
-import { languageOf, paintFile } from "@/lib/highlight";
+import { languageOf, paintFileLines } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
@@ -428,7 +428,7 @@ export function FileView({
   // While it is waiting the `<pre>` shows the plain text, never the
   // last painting: a stale painting is the wrong letters under the
   // caret, which is worse than no colour by a long way.
-  const [painted, setPainted] = useState<{ text: string; html: string | null } | null>(null);
+  const [painted, setPainted] = useState<{ text: string; lines: string[] | null } | null>(null);
   useEffect(() => {
     if (lang === null) {
       setPainted(null);
@@ -443,7 +443,7 @@ export function FileView({
     // under new keystrokes.
     let live = true;
     const id = setTimeout(() => {
-      void paintFile(body, lang).then((html) => live && setPainted({ text: body, html }));
+      void paintFileLines(body, lang).then((lines) => live && setPainted({ text: body, lines }));
     }, dirty ? PAINT_IDLE : 0);
     return () => {
       live = false;
@@ -451,6 +451,66 @@ export function FileView({
     };
   }, [body, lang, dirty]);
 
+
+  /** The file, one entry per source line. **The text's own split is the
+      spine, not the painter's** (工作区批⑨): the numbers, the gutter and
+      the editor all count lines the way `\n` does, and a painting that
+      disagreed would move every one of them. `paintFileLines` refuses to
+      hand back a different count for exactly that reason. */
+  const rows = useMemo(() => (body.length === 0 ? [] : body.split("\n")), [body]);
+  /** Where each source line starts, in pixels down from the sheet's own
+      top, plus one last entry for the bottom of the last line — so a
+      hunk covering lines `at`…`at+n` is `tops[at-1]` to `tops[at-1+n]`
+      with no special case at the end.
+   *
+   * **Measured, because the file wraps now** (工作区批⑨). Until this
+   * batch every one of these was arithmetic: line `n` began at
+   * `line-height × n`, which is exact for a `<pre>` that never wraps
+   * and simply wrong for one that does — 「文件显示,要随屏幕宽度自动
+   * 换行」(the user, 2026-09-15). A long line now occupies three rows
+   * and everything below it has moved three rows down; no formula this
+   * side of laying the text out knows by how much.
+   *
+   * **Empty until the first layout**, and the numbers and the bars draw
+   * nothing rather than guess: a bar at a line it is not about is worse
+   * than a bar that arrives a frame late. */
+  const [tops, setTops] = useState<number[]>([]);
+  /** The painted sheet, so its lines can be measured. */
+  const sheet = useRef<HTMLPreElement>(null);
+  // **A layout effect and a `ResizeObserver`, both.** The effect catches
+  // the text changing; the observer catches the column changing width,
+  // which is the whole point of wrapping and which no render here is
+  // told about (the seam is dragged one component up, and the window is
+  // not a prop at all).
+  useLayoutEffect(() => {
+    const el = sheet.current;
+    if (el === null) return;
+    const read = () => {
+      const seen = el.querySelectorAll<HTMLElement>("[data-line]");
+      // **Rects, not `offsetTop`.** A line sits at a multiple of 21.6
+      // and `offsetTop` is rounded to a whole pixel, so the numbers
+      // column — whose blocks are the differences between neighbours —
+      // drifted up to half a pixel away from the text it names. The
+      // gate measures that difference at 0.5, which is exactly where
+      // rounded arithmetic lands.
+      const base = el.getBoundingClientRect().top;
+      const next: number[] = [];
+      for (const row of seen) next.push(row.getBoundingClientRect().top - base);
+      const last = seen[seen.length - 1];
+      next.push(last === undefined ? 0 : last.getBoundingClientRect().bottom - base);
+      // **Nothing is written when nothing moved.** The observer fires on
+      // every layout that touches this box, including the one this
+      // state change causes — a new array every time is a render loop
+      // with a repaint in it.
+      setTops((was) =>
+        was.length === next.length && was.every((v, i) => v === next[i]) ? was : next,
+      );
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [body, painted, face]);
 
   // The ask from outside, and **nothing on the first render**: the
   // value arrives with the mount, and a mount is not an ask. The ref
@@ -678,8 +738,7 @@ export function FileView({
     );
   }
 
-  const html = painted !== null && painted.text === body ? painted.html : null;
-  const lines = body.length === 0 ? 0 : body.split("\n").length;
+  const paint = painted !== null && painted.text === body ? painted.lines : null;
 
   // **Nothing is drawn about HEAD while the buffer differs from disk.**
   // The bars name line numbers and one typed line moves every line
@@ -918,15 +977,22 @@ export function FileView({
       {diff?.more === true && (
         <div className="border-b px-3 py-1.5 text-aux text-muted-foreground">{cli.git_more}</div>
       )}
-      {/* Three columns that scroll as one. The numbers and the code are
-          each their own `<pre>` rather than a marker on every line: a
-          painted block's spans cross line ends (a block comment is one
-          span over many lines), so splitting the markup by「\n」to hang
-          anything off each line would cut those spans in half.
-          **The gutter between them is where that rule is paid for** —
-          it cannot be a marker inside either column, so it is a column
-          of its own, and every bar in it is placed by arithmetic on the
-          line height rather than by flowing with the text. */}
+      {/* Three columns that scroll as one, **and every line is a block
+          of its own** (工作区批⑨).
+
+          It used to be two `<pre>`s each holding one string, because a
+          painted block's spans cross line ends and splitting the markup
+          by「\n」would cut them in half. Shiki hands the lines over
+          already separated (`paintFileLines`), so that cost is gone —
+          and it had to go: with wrapping on, 「where does line 40
+          start」 is a question only the laid-out text can answer, and a
+          single box has nothing in it to ask.
+
+          **The gutter is still a column of its own.** It cannot be a
+          marker inside either of the other two — one of them has a
+          transparent editor over it — so it floats, and its bars are
+          placed at the measured tops rather than at a multiple of the
+          line height. */}
       {/* **One padding box for all three columns**, rather than `py-2`
           on each. Everything the gutter draws is placed by arithmetic
           from the top of the first line, and a padding of its own would
@@ -947,23 +1013,56 @@ export function FileView({
           )}
         </div>
       ) : (
-      <div ref={box} className="min-h-0 flex-1 overflow-auto">
+      <div
+        ref={box}
+        // Named so a gate can ask **this** box whether anything scrolls
+        // sideways (工作区批⑨). The ruling is that a file wraps, and a
+        // page that does not scroll while its inner scroller does is the
+        // same file off the right edge with one more thing in the way.
+        data-file-scroll
+        className="min-h-0 flex-1 overflow-auto"
+      >
         <div className="flex min-w-full items-start py-2">
+          {/* **One block per number, as tall as the line it names**
+              (工作区批⑨). A joined string was exact while every line was
+              one row tall; with wrapping it would put 40 beside line 43.
+              Each block takes the measured height of its line, so the
+              digits land on that line's **first** visual row and the
+              next number waits out however many rows the wrap took —
+             「不做换行开关,我们显示行号的作用就是这个啊」(the user,
+              2026-09-15). */}
           <pre
+            data-numbers
             aria-hidden="true"
             className="shrink-0 select-none pl-2 text-right font-mono text-code leading-code text-muted-foreground tabular-nums"
           >
-            {Array.from({ length: lines }, (_, i) => i + 1).join("\n")}
+            {rows.map((_, i) => (
+              <div
+                key={i}
+                data-num={i + 1}
+                style={tops.length > i + 1 ? { height: tops[i + 1] - tops[i] } : undefined}
+              >
+                {i + 1}
+              </div>
+            ))}
           </pre>
           <Gutter
             hunks={hunks}
             shown={shown}
+            tops={tops}
             onShow={(i) => setShown(shown === i ? null : i)}
           />
-          <div className="relative min-w-max flex-1">
+          {/* **`min-w-0`, where it used to be `min-w-max`.** That was
+              the column growing to the longest line and the file
+              scrolling sideways; the ruling is that it wraps instead,
+              so the column takes the width it is given and the text
+              folds into it. */}
+          <div className="relative min-w-0 flex-1">
             <Sheet
+              ref={sheet}
+              rows={rows}
               text={body}
-              html={html}
+              paint={paint}
               edit={canEdit}
               onText={(t) => {
                 setClashes(null);
@@ -1035,18 +1134,28 @@ function Table({ text, sep }: { text: string; sep: string }) {
     nothing else in the app shares. */
 const PAINT_IDLE = 120;
 
+/** The one rule that makes the caret land on its letter: the painted
+    copy and the editor over it wrap at the same places.
+
+    **Set once and spread onto both**, because the pair is the whole
+    trick and a class edited on one of them is the drift `check-face`
+    goes red about. `anywhere` rather than `break-word`: a 400-character
+    path with no space in it has to fold somewhere, and the alternative
+    is the sideways scroll the ruling took away. */
+const WRAP = "font-mono text-code leading-code whitespace-pre-wrap [overflow-wrap:anywhere]";
+
 /**
  * The file's one surface: the painted text, with a transparent editor
  * laid exactly over it when the file may be written back.
  *
  * **Why a textarea over a `<pre>` and not an editor component.** The
  * two have to agree character for character, and they do because they
- * are the same string in the same font, size, line height and padding,
- * with `white-space: pre` on both — a browser laying out one lays out
- * the other identically. That is the whole trick, and it is also the
- * whole of its fragility: **every typographic property here must be set
- * on both, and `check-face` measures the caret against the ink to catch
- * the day one of them drifts.**
+ * are the same string in the same font, size, line height, padding and
+ * wrapping — a browser laying out one lays out the other identically.
+ * That is the whole trick, and it is also the whole of its fragility:
+ * **every typographic property here must be set on both (`WRAP`), and
+ * `check-face` measures the caret against the ink to catch the day one
+ * of them drifts.**
  *
  * **What it does not buy, said where it is spent:** no bracket
  * matching, no multiple cursors, no folding, and no completion — the
@@ -1054,23 +1163,37 @@ const PAINT_IDLE = 120;
  * person who wants those opens the file in VS Code, which is the
  * batch after this one.
  *
+ * **One block per line, and the newlines are in the editor only**
+ * (工作区批⑨). The `<pre>` draws each line as a `<div>`: a block box
+ * breaks where a `\n` would, so the two lay out the same, and the
+ * numbers and the gutter get one element per line to measure. An empty
+ * line has no content to give it height, which is what the `min-h`
+ * is for — without it a blank line collapses and everything below it
+ * climbs one row.
+ *
  * **The `<pre>` keeps the text even under the editor.** It would be
  * cheaper to leave it empty and let the textarea show through, but then
- * the column would have no width of its own and the horizontal scroll,
- * the gutter's arithmetic and the line numbers would all be measuring
- * a box with nothing in it.
+ * the column would have no height of its own and the line tops, the
+ * gutter and the numbers would all be measuring a box with nothing in
+ * it.
  */
 function Sheet({
+  ref,
+  rows,
   text,
-  html,
+  paint,
   edit,
   onText,
   onSave,
 }: {
+  ref: React.Ref<HTMLPreElement>;
+  /** The file split on 「\n」 — the spine every column counts by. */
+  rows: string[];
+  /** The same text unsplit, which is what the editor holds. */
   text: string;
-  /** The painted markup, or null for a language this build does not
-      carry — then the `<pre>` shows the plain text instead. */
-  html: string | null;
+  /** The painted markup, one entry per line, or null for a language
+      this build does not carry — then the `<pre>` shows plain text. */
+  paint: string[] | null;
   /** Whether to lay an editor over it at all. **A file that cannot be
       written back grows no textarea**, rather than a disabled one: a
       caret that appears and then refuses every keystroke is worse than
@@ -1083,6 +1206,7 @@ function Sheet({
   return (
     <>
       <pre
+        ref={ref}
         // Named so a gate can find *this* `<pre>` and not the line
         // numbers beside it. The first probe for「does the expanded
         // panel cover any code」 fell back to `document.querySelector
@@ -1093,17 +1217,21 @@ function Sheet({
         // Hidden from a screen reader when the textarea is there: the
         // two hold the same words, and read twice they are gibberish.
         aria-hidden={edit || undefined}
-        className="px-3 font-mono text-code leading-code"
+        className={cn("px-3", WRAP)}
       >
-        {html === null ? (
-          text
-        ) : (
-          // Safe for `paint`'s reason, which `paintFile` inherits:
-          // highlight.js escapes every character of the input before it
-          // wraps any of it, so this is the file's own text plus spans
-          // this build generated.
-          <code dangerouslySetInnerHTML={{ __html: html }} />
-        )}
+        {rows.map((line, i) => (
+          <div key={i} data-line={i + 1} className="min-h-[var(--text-code--line-height)]">
+            {paint === null ? (
+              line
+            ) : (
+              // Safe for `paint`'s reason: Shiki escapes every
+              // character of the input before it wraps any of it, so
+              // this is the file's own text plus spans this build
+              // generated (`lib/highlight`'s `line`).
+              <span dangerouslySetInnerHTML={{ __html: paint[i] }} />
+            )}
+          </div>
+        ))}
       </pre>
       {edit && (
         <textarea
@@ -1122,10 +1250,16 @@ function Sheet({
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          // `wrap="off"` is the attribute, not a class: a wrapped line
-          // would put the editor's line 40 beside the painting's line
-          // 39 and every number, bar and hunk below it would be wrong.
-          wrap="off"
+          // **`soft`, which is the attribute half of `WRAP`** (工作区
+          // 批⑨). It was `off` until this batch, and the reason given
+          // was that a wrapped editor line would sit beside an unwrapped
+          // painted one — true then, because only one of the two
+          // wrapped. Both do now, and what `off` would cost instead is
+          // an editor that scrolls sideways under a sheet that does not.
+          // **`soft` and never `hard`**: `hard` writes the wrap points
+          // into the value, which would save a file with newlines
+          // nobody typed.
+          wrap="soft"
           // Transparent ink over the painted copy, and the caret is the
           // one thing drawn — `text-transparent` hides the glyphs but
           // not the selection, which browsers paint from their own
@@ -1133,23 +1267,13 @@ function Sheet({
           // look like here.
           className={cn(
             "absolute inset-0 resize-none overflow-hidden border-0 bg-transparent px-3",
-            "font-mono text-code leading-code text-transparent caret-foreground outline-none",
+            WRAP,
+            "text-transparent caret-foreground outline-none",
           )}
         />
       )}
     </>
   );
-}
-
-/** A line count as a distance down the page.
-
-    **The line height is read from the same token the text is set in**
-    (`--text-code--line-height`), not measured off the DOM: `<pre>` does
-    not wrap, so every line is exactly one line tall and the arithmetic
-    is exact. A measurement would be the same number arrived at later
-    and with a reflow. */
-function down(n: number): string {
-  return `calc(var(--text-code--line-height) * ${n})`;
 }
 
 /** The change gutter: one bar per hunk, each one pressable.
@@ -1162,10 +1286,17 @@ function down(n: number): string {
 function Gutter({
   hunks,
   shown,
+  tops,
   onShow,
 }: {
   hunks: GitHunk[];
   shown: number | null;
+  /** Where every line begins, measured off the sheet (`FileView`'s
+      `tops`). **Empty means nothing has been laid out yet** and the
+      gutter draws no bars — a bar at a line it is not about is worse
+      than a bar one frame late, and with wrapping there is no formula
+      to fall back on. */
+  tops: number[];
   onShow: (i: number) => void;
 }) {
   return (
@@ -1177,6 +1308,17 @@ function Gutter({
     <div data-gutter={hunks.length} className="relative w-3 shrink-0 self-stretch border-r">
       {hunks.map((h, i) => {
         const gone = h.lines === 0;
+        // The line the hunk starts on, and the one after everything it
+        // covers. Out of range — a diff that names lines this buffer no
+        // longer has — draws nothing at all, which is the same answer
+        // as「not measured yet」and the right one: khor has no place to
+        // put a bar about a line it cannot find.
+        const from = tops[h.at - 1];
+        const to = tops[h.at - 1 + h.lines];
+        // A deletion stands on the boundary **below** line `at`, which
+        // is where the lines that went away used to begin.
+        const edge = tops[h.at];
+        if (from === undefined || to === undefined || (gone && edge === undefined)) return null;
         return (
           <button
             type="button"
@@ -1207,11 +1349,14 @@ function Gutter({
                     // A deletion has no lines to stand beside, so it is
                     // a notch on the boundary between two rather than a
                     // bar over any of them — sitting on a line it would
-                    // claim that line had changed.
-                    top: `calc(${down(h.at)} - var(--text-code--line-height) / 8)`,
-                    height: `calc(var(--text-code--line-height) / 4)`,
+                    // claim that line had changed. The transform
+                    // centres the notch on the boundary rather than a
+                    // second arithmetic subtracting half its height.
+                    top: edge,
+                    height: "calc(var(--text-code--line-height) / 4)",
+                    transform: "translateY(-50%)",
                   }
-                : { top: down(h.at - 1), height: down(h.lines) }
+                : { top: from, height: to - from }
             }
           />
         );

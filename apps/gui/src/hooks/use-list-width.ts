@@ -232,11 +232,34 @@ export function useListWidth(
     });
   }, []);
 
+  /** Open, or put away — said as **a state rather than a flip**.
+   *
+   * ⚠️ **An effect that declares a default must be idempotent, and a
+   * flip is not.** React runs an effect twice on mount in development
+   * on purpose, and both runs read the same render's `collapsed`, so a
+   * caller spelling 「put it away」 as 「toggle if it is open」 toggles
+   * twice and lands exactly where it started. That is what the
+   * workspace's 「the sessions column starts folded when the list has a
+   * column of its own」 default had been doing since it was written:
+   * the column came up open regardless, which on a phone is three
+   * columns in 390 pixels and a file view 39 wide. Nothing said so
+   * until the file began to wrap and `check-face`'s touch floor
+   * measured the editor (工作区批⑨). */
+  const show = useCallback((on: boolean) => {
+    setPref((p) => {
+      if (p.collapsed === !on) return p;
+      const next = { ...p, collapsed: !on };
+      persist(next);
+      return next;
+    });
+  }, []);
+
   return {
     width: pref.w,
     collapsed: pref.collapsed,
     expand,
     toggle,
+    show,
     handleProps: { onPointerDown, onPointerMove, onPointerUp, onDoubleClick, onKeyDown },
     /** What the seam reports about itself, for anything that reads it
         aloud: where it sits between its two ends. */

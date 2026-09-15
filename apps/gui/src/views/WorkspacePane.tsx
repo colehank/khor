@@ -166,9 +166,11 @@ export function WorkspacePane({
   const sidePane = useListWidth(narrow, "ws-sessions", "right", "[data-ws-sessions]");
   const tree = !treePane.collapsed;
   const sessions = !sidePane.collapsed;
-  const setTree = (on: boolean) => (on === treePane.collapsed ? treePane.toggle() : undefined);
-  const setSessions = (on: boolean) =>
-    on === sidePane.collapsed ? sidePane.toggle() : undefined;
+  // **Said as a state, never as a flip** (工作区批⑨): the default below
+  // is declared from an effect, and an effect that flips is an effect
+  // that undoes itself the second time React runs it.
+  const setTree = treePane.show;
+  const setSessions = sidePane.show;
   /** Which session this column is standing in, by id, or `null` for
       the list. **Dropped when the workspace changes** along with the
       tree's position and the open file: a session belongs to one
@@ -597,7 +599,15 @@ export function WorkspacePane({
         {tree && (
           <div
             data-ws-tree
-            className="flex shrink-0 flex-col border-r"
+            // **A ceiling on the share, not only a width** (工作区批⑨).
+            // The dragged width is a number of pixels and the pane it
+            // sits in is not: on a 390 phone the remembered 288 left
+            // the file column two characters wide. Nothing said so
+            // while the sheet did not wrap — it simply grew past the
+            // column and the pane scrolled sideways — and the first
+            // thing to notice was `check-face`'s touch floor, which
+            // measured a 24-wide editor.
+            className="flex max-w-[45%] shrink-0 flex-col border-r"
             style={{ width: treePane.width }}
           >
             {/* **Two trees, one ruling apart** (工作区批⑦). A project
@@ -872,8 +882,9 @@ export function WorkspacePane({
             // is `h-full` with its own scroller inside; wrapped in a
             // second one it sizes to its content and the header stops
             // being sticky.
+            // Capped for the tree's reason, one column over.
             className={cn(
-              "flex shrink-0 flex-col border-l",
+              "flex max-w-[45%] shrink-0 flex-col border-l",
               picked === null ? "overflow-y-auto" : "min-h-0",
             )}
             style={{ width: sidePane.width }}

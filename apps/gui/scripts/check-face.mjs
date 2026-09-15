@@ -4356,6 +4356,11 @@ try {
         font: `${s.fontFamily}|${s.fontSize}|${s.lineHeight}|${s.letterSpacing}|${s.tabSize}`,
         pad: `${s.paddingTop}|${s.paddingRight}|${s.paddingBottom}|${s.paddingLeft}`,
         ws: s.whiteSpace,
+        // How a line too long for the box is broken. Only meaningful
+        // since the sheet wraps (工作区批⑨), and only on both at once:
+        // one of the two folding a 400-character path where the other
+        // does not is a caret drifting a whole row.
+        wrap: `${s.overflowWrap}|${s.wordBreak}`,
       };
     };
     return {
@@ -4397,6 +4402,198 @@ try {
         fail(`the editor's box is ${n} off the painted copy's on ${axis} (src/views/FileView.tsx)`);
       }
     }
+    // …and they fold at the same places. **4c above measures the two
+    // boxes; this measures the text inside them** (工作区批⑨). With
+    // `pre` on both, one box could not wrap differently from the other
+    // because neither wrapped at all; with `pre-wrap` on both it is a
+    // property either side can lose on its own — `overflow-wrap`, a
+    // word-break rule, a padding — and the boxes would still line up
+    // corner for corner while the caret sat a row above its letter.
+    if (sheet.ta.wrap !== sheet.pre.wrap) {
+      fail(
+        `the editor and the painted copy disagree on how they fold: ${sheet.ta.wrap} against ` +
+          `${sheet.pre.wrap} — the caret is laid out by one and the letters by the other ` +
+          "(src/views/FileView.tsx `WRAP`)",
+      );
+    }
+  }
+
+  // ── 4m) 随宽度换行: the file folds, nothing scrolls sideways ──────
+  //
+  // 「文件显示,要随屏幕宽度自动换行。」「不做换行开关,我们显示行号的作用
+  // 就是这个啊」— the user, 2026-09-15 (工作区批⑨).
+  //
+  // Claims:
+  //   a. a file holding a 400-character line scrolls **nothing**
+  //      sideways — not the page, not the file's own box — and the
+  //      sheet is no wider than the column it was handed;
+  //   b. a line's number sits on that line's **first** visual row, so
+  //      the line after a wrapped one is not off by however many rows
+  //      the wrap took. This is the half the ruling paid for the
+  //      switch with:「行号的作用就是这个」;
+  //   c. a hunk beginning after a wrapped line puts its bar on that
+  //      line — the same arithmetic the numbers just stopped doing,
+  //      and the one a `line-height × n` gutter gets wrong by exactly
+  //      the rows the wrap took.
+  //
+  // **This section's own file, and its own diff.** The shared fixture
+  // answers three short lines, in which nothing wraps and every one of
+  // these assertions is unfalsifiable.
+  {
+    const LONG = "x".repeat(400);
+    const wrapText =
+      `fn main() {\n    let a = "${LONG}";\n    let b = 2;\n    let c = 3;\n    let d = 4;\n}\n`;
+    const wrapRead = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: wrapText.length,
+          at_ms: Date.now(),
+          text: wrapText,
+          cut: false,
+          binary: false,
+          digest: "0".repeat(64),
+        }),
+      });
+    // **A hunk at line 4, which is two lines past the wrapped one.**
+    // At line 1 or 2 a bar placed by `line-height × n` is still right,
+    // because nothing above it has folded yet — the error only exists
+    // below a wrap, so that is where the bar has to be measured.
+    const wrapDiff = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ hunks: [{ at: 4, lines: 2, was: ["a line HEAD had"] }], more: false }),
+      });
+    await page.route("**/read_text", wrapRead);
+    await page.route("**/git_diff", wrapDiff);
+    // The strip has to be empty first: a tab already open on this file
+    // is a `FileView` that will not be remounted, and one that is not
+    // remounted never re-reads — so the fixture above would go
+    // unasked and this section would measure the previous one's text.
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(120);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(120);
+      }
+    }
+    await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+    const drew = await until(8_000, async () =>
+      (await page.locator('[data-sheet] [data-line="6"]').count()) === 1,
+    );
+    if (!drew) {
+      fail(
+        "probe dead: the sheet drew no per-line blocks — the numbers and the gutter read a real " +
+          "height off each one, and a single box has nothing in it to measure (src/views/FileView.tsx)",
+      );
+    } else {
+      const fold = await page.evaluate(() => {
+        const round = (n) => Math.round(n * 10) / 10;
+        const pre = document.querySelector("[data-sheet]");
+        const ta = document.querySelector("[data-edit]");
+        const box = document.querySelector("[data-file-scroll]");
+        const page_ = document.scrollingElement;
+        const top = (sel) => {
+          const el = document.querySelector(sel);
+          return el === null ? null : round(el.getBoundingClientRect().top);
+        };
+        const tall = (sel) => {
+          const el = document.querySelector(sel);
+          return el === null ? null : round(el.getBoundingClientRect().height);
+        };
+        return {
+          page: [page_.scrollWidth, page_.clientWidth],
+          box: box === null ? null : [box.scrollWidth, box.clientWidth],
+          sheet: round(pre.getBoundingClientRect().width),
+          column: round(pre.parentElement.getBoundingClientRect().width),
+          row: tall('[data-sheet] [data-line="1"]'),
+          wrapped: tall('[data-sheet] [data-line="2"]'),
+          lines: [2, 3, 4].map((n) => [n, top(`[data-sheet] [data-line="${n}"]`), top(`[data-num="${n}"]`)]),
+          bar: top('[data-hunk="4"]'),
+          // The editor's own idea of how tall the text is. It is forced
+          // to the column's height by `inset-0`, so the only thing that
+          // says whether it folded the same way is what it thinks it
+          // would need.
+          editor: ta === null ? null : ta.scrollHeight,
+          painted: round(pre.getBoundingClientRect().height),
+        };
+      });
+      console.log(`wrap: ${JSON.stringify(fold)}`);
+      // a) nothing goes sideways. **Asked before the arm below**, and
+      // that is deliberate: 「it did not wrap」 is the very failure this
+      // claim is about, so gating it on the line having wrapped would
+      // make it unfalsifiable by exactly the change that breaks it.
+      {
+        if (fold.page[0] > fold.page[1]) {
+          fail(
+            `the page scrolls sideways by ${fold.page[0] - fold.page[1]}px on a file with one long ` +
+              "line — 「文件显示,要随屏幕宽度自动换行」 (src/views/FileView.tsx)",
+          );
+        }
+        if (fold.box !== null && fold.box[0] > fold.box[1]) {
+          fail(
+            `the file's own box scrolls sideways by ${fold.box[0] - fold.box[1]}px — a column that ` +
+              "scrolls instead of the page is the same line off the right edge with one more thing " +
+              "in the way (src/views/FileView.tsx)",
+          );
+        }
+        if (fold.sheet > fold.column + 1) {
+          fail(
+            `the sheet is ${fold.sheet} wide inside a ${fold.column} column — it takes the width it ` +
+              "is given and folds into it (src/views/FileView.tsx)",
+          );
+        }
+      }
+      // The arm that makes the rest mean anything: if the long line did
+      // not fold, every assertion below is true of a file that never
+      // needed wrapping.
+      if (fold.row === null || fold.wrapped === null || fold.wrapped < fold.row * 1.5) {
+        fail(
+          `probe void: the 400-character line is ${fold.wrapped} tall against a ${fold.row} row, so ` +
+            "it did not wrap and nothing below is being measured (widen the fixture or narrow the column)",
+        );
+      } else {
+        // b) every number on its line's first row, the one under the
+        //    wrap being the one that could not be right by arithmetic.
+        for (const [n, line, num] of fold.lines) {
+          if (line === null || num === null) {
+            fail(`probe void: line ${n} has no block or no number to measure (src/views/FileView.tsx)`);
+          } else if (Math.abs(line - num) > 0.5) {
+            fail(
+              `line ${n}'s number sits ${Math.round((num - line) * 10) / 10}px off its first character — the numbers ` +
+                "are what the ruling spent the wrap switch on (src/views/FileView.tsx)",
+            );
+          }
+        }
+        // c) the gutter reads the same heights.
+        const line4 = fold.lines.find(([n]) => n === 4)?.[1] ?? null;
+        if (fold.bar === null) {
+          fail(
+            "the change gutter drew no bar for the hunk at line 4 — a file that wraps still differs " +
+              "from HEAD in the same places (src/views/FileView.tsx)",
+          );
+        } else if (line4 !== null && Math.abs(fold.bar - line4) > 0.5) {
+          fail(
+            `the hunk's bar sits ${Math.round((fold.bar - line4) * 10) / 10}px off line 4 — placed by ` +
+              "「line-height × n」 it misses by however many rows the wrap above it took " +
+              "(src/views/FileView.tsx)",
+          );
+        }
+        // d) …and the editor folded where the painting did.
+        if (fold.editor !== null && Math.abs(fold.editor - fold.painted) > 2) {
+          fail(
+            `the editor needs ${fold.editor}px for text the painting drew in ${fold.painted} — they ` +
+              "wrapped at different places, and the caret is a row off its letter from there down " +
+              "(src/views/FileView.tsx `WRAP`)",
+          );
+        }
+      }
+    }
+    await page.unroute("**/read_text", wrapRead);
+    await page.unroute("**/git_diff", wrapDiff);
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────

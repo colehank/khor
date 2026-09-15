@@ -289,7 +289,7 @@ export function painted(code: string, language: string): string | null {
  * block that came back wrong would be worse than a block that came back
  * bare.
  */
-export async function paint(code: string, language: string, remember = true): Promise<string | null> {
+export async function paint(code: string, language: string): Promise<string | null> {
   const key = `${language} ${code}`;
   const seen = PAINTED.get(key);
   if (seen !== undefined) return seen;
@@ -303,21 +303,55 @@ export async function paint(code: string, language: string, remember = true): Pr
       defaultColor: false,
     });
     const html = tokens.map(line).join("\n");
-    if (remember) {
-      if (PAINTED.size >= PAINTED_CAP) PAINTED.delete(PAINTED.keys().next().value as string);
-      PAINTED.set(key, html);
-    }
+    // **Always remembered now.** The one caller that asked not to be
+    // was the file sheet, and it went its own way in 工作区批⑨
+    // (`paintFileLines` — a file needs its lines apart, and a 64-entry
+    // cache keyed on a whole file is not for one). What is left here is
+    // the conversation's blocks, which are exactly what the cache is
+    // for, so the flag had no second reader and went with it.
+    if (PAINTED.size >= PAINTED_CAP) PAINTED.delete(PAINTED.keys().next().value as string);
+    PAINTED.set(key, html);
     return html;
   } catch {
     return null;
   }
 }
 
-/** A file's worth: painted every time and never remembered — a file is
-    large, edited, and open once, none of which a 64-entry cache keyed
-    on the whole text is for. */
-export function paintFile(code: string, language: string): Promise<string | null> {
-  return paint(code, language, false);
+/** A file's worth, **one string per source line** (工作区批⑨).
+ *
+ * Never remembered — a file is large, edited, and open once, none of
+ * which a 64-entry cache keyed on the whole text is for.
+ *
+ * **Lines rather than one joined string, because the sheet wraps now.**
+ * A wrapped file's line numbers and change gutter have to know how tall
+ * each source line came out, and「how tall」 is only askable of an
+ * element that is exactly one line. Joining with 「\n」 and letting
+ * `pre-wrap` break it puts every line inside one box with nothing to
+ * measure — which is the arrangement 工作区批⑨ replaced.
+ *
+ * Shiki's `codeToTokens` already hands lines back; this only refuses to
+ * flatten them. `null` for a language this build does not carry and for
+ * a grammar that refused — plain is the honest outcome either way.
+ *
+ * **The count is checked against the text's own.** A grammar that
+ * returned a different number of lines than `split("\n")` would put
+ * every number below it against the wrong code, so the whole painting
+ * is dropped rather than half-trusted. */
+export async function paintFileLines(code: string, language: string): Promise<string[] | null> {
+  try {
+    const h = await ready(language);
+    if (h === null) return null;
+    measured.paints += 1;
+    const { tokens } = h.codeToTokens(code, {
+      lang: language,
+      themes: { light: LIGHT, dark: DARK },
+      defaultColor: false,
+    });
+    const out = tokens.map(line);
+    return out.length === code.split("\n").length ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 export function openFenceAt(text: string): number | null {
