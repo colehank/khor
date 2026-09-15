@@ -48,13 +48,17 @@ import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { connectionWord } from "@/words";
 
-/** What the picker answers with.
-    `machine` is the name every verb takes (`""` is this machine, the
-    spelling the whole API uses); `device` is its id, carried because a
-    row in the workspace table is keyed by id and the caller should not
-    have to look it up again. It is `""` while the device table has not
-    answered — best effort, and the name is the field callers act on. */
-export type DirPick = { device: string; machine: string; path: string };
+/** What the picker answers with: the machine as the name every verb
+    takes (`""` is this machine, the spelling the whole API uses), and
+    the directory.
+
+    ⚠️ **It carried the machine's id too, and that field is gone**
+    (2026-09-15). It was there so a caller keying the workspace table by
+    id would not look it up again — and across four batches no caller
+    ever read it: `ws_add` names a machine because adding one has to
+    reach it, and the wizard writes a path into a box. A field nobody
+    reads is a field that can be wrong without anybody noticing. */
+export type DirPick = { machine: string; path: string };
 
 export function DirPicker({
   open,
@@ -168,13 +172,7 @@ export function DirPicker({
     setTaking(true);
     setRefused(null);
     Promise.resolve()
-      .then(() =>
-        onPick({
-          device: machines.find((d) => (machine === "" ? d.me : d.name === machine))?.id ?? "",
-          machine,
-          path,
-        }),
-      )
+      .then(() => onPick({ machine, path }))
       .then(
         () => onOpenChange(false),
         (e: unknown) => {

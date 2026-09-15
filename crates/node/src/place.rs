@@ -123,12 +123,17 @@ pub fn shorten(path: &Path) -> String {
 /// [`shorten`] with the home handed in.
 ///
 /// **Split because whose home a path is under is a fact about the
-/// machine holding it.** A satellite's rows are shortened with the
-/// satellite's home, read over the same ssh that read the rows
-/// (`crate::satellite::places`); shortening them here would write `~`
-/// where the *sponsor's* home happens to match and leave the
-/// satellite's own home spelled out in full — a row that is wrong in
-/// both directions at once.
+/// machine holding it** — a row read off another machine has to be
+/// shortened with *that* machine's home, or `~` lands where the
+/// sponsor's home happens to match and the far machine's own home is
+/// spelled out in full, wrong in both directions at once.
+///
+/// ⚠️ **The caller that needed that is gone** (2026-09-15): the
+/// satellite road read the far home over the same ssh that read the
+/// rows, and it went with the derived workspace list it existed for.
+/// What is left is [`shorten`]'s own body and a seam its test uses, and
+/// the argument above is kept because the next caller reading a far
+/// machine's paths will need it before it needs anything else here.
 ///
 /// An empty home shortens nothing, which is the honest answer when the
 /// far side did not say.
@@ -169,14 +174,18 @@ pub fn fold(seen: impl IntoIterator<Item = (PathBuf, u32, i64)>) -> Vec<Place> {
 /// The half of [`fold`] that touches no disk: rooted rows in, one row
 /// per root out, newest first.
 ///
-/// **Split because a satellite's rows are rooted somewhere else.**
-/// Rooting a directory means asking whether `.git` is above it and
-/// whether the root still exists, and for a machine only ssh can reach
-/// both questions are answered over there (`crate::satellite::places`).
-/// What must not be answered twice is how duplicates combine and how
-/// the list is ordered — a satellite's list sorted by another rule
-/// would be the same landing painting two orders, and the one being
-/// read would depend on which machine a row came from.
+/// **Split because rows can be rooted somewhere else.** Rooting a
+/// directory means asking whether `.git` is above it and whether the
+/// root still exists, and for a machine only ssh can reach both
+/// questions are answered over there. What must not be answered twice
+/// is how duplicates combine and how the list is ordered — two lists
+/// sorted by two rules would be one landing painting two orders, and
+/// which one you read would depend on which machine a row came from.
+///
+/// ⚠️ **Only [`fold`] calls this today** (2026-09-15): the satellite
+/// road that rooted its own rows went with the derived workspace list.
+/// The seam is kept for the reason above, which is about the next such
+/// caller rather than about the one that left.
 pub fn merge(rooted: impl IntoIterator<Item = (String, u32, i64)>) -> Vec<Place> {
     let mut by: std::collections::HashMap<String, (u32, i64)> = std::collections::HashMap::new();
     for (root, count, at) in rooted {
