@@ -91,7 +91,13 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["zoo", "apple", "Banana"], "the far disk, in the node's order");
     assert!(rows[0].dir && rows[2].size == 2 && !truncated);
-    assert_eq!(at, browse.to_str().unwrap(), "the answer names where it is about");
+    // Resolved, because the answer is the far machine's physical
+    // spelling (`files::list_dir`), and `temp_dir()` on a Mac is a link.
+    assert_eq!(
+        at,
+        browse.canonicalize().unwrap().to_str().unwrap(),
+        "the answer names where it is about, links resolved"
+    );
 
     // A relative path is refused across the real wire too — the refusal
     // must survive the trip, not just the unit test.

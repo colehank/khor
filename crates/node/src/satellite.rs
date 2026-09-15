@@ -720,7 +720,7 @@ pub fn ls(host: &str, path: &str) -> Result<(String, Vec<crate::proto::DirEntry>
     let target = if path.is_empty() { "\"$HOME\"".to_owned() } else { sh_quote(path) };
     let script = format!(
         r#"cd {target} 2>/dev/null || {{ echo KHOR-NO-DIR; exit 0; }}
-pwd
+pwd -P
 find . -mindepth 1 -maxdepth 1 2>/dev/null | while IFS= read -r f; do
   f=${{f#./}}
   if [ -d "$f" ]; then echo "d/$f"; else echo "f $(wc -c <"$f" 2>/dev/null | tr -d ' 	') $f"; fi

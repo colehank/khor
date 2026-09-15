@@ -2227,19 +2227,27 @@ impl Node {
             return Err(msg::path_not_absolute(path));
         }
         let (_, home) = self.resolve_or_here(machine)?;
-        if home == self.device() {
+        // **Stored as the holding machine spells it, links resolved**
+        // — `files::list_dir` says why. The key must match what a
+        // session in that directory will record, or the row never
+        // shows its own sessions.
+        let real = if home == self.device() {
             if !std::path::Path::new(path).is_dir() {
                 return Err(msg::ws_not_a_dir(path));
             }
+            std::fs::canonicalize(path)
+                .map_err(|e| msg::cant_list_dir(path, e))?
+                .display()
+                .to_string()
         } else {
             // That machine's own sentence about why it could not list
             // the path is the one to show — it already says whether the
             // path is a file, is missing, or the machine is unreachable
             // (the `load-*` pair's lesson, zh.toml).
-            self.ls_of(machine, path).await?;
-        }
+            self.ls_of(machine, path).await?.0
+        };
         let loaded = self.workspaces_loaded()?;
-        let key = khor_sync::workspaces::key(&home.hex(), path);
+        let key = khor_sync::workspaces::key(&home.hex(), &real);
         if loaded.doc.state(&key) == khor_sync::workspaces::State::No {
             loaded.doc.set(&key, khor_sync::workspaces::State::Yes)?;
             let mut store = loaded.store;

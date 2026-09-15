@@ -83,9 +83,11 @@ fn a_directory_becomes_a_row_named_after_itself_and_comes_back_off() {
         rows.iter().any(|r| r.split('\t').nth(1) == Some("test")),
         "the name is the directory's last component: {listed}"
     );
+    // Compared resolved: the row carries the physical spelling, and on
+    // a Mac `temp_dir()` is itself a link (`/var` → `/private/var`).
+    let two_real = std::fs::canonicalize(&two).unwrap().display().to_string();
     assert!(
-        rows[0].ends_with(&format!("box:{}", two.display()))
-            || rows[1].ends_with(&format!("box:{}", two.display())),
+        rows[0].ends_with(&format!("box:{two_real}")) || rows[1].ends_with(&format!("box:{two_real}")),
         "the row says which machine holds the path: {listed}"
     );
 
@@ -160,4 +162,27 @@ fn a_dot_becomes_the_directory_it_was_typed_in() {
     let want = std::fs::canonicalize(&dir).unwrap();
     assert!(listed.trim_end().ends_with(&format!("box:{}", want.display())), "{listed}");
     assert_eq!(listed.lines().next().unwrap().split('\t').nth(1), Some("here"), "{listed}");
+}
+
+/// **Declared through a symlink, stored resolved.** A session records
+/// `current_dir()`, which has no links in it; a row keyed by the linked
+/// spelling would never match the sessions inside it (smoke 批⑥ found
+/// exactly this on a `target/` that points at another disk).
+#[test]
+fn a_directory_added_through_a_link_is_stored_as_the_real_one() {
+    let h = home("link");
+    let real = h.join("disk/project");
+    std::fs::create_dir_all(&real).unwrap();
+    let link = h.join("working/project");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    assert!(run(&h, &["ws", "add", link.to_str().unwrap()]).0);
+    let listed = run(&h, &["ws", "ls"]).1;
+    let real_s = std::fs::canonicalize(&real).unwrap().display().to_string();
+    assert!(
+        listed.trim_end().ends_with(&format!("box:{real_s}")),
+        "the real path, not the link: {listed}"
+    );
+    assert!(!listed.contains("working/project"), "{listed}");
 }

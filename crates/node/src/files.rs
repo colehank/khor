@@ -46,6 +46,15 @@ pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool),
     } else {
         return Err(msg::path_not_absolute(path));
     };
+    // **The path handed back is the physical one.** A session records
+    // where it ran as `current_dir()`, which has every symlink resolved;
+    // a workspace declared through a link (`target/` on this machine
+    // points at another disk) would never share a prefix with the
+    // sessions inside it, and its column stayed empty forever (found by
+    // smoke 批⑥, 2026-09-15). Only the machine holding the directory
+    // can resolve its links, and this is where every far read of a
+    // directory lands, so this is where the spelling is settled.
+    let dir = dir.canonicalize().map_err(|e| msg::cant_list_dir(&dir.display(), e))?;
     let rd = std::fs::read_dir(&dir).map_err(|e| msg::cant_list_dir(&dir.display(), e))?;
     let mut entries: Vec<DirEntry> = Vec::new();
     for e in rd.flatten() {

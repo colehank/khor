@@ -2080,8 +2080,20 @@ impl Node {
         // write would look like it took. A machine that has left the
         // table still parses — that is the whole case this exists for.
         let id = device_id_from_hex(device_hex)?;
+        // **Spelled the way the row was stored.** `ws_add` keys a
+        // directory by its physical path (`link::ws_add`), so a pin or a
+        // removal typed through a link must resolve to the same key or
+        // it writes a second row instead of touching the first. Only
+        // this machine's own links can be resolved here; a path on
+        // another machine is taken as given, which is what every row on
+        // the screen already carries.
+        let path = if id == self.device() {
+            std::fs::canonicalize(path).map(|p| p.display().to_string()).unwrap_or_else(|_| path.to_owned())
+        } else {
+            path.to_owned()
+        };
         let loaded = self.workspaces_loaded()?;
-        loaded.doc.set(&khor_sync::workspaces::key(&id.hex(), path), state)?;
+        loaded.doc.set(&khor_sync::workspaces::key(&id.hex(), &path), state)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }
