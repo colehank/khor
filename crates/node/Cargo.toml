@@ -28,7 +28,6 @@ jiff.workspace = true
 reqwest.workspace = true
 gix = { version = "0.87.1", default-features = false, features = ["status", "blob-diff", "revision", "sha1", "max-performance-safe", "merge"] }
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
-csv = "1.4.0"
 office_oxide = "0.1.11"
 pdfboss-output = "2.4.0"
 pdfboss-core = "2.4.0"

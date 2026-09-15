@@ -70,10 +70,27 @@ fn the_node_and_the_file_view_agree_about_what_an_image_is() {
 fn the_node_and_the_file_view_agree_about_what_a_document_is() {
     let rust = list_after(&repo_file("../../../crates/node/src/preview.rs"), "const DOCS");
     let ts = list_after(&repo_file("../src/views/FileView.tsx"), "const DOCS");
-    assert!(rust.len() >= 8, "the rust finder matched {rust:?}");
-    assert!(ts.len() >= 8, "the ts finder matched {ts:?}");
+    // **Six, and it was eleven until 工作区批⑤.** The floor exists to
+    // catch a finder that stopped matching (an empty set agrees with an
+    // empty set), so it tracks the table's real size rather than being
+    // left generously low — a floor under the truth catches nothing.
+    assert!(rust.len() >= 6, "the rust finder matched {rust:?}");
+    assert!(ts.len() >= 6, "the ts finder matched {ts:?}");
     assert_eq!(
         rust, ts,
         "the node and the file view disagree about which files are documents",
     );
+
+    // **The five spellings that left this table** (工作区批⑤), in two
+    // directions. md/markdown, csv and tsv are text — the road that
+    // saves, merges and draws a gutter — and a `.pdf` is drawn by the
+    // browser where there is a viewer for it. Putting any of the four
+    // back in either table is the drift this batch can suffer, and it
+    // would be silent: the view would render a markdown file that can
+    // no longer be written back, on the one format this repo is written
+    // in.
+    for text in ["md", "markdown", "csv", "tsv", "pdf"] {
+        assert!(!rust.contains(text), "{text} is back in the node's document table");
+        assert!(!ts.contains(text), "{text} is back in the file view's document table");
+    }
 }

@@ -67,6 +67,7 @@ try {
 const pages = {
   "/page.html": readFileSync(join(PROBE, "page.html")),
   "/kid.html": readFileSync(join(PROBE, "kid.html")),
+  "/pdf.html": readFileSync(join(PROBE, "pdf.html")),
 };
 const server = createServer((req, res) => {
   const body = pages[req.url];
@@ -156,6 +157,53 @@ if (said.shimmed?.loadFailed) {
   }
 }
 
+// ── The PDF arm (工作区批⑤) ──────────────────────────────────────────
+//
+// 「pdf 你咋转成字符了,应该直接预览」(the user, 2026-09-14). khor's file
+// view hands the bytes to an `<iframe>` as a `blob:` and lets the engine
+// draw them — and whether that engine *has* a PDF viewer is the one
+// question deciding whether the face does that or falls back to the
+// document's words (`khor_node::preview::PDF_HERE`, true on macOS/iOS
+// WebKit and false on WebKitGTK).
+//
+// **The reading is the picture, because nothing else can answer.**
+// WebKit draws a PDF with its own viewer and gives the page no document
+// to query — `contentDocument` is null whether it rendered or not. So
+// the probe snapshots the webview and counts dark pixels inside the
+// frame's box, over a white page, with a PDF whose one page is a black
+// square. An empty page and a page that never rendered are both white;
+// only a drawn one is dark.
+if (said.pdf?.loadFailed) {
+  fail(`wk probe could not run the PDF arm (${said.pdf.loadFailed}) — nothing about PDFs was measured`);
+} else {
+  const [scheme, how, viewer] = String(said.pdf?.frame ?? "").split("|");
+  console.log(`wk: pdf         frame=${said.pdf?.frame}, dark=${said.pdf?.dark}%`);
+  if (scheme !== "blob:") {
+    fail(
+      `the PDF arm made a ${scheme} URL rather than a blob: — a data: URL is what this road was ` +
+        "chosen against (length ceiling, and frames have blocked it before)",
+    );
+  }
+  if (how !== "loaded") {
+    fail(`a blob: PDF in an iframe never fired load on this WebKit (${how}) — khor's file view puts one there`);
+  }
+  if (viewer !== "true") {
+    fail(
+      `this WebKit says navigator.pdfViewerEnabled=${viewer} — khor hands it PDF bytes on the ` +
+        "strength of that being true (`khor_node::preview::PDF_HERE`)",
+    );
+  }
+  const dark = Number(said.pdf?.dark);
+  if (!Number.isFinite(dark)) {
+    fail(`the PDF arm could not read the picture (${said.pdf?.dark}) — 「it drew」 is unmeasured`);
+  } else if (dark < 5) {
+    fail(
+      `the frame's box is ${dark}% dark over a PDF whose one page is a black square — the blob ` +
+        "loaded and nothing was painted, which is the failure this arm exists for",
+    );
+  }
+}
+
 // ── Printed, not asserted: the two ways out that are still open ──────
 console.log(`wk: bare        ${JSON.stringify(said.bare)}`);
 console.log(`wk: shimmed     ${JSON.stringify(said.shimmed)}`);
@@ -167,5 +215,10 @@ console.log(
   `wk: still open  worker=${reading(said.shimmed?.worker)} (a worker global gets no user script), ` +
     `srcdoc read before its load event=${reading(said.shimmed?.srcdocScripted?.split(" / ")[0])} (that read is the pre-navigation document)`,
 );
-if (!bad) console.log("wk gate: on this WebKit the delete takes, and the script reaches the page, both parsed frames, a scripted blank frame and a srcdoc frame once loaded");
+if (!bad) {
+  console.log(
+    "wk gate: on this WebKit the delete takes, and the script reaches the page, both parsed frames, " +
+      "a scripted blank frame and a srcdoc frame once loaded — and a blob: PDF in an iframe really paints",
+  );
+}
 process.exitCode = bad ? 1 : 0;

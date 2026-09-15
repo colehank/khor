@@ -3,39 +3,53 @@
 //!
 //! # One pipeline, not one renderer per type
 //!
-//! Word, Excel, PowerPoint, their three legacy binary forms, csv and
-//! markdown itself all end up as **markdown**, and markdown is rendered
-//! once. That is not a tidy accident — `office_oxide` answers
-//! `to_markdown()` for every format it reads, so the alternative would
-//! have been six renderers agreeing with each other by hand. What it
-//! costs is faithfulness: this is a document's *words and structure*,
-//! never its layout, and the face says so rather than implying a
-//! preview that is what the file looks like in Word.
+//! Word, Excel, PowerPoint and their three legacy binary forms all end
+//! up as **markdown**, and markdown is rendered once. That is not a
+//! tidy accident — `office_oxide` answers `to_markdown()` for every
+//! format it reads, so the alternative would have been six renderers
+//! agreeing with each other by hand. What it costs is faithfulness:
+//! this is a document's *words and structure*, never its layout, and
+//! the face says so rather than implying a preview that is what the
+//! file looks like in Word.
 //!
-//! Images and SVG do not join the pipeline because the browser already
-//! decodes them; handing bytes to a `<img>` is less code and a better
-//! picture than anything here could produce.
+//! **Three things are deliberately not on that pipeline.** Images and
+//! SVG, because the browser already decodes them and handing bytes to
+//! an `<img>` is less code and a better picture than anything here
+//! could produce. PDF, for the same reason, on the platforms whose
+//! browser has a viewer ([`PDF_HERE`]). And md, csv and tsv, which are
+//! **text** — calling them documents cost them saving, the save
+//! contract, the three-way merge and the change gutter, and the
+//! rendered view they actually wanted is one the screen can draw from
+//! the buffer a person is typing into (工作区批⑤).
 //!
 //! # What the dependencies cost, measured off the Cargo.lock diff
 //!
-//! **15 packages**, all permissive (checked before use, not after):
+//! **13 packages**, all permissive (checked before use, not after):
 //! `office_oxide` and its seven (MIT OR Apache-2.0, except `zip` MIT
-//! and `zopfli` Apache-2.0), `pulldown-cmark` (MIT), `csv` and
-//! `csv-core` (Unlicense/MIT), and `pdfboss-output` with its three
-//! (MIT OR Apache-2.0). One crate per *family* rather than per format
-//! is the reason that number is small.
+//! and `zopfli` Apache-2.0), `pulldown-cmark` (MIT), and
+//! `pdfboss-output` with its three (MIT OR Apache-2.0). One crate per
+//! *family* rather than per format is the reason that number is small.
+//! It was 15 until 工作区批⑤ gave `csv` and `csv-core` back with the
+//! table they built — **a dependency is retired when its last caller
+//! is**, and the caller went to the screen.
 //!
-//! **The PDF number is the one that was shopped for.** Reading a PDF's
-//! words needs its fonts and encodings, so it is never free — but the
-//! spread is enormous and was measured off the Cargo.lock diff rather
-//! than guessed. `pdf_oxide`, from `office_oxide`'s own author and so
-//! the first candidate on the family argument, costs **55 packages**
-//! (53 with default features off): it is a whole toolkit, and the
-//! rasteriser, the layout engine, the JPEG decoder and the font writer
-//! come along whether or not anything renders. `pdf-extract` costs 19.
-//! `pdfboss` costs **4**, because text extraction is all it claims to
-//! do — which is also all this file wants, and the reason pdf.js and
-//! its megabyte of frontend never entered the question.
+//! **The four PDF packages now buy the fallback, not the face.** They
+//! were shopped for when reading a PDF's words *was* the plan, and the
+//! numbers are worth keeping because the choice would be the same
+//! today: `pdf_oxide`, from `office_oxide`'s own author and so the
+//! first candidate on the family argument, costs **55 packages** (53
+//! with default features off) — a whole toolkit, rasteriser and layout
+//! engine and JPEG decoder and font writer, whether or not anything
+//! renders. `pdf-extract` costs 19. `pdfboss` costs **4**, because text
+//! extraction is all it claims to do.
+//!
+//! What changed is what that extraction is for. 「pdf 你咋转成字符了,
+//! 应该直接预览」(the user, 2026-09-14): where the browser draws PDFs
+//! the bytes go straight to it, and these four are what Linux and
+//! Android get instead of an empty frame. **pdf.js still never entered
+//! the question** — a megabyte of frontend to do what three of the five
+//! platforms already do natively, and the other two are the two khor
+//! would have had to ship it to anyway.
 //!
 //! ⚠️ **`office_oxide` is young** — first published 2026-04-28, 0.1.x,
 //! and khor took 0.1.11. What was done about that instead of hoping:
@@ -112,6 +126,13 @@ pub enum Kind {
     Svg,
     /// Markdown, whether it started as markdown or was turned into it.
     Doc,
+    /// Hand the bytes to the browser as a PDF, where the browser has a
+    /// PDF viewer ([`PDF_HERE`]); extract its words where it does not.
+    ///
+    /// **Its own kind rather than an image**, because the two failures
+    /// differ: a platform with no viewer still has something to show
+    /// (the words), and an image with no decoder has nothing.
+    Pdf,
     /// Nothing khor can show. It says so and offers to hand the file
     /// over.
     Other,
@@ -132,10 +153,17 @@ fn ext(path: &str) -> String {
 /// the browser cannot read would be a grey box with no sentence.
 const IMAGES: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"];
 
-/// The six `office_oxide` reads, plus the two text tables khor turns
-/// into markdown itself.
-const DOCS: &[&str] =
-    &["md", "markdown", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "csv", "tsv", "pdf"];
+/// The six `office_oxide` reads, and only those (工作区批⑤).
+///
+/// **md, csv and tsv left on 2026-09-15.** They are text files, and
+/// calling them documents cost them everything a text file gets:
+/// markdown could not be saved, had no save contract, no three-way
+/// merge and no change gutter — on the one format this project is
+/// written in. They go down the text road now and the *screen* offers
+/// a rendered view beside the source (「所有代码、md 文件,打开先是源码,
+/// 要有语法高亮。然后对于支持预览的文件,如 md,显示预览」— the user,
+/// 2026-09-14), which is a face's job and not a kind.
+const DOCS: &[&str] = &["docx", "xlsx", "pptx", "doc", "xls", "ppt"];
 
 /// The media type a browser needs to be told before it will decode
 /// these bytes.
@@ -156,6 +184,10 @@ pub fn media(path: &str) -> &'static str {
         "ico" => "image/x-icon",
         "avif" => "image/avif",
         "svg" => "image/svg+xml",
+        // Not an image, but the same contract: bytes the browser
+        // decodes itself, and a blob with no media type is a blob the
+        // viewer will not open.
+        "pdf" => "application/pdf",
         _ => "",
     }
 }
@@ -169,11 +201,29 @@ pub fn kind(path: &str) -> Kind {
     if e == "svg" {
         return Kind::Svg;
     }
+    if e == "pdf" {
+        return Kind::Pdf;
+    }
     if DOCS.contains(&e.as_str()) {
         return Kind::Doc;
     }
     Kind::Text
 }
+
+/// **Whether the browser khor's face runs in will draw a PDF itself.**
+///
+/// A compile-time fact, answered here for [`crate::files::TRASH_HERE`]'s
+/// reason: the face must not read the platform off `navigator`, because
+/// the same page is served to a phone looking at another machine's
+/// khor.
+///
+/// macOS and iOS (WebKit, PDFKit behind it) and Windows (WebView2,
+/// Chromium's viewer) draw one. **WebKitGTK does not ship a PDF
+/// viewer** and Android's WebView does not either — there the words are
+/// what khor can honestly show, and the face says so out loud rather
+/// than drawing an empty frame.
+pub const PDF_HERE: bool =
+    cfg!(any(target_os = "macos", target_os = "ios", target_os = "windows"));
 
 /// A file's bytes as markdown, whatever it started as.
 ///
@@ -183,11 +233,13 @@ pub fn kind(path: &str) -> Kind {
 /// read as khor being broken.
 pub fn markdown(path: &str, bytes: &[u8]) -> Result<String, String> {
     let e = ext(path);
-    if e == "md" || e == "markdown" {
+    // **Already words.** markdown is markdown; a csv or tsv is its own
+    // plain text, and since 工作区批⑤ nothing turns it into a table on
+    // this side — the screen that wants a table builds one from the
+    // buffer it is showing, which is the only copy that can be half
+    // typed (`views/FileView`). `khor read` prints the file.
+    if e == "md" || e == "markdown" || e == "csv" || e == "tsv" {
         return String::from_utf8(bytes.to_vec()).map_err(|_| msg::NOT_A_TEXT_FILE.to_owned());
-    }
-    if e == "csv" || e == "tsv" {
-        return table(bytes, if e == "tsv" { b'\t' } else { b',' });
     }
     if e == "pdf" {
         return pdf(bytes);
@@ -246,56 +298,6 @@ fn has_font(bytes: &[u8]) -> bool {
     bytes.windows(5).any(|w| w == b"/Font")
 }
 
-/// How many rows of a table travel. A spreadsheet is a thing people
-/// keep a hundred thousand rows in, and a preview is a screen —
-/// **the cut is said out loud** rather than left to look like the end
-/// of the data.
-const ROWS: usize = 2000;
-
-/// Delimited text as a markdown table.
-fn table(bytes: &[u8], sep: u8) -> Result<String, String> {
-    let mut rd = csv::ReaderBuilder::new()
-        .delimiter(sep)
-        // **No header row, on purpose.** A csv's first line is a header
-        // often and data sometimes, and khor cannot tell; treating it
-        // as data and letting the markdown table's first row be the
-        // header shows the same thing either way and loses nothing.
-        .has_headers(false)
-        // A ragged file is a file to look at, not to refuse.
-        .flexible(true)
-        .from_reader(bytes);
-    let mut out = String::new();
-    let mut wide = 0usize;
-    let mut n = 0usize;
-    let mut more = false;
-    for row in rd.records() {
-        let row = row.map_err(|e| msg::cant_read_document(e))?;
-        if n >= ROWS {
-            more = true;
-            break;
-        }
-        let cells: Vec<String> = row.iter().map(|c| c.replace('|', "\\|")).collect();
-        if n == 0 {
-            wide = cells.len();
-        }
-        out.push_str("| ");
-        out.push_str(&cells.join(" | "));
-        out.push_str(" |\n");
-        if n == 0 {
-            out.push('|');
-            for _ in 0..wide.max(1) {
-                out.push_str(" --- |");
-            }
-            out.push('\n');
-        }
-        n += 1;
-    }
-    if more {
-        out.push_str(&format!("\n{}\n", msg::table_cut(ROWS as u64)));
-    }
-    Ok(out)
-}
-
 /// Markdown as HTML.
 ///
 /// **Raw HTML in the source is escaped, not passed through**, and that
@@ -338,6 +340,14 @@ mod tests {
         assert_eq!(kind("/a/B.PNG"), Kind::Image, "and case does not matter");
         assert_eq!(kind("/a/b.svg"), Kind::Svg);
         assert_eq!(kind("/a/b.docx"), Kind::Doc);
+        assert_eq!(kind("/a/b.pdf"), Kind::Pdf, "its own kind since 工作区批⑤");
+        // **The three that left `Doc` on 2026-09-15.** They are text,
+        // and what a text file gets — saving, a save contract, a merge,
+        // a change gutter — is what calling them documents cost.
+        assert_eq!(kind("/a/b.md"), Kind::Text);
+        assert_eq!(kind("/a/b.markdown"), Kind::Text);
+        assert_eq!(kind("/a/b.csv"), Kind::Text);
+        assert_eq!(kind("/a/b.tsv"), Kind::Text);
         assert_eq!(kind("/a/b.rs"), Kind::Text);
         assert_eq!(kind("/a/Makefile"), Kind::Text, "no extension at all");
         assert_eq!(kind("/a/.gitignore"), Kind::Text, "a leading dot is not one either");
@@ -355,6 +365,9 @@ mod tests {
             assert!(media(&path).starts_with("image/"), "{e} has no media type");
         }
         assert_eq!(media("/a/b.svg"), "image/svg+xml");
+        // The browser decodes this one too, so it needs naming for the
+        // same reason (工作区批⑤).
+        assert_eq!(media("/a/b.pdf"), "application/pdf");
         assert_eq!(media("/a/b.rs"), "", "and nothing else claims one");
     }
 
@@ -366,30 +379,15 @@ mod tests {
         assert!(out.contains("&lt;script"), "and it must still be readable as text: {out}");
     }
 
+    /// **A text file comes back as itself**, whichever of the three it
+    /// is (工作区批⑤). A csv used to be turned into a markdown table
+    /// here; the screen builds that from its own buffer now, and
+    /// `khor read` prints the file — which for a csv *is* its words.
     #[test]
-    fn a_csv_becomes_a_table_with_a_header_rule() {
-        let md = markdown("/a/b.csv", b"one,two\n1,2\n").unwrap();
-        assert_eq!(md, "| one | two |\n| --- | --- |\n| 1 | 2 |\n");
-        let out = html(&md);
-        assert!(out.contains("<table>"), "and the table survives the render: {out}");
-    }
-
-    #[test]
-    fn a_pipe_inside_a_cell_does_not_break_the_table() {
-        // The one character a markdown table cannot carry raw.
-        let md = markdown("/a/b.csv", "a|b,c\n".as_bytes()).unwrap();
-        assert!(md.starts_with("| a\\|b | c |"), "{md}");
-    }
-
-    #[test]
-    fn a_tab_separated_file_uses_tabs() {
-        let md = markdown("/a/b.tsv", b"one\ttwo\n").unwrap();
-        assert!(md.starts_with("| one | two |"), "{md}");
-    }
-
-    #[test]
-    fn a_markdown_file_comes_back_as_itself() {
+    fn the_text_formats_come_back_as_themselves() {
         assert_eq!(markdown("/a/b.md", b"# hi\n").unwrap(), "# hi\n");
+        assert_eq!(markdown("/a/b.csv", b"one,two\n1,2\n").unwrap(), "one,two\n1,2\n");
+        assert_eq!(markdown("/a/b.tsv", b"one\ttwo\n").unwrap(), "one\ttwo\n");
     }
 
     /// A valid PDF built here rather than a file checked in.
@@ -474,13 +472,20 @@ mod tests {
         assert_eq!(err, msg::PDF_IS_PICTURES);
     }
 
+    /// The kind decides which screen opens before anything is read.
+    ///
+    /// **A PDF is its own kind since 工作区批⑤**, and it was `Doc`
+    /// before: the user asked for the file itself rather than its words
+    /// (「pdf 你咋转成字符了,应该直接预览」, 2026-09-14), and where the
+    /// browser has no viewer the words are still what khor can honestly
+    /// show — two screens, so one kind that carries both and neither of
+    /// the two it used to be confused with. It is not an image: an
+    /// image with no decoder has nothing left to say.
     #[test]
-    fn a_pdf_is_a_document_not_a_picture_to_the_router() {
-        // The kind decides which screen opens before anything is read;
-        // a `.pdf` sent down the image road would reach an `<img>` that
-        // renders nothing (`views/FileView`'s `kindOf`).
-        assert_eq!(kind("a.pdf"), Kind::Doc);
-        assert_eq!(kind("A.PDF"), Kind::Doc);
+    fn a_pdf_is_its_own_kind_to_the_router() {
+        assert_eq!(kind("a.pdf"), Kind::Pdf);
+        assert_eq!(kind("A.PDF"), Kind::Pdf, "and case does not matter");
+        assert_ne!(kind("a.pdf"), Kind::Image, "an <img> would render nothing");
     }
 
     #[test]

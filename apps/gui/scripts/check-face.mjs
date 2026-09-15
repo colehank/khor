@@ -1109,19 +1109,23 @@ try {
   // view offers a save exactly when it was handed one, so a fixture
   // without it would quietly turn the editor off and 4c below would
   // report a dead probe rather than a drifting caret.
-  await page.route("**/read_text", (r) =>
-    r.fulfill({
+  await page.route("**/read_text", (r) => {
+    // **A csv answers a csv** (工作区批⑤): one row with a quoted cell
+    // that carries the separator, which is the whole of what a parser
+    // has to get right and the one thing a naive `split(",")` does not.
+    const csv = (r.request().postData() ?? "").includes(".csv");
+    return r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         total: 42,
         at_ms: Date.now(),
-        text: "# notes\n\nthe fixture's file\n",
+        text: csv ? 'a,"b,c",d\n' : "# notes\n\nthe fixture's file\n",
         cut: false,
         binary: false,
         digest: "0".repeat(64),
       }),
-    }),
-  );
+    });
+  });
   // One marked file and one marked directory, so the tree wears both
   // kinds of mark (工作区批3): `src` folds up a `·` from what is under
   // it, `notes.md` wears its own letter.
@@ -1184,8 +1188,16 @@ try {
   // a broken-image glyph and section 4e below would pass on it.
   const ONE_PX_PNG =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  // **A PDF, and whether this platform's browser draws one** (工作区
+  // 批⑤). `pdfDraws` is flipped by 4j to reach the other half: the
+  // node answers `data` where the browser has a viewer and `html` —
+  // the words — where it has none, and the face must draw a different
+  // screen for each without ever asking the browser what it is.
+  let pdfDraws = true;
   await page.route("**/preview", (r) => {
-    const png = (r.request().postData() ?? "").includes(".png");
+    const asked = r.request().postData() ?? "";
+    const png = asked.includes(".png");
+    const pdf = asked.includes(".pdf");
     r.fulfill({
       contentType: "application/json",
       body: JSON.stringify(
@@ -1196,6 +1208,18 @@ try {
               data: ONE_PX_PNG,
               media: "image/png",
               html: "",
+              cut: false,
+              empty: false,
+            }
+          : pdf
+          ? {
+              kind: "pdf",
+              total: 4321,
+              // Smallest thing a viewer will accept; the assertion is
+              // that a `blob:` reaches a frame, not what it renders.
+              data: pdfDraws ? TINY_PDF : "",
+              media: "application/pdf",
+              html: pdfDraws ? "" : "<h1>report</h1><p>the words of it</p>",
               cut: false,
               empty: false,
             }
@@ -1265,6 +1289,15 @@ try {
   // path until 工作区批②, which no probe had noticed because none of
   // them walked into a directory — and a picker that walks is a picker
   // whose breadcrumb would have bounced straight back.
+  // A one-page PDF, base64. Built here rather than checked in: a
+  // fixture file is a file that stays forever, and what this needs is
+  // 「bytes a viewer opens」 and nothing else.
+  const TINY_PDF = Buffer.from(
+    "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+      "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n" +
+      "trailer<</Root 1 0 R>>\n%%EOF\n",
+  ).toString("base64");
   await page.route("**/ls", (r) => {
     const body = r.request().postDataJSON() ?? {};
     askedLs.push({ machine: body.machine ?? "", path: body.path ?? "" });
@@ -1281,6 +1314,13 @@ try {
           // markdown as prose has no caret and no gutter to measure.
           { name: "one.rs", dir: false, size: 400, at_ms: Date.now() },
           { name: "shot.png", dir: false, size: 9000, at_ms: Date.now() },
+          // 工作区批⑤: a csv is a text file with a table behind a
+          // switch, a pdf is drawn by the browser, and a docx is still
+          // the words road — one file each, so a table that drifts
+          // between the node and the face shows up as a wrong screen.
+          { name: "data.csv", dir: false, size: 40, at_ms: Date.now() },
+          { name: "report.pdf", dir: false, size: 4321, at_ms: Date.now() },
+          { name: "sheet.docx", dir: false, size: 5000, at_ms: Date.now() },
         ],
         truncated: false,
       }),
@@ -3431,6 +3471,235 @@ try {
     }
   });
 
+  // ── 4j) source first, preview beside it, PDF drawn ───────────────
+  //
+  // 「所有代码、md 文件,打开先是源码,要有语法高亮。然后对于支持预览的
+  // 文件,如 md,显示预览」and「pdf 你咋转成字符了,应该直接预览」— the
+  // user, 2026-09-14 (工作区批⑤).
+  //
+  // Claims:
+  //   i. a markdown file opens as **source**: an editor over painted
+  //      text, not rendered HTML. It was a document until this batch,
+  //      which cost it saving, the save contract, the merge and the
+  //      gutter — on the one format this project is written in;
+  //  ii. the switch is on the head and goes both ways, and coming back
+  //      finds the text where it was;
+  // iii. the preview renders the **buffer**, half-typed — the whole
+  //      reason this is a face and not a kind;
+  //  iv. it can be saved, with the digest the read handed over;
+  //   v. a csv's table is parsed, quotes and all: `a,"b,c",d` is three
+  //      cells and a naive split is four;
+  //  vi. a PDF reaches a viewer as a `blob:`, and where the browser has
+  //      no viewer the words come instead, saying so;
+  // vii. a docx is still the words road (the regression this batch
+  //      could most easily have broken);
+  // viii. and source is painted, not plain.
+  // **This section's own `read_text`, because 4b-bis left one of its
+  // own behind** (a merge fixture, so every file read as「what the
+  // other person wrote」). Routes stack last-first and that one was
+  // never taken off, so the first spelling of these probes measured a
+  // csv that was not a csv and a `.rs` file with no Rust in it. Taken
+  // off by name and replaced with one that answers per extension.
+  await page.unroute("**/read_text");
+  await page.route("**/read_text", (r) => {
+    const asked = r.request().postData() ?? "";
+    const text = asked.includes(".csv")
+      ? 'a,"b,c",d\n'
+      : asked.includes(".rs")
+        ? "fn main() {\n    let x = 1;\n}\n"
+        : "# notes\n\nthe fixture's file\n";
+    return r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        total: text.length,
+        at_ms: Date.now(),
+        text,
+        cut: false,
+        binary: false,
+        digest: "0".repeat(64),
+      }),
+    });
+  });
+  const openFile = async (name) => {
+    await press(rail("workspaces"));
+    await press("[data-ws-row]");
+    if (!(await until(5_000, async () => (await page.locator("[data-file]").count()) > 0))) {
+      return false;
+    }
+    await press(`[data-file="${name}"] > button`);
+    return true;
+  };
+
+  if (!(await openFile("notes.md"))) {
+    fail("probe dead: the tree never drew (src/views/FilesPane.tsx)");
+  } else {
+    const opened = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
+    const asOpened = await page.evaluate(() => ({
+      editor: !!document.querySelector("[data-edit]"),
+      md: !!document.querySelector("[data-file-preview] [data-md]"),
+      on: document.querySelector('[data-file-face="source"]')?.dataset.on ?? null,
+      faces: document.querySelectorAll("[data-file-face]").length,
+    }));
+    console.log(`md opens: ${JSON.stringify(asOpened)}`);
+    if (!opened || !asOpened.editor || asOpened.md) {
+      fail(
+        "a markdown file opened rendered rather than as source — it is a text file, and 「打开先是" +
+          "源码」 is the whole of what this batch is about (src/views/FileView.tsx)",
+      );
+    }
+    if (asOpened.faces !== 2 || asOpened.on !== "true") {
+      fail(
+        `the head carries ${asOpened.faces} face switch(es), 源码 on=${asOpened.on} — a file with a ` +
+          "renderer gets both and opens on the source (src/views/FileView.tsx)",
+      );
+    }
+    // ii/iii) the switch, and what it renders.
+    await page.locator("[data-edit]").click();
+    await page.keyboard.type("\n## typed\n");
+    const typed = await page.locator("[data-edit]").inputValue();
+    await press('[data-file-face="preview"]');
+    const rendered = await until(5_000, async () =>
+      (await page.locator("[data-file-preview] h1").count()) === 1,
+    );
+    const heads = await page.evaluate(() => ({
+      h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
+      h2: document.querySelector("[data-file-preview] h2")?.textContent?.trim() ?? null,
+      editor: document.querySelectorAll("[data-edit]").length,
+    }));
+    console.log(`md preview: ${JSON.stringify(heads)}`);
+    if (!rendered || heads.h1 !== "notes") {
+      fail(
+        `按预览 drew ${JSON.stringify(heads)} — 「# notes」 is an <h1> and that is what a preview ` +
+          "means (src/views/FileView.tsx)",
+      );
+    }
+    if (heads.h2 !== "typed") {
+      fail(
+        "the preview did not carry the line just typed — it renders the buffer, not the file on " +
+          "disk, and a view one save behind is a view of a document nobody has (src/views/FileView.tsx)",
+      );
+    }
+    await press('[data-file-face="source"]');
+    const back = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
+    const kept = back ? await page.locator("[data-edit]").inputValue() : "";
+    if (!back || kept !== typed) {
+      fail(
+        `coming back from 预览 left 「${kept}」 where 「${typed}」 was typed — the buffer is this ` +
+          "view's state and the editor merely shows it (src/views/FileView.tsx)",
+      );
+    }
+    // iv) and it saves, which is what being a document cost it.
+    // **The first one**, because a save answers with a digest the next
+    // save pins to: keeping only the last would assert that khor sent
+    // back its own previous answer, which is true of any number of
+    // saves and says nothing about the first.
+    const wrote = [];
+    await page.route("**/write_text", (r) => {
+      wrote.push(r.request().postDataJSON()?.was ?? null);
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ at_ms: Date.now(), digest: "2".repeat(64) }),
+      });
+    });
+    await press("[data-save]");
+    const saved = await until(5_000, async () => wrote.length > 0);
+    const state = await page.evaluate(
+      () => document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+    );
+    console.log(`md save: was ${JSON.stringify(wrote)}, state ${state}`);
+    if (!saved || wrote[0] !== "0".repeat(64)) {
+      fail(
+        `saving a markdown file sent was=${JSON.stringify(wrote)} — it must be the digest the ` +
+          "read handed over, which is the whole of the save contract (src/views/FileView.tsx)",
+      );
+    }
+    if (state !== "saved") {
+      fail(`…and the file says ${state} after a save the far machine took (src/views/FileView.tsx)`);
+    }
+    await page.unroute("**/write_text");
+  }
+
+  // v) the csv table, parsed rather than split.
+  if (await openFile("data.csv")) {
+    await press('[data-file-face="preview"]');
+    const cells = await until(5_000, async () =>
+      (await page.locator("[data-file-preview] [data-cell]").count()) > 0,
+    );
+    const said = await page.$$eval("[data-file-preview] [data-cell]", (els) =>
+      els.map((e) => e.textContent),
+    );
+    console.log(`csv cells: ${JSON.stringify(said)}`);
+    if (!cells || said.length !== 3 || said[1] !== "b,c") {
+      fail(
+        `a,"b,c",d drew ${JSON.stringify(said)} — three cells, and the middle one carries the ` +
+          "separator inside its quotes (src/lib/csv.ts)",
+      );
+    }
+  }
+
+  // vi) the PDF, both halves.
+  if (await openFile("report.pdf")) {
+    const frame = await until(5_000, async () => (await page.locator("[data-pdf-frame]").count()) === 1);
+    const src = frame ? await page.locator("[data-pdf-frame]").getAttribute("src") : "";
+    console.log(`pdf: frame ${frame}, src ${String(src).slice(0, 12)}`);
+    if (!frame || !String(src).startsWith("blob:")) {
+      fail(
+        `a PDF drew ${frame ? `a frame at ${src}` : "no frame"} — the browser draws this one, and ` +
+          "the bytes reach it as a blob rather than a data URL (src/views/FileView.tsx)",
+      );
+    }
+    // …and the other platform, where there is no viewer at all.
+    pdfDraws = false;
+    await openFile("shot.png");
+    await openFile("report.pdf");
+    const fell = await until(5_000, async () =>
+      (await page.locator('[data-doc-note="pdf"]').count()) === 1,
+    );
+    const note = await page.evaluate(() => ({
+      frame: document.querySelectorAll("[data-pdf-frame]").length,
+      words: document.querySelector('[data-look="doc"]')?.textContent?.trim() ?? null,
+      note: document.querySelector('[data-doc-note="pdf"]')?.textContent?.trim() ?? null,
+    }));
+    console.log(`pdf fallback: ${JSON.stringify(note)}`);
+    if (!fell || note.frame !== 0 || !String(note.words).includes("report")) {
+      fail(
+        `a browser with no PDF viewer drew ${JSON.stringify(note)} — the words are what khor can ` +
+          "honestly show there, and an empty frame is not (src/views/FileView.tsx)",
+      );
+    }
+    pdfDraws = true;
+  }
+
+  // vii) a docx is still the words road.
+  if (await openFile("sheet.docx")) {
+    const doc = await until(5_000, async () => (await page.locator('[data-look="doc"]').count()) === 1);
+    const note = await page.evaluate(
+      () => document.querySelector("[data-doc-note]")?.dataset.docNote ?? null,
+    );
+    if (!doc || note !== "doc") {
+      fail(
+        `a docx drew note=${note} — the six Office formats are still the one pipeline, and this ` +
+          "batch only took the text ones off it (src/views/FileView.tsx)",
+      );
+    }
+  }
+
+  // viii) source is painted.
+  if (await openFile("one.rs")) {
+    const painted = await until(5_000, async () =>
+      (await page.locator("[data-sheet] .hljs-keyword").count()) > 0,
+    );
+    if (!painted) {
+      const html = await page.evaluate(
+        () => document.querySelector("[data-sheet]")?.innerHTML?.slice(0, 120) ?? null,
+      );
+      fail(
+        `the source of a .rs file carries no highlighting — 「要有语法高亮」, and what is there is ` +
+          `${JSON.stringify(html)} (src/lib/highlight.ts)`,
+      );
+    }
+  }
+
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //
   // **The editor is a transparent textarea laid over the painted
@@ -3626,7 +3895,7 @@ try {
   // `apps/gui/core/tests/kind_tables.rs`; this measures that the road
   // arrives somewhere.
   await atCrumbs();
-  await press('[data-file="shot.png"] button');
+  await press('[data-file="shot.png"] > button');
   const pic = await page.evaluate(async () => {
     const img = document.querySelector('[data-look="image"]');
     if (!img) return null;
@@ -3650,8 +3919,14 @@ try {
     );
   }
 
+  // **`sheet.docx`, and it used to be `notes.md`** (工作区批⑤). A
+  // markdown file is a text file now — source first, a rendered face
+  // beside it (section 4j) — and the words road is what the six Office
+  // formats are still on. The claim below is unchanged; only the file
+  // that exercises it moved, because the old one stopped being a
+  // document.
   await atCrumbs();
-  await press('[data-file="notes.md"] button');
+  await press('[data-file="sheet.docx"] > button');
   const doc = await page.evaluate(() => {
     const el = document.querySelector('[data-look="doc"]');
     if (!el) return null;
@@ -3669,7 +3944,7 @@ try {
     `document: ${doc ? `${doc.headings} heading(s), ${doc.tables} table(s), h1 ${doc.h1Size} over body ${doc.bodySize}` : "nothing drawn"}`,
   );
   if (doc === null) {
-    fail("a .md opened as something other than a document (src/views/FileView.tsx)");
+    fail("a .docx opened as something other than a document (src/views/FileView.tsx)");
   } else {
     if (doc.headings === 0 || doc.tables === 0) {
       fail(

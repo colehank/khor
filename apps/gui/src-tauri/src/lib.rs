@@ -452,6 +452,12 @@ fn trash_here() -> bool {
     khor_gui_core::files::trash_here()
 }
 
+/// Whether this browser draws PDFs itself (`files::pdf_here`).
+#[tauri::command]
+fn pdf_here() -> bool {
+    khor_gui_core::files::pdf_here()
+}
+
 #[tauri::command]
 fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
     khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
@@ -1736,6 +1742,7 @@ pub fn run() {
             touched,
             remove,
             trash_here,
+            pdf_here,
             read_text,
             git_status,
             git_diff,

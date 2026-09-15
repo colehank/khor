@@ -21,7 +21,7 @@
 // elsewhere, scroll what is here and take the rest if you need it, or
 // nothing. Folded into one「打不开」they would all read as khor being
 // broken, which is the failure `check-acp` 第二批 names.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchPreview,
@@ -36,8 +36,10 @@ import {
   type GitHunk,
 } from "@/api";
 import { IconChevronDown, IconChevronUp } from "@/components/icons";
+import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
+import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFile } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
@@ -60,16 +62,34 @@ import { sizeWord } from "@/views/FilesPane";
 export type Draft = { text: string; was: string };
 
 const IMAGES = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"];
-const DOCS = ["md", "markdown", "docx", "xlsx", "pptx", "doc", "xls", "ppt", "csv", "tsv", "pdf"];
+const DOCS = ["docx", "xlsx", "pptx", "doc", "xls", "ppt"];
 
-export function kindOf(path: string): "image" | "svg" | "doc" | "text" {
+export function kindOf(path: string): "image" | "svg" | "pdf" | "doc" | "text" {
   const name = path.split("/").pop() ?? "";
   const dot = name.lastIndexOf(".");
   const e = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
   if (IMAGES.includes(e)) return "image";
   if (e === "svg") return "svg";
+  if (e === "pdf") return "pdf";
   if (DOCS.includes(e)) return "doc";
   return "text";
+}
+
+/** Which second face this text file has, or `null` for one with none
+    (工作区批⑤).
+
+    **A property of the format, not of the road.** Everything here is a
+    text file: it opens as source, it saves, it merges, it wears a
+    change gutter. What this answers is whether there is anything to
+    *also* show — and where there is not, no switch is drawn rather
+    than a greyed one. */
+export function rendererOf(path: string): "md" | "table" | null {
+  const name = path.split("/").pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  const e = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (e === "md" || e === "markdown") return "md";
+  if (e === "csv" || e === "tsv") return "table";
+  return null;
 }
 
 /** A file khor will not paint, and the one thing it can still do about
@@ -151,6 +171,12 @@ export function FileView({
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
   const [look, setLook] = useState<Preview | null>(null);
+  /** 源码 or 预览. **Always opens on 源码** (「打开先是源码」— the user,
+      2026-09-14) and is not remembered: a person who read one file
+      rendered has said nothing about the next, and a toggle that
+      carried over would mean the source they asked for is not what
+      opens. */
+  const [face, setFace] = useState<"source" | "preview">("source");
   const [lookError, setLookError] = useState<string | null>(null);
   const [file, setFile] = useState<FileText | null>(null);
   /** The working copy, and the digest it is pinned to. **One piece of
@@ -212,6 +238,40 @@ export function FileView({
       already true would answer the second one with the first one's
       gutter. */
   const [diffAt, setDiffAt] = useState(0);
+
+  useEffect(() => setFace("source"), [path]);
+
+  /** The PDF, as something a viewer will open (工作区批⑤).
+
+      **A `blob:` and not a `data:`.** A data URL carries the whole file
+      in the address, which has a length ceiling, and Chrome has blocked
+      `data:` navigation inside frames before — a PDF is exactly the
+      size of file that finds both. Revoked when it is replaced or the
+      view goes, or every file read leaks its own bytes for the life of
+      the page.
+
+      **Nothing in `tauri.conf.json` had to change**: its `csp` is
+      `null`, so no policy is emitted and a `blob:` frame is not being
+      allowed by an exception somebody could tighten away by accident.
+      The day a policy is set, `frame-src blob:` is what this needs —
+      written here because a JSON file cannot carry the note.
+
+      **That the engine really paints it is measured, not assumed**:
+      `npm run wk` puts a blob PDF in an iframe in a real `WKWebView`,
+      snapshots it and counts dark pixels (WebKit gives the page no
+      document to query, so the picture is the only witness). Chrome's
+      side is `check-face` 4j. */
+  const pdfAt = useMemo(() => {
+    if (look === null || look.kind !== "pdf" || look.data === "") return null;
+    const raw = atob(look.data);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: look.media }));
+  }, [look]);
+  useEffect(() => {
+    if (pdfAt === null) return;
+    return () => URL.revokeObjectURL(pdfAt);
+  }, [pdfAt]);
 
   // **Asked first and alone: what is this.** The node answers with the
   // content, so a file that turns out to be a picture never has its
@@ -479,7 +539,24 @@ export function FileView({
         </div>
       );
     }
-    if (look.kind === "doc") {
+    if (look.kind === "pdf" && pdfAt !== null) {
+      // **The file itself, drawn by the browser** (「pdf 你咋转成字符
+      // 了,应该直接预览」— the user, 2026-09-14). An `<iframe>` rather
+      // than `<object>`: both reach the same viewer, and a frame is the
+      // one of the two whose failure mode is a blank rectangle rather
+      // than a silent fallback to nothing.
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <iframe
+            data-pdf-frame
+            src={pdfAt}
+            title={path.split("/").pop() ?? path}
+            className="min-h-0 flex-1 border-0"
+          />
+        </div>
+      );
+    }
+    if (look.kind === "doc" || look.kind === "pdf") {
       return (
         <div className="flex min-h-0 flex-1 flex-col">
           {look.empty ? (
@@ -501,9 +578,18 @@ export function FileView({
             </div>
           )}
           {/* Said once, under the document rather than over it: it is a
-              caveat about what you are reading, not a warning. */}
-          <div className="flex-none border-t px-3 py-1.5 text-aux text-muted-foreground">
-            {gui.doc_plain}
+              caveat about what you are reading, not a warning.
+
+              **A PDF that got here says something else**: it is not on
+              the words road because khor reads words, it is on it
+              because this browser draws no PDFs
+              (`khor_node::preview::PDF_HERE`), and that is a different
+              sentence about a different reason. */}
+          <div
+            data-doc-note={look.kind}
+            className="flex-none border-t px-3 py-1.5 text-aux text-muted-foreground"
+          >
+            {look.kind === "pdf" ? gui.pdf_as_words : gui.doc_plain}
           </div>
         </div>
       );
@@ -567,8 +653,36 @@ export function FileView({
     }
   };
 
+  const renders = rendererOf(path);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* **源码 / 预览, and the column is switched from its head**
+          (工作区批⑤). Drawn only where there is a second face to switch
+          to; a file with none gets no strip at all rather than a switch
+          with one position.
+
+          **The preview renders `body`** — the buffer, half-typed and
+          unsaved — never the file on disk. That is the whole reason
+          this is a face and not a kind: a rendered view lagging the
+          text by one save would be showing a document nobody has. */}
+      {renders !== null && (
+        <div className="flex flex-none items-center gap-1 border-b px-3 py-1">
+          {(["source", "preview"] as const).map((f) => (
+            <Button
+              key={f}
+              size="sm"
+              variant={face === f ? "secondary" : "ghost"}
+              data-file-face={f}
+              data-on={face === f}
+              className="min-h-touch"
+              onClick={() => setFace(f)}
+            >
+              {f === "source" ? gui.file_face_source : gui.file_face_preview}
+            </Button>
+          ))}
+        </div>
+      )}
       {/* **Only while something is unsettled.** A file that is open and
           saved says nothing at all — 「没有就不显示」, and a permanent
           「已保存」is a label that stops being read on the second file.
@@ -757,6 +871,21 @@ export function FileView({
           from the top of the first line, and a padding of its own would
           put that origin inside its own border box — eight pixels above
           where the text actually starts, on every bar. */}
+      {/* **The editor leaves the screen in 预览 and keeps everything.**
+          The buffer, the digest the next save is pinned to, the dirty
+          mark: all of them are this component's state and none of them
+          lives inside the textarea. Switching back finds the text
+          exactly as it was — and typing into a preview is not possible,
+          because there is nothing there to focus. */}
+      {face === "preview" && renders !== null ? (
+        <div data-file-preview={renders} className="min-h-0 flex-1 overflow-auto">
+          {renders === "md" ? (
+            <Markdown text={body} className="prose-khor mx-auto max-w-prose px-6 py-4" />
+          ) : (
+            <Table text={body} sep={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />
+          )}
+        </div>
+      ) : (
       <div ref={box} className="min-h-0 flex-1 overflow-auto">
         <div className="flex min-w-full items-start py-2">
           <pre
@@ -784,6 +913,7 @@ export function FileView({
           </div>
         </div>
       </div>
+      )}
       {/* **Under the code, not over it** (2026-09-13). It was an
           overlay laid at the hunk's own line, which put the removed
           lines exactly where they used to be — and hid however many
@@ -803,6 +933,37 @@ export function FileView({
         <Was hunk={diff.hunks[shown]} onClose={() => setShown(null)} />
       )}
     </div>
+  );
+}
+
+/** Delimited text as a table (工作区批⑤).
+ *
+ * **No header row**, which is the judgment the node's table already
+ * made before it moved here: a csv's first line is a header often and
+ * data sometimes, and khor cannot tell. Every row is drawn the same and
+ * the file reads the way it is.
+ *
+ * **No cap either.** The node's table cut at 2000 rows because it was
+ * building a string to put on a wire; this is built from the buffer
+ * already on screen, which was capped when the file was read
+ * (`files::shape`) and says so in its own line. A second cut would be a
+ * second sentence about one cut. */
+function Table({ text, sep }: { text: string; sep: string }) {
+  const rows = useMemo(() => parseDelimited(text, sep), [text, sep]);
+  return (
+    <table data-table className="w-full border-collapse text-code">
+      <tbody>
+        {rows.map((row, i) => (
+          <tr key={i} className="border-b">
+            {row.map((cell, j) => (
+              <td key={j} data-cell className="border-r px-2 py-1 align-top font-mono">
+                {cell}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

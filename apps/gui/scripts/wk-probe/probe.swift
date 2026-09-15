@@ -101,11 +101,11 @@ func spin(_ until: () -> Bool, seconds: Double) {
   }
 }
 
-func ask(_ web: WKWebView, _ js: String, async: Bool) -> String {
+func ask(_ web: WKWebView, _ js: String, async: Bool, args: [String: Any] = [:]) -> String {
   var answer = "no answer"
   var got = false
   if async {
-    web.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { r in
+    web.callAsyncJavaScript(js, arguments: args, in: nil, in: .page) { r in
       switch r {
       case .success(let v): answer = "\(v)"
       case .failure(let e): answer = "eval failed: \(e.localizedDescription)"
@@ -157,4 +157,101 @@ func probe(_ withShim: Bool) -> String {
   return out
 }
 
-print("{\"bare\":\(probe(false)),\"shimmed\":\(probe(true))}")
+/// A one-page PDF with a black square on it, built by CoreGraphics.
+///
+/// **Built rather than typed**, because a hand-written PDF has no xref
+/// table and a viewer that refused it would make this gate red about
+/// the fixture. The square is what the reading below looks for: an
+/// empty page and a page that never rendered are both white.
+func tinyPdf() -> String {
+  let data = NSMutableData()
+  var box = CGRect(x: 0, y: 0, width: 200, height: 200)
+  guard let consumer = CGDataConsumer(data: data as CFMutableData),
+    let ctx = CGContext(consumer: consumer, mediaBox: &box, nil)
+  else { return "" }
+  ctx.beginPDFPage(nil)
+  ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+  ctx.fill(CGRect(x: 20, y: 20, width: 160, height: 160))
+  ctx.endPDFPage()
+  ctx.closePDF()
+  return (data as Data).base64EncodedString()
+}
+
+/// How dark the frame's box is, as a percentage of the pixels sampled.
+///
+/// **A snapshot, because nothing inside a PDF frame is readable from
+/// JavaScript.** WebKit draws a PDF with its own viewer and hands the
+/// page no document to query — `contentDocument` is null whether it
+/// rendered or not. The only witness to「it drew」 is the picture, so
+/// the picture is what is read.
+func darkness(_ web: WKWebView) -> String {
+  var answer = "no snapshot"
+  var got = false
+  let cfg = WKSnapshotConfiguration()
+  web.takeSnapshot(with: cfg) { image, err in
+    defer { got = true }
+    if let err = err {
+      answer = "snapshot failed: \(err.localizedDescription)"
+      return
+    }
+    guard let image = image,
+      let rep = NSBitmapImageRep(
+        data: image.tiffRepresentation ?? Data())
+    else {
+      answer = "snapshot gave no bitmap"
+      return
+    }
+    // The frame sits at 40,40 and is 300 square (pdf.html); sampled in
+    // page points scaled to the bitmap, so a retina snapshot reads the
+    // same box.
+    let sx = Double(rep.pixelsWide) / 400.0
+    let sy = Double(rep.pixelsHigh) / 400.0
+    var dark = 0
+    var seen = 0
+    var y = 60
+    while y < 320 {
+      var x = 60
+      while x < 320 {
+        let px = Int(Double(x) * sx)
+        let py = Int(Double(y) * sy)
+        if px < rep.pixelsWide, py < rep.pixelsHigh,
+          let c = rep.colorAt(x: px, y: py)
+        {
+          seen += 1
+          if c.brightnessComponent < 0.5 { dark += 1 }
+        }
+        x += 4
+      }
+      y += 4
+    }
+    answer = seen == 0 ? "nothing sampled" : "\(dark * 100 / seen)"
+  }
+  spin({ got }, seconds: 15)
+  return answer
+}
+
+/// A `blob:` PDF in an iframe — what khor's file view does (工作区批⑤).
+///
+/// No shim arm: this is not about the shim. It is about whether the
+/// engine khor draws on has a PDF viewer at all, which decides whether
+/// the face hands over bytes or falls back to the document's words
+/// (`khor_node::preview::PDF_HERE`).
+func pdfProbe() -> String {
+  let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 400))
+  let w = Waiter()
+  web.navigationDelegate = w
+  web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/pdf.html")!))
+  spin({ w.done }, seconds: 20)
+  if let t = w.trouble { return "{\"loadFailed\":\(quoted(t))}" }
+  if !w.done { return "{\"loadFailed\":\"never finished\"}" }
+  let b64 = tinyPdf()
+  if b64.isEmpty { return "{\"loadFailed\":\"could not build a pdf\"}" }
+  let said = ask(web, "return window.__put(b);", async: true, args: ["b": b64])
+  // The viewer lays out and paints after the load event; a snapshot
+  // taken in the same turn catches an empty frame.
+  spin({ false }, seconds: 2.0)
+  return "{\"frame\":\(quoted(said)),\"dark\":\(quoted(darkness(web)))}"
+}
+
+print(
+  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe())}")

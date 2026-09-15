@@ -419,6 +419,9 @@ pub fn answer(
         // Whether this machine has a bin at all — asked rather than
         // guessed from the browser (`files::trash_here`).
         "trash_here" => to_json(&crate::files::trash_here()),
+        // Whether this browser draws PDFs itself — asked for
+        // `trash_here`'s reason, never read off `navigator`.
+        "pdf_here" => to_json(&crate::files::pdf_here()),
         "pin_dir" => {
             crate::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
             Ok("null".to_owned())

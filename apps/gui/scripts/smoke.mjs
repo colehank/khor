@@ -217,6 +217,14 @@ function rustSources(dir, out = []) {
   }
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (e.name === "target" || e.name === "node_modules" || e.name.startsWith(".")) continue;
+    // **A crate's `tests/` is never linked into a binary**, so a file
+    // there can never make one stale — and the guard below refuses to
+    // run until the binary is newer than everything here. Editing an
+    // integration test therefore used to wedge this script: the rebuild
+    // it names finishes in a quarter of a second without touching the
+    // binary, so the same refusal comes back for ever. Found by editing
+    // `core/tests/kind_tables.rs` (工作区批⑤).
+    if (e.name === "tests") continue;
     const full = join(dir, e.name);
     if (e.isDirectory()) rustSources(full, out);
     else if (e.name.endsWith(".rs")) out.push(full);
@@ -3730,8 +3738,16 @@ for line in sys.stdin:
   //      rows, and the table's own 2000-row cap cut it long before the
   //      slice did — so the assertion below went red about the read
   //      while the read was fine. 1500 rows of 300 bytes is over one
-  //      slice and under the row cap, so only one thing is being
-  //      measured.
+  //      slice, so only one thing is being measured.
+  //
+  //      ⚠️ **The table is gone** (工作区批⑤, 2026-09-15). A csv is a
+  //      text file now: `khor read` prints it, and the screen builds
+  //      the table from the buffer it is showing. So the row cap the
+  //      paragraph above worked around no longer exists, and what this
+  //      asserts is what it was always really about — **a file over one
+  //      slice arrives whole**. Kept as a csv rather than moved to some
+  //      other format because the two ends being checked below are the
+  //      first line and the last, and a csv makes both nameable.
   const bigCsv = join(SCRATCH, "wide.csv");
   {
     const pad = "x".repeat(290);
@@ -3740,13 +3756,13 @@ for line in sys.stdin:
     writeFileSync(bigCsv, rows);
   }
   const csvOut = cli(envA, "read", "beta", bigCsv);
-  if (!csvOut.startsWith("| a | b | c |")) {
-    throw new Error(`a csv over one slice did not come back as a table: ${csvOut.slice(0, 80)}`);
+  if (!csvOut.startsWith("a,b,c\n")) {
+    throw new Error(`a csv over one slice did not come back as itself: ${csvOut.slice(0, 80)}`);
   }
   //      …and the far end of it arrived too, which is the half that a
   //      one-slice read would have failed.
   const lastRow = readFileSync(bigCsv, "utf8").trim().split("\n").pop().split(",")[0];
-  if (!csvOut.includes(`| ${lastRow} |`)) {
+  if (!csvOut.includes(`\n${lastRow},`)) {
     throw new Error(`the last row of a ${Math.round(statSync(bigCsv).size / 1024)} KB csv is missing — the read stopped at one slice`);
   }
   //      The cut is said rather than silent, on a file past the ceiling.
@@ -3755,17 +3771,25 @@ for line in sys.stdin:
   //      ceiling that moves.
   const huge = join(SCRATCH, "huge.csv");
   writeFileSync(huge, `h\n${"0123456789,\n".repeat(400_000)}`);
+  // **`maxBuffer`, and it is not a nicety.** node caps a captured
+  // stdout at 1 MB and kills the child when it goes over — so the
+  // moment a csv stopped being folded into a 2000-row table (工作区
+  // 批⑤) this call started reading 4 MB, the process was killed before
+  // it could print the cut line, and the assertion below went red about
+  // khor for node's buffer. The ceiling is khor's own `LOOK`; the
+  // buffer has to be over it.
+  const big = { env: envA, encoding: "utf8", timeout: 60_000, maxBuffer: 16 * 1024 * 1024 };
   let cutWord = "";
   try {
-    execFileSync(KHOR, ["read", "beta", huge], { env: envA, encoding: "utf8", timeout: 60_000 });
+    execFileSync(KHOR, ["read", "beta", huge], big);
   } catch {
     /* a big read may exit non-zero on a broken pipe; the word is what matters */
   }
-  cutWord = spawnSync(KHOR, ["read", "beta", huge], { env: envA, encoding: "utf8", timeout: 60_000 }).stderr ?? "";
+  cutWord = spawnSync(KHOR, ["read", "beta", huge], big).stderr ?? "";
   if (!cutWord.includes("只读了前")) {
     throw new Error(`a file past the 4 MB ceiling did not say it was cut: ${JSON.stringify(cutWord.slice(0, 120))}`);
   }
-  console.log(`preview: a ${Math.round(statSync(bigCsv).size / 1024)} KB csv came back whole as a table, and a 5 MB one says it was cut`);
+  console.log(`preview: a ${Math.round(statSync(bigCsv).size / 1024)} KB csv came back whole, and a 5 MB one says it was cut`);
 
   // 24d) browser 的 omnibox (批③ 四笔): the exit is a chip, the address
   //      is text, and the candidates are the pinned pages — the one

@@ -103,6 +103,14 @@ pub async fn remove(root: &Path, machine: &str, path: &str) -> Result<(), String
     Node::open(root.to_path_buf())?.remove_path(machine, path).await
 }
 
+/// Whether the browser this face runs in will draw a PDF itself
+/// (`khor_node::preview::PDF_HERE`). False on Linux (WebKitGTK ships no
+/// viewer) and Android, where khor shows the PDF's words instead and
+/// says that is what they are.
+pub fn pdf_here() -> bool {
+    khor_node::preview::PDF_HERE
+}
+
 /// Whether **this** machine — the one khor's backend is running on —
 /// has a recycle bin (`khor_node::files::TRASH_HERE`). False on iOS and
 /// Android, where 删除 on a local file is as final as it is on a far
@@ -222,22 +230,26 @@ fn shape(total: u64, at_ms: u64, bytes: &[u8]) -> FileText {
 /// One file shaped for a screen that is not a code view.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct Preview {
-    /// `image` · `svg` · `doc` · `text` · `other` — what the screen
-    /// should do with this. **Decided in the node** so `khor` and the
-    /// app never disagree about what a file is.
+    /// `image` · `svg` · `pdf` · `doc` · `text` · `other` — what the
+    /// screen should do with this. **Decided in the node** so `khor`
+    /// and the app never disagree about what a file is.
     pub kind: String,
     #[ts(type = "number")]
     pub total: u64,
-    /// `image` and `svg`: the bytes, base64, ready for a data URL.
-    /// Empty otherwise.
+    /// `image`, `svg` and `pdf`: the bytes, base64, ready for the
+    /// browser to decode. Empty otherwise — **and empty on a `pdf`
+    /// means the words are in `html` instead**, because this platform's
+    /// browser has no PDF viewer (`khor_node::preview::PDF_HERE`). One
+    /// kind, two shapes, and which one it is, is which field is full.
     pub data: String,
     /// The media type those bytes need to be announced with, or empty.
     /// **Carried rather than derived on the far side**: a `data:` URL
     /// with no media type is rendered only by sniffing, and a browser
     /// that sniffs wrong draws a broken-image glyph with no sentence.
     pub media: String,
-    /// `doc`: the file rendered to HTML, already escaped
-    /// (`khor_node::preview::html`). Empty otherwise.
+    /// `doc`, and a `pdf` on a platform that cannot draw one: the file
+    /// rendered to HTML, already escaped (`khor_node::preview::html`).
+    /// Empty otherwise.
     pub html: String,
     /// The file is bigger than a preview carries and this is its
     /// beginning. **An image that is cut is not shown at all** — half a
@@ -265,6 +277,7 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
         kind: match kind {
             khor_node::preview::Kind::Image => "image",
             khor_node::preview::Kind::Svg => "svg",
+            khor_node::preview::Kind::Pdf => "pdf",
             khor_node::preview::Kind::Doc => "doc",
             khor_node::preview::Kind::Text => "text",
             khor_node::preview::Kind::Other => "other",
@@ -289,6 +302,23 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
             let md = khor_node::preview::markdown(path, &bytes)?;
             out.empty = md.trim().is_empty();
             out.html = khor_node::preview::html(&md);
+        }
+        // **The bytes where the browser can draw them, the words where
+        // it cannot** (工作区批⑤). Half a PDF is a broken PDF, so a cut
+        // one carries no bytes and the face says why — the same rule a
+        // picture is under; the words road is left to the fallback,
+        // which does not need the whole file to be useful but would
+        // then be answering about half a document without saying so.
+        khor_node::preview::Kind::Pdf => {
+            if khor_node::preview::PDF_HERE {
+                if !cut {
+                    out.data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                }
+            } else {
+                let md = khor_node::preview::markdown(path, &bytes)?;
+                out.empty = md.trim().is_empty();
+                out.html = khor_node::preview::html(&md);
+            }
         }
         _ => {}
     }

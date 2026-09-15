@@ -128,9 +128,10 @@ usage = """
   rm [-m 机器] <路径>     把那个文件或目录删掉。**本机的进废纸篓,别的机器
                         和卫星是直接删、找不回来**(那边没有废纸篓)。
                         目录连里面的一起走;路径不存在就拒绝
-  read <机器> <文件>      把文档读成文字打出来:md 原样,docx/xlsx/pptx 和
-                        它们的旧格式(doc/xls/ppt)、csv/tsv、pdf 都转成
-                        markdown。读的是文字和结构,不是排版
+  read <机器> <文件>      把文档读成文字打出来:md/csv/tsv 原样(它们本来
+                        就是文本),docx/xlsx/pptx 和它们的旧格式
+                        (doc/xls/ppt)、pdf 转成 markdown。读的是文字和
+                        结构,不是排版
   code [--stop] <机器> [仓库路径]
                         在那台机器上开 VS Code 的网页脸,打印本地链接
                         (链接里带密钥;不给路径就是它上次开的那个)。
@@ -1003,10 +1004,11 @@ cant-read-document = "这个文档读不开: {0}"
 # Said as a fact about the file rather than as a failure, because
 # nothing went wrong: khor reads words, and there are none to read.
 pdf-is-pictures = "这个 PDF 里是图不是文字(扫描件或者整页插图),没有可读的文字层"
-# A spreadsheet is a thing people keep a hundred thousand rows in and a
-# preview is a screen. Said out loud for `Response::Dir::truncated` 's
-# reason: a cut table and a short table look identical.
-table-cut = "表太长,只画了前 {0} 行"
+# ⚠️ **`table-cut` was deleted here on 2026-09-15** (工作区批⑤). It
+# capped a csv turned into a markdown table on the node; a csv is a text
+# file now and the table is built by the screen from the buffer it is
+# showing, which has no cap because it is one screen's worth of file
+# already (`views/FileView`).
 # What a preview says about itself, in [gui]. **「读的是文字和结构,不是
 # 排版」is the honest frame** and it is said once, under the document,
 # rather than implied by showing something that looks like Word and is
@@ -2159,6 +2161,23 @@ file-take = "取下来"
 # one word, one meaning (docs/UX.md 语料库), and a machine leaving the
 # mesh is not a file leaving a disk.
 file-remove = "删掉"
+# 源码 / 预览 (工作区批⑤). **The switch, and its default is 源码** —
+# 「所有代码、md 文件,打开先是源码,要有语法高亮。然后对于支持预览的
+# 文件,如 md,显示预览」(the user, 2026-09-14). Drawn only where there
+# is something to render; a file with no second face gets no switch
+# rather than a greyed one.
+#
+# **Not remembered.** A person who read one file rendered has not said
+# anything about the next one, and a toggle that carries over means the
+# source they asked for is not what opens.
+file-face-source = "源码"
+file-face-preview = "预览"
+# Under a PDF whose words are being shown because this platform's
+# browser has no viewer (Linux, Android — `khor_node::preview::
+# PDF_HERE`). **Says what is on screen, not what is missing**: 「这台
+# 上看不了 PDF」 would be a complaint about the machine, and what is
+# actually there is the document's text, which is worth reading.
+pdf-as-words = "这台上的浏览器不画 PDF,给的是抽出来的文字,不是版式"
 # The three sentences a person confirms, and they are **three keys
 # rather than one with a slot in it** because what they promise is not
 # the same thing. 「进废纸篓」 is reversible and 「直接删」 is not, and a

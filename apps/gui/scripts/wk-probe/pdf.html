@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pdf</title>
+<style>
+  /* White ground on purpose: the reading below counts dark pixels, so
+     anything dark in the frame's box came from the PDF. */
+  html, body { margin: 0; background: #fff; }
+  iframe { position: absolute; left: 40px; top: 40px; width: 300px; height: 300px; border: 0; }
+</style>
+<body>
+  <script>
+    // Handed the bytes by the probe rather than fetching them: the
+    // question is what a `blob:` does in a frame, and a fixture served
+    // over http would be measuring a different URL scheme.
+    window.__put = (b64) =>
+      new Promise((done) => {
+        const raw = atob(b64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+        const f = document.createElement("iframe");
+        f.id = "pdf";
+        // A frame that never loads must not hang the probe: the answer
+        // says so instead, and the gate reads it as a failure with a
+        // name rather than as a timeout with none.
+        const bell = setTimeout(() => done(`${url.slice(0, 5)}|timeout`), 8000);
+        f.addEventListener("load", () => {
+          clearTimeout(bell);
+          // Two readings, both WebKit's: whether it says it renders
+          // PDFs inline at all, and that the blob really is one.
+          done(`${url.slice(0, 5)}|loaded|${navigator.pdfViewerEnabled}`);
+        });
+        f.src = url;
+        document.body.appendChild(f);
+      });
+  </script>
+</body>
