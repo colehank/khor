@@ -13,7 +13,7 @@
 // whole landing of their own on the rail; the tree and the file have no
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   onWebFace,
@@ -26,6 +26,7 @@ import {
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { IconCode, IconFile, IconFiles, IconSessions } from "@/components/icons";
+import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,12 @@ import { TabStrip, type TabFace } from "@/browse/TabStrip";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
+import {
+  rememberWords,
+  sessionAxes,
+  sessionOptions,
+  storedWords,
+} from "@/lib/session-filter";
 import { cn } from "@/lib/utils";
 import { basename } from "@/words";
 import { BrowserPane } from "@/views/BrowserPane";
@@ -55,6 +62,8 @@ export function WorkspacePane({
   onClose,
   pinFailed,
   closeRefused,
+  arrange,
+  onNewSession,
   narrow,
   listOpen,
 }: {
@@ -97,6 +106,23 @@ export function WorkspacePane({
   onClose: (row: SessionRow) => Promise<void>;
   pinFailed: Set<string>;
   closeRefused: Map<string, string>;
+  /** 排布, and it is **the shell's own** (工作区批⑩). There is one
+      `rows` poll in this app and the node does the arranging
+      (`khor_node::list::Arrange`), so a column that sorted for itself
+      would be re-deriving an order the backend already decided — the
+      thing docs/UX.md forbids in so many words. What it costs is said
+      out loud: changing it here changes the sessions landing too,
+      because it is one setting and not two. */
+  arrange: {
+    label: string;
+    options: readonly ArrangeOption[];
+    chosen: string;
+    onChoose: (key: string) => void;
+  };
+  /** 「+」: open the wizard on this machine, in this directory
+      (「这就是最早说的『加入我的工作区』」). The shell owns the sheet,
+      so it owns this. */
+  onNewSession: (machine: string, dir: string) => void;
   narrow: boolean;
   /** Whether the workspace list is holding a column of its own. The
       fifth column's existence is what decides the sessions' default,
@@ -181,6 +207,39 @@ export function WorkspacePane({
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
+  /** Bumped to ask the open file to read itself again (工作区批⑩). Its
+      own counter rather than `gitAt`'s, because the two are asked of
+      different machines' answers about different things — and one of
+      them is also bumped by every save this pane makes, which is
+      precisely the moment the file must *not* be re-read out from
+      under the person who just wrote it. */
+  const [readAt, setReadAt] = useState(0);
+  /** What this column is searched for. **In memory and per pane**
+      (工作区批⑩): a search box is something being done right now, and
+      one that followed you into the next workspace would be filtering
+      the wrong project on arrival (`App`'s `queries` says the same). */
+  const [query, setQuery] = useState("");
+  /** The ticked words, remembered under **this pane's own key** rather
+      than the sessions landing's (工作区批⑩).
+   *
+   * Not shared, and the reason is what the landing's ticks are made of:
+   * they name machines and directories as well as states, and both of
+   * those are what this column already **is**. A tick on another machine
+   * would empty every workspace column on this one, for a reason nothing
+   * on the glass says — this repo's oldest failure wearing a filter.
+   *
+   * One key for the pane and not one per workspace, because a tick is a
+   * posture about a list（「只看忙碌的」）rather than a fact about a
+   * project — the same class of thing as the arrangement, and the
+   * opposite class from a pin. */
+  const [words, setWords] = useState<string[]>(() => storedWords(WS_PANE));
+  const toggleWord = useCallback((key: string) => {
+    setWords((was) => {
+      const next = was.includes(key) ? was.filter((w) => w !== key) : [...was, key];
+      rememberWords(WS_PANE, next);
+      return next;
+    });
+  }, []);
   const hidden = useHidden();
   /** What that machine says about its editor. `version` empty means it
       has none **or could not be asked** — the two lead to the same next
@@ -238,9 +297,16 @@ export function WorkspacePane({
   // so it is the moment to ask. A repository still changes under a
   // pane somebody is staring at without touching; that is left
   // unasked on purpose rather than paid for once every few seconds.
+  //
+  // **The open file rides the same trigger** (工作区批⑩). Its staleness
+  // starts misleading at exactly the same moment for exactly the same
+  // reason — 「khor 里最常改文件的是 agent」 — and giving it a beat of
+  // its own would be two answers to one question about when a screen
+  // has gone old.
   useEffect(() => {
     if (hidden) return;
     setGitAt((n) => n + 1);
+    setReadAt((n) => n + 1);
   }, [hidden]);
 
   // **Given back when this pane stops pointing at that machine.** A
@@ -381,6 +447,43 @@ export function WorkspacePane({
       .map((r) => ({ ...r, group: "" }));
   }, [root, rows, channel]);
   const marks = useMemo(() => folded(root, git), [root, git]);
+  /** What each of this project's sessions was saying the last time the
+      rows moved, by id. */
+  const said = useRef(new Map<string, string>());
+  // **An agent stopping is a reason to ask git again** (工作区批⑩:
+  // 「这个工作区里的会话从 busy 变到别的状态时,git 标记重问一次」).
+  // The thing that most often changes files in a khor workspace is an
+  // agent, and the moment it has finished changing them is the moment
+  // it stops being 忙碌 — so that transition is the ask, and no timer
+  // is added to catch it.
+  //
+  // **busy → anything, not busy → 完成.** A run that failed, was
+  // interrupted or is now waiting on an answer has already written
+  // whatever it wrote; which of the six words it landed on is a fact
+  // about the session and says nothing about the disk.
+  //
+  // Driven by `rows` arriving rather than by a word being watched:
+  // the shell polls, this compares two polls, and a session that was
+  // never seen busy has nothing to have stopped from.
+  useEffect(() => {
+    const now = new Map<string, string>();
+    let stopped = false;
+    for (const r of mine) {
+      now.set(r.id, r.word);
+      if (said.current.get(r.id) === "busy" && r.word !== "busy") stopped = true;
+    }
+    said.current = now;
+    if (stopped) setGitAt((n) => n + 1);
+  }, [mine]);
+  /** The choices this column's filter offers: **the state words and
+      nothing else** (工作区批⑩). The other three axes the sessions
+      landing offers — machine, category, workspace — are two thirds of
+      what this column already is (`mine` is one machine under one
+      directory), and a category axis alone is not worth a heading.
+      Built by the helper the landing calls, so the two cannot come back
+      with different words for one state. */
+  const wordOptions = useMemo(() => sessionOptions(mine, words, ["state:"]), [mine, words]);
+  const axes = useMemo(() => sessionAxes(wordOptions), [wordOptions]);
 
   /** Remember which tabs are open, for this workspace. Storage refusing
       costs the memory and nothing else — the tabs are on screen either
@@ -829,6 +932,9 @@ export function WorkspacePane({
               // catches a tab being closed over a draft. A counter,
               // because two asks are two saves.
               saveAt={saveAt}
+              // **Asked to read itself again on the way back into the
+              // window** (工作区批⑩), the same trigger the marks ride.
+              readAt={readAt}
               draft={drafts.get(file)}
               onDraft={(d) => {
                 setDrafts((was) => {
@@ -878,15 +984,15 @@ export function WorkspacePane({
         {sessions && (
           <div
             data-ws-sessions
-            // **Scrolls as a list, does not as a pane.** `DetailPane`
-            // is `h-full` with its own scroller inside; wrapped in a
-            // second one it sizes to its content and the header stops
-            // being sticky.
+            // **Neither half scrolls this box** (工作区批⑩). It used to
+            // be the scroller for the list; with a `PaneBar` on top of
+            // that list the bar would scroll away with the rows, and a
+            // search box you have to scroll back up to is a search box
+            // people stop using. So the scroller moved one level in, to
+            // the rows alone. `DetailPane` was already `h-full` with a
+            // scroller of its own.
             // Capped for the tree's reason, one column over.
-            className={cn(
-              "flex max-w-[45%] shrink-0 flex-col border-l",
-              picked === null ? "overflow-y-auto" : "min-h-0",
-            )}
+            className="flex min-h-0 max-w-[45%] shrink-0 flex-col border-l"
             style={{ width: sidePane.width }}
           >
             {/* **A place to work, not a list of what exists**
@@ -907,31 +1013,78 @@ export function WorkspacePane({
                 to. The back arrow is the way out, the shell's own
                 gesture on its narrow face. */}
             {picked === null ? (
-              // **The sessions list itself, not a second drawing of
-              // it** (工作区批③). This column used to hand-draw a title
-              // and a state word, which is three of the five questions
-              // missing and a second answer to 「what does a session
-              // row look like」 — the failure `PaneBar`'s head warns
-              // about, one list over. The only difference a project's
-              // column earns is that it does not repeat the machine
-              // (`showVia`), because the header above it just said it.
+              // **The sessions landing's bar and the sessions landing's
+              // list, both of them the real ones** (工作区批⑩:
+              // 「工作区的 session list 是全功能的,和 session 页的 list
+              // 一致,可以搜索、新建和 filter」). This column used to
+              // hand-draw a title and a state word (three of the five
+              // questions missing); 批③ gave it the list; this batch
+              // gives it the bar. Neither is a second drawing — a second
+              // search box that behaves differently is the failure
+              // `PaneBar`'s own head warns about.
               //
-              // Every row action comes with it. A column where a row
-              // can be opened but not pinned or closed would be the
+              // What it does not take from the landing is the **ticks**
+              // and the **query**, which are this pane's (see `words`).
+              // What it does take is the arrangement, because there is
+              // one `rows` poll and the node does the ordering.
+              //
+              // Every row action comes with the list. A column where a
+              // row can be opened but not pinned or closed would be the
               // same rows with fewer verbs, which is the thing a person
               // has to learn twice.
-              <SessionsList
-                rows={mine}
-                query=""
-                words={[]}
-                selected={picked}
-                onSelect={(r) => setPicked(r.id)}
-                onPin={onPin}
-                onClose={onClose}
-                pinFailed={pinFailed}
-                closeRefused={closeRefused}
-                showVia={false}
-              />
+              <>
+                <PaneBar
+                  searchLabel={gui.search_sessions}
+                  query={query}
+                  onQuery={setQuery}
+                  filterLabel={gui.filter}
+                  filter={{ options: wordOptions, chosen: words, onToggle: toggleWord }}
+                  axes={axes}
+                  arrange={{
+                    label: arrange.label,
+                    options: [...arrange.options],
+                    chosen: arrange.chosen,
+                    onChoose: arrange.onChoose,
+                  }}
+                  // **`create` and not `actions`**: this column has
+                  // exactly one thing to make, and a menu holding one
+                  // item is a menu that teaches people not to open
+                  // menus (`PaneBar`'s own judgment). The wizard opens
+                  // on **this** machine in **this** directory, which is
+                  // the whole of what 「加入我的工作区」 ever meant.
+                  //
+                  // The channel name, never the one on the glass: the
+                  // wizard hands what it is given straight to the node
+                  // (`openSession`), and the name a person retyped is
+                  // not a name the node files machines under. A machine
+                  // the device table has lost leaves `channel` null and
+                  // this column empty anyway; the shown name is then all
+                  // there is to send, and the node refuses it in its own
+                  // words.
+                  create={{
+                    label: gui.new_session,
+                    mark: "data-ws-new-session",
+                    onSelect: () => onNewSession(channel ?? machine, root),
+                  }}
+                />
+                <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
+                  <SessionsList
+                    rows={mine}
+                    query={query}
+                    words={words}
+                    selected={picked}
+                    onSelect={(r) => setPicked(r.id)}
+                    onPin={onPin}
+                    onClose={onClose}
+                    pinFailed={pinFailed}
+                    closeRefused={closeRefused}
+                    // The one difference a project's column earns: it
+                    // does not repeat the machine, because the workspace
+                    // this column belongs to already said which one.
+                    showVia={false}
+                  />
+                </div>
+              </>
             ) : (
               <DetailPane
                 row={mine.find((r) => r.id === picked) ?? null}
@@ -979,6 +1132,11 @@ export function WorkspacePane({
     </div>
   );
 }
+
+/** What this column calls itself in this face's storage — the pane
+    name its ticked filter words are filed under (工作区批⑩). One name
+    for every workspace, not one per workspace: see `words`. */
+const WS_PANE = "workspace-sessions";
 
 /** Where the open tabs are kept, per workspace (工作区批⑧).
     **Keyed by the pair that is the workspace's identity**

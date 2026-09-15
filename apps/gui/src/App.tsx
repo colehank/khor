@@ -54,8 +54,17 @@ import { useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
+import {
+  ARRANGE,
+  rememberArrange,
+  rememberWords,
+  sessionAxes as axesOf,
+  sessionOptions,
+  storedArrange,
+  storedWords,
+} from "@/lib/session-filter";
 import { cn } from "@/lib/utils";
-import { axisOf, groupLabel, placeLabels, valueOf, word } from "@/words";
+import { groupLabel, placeLabels } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
@@ -151,80 +160,9 @@ const HOOKS_MS = 60_000;
     it is used. */
 const USAGE_POLL_MS = 10_000;
 
-/**
- * How to arrange the session list. The keys are the node's
- * (`khor_node::list::Arrange`) and the CLI's `--by` values — spelled
- * once there, echoed here, so the two faces cannot drift into different
- * vocabularies for one setting.
- */
-const ARRANGE = [
-  { key: "recent", label: gui.by_recent },
-  { key: "category", label: gui.by_category },
-  { key: "device", label: gui.by_device },
-  { key: "state", label: gui.by_state },
-  { key: "place", label: gui.by_place },
-] as const;
-
-/** WeChat's opening: the thing you touched last is the thing you want. */
-const ARRANGE_DEFAULT = "recent";
-const ARRANGE_KEY = "khor.sessions.arrange";
-
-/**
- * The chosen arrangement, remembered on this device.
- *
- * **Local on purpose, unlike a pin.** A pin is a property of the session
- * it is stuck to, so it travels the network; how one screen sorts is
- * that screen's posture, and a phone held in a queue does not want the
- * desktop's answer (docs/handoff 置顶与分类 — the same split that keeps
- * collapse state local).
- *
- * An unreadable or unknown stored value falls back to the default rather
- * than being passed on: the backend refuses a mode it does not know, so
- * a stale key would leave the list empty with an error nobody asked for.
- */
-function storedArrange(): string {
-  try {
-    const saved = window.localStorage.getItem(ARRANGE_KEY);
-    return ARRANGE.some((a) => a.key === saved) ? saved! : ARRANGE_DEFAULT;
-  } catch {
-    return ARRANGE_DEFAULT;
-  }
-}
-
-/**
- * The ticked filter words, remembered on this device — **one entry per
- * pane**, which is why the key carries the landing.
- *
- * Same mechanism and same reasoning as the arrangement above: a
- * preference the user set once should still be set the next time
- * (docs/handoff — 所有偏好保留一次设置). Only the sessions pane can
- * filter today, and the shape is per pane anyway because the alternative
- * is one pane silently inheriting another's ticks the day a second pane
- * grows a filter.
- *
- * **Not validated against a list of known words.** This layer does not
- * get to say which states exist (docs/UX.md 状态呈现) — the options come
- * from what the node sent — so all that can be checked here is the
- * shape. A key that no longer means anything simply matches no rows,
- * which the pane says out loud (`no_matches`) with the filter control
- * lit, and one tick undoes it.
- */
-const FILTER_KEY = "khor.filter";
-const filterKey = (landing: Landing) => `${FILTER_KEY}.${landing}`;
-
-function storedWords(landing: Landing): string[] {
-  try {
-    const raw = window.localStorage.getItem(filterKey(landing));
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.every((k) => typeof k === "string")
-      ? (parsed as string[])
-      : [];
-  } catch {
-    return [];
-  }
-}
-
+/** The sessions landing's stored ticks, one entry per pane
+    (`lib/session-filter`). The workspace column keeps its own under a
+    pane name of its own — see `WorkspacePane`. */
 function storedWordsAll(): Record<Landing, string[]> {
   return {
     sessions: storedWords("sessions"),
@@ -481,14 +419,20 @@ export default function App() {
       sheet and never on its own, so a card's pick cannot outlive the
       opening it was made for. */
   const [newSessionOn, setNewSessionOn] = useState("");
+  /** …and which directory. The workspace column's 「+」 names its
+      project's (工作区批⑩); every other door names none, which the
+      wizard reads as that machine's home. Set together with the sheet
+      for `newSessionOn`'s reason. */
+  const [newSessionAt, setNewSessionAt] = useState("");
   /** Bumped when this shell has changed the workspace table from
       outside the list — the pane bar's 「+」 lives up here, and the list
       owns every read it makes. One number rather than a callback,
       because what the list needs to know is 「something changed」 and
       not what: it re-reads a local table, which costs nothing. */
   const [wsAdded, setWsAdded] = useState(0);
-  const openNewSession = useCallback((machine = "") => {
+  const openNewSession = useCallback((machine = "", dir = "") => {
     setNewSessionOn(machine);
+    setNewSessionAt(dir);
     setSheet("new");
   }, []);
   // Settings sit behind the rail's last glyph, one level down and not on
@@ -927,65 +871,18 @@ export default function App() {
   // offline axis and is absent on rows that live here, so an axis built
   // on it would be missing this machine — the one people reach for
   // first (`SessionRow::home` says the rest).
-  const wordOptions = useMemo(() => {
-    // The place chips, told apart where two checkouts share a name —
-    // the same reader the list's headings use, so a chip and the
-    // heading it filters to always print the same words.
-    const placeNames = placeLabels(rows.map((r) => `at:${r.place ?? ""}`));
-    const seen = (pick: (r: SessionRow) => string, axis: string, label: (v: string) => string) => {
-      const values: string[] = [];
-      for (const r of rows) {
-        const v = pick(r);
-        if (!values.includes(v)) values.push(v);
-      }
-      // A ticked key stays on the list after its last row leaves, or the
-      // tick becomes impossible to undo — which also covers a tick
-      // restored from storage before any row has arrived, the one case
-      // where the ticked key is guaranteed to be missing from `rows`.
-      for (const key of words.sessions) {
-        if (axisOf(key) === axis && !values.includes(valueOf(key))) values.push(valueOf(key));
-      }
-      return values.map((v) => ({ key: `${axis}${v}`, label: label(v) }));
-    };
-    return [
-      ...seen((r) => r.word, "state:", word).map((o) => ({ ...o, axis: gui.axis_state })),
-      ...seen((r) => r.home, "dev:", (v) => v).map((o) => ({ ...o, axis: gui.devices_tab })),
-      ...seen((r) => r.category ?? "", "cat:", (v) => groupLabel(`cat:${v}`)).map((o) => ({
-        ...o,
-        axis: gui.axis_category,
-      })),
-      // The 工作区 axis, gathered the same way as the other three — the
-      // values are whatever places the rows on screen actually carry,
-      // so the list is never longer than the work in front of you.
-      ...seen((r) => r.place ?? "", "at:", (v) => placeNames.get(`at:${v}`) ?? groupLabel(`at:${v}`)).map((o) => ({
-        ...o,
-        axis: gui.axis_place,
-      })),
-    ];
-  }, [rows, words]);
-
-  // The same options, grouped into the axes the search box offers.
-  // **Derived from `wordOptions` rather than gathered again**: the chips
-  // and the menu ticks are then not merely kept in step, they are one
-  // list read two ways, and there is no second gathering that can come
-  // back with something else.
-  const sessionAxes = useMemo<OmniAxis[]>(() => {
-    const byAxis = new Map<string, OmniAxis>();
-    for (const o of wordOptions) {
-      const axis = axisOf(o.key);
-      const seat = byAxis.get(axis) ?? { key: axis, label: o.axis, candidates: [] };
-      seat.candidates.push({
-        key: o.key,
-        label: o.label,
-        // A machine wears its face here as it does everywhere else; the
-        // other two axes have no face to wear, and an invented one is
-        // worse than none (Avatar.tsx's rule).
-        face: axis === "dev:" ? (devices.find((d) => d.name === valueOf(o.key))?.face ?? null) : undefined,
-      });
-      byAxis.set(axis, seat);
-    }
-    return [...byAxis.values()];
-  }, [wordOptions, devices]);
+  // The four axes and their words, built by the helper both session
+  // panes call (`lib/session-filter`). This landing offers all of them;
+  // a workspace's column offers the state words alone, because the
+  // other three are what that column already is.
+  const wordOptions = useMemo(
+    () => sessionOptions(rows, words.sessions),
+    [rows, words],
+  );
+  const sessionAxes = useMemo<OmniAxis[]>(
+    () => axesOf(wordOptions, devices),
+    [wordOptions, devices],
+  );
 
   // (The files pane's box used to be assembled here — a machine chip
   // and a path axis, for a pane whose subject was one machine. It moved
@@ -999,13 +896,7 @@ export default function App() {
 
   const chooseArrange = useCallback((key: string) => {
     setArrangeBy(key);
-    // Kept even if storage refuses (private mode, quota): the choice
-    // still applies to this session, it just will not outlive it.
-    try {
-      window.localStorage.setItem(ARRANGE_KEY, key);
-    } catch {
-      /* the list still arranges; only the memory of it is lost */
-    }
+    rememberArrange(key);
   }, []);
 
   const toggleWord = useCallback(
@@ -1013,13 +904,7 @@ export default function App() {
       setWords((was) => {
         const had = was[landing];
         const next = had.includes(key) ? had.filter((w) => w !== key) : [...had, key];
-        // Kept even if storage refuses, same as the arrangement: the
-        // filter still applies, it just will not outlive this session.
-        try {
-          window.localStorage.setItem(filterKey(landing), JSON.stringify(next));
-        } catch {
-          /* the list still filters; only the memory of it is lost */
-        }
+        rememberWords(landing, next);
         return { ...was, [landing]: next };
       }),
     [landing],
@@ -1483,6 +1368,19 @@ export default function App() {
         onClose={onCloseSession}
         pinFailed={pinFailed}
         closeRefused={closeRefused}
+        // **The same arrangement the landing uses, because there is
+        // one `rows` poll and the node is what orders it** (工作区批⑩).
+        // A column with a sort of its own would be this layer
+        // re-deriving a judgment the backend already made.
+        arrange={{
+          label: gui.arrange,
+          options: ARRANGE,
+          chosen: arrangeBy,
+          onChoose: chooseArrange,
+        }}
+        // 「+」 in that column: the wizard, on this workspace's machine
+        // and in its directory (工作区批⑩).
+        onNewSession={openNewSession}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
       />
@@ -1537,6 +1435,7 @@ export default function App() {
         open={sheet === "new"}
         onOpenChange={(o) => setSheet(o ? "new" : null)}
         machine={newSessionOn}
+        dir={newSessionAt}
         // The freshly-opened session is what the person came to see —
         // on the sessions landing, on its row, whichever pane the
         // wizard was opened from (the machine card opens it too, and

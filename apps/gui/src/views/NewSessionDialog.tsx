@@ -112,6 +112,7 @@ export function NewSessionDialog({
   onOpenChange,
   onOpened,
   machine: picked = "",
+  dir: at = "",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -121,6 +122,15 @@ export function NewSessionDialog({
       开会话 names the card's machine (2026-09-06). Empty is the "+"
       menu's opening and means this machine, as it always has. */
   machine?: string;
+  /** 目录, answered before the dialog opens — the workspace column's
+      「+」 names that project's directory (工作区批⑩). Empty is every
+      other door, and means that machine's home.
+   *
+   * **Answered, not decided**: it lands in the same box a person types
+   * into, so the shortcut can be typed over, replaced from 常去的地方,
+   * or walked away from in the picker. A prefill that could not be
+   * changed would be a fifth question asked somewhere else. */
+  dir?: string;
 }) {
   /** 在哪台 — which machine the session is born on. Every paired
       machine is offered; the row is drawn only when there is a choice
@@ -182,7 +192,10 @@ export function NewSessionDialog({
     // The card's pick, or this machine. Read at opening: the prop only
     // ever changes together with `open` (`App.openNewSession`).
     setMachine(picked);
-    setDir("~");
+    // The caller's directory, or that machine's home. Read at opening
+    // for `picked`'s reason: the prop only ever changes together with
+    // `open` (`App.openNewSession`).
+    setDir(at === "" ? "~" : at);
     setPicking(false);
     setPlaces([]);
     setTitle("");
@@ -229,7 +242,7 @@ export function NewSessionDialog({
     return () => {
       live = false;
     };
-  }, [open, picked]);
+  }, [open, picked, at]);
 
   // **The places follow the machine.** 常去的地方 are read from where
   // the session is about to be born, and a machine change resets the

@@ -4596,6 +4596,296 @@ try {
     await page.unroute("**/git_diff", wrapDiff);
   }
 
+  // ── 4n) 会话列全功能, and the two things that ask again ───────────
+  //
+  // 「工作区的 session list 是全功能的,和 session 页的 list 一致,可以
+  // 搜索、新建和 filter」— the user, 2026-09-15 (工作区批⑩), with the two
+  // 顺手的 from the same ruling: an agent in this project going quiet
+  // re-asks the marks, and a file that changed on the disk is re-read
+  // when somebody comes back to the window.
+  //
+  // Claims:
+  //   i. the column carries the bar itself — a search box, the filter,
+  //      the arrangement and a 「+」 — and the filter offers the state
+  //      words the node sent, not a list this layer wrote out;
+  //  ii. 「+」 opens the wizard with **this** workspace's machine and
+  //      directory already answered;
+  // iii. a session of this project going from 忙碌 to anything else
+  //      between two `rows` polls asks git once, and nothing asks on a
+  //      timer;
+  //  iv. and the open file is re-read on the way back into the window:
+  //      changed bytes replace the buffer, unchanged bytes touch
+  //      nothing, and a draft is never overwritten.
+  {
+    // A disk of this section's own, so it can change between two looks.
+    const disk = { text: "fn main() {}\n", digest: "a".repeat(64) };
+    let reads = 0;
+    // **The gutter is the witness for「nothing changed」.** Identical
+    // bytes put identical text in the box, so a buffer that was
+    // needlessly replaced looks exactly like one that was not — the
+    // assertion would be true whatever the code did. What a needless
+    // replacement *does* leave behind is a fresh `git_diff`, because
+    // the file it draws bars for has moved. So that is what is counted.
+    let diffs = 0;
+    const colDiff = (r) => {
+      diffs += 1;
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ hunks: [{ at: 1, lines: 1, was: ["what HEAD had"] }], more: false }),
+      });
+    };
+    const colRead = (r) => {
+      reads += 1;
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: disk.text.length,
+          at_ms: Date.now(),
+          text: disk.text,
+          cut: false,
+          binary: false,
+          digest: disk.digest,
+        }),
+      });
+    };
+    await page.route("**/read_text", colRead);
+    await page.route("**/git_diff", colDiff);
+    await press(rail("workspaces"));
+    await press("[data-ws-row]");
+    if ((await page.locator("[data-ws-sessions]").count()) === 0) {
+      await press("[data-ws-sessions-switch]");
+    }
+    const column = await until(5_000, async () =>
+      (await page.locator("[data-ws-sessions] [data-row]").count()) > 0,
+    );
+    if (!column) {
+      fail("probe dead: the workspace drew no session column (src/views/WorkspacePane.tsx)");
+    } else {
+      // i) the bar, and it is the same bar.
+      const bar = await page.evaluate(() => {
+        const col = document.querySelector("[data-ws-sessions]");
+        const has = (sel) => col.querySelectorAll(sel).length;
+        return {
+          bars: has("[data-pane-bar]"),
+          search: has("[data-pane-search]"),
+          filter: has("[data-pane-filter]"),
+          plus: has("[data-ws-new-session]"),
+          // The bar must not scroll away with the rows under it.
+          scroller: has("[data-ws-sessions-list]"),
+        };
+      });
+      console.log(`ws bar: ${JSON.stringify(bar)}`);
+      if (bar.bars !== 1 || bar.search !== 1 || bar.filter !== 1 || bar.plus !== 1) {
+        fail(
+          `the workspace's session column drew ${JSON.stringify(bar)} — 「全功能…可以搜索、新建和 ` +
+            "filter」 is one bar with all three on it (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (bar.scroller !== 1) {
+        fail(
+          "the rows have no scroller of their own, so the bar scrolls away with them — a search box " +
+            "you have to scroll back up to is one people stop using (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // …and what it offers: the node's own state keys, plus the five
+      // arrangements. **Read out of the menu**, because a filter that
+      // enumerated the six words here would be this layer deciding what
+      // states exist (docs/UX.md 状态呈现).
+      await press("[data-ws-sessions] [data-pane-filter]");
+      const menu = await until(3_000, async () =>
+        (await page.locator("[data-filter-option]").count()) > 0,
+      );
+      const offers = menu
+        ? await page.evaluate(() => ({
+            words: [...document.querySelectorAll("[data-filter-option]")].map((e) =>
+              e.getAttribute("data-filter-option"),
+            ),
+            arrange: [...document.querySelectorAll("[data-arrange-option]")].map((e) =>
+              e.getAttribute("data-arrange-option"),
+            ),
+          }))
+        : { words: [], arrange: [] };
+      console.log(`ws filter: ${JSON.stringify(offers)}`);
+      // The two rows in this column are 空闲 and 忙碌, so those are the
+      // two keys — and nothing about a machine or a directory, which is
+      // what this column already is.
+      const wantWords = ["state:idle", "state:busy"];
+      if (JSON.stringify([...offers.words].sort()) !== JSON.stringify([...wantWords].sort())) {
+        fail(
+          `the column's filter offers ${JSON.stringify(offers.words)} against ` +
+            `${JSON.stringify(wantWords)} — the state words the node sent, and only those: a machine ` +
+            "or a directory is what this column already is (src/lib/session-filter.ts)",
+        );
+      }
+      if (offers.arrange.length !== 5) {
+        fail(
+          `the column offers ${offers.arrange.length} arrangement(s) — 排布 is the node's five, the ` +
+            "same five the sessions landing offers (src/lib/session-filter.ts)",
+        );
+      }
+      await page.keyboard.press("Escape");
+      await wait(200);
+
+      // ii) 「+」 opens the wizard on this machine, in this directory.
+      await press("[data-ws-sessions] [data-ws-new-session]");
+      const wizard = await until(3_000, async () =>
+        (await page.locator("[data-new-session-dialog]").count()) === 1,
+      );
+      if (!wizard) {
+        fail(
+          "「+」 in the session column opened nothing — it is 「加入我的工作区」, and the wizard is " +
+            "where the four answers live (src/views/WorkspacePane.tsx)",
+        );
+      } else {
+        const filled = await page.evaluate(() => ({
+          dir: document.querySelector("[data-new-session-dir]")?.value ?? null,
+          on:
+            [...document.querySelectorAll("[data-new-session-machine]")]
+              .filter((e) => e.getAttribute("data-on") === "true")
+              .map((e) => e.getAttribute("data-new-session-machine")),
+        }));
+        console.log(`ws + : ${JSON.stringify(filled)}`);
+        if (filled.dir !== pin.path) {
+          fail(
+            `the wizard opened on ${JSON.stringify(filled.dir)} rather than ${JSON.stringify(pin.path)} ` +
+              "— 「机器与目录预填成这个工作区」 is the whole of what that 「+」 is for " +
+              "(src/views/NewSessionDialog.tsx)",
+          );
+        }
+        if (JSON.stringify(filled.on) !== JSON.stringify([pin.name])) {
+          fail(
+            `the wizard opened with ${JSON.stringify(filled.on)} picked — a directory on peer's disk ` +
+              "under this machine's name is a session that starts somewhere else " +
+              "(src/views/WorkspacePane.tsx)",
+          );
+        }
+        await page.keyboard.press("Escape");
+        await wait(250);
+      }
+
+      // iii) an agent going quiet re-asks the marks.
+      //
+      // **Two readings around one change**, because the claim is about a
+      // transition and not about a poll: the same wait with nothing
+      // moving must ask nothing, or what is being measured is a timer.
+      const before = gitAsked;
+      await wait(2_500);
+      const idle = gitAsked;
+      // `shell/ws-3` is this project's 忙碌 row. Stopping is stopping,
+      // whichever of the other five words it lands on.
+      rows[3].word = "done";
+      await wait(2_500);
+      const after = gitAsked;
+      rows[3].word = "busy";
+      console.log(
+        `ws busy→done: ${idle - before} ask(s) while nothing moved, ${after - idle} when it stopped`,
+      );
+      if (idle !== before) {
+        fail(
+          `the marks were asked ${idle - before} time(s) with nothing moving — that is a timer, and ` +
+            "工作区批⑩ says 「不上定时器」 (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (after - idle !== 1) {
+        fail(
+          `a session of this project going quiet asked git ${after - idle} time(s) — 「从 busy 变到别的` +
+            "状态时,git 标记重问一次」, because khor 里最常改文件的是 agent " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+    }
+
+    // iv) the open file, on the way back into the window.
+    //
+    // **The strip is emptied first**, for 4m's reason: a tab already
+    // open on this file is a `FileView` that is never remounted, so it
+    // would still be holding the previous section's text and the first
+    // 「nothing changed」 reading would be against the wrong bytes.
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(120);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(120);
+      }
+    }
+    await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+    const editing = await until(5_000, async () =>
+      (await page.locator("[data-edit]").count()) === 1,
+    );
+    if (!editing) {
+      fail("probe dead: no file open to re-read (src/views/FileView.tsx)");
+    } else {
+      const shown = () => page.locator("[data-edit]").inputValue();
+      const back = async () => {
+        await hide(true);
+        await wait(80);
+        await hide(false);
+        await wait(400);
+      };
+      // Unchanged bytes: khor has to ask to find that out — there is no
+      // way to learn a digest without one — but nothing on the glass
+      // may move.
+      const quietReads = reads;
+      const quietDiffs = diffs;
+      await back();
+      console.log(
+        `ws re-read · nothing changed: ${reads - quietReads} ask(s), ` +
+          `${diffs - quietDiffs} fresh gutter(s)`,
+      );
+      if (reads - quietReads !== 1) {
+        fail(
+          `coming back to the window read the file ${reads - quietReads} time(s) — once, on the same ` +
+            "trigger the marks use, and never on a timer (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (diffs - quietDiffs !== 0) {
+        fail(
+          `a file nobody changed was taken again anyway (${diffs - quietDiffs} fresh gutter(s)) — the ` +
+            "same digest is not news, and re-reading on it is a repaint plus a diff on somebody " +
+            "else's machine for nothing (src/views/FileView.tsx)",
+        );
+      }
+      // Changed bytes: the buffer takes them, silently.
+      disk.text = "fn main() { /* somebody else */ }\n";
+      disk.digest = "b".repeat(64);
+      await back();
+      const now = await shown();
+      console.log(`ws re-read · changed: ${JSON.stringify(now)}, ${diffs - quietDiffs} fresh gutter(s)`);
+      if (now !== disk.text) {
+        fail(
+          "the file changed on the disk and the window still shows what it showed before — " +
+            "「打开的文件在盘上变了,没草稿就直接换新内容」 (src/views/FileView.tsx)",
+        );
+      }
+      // …and a draft is never overwritten: that clash belongs to the
+      // save, which has three ways out of it.
+      await page.locator("[data-edit]").click();
+      await page.keyboard.type("Z");
+      await wait(250);
+      const typed = await shown();
+      disk.text = "fn main() { /* and again */ }\n";
+      disk.digest = "c".repeat(64);
+      await back();
+      const kept = await shown();
+      console.log(`ws re-read · with a draft: ${kept === typed ? "kept" : JSON.stringify(kept)}`);
+      if (kept !== typed) {
+        fail(
+          "somebody's unsaved typing was replaced by what is on the disk — 「有草稿维持『存的时候报" +
+            "冲突』」, and khor does not pick between two people's work (src/views/FileView.tsx)",
+        );
+      }
+      // Put the draft back where it was, so the sections after this one
+      // do not inherit a tab that asks before it closes.
+      await page.keyboard.press("Backspace");
+      await wait(250);
+    }
+    await page.unroute("**/read_text", colRead);
+    await page.unroute("**/git_diff", colDiff);
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**

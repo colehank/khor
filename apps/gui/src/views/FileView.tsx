@@ -136,6 +136,7 @@ export function FileView({
   draft,
   onDraft,
   saveAt = 0,
+  readAt = 0,
 }: {
   machine: string;
   /** Absolute, on that machine. */
@@ -174,6 +175,18 @@ export function FileView({
       second road into the save is a second place the digest contract
       can be got wrong (`save`). */
   saveAt?: number;
+  /** Bumped by whoever holds this pane when it is worth asking the far
+      machine what this file says **now** — 「打开的文件在盘上变了,没
+      草稿就直接换新内容」(the user, 2026-09-15, 工作区批⑩).
+   *
+   * **The same beat the marks ride, and for the same reason**: coming
+   * back to the window is the moment a stale screen starts to mislead,
+   * and khor里最常改文件的是 agent. A timer was the other road and it is
+   * the worse one — a read of somebody else's disk every few seconds for
+   * an answer that is almost always the one already on screen.
+   *
+   * A counter, because two returns are two questions. */
+  readAt?: number;
 }) {
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
@@ -523,6 +536,49 @@ export function FileView({
     save();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveAt]);
+
+  // …and the same for the ask to re-read (工作区批⑩). Nothing on the
+  // first render for the same reason: the value arrives with the mount,
+  // and the mount already read the file.
+  const readAsked = useRef(readAt);
+  useEffect(() => {
+    if (readAt === readAsked.current) return;
+    readAsked.current = readAt;
+    again();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readAt]);
+
+  /** Ask the far machine what this file says now, and take the answer
+      only where taking it costs nobody anything (工作区批⑩).
+   *
+   * **A draft stops it dead, before the round trip is even read.**
+   * 「有草稿维持『存的时候报冲突』」— the buffer is somebody's work and
+   * the disk is somebody else's; khor does not pick between them, and
+   * the place that already asks is the save, which has three ways out
+   * (`theirs` / `merge` / `mine`). Touching `file` here would be worse
+   * than useless: `file.text` is the **base** the merge is computed
+   * against, so moving it under a draft would make that merge
+   * three-way against a base nobody ever had.
+   *
+   * **The same digest means nothing happened**, and saying so would be
+   * a repaint of an unchanged file plus a fresh diff request.
+   *
+   * A failure is silent: a machine that could not be reached on the way
+   * back into the window is not news about this file, and the next save
+   * says its own piece in its own words. */
+  const again = () => {
+    if (kindOf(path) !== "text" || file === null || dirty) return;
+    fetchFileText(machine, path)
+      .then((f) => {
+        if (f.digest === file.digest) return;
+        setFile(f);
+        setEdit({ text: f.text, was: f.digest });
+        // The gutter is about HEAD and the file just moved underneath
+        // it, so it is wrong until it is asked again.
+        setDiffAt((n) => n + 1);
+      })
+      .catch(() => {});
+  };
 
   const save = () => {
     if (edit === null || !canEdit || saving) return;

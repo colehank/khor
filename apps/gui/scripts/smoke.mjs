@@ -137,8 +137,11 @@
 //      column holding the one started under that directory and not the
 //      one started beside it; a 400-character line in a real file
 //      folding into its column with the numbers still on their lines
-//      (工作区批⑨); and 移出 replicating back while the directory
-//      stays;
+//      (工作区批⑨); that column's own 「+」 opening the wizard already
+//      answered with alpha and alpha's directory, and a session
+//      finishing in that project re-asking git so the file it wrote
+//      wears its letter with nobody touching the window (工作区批⑩);
+//      and 移出 replicating back while the directory stays;
 //  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
@@ -6861,6 +6864,7 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   const wsFile = join(wsDir, "notes.md");
   const wsOutside = join(realpathSync(SCRATCH), "alpha-elsewhere");
   const wsLong = join(wsDir, "long.txt");
+  const wsKeep = join(wsDir, "keep.txt");
   mkdirSync(join(wsDir, "sub"), { recursive: true });
   mkdirSync(wsOutside, { recursive: true });
   writeFileSync(wsFile, "# a note\n");
@@ -6870,7 +6874,11 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //      same way, and only the plain one is reachable without the
   //      Shiki chunk landing first.
   writeFileSync(wsLong, `short\n${"x".repeat(400)}\nafter\n`);
-
+  //      Something for git to have an opinion about, once 31g gives it
+  //      one. It is here rather than made later because the tree lists
+  //      a directory when it opens it, and a file that arrives after
+  //      that is a file with no row to wear a letter.
+  writeFileSync(wsKeep, "one\n");
   //      **Deliberately not a checkout**: the git corner has to come out
   //      empty, and a directory with a `.git` in it would fill it.
   //      Dated old so 31b can tell 「alpha answered a fresh mtime」 from
@@ -7108,6 +7116,172 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     //      assertion that cannot fail is not one. It comes back when
     //      something writes a via.
     //
+    // 31h) the column's own「+」opens the wizard already answered
+    //      (工作区批⑩: 「这就是最早说的『加入我的工作区』」). Both
+    //      halves, because either one alone starts the session
+    //      somewhere nobody asked for: alpha's name and alpha's
+    //      directory.
+    await until("the column's own bar", 10_000, async () =>
+      (await page.locator("[data-ws-sessions] [data-ws-new-session]").count()) === 1,
+    );
+    await page.locator("[data-ws-sessions] [data-ws-new-session]").click();
+    await until("the wizard", 10_000, async () =>
+      (await page.locator("[data-new-session-dialog]").count()) === 1,
+    );
+    //      **And its machine row, which arrives a round trip later.**
+    //      The wizard reads the device table on every opening (it syncs,
+    //      so a cached list is a stale answer to the one question it
+    //      cannot guess), and it draws no machines at all until that
+    //      lands. Read at the moment the dialog appears, 「which machine
+    //      is picked」 came back as 「none of them」 — a red about this
+    //      script's timing wearing the words of a red about the product.
+    await until("the wizard's machine row", 20_000, async () =>
+      (await page.locator("[data-new-session-machine]").count()) > 1,
+    );
+    const prefilled = await page.evaluate(() => ({
+      dir: document.querySelector("[data-new-session-dir]")?.value ?? null,
+      on: [...document.querySelectorAll("[data-new-session-machine]")]
+        .filter((e) => e.getAttribute("data-on") === "true")
+        .map((e) => e.getAttribute("data-new-session-machine")),
+    }));
+    console.log(`workspaces · +: ${JSON.stringify(prefilled)}`);
+    if (prefilled.dir !== wsDir) {
+      throw new Error(`the wizard opened on ${prefilled.dir} rather than ${wsDir}`);
+    }
+    if (JSON.stringify(prefilled.on) !== JSON.stringify(["alpha"])) {
+      throw new Error(
+        `the wizard opened with ${JSON.stringify(prefilled.on)} picked — this workspace is alpha's, ` +
+          "and a directory on alpha's disk under beta's name is a session that starts elsewhere",
+      );
+    }
+    await page.keyboard.press("Escape");
+    await until("the wizard closed", 10_000, async () =>
+      (await page.locator("[data-new-session-dialog]").count()) === 0,
+    );
+
+    // 31i) an agent in this project going quiet re-asks git (工作区批⑩:
+    //      「khor 里最常改文件的是 agent」). **No timer and no press**:
+    //      the only thing that happens between the two readings below is
+    //      a session finishing.
+    //
+    //      The directory becomes a checkout only now — 31a asserted the
+    //      opposite corner, and a repository from the start would have
+    //      filled it.
+    const git = (...args) =>
+      execFileSync("git", ["-C", wsDir, ...args], { encoding: "utf8", timeout: 30_000 });
+    git("init", "-q");
+    git("-c", "user.email=smoke@khor.invalid", "-c", "user.name=smoke", "commit", "-q", "--allow-empty", "-m", "start");
+    git("add", "keep.txt");
+    git("-c", "user.email=smoke@khor.invalid", "-c", "user.name=smoke", "commit", "-q", "-m", "keep");
+    //      One kick, to get a reading khor can be wrong about later.
+    //      **What it waits for is a letter, not the absence of one**:
+    //      `long.txt` was never added, so a readable checkout puts a U
+    //      on it — and waiting for 「no letters」 instead would have been
+    //      true at the first instant, before the ask even left, which is
+    //      an arm that passes on a khor that cannot read git at all.
+    await setHiddenWs(true);
+    await setHiddenWs(false);
+    await until("the marks back once the directory is a checkout", 30_000, async () =>
+      (await page.locator('[data-file="long.txt"] [data-git-mark]').count()) === 1,
+    );
+    //      …and `keep.txt` is committed and untouched, so it wears
+    //      nothing. That is the fact the session below is about to
+    //      change.
+    if ((await page.locator('[data-file="keep.txt"] [data-git-mark]').count()) !== 0) {
+      throw new Error("keep.txt wears a letter before anything touched it — it was just committed clean");
+    }
+    //      **A session that really goes 忙碌, driven through the op the
+    //      hooks drive** (`khor state <word> --session`). The first
+    //      spelling here started `sh -c "sleep 3; …"` and waited for it
+    //      to finish; the column saw it go `["idle","done"]` and the
+    //      letter never came. That is not a bug: **a shell khor opens is
+    //      空闲 from birth** (`live::register_observed` writes Idle), so
+    //      there is no 忙碌 for it to leave, and the rule is about the
+    //      thing that does — 「khor 里最常改文件的是 agent」. An agent
+    //      says its words through the hook, and this says them the same
+    //      way.
+    const wsQuiet = execFileSync(
+      KHOR,
+      ["open", "-d", "--title", "ws-writes", "--", "sh", "-c", "sleep 600"],
+      { env: envA, cwd: wsDir, encoding: "utf8", timeout: 30_000 },
+    ).trim();
+    //      What the column said about it as it went, so a red names the
+    //      link that broke rather than the whole chain.
+    const wentBy = [];
+    const watch = async () => {
+      const word = await page
+        .locator(`[data-ws-sessions] [data-row="${wsQuiet}"]`)
+        .getAttribute("data-word")
+        .catch(() => null);
+      if (wentBy[wentBy.length - 1] !== word) wentBy.push(word);
+    };
+    try {
+      //      **The row first, then the word.** A detached host is still
+      //      standing up when `khor open` returns, and it seats itself
+      //      on the way (`live::reseat` — 「a prompt nobody has typed
+      //      into yet」 is 空闲), so a word reported into that gap is
+      //      written and then written over. An agent's first hook comes
+      //      after it is up; this waits for the same moment.
+      await until("the column listing it at all", 60_000, async () => {
+        await watch();
+        return wentBy[wentBy.length - 1] !== null;
+      });
+      cli(envA, "state", "busy", "--session", wsQuiet);
+      //      **A minute, because this face is beta's.** The row lives on
+      //      alpha and reaches this screen over the mesh, on the mesh's
+      //      own beat rather than the 2s one this page polls itself on.
+      await until("the column showing it busy", 60_000, async () => {
+        await watch();
+        return wentBy[wentBy.length - 1] === "busy";
+      }).catch((e) => {
+        throw new Error(
+          `${e.message} — the column saw it go ${JSON.stringify(wentBy)}, while alpha's own list says ` +
+            JSON.stringify(cli(envA, "sessions")),
+        );
+      });
+      //      Changed **while it was busy**, which is the situation: a
+      //      file on that machine moved under a khor that is not
+      //      watching the disk.
+      writeFileSync(wsKeep, "one\ntwo\n");
+      //      Nothing has asked git since, so nothing on screen knows.
+      if ((await page.locator('[data-file="keep.txt"] [data-git-mark]').count()) !== 0) {
+        throw new Error("keep.txt wore a letter before anything re-asked git — then this proves nothing");
+      }
+      cli(envA, "state", "idle", "--session", wsQuiet);
+      await until("the letter appearing with nobody touching the window", 90_000, async () => {
+        await watch();
+        return (await page.locator('[data-file="keep.txt"] [data-git-mark]').count()) === 1;
+      }).catch(async (e) => {
+        const all = await bridgeOp("sessions", { by: "recent" }).catch((x) => String(x));
+        const said = Array.isArray(all)
+          ? all
+              .filter((r) => r.title === "ws-writes")
+              .map((r) => `ws-writes word=${r.word} home=${r.home} place=${r.place}`)
+              .join("; ") || "the node does not list ws-writes"
+          : `the node would not say: ${all}`;
+        throw new Error(
+          `${e.message} — ${said}; the column saw it go ${JSON.stringify(wentBy)}; ` +
+            `git itself says ${JSON.stringify(cli(envA, "git", "status", "", wsDir))}`,
+        );
+      });
+    } finally {
+      try {
+        cli(envA, "close", wsQuiet);
+      } catch {
+        // It may already be over; closing a row that has ended is not a
+        // failure of this claim.
+      }
+    }
+    const letter = await page
+      .locator('[data-file="keep.txt"] [data-git-mark]')
+      .getAttribute("data-git-weight");
+    console.log(
+      `workspaces · an agent stopped: the column saw ${JSON.stringify(wentBy)}, keep.txt now wears ${letter}`,
+    );
+    if (letter !== "M") {
+      throw new Error(`keep.txt wears ${letter} after a file changed under a busy session — git calls that M`);
+    }
+
     //      Back to the landing, so 31f starts from the list rather than
     //      from wherever the last press left this pane.
     await openLanding("workspaces");
