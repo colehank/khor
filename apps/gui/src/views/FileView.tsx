@@ -135,6 +135,7 @@ export function FileView({
   onUndo,
   draft,
   onDraft,
+  saveAt = 0,
 }: {
   machine: string;
   /** Absolute, on that machine. */
@@ -166,6 +167,13 @@ export function FileView({
       history is a different thing with a disk behind it. */
   undo?: string;
   onUndo?: (text: string | null) => void;
+  /** Bumped by whoever holds this pane to ask for a save — the sheet
+      that catches a tab being closed over a draft (工作区批⑧).
+      **A counter and not a callback handed the other way**, because the
+      thing that has to happen is exactly what pressing 存 does, and a
+      second road into the save is a second place the digest contract
+      can be got wrong (`save`). */
+  saveAt?: number;
 }) {
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
@@ -185,19 +193,27 @@ export function FileView({
       is how a second save gets pinned to a digest that belongs to
       different bytes. `null` until the file arrives. */
   const [own, setOwn] = useState<Draft | null>(null);
-  // The draft the pane is holding wins over anything this mount read:
-  // coming back to a file must show what was typed, not what is on
-  // disk. `setEdit` writes both so the two never disagree.
-  const edit = draft ?? own;
+  /** The buffer: this mount's own once it has one, and the pane's draft
+      until then.
+      **That order, and it is the second spelling of it** (工作区批⑧).
+      It read `draft ?? own` while every `setEdit` also handed the new
+      value straight up to the pane in the same tick — so the two could
+      not disagree. Reporting the draft from an effect made them able
+      to: the pane's copy is now one render behind, and a buffer read
+      from behind is a buffer that never moves. A merge landed in `own`
+      and the screen went on showing the text from before it, for as
+      long as the file stayed open (`check-face` 4b-bis).
+
+      `own` is never staler than `draft` — `draft` is derived from it —
+      so preferring it is not a race won by luck. What the fallback is
+      still for is the beat after a remount, when this mount has read
+      nothing yet and the pane is holding what somebody typed. */
+  const edit = own ?? draft ?? null;
   const setEdit = useCallback(
     (next: Draft | null | ((was: Draft | null) => Draft | null)) => {
-      setOwn((was) => {
-        const now = typeof next === "function" ? next(draft ?? was) : next;
-        onDraft?.(now);
-        return now;
-      });
+      setOwn((was) => (typeof next === "function" ? next(was ?? draft ?? null) : next));
     },
-    [draft, onDraft],
+    [draft],
   );
   const [saving, setSaving] = useState(false);
   /** Bumped to read this file again without changing which file it is
@@ -348,6 +364,29 @@ export function FileView({
   const canEdit = (edit?.was ?? "") !== "";
   const dirty = file !== null && edit !== null && edit.text !== file.text;
 
+  // **「a draft」means「the buffer differs from the disk」, and it is
+  // reported from one place** (工作区批⑧). Until this batch every
+  // `setEdit` handed the buffer up, including the one that *loads* the
+  // file and the one that re-pins it after a save — so the pane counted
+  // a freshly opened file as unsaved, and a save could never take the
+  // count back down. Nobody noticed while the only reader was a line in
+  // a head saying 「N 个文件未存」; the tab's dot is a mark per file,
+  // and a dot that never goes out is the kind of wrong somebody stares
+  // at (「保存成功了,圆点消失」).
+  //
+  // Derived here rather than spelled at each writer because the two
+  // halves move on different beats: a keystroke replaces the buffer, a
+  // save replaces khor's reading of the file, and a rule written at
+  // five call sites is a rule that will disagree with itself.
+  //
+  // **Silent until the file has arrived.** On a remount the pane is
+  // already holding the draft and `file` is null for a beat; reporting
+  // then would throw away what somebody typed before the read lands.
+  useEffect(() => {
+    if (onDraft === undefined || file === null || edit === null) return;
+    onDraft(edit.text === file.text ? null : edit);
+  }, [edit, file, onDraft]);
+
   const lang = languageOfPath(path);
   // **Above the three early returns on purpose.** A hook after a
   // conditional `return` is a hook that runs on some renders and not
@@ -412,6 +451,18 @@ export function FileView({
     };
   }, [body, lang, dirty]);
 
+
+  // The ask from outside, and **nothing on the first render**: the
+  // value arrives with the mount, and a mount is not an ask. The ref
+  // moves with each real one, so bringing a tab to the front and asking
+  // it to save is two beats rather than a save on every remount.
+  const askedAt = useRef(saveAt);
+  useEffect(() => {
+    if (saveAt === askedAt.current) return;
+    askedAt.current = saveAt;
+    save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveAt]);
 
   const save = () => {
     if (edit === null || !canEdit || saving) return;

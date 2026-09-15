@@ -3073,6 +3073,363 @@ try {
     }
   }
 
+  // ── 4l) 中栏的标签页: one file, one tab ───────────────────────────
+  //
+  // 「做成和 vscode 一样的标签页。一个文件一个标签,与 session 页标签类似。
+  // 标签上显示文件名,下方显示其路径。标签页的最右侧,显示现有的文件、
+  // session 和 vscode 切换(vscode 换成 icon 显示)。」「正在修改的,和
+  // vscode 一致,标签上有一个圆点。保存成功了,圆点消失。」— the user,
+  // 2026-09-15 (工作区批⑧).
+  //
+  // Claims:
+  //   i. a tab per open file, the name on one line and **where it is**
+  //      on the other — four files called `mod.rs` are four tabs that
+  //      read the same without it;
+  //  ii. one click opens a **preview** and the next one replaces it
+  //      rather than joining it; a double click keeps both;
+  // iii. typing puts a dot on that tab and a save takes it off — this
+  //      is the one the old head could not do, because it counted
+  //      files in a corner instead of marking the file;
+  //  iv. closing a tab with something typed in it **asks**, and 别关
+  //      leaves the tab and the text exactly where they were;
+  //   v. the tab's menu closes it, closes the others, and copies the
+  //      path both ways;
+  //  vi. ⌘W closes the one in front;
+  // vii. the three switches sit at the far end of the strip, and the
+  //      head row that used to carry them is gone whole — no branch, no
+  //      count of unsaved files.
+  {
+    // This section's own reads and writes. 4b-bis left a merge fixture
+    // behind and took its `write_text` away with it (4j learned the
+    // first half the hard way), so a save here would reach the real
+    // bridge; both are taken off again at the end.
+    const tabRead = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 12,
+          at_ms: Date.now(),
+          text: "fn main() {}\n",
+          cut: false,
+          binary: false,
+          digest: "3".repeat(64),
+        }),
+      });
+    const wrote = [];
+    const tabWrite = (r) => {
+      wrote.push(r.request().postDataJSON() ?? {});
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ at_ms: Date.now(), digest: "4".repeat(64) }),
+      });
+    };
+    await page.route("**/read_text", tabRead);
+    await page.route("**/write_text", tabWrite);
+
+    /** Every tab the strip is drawing, as it is drawn. */
+    const strip = () =>
+      page.$$eval("[data-ws-tab-strip] [data-tab]", (els) =>
+        els.map((e) => ({
+          id: e.getAttribute("data-tab"),
+          on: e.getAttribute("data-on"),
+          name: e.querySelector("[data-tab-name]")?.textContent?.trim() ?? null,
+          sub: e.querySelector("[data-tab-sub]")?.textContent?.trim() ?? null,
+          slope: getComputedStyle(e.querySelector("[data-tab-name]")).fontStyle,
+          dot: e.querySelector("[data-tab-dot]") !== null,
+        })),
+      );
+    /** Put the strip back to nothing, whatever the walk left on it. */
+    const clearTabs = async () => {
+      for (let i = 0; i < 12; i += 1) {
+        const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+        if ((await one.count()) === 0) break;
+        await one.click();
+        await wait(120);
+        if ((await page.locator("[data-close-draft]").count()) === 1) {
+          await press("[data-close-drop]");
+          await wait(120);
+        }
+      }
+      return (await page.locator("[data-ws-tab-strip] [data-tab]").count()) === 0;
+    };
+
+    if (!(await atTree())) {
+      fail("probe dead: no tree to open files from (src/views/FileTree.tsx)");
+    } else if (!(await clearTabs())) {
+      fail("probe dead: the strip would not empty, so nothing below starts from a known place");
+    } else {
+      // The head, gone whole. A negative claim, so it is asserted with
+      // the strip on screen — otherwise it passes on a blank pane.
+      const head = await page.evaluate(() => ({
+        strip: document.querySelectorAll("[data-ws-tab-strip]").length,
+        drafts: document.querySelectorAll("[data-drafts]").length,
+        branch: document.querySelectorAll("[data-branch]").length,
+        tree: document.querySelectorAll("[data-ws-tab-strip] [data-on]").length,
+      }));
+      if (head.strip !== 1) {
+        fail(
+          "the middle column drew no tab strip — it is what the head row became, and the three " +
+            "switches ride on it (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (head.drafts !== 0 || head.branch !== 0) {
+        fail(
+          `the old head is still there (${head.drafts} draft count(s), ${head.branch} branch) — the name ` +
+            "and the branch are the workspace row's corners and 「N 个文件未存」 is each tab's own dot " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      // …and the three switches are at the end of the strip.
+      const tail = await page.$$eval("[data-ws-switches] > button", (els) =>
+        els.map((e) => e.getAttribute("aria-label")),
+      );
+      console.log(`tab strip tail: ${JSON.stringify(tail)}`);
+      if (tail.length !== 3) {
+        fail(
+          `the strip's far end carries ${tail.length} switch(es) — 「标签页的最右侧,显示现有的文件、` +
+            "session 和 vscode 切换」 is three (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if ((await page.locator("[data-code] svg").count()) !== 1) {
+        fail(
+          "the VS Code switch is still a word — 「vscode 换成 icon 显示」, and it sits beside two " +
+            "glyphs that switch a column (src/views/WorkspacePane.tsx)",
+        );
+      }
+
+      // i/ii) one click is a preview, the next one takes its seat.
+      //
+      // **Opened only if it is shut.** The tree remembers its open
+      // branches per workspace, and 4k above left this one open — a
+      // blind press would shut it, which is what it did the first time
+      // this section ran.
+      // **The one at the top level.** The fixture answers the same
+      // listing for every path, so an open `src` holds a `src` of its
+      // own — and a selector that did not say which level it meant
+      // pressed the outer one shut while reading the inner one's
+      // 「still closed」.
+      const srcRow = '[data-file-tree] [data-depth="0"] [data-dir="src"]';
+      if ((await page.locator(`${srcRow}[data-on="false"]`).count()) === 1) {
+        await press(srcRow);
+      }
+      if (
+        !(await until(5_000, async () =>
+          (await page.locator('[data-file-tree] [data-depth="1"]').count()) > 0,
+        ))
+      ) {
+        fail("probe dead: `src` would not open, so nothing below has a file to press");
+      }
+      await press('[data-file-tree] [data-depth="1"][data-file="one.rs"] > button');
+      await wait(250);
+      let open = await strip();
+      console.log(`tabs · one click: ${JSON.stringify(open)}`);
+      if (open.length !== 1) {
+        fail(`pressing one file opened ${open.length} tab(s) — 一个文件一个标签 (src/views/WorkspacePane.tsx)`);
+      } else {
+        if (open[0].name !== "one.rs" || open[0].sub !== "src/one.rs") {
+          fail(
+            `the tab says ${JSON.stringify([open[0].name, open[0].sub])} — 「标签上显示文件名,下方显示` +
+              "其路径」, and the path is what tells two files of the same name apart " +
+              "(src/views/WorkspacePane.tsx)",
+          );
+        }
+        if (open[0].id !== `${pin.name}:${pin.path}/src/one.rs`) {
+          fail(
+            `the tab's id is ${JSON.stringify(open[0].id)} — it is 机器:绝对路径, because a file is ` +
+              "the pair and not the path (src/views/WorkspacePane.tsx)",
+          );
+        }
+        if (open[0].slope !== "italic") {
+          fail(
+            "a tab opened by one click is not drawn as a preview — the next single click replaces it, " +
+              "and nothing on screen says so (src/browse/TabStrip.tsx)",
+          );
+        }
+      }
+      await press('[data-file-tree] [data-depth="1"][data-file="notes.md"] > button');
+      await wait(250);
+      open = await strip();
+      console.log(`tabs · the next click: ${JSON.stringify(open.map((t) => t.name))}`);
+      if (open.length !== 1 || open[0].name !== "notes.md") {
+        fail(
+          `a second single click left ${JSON.stringify(open.map((t) => t.name))} — the preview is the ` +
+            "seat the next glance takes, or a tree walk ends in twenty tabs nobody opened " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      // iii) a double click pins, and **a pinned tab is not the seat the
+      //      next glance takes** — which is the half that makes two tabs
+      //      possible at all. The double click itself still leaves one:
+      //      its first click takes the preview seat and its second pins
+      //      what is sitting in it, exactly as VS Code does.
+      //
+      // `.first()`: a file row's own name is its first button and
+      // 拉过来 is its second (`FileTree`), and only the name opens it.
+      await page
+        .locator('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button')
+        .first()
+        .dblclick();
+      await wait(250);
+      open = await strip();
+      console.log(`tabs · double click: ${JSON.stringify(open.map((t) => [t.name, t.slope]))}`);
+      if (open.length !== 1 || open[0].name !== "one.rs") {
+        fail(
+          `a double click left ${JSON.stringify(open.map((t) => t.name))} — its first click takes the ` +
+            "preview seat and its second pins what is in it (src/views/WorkspacePane.tsx)",
+        );
+      } else if (open[0].slope === "italic") {
+        fail(
+          "the double-clicked tab is still drawn as a preview — 「双击…就钉住」 " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      await press('[data-file-tree] [data-depth="1"][data-file="notes.md"] > button');
+      await wait(250);
+      open = await strip();
+      console.log(`tabs · beside a pinned one: ${JSON.stringify(open.map((t) => [t.name, t.slope]))}`);
+      if (open.length !== 2) {
+        fail(
+          `a single click beside a pinned tab left ${open.length} tab(s) — a pinned tab is not a seat ` +
+            "the next glance may take, or nothing could ever be open twice " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+
+      // iv) the dot: typing puts it there, a save takes it off.
+      const box = await page.$("[data-edit]");
+      if (box === null) {
+        fail("probe void: the open file grew no editor, so nothing here can be typed into");
+      } else {
+        await box.click();
+        await page.keyboard.type("X");
+        await wait(250);
+        open = await strip();
+        const dots = open.filter((t) => t.dot).map((t) => t.name);
+        console.log(`tabs · after typing: dots on ${JSON.stringify(dots)}`);
+        if (dots.length !== 1 || dots[0] !== "notes.md") {
+          fail(
+            `typing put a dot on ${JSON.stringify(dots)} — 「正在修改的…标签上有一个圆点」, on the tab ` +
+              "being typed in and on no other (src/browse/TabStrip.tsx)",
+          );
+        }
+        const before = wrote.length;
+        await press("[data-save]");
+        const gone = await until(5_000, async () =>
+          (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0,
+        );
+        console.log(`tabs · after saving: ${wrote.length - before} write(s), dot ${gone ? "gone" : "still there"}`);
+        if (wrote.length === before) {
+          fail("probe dead: 存 wrote nothing, so the dot going out would prove nothing");
+        }
+        if (!gone) {
+          fail(
+            "the dot stayed after a save landed — 「保存成功了,圆点消失」, and a mark that never goes " +
+              "out is one people stop reading (src/views/FileView.tsx)",
+          );
+        }
+      }
+
+      // v) closing over a draft asks, and 别关 changes nothing.
+      await page.locator("[data-edit]").click();
+      await page.keyboard.type("Y");
+      await wait(250);
+      const front = (await strip()).find((t) => t.on === "true");
+      await press(`[data-tab-close="${front.id}"]`);
+      const asked = await until(3_000, async () =>
+        (await page.locator("[data-close-draft]").count()) === 1,
+      );
+      if (!asked) {
+        fail(
+          "closing a tab with something typed in it threw the typing away without asking — that is " +
+            "the one press in this pane nobody can undo (src/views/WorkspacePane.tsx)",
+        );
+      } else {
+        const says = (await page.locator("[data-close-draft-says]").innerText()).trim();
+        console.log(`tabs · asked: ${JSON.stringify(says)}`);
+        if (!says.includes("notes.md")) {
+          fail(
+            `the sheet says 「${says}」 without naming the file — a person with seven tabs open has ` +
+              "been told the least useful half (src/components/CloseDraftDialog.tsx)",
+          );
+        }
+        await press("[data-close-keep]");
+        await wait(200);
+        const kept = await strip();
+        if (kept.length !== 2 || !kept.some((t) => t.dot)) {
+          fail(
+            `别关 left ${JSON.stringify(kept.map((t) => [t.name, t.dot]))} — it is the answer that ` +
+              "changes nothing (src/views/WorkspacePane.tsx)",
+          );
+        }
+        // …and 不存,关掉 really drops it.
+        await press(`[data-tab-close="${front.id}"]`);
+        await until(3_000, async () => (await page.locator("[data-close-draft]").count()) === 1);
+        await press("[data-close-drop]");
+        await wait(250);
+        const dropped = await strip();
+        console.log(`tabs · dropped: ${JSON.stringify(dropped.map((t) => t.name))}`);
+        if (dropped.length !== 1 || dropped[0].name !== "one.rs" || dropped.some((t) => t.dot)) {
+          fail(
+            `不存,关掉 left ${JSON.stringify(dropped.map((t) => [t.name, t.dot]))} (src/views/WorkspacePane.tsx)`,
+          );
+        }
+      }
+
+      // v) the menu, on the tab's own opener. A second tab first, so
+      //    关闭其他 has something to close.
+      await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
+      await wait(200);
+      await wait(200);
+      const two = await strip();
+      if (two.length < 2) {
+        fail(`probe void: ${two.length} tab(s) on the strip, and 关闭其他 needs at least two`);
+      } else {
+        await page.locator(`[data-tab-open="${two[1].id}"]`).click({ button: "right" });
+        const menu = await until(3_000, async () =>
+          (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0,
+        );
+        const items = menu
+          ? await page.$$eval("[data-row-menu] [data-menu-item]", (els) =>
+              els.map((e) => e.getAttribute("data-menu-item")),
+            )
+          : [];
+        console.log(`tabs · menu: ${JSON.stringify(items)}`);
+        const want = ["close", "close-others", "copy-path", "copy-rel"];
+        if (JSON.stringify(items) !== JSON.stringify(want)) {
+          fail(
+            `the tab's menu holds ${JSON.stringify(items)} against ${JSON.stringify(want)} ` +
+              "(src/views/WorkspacePane.tsx)",
+          );
+        } else {
+          await press('[data-row-menu] [data-menu-item="close-others"]');
+          await wait(250);
+          const left = await strip();
+          console.log(`tabs · 关闭其他 left ${JSON.stringify(left.map((t) => t.name))}`);
+          if (left.length !== 1 || left[0].id !== two[1].id) {
+            fail(
+              `关闭其他 left ${JSON.stringify(left.map((t) => t.name))} — the one it was asked from is ` +
+                "the one that stays (src/views/WorkspacePane.tsx)",
+            );
+          }
+        }
+      }
+
+      // vi) ⌘W closes the one in front.
+      await page.keyboard.press("Meta+w");
+      await wait(250);
+      const after = await strip();
+      console.log(`tabs · after ⌘W: ${after.length} left`);
+      if (after.length !== 0) {
+        fail(
+          `⌘W left ${after.length} tab(s) — it closes the tab in front, which is the one shortcut ` +
+            "this strip has (src/views/WorkspacePane.tsx)",
+        );
+      }
+    }
+    await page.unroute("**/read_text", tabRead);
+    await page.unroute("**/write_text", tabWrite);
+  }
+
   // ── 4f) the workspace row's four corners ──────────────────────────
   //
   // **The list is a table now** (工作区批①, user ruling): a workspace is
@@ -4054,14 +4411,23 @@ try {
   // acceptance of Microsoft's licence (「第一个,第一次是允许的.联网也要
   // 说一下」— the user, 2026-09-10).
   await atTree();
+  // **Its name, not its text** (工作区批⑧): it is a glyph now
+  // (「vscode 换成 icon 显示」), so what a person is told is the label a
+  // screen reader reads and a hover shows — and reading `textContent`
+  // here would quietly measure an empty string forever.
   const withCode = await page.evaluate(() => {
     const b = document.querySelector("[data-code]");
-    return b ? { on: b.dataset.code, word: b.textContent.trim() } : null;
+    return b ? { on: b.dataset.code, word: b.getAttribute("aria-label") } : null;
   });
   if (withCode === null) {
     fail(
-      "a machine that answered `code --version` drew no editor switch — the workspace head is where " +
-        "it belongs (src/views/WorkspacePane.tsx)",
+      "a machine that answered `code --version` drew no editor switch — the tab strip's far end is " +
+        "where it belongs (src/views/WorkspacePane.tsx)",
+    );
+  } else if (!withCode.word) {
+    fail(
+      "the editor switch is a glyph with no name — an icon a person cannot hear is a control only " +
+        "sighted pointers have (src/views/WorkspacePane.tsx)",
     );
   } else {
     await press("[data-code]");

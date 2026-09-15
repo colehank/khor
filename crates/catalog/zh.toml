@@ -2202,6 +2202,26 @@ file-remove-gone = "「{0}」直接删掉,找不回来;目录连里面的一起�
 # ticked once about something else (`views/FilesPane`), so the far
 # machines ask every time and this word is simply not drawn there.
 file-remove-never-ask = "以后不再问"
+# 中栏的标签页 (工作区批⑧). 「做成和 vscode 一样的标签页。一个文件一个
+# 标签…标签上显示文件名,下方显示其路径」— the user, 2026-09-15.
+#
+# 关一个有草稿的标签要问一句。**三个出口,三句话**,不是一句加两个词:
+# 存下去、丢掉、留在原地是三件不同的事,而中间那件不可撤销。句子里带文件
+# 名,因为一个人可能开着七个标签,「还没存」说的是哪一个是全部的问题。
+tab-close-draft = "「{0}」还没存"
+tab-close-save = "存了再关"
+tab-close-drop = "不存,关掉"
+# 「别关」而不是「取消」:这三个按钮回答的是「要不要关」,而不是
+# 「刚才那一步作不作数」——取消是后者的词。
+tab-close-keep = "别关"
+# 标签右键。**「关闭」借的是 `close`**(语料库一句一键):关一个标签和关
+# 一个会话是同一个动词,写第二个键就得写第二句话。
+tab-close-others = "关闭其他"
+# 两条路径,两个键:一个是那台机器上的绝对路径(贴给别人、贴给命令行),
+# 一个是相对工作区根的(贴进这个项目自己的文档里)。哪一个都不能替另一个,
+# 所以不做成一个带开关的动作。
+tab-copy-path = "复制路径"
+tab-copy-rel = "复制相对路径"
 # The two switches in a workspace's head. **Aria names, not labels** —
 # they are icons on screen (docs/UX.md: no pane wears its name where you
 # can see it), and a screen reader still has to be told which end each
@@ -2269,11 +2289,9 @@ git-next = "下一处改动"
 # something is still only in this window, not that they changed it —
 # they know they changed it, they were the one typing.
 file-unsaved = "未存"
-# How many files in this workspace have something typed in them and
-# not saved. **A count of files, not a state of the one in front of
-# you** — that one says 未存 for itself; this is the half that would
-# otherwise be invisible, a draft two directories away.
-drafts-waiting = "{0} 个文件未存"
+# **`drafts-waiting` 撤掉了,没有替代键**(工作区批⑧,2026-09-15):
+# 「N 个文件未存」原来在工作区页的头上,而那一整行随标签页一起删了——
+# 「有几个文件没存」现在是每个标签自己戴的那个圆点,一个文件一个,指得出来。
 file-save = "存"
 # Said for a moment after a save lands, then it goes. **Not a
 # permanent「已保存」**: a resting file needs no word, and a label that

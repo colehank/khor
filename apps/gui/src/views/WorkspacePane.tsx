@@ -13,7 +13,7 @@
 // whole landing of their own on the rail; the tree and the file have no
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   onWebFace,
@@ -24,14 +24,17 @@ import {
   type GitStatus,
   type SessionRow,
 } from "@/api";
-import { IconFiles, IconSessions } from "@/components/icons";
+import { CloseDraftDialog } from "@/components/CloseDraftDialog";
+import { IconCode, IconFile, IconFiles, IconSessions } from "@/components/icons";
 import { PathCrumbs } from "@/components/PathCrumbs";
+import { type RowAction } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
-import { cli, gui } from "@/gen/catalog";
+import { TabStrip, type TabFace } from "@/browse/TabStrip";
+import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
-import { ago, basename } from "@/words";
+import { basename } from "@/words";
 import { BrowserPane } from "@/views/BrowserPane";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionsList } from "@/views/SessionsList";
@@ -103,7 +106,39 @@ export function WorkspacePane({
   // Where the tree is standing. Starts at the workspace and walks down;
   // `root` changing is a different workspace, not a step.
   const [at, setAt] = useState(root);
-  const [file, setFile] = useState<string | null>(null);
+  /** Every file open in the middle column, in the order they were
+      opened, by absolute path. **Remembered per workspace in this
+      face's own storage** (工作区批⑧) — a set of open tabs is a habit
+      about one screen, the same class of thing as a column's width, and
+      it belongs nowhere near the replicated documents.
+
+      The tab's id on the strip is `机器:绝对路径`; what is kept here is
+      the path alone, because the machine is this pane's and a stored id
+      that disagreed with it would be a tab pointing at another disk. */
+  const [tabs, setTabs] = useState<string[]>(() => storedTabs(machine, root));
+  const [file, setFile] = useState<string | null>(() => tabs[0] ?? null);
+  /** Which tab is the **preview**: opened by one click, and replaced by
+      the next one rather than joined by it (VS Code's arrangement, and
+      the user asked for VS Code's). `null` when every open tab is
+      pinned. A double click, or typing in it, pins it. */
+  const [preview, setPreview] = useState<string | null>(null);
+  /** Which tab is waiting on 存了再关 / 不存,关掉 / 别关, by path. */
+  const [closing, setClosing] = useState<string | null>(null);
+  /** A tab whose 存了再关 was pressed and whose file is not the one in
+      front yet. **The save has to be made by the view that holds the
+      buffer** — it is pinned to a digest that view is holding, and a
+      second writer with its own idea of that digest is the clash the
+      whole save contract exists to avoid — so the tab is brought to the
+      front first and asked to save on the beat after. */
+  const [wantSave, setWantSave] = useState<string | null>(null);
+  /** Bumped to ask the open file's view to save. A counter for the
+      reason `gitAt` is one: two asks are two saves. */
+  const [saveAt, setSaveAt] = useState(0);
+  /** A tab that will close as soon as it has nothing waiting in it.
+      **Watched rather than closed on the save's promise**: a save that
+      is refused must leave the tab open with the refusal on it, and the
+      only thing that knows a save landed is the draft going away. */
+  const [waiting, setWaiting] = useState<string | null>(null);
   /** Every file in this workspace with something typed in it and not
       saved, by absolute path.
       **Held here because the view is remounted on every file.** Until
@@ -240,20 +275,21 @@ export function WorkspacePane({
     };
   }, [machine]);
 
+  // **Only the sessions column's default lives here now** (工作区批⑧).
+  // It used to also throw away the open file, both draft maps and the
+  // tree's position, on `[root, machine, narrow, listOpen]` — and the
+  // first two of those never change, because the shell remounts this
+  // pane per workspace (`App`'s `key`). What did change was the other
+  // two: dragging the window across the narrow breakpoint, or opening
+  // the workspace list, silently discarded every unsaved draft in the
+  // project. Nothing reported it, because the count that would have
+  // said so was in the same render that had just been reset.
   useEffect(() => {
-    setAt(root);
-    setFile(null);
-    // A different workspace is a different set of files. **Dropped
-    // rather than carried**: a draft is pinned to a digest on one
-    // machine's disk, and carrying it into another project would be
-    // holding a save aimed at a file nobody is looking at.
-    setDrafts(new Map());
-    setUndos(new Map());
-    setPicked(null);
     // Narrow has no room for a second column at all, so the default
     // there is not about the fifth one.
     setSessions(!narrow && !listOpen);
-  }, [root, machine, narrow, listOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrow, listOpen]);
 
   /** Remembered per machine, in this face's own storage. */
   const agreedKey = `khor.code.agreed.${machine}`;
@@ -344,6 +380,187 @@ export function WorkspacePane({
   }, [root, rows, channel]);
   const marks = useMemo(() => folded(root, git), [root, git]);
 
+  /** Remember which tabs are open, for this workspace. Storage refusing
+      costs the memory and nothing else — the tabs are on screen either
+      way (`use-list-width`'s bargain). */
+  const remember = useCallback(
+    (open: string[]) => {
+      try {
+        window.localStorage.setItem(tabsKey(machine, root), JSON.stringify(open));
+      } catch {
+        /* the tabs are still open; only finding them again tomorrow is lost */
+      }
+    },
+    [machine, root],
+  );
+
+  /** A file was pressed in the tree.
+   *
+   * **One click opens a preview, the next one replaces it** (工作区批⑧,
+   * VS Code's arrangement, which is what was asked for). The preview is
+   * a real tab in every way but one: it is the tab the next glance is
+   * allowed to take. A double click pins it, and so does typing in it —
+   * both are a person saying they are staying.
+   */
+  const open = useCallback(
+    (path: string, pinned: boolean) => {
+      setFile(path);
+      setTabs((was) => {
+        if (was.includes(path)) return was;
+        // The preview seat, if there is one, is where a fresh glance
+        // goes; otherwise the tab joins the end.
+        const now =
+          !pinned && preview !== null && was.includes(preview)
+            ? was.map((p) => (p === preview ? path : p))
+            : [...was, path];
+        remember(now);
+        return now;
+      });
+      setPreview((was) => (pinned ? (was === path ? null : was) : path));
+    },
+    [preview, remember],
+  );
+
+  /** Take a tab off the strip. **Never asks here** — whether there is
+      anything to ask about is `shut`'s business one level up, and this
+      is what both of its answers end in. */
+  const drop = useCallback(
+    (path: string) => {
+      setTabs((was) => {
+        const at = was.indexOf(path);
+        if (at < 0) return was;
+        const now = was.filter((p) => p !== path);
+        remember(now);
+        // **The neighbour, not the first tab.** Closing the third of
+        // five and landing on the first is a jump a person has to
+        // undo; the one that slid into this seat is where the eye
+        // already is.
+        setFile((open) => (open === path ? (now[at] ?? now[at - 1] ?? null) : open));
+        return now;
+      });
+      setPreview((was) => (was === path ? null : was));
+      setDrafts((was) => {
+        if (!was.has(path)) return was;
+        const now = new Map(was);
+        now.delete(path);
+        return now;
+      });
+      setUndos((was) => {
+        if (!was.has(path)) return was;
+        const now = new Map(was);
+        now.delete(path);
+        return now;
+      });
+      setClosing((was) => (was === path ? null : was));
+    },
+    [remember],
+  );
+
+  /** Close a tab, asking first when something is typed in it.
+      **The dialog is the only place the draft can be saved from**, and
+      it is raised rather than the close being refused: a refusal would
+      leave a person pressing × over and over with nothing telling them
+      why (docs/UX.md 做了但没变化). */
+  const shut = useCallback(
+    (path: string) => {
+      if (drafts.has(path)) setClosing(path);
+      else drop(path);
+    },
+    [drafts, drop],
+  );
+
+  // The save the sheet asked for, made by the view that holds the
+  // buffer — so the tab is brought to the front and asked on the beat
+  // after, when that view is the one mounted.
+  useEffect(() => {
+    if (wantSave === null || file !== wantSave) return;
+    setWantSave(null);
+    setSaveAt((n) => n + 1);
+  }, [wantSave, file]);
+
+  // …and it closes when it has nothing waiting in it any more, which is
+  // the only honest signal that the save landed: a refusal leaves the
+  // draft where it is, and the tab with it.
+  useEffect(() => {
+    if (waiting === null || drafts.has(waiting)) return;
+    setWaiting(null);
+    drop(waiting);
+  }, [waiting, drafts, drop]);
+
+  // ⌘W / Ctrl+W, the one shortcut this strip has. **Both modifiers**,
+  // because one build runs on a mac app, a phone's browser and a
+  // Windows desktop (`FileView`'s save shortcut says the same).
+  //
+  // **Only while a file is in front.** The editor and the browsing
+  // shell are other things with other tabs, and a shortcut that fired
+  // over the top of them would close something nobody was looking at.
+  useEffect(() => {
+    if (file === null || codeAt !== null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "w" || e.key === "W")) {
+        e.preventDefault();
+        shut(file);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [file, codeAt, shut]);
+
+  /** What the strip draws. **Built here because the facts are this
+      pane's** — which files are open, which one is in front, which one
+      has something typed in it — and `TabStrip` paints and decides
+      nothing (its own head says so). */
+  const tabFaces: TabFace[] = useMemo(
+    () =>
+      tabs.map((path) => ({
+        id: `${machine}:${path}`,
+        label: basename(path),
+        face: null,
+        path,
+        machine,
+        // Relative to the workspace root, which is the half that tells
+        // two tabs called `mod.rs` apart. The absolute path is the
+        // hover title's, and both are on the menu.
+        sub: under(root, path),
+        dirty: drafts.has(path),
+        preview: preview === path,
+        glyph: <IconFile />,
+        menu: tabMenu(path),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tabs, machine, root, drafts, preview, shut],
+  );
+
+  /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
+      **Two copy items and not one with a switch**: the absolute path is
+      what a command line and another machine take, the relative one is
+      what this project's own documents take, and neither stands in for
+      the other. A clipboard refusal rejects, which is how `RowMenu`
+      keeps the menu open over the press that failed. */
+  function tabMenu(path: string): RowAction[] {
+    return [
+      { key: "close", label: gui.close, run: () => shut(path) },
+      {
+        key: "close-others",
+        label: gui.tab_close_others,
+        run: () => {
+          for (const p of tabs) if (p !== path) shut(p);
+          setFile(path);
+        },
+      },
+      {
+        key: "copy-path",
+        label: gui.tab_copy_path,
+        run: () => navigator.clipboard.writeText(path),
+      },
+      {
+        key: "copy-rel",
+        label: gui.tab_copy_rel,
+        run: () => navigator.clipboard.writeText(under(root, path)),
+      },
+    ];
+  }
+
   return (
     // **`h-full`, not `flex-1`.** The slot this lands in (App.tsx) is a
     // block, not a flex container, so `flex-1` resolves to nothing and
@@ -353,130 +570,28 @@ export function WorkspacePane({
     // real file, 2026-09-12. Every other detail pane already wears
     // `h-full` for this reason (`DetailPane`, `BrowseLanding`).
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="shrink-0 truncate text-fact font-title text-foreground">
-          {root === "" ? machine : basename(root)}
-        </span>
-        {/* **The branch, or nothing at all.** A detached HEAD has no
-            name to say and a repository with no commit has none either;
-            both arrive as an empty string, and 「没有就不显示」 is the
-            rule for both. The refusal takes the same spot because it is
-            the answer to the same question — this is the one place on
-            the face with room for a sentence about git. */}
-        {/* **Only when something is waiting**, and it is a count of
-            files rather than a state of this one: the file in front of
-            you says 未存 for itself, and this is the half that would
-            otherwise be invisible — a draft two directories away. */}
-        {drafts.size > 0 && (
-          <span data-drafts={drafts.size} className="shrink-0 text-aux text-muted-foreground">
-            {gui.drafts_waiting(drafts.size)}
+      {/* **The head row is gone** (工作区批⑧). It held the workspace's
+          name, its branch, how far the branch was from its remote, a
+          count of unsaved files and a breadcrumb — and every one of
+          those moved somewhere that already answers for it: the name
+          and the branch are two corners of this workspace's row in the
+          list beside it (docs/WORKSPACE.md 一行的四个角), 「N 个文件
+          未存」 became a dot on each tab that has one, and the crumbs
+          were cut by the ruling. What is left of the head is the strip.
+
+          **Except on the browsing face.** `root === ""` is what
+          看它的文件 hands over — a whole machine's disk, where 「where
+          am I」 is the question and the address bar is the answer — so
+          that face keeps a bar with the machine's name and its crumbs,
+          and a project gets none. */}
+      {root === "" && (
+        <div className="flex items-center gap-2 border-b px-3 py-2">
+          <span className="shrink-0 truncate text-fact font-title text-foreground">
+            {machine}
           </span>
-        )}
-        {git !== null && (
-            <>
-              {git.branch !== "" && (
-                <span
-                  data-branch={git.branch}
-                  className="shrink-0 truncate text-aux text-muted-foreground"
-                >
-                  {git.branch}
-                </span>
-              )}
-              {/* **How far from the remote, and never without when.**
-                  khor opens no connection nobody asked for, so it
-                  never fetches — which makes 领先/落后 a fact about
-                  the last time somebody else did, and a three-week-old
-                  pair the same shape as a fresh one. That is why 批3
-                  cut it and this is what brings it back: the number
-                  and its age are one sentence or neither is said.
-
-                  Nothing at all when `fetched_ms` is 0. A repository
-                  that never fetched has no date to put on the pair,
-                  and a branch with no upstream answers 0/0 — which is
-                  also what being in step answers, and both lead to the
-                  same next move, which is to draw nothing. */}
-              {git.fetched_ms > 0 && (git.ahead > 0 || git.behind > 0) && (
-                <span
-                  data-track={`${git.ahead}/${git.behind}`}
-                  className="shrink-0 truncate text-aux text-muted-foreground"
-                >
-                  {git.ahead > 0 && git.behind > 0
-                    ? cli.git_track(git.ahead, git.behind, ago(git.fetched_ms))
-                    : git.ahead > 0
-                      ? cli.git_ahead(git.ahead, ago(git.fetched_ms))
-                      : cli.git_behind(git.behind, ago(git.fetched_ms))}
-                </span>
-              )}
-              {/* The cap said out loud, for `Response::Dir::truncated`'s
-                  reason: a tree that was cut and a tree that is clean
-                  below this point look exactly the same. */}
-              {git.more && (
-                <span className="shrink-0 truncate text-aux text-muted-foreground">
-                  {cli.git_status_more}
-                </span>
-              )}
-            </>
-          )}
-        {/* **The address bar belongs to the browsing face and not to a
-            project** (工作区批⑦: 「取消面包屑」). `root === ""` is what
-            看它的文件 hands over — a whole machine's disk, where
-            「where am I」 is the question — and that face keeps its
-            crumbs. A workspace has a ceiling instead, so there is
-            nothing for a step above the root to say. */}
-        {root === "" && <PathCrumbs at={at} onGo={setAt} onEdit={() => setAt(at)} />}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={gui.workspace_tree}
-            data-on={tree}
-            onClick={() => setTree(!tree)}
-            // The floor is worn here rather than by the variant: an
-            // icon button is 30 square by default and a finger needs
-            // `--touch` (tokens.css). Extended hit area, same drawing.
-            className={cn("min-h-touch min-w-touch", !tree && "text-muted-foreground")}
-          >
-            <IconFiles />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={gui.workspace_sessions}
-            data-ws-sessions-switch
-            data-on={sessions}
-            onClick={() => setSessions(!sessions)}
-            className={cn("min-h-touch min-w-touch", !sessions && "text-muted-foreground")}
-          >
-            <IconSessions />
-          </Button>
+          <PathCrumbs at={at} onGo={setAt} onEdit={() => setAt(at)} />
         </div>
-        {/* **Only where there is an editor to open.** A machine without
-            one, and a machine that could not be asked, both answer
-            empty and both get no switch — offering a button that fails
-            is worse than offering nothing (`khor_gui_core::code`).
-
-            Two words for one control, the pin's rule: it says what
-            pressing it will do, not which side it is on. */}
-        {/* **Never on the web face**, and that is a fact about where
-            the pipe lands rather than a missing feature. The tunnel in
-            front of somebody's editor is bound to 127.0.0.1 on the
-            machine running the resident serve; a phone reading khor's
-            web face is not that machine, so the link would name a
-            loopback it cannot reach. Offering a button that resolves to
-            somewhere else's localhost is worse than offering none. */}
-        {code.version !== "" && root !== "" && !onWebFace && (
-          <Button
-            variant="ghost"
-            size="sm"
-            data-code={codeAt === null ? "off" : "on"}
-            title={code.version}
-            onClick={() => (codeAt === null ? want() : setCodeAt(null))}
-            className="min-h-touch min-w-touch shrink-0"
-          >
-            {codeAt === null ? gui.code_tab : gui.code_off}
-          </Button>
-        )}
-      </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         {tree && (
@@ -499,7 +614,21 @@ export function WorkspacePane({
                 narrow={narrow}
                 onPath={setAt}
                 onLanded={setAt}
-                onFile={setFile}
+                // The browsing face gets the same strip: a tab is a
+                // file wherever the file was found, and a second rule
+                // for「what happens when you press a file」 is the kind
+                // of thing a person has to learn twice. It opens no
+                // preview because there is no second click to replace
+                // one here — `FilesPane` has one gesture, not two.
+                onFile={(path) =>
+                  path === null
+                    ? // The file somebody was reading was deleted, so
+                      // its tab goes with it: a tab over a file that is
+                      // not there is the state neither tree may leave
+                      // behind, and the strip would keep it on screen.
+                      file !== null && drop(file)
+                    : open(path, true)
+                }
                 open={file}
                 here={here}
                 marks={marks}
@@ -515,10 +644,8 @@ export function WorkspacePane({
                 here={here}
                 marks={marks}
                 open={file}
-                onOpen={(path) => setFile(path)}
-                onGone={(path) => {
-                  if (file === path) setFile(null);
-                }}
+                onOpen={open}
+                onGone={drop}
               />
             )}
           </div>
@@ -539,6 +666,98 @@ export function WorkspacePane({
           />
         )}
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* **One tab per open file, and the three switches at the far
+              end of it** (工作区批⑧, the user's own layout: 「标签页的
+              最右侧,显示现有的文件、session 和 vscode 切换」).
+
+              The strip is `browse/TabStrip` itself, not a second
+              drawing of one: a tab is a tab, and two components that
+              both paint tabs is the failure `PaneBar` warns about one
+              landing over. What this face hands it that a browsing tab
+              does not have is the second line, the dot and the preview
+              slope; what it does not hand it is 「+」, because a tab
+              here is a file somebody pressed in the tree and there is
+              nothing a bare new tab could open.
+
+              **Drawn even with nothing open**, because the switches
+              live on it: a strip that disappeared when the last tab
+              closed would take the only way back to the tree with it —
+              exactly the trap the old head was written to avoid ("a
+              column that is collapsed cannot carry the control that
+              brings it back"). */}
+          <div data-ws-tab-strip className="flex flex-none flex-col">
+          <TabStrip
+            faces={tabFaces}
+            active={file === null ? "" : `${machine}:${file}`}
+            onFocus={(id) => setFile(id.slice(machine.length + 1))}
+            onClose={(id) => shut(id.slice(machine.length + 1))}
+            tail={
+              <div data-ws-switches className="flex flex-none items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={gui.workspace_tree}
+                  data-on={tree}
+                  onClick={() => setTree(!tree)}
+                  // The floor is worn here rather than by the variant:
+                  // an icon button is 30 square by default and a finger
+                  // needs `--touch` (tokens.css). Extended hit area,
+                  // same drawing.
+                  className={cn("min-h-touch min-w-touch", !tree && "text-muted-foreground")}
+                >
+                  <IconFiles />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={gui.workspace_sessions}
+                  data-ws-sessions-switch
+                  data-on={sessions}
+                  onClick={() => setSessions(!sessions)}
+                  className={cn("min-h-touch min-w-touch", !sessions && "text-muted-foreground")}
+                >
+                  <IconSessions />
+                </Button>
+                {/* **Only where there is an editor to open.** A machine
+                    without one, and a machine that could not be asked,
+                    both answer empty and both get no switch — offering
+                    a button that fails is worse than offering nothing
+                    (`khor_gui_core::code`).
+
+                    **Never on the web face**, and that is a fact about
+                    where the pipe lands rather than a missing feature.
+                    The tunnel in front of somebody's editor is bound to
+                    127.0.0.1 on the machine running the resident serve;
+                    a phone reading khor's web face is not that machine,
+                    so the link would name a loopback it cannot reach.
+
+                    **A glyph now, not two words** (「vscode 换成 icon
+                    显示」— the user, 2026-09-15). It sits beside two
+                    other glyphs that switch a column, so a word here
+                    read as a different kind of control; the two words
+                    it wore are its name out loud instead, which is
+                    where the other two keep theirs as well. */}
+                {code.version !== "" && root !== "" && !onWebFace && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    data-code={codeAt === null ? "off" : "on"}
+                    data-on={codeAt !== null}
+                    aria-label={codeAt === null ? gui.code_tab : gui.code_off}
+                    title={code.version}
+                    onClick={() => (codeAt === null ? want() : setCodeAt(null))}
+                    className={cn(
+                      "min-h-touch min-w-touch",
+                      codeAt === null && "text-muted-foreground",
+                    )}
+                  >
+                    <IconCode />
+                  </Button>
+                )}
+              </div>
+            }
+          />
+          </div>
           {asking ? (
             // **Two sentences and two words.** Both sentences are about
             // what happens to the far machine; neither is about how to
@@ -596,19 +815,33 @@ export function WorkspacePane({
               // and a mark this pane patched by hand would be a second
               // opinion about a fact git already has.
               onSaved={() => setGitAt((n) => n + 1)}
+              // **Asked to save from outside**, by the sheet that
+              // catches a tab being closed over a draft. A counter,
+              // because two asks are two saves.
+              saveAt={saveAt}
               draft={drafts.get(file)}
-              onDraft={(d) =>
+              onDraft={(d) => {
                 setDrafts((was) => {
+                  // A draft that matches the disk is not a draft — the
+                  // view says so by handing back `null`, and that is
+                  // what puts the tab's dot out again.
+                  //
+                  // **Nothing is written when nothing changed.** This
+                  // is reported from an effect now (`FileView`), so a
+                  // new Map every time would be a render every time,
+                  // and a render that re-runs the effect that caused
+                  // it (工作区批⑧).
+                  const had = was.get(file);
+                  if (d === null ? had === undefined : had === d) return was;
                   const now = new Map(was);
-                  // A draft that matches the disk is not a draft. The
-                  // view says so by handing back `null`, and keeping an
-                  // entry for it would make the head count files that
-                  // have nothing waiting.
                   if (d === null) now.delete(file);
                   else now.set(file, d);
                   return now;
-                })
-              }
+                });
+                // 「在里面打了字,就钉住」— typing is a person saying
+                // they are staying, exactly as a double click is.
+                if (d !== null) setPreview((was) => (was === file ? null : was));
+              }}
               undo={undos.get(file)}
               onUndo={(t) =>
                 setUndos((was) => {
@@ -706,8 +939,68 @@ export function WorkspacePane({
           </div>
         )}
       </div>
+      {/* One sheet for the whole strip, not one per tab: what is being
+          asked about is state, and a dialog per tab would be one
+          mounted component per open file. */}
+      <CloseDraftDialog
+        name={closing === null ? null : basename(closing)}
+        onKeep={() => setClosing(null)}
+        onDrop={() => closing !== null && drop(closing)}
+        onSave={() => {
+          if (closing === null) return;
+          // **Asks the view that holds the buffer to save**, rather
+          // than writing from here: the save is pinned to a digest that
+          // view is holding, and a second writer with its own idea of
+          // that digest is exactly the clash the save contract exists
+          // to avoid.
+          //
+          // **The sheet goes now and the tab does not.** What happens
+          // next has a face of its own — the file's own strip says
+          // 存好了 or says why not, and carries the three ways out of a
+          // refusal — and a modal held open over that would be khor
+          // asking a second time about something it is already showing.
+          setFile(closing);
+          setWantSave(closing);
+          setWaiting(closing);
+          setClosing(null);
+        }}
+      />
     </div>
   );
+}
+
+/** Where the open tabs are kept, per workspace (工作区批⑧).
+    **Keyed by the pair that is the workspace's identity**
+    (docs/WORKSPACE.md 身份与名字), the same key shape the tree's open
+    branches use: the same checkout on two machines is two projects, and
+    one's tabs under the other's name would point at another disk. */
+const tabsKey = (machine: string, root: string) => `khor.ws-tabs.${machine}:${root}`;
+
+/** The tabs this workspace was last left with. Paths outside the root
+    are dropped whatever storage holds — the ceiling is the whole ruling
+    (工作区批⑦), and a tab from somewhere else is one the tree cannot
+    explain. Storage refusing reads as「nothing was open」, which is the
+    shape a workspace opens in anyway. */
+function storedTabs(machine: string, root: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(tabsKey(machine, root));
+    const list: unknown = raw === null ? [] : JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+    return list.filter(
+      (p): p is string =>
+        typeof p === "string" && (root === "" ? p.startsWith("/") : p.startsWith(`${root}/`)),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Where a file sits relative to the workspace root — the tab's second
+    line and its 复制相对路径. Falls back to the absolute path where
+    there is no root to be relative to (the browsing face), because a
+    path is better than a blank line. */
+function under(root: string, path: string): string {
+  return root !== "" && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
 }
 
 /** Absolute path → its mark, for every marked file **and every

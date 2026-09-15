@@ -38,11 +38,12 @@
 // you all of them and a second way to a thing that is not hidden is
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { IconClose, IconPlus } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -79,17 +80,51 @@ export type TabFace = {
       renamable」 would put an editor on the second kind, where Enter
       would write into a table that has no row for it. */
   rename?: { kind: "session" | "machine"; id: string };
+  /** A second line under the name, on the **strip** (工作区批⑧:
+      「标签上显示文件名,下方显示其路径」). `path` is the whole address
+      and belongs to the hover title and the switcher; this is the short
+      form a tab has room for — for a file tab, where it sits relative
+      to the workspace root. Absent on a tab whose name is already the
+      whole of what there is to say. */
+  sub?: string;
+  /** Something is typed here and not saved. The close mark becomes a
+      filled dot, VS Code's arrangement, and goes back to a × the moment
+      a save lands. */
+  dirty?: boolean;
+  /** This tab is the **preview**: one single click opened it and the
+      next single click will replace it (工作区批⑧). Italic, the one
+      place this app uses the slope, because what it marks is exactly
+      「this is not settled」. */
+  preview?: boolean;
+  /** What this tab wears instead of a face. A file tab's subject is a
+      file, and a machine's portrait on it would say whose disk rather
+      than which file — the one thing the row already repeats. */
+  glyph?: ReactNode;
+  /** The tab's own right-click menu. **Hung on the button that opens
+      the tab**, never on the tab box around it: `RowMenu`'s trigger
+      carries an `onPointerDown`, and a press handler on a bare element
+      is a target only a pointer can find. */
+  menu?: RowAction[];
 };
 
 /** The face a tab wears: the session assembly when it is a session,
     the bare machine face when it is a place. One decision, both the
     strip and the switcher read it. */
 function TabAvatar({ f, bare }: { f: TabFace; bare: string }) {
+  if (f.glyph) return <span className="flex-none">{f.glyph}</span>;
   return f.session ? (
     <SessionFace face={f.face} {...f.session} />
   ) : (
     <MachineAvatar face={f.face} className={bare} />
   );
+}
+
+/** The tab's opener, inside its menu when it has one. **A component
+    rather than a ternary around the button**, so the button is written
+    once: two copies of it is how the hover title and the anchor drift
+    apart, and the anchor is what every gate finds a tab by. */
+function TabOpen({ menu, children }: { menu?: RowAction[]; children: ReactNode }) {
+  return menu && menu.length > 0 ? <RowMenu items={menu}>{children}</RowMenu> : <>{children}</>;
 }
 
 export function TabStrip({
@@ -99,6 +134,7 @@ export function TabStrip({
   onClose,
   onNew,
   onSwitch,
+  tail,
 }: {
   faces: TabFace[];
   active: string;
@@ -111,6 +147,12 @@ export function TabStrip({
       every tab** — see the file head; a landing that has no switcher to
       open leaves this out and gets the strip alone. */
   onSwitch?: () => void;
+  /** Whatever the landing pins against the right end of the strip
+      (工作区批⑧: the workspace puts its three switches there —
+      「标签页的最右侧,显示现有的文件、session 和 vscode 切换」).
+      **Outside the scroller**, unlike 「+」: these are not about the
+      tabs, so they must not scroll away with them. */
+  tail?: ReactNode;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   // Whether the strip has given up on its own promise. Measured off the
@@ -228,6 +270,7 @@ export function TabStrip({
                   : "w-tab text-muted-foreground hover:bg-background/50",
               )}
             >
+              <TabOpen menu={f.menu}>
               <button
                 type="button"
                 data-tab-open={f.id}
@@ -257,12 +300,39 @@ export function TabStrip({
                     // detail).
                     boxData={{ "data-tab-label": "" }}
                   />
+                ) : f.sub ? (
+                  // **Two lines, and the second one is the way to tell
+                  // two tabs apart** (工作区批⑧). Four files called
+                  // `mod.rs` make four tabs that read the same; where
+                  // they are is the only thing that differs, so it is on
+                  // the tab rather than only in a hover title. The pair
+                  // fits inside the band because the band is the
+                  // finger's floor (44) and two lines of 12/10 are 32.
+                  <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
+                    <span
+                      data-tab-name
+                      className={cn("truncate text-sm leading-tight", f.preview && "italic")}
+                    >
+                      {f.label}
+                    </span>
+                    <span
+                      data-tab-sub
+                      className="truncate text-xs leading-tight text-muted-foreground"
+                    >
+                      {f.sub}
+                    </span>
+                  </span>
                 ) : (
-                  <span data-tab-label className="min-w-0 flex-1 truncate text-sm">
+                  <span
+                    data-tab-label
+                    data-tab-name
+                    className={cn("min-w-0 flex-1 truncate text-sm", f.preview && "italic")}
+                  >
                     {f.label}
                   </span>
                 )}
               </button>
+              </TabOpen>
               <Button
                 size="icon"
                 variant="ghost"
@@ -296,13 +366,35 @@ export function TabStrip({
                 // still the bigger one (102 was the width where they
                 // crossed, back when tabs shrank; fixed stubs never reach
                 // it).
+                //
+                // **A tab with a draft keeps its mark drawn**, dot or
+                // not: the dot *is* the report that something is waiting
+                // here, and a report that only appears under a pointer
+                // is one a phone never sees.
                 className={cn(
                   "min-h-touch min-w-touch flex-none",
-                  !on && "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+                  !on &&
+                    !f.dirty &&
+                    "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
                 )}
                 onClick={() => onClose(f.id)}
               >
-                <IconClose />
+                {/* 「正在修改的,和 vscode 一致,标签上有一个圆点。保存
+                    成功了,圆点消失。」— the user, 2026-09-15. **The dot
+                    replaces the ×, it does not sit beside it**: one mark
+                    in one place, and pressing it still closes, which is
+                    what makes 「关一个有草稿的标签问一句」 the thing
+                    that catches the mistake rather than a second
+                    control nobody aimed at. */}
+                {f.dirty ? (
+                  <span
+                    data-tab-dot
+                    aria-hidden="true"
+                    className="size-2 rounded-full bg-current"
+                  />
+                ) : (
+                  <IconClose />
+                )}
               </Button>
             </div>
           );
@@ -339,6 +431,7 @@ export function TabStrip({
           holding the button drawn on `switching` would be drawing "go
           see your tabs" over the screen that is showing them. */}
       {onSwitch && crowded && <TabCount n={faces.length} onPress={onSwitch} />}
+      {tail}
     </div>
   );
 }
