@@ -400,130 +400,32 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
-/* Syntax colour, at the one intensity this app has room for. Three
- * roles: a comment is aux ink, a string literal is `--code-string`, and
- * **Nine roles since 2026-09-15.** It was two — comments and strings,
- * everything else body ink, on the argument that the palette had no
- * six colours to give — until the user opened a .py file on the sheet
- * and ruled 「我说的语法高亮，是有颜色的」. The colours now live in
- * `tokens.css` as `--code-*`, GitHub's values in both themes, and the
- * rules below only name which highlight.js class wears which.
- *
- * Here rather than as utilities because these are highlight.js's own
- * class names on spans this app never writes — there is no element to
- * hang a utility on.
- *
- * Scoped to the two places highlight.js writes: a rendered agent turn
- * (`[data-md]`) and the file sheet (`[data-sheet]`, `views/FileView`).
- * **The sheet was missing until 2026-09-15** — `paintFile` wrapped
- * every token and not one rule reached them, so a .py file opened in
- * one colour and the person reading it saw 「没有任何语法高亮」.
- *
- * A regular expression joins the string role rather than the silent
- * majority: it is a literal, and left as body ink a `/…/` reads as a
- * pair of operators with words in between.
- *
- * (A first fix the same day told keywords apart by weight alone, to
- * keep the palette's silence; the user's next sentence was 「是有颜色
- * 的」, and the seven tokens followed.) */
-[data-md] .hljs-comment,
-[data-md] .hljs-quote,
-[data-sheet] .hljs-comment,
-[data-sheet] .hljs-quote {
-  color: var(--muted-foreground);
+/* Code colour: **Shiki's, in whichever of GitHub's two themes the page
+   is in.** Every painted token carries both colours as custom
+   properties on its own span (`--shiki-light` / `--shiki-dark`,
+   `lib/highlight.ts`), and these two rules are the whole of the theme
+   switch: the light one by default, the dark one under the same media
+   query `tokens.css` keys its own palette on. No colour is chosen here
+   — the values are `github-light-default` / `github-dark-default` as
+   Shiki ships them, which is what github.com paints (user, 2026-09-15:
+   「做到 gh web 预览代码的那种高亮」). Scoped to the two surfaces that
+   paint: a rendered turn and the file sheet. */
+[data-md] span[style*="--shiki"],
+[data-sheet] span[style*="--shiki"] {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style, inherit);
+  font-weight: var(--shiki-light-font-weight, inherit);
+  text-decoration: var(--shiki-light-text-decoration, inherit);
 }
 
-[data-md] .hljs-string,
-[data-md] .hljs-regexp,
-[data-sheet] .hljs-string,
-[data-sheet] .hljs-regexp {
-  color: var(--code-string);
-}
-
-/* The seven roles the user asked for on 2026-09-15 (「有颜色的」),
-   mapped from highlight.js's class names to `tokens.css`'s code
-   palette. One rule per role, both surfaces at once — the sheet and a
-   rendered turn must colour `def` the same way or the same file reads
-   as two languages. */
-[data-md] .hljs-keyword,
-[data-md] .hljs-literal,
-[data-md] .hljs-doctag,
-[data-sheet] .hljs-keyword,
-[data-sheet] .hljs-literal,
-[data-sheet] .hljs-doctag {
-  color: var(--code-keyword);
-}
-
-[data-md] .hljs-number,
-[data-sheet] .hljs-number {
-  color: var(--code-number);
-}
-
-[data-md] .hljs-type,
-[data-md] .hljs-built_in,
-[data-md] .hljs-class .hljs-title,
-[data-md] .hljs-title.class_,
-[data-sheet] .hljs-type,
-[data-sheet] .hljs-built_in,
-[data-sheet] .hljs-class .hljs-title,
-[data-sheet] .hljs-title.class_ {
-  color: var(--code-type);
-}
-
-[data-md] .hljs-title,
-[data-md] .hljs-title.function_,
-[data-md] .hljs-function .hljs-title,
-[data-sheet] .hljs-title,
-[data-sheet] .hljs-title.function_,
-[data-sheet] .hljs-function .hljs-title {
-  color: var(--code-function);
-}
-
-[data-md] .hljs-attr,
-[data-md] .hljs-attribute,
-[data-md] .hljs-property,
-[data-md] .hljs-selector-tag,
-[data-md] .hljs-selector-class,
-[data-md] .hljs-selector-id,
-[data-md] .hljs-name,
-[data-sheet] .hljs-attr,
-[data-sheet] .hljs-attribute,
-[data-sheet] .hljs-property,
-[data-sheet] .hljs-selector-tag,
-[data-sheet] .hljs-selector-class,
-[data-sheet] .hljs-selector-id,
-[data-sheet] .hljs-name {
-  color: var(--code-attr);
-}
-
-[data-md] .hljs-variable,
-[data-md] .hljs-params,
-[data-md] .hljs-template-variable,
-[data-sheet] .hljs-variable,
-[data-sheet] .hljs-params,
-[data-sheet] .hljs-template-variable {
-  color: var(--code-variable);
-}
-
-[data-md] .hljs-meta,
-[data-md] .hljs-symbol,
-[data-md] .hljs-section,
-[data-md] .hljs-bullet,
-[data-sheet] .hljs-meta,
-[data-sheet] .hljs-symbol,
-[data-sheet] .hljs-section,
-[data-sheet] .hljs-bullet {
-  color: var(--code-meta);
-}
-
-[data-md] .hljs-emphasis,
-[data-sheet] .hljs-emphasis {
-  font-style: italic;
-}
-
-[data-md] .hljs-strong,
-[data-sheet] .hljs-strong {
-  font-weight: 600;
+@media (prefers-color-scheme: dark) {
+  [data-md] span[style*="--shiki"],
+  [data-sheet] span[style*="--shiki"] {
+    color: var(--shiki-dark);
+    font-style: var(--shiki-dark-font-style, inherit);
+    font-weight: var(--shiki-dark-font-weight, inherit);
+    text-decoration: var(--shiki-dark-text-decoration, inherit);
+  }
 }
 
 /* The parts under a dial: one grid for every row in the drawer, so the

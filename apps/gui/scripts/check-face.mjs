@@ -3716,10 +3716,17 @@ try {
     }
   }
 
-  // viii) source is painted.
+  // viii) source is painted — by Shiki, in GitHub's theme, and the
+  // paint is colour on the glass, not a class in the DOM. **A class is
+  // not a colour**: every token wore highlight.js's class before
+  // 2026-09-15 and the sheet was one colour anyway, because no rule
+  // reached `[data-sheet]`. So what is read is computed ink: the
+  // painted spans must wear at least three inks between them and at
+  // least one of them must differ from the sheet's own — a one-colour
+  // theme wearing spans would pass a count and fail here.
   if (await openFile("one.rs")) {
-    const painted = await until(5_000, async () =>
-      (await page.locator("[data-sheet] .hljs-keyword").count()) > 0,
+    const painted = await until(8_000, async () =>
+      (await page.locator('[data-sheet] span[style*="--shiki"]').count()) > 0,
     );
     if (!painted) {
       const html = await page.evaluate(
@@ -3730,30 +3737,23 @@ try {
           `${JSON.stringify(html)} (src/lib/highlight.ts)`,
       );
     } else {
-      // **A class is not a colour.** Every token wore its class before
-      // 2026-09-15 and the sheet was one colour anyway, because no rule
-      // reached `[data-sheet]` — 「我说的语法高亮，是有颜色的」. So the
-      // keyword's painted ink must differ from the sheet's, and so must
-      // a string's from the keyword's: two roles, two colours, or it is
-      // a bold-and-plain theme wearing the word.
       const inks = await page.evaluate(() => {
         const sheet = document.querySelector("[data-sheet]");
-        const ink = (el) => (el ? getComputedStyle(el).color : null);
-        return {
-          body: ink(sheet),
-          keyword: ink(sheet.querySelector(".hljs-keyword")),
-          string: ink(sheet.querySelector(".hljs-string")),
-        };
+        const body = getComputedStyle(sheet).color;
+        const seen = new Set();
+        for (const el of sheet.querySelectorAll('span[style*="--shiki"]')) seen.add(getComputedStyle(el).color);
+        return { body, inks: [...seen] };
       });
       console.log(`sheet inks: ${JSON.stringify(inks)}`);
-      if (!inks.keyword || inks.keyword === inks.body) {
-        fail(`a keyword on the sheet is painted in the body ink (${inks.keyword}) — the class landed and no colour did (src/styles/app.css)`);
+      if (inks.inks.length < 3) {
+        fail(`the sheet's tokens wear ${inks.inks.length} ink(s) between them — GitHub's theme gives a .rs at least three (src/styles/app.css)`);
       }
-      if (inks.string && inks.string === inks.keyword) {
-        fail(`a string and a keyword share one ink (${inks.string}) — one colour is not a highlighting (src/styles/tokens.css)`);
+      if (!inks.inks.some((c) => c !== inks.body)) {
+        fail(`every painted token is the sheet's own ink (${inks.body}) — the spans landed and no colour did (src/styles/app.css)`);
       }
     }
   }
+
 
   // ── 4c) the caret sits on the ink ─────────────────────────────────
   //

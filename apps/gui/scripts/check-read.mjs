@@ -412,13 +412,27 @@ const probe = () => {
   // one paper, not two declarations.
   const onPaper = (colour, paper) =>
     `rgb(${over(parse(colour), paper).map((n) => Math.round(n)).join(", ")})`;
-  const spans = (el) => (el ? el.querySelectorAll('[class*="hljs-"]').length : -1);
+  // Shiki paints roles as colour on anonymous spans, never as a class,
+  // so a role is found by the text it painted: the fixture's own
+  // string, comment and keyword (`turn`, below).
+  const spans = (el) => (el ? el.querySelectorAll('span[style*="--shiki"]').length : -1);
+  const byText = (el, want) => {
+    if (!el) return null;
+    for (const sp of el.querySelectorAll('span[style*="--shiki"]')) {
+      if ((sp.textContent ?? "").includes(want)) return getComputedStyle(sp).color;
+    }
+    return null;
+  };
   const code = {
     closedFound: closed !== null,
     closedSpans: spans(closed),
-    stringInk: inkOf(closed, ".hljs-string"),
-    commentInk: inkOf(closed, ".hljs-comment"),
-    keywordInk: inkOf(closed, ".hljs-keyword"),
+    // A run only the literal contains — `hi` is also inside `which`,
+    // in the comment two lines up.
+    stringInk: byText(closed, "a string literal"),
+    // The slashes, not the words: the grammar cuts `//` from what
+    // follows it, and both halves wear the comment's ink.
+    commentInk: byText(closed, "//"),
+    keywordInk: byText(closed, "const"),
     bodyInk: inkOf(closed, null),
     arrivingFound: arriving !== null,
     arrivingSpans: spans(arriving),
@@ -428,7 +442,6 @@ const probe = () => {
     evilElements: evil ? evil.querySelectorAll("script, img, iframe, object, embed, svg").length : -1,
     // The trailing newline is the fence's own, not the agent's.
     evilText: evil ? (evil.textContent ?? "").replace(/\n$/, "") : null,
-    codeString: token("--code-string"),
     spokenFor: Object.fromEntries(
       ["busy", "blocked", "done", "errored", "failed", "idle", "strain", "lq3"].map((n) => [
         n,
@@ -540,32 +553,29 @@ const APART = 0.1;
 // once rather than once per remaining chunk.
 //
 // Measured rather than reasoned: node runs this module directly (it
-// strips the types), and highlight.js's own entry point is wrapped
-// before the module loads, so the count is of real calls.
+// strips the types), and the module counts its own grammar runs
+// (`measured.paints`, `lib/highlight.ts`) — Shiki's highlighter is a
+// closure nothing outside the module can wrap, where highlight.js's
+// entry point could be. The count is still of real runs.
 {
-  const core = (await import("highlight.js/lib/core")).default;
-  const real = core.highlight.bind(core);
+  const { paint, openFenceAt, languageOf, measured } = await import("../src/lib/highlight.ts");
   let calls = 0;
-  core.highlight = (...args) => {
-    calls += 1;
-    return real(...args);
-  };
-  const { paint, openFenceAt, languageOf } = await import("../src/lib/highlight.ts");
 
   // The probe first: a build where nothing ever paints satisfies both
   // 「zero while open」and「one when closed」by doing nothing at all.
   const sample = 'const s = "hi"; // c';
   if (languageOf("tsx") === null) fail("probe dead: the whitelist resolves nothing, so nothing below is exercised");
-  else if (paint(sample, "typescript") === null) fail("probe dead: the painter answered nothing for a whitelisted language");
-  else if (calls === 0) fail("probe dead: the wrapper never saw a call, so the count below means nothing");
+  else if ((await paint(sample, "typescript")) === null) fail("probe dead: the painter answered nothing for a whitelisted language");
+  else if (measured.paints === 0) fail("probe dead: the module counted no run, so the count below means nothing");
   else {
-    const first = calls;
-    paint(sample, "typescript");
-    paint(sample, "typescript");
-    paint(sample, "typescript");
+    const first = measured.paints;
+    await paint(sample, "typescript");
+    await paint(sample, "typescript");
+    await paint(sample, "typescript");
+    calls = measured.paints;
     if (calls !== first) {
       fail(
-        `a closed block is re-highlighted: ${calls - first} extra call(s) for the same text. ` +
+        `a closed block is re-highlighted: ${calls - first} extra run(s) for the same text. ` +
           `Closing a fence is not the end of a turn — the prose after it keeps arriving, and each ` +
           `chunk re-renders the whole turn`,
       );
@@ -817,37 +827,23 @@ try {
           if (c.commentInk === c.stringInk) {
             fail(`${say(m)}: comment and string are one colour (${c.stringInk})`);
           }
-          // And everything else really is left alone: a keyword is the
-          // body ink. This is the half that keeps a low-colour scheme
-          // low — without it, four more roles can arrive one at a time.
-          if (c.keywordInk !== c.bodyInk) {
-            fail(
-              `${say(m)}: a keyword paints ${c.keywordInk} against the body's ${c.bodyInk} — ` +
-                `this batch gives syntax three roles, and a fourth has arrived`,
-            );
+          // **A keyword is its own colour since 2026-09-15.** This gate
+          // used to hold the opposite line — three roles, a keyword in
+          // body ink — until the user ruled 「我说的语法高亮，是有颜色
+          // 的」 and then 「做到 gh web 预览代码的那种高亮」; the theme
+          // is GitHub's own now, and a keyword that fell back to body
+          // ink would mean the theme did not reach the page.
+          if (c.keywordInk === c.bodyInk) {
+            fail(`${say(m)}: a keyword reads as body ink (${c.bodyInk}) — the theme is not landing`);
           }
-          // The new colour is genuinely new.
-          for (const [name, colour] of Object.entries(c.spokenFor)) {
-            // The probe this claim needs most: a colour in a form the
-            // comparison cannot read is a colour it will call far away.
-            // This gate was green with the string set to 待批's exact
-            // value because the token came back as hex and the distance
-            // was computed from the digits inside it.
-            if (!colour.startsWith("rgb")) {
-              fail(
-                `${say(m)}: probe dead — ${name} came back as「${colour}」, which the comparison ` +
-                  `cannot read, so its separation was never checked`,
-              );
-              continue;
-            }
-            const d = apart(c.stringInk, colour);
-            if (d < APART) {
-              fail(
-                `${say(m)}: the string colour sits ${d.toFixed(3)} from ${name} in OKLab, under ${APART} — ` +
-                  `close enough to be read as saying what that colour says`,
-              );
-            }
-          }
+          // The string's distance from the state words is printed, not
+          // gated: the colour is GitHub's and not this app's to move,
+          // and a person reads code inside a code block, where a state
+          // word never appears.
+          const near = Object.entries(c.spokenFor)
+            .filter(([, colour]) => colour.startsWith("rgb"))
+            .map(([name, colour]) => `${name} ${apart(c.stringInk, colour).toFixed(3)}`);
+          console.log(`  string ink ${c.stringInk} vs the spoken-for colours: ${near.join(" · ")}`);
         }
 
         // 8) and the block that is still arriving is left alone.

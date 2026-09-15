@@ -40,13 +40,13 @@
 // out of the streaming path**: the block that is still arriving is
 // exactly the block whose fence has not closed, so it is left plain and
 // the highlighter is called once, when the fence lands.
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import { openLink } from "@/api";
-import { languageOf, openFenceAt, paint } from "@/lib/highlight";
+import { languageOf, openFenceAt, paint, painted } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 
 /** The shape every component override receives from react-markdown. */
@@ -162,35 +162,68 @@ const codePart =
       "font-mono text-code",
       !fenced && "rounded-sm bg-muted px-1 py-0.5 [pre_&]:bg-transparent [pre_&]:p-0",
     );
-    const html = fenced ? html_of(String(children ?? ""), className ?? "", node, openAt) : null;
-    // **The one place this file emits markup, and the ban it looks like
-    // it breaks is intact.** The module head refuses raw HTML because
-    // the text is a remote agent's; this is not the agent's markup, it
-    // is markup highlight.js generated *from* the agent's text after
-    // escaping every character of it. The difference is measured, not
-    // asserted: the gate paints a block containing a script tag and an
-    // event handler and reads back both the element count and the text,
-    // character for character.
-    return html === null ? (
+    const lang = fenced ? langOf(className ?? "", node, openAt) : null;
+    return lang === null ? (
       <code className={dress}>{children}</code>
     ) : (
-      <code className={dress} dangerouslySetInnerHTML={{ __html: html }} />
+      <Painted code={String(children ?? "")} lang={lang} dress={dress}>
+        {children}
+      </Painted>
     );
   };
 
+/**
+ * A closed fence, painted when its grammar has arrived.
+ *
+ * **Text first, paint second.** Shiki loads a grammar on the first
+ * block in a language, so a block draws as plain text on the frame it
+ * lands and takes the paint when the promise settles; one already
+ * painted (`painted`) never passes through the plain frame, which is
+ * what keeps a long answer's early blocks steady while its prose keeps
+ * arriving (the cache's reason, `lib/highlight.ts`).
+ *
+ * **The one place this file emits markup, and the ban it looks like it
+ * breaks is intact.** The module head refuses raw HTML because the text
+ * is a remote agent's; this is not the agent's markup, it is markup the
+ * highlighter generated *from* the agent's text after escaping every
+ * character of it. The difference is measured, not asserted: the gate
+ * paints a block containing a script tag and an event handler and reads
+ * back both the element count and the text, character for character.
+ */
+function Painted({
+  code,
+  lang,
+  dress,
+  children,
+}: {
+  code: string;
+  lang: string;
+  dress: string;
+  children?: ReactNode;
+}) {
+  const [html, setHtml] = useState<string | null>(() => painted(code, lang));
+  useEffect(() => {
+    if (html !== null) return;
+    let live = true;
+    void paint(code, lang).then((h) => live && h !== null && setHtml(h));
+    return () => {
+      live = false;
+    };
+  }, [code, lang, html]);
+  return html === null ? (
+    <code className={dress}>{children}</code>
+  ) : (
+    <code className={dress} dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
+
 /** The painted HTML for a closed, whitelisted block — else `null`. */
-function html_of(
-  code: string,
-  className: string,
-  node: Positioned["node"],
-  openAt: number | null,
-): string | null {
+function langOf(className: string, node: Positioned["node"], openAt: number | null): string | null {
   if (openAt !== null) {
     const at = node?.position?.start?.offset;
     if (at === undefined || at >= openAt) return null;
   }
-  const lang = languageOf(/language-(\S+)/.exec(className)?.[1] ?? "");
-  return lang === null ? null : paint(code, lang);
+  return languageOf(/language-(\S+)/.exec(className)?.[1] ?? "");
 }
 
 /** A link in an agent's text: pressed, it goes to this machine's own

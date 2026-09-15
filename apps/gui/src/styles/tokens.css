@@ -111,48 +111,9 @@
    * light against 15.17 dark meant the same paragraph had two weights
    * depending on an OS setting nobody had written down. */
   --read-ink: rgba(26, 26, 20, 0.9);
-  /* The one colour syntax highlighting is allowed, and it means **a
-   * string literal** — nothing else. Comments take the aux ink they
-   * already are; every other token in a code block stays body ink. Three
-   * roles, one new colour (`lib/highlight.ts` for why not six).
-   *
-   * **What it is not: a seventh word.** The six state words share a
-   * lightness band (L* held together so they read as one family), and
-   * this deliberately does *not* stand in that band — it is a tint of
-   * ink, not a status. A colour sitting at the words' lightness with a
-   * hue of its own is a colour a person will eventually read as
-   * meaning something about the session.
-   *
-   * **Measured rather than picked.** On the code block's real ground
-   * (`--muted` over the page, rgb(231,231,226) here) it contrasts 10.99,
-   * which is level with the body ink beside it at 10.92 — a low-colour
-   * scheme's string must not be louder than the code around it. Its
-   * distance in OKLab from every colour this app has already given a
-   * job to: blocked .176, strain .178, failed .264, errored .266, done
-   * .272, the brand green .479. For scale, the closest pair this app
-   * already ships as two different colours is done/errored at .090.
-   *
-   * The gate holds both halves — the separation and the contrast — so
-   * neither can be lost to a later nudge (`scripts/check-read.mjs`).
-   *
-   * No `--color-` mapping: nothing wears this as a utility. The rules
-   * that apply it name highlight.js's own class names, which only a
-   * stylesheet can reach (`styles/app.css`). */
-  --code-string: #321c71;
-  /* The rest of the code palette (2026-09-15, 「我说的语法高亮，是有
-     颜色的」). Until then the sheet had one colour beside the string:
-     the palette was held to three roles on purpose (`lib/highlight.ts`
-     head), and the person reading a .py file called that 「没有任何
-     语法高亮」. Seven roles, GitHub's light values — chosen because
-     they are the ones most eyes already know from a diff page, and
-     none of them lands on a state word or the brand green. */
-  --code-keyword: #cf222e;
-  --code-number: #0550ae;
-  --code-type: #953800;
-  --code-function: #6639ba;
-  --code-attr: #116329;
-  --code-variable: #24292f;
-  --code-meta: #8250df;
+  /* No code palette of its own since 2026-09-15: the sheet and the
+     rendered turns paint with Shiki in GitHub's two themes, and every
+     token carries its own colour (`styles/app.css`). */
   --accent: rgba(147, 176, 77, 0.16);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
@@ -1170,20 +1131,6 @@
        measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
        has, which is where a dark page starts to glare. */
     --read-ink: rgba(238, 238, 231, 0.86);
-    /* 10.26 on this theme's code ground against the body ink's 10.76 —
-       a shade quieter than the code it sits among, which is the right
-       side to err on. Distances in OKLab: blocked .126, failed .126,
-       strain .126, done .194, the brand green .196, errored .197. The
-       reasoning is on the light value. */
-    --code-string: #c8c7fe;
-    /* GitHub's dark values for the same seven roles (light block). */
-    --code-keyword: #ff7b72;
-    --code-number: #79c0ff;
-    --code-type: #ffa657;
-    --code-function: #d2a8ff;
-    --code-attr: #7ee787;
-    --code-variable: #e6edf3;
-    --code-meta: #d2a8ff;
     --accent: rgba(183, 207, 117, 0.14);
     --accent-foreground: rgba(238, 238, 231, 0.96);
     --destructive: #d4756b;

@@ -216,13 +216,20 @@ false 时走 pdfboss 抽字那条路，脸上写明给的是文字不是版式�
 
 ### 高亮（2026-09-15）
 
-用户裁决：「我说的语法高亮，是有颜色的」。工具是 highlight.js（已在树里，
-不上 Shiki——TextMate 语法 + oniguruma wasm 一兆多且异步）。颜色九个角色，
-`tokens.css` 的 `--code-*`，亮暗各一份，取 GitHub 的值；规则在 `app.css`，
-同时挂在文件视图 `[data-sheet]` 和聊天代码块 `[data-md]` 上——同一个 `def`
-两处一个颜色。语言按扩展名映射（`lib/highlight.ts` 的 `LANGS`），
-注册 46 种，按模块引入；这一批加的 35 种量得 **+130 KB JS**（1.39 → 1.52 MB）。
-`check-face` 断言关键字的着色 ≠ 正文、字符串 ≠ 关键字——一个类名不算颜色。
+两句裁决：「我说的语法高亮，是有颜色的」「应该用已有成熟工具啊。做到 gh web
+预览代码的那种高亮」。落法：**Shiki**——VS Code 那套 TextMate 语法，配 GitHub
+自己发布的 `github-light-default` / `github-dark-default` 主题，也就是 github.com
+上画的那套颜色，一个都不是 khor 挑的。引擎用纯 JS 正则（不带 wasm、不异步初始化），
+语法按需懒加载（一个 .py 只多下 Python 一份语法），`crates/web/build.rs` 递归打包
+`dist`，懒加载在网页脸上一样走得通。每个 token 的 span 上带两套颜色的 CSS 变量，
+`app.css` 只做亮暗切换（跟 `tokens.css` 同一条 media query）。
+
+装了 16 个 npm 包，全 MIT；highlight.js 与手写的 `--code-*` 调色板一并删除。
+中间有过一版手写九角色映射（39eb05f），当天被这两句裁决替掉。
+
+`check-face` 读的是**画在玻璃上的颜色**，不是 DOM 里的类名：.rs 的 span 之间至少
+三种着色、且至少一种 ≠ 正文；`check-read` 按文本找到字符串/注释/关键字三个 span，
+断言三者互不相同、且都 ≠ 正文。
 
 ## 分五批做，这是第⑤批
 

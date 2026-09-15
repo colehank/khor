@@ -398,8 +398,18 @@ export function FileView({
     // No wait at all on a file that is only being read — a new file
     // must not flash plain before it colours. The wait exists for the
     // burst of keystrokes, so it starts when the burst does.
-    const id = setTimeout(() => setPainted({ text: body, html: paintFile(body, lang) }), dirty ? PAINT_IDLE : 0);
-    return () => clearTimeout(id);
+    // Asynchronous since Shiki (2026-09-15): the first file in a
+    // language waits for its grammar. `live` drops a paint whose text is
+    // no longer the buffer's, so a slow grammar cannot land old paint
+    // under new keystrokes.
+    let live = true;
+    const id = setTimeout(() => {
+      void paintFile(body, lang).then((html) => live && setPainted({ text: body, html }));
+    }, dirty ? PAINT_IDLE : 0);
+    return () => {
+      live = false;
+      clearTimeout(id);
+    };
   }, [body, lang, dirty]);
 
 
