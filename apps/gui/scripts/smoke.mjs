@@ -125,6 +125,18 @@
 //      out of it, every face on it is pressable and opens that machine's
 //      card, and the session count it prints is the one `khor sessions`
 //      lists for the same home, with no number written in this file;
+//  31. the workspace landing on the real mesh (工作区批⑥, and the first
+//      time this file opens it at all): a workspace declared from
+//      beta's face onto **alpha's** disk through the cross-machine
+//      picker, arriving in alpha's own `khor ws ls` with nobody telling
+//      it; its git corner empty because the directory is no checkout;
+//      an mtime alpha answered, re-asked on the way back to the window
+//      and changed by a write; the directory listed and walked; a file
+//      deleted across the wire really gone from the disk, behind the
+//      sheet that says 直接删 and offers no 「不再问」; the sessions
+//      column holding the one started under that directory and not the
+//      one started beside it; and 移出 replicating back while the
+//      directory stays;
 //  27. zero pageerror throughout.
 // Every wait has a deadline; cleanup runs in finally and kills by pid.
 //
@@ -172,6 +184,8 @@ import {
   chmodSync,
   statSync,
   symlinkSync,
+  utimesSync,
+  realpathSync,
 } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { tmpdir } from "node:os";
@@ -6802,6 +6816,250 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     (await page.locator('[data-device="gamma"]').count()) === 0,
   );
   await until("beta's CLI to stop listing gamma", 20_000, () => !listsGamma(), 1_000);
+
+  // 31) the workspace landing, on the real mesh (工作区批⑥).
+  //
+  //      **The whole of 工作区 was fixture-only until now.** Five
+  //      batches built it and `check-face` drove every one of them
+  //      against routed JSON; this file — three real homes, real UDP,
+  //      a real bridge — never opened the landing at all. So a
+  //      workspace that syncs, a directory listed off another machine,
+  //      a file deleted on it and a session filed under it were all
+  //      unmeasured on the one road that has a far machine in it.
+  //
+  //      **One box, two homes, and what that can and cannot prove.**
+  //      alpha and beta are two khor homes on one filesystem, so an
+  //      absolute path resolves the same for both and 「it listed
+  //      alpha's disk rather than beta's」 is not a claim any content
+  //      can settle here. What it *can* settle is everything that goes
+  //      through the far machine's serve: the row saying `alpha:`, an
+  //      mtime alpha answered, a file alpha really unlinked, and the
+  //      declaration itself arriving in alpha's own table.
+  //
+  //      **Before 26, like 30 above.** Written at the end of the file
+  //      and run there once: 26 kills the bridge, and every ask after
+  //      it answers nothing — the picker still drew (its dialog is this
+  //      app's own), the machine row did not, and the failure read as
+  //      「the picker has no cross-machine row」 rather than 「there is
+  //      no backend」. A section that needs a node goes above the one
+  //      that takes the node away.
+  //      **The one path in this file that is resolved before it is
+  //      used, and 31e is why.** `SCRATCH` is under `target/`, which on
+  //      this checkout is a symlink to another volume — so the path
+  //      typed into the picker and the path `khor open` records for a
+  //      session started there are two spellings of one directory.
+  //      Belonging is a prefix comparison over the recorded cwd
+  //      (`WorkspacePane`'s `mine`), and two spellings never share a
+  //      prefix: the column came up empty with both rows sitting in the
+  //      node under `/Volumes/...`. **This is a fixture that walks
+  //      around the difference, not a fix for it** — a workspace really
+  //      declared through a symlink still collects nothing, and that is
+  //      reported rather than patched here (批⑥: 产品不动).
+  const wsDir = join(realpathSync(SCRATCH), "alpha-workspace");
+  const wsFile = join(wsDir, "notes.md");
+  const wsOutside = join(realpathSync(SCRATCH), "alpha-elsewhere");
+  mkdirSync(join(wsDir, "sub"), { recursive: true });
+  mkdirSync(wsOutside, { recursive: true });
+  writeFileSync(wsFile, "# a note\n");
+  //      **Deliberately not a checkout**: the git corner has to come out
+  //      empty, and a directory with a `.git` in it would fill it.
+  //      Dated old so 31b can tell 「alpha answered a fresh mtime」 from
+  //      「the column drew something」.
+  const OLD = new Date("2020-01-01T00:00:00Z");
+  utimesSync(wsFile, OLD, OLD);
+  utimesSync(join(wsDir, "sub"), OLD, OLD);
+
+  // 31a) declared from beta's face, on alpha's disk, through the picker.
+  await openLanding("workspaces");
+  await page.locator("[data-ws-add]").click();
+  await until("the directory picker", 10_000, async () =>
+    (await page.locator("[data-dir-picker]").count()) === 1,
+  );
+  await page.locator('[data-dir-picker-machine="alpha"]').click();
+  //      Typed rather than walked from the home the picker opens on:
+  //      that home is this developer's own, and the path below is under
+  //      the scratch directory. The box is the road for exactly this
+  //      (`components/DirPicker` — the tree is the shortcut, the box is
+  //      the floor), and Enter walks it, so what comes back is alpha's
+  //      listing of that directory and not this face's idea of one.
+  await page.locator("[data-dir-picker-path]").fill(wsDir);
+  await page.locator("[data-dir-picker-path]").press("Enter");
+  await until("alpha listing the directory it was asked about", 20_000, async () =>
+    (await page.locator('[data-dir-picker-row="sub"]').count()) === 1,
+  );
+  await page.locator("[data-dir-picker-take]").click();
+  await until("the picker answered and closed", 20_000, async () =>
+    (await page.locator("[data-dir-picker]").count()) === 0,
+  );
+  const wsName = wsDir.split("/").pop();
+  await until("the row on beta's list", 20_000, async () =>
+    (await page.locator("[data-ws-row] [data-ws-name]").allInnerTexts()).includes(wsName),
+  );
+  const wsRow = page.locator("[data-ws-row]").filter({ hasText: wsName }).first();
+  const where = await wsRow.locator("[data-ws-where]").innerText();
+  if (where !== `alpha:${wsDir}`) {
+    throw new Error(`the row says ${where} — a workspace is (machine, directory) and this one is alpha's`);
+  }
+  //      **The decision replicated**, which is the whole reason it is a
+  //      document: nobody told alpha, and alpha lists it.
+  await until("alpha's own table carrying the declaration", 40_000, () =>
+    cli(envA, "ws", "ls").includes(`alpha:${wsDir}`),
+  );
+  if (!cli(envA, "ws", "ls").split("\n").some((l) => l.split("\t")[1] === wsName)) {
+    throw new Error(`khor ws ls on alpha does not name the row ${wsName}: ${cli(envA, "ws", "ls")}`);
+  }
+  //      Not a repository, so the git corner is empty — never the word
+  //      for「no git」, and never「clean」.
+  const gitCorner = await wsRow.locator("[data-ws-git]").innerText();
+  if (gitCorner.trim() !== "") {
+    throw new Error(`a directory that is no checkout drew 「${gitCorner}」 in its git corner`);
+  }
+
+  // 31b) the mtime is alpha's answer, re-asked on the way back to the
+  //      window (the same kick `WorkspacePane` uses for the marks).
+  const setHiddenWs = (on) =>
+    page.evaluate((hide) => {
+      Object.defineProperty(document, "hidden", { value: hide, configurable: true });
+      Object.defineProperty(document, "visibilityState", {
+        value: hide ? "hidden" : "visible",
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, on);
+  const wasTouched = await wsRow.locator("[data-ws-touched]").innerText();
+  if (wasTouched.trim() === "") {
+    throw new Error("alpha answered no mtime at all for a directory with files in it");
+  }
+  writeFileSync(wsFile, "# a note, edited\n");
+  await setHiddenWs(true);
+  await setHiddenWs(false);
+  await until("the row carrying alpha's fresh mtime", 30_000, async () => {
+    const now = await wsRow.locator("[data-ws-touched]").innerText().catch(() => "");
+    return now.trim() !== "" && now !== wasTouched;
+  });
+
+  // 31c) opened: the tree is that directory's.
+  await wsRow.click();
+  await until("alpha's directory in the tree", 30_000, async () =>
+    (await page.locator('[data-file="notes.md"]').count()) === 1 &&
+    (await page.locator('[data-dir="sub"]').count()) === 1,
+  );
+
+  // 31d) a file deleted across the wire is really gone from alpha's
+  //      disk — and the sheet says so before anybody presses, because a
+  //      far machine has no recycle bin to put it in.
+  await page.locator('[data-file="notes.md"] > button').first().click({ button: "right" });
+  await until("the file's menu", 10_000, async () =>
+    (await page.locator('[data-menu-item="remove"]').count()) === 1,
+  );
+  await page.locator('[data-menu-item="remove"]').click();
+  await until("the confirmation sheet", 10_000, async () =>
+    (await page.locator("[data-remove-dialog]").count()) === 1,
+  );
+  if ((await page.locator("[data-remove-never-ask]").count()) !== 0) {
+    throw new Error("a file on another machine offered 「不再问」 — there is no bin over there to take it back out of");
+  }
+  const saysGone = await page.locator("[data-remove-says]").innerText();
+  if (!saysGone.includes("notes.md")) {
+    throw new Error(`the sheet does not name the file: ${saysGone}`);
+  }
+  await page.locator("[data-remove-go]").click();
+  await until("the file gone from alpha's disk", 20_000, () => !existsSync(wsFile));
+  await until("and gone from the tree", 20_000, async () =>
+    (await page.locator('[data-file="notes.md"]').count()) === 0,
+  );
+
+  // 31e) the sessions column: what is running under this directory on
+  //      this machine, and nothing else.
+  //
+  //      Started with a cwd rather than through the wizard, because the
+  //      cwd is the whole subject: `khor open` records where it was run
+  //      (`live::learn_place`), and `execFileSync` can say where that
+  //      is. Two of them, one inside and one beside, so the rule being
+  //      measured is「under this directory」and not「on this machine」.
+  const wsInside = execFileSync(
+    KHOR,
+    ["open", "-d", "--title", "ws-inside", "--", "sh", "-c", "sleep 600"],
+    { env: envA, cwd: wsDir, encoding: "utf8", timeout: 30_000 },
+  ).trim();
+  const wsBeside = execFileSync(
+    KHOR,
+    ["open", "-d", "--title", "ws-beside", "--", "sh", "-c", "sleep 600"],
+    { env: envA, cwd: wsOutside, encoding: "utf8", timeout: 30_000 },
+  ).trim();
+  try {
+    //      **The column's default is closed here** — a wide face with
+    //      the workspace list open already has four columns, and this
+    //      is the fifth (`WorkspacePane` `listOpen`). So the switch is
+    //      pressed, and that the column then exists is its own
+    //      assertion: without it 「no row in the column」 and 「no
+    //      column」 are the same red, and only one of them is about
+    //      belonging.
+    if ((await page.locator("[data-ws-sessions]").count()) === 0) {
+      await page.locator("[data-ws-sessions-switch]").click();
+    }
+    await until("the workspace's sessions column", 10_000, async () =>
+      (await page.locator("[data-ws-sessions]").count()) === 1,
+    );
+    //      What the node itself holds for these two rows, printed into
+    //      the failure rather than left to a second run: the column can
+    //      come up empty because the row never arrived, because it
+    //      arrived under another machine, or because its birthplace was
+    //      not recorded — three different bugs, one empty column.
+    const wsRowsSay = async () => {
+      const all = await bridgeOp("sessions", { by: "recent" }).catch((e) => String(e));
+      if (!Array.isArray(all)) return `the node would not say: ${all}`;
+      return all
+        .filter((r) => r.title === "ws-inside" || r.title === "ws-beside")
+        .map((r) => `${r.title} home=${r.home} place=${r.place}`)
+        .join("; ") || "the node lists neither of them";
+    };
+    await until("the session started inside the workspace", 40_000, async () =>
+      (await page.locator('[data-ws-sessions] [data-title="ws-inside"]').count()) === 1,
+    ).catch(async (e) => {
+      throw new Error(`${e.message} — the node says: ${await wsRowsSay()}`);
+    });
+    if ((await page.locator('[data-ws-sessions] [data-title="ws-beside"]').count()) !== 0) {
+      throw new Error("a session started beside the workspace is listed in it — the rule is 「under this directory」");
+    }
+    //      **`showVia={false}` is not asserted here, and the control is
+    //      why.** The column passes it so a row does not repeat the
+    //      machine the header above it just named — but `data-via` is
+    //      the 借网 mark (`SessionRow::via`, docs/NET.md), and that
+    //      field has no producer in the product yet. A run that
+    //      measured it found zero marks in the column *and* zero on the
+    //      sessions landing, which is this file's own 假绿 family: an
+    //      assertion that cannot fail is not one. It comes back when
+    //      something writes a via.
+    //
+    //      Back to the landing, so 31f starts from the list rather than
+    //      from wherever the last press left this pane.
+    await openLanding("workspaces");
+  } finally {
+    //      Detached hosts outlive this script unless they are told
+    //      (the orphan discipline).
+    for (const id of [wsInside, wsBeside]) cli(envA, "close", id);
+  }
+
+  // 31f) moved out: the decision replicates back, and the directory is
+  //      not touched.
+  await until("the list back with the row on it", 20_000, async () =>
+    (await page.locator("[data-ws-row] [data-ws-name]").allInnerTexts()).includes(wsName),
+  );
+  const backRow = page.locator("[data-ws-row]").filter({ hasText: wsName }).first();
+  await backRow.click({ button: "right" });
+  await until("the row's menu", 10_000, async () =>
+    (await page.locator('[data-menu-item="remove"]').count()) === 1,
+  );
+  await page.locator('[data-menu-item="remove"]').click();
+  await until("the row gone from beta's list", 20_000, async () =>
+    !(await page.locator("[data-ws-row] [data-ws-name]").allInnerTexts()).includes(wsName),
+  );
+  await until("and gone from alpha's table", 40_000, () => !cli(envA, "ws", "ls").includes(wsDir));
+  if (!existsSync(wsDir) || !existsSync(join(wsDir, "sub"))) {
+    throw new Error("移出 took the directory with it — it takes the row and nothing else");
+  }
+  console.log(`workspaces: declared ${wsName} on alpha from beta's face, listed it, deleted a file on it, and moved it out`);
 
   // Back to the sessions landing: what follows reads rows off it.
   await openLanding("sessions");
