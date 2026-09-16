@@ -1166,6 +1166,14 @@ try {
           { path: "data.csv", mark: "R" },
           { path: "src/one.rs", mark: "U" },
           { path: "src/notes.md", mark: "C" },
+          // **One ignored file and one ignored directory** (2026-09-16
+          // ruling 28). `!` is not a change — it is `.gitignore`
+          // covering a path — and the pair is here because the tree has
+          // to grey both kinds of row: git collapses an ignored
+          // directory to one row (`khor_node::git`'s `CollapseDirectory`),
+          // so `target` arrives whole rather than as its contents.
+          { path: "debug.log", mark: "!" },
+          { path: "target", mark: "!" },
         ],
         more: false,
       }),
@@ -1254,6 +1262,18 @@ try {
       body: JSON.stringify({ version: "1.137.0", ready: false }),
     }),
   );
+  // **The window-widening call, counted rather than answered**
+  // (2026-09-16 ruling 25:「右上角的icon,都是点击后,在最右侧,拓宽窗口,
+  // 而不是挤占现有窗口」). A window is the app's to resize and nobody
+  // else's, so the face must not even ask outside it — and this run is
+  // a browser with a bridge, which is exactly「outside it」. The route is
+  // here so the ask is visible if it happens; what is asserted is that
+  // it never does (4l).
+  const widened = [];
+  await page.route("**/widen", (r) => {
+    widened.push(r.request().postDataJSON() ?? {});
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
   await page.route("**/recents", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify([]) }),
   );
@@ -1331,6 +1351,12 @@ try {
           { name: "data.csv", dir: false, size: 40, at_ms: Date.now() },
           { name: "report.pdf", dir: false, size: 4321, at_ms: Date.now() },
           { name: "sheet.docx", dir: false, size: 5000, at_ms: Date.now() },
+          // The two rows `.gitignore` covers (2026-09-16 ruling 28),
+          // one of each kind: the **listing** still has them — an
+          // ignored file is a file on the disk — and what says so is
+          // the name's ink, which is what 4k′ measures.
+          { name: "debug.log", dir: false, size: 120, at_ms: Date.now() },
+          { name: "target", dir: true, size: 0, at_ms: Date.now() },
         ],
         truncated: false,
       }),
@@ -1739,6 +1765,29 @@ try {
     if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
     return press(rail(tab));
   };
+  /** Open a workspace from the list **and leave its tree out.**
+   *
+   * **Pressing the row that is already in front folds the tree**
+   * (2026-09-16 ruling 42:「取消工作区list这个只能点击『<』展开文件树吧.
+   * 还是点击整个工作区行都可以」) — right for a person and a trap for a
+   * walk that re-opens the same workspace at every stop: the second
+   * visit would fold the column the stop is about, and the stop would
+   * read probe dead. Exactly the shape the rail's own 再点收起 laid on
+   * this file in 第三轮·续.
+   *
+   * So the tree is asked for rather than assumed. The probe that
+   * measures the fold itself presses the row raw (4l), which is the
+   * same arrangement `open` keeps for the rail. Narrow has no column to
+   * fold — there the row opens a screen and the tree is one press back
+   * (`[data-ws-back]`), which is the stops' business, not this one's. */
+  const openWs = async (sel = "[data-ws-row]") => {
+    if (!(await press(sel))) return false;
+    const folded =
+      !(await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"))) &&
+      (await page.locator("[data-ws-tree]").count()) === 0;
+    if (folded) await press(sel);
+    return true;
+  };
   //     ── 「还没答」那张脸,趁路由还挂着 ──────────────────────
   //
   //     **它必须在这里,不能在下面那一节。** 走查(第 3 节)有一站要打开
@@ -1853,7 +1902,15 @@ try {
       // than passing an empty column.
       name: "workspaces · one open",
       anchor: "[data-file-tree]",
-      go: async () => (await open("workspaces")) && press("[data-ws-row]"),
+      go: async () => {
+        if (!(await open("workspaces")) || !(await openWs())) return false;
+        // **Narrow is one screen at a time now** (2026-09-16 ruling 33)
+        // and a workspace with a tab left on its strip opens on the
+        // file; the tree is one press back from there. Wide draws all
+        // three columns and finds nothing to press.
+        await press("[data-ws-back]");
+        return true;
+      },
     },
     {
       // …and a file open inside it, which is where the change gutter is
@@ -1864,10 +1921,14 @@ try {
       // measured by nothing.
       name: "workspaces · one file",
       anchor: "[data-gutter]",
-      go: async () =>
-        (await open("workspaces")) &&
-        (await press("[data-ws-row]")) &&
-        press('[data-file="one.rs"] button'),
+      go: async () => {
+        if (!(await open("workspaces")) || !(await openWs())) return false;
+        // The tree first (ruling 33: on narrow it is a screen of its
+        // own), then the file — which on narrow *is* the next screen,
+        // and on wide is the middle column.
+        await press("[data-ws-back]");
+        return press('[data-file="one.rs"] button');
+      },
     },
     {
       // Folded behind「…」on the narrow bar (App.tsx `NARROW_SHOWN`),
@@ -2119,8 +2180,9 @@ try {
         "the size is determined by the information being presented. **What it does not buy:** a " +
         "finger on a wide touch screen. It is also the one place where that costs less than it " +
         "looks — unlike the list seam, **both of these columns can be put away and brought back " +
-        "from the head above them** (`gui.workspace_tree`, `gui.workspace_sessions`), and those two " +
-        "controls do wear the floor. So a touch user loses the *width*, not the column. **It is " +
+        "without it**: the tree from the workspace's own row in the list and from ⌘B (2026-09-16), the " +
+        "sessions from the switch at the strip's end (`gui.workspace_sessions`), and both of those " +
+        "targets do wear the floor. So a touch user loses the *width*, not the column. **It is " +
         "still not「no problem」**: they cannot choose a width at all, and the answer to that is a " +
         "width control that is not a two-pixel strip, not a wider strip.",
     ],
@@ -2398,7 +2460,7 @@ try {
     await open("workspaces");
     // The walk may have left a workspace open, so the list row need not
     // be there — pressing it is an attempt, not a requirement.
-    await press("[data-ws-row]");
+    await openWs();
     return until(5_000, async () => (await page.locator("[data-file]").count()) > 0);
   };
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -2720,66 +2782,102 @@ try {
         body: JSON.stringify({ at_ms: Date.now(), digest: "1".repeat(64) }),
       }),
     );
+    // **Where the file's first line stands, before anything is typed.**
+    // 2026-09-16 ruling 30:「修改文件不要显示"存好了"和"回到存之前", 类似
+    // 要在文件上方新增一列的东西都不要」— what that row cost was paid on
+    // the keystroke, so the keystroke is where it is measured.
+    const lineTop = () =>
+      page.evaluate(() => {
+        const one = document.querySelector('[data-sheet] [data-line="1"]');
+        return one === null ? null : Math.round(one.getBoundingClientRect().top * 10) / 10;
+      });
+    const restTop = await lineTop();
     await editing.click();
     await page.keyboard.type("X");
-    await press("[data-save]");
-    await new Promise((r) => setTimeout(r, 120));
-    const afterSave = await page.evaluate(() => ({
-      state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
-      undo: !!document.querySelector("[data-undo]"),
-      text: document.querySelector("textarea")?.value ?? "",
-    }));
-    console.log(
-      `save: state ${afterSave.state}, a way back is ${afterSave.undo ? "offered" : "absent"}`,
-    );
-    if (afterSave.state !== "saved") {
-      fail(`a save the far machine took left the file saying ${afterSave.state} (src/views/FileView.tsx)`);
-    }
-    if (!afterSave.undo) {
+    await new Promise((r) => setTimeout(r, 200));
+    const typedTop = await lineTop();
+    console.log(`the file's first line: ${restTop} at rest, ${typedTop} with something typed`);
+    if (restTop === null || typedTop === null) {
+      fail("probe void: no first line on the sheet to measure against (src/views/FileView.tsx)");
+    } else if (Math.abs(typedTop - restTop) > 1) {
       fail(
-        "a save landed and offered no way back to what was there — khor replaced the file and kept " +
-          "nothing, which is the one minute somebody needs it (src/views/FileView.tsx)",
+        `typing moved the file's first line from ${restTop} to ${typedTop} — 「类似要在文件上方新增一列的` +
+          "东西都不要」, and a row that appears on the keystroke moves the line being typed on " +
+          "(src/views/FileView.tsx)",
       );
-    } else {
-      await press("[data-undo]");
-      await new Promise((r) => setTimeout(r, 80));
-      const back = await page.evaluate(() => document.querySelector("textarea")?.value ?? "");
-      console.log(`back: the box holds ${JSON.stringify(back.slice(0, 24))}`);
-      if (back === afterSave.text) {
-        fail(
-          "「回到存之前」 left the box exactly as the save did — it is supposed to put the replaced " +
-            "text back (src/views/FileView.tsx)",
-        );
-      }
-      // **Into the box, not onto the disk.** khor writes when somebody
-      // presses 存 and at no other moment, so the file must now read as
-      // unsaved rather than as written.
-      const nowState = await page.evaluate(
-        () => document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+    }
+    // **⌘S is the save**, and it is the only one: the 存 button lived on
+    // that row and went with it.
+    await page.keyboard.press("Control+s");
+    await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0);
+    const afterSave = await page.evaluate(() => ({
+      buttons: document.querySelectorAll("[data-save], [data-undo]").length,
+      notice: document.querySelectorAll("[data-file-notice]").length,
+      wrote: null,
+      text: document.querySelector("textarea")?.value ?? "",
+      dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
+    }));
+    console.log(`save by ⌘S: ${JSON.stringify(afterSave)}`);
+    if (!afterSave.text.includes("X")) {
+      fail("probe void: nothing was typed into the box, so the save below is about nothing");
+    }
+    if (afterSave.buttons !== 0) {
+      fail(
+        `the file still carries ${afterSave.buttons} of 存 / 回到存之前 — both went with the row over the ` +
+          "file, and what is left is ⌘S and the tab's own dot (src/views/FileView.tsx)",
       );
-      if (nowState !== "unsaved") {
-        fail(
-          `going back left the file saying ${nowState} — putting the old text in the box is not ` +
-            "writing it, and saying 存好了 about bytes nobody wrote is the worst of the three " +
-            "(src/views/FileView.tsx)",
-        );
-      }
+    }
+    if (afterSave.notice !== 0) {
+      fail(
+        "a save khor took left a notice on the screen — 「存好了」 is the dot going out, and a word that " +
+          "never leaves stops being read (src/views/FileView.tsx)",
+      );
+    }
+    // **The dot is what says saved and unsaved now** (工作区批⑧'s own
+    // arrangement, which this ruling leans the rest of its weight on).
+    if (afterSave.dot !== 0) {
+      fail(
+        "the tab still wears its unsaved dot after a save the far machine took — that dot is the whole " +
+          "of what says 存好了 now (src/views/WorkspacePane.tsx, src/browse/TabStrip.tsx)",
+      );
     }
 
     // …and a save the far machine refuses, which is the case that had
     // no exit at all.
+    //
+    // **Something is typed first, and it is not decoration**: the
+    // merge below is asked with khor's last reading as its base and the
+    // box as one side, and a box that has not moved since the save
+    // would make those two the same text — a three-way merge with
+    // nothing to be three-way about, which is the arm that fires a few
+    // lines down.
+    await editing.click();
+    await page.keyboard.type("Y");
+    await new Promise((r) => setTimeout(r, 200));
     await page.unroute("**/write_text");
     await page.route("**/write_text", (r) =>
       r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify("这个文件在你编辑期间变了") }),
     );
-    await press("[data-save]");
-    await new Promise((r) => setTimeout(r, 120));
-    const refused = await page.evaluate(() => ({
-      state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
-      theirs: !!document.querySelector("[data-take-theirs]"),
-      mine: !!document.querySelector("[data-keep-mine]"),
-      merge: !!document.querySelector("[data-merge]"),
-    }));
+    await page.keyboard.press("Control+s");
+    await new Promise((r) => setTimeout(r, 200));
+    const refused = await page.evaluate(() => {
+      const notice = document.querySelector("[data-file-notice]");
+      const box = document.querySelector("[data-file-scroll]");
+      const first = document.querySelector('[data-sheet] [data-line="1"]');
+      const n = notice?.getBoundingClientRect() ?? null;
+      const b = box?.getBoundingClientRect() ?? null;
+      return {
+        state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+        theirs: !!document.querySelector("[data-take-theirs]"),
+        mine: !!document.querySelector("[data-keep-mine]"),
+        merge: !!document.querySelector("[data-merge]"),
+        // Where it stands: at the foot of the column, over the file.
+        // 「不推正文」 is the claim, and a block in the flow would have
+        // moved line 1 as well as taking room of its own.
+        atFoot: n !== null && b !== null && n.bottom <= b.bottom + 2 && n.top > b.top,
+        lineTop: first === null ? null : Math.round(first.getBoundingClientRect().top * 10) / 10,
+      };
+    });
     console.log(
       `refused: state ${refused.state}, exits ${[refused.theirs && "theirs", refused.merge && "merge", refused.mine && "mine"]
         .filter(Boolean)
@@ -2792,6 +2890,23 @@ try {
       fail(
         "a refused save offers no way out — the sentence says the file moved and the only move left " +
           "is copying the text out by hand (src/views/FileView.tsx)",
+      );
+    }
+    // **…and it floats at the foot rather than standing over the file**
+    // (ruling 30). This is the one thing left on this screen a person
+    // must act on, so it is still drawn — and it covers the last row or
+    // two instead of pushing every row down.
+    console.log(`refusal notice: at the foot ${refused.atFoot}, line 1 at ${refused.lineTop} (was ${restTop})`);
+    if (!refused.atFoot) {
+      fail(
+        "the refusal is not at the foot of the column — 「类似要在文件上方新增一列的东西都不要」, and " +
+          "what is left of it floats over the text (src/views/FileView.tsx data-file-notice)",
+      );
+    }
+    if (refused.lineTop !== null && restTop !== null && Math.abs(refused.lineTop - restTop) > 1) {
+      fail(
+        `a refused save moved the file's first line from ${restTop} to ${refused.lineTop} — the notice is ` +
+          "over the file, not above it (src/views/FileView.tsx)",
       );
     }
 
@@ -2830,7 +2945,10 @@ try {
     const merged = await page.evaluate(() => ({
       box: document.querySelector("textarea")?.value ?? "",
       said: document.querySelector("[data-merged]")?.dataset.merged ?? null,
-      state: document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+      // **「not saved」 is the tab's dot now** (2026-09-16 ruling 30):
+      // the row that used to carry a word for it is gone, and what says
+      // a file has something unwritten in it is the mark on its tab.
+      dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
     }));
     console.log(
       `merge: asked with base ${JSON.stringify((asked?.base ?? "").slice(0, 18))}, ` +
@@ -2861,12 +2979,12 @@ try {
           "sees is a number nobody settles (src/views/FileView.tsx)",
       );
     }
-    // **Merged is not saved.** khor writes when somebody presses 存;
-    // a merge that painted 存好了 would be claiming bytes nobody wrote.
-    if (merged.state === "saved") {
+    // **Merged is not saved.** khor writes when somebody presses ⌘S;
+    // a merge that put the dot out would be claiming bytes nobody wrote.
+    if (merged.dot === 0) {
       fail(
         "the file read as saved straight after a merge — nothing was written, and saying otherwise " +
-          "is the worst answer khor can give (src/views/FileView.tsx)",
+          "is the worst answer khor can give (src/views/FileView.tsx, src/browse/TabStrip.tsx)",
       );
     }
     await page.unroute("**/merge_text");
@@ -3175,6 +3293,36 @@ try {
           textH: name ? px(parseFloat(getComputedStyle(name).fontSize)) : 0,
           ink: slot ? getComputedStyle(slot).color : null,
           shape: dir ? "chevron" : (slot?.innerHTML.length ?? 0),
+          // **What is painted, not what is boxed** (2026-09-16 ruling
+          // 29:「文件类型的icon仍然不够大. 试试看基本占满这一个文件显示
+          // 高度」). Seti's shapes keep air inside their own canvas, so
+          // a box and its mark are two different sizes — the same
+          // lesson the strip's end learned one ruling earlier. `getBBox`
+          // is the drawing's own extent, scaled by however big the svg
+          // was drawn.
+          inkH: (() => {
+            const svg = slot?.querySelector("svg");
+            if (!svg || dir) return 0;
+            const bb = svg.getBBox();
+            const vb = svg.viewBox.baseVal;
+            // **The scale is the smaller of the two**, because the svg
+            // is square and Seti's canvases are not always (the default
+            // document is 1200×1000): `xMidYMid meet` fits the long
+            // side, so a height-only scale reads a squashed glyph as a
+            // big one.
+            const box = svg.getBoundingClientRect();
+            const k = Math.min(box.width / (vb.width || 1), box.height / (vb.height || 1));
+            // The larger extent, not the height: several of these
+            // shapes are wider than they are tall (the picture, the
+            // table), and a mark that fills its line sideways fills it.
+            return px(Math.max(bb.width, bb.height) * k);
+          })(),
+          rowH: px(r.height),
+          // …and the row's own wash, for the open file (ruling 31).
+          on: row.getAttribute("data-open") === "true",
+          ground: getComputedStyle(row).backgroundColor,
+          nameInk: name ? getComputedStyle(name).color : null,
+          mark: row.querySelector("[data-git-mark]") !== null,
         });
       }
       return { rows: out, body: getComputedStyle(document.body).color };
@@ -3263,6 +3411,129 @@ try {
         fail(
           `the kind icons wear ${JSON.stringify([...inks])} against a body of ${kinds.body} — Seti's colours, ` +
             "two of them at least, and none of them the text's (src/components/FileKindIcon.tsx, app.css)",
+        );
+      }
+      // **…and the mark fills the line it sits on** (2026-09-16 ruling
+      // 29:「文件类型的icon仍然不够大.试试看基本占满这一个文件显示高度」).
+      // The floor is a fraction of the **row**, not a number of pixels:
+      // what the user asked for is 「基本占满这一行」, and a row that is
+      // 28 under a mouse and 44 under a finger has two right answers.
+      // Half of 28 is 14: the 16 box this ruling replaced painted 9–10
+      // and the 24 it first asked for paints 12–15, so both are red,
+      // and the row-high slot paints 16–18.
+      //
+      // **`debug.log` is left out of this one and only this one.** Seti
+      // has no shape for `.log`, so it falls to the default document —
+      // drawn small inside a 1200×1000 canvas, about a third of its
+      // box, whatever the box is. That row is in this fixture for
+      // ruling 28 (its name is grey), and a floor it can never clear
+      // whatever khor does is a floor about Seti rather than about
+      // khor.
+      const short = files.filter((r) => r.what !== "debug.log" && r.inkH < r.rowH * 0.5);
+      if (short.length) {
+        fail(
+          `${short.map((r) => `${JSON.stringify(r.what)} paints ${r.inkH}px in a ${r.rowH}px row`).join(", ")} — ` +
+            "「基本占满这一个文件显示高度」, and what has to fill it is the ink, not the box " +
+            "(src/styles/tokens.css --tree-slot, src/views/FileTree.tsx)",
+        );
+      }
+      // **The names `.gitignore` covers are grey, and wear no mark**
+      // (2026-09-16 ruling 28:「文件树中, 被.gitignore的文件/目录名要变
+      // 灰」). Both kinds: git collapses an ignored directory to one row
+      // and the tree greys it whole.
+      const muted = await page.evaluate(
+        () => getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground").trim(),
+      );
+      const ignored = await page.evaluate(() => {
+        const paint = (v) => {
+          const el = document.createElement("span");
+          el.style.color = v;
+          document.body.append(el);
+          const got = getComputedStyle(el).color;
+          el.remove();
+          return got;
+        };
+        const out = [];
+        for (const name of ["debug.log", "target"]) {
+          const row =
+            document.querySelector(`[data-file-tree] [data-depth="0"][data-file="${name}"]`) ??
+            document.querySelector(`[data-file-tree] [data-depth="0"] [data-dir="${name}"]`)?.closest("[data-depth]");
+          if (row === null || row === undefined) {
+            out.push({ name, missing: true });
+            continue;
+          }
+          const label = row.querySelector("[data-file-name],[data-dir-name]");
+          out.push({
+            name,
+            ink: label ? getComputedStyle(label).color : null,
+            mark: row.querySelector("[data-git-mark]") !== null,
+          });
+        }
+        return { rows: out, muted: paint(getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground")) };
+      });
+      console.log(`ignored rows: ${JSON.stringify(ignored.rows)}, --muted-foreground ${ignored.muted} (${muted})`);
+      if (ignored.rows.some((r) => r.missing)) {
+        fail(
+          "probe void: the tree drew no row for the ignored file or the ignored directory (widen the **/ls fixture)",
+        );
+      } else {
+        for (const r of ignored.rows) {
+          if (r.ink !== ignored.muted) {
+            fail(
+              `${JSON.stringify(r.name)} is painted ${r.ink} where --muted-foreground is ${ignored.muted} — ` +
+                "「被.gitignore的文件/目录名要变灰」, and grey is the whole of what that row says " +
+                "(src/views/fileRow.tsx markInk, khor_node::git IGNORED)",
+            );
+          }
+          if (r.mark) {
+            fail(
+              `${JSON.stringify(r.name)} wears a mark at the end of its row as well — the colour has already ` +
+                "said it, and git gives an ignored path no badge either (src/views/fileRow.tsx Mark)",
+            );
+          }
+        }
+      }
+      // **…and an ignored path never colours the directory above it.**
+      // `src` holds a `C` and the root holds an ignored pair; a fold
+      // that let `!` travel would paint a folder grey for a build
+      // output, which is a claim about the folder nobody made.
+      const folded = kinds.rows.find((r) => r.dir && r.what === "src");
+      if (folded !== undefined && folded.nameInk === ignored.muted) {
+        fail(
+          "the directory `src` is grey — an ignored path folded up into it, and a folder holding an edited " +
+            "file and a build output is 黄 (src/views/WorkspacePane.tsx folded, khor_node::git fold)",
+        );
+      }
+      // **The file in front is washed whole** (2026-09-16 ruling 31:
+      // 「文件树中, 被选中的文件也要高亮」). It was the name going bold
+      // and nothing else; bold reads as a kind of file before it reads
+      // as 「this one is open」, and the wash is what the workspace list
+      // and the sessions list already mark their front row with.
+      //
+      // Read after a press rather than off the tree as it stands: what
+      // is being measured is the row of the file in front, and the walk
+      // may have arrived here with nothing open at all.
+      await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
+      await wait(300);
+      const seats = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-file-tree] [data-depth="0"][data-file]')].map((row) => ({
+          what: row.getAttribute("data-file"),
+          on: row.getAttribute("data-open") === "true",
+          ground: getComputedStyle(row).backgroundColor,
+        })),
+      );
+      const lit = seats.filter((r) => r.on);
+      const others = seats.filter((r) => !r.on).map((r) => r.ground);
+      console.log(`tree selection: ${JSON.stringify(lit.map((r) => [r.what, r.ground]))}, others ${JSON.stringify([...new Set(others)])}`);
+      if (lit.length !== 1) {
+        fail(
+          `${lit.length} row(s) in the tree say they are the open file — the middle column has one, and ` +
+            "the tree says which (src/views/FileTree.tsx)",
+        );
+      } else if (others.includes(lit[0].ground) || lit[0].ground === "rgba(0, 0, 0, 0)") {
+        fail(
+          `the open file's row is painted ${lit[0].ground}, the same ground the rows around it stand on — ` +
+            "「被选中的文件也要高亮」 (src/views/FileTree.tsx)",
         );
       }
     }
@@ -3387,30 +3658,113 @@ try {
       // canvas, the filled marks fill theirs) and read as three sizes;
       // what has to match is what is painted.
       const tailLook = await page.evaluate(() => {
+        const paint = (v) => {
+          const el = document.createElement("span");
+          el.style.color = v;
+          document.body.append(el);
+          const got = getComputedStyle(el).color;
+          el.remove();
+          return got;
+        };
         const btns = [...document.querySelectorAll("[data-file-face-switch], [data-ws-switches] > button")];
-        return btns.map((b) => {
-          const svg = b.querySelector("svg");
-          let ink = 0;
-          if (svg) {
-            const bb = svg.getBBox();
-            const vb = svg.viewBox.baseVal;
-            const k = svg.getBoundingClientRect().height / (vb.height || 1);
-            ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
-          }
-          return {
-            box: [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)].join("x"),
-            ink,
-          };
-        });
+        return {
+          on: paint(getComputedStyle(document.documentElement).getPropertyValue("--rail-on-ink")),
+          body: getComputedStyle(document.body).color,
+          btns: btns.map((b) => {
+            const svg = b.querySelector("svg");
+            let ink = 0;
+            if (svg) {
+              const bb = svg.getBBox();
+              const vb = svg.viewBox.baseVal;
+              const k = svg.getBoundingClientRect().height / (vb.height || 1);
+              ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
+            }
+            return {
+              what: b.getAttribute("aria-label"),
+              box: [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)].join("x"),
+              ink,
+              pressed: b.getAttribute("data-on") === "true",
+              // Read off the glyph, which is what carries the colour:
+              // the button sets `color` and the svg wears
+              // `currentColor`.
+              paintedAs: svg ? getComputedStyle(svg).color : null,
+            };
+          }),
+        };
       });
       console.log(`tail look: ${JSON.stringify(tailLook)}`);
-      const inks = tailLook.map((t) => t.ink);
-      if (new Set(tailLook.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
+      const inks = tailLook.btns.map((t) => t.ink);
+      if (new Set(tailLook.btns.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
         fail(
-          `the strip's end is uneven: ${tailLook.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, and ` +
+          `the strip's end is uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, and ` +
             "the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
         );
       }
+      // **…and they are 20, not 14** (2026-09-16 ruling 44:「工作区右上角
+      // 的四个icon过小. 浪费他们自己的空间,放大一点,但注意四个icon的大小
+      // 一致性」). The box was already the finger's floor and the marks
+      // in it were spending a third of it; what grew is the ink.
+      if (inks.some((k) => k < 19 || k > 21)) {
+        fail(
+          `the strip's end paints ${inks.join("/")}px of ink — 20, in a 44 box: 「过小. 浪费他们自己的空间,` +
+            "放大一点」 (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // **Pressed in is the rail's own open ink** (2026-09-16 ruling 26:
+      // 「并且,点击后要有状态.这个icon要变成品牌绿」). Read off the glass
+      // against the token, because a class name proves neither half —
+      // and **both** halves are asserted, since a switch painted green
+      // whether or not it is on is the same screen as one that is never
+      // green. So the sessions switch is pressed, read, and pressed
+      // back: a colour claim needs one of each on one run.
+      for (const b of tailLook.btns) {
+        if (!b.pressed && b.paintedAs === tailLook.on) {
+          fail(
+            `the ${JSON.stringify(b.what)} switch is painted 开着's ink while it is off — then the colour says ` +
+              "nothing (src/views/WorkspacePane.tsx switchClass)",
+          );
+        }
+      }
+      const askedWide = widened.length;
+      await press("[data-ws-sessions-switch]");
+      await wait(250);
+      const pressedLook = await page.evaluate(() => {
+        const b = document.querySelector("[data-ws-sessions-switch]");
+        const svg = b?.querySelector("svg") ?? null;
+        return {
+          on: b?.getAttribute("data-on") ?? null,
+          paintedAs: svg ? getComputedStyle(svg).color : null,
+          column: document.querySelectorAll("[data-ws-sessions]").length,
+        };
+      });
+      console.log(`sessions switch pressed: ${JSON.stringify(pressedLook)}`);
+      if (pressedLook.on !== "true" || pressedLook.column !== 1) {
+        fail(
+          `pressing the sessions switch left it ${pressedLook.on} with ${pressedLook.column} column(s) — ` +
+            "probe void for the ink below (src/views/WorkspacePane.tsx)",
+        );
+      } else if (pressedLook.paintedAs !== tailLook.on) {
+        fail(
+          `the pressed-in sessions switch is painted ${pressedLook.paintedAs} where --rail-on-ink is ` +
+            `${tailLook.on} — 「点击后要有状态.这个icon要变成品牌绿」, and it is the same ink the rail ` +
+            "lights an open landing with (src/views/WorkspacePane.tsx switchClass)",
+        );
+      }
+      // **…and the window was never asked to grow** (ruling 25). In the
+      // app that press widens the window by the column's width; here it
+      // is a browser, and a page resizing a window somebody else placed
+      // is the thing that must not happen. The window's own size cannot
+      // be measured from a fixed viewport — that half is verified on
+      // the app by eye, and is written down as such in the handoff.
+      if (widened.length !== askedWide) {
+        fail(
+          `the face asked the app to widen its window ${widened.length - askedWide} time(s) from a browser — ` +
+            "`widenWindow` is a no-op outside the app, because a browser window is not the page's to " +
+            "resize (src/api.ts widenWindow)",
+        );
+      }
+      await press("[data-ws-sessions-switch]");
+      await wait(200);
       // **The tab wears the file's kind too** (2026-09-16:「标签页打开了,
       // 最上方也要有 icon」): the same icon the tree drew, not the
       // generic file mark.
@@ -3429,20 +3783,34 @@ try {
             "and ⌘B now, so the end is the sessions column and VS Code, two (src/views/WorkspacePane.tsx)",
         );
       }
-      // **The tree folds from its own row, and from ⌘B** (2026-09-16,
-      // after the two-meanings trap was talked through: a row's press
-      // means open, everywhere, so the fold is a chevron beside the
-      // name, on the open row only; and ⌘B is the way back that no
-      // fold can hide).
-      const chevrons = await page.locator("[data-ws-tree-toggle]").count();
+      // **The tree folds from its own row, and from ⌘B** (2026-09-16).
+      // The first shape of this made the chevron the control and the
+      // row the selection; the user changed it:「取消工作区list这个只能
+      // 点击『<』展开文件树吧. 还是点击整个工作区行都可以. 但『<』保留为
+      // 状态展示. 收起状态, 点击行来控制」. So the press is the row's —
+      // the open one's, where it has a second thing left to mean — and
+      // the chevron is a drawing of which way it went.
+      const chevrons = await page.locator("[data-ws-tree-mark]").count();
       if (chevrons !== 1) {
         fail(
           `${chevrons} tree chevron(s) on the workspace list — one, on the open row and on it alone ` +
             "(src/views/WorkspacesList.tsx)",
         );
       } else {
+        // **It is not a control any more**, and that is the half of the
+        // ruling a fold test cannot see: a button here would still fold
+        // the tree and still be wrong.
+        const isButton = await page.$eval("[data-ws-tree-mark]", (el) =>
+          el.tagName === "BUTTON" || el.closest("button") !== null || el.querySelector("button") !== null,
+        );
+        if (isButton) {
+          fail(
+            "the chevron on the workspace row is still a button — 「『<』保留为状态展示」, and the press " +
+              "is the row's (src/views/WorkspacesList.tsx)",
+          );
+        }
         const onOpenRow = await page.$eval(
-          "[data-ws-tree-toggle]",
+          "[data-ws-tree-mark]",
           (el) => el.closest("[data-ws-line]")?.querySelector('[data-ws-row][data-selected="true"]') !== null,
         );
         if (!onOpenRow) {
@@ -3450,7 +3818,7 @@ try {
         }
         // **As tall as its row, and pointing sideways** (2026-09-16).
         const chevBox = await page.evaluate(() => {
-          const b = document.querySelector("[data-ws-tree-toggle]");
+          const b = document.querySelector("[data-ws-tree-mark]");
           const line = b?.closest("[data-ws-line]");
           if (!b || !line) return null;
           // Tailwind's `rotate-*` writes the `rotate` property, not
@@ -3475,8 +3843,8 @@ try {
         } else {
           if (chevBox.button < chevBox.row - 1) {
             fail(
-              `the row's chevron is ${chevBox.button}px tall in a ${chevBox.row}px row — its wash is the whole strip, ` +
-                "「应该是和这整个 list 等高的」 (src/views/WorkspacesList.tsx)",
+              `the row's chevron stands ${chevBox.button}px in a ${chevBox.row}px row — it sits on the row's ` +
+                "right edge whatever height the row came out at (src/views/WorkspacesList.tsx)",
             );
           }
           if (!chevBox.sideways) {
@@ -3484,16 +3852,39 @@ try {
           }
         }
         const treeCount = () => page.locator("[data-ws-tree]").count();
+        const openRow = '[data-ws-row][data-selected="true"]';
         const t0 = await treeCount();
-        await press("[data-ws-tree-toggle]");
+        await press(openRow);
         const t1 = await treeCount();
-        await press("[data-ws-tree-toggle]");
+        await press(openRow);
         const t2 = await treeCount();
-        console.log(`tree fold by chevron: ${t0} → ${t1} → ${t2}`);
+        console.log(`tree fold by pressing the open row: ${t0} → ${t1} → ${t2}`);
         if (!(t0 === 1 && t1 === 0 && t2 === 1)) {
           fail(
-            `pressing the row's chevron left the tree at ${t0}/${t1}/${t2} — it folds and unfolds the ` +
-              "file tree (src/views/WorkspacesList.tsx, App.tsx treePane)",
+            `pressing the open workspace's row left the tree at ${t0}/${t1}/${t2} — 「还是点击整个工作区行` +
+              "都可以」, on the row that is already in front (src/views/WorkspacesList.tsx, App.tsx treePane)",
+          );
+        }
+        // …and the chevron followed it, which is the whole of what it
+        // is for now.
+        const marked = await page.$eval("[data-ws-tree-mark]", (el) => el.getAttribute("data-on"));
+        const said = await page.$eval("[data-ws-line]", (el) => el.getAttribute("data-tree"));
+        console.log(`tree state: chevron ${marked}, row says ${said}`);
+        if (marked !== "true" || said !== "true") {
+          fail(
+            `the tree is out and the row says ${said} with a chevron at ${marked} — the mark is the state ` +
+              "and nothing else, so it has to be right (src/views/WorkspacesList.tsx)",
+          );
+        }
+        // **The selection does not move under the fold** (the ruling's
+        // second half: 「选中不变, 中栏不变」). A press that both folded
+        // and re-opened the workspace would remount the pane and throw
+        // away what is on the strip.
+        const stillOpen = await page.locator('[data-ws-row][data-selected="true"]').count();
+        if (stillOpen !== 1) {
+          fail(
+            `${stillOpen} workspace row(s) say they are the open one after two presses on the open one — ` +
+              "folding the tree is not a change of workspace (src/views/WorkspacesList.tsx)",
           );
         }
         await page.keyboard.press("Control+b");
@@ -3702,13 +4093,16 @@ try {
           );
         }
         const before = wrote.length;
-        await press("[data-save]");
+        // ⌘S, which is the whole of 存 since the row over the file went
+        // (2026-09-16 ruling 30). The caret is in the box — the typing
+        // above put it there — and that is where the shortcut lives.
+        await page.keyboard.press("Control+s");
         const gone = await until(5_000, async () =>
           (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0,
         );
         console.log(`tabs · after saving: ${wrote.length - before} write(s), dot ${gone ? "gone" : "still there"}`);
         if (wrote.length === before) {
-          fail("probe dead: 存 wrote nothing, so the dot going out would prove nothing");
+          fail("probe dead: ⌘S wrote nothing, so the dot going out would prove nothing");
         }
         if (!gone) {
           fail(
@@ -4011,8 +4405,10 @@ try {
     const rows = await page.$$eval("[data-dir-picker-row]", (els) =>
       els.map((e) => e.getAttribute("data-dir-picker-row")),
     );
-    // The fixture's listing is one directory among several files.
-    if (rows.length !== 1 || rows[0] !== "src") {
+    // The fixture's listing is two directories among several files
+    // (`target` joined it for ruling 28 — it is a directory git ignores,
+    // and a picker has no opinion about that: it offers directories).
+    if (JSON.stringify(rows) !== JSON.stringify(["src", "target"])) {
       fail(
         `the picker drew ${JSON.stringify(rows)} — only directories belong in a dialog whose whole ` +
           "question is which directory (src/components/DirPicker.tsx)",
@@ -4213,7 +4609,7 @@ try {
   //  iv. a shell session is a row like any other, not a branch;
   //   v. pressing one opens it here, and there is a way back.
   await open("workspaces");
-  await press("[data-ws-row]");
+  await openWs();
   // Wide with the list pane open, the column starts collapsed — the
   // fifth column's existence is what decides that (`WorkspacePane`).
   if ((await page.locator("[data-ws-sessions]").count()) === 0) {
@@ -4315,6 +4711,12 @@ try {
     );
     if (n < 0) return false;
     await page.locator("[data-ws-row]").nth(n).click();
+    await wait(400);
+    // …and the tree, for `openWs`'s reason: this row may be the one
+    // already in front, and a press there folds it (ruling 42).
+    if ((await page.locator("[data-ws-tree]").count()) === 0) {
+      await page.locator("[data-ws-row]").nth(n).click();
+    }
     return until(5_000, async () => (await page.locator("[data-file]").count()) > 0);
   };
   // The menu hangs on the row's **button**, never on the row around it
@@ -4516,7 +4918,7 @@ try {
   });
   const openFile = async (name) => {
     await open("workspaces");
-    await press("[data-ws-row]");
+    await openWs();
     if (!(await until(5_000, async () => (await page.locator("[data-file]").count()) > 0))) {
       return false;
     }
@@ -4578,31 +4980,97 @@ try {
           "— the sheet keeps colour only, or the caret leaves its letter (src/styles/app.css)",
       );
     }
-    // …seated on the name line, not between the two lines
-    // (2026-09-16:「标签页上的 icon 也没有对齐,不和谐」).
+    // …standing beside **both** lines and big enough to read
+    // (2026-09-16 ruling 43:「标签页上, 文件类型的icon, 过小了. 而且上面
+    // 是文件名,下面是路径. icon只和上面对齐, 还对的不是很齐. 可以放大一点,
+    // 和这两行对齐」).
+    //
+    // It was seated on the name's line for one batch, which answered
+    // 「centred on the pair it hangs between them」 — true of a 16 glyph
+    // and the wrong fix. The measure now is the pair itself: the
+    // glyph's middle against the middle of name-top to path-bottom,
+    // and its painted height against the two lines it stands beside.
     const seat = await page.evaluate(() => {
       const tab = document.querySelector("[data-tab-open]");
       const g = tab?.querySelector("[data-file-kind]");
       const nm = tab?.querySelector("[data-tab-name]");
-      if (!g || !nm) return null;
+      const sub = tab?.querySelector("[data-tab-sub]");
+      if (!g || !nm || !sub) return null;
       const a = g.getBoundingClientRect();
       const b = nm.getBoundingClientRect();
+      const c = sub.getBoundingClientRect();
+      const svg = g.querySelector("svg");
+      let ink = 0;
+      if (svg) {
+        const bb = svg.getBBox();
+        const vb = svg.viewBox.baseVal;
+        const k = svg.getBoundingClientRect().height / (vb.height || 1);
+        ink = Math.round(bb.height * k * 10) / 10;
+      }
       return {
         glyphMid: Math.round((a.top + a.bottom) / 2),
-        nameMid: Math.round((b.top + b.bottom) / 2),
-        nameTop: Math.round(b.top),
-        nameBottom: Math.round(b.bottom),
+        pairMid: Math.round((b.top + c.bottom) / 2),
+        pair: `${Math.round(b.top)}–${Math.round(c.bottom)}`,
+        // Both lines start on one edge, which is the glyph's right side.
+        nameLeft: Math.round(b.left),
+        subLeft: Math.round(c.left),
+        ink,
       };
     });
     console.log(`tab glyph seat: ${JSON.stringify(seat)}`);
-    // **Centred on the name, within two pixels.** 「Inside the name's
-    // box」 let the old glyph through: centred on the two-line pair it
-    // sat at 24 in a name running 11–27 — inside, and visibly low.
-    if (seat !== null && Math.abs(seat.glyphMid - seat.nameMid) > 2) {
-      fail(
-        `the tab's kind icon is centred at ${seat.glyphMid} while the name is centred at ${seat.nameMid} ` +
-          `(${seat.nameTop}–${seat.nameBottom}) — the glyph sits on the name line (src/browse/TabStrip.tsx)`,
-      );
+    if (seat === null) {
+      fail("probe void: the open tab has no kind icon, name and path to measure against each other");
+    } else {
+      // Three, where the ruling said two: the glyph is centred on the
+      // **flex line** and the pair is measured from the name's box top
+      // to the path's box bottom, and those two differ by whatever
+      // leading the second line carries — 2.0 on Blink today. A
+      // tolerance that sits exactly on the reading is a gate that goes
+      // red on the next engine for a picture nobody would call
+      // misaligned.
+      if (Math.abs(seat.glyphMid - seat.pairMid) > 3) {
+        fail(
+          `the tab's kind icon is centred at ${seat.glyphMid} while the two lines run ${seat.pair} (middle ` +
+            `${seat.pairMid}) — 「和这两行对齐」 (src/browse/TabStrip.tsx)`,
+        );
+      }
+      if (seat.ink < 18) {
+        fail(
+          `the tab's kind icon paints ${seat.ink}px beside two lines — 「过小了…可以放大一点」, and what ` +
+            "has to grow is the ink (src/views/WorkspacePane.tsx tabFaces)",
+        );
+      }
+      // …and the 预览 switch, which is the third of the three the
+      // strip's end carries and the one 4l cannot see: it is drawn only
+      // for a file that has a second face, and 4l's strip is empty.
+      const eye = await page.evaluate(() => {
+        const b = document.querySelector("[data-file-face-switch]");
+        const svg = b?.querySelector("svg") ?? null;
+        if (!b || !svg) return null;
+        const bb = svg.getBBox();
+        const vb = svg.viewBox.baseVal;
+        const k = svg.getBoundingClientRect().height / (vb.height || 1);
+        const r = b.getBoundingClientRect();
+        return {
+          box: [Math.round(r.width), Math.round(r.height)].join("x"),
+          ink: Math.round(Math.max(bb.width, bb.height) * k * 10) / 10,
+        };
+      });
+      console.log(`the 预览 switch: ${JSON.stringify(eye)}`);
+      if (eye === null) {
+        fail("probe void: no 预览 switch on screen to measure (src/views/WorkspacePane.tsx)");
+      } else if (eye.ink < 19 || eye.ink > 21 || eye.box !== "44x44") {
+        fail(
+          `the 预览 switch is ${eye.box} around ${eye.ink}px of ink — the strip's end is three marks of 20 in ` +
+            "44 boxes, and this is the third (src/views/WorkspacePane.tsx switchClass)",
+        );
+      }
+      if (Math.abs(seat.nameLeft - seat.subLeft) > 1) {
+        fail(
+          `the tab's name starts at ${seat.nameLeft} and its path at ${seat.subLeft} — the glyph is beside the ` +
+            "pair now, so both lines start on its right edge (src/browse/TabStrip.tsx)",
+        );
+      }
     }
     if (!opened || !asOpened.editor || asOpened.md) {
       fail(
@@ -4707,20 +5175,30 @@ try {
         body: JSON.stringify({ at_ms: Date.now(), digest: "2".repeat(64) }),
       });
     });
-    await press("[data-save]");
+    // The caret is in the box (the text above was typed into it), and
+    // ⌘S is where 存 lives since ruling 30.
+    await page.locator("[data-edit]").click();
+    await page.keyboard.press("Control+s");
     const saved = await until(5_000, async () => wrote.length > 0);
-    const state = await page.evaluate(
-      () => document.querySelector("[data-save-state]")?.dataset.saveState ?? null,
+    // The dot goes out when the answer lands and the buffer stops
+    // differing from the disk — a read of the DOM on the same beat as
+    // the request would be asking before either happened.
+    const clean = await until(5_000, async () =>
+      (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0,
     );
-    console.log(`md save: was ${JSON.stringify(wrote)}, state ${state}`);
+    const dot = await page.locator("[data-ws-tab-strip] [data-tab-dot]").count();
+    console.log(`md save: was ${JSON.stringify(wrote)}, unsaved dot(s) ${dot} (went out: ${clean})`);
     if (!saved || wrote[0] !== "0".repeat(64)) {
       fail(
         `saving a markdown file sent was=${JSON.stringify(wrote)} — it must be the digest the ` +
           "read handed over, which is the whole of the save contract (src/views/FileView.tsx)",
       );
     }
-    if (state !== "saved") {
-      fail(`…and the file says ${state} after a save the far machine took (src/views/FileView.tsx)`);
+    if (dot !== 0) {
+      fail(
+        `…and the tab still wears ${dot} unsaved dot(s) after a save the far machine took — that dot is ` +
+          "what says 存好了 now (src/views/FileView.tsx, src/browse/TabStrip.tsx)",
+      );
     }
     await page.unroute("**/write_text");
   }
@@ -5243,7 +5721,7 @@ try {
     await page.route("**/read_text", colRead);
     await page.route("**/git_diff", colDiff);
     await open("workspaces");
-    await press("[data-ws-row]");
+    await openWs();
     if ((await page.locator("[data-ws-sessions]").count()) === 0) {
       await press("[data-ws-sessions-switch]");
     }
@@ -5351,8 +5829,60 @@ try {
               "(src/views/WorkspacePane.tsx)",
           );
         }
-        await page.keyboard.press("Escape");
-        await wait(250);
+        // **…and what it opens stays here** (2026-09-16 ruling 34:
+        // 「在工作区新建的 session, 直接弹到了 session 页面去打开, 应该是
+        // 在工作区就地打开」— the user). The wizard is driven to its end
+        // rather than escaped, because the claim is about the moment it
+        // closes: the shell used to walk to the sessions landing, which
+        // takes somebody out of the files they were standing in.
+        //
+        // The id the fixture answers is a row this run's session list
+        // already carries, so the column has something to mark: a fresh
+        // id would be a selection on a row that is not there yet, and
+        // the probe would be waiting on a poll instead of reading a
+        // decision.
+        const born = "tui/ws-6";
+        rows.push(wsRow(6, "idle", "/home/peer/work", "tui", "刚开的", "peer"));
+        await page.route("**/open_session", (r) =>
+          r.fulfill({ contentType: "application/json", body: JSON.stringify(born) }),
+        );
+        await press("[data-new-session-create]");
+        await wait(1_200);
+        const stayed = await page.evaluate((id) => ({
+          wizard: document.querySelectorAll("[data-new-session-dialog]").length,
+          column: document.querySelectorAll("[data-ws-sessions]").length,
+          tree: document.querySelectorAll("[data-ws-tree]").length,
+          // The sessions landing's own strip, which is what the shell
+          // used to walk to.
+          landed: document.querySelectorAll("[data-session-tabs]").length,
+          marked: [...document.querySelectorAll('[data-ws-sessions] [data-row][data-selected="true"]')].map((e) =>
+            e.getAttribute("data-row"),
+          ),
+          there: document.querySelectorAll(`[data-ws-sessions] [data-row="${id}"]`).length,
+        }), born);
+        console.log(`ws new session: ${JSON.stringify(stayed)}`);
+        await page.unroute("**/open_session");
+        if (stayed.wizard !== 0) {
+          fail("the wizard stayed open after it opened a session (src/views/NewSessionDialog.tsx)");
+        }
+        if (stayed.column === 0 || stayed.tree === 0 || stayed.landed !== 0) {
+          fail(
+            `opening a session from the workspace left ${stayed.column} session column(s), ${stayed.tree} tree(s) ` +
+              `and ${stayed.landed} sessions-landing strip(s) — 「应该是在工作区就地打开」 (src/App.tsx onOpened)`,
+          );
+        } else if (stayed.there === 0) {
+          fail("probe void: the new session's row never reached this column, so nothing could be marked");
+        } else if (JSON.stringify(stayed.marked) !== JSON.stringify([born])) {
+          fail(
+            `the column marks ${JSON.stringify(stayed.marked)} after the wizard made ${born} — the new session ` +
+              "is this project's, and the row is where somebody looks for it (src/views/WorkspacePane.tsx)",
+          );
+        }
+        // …and the fixture goes back to the six rows every other
+        // section counts: a row added here would be a seventh session
+        // in every list below this line.
+        rows.pop();
+        await wait(1_200);
       }
 
       // iii) an agent going quiet re-asks the marks.
@@ -5535,7 +6065,7 @@ try {
       fail("probe dead: the long-named workspace never reached the list (scripts/check-face.mjs fixture)");
     } else {
       // i) open one, and look at what the list says about which.
-      await press("[data-ws-row]");
+      await openWs();
       const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip]").count()) === 1);
       const marked = await page.evaluate(() => {
         const rows = [...document.querySelectorAll("[data-ws-row]")];
@@ -5703,6 +6233,12 @@ try {
       { at: 3, lines: 2, was: ["what HEAD had at three"] },
       { at: 6, lines: 1, was: [] },
       { at: 9, lines: 0, was: ["a line that went away"] },
+      // **One in the middle, and it is what ruling 27 is measured on.**
+      // A hunk near the end cannot be scrolled to the top of the column
+      // — there is less than a viewport of file under it — so the claim
+      // 「the old text opens at the top」 is unfalsifiable there and was
+      // red against a scroller simply pinned at its end.
+      { at: 80, lines: 1, was: ["old eighty"] },
       { at: 150, lines: 2, was: ["old one fifty", "and its neighbour"] },
     ];
     const longDiff = (r) =>
@@ -5814,6 +6350,7 @@ try {
         if (!box || !peek || !bar) return null;
         const b = box.getBoundingClientRect();
         const p = peek.getBoundingClientRect();
+        const air = Number.parseFloat(getComputedStyle(box).getPropertyValue("--gap-row")) || 0;
         // Colours come back as `rgb(r, g, b)`, `rgb(r g b / a)` or
         // `color(srgb r g b / a)` depending on how Tailwind spelled the
         // alpha; read the first three numbers and scale the unit form.
@@ -5836,8 +6373,15 @@ try {
         };
         return {
           inView: p.top >= b.top - 1 && p.bottom <= b.bottom + 1,
+          // **How far its top edge is from the scroller's** (2026-09-16
+          // ruling 27). `--gap-row` of air is the arrangement; anything
+          // more is the block sitting somewhere else on the screen.
+          fromTop: Math.round((p.top - b.top - air) * 10) / 10,
           peekTone: tone(getComputedStyle(peek).backgroundColor),
           barTone: tone(getComputedStyle(bar).backgroundColor),
+          // …and the thumb of this scroller, which the ruler's marks
+          // are painted on the strip of (ruling 32).
+          thumb: getComputedStyle(box).scrollbarColor,
         };
       });
       console.log(`peek at 150: ${JSON.stringify(peekSeen)}`);
@@ -5846,6 +6390,28 @@ try {
       } else {
         if (!peekSeen.inView) {
           fail("the old text opened off the screen — 「点击后,窗口应该移动到这个状态条显示内容的地方」 (src/views/FileView.tsx)");
+        }
+        // **The thumb reads over a coloured mark** (2026-09-16 ruling
+        // 32:「文件右侧的滑动按钮还是在状态条下看不清, 透明度再低一点」—
+        // the thumb is what is hard to see). It was 80% of the app's own
+        // wash, α 0.2, which a mark underneath simply swallowed.
+        const alpha = (() => {
+          const m = /rgba?\(([^)]+)\)/.exec(peekSeen.thumb ?? "");
+          if (m === null) return null;
+          const parts = m[1].split(/[,/]/).map((v) => Number.parseFloat(v));
+          return parts.length >= 4 ? parts[3] : 1;
+        })();
+        console.log(`file scroller thumb: ${peekSeen.thumb} (alpha ${alpha})`);
+        if (alpha === null) {
+          fail(
+            `the file's scroller says its thumb is ${JSON.stringify(peekSeen.thumb)} — nothing to read an ` +
+              "alpha off (src/styles/app.css, tokens.css --scroll-thumb-strong)",
+          );
+        } else if (alpha < 0.45) {
+          fail(
+            `the file's scrollbar thumb is painted at α ${alpha} — 「滑动按钮还是在状态条下看不清」, and ` +
+              "the ruler's marks are on that same strip (src/styles/tokens.css --scroll-thumb-strong)",
+          );
         }
         const apart = (a, b) => a.split(",").some((v, k) => Math.abs(+v - +b.split(",")[k]) > 0.15);
         if (apart(peekSeen.peekTone, peekSeen.barTone)) {
@@ -5924,6 +6490,56 @@ try {
           );
         }
       }
+      // **…and a press lands the old text at the top of the column**
+      // (2026-09-16 ruling 27:「点击git状态bar的时候, 如果从文件第一行
+      // 开始就有此bar, 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标
+      // 拖动. 应该直接跳转到提示框的最上方」— the user).
+      //
+      // It used to scroll only when the block was **out of view**, and
+      // to a third of the way down. Both halves are what the user hit:
+      // a hunk at line 1 lays its old text above line 1, so scrolling
+      // to the line leaves the block off the top, and a block taller
+      // than the viewport is 「already visible」 by any test about its
+      // top edge.
+      //
+      // Measured on the hunk in the middle of the file, for the reason
+      // written into the fixture above.
+      await press('[data-gutter] [data-hunk="150"]');
+      await wait(200);
+      await press('[data-gutter] [data-hunk="80"]');
+      await wait(300);
+      const landed = await page.evaluate(() => {
+        const box = document.querySelector("[data-file-scroll]");
+        const peek = document.querySelector("[data-peek]");
+        if (!box || !peek) return null;
+        const air = Number.parseFloat(getComputedStyle(box).getPropertyValue("--gap-row")) || 0;
+        return {
+          fromTop: Math.round((peek.getBoundingClientRect().top - box.getBoundingClientRect().top - air) * 10) / 10,
+          said: peek.textContent?.trim() ?? "",
+          // The scroller is nowhere near its end, so 「at the top」 is
+          // something this file can actually do.
+          room: Math.round(box.scrollHeight - box.scrollTop - box.clientHeight),
+        };
+      });
+      console.log(`peek at 80: ${JSON.stringify(landed)}`);
+      if (landed === null || !landed.said.includes("old eighty")) {
+        fail("probe void: pressing the bar at line 80 opened no old text to measure (src/views/FileView.tsx)");
+      } else if (landed.room < 50) {
+        fail(
+          `probe void: the file has ${landed.room}px left under the viewport, so 「scrolled to the top」 ` +
+            "cannot be told from 「scrolled to the end」 (lengthen the fixture)",
+        );
+      } else if (Math.abs(landed.fromTop) > 4) {
+        fail(
+          `the old text opened ${landed.fromTop}px below the top of the column — 「应该直接跳转到提示框的` +
+            "最上方」 (src/views/FileView.tsx, the peek's layout effect)",
+        );
+      }
+      await press('[data-gutter] [data-hunk="80"]');
+      await wait(200);
+      await press('[data-gutter] [data-hunk="150"]');
+      await wait(200);
+
       // v) the same bar closes it, and so does Esc.
       await press('[data-gutter] [data-hunk="150"]');
       const shut = await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
@@ -6108,6 +6724,152 @@ try {
     }
     await page.unroute("**/read_text", longRead);
     await page.unroute("**/git_diff", longDiff);
+  }
+
+  // ── 4q) 窄档一次一屏: tree, file, sessions ─────────────────────────
+  //
+  // 「窄屏条件下,工作区几乎不可用」— the user, 2026-09-16 (ruling 33),
+  // and docs/UX.md line 9 has the shape: 「窄档是『处理一件事』:一次一屏,
+  // 有退路」.
+  //
+  // What it was: the tree and the sessions were drawn `!narrow`, so a
+  // phone got the middle column alone — no way into the files at all,
+  // which is what 「几乎不可用」 names. What it is now: three screens
+  // with one road between them.
+  //
+  // Claims:
+  //   i. a workspace with nothing open lands on the **tree**, and it is
+  //      the only column on screen;
+  //  ii. pressing a file walks to the **file**, and the strip carries a
+  //      way back;
+  // iii. that way back really goes to the tree;
+  //  iv. the sessions switch walks to the **sessions**, alone, with a
+  //      way back of its own;
+  //   v. and ⌘B is the way to the tree from anywhere — the key that no
+  //      fold can hide, spelled for a face that has no columns to fold.
+  {
+    const wide = { width: 1400, height: 900 };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(400);
+    // A workspace with an empty strip, so 「it opens on the tree」 is
+    // about the rule and not about a tab this walk left behind.
+    await open("workspaces");
+    await openWs();
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(150);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(150);
+      }
+    }
+    // Back out of the pane and in again, because 「it opens on the
+    // tree」 is a thing that happens when the pane opens.
+    await open("sessions");
+    await open("workspaces");
+    await openWs();
+    const screens = () =>
+      page.evaluate(() => ({
+        tree: document.querySelectorAll("[data-ws-tree]").length,
+        strip: document.querySelectorAll("[data-ws-tab-strip]").length,
+        sessions: document.querySelectorAll("[data-ws-sessions]").length,
+        back: document.querySelectorAll("[data-ws-back]").length,
+        switches: document.querySelectorAll("[data-ws-switches] > button").length,
+      }));
+    const first = await screens();
+    console.log(`narrow workspace · on arrival: ${JSON.stringify(first)}`);
+    if (first.tree !== 1) {
+      fail(
+        "a workspace opened on a phone with no tree on screen — 「窄屏条件下,工作区几乎不可用」 was " +
+          "exactly this: the middle column alone, and no way into the files (src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (first.strip !== 0 || first.sessions !== 0) {
+      fail(
+        `the tree screen also carries ${first.strip} strip(s) and ${first.sessions} session column(s) — ` +
+          "「一次一屏」 (src/views/WorkspacePane.tsx)",
+      );
+    }
+    // ii/iii) a file, and the way back.
+    if (!(await press('[data-file="notes.md"] > button'))) {
+      fail("probe dead: no file row on the narrow tree to press (src/views/FileTree.tsx)");
+    } else {
+      await wait(400);
+      const onFile = await screens();
+      console.log(`narrow workspace · a file open: ${JSON.stringify(onFile)}`);
+      if (onFile.tree !== 0 || onFile.strip !== 1) {
+        fail(
+          `pressing a file left ${onFile.tree} tree(s) beside ${onFile.strip} strip(s) — one screen at a time, ` +
+            "and the file is the next one (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (onFile.back === 0) {
+        fail(
+          "the file screen has no way back to the tree — 「一次一屏,有退路」, and a phone that cannot " +
+            "reach the tree is where this ruling started (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (onFile.switches === 0) {
+        fail(
+          "the file screen carries no column switches — the sessions are reached from the strip's end, " +
+            "and without them the third screen has no door (src/views/WorkspacePane.tsx)",
+        );
+      }
+      await press("[data-ws-back]");
+      await wait(300);
+      const back = await screens();
+      console.log(`narrow workspace · back: ${JSON.stringify(back)}`);
+      if (back.tree !== 1 || back.strip !== 0) {
+        fail(
+          `「←」 left ${back.tree} tree(s) and ${back.strip} strip(s) — it goes back to the tree ` +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      // iv) the sessions, from the file screen's switch.
+      await press('[data-file="notes.md"] > button');
+      await wait(300);
+      await press("[data-ws-sessions-switch]");
+      await wait(400);
+      const onSessions = await screens();
+      console.log(`narrow workspace · the sessions: ${JSON.stringify(onSessions)}`);
+      if (onSessions.sessions !== 1 || onSessions.strip !== 0 || onSessions.tree !== 0) {
+        fail(
+          `the sessions switch left ${JSON.stringify(onSessions)} — on a phone that column is a screen, ` +
+            "not a third of one (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (onSessions.back === 0) {
+        fail(
+          "the sessions screen has no way back — every screen that is not the first one has one " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      await press("[data-ws-back]");
+      await wait(300);
+      const toFile = await screens();
+      console.log(`narrow workspace · back to the file: ${JSON.stringify(toFile)}`);
+      if (toFile.strip !== 1 || toFile.sessions !== 0) {
+        fail(
+          `「←」 out of the sessions left ${JSON.stringify(toFile)} — it goes back to the file it was ` +
+            "opened from (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // v) ⌘B, from wherever.
+      await page.keyboard.press("Control+b");
+      await wait(300);
+      const byKey = await screens();
+      console.log(`narrow workspace · ⌘B: ${JSON.stringify(byKey)}`);
+      if (byKey.tree !== 1) {
+        fail(
+          "⌘B did not put the tree in front on the narrow face — it is the one way to the tree that no " +
+            "fold and no screen can hide (src/views/WorkspacePane.tsx)",
+        );
+      }
+    }
+    await page.setViewportSize(wide);
+    await wait(400);
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────
