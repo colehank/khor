@@ -101,8 +101,23 @@ export function markInk(mark: string | undefined): string {
     A directory wears [`DOT`] in the ink of the heaviest letter under it
     — git has no opinion about directories, so any letter on a folder
     would be khor inventing a claim, while「something under here
-    differs」is both true and the only thing worth walking for. */
-export function Mark({ mark, dir = false }: { mark?: string; dir?: boolean }) {
+    differs」is both true and the only thing worth walking for.
+
+    **The letter is pressable where somebody handed it an `onPress`**
+    (工作区第五轮 第 38 条): 「点击 M 看整文件对 HEAD 的 diff」. The dot
+    on a directory is not — a directory has no diff, and a press that
+    opened「the first changed file under here」would be khor picking one.
+    Where no handler is given it stays a span, because a button nothing
+    happens on is worse than a letter. */
+export function Mark({
+  mark,
+  dir = false,
+  onPress,
+}: {
+  mark?: string;
+  dir?: boolean;
+  onPress?: () => void;
+}) {
   if (mark === undefined) return null;
   // **An ignored path wears no mark at all, on a file or a directory.**
   // Its name is already grey (`markInk`), and that is the whole of what
@@ -131,14 +146,30 @@ export function Mark({ mark, dir = false }: { mark?: string; dir?: boolean }) {
       />
     );
   }
+  const look = cn("flex-none font-mono text-xs", markInk(mark));
+  if (onPress === undefined) {
+    return (
+      <span data-git-mark={mark} data-git-weight={mark} className={look}>
+        {mark}
+      </span>
+    );
+  }
   return (
-    <span
+    <button
+      type="button"
       data-git-mark={mark}
       data-git-weight={mark}
-      className={cn("flex-none font-mono text-xs", markInk(mark))}
+      aria-label={gui.diff_open}
+      // The row under it opens the file; this opens the diff, and a
+      // press is one or the other (`Ruler`'s marks, same rule).
+      onClick={(e) => {
+        e.stopPropagation();
+        onPress();
+      }}
+      className={cn(look, "cursor-pointer")}
     >
       {mark}
-    </span>
+    </button>
   );
 }
 

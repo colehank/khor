@@ -60,6 +60,7 @@ export function FilesPane({
   open,
   here,
   marks,
+  onDiff,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -106,6 +107,11 @@ export function FilesPane({
       matches HEAD, and a tree khor could not read must not claim that.
       Absent entirely when this pane is not inside a workspace. */
   marks?: Map<string, string> | null;
+  /** git's letter beside a file was pressed: open that file against
+      HEAD (工作区第五轮 第 38 条). Absent where there is nowhere to open
+      one — browsing a machine's whole disk, which is not a checkout —
+      and the letter stays a letter then. */
+  onDiff?: (path: string) => void;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -398,7 +404,10 @@ export function FilesPane({
                     <span className="min-w-0 truncate">{e.name}</span>
                   </button>
                   </RowMenu>
-                  <Mark mark={marks?.get(full)} />
+                  <Mark
+                    mark={marks?.get(full)}
+                    onPress={onDiff === undefined ? undefined : () => onDiff(full)}
+                  />
                   {took?.path === full ? (
                     <span
                       data-took={took.state}
