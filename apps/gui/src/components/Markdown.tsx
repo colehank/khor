@@ -45,7 +45,9 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
-import { openLink } from "@/api";
+import { launchOn, openLink } from "@/api";
+import { PathLink, remarkPaths } from "@/components/PathLinks";
+import { useLinkHome } from "@/views/linkHome";
 import { languageOf, openFenceAt, paint, painted } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +61,11 @@ type Node = { children?: ReactNode; className?: string };
 type Positioned = { node?: { position?: { start?: { offset?: number } } } };
 
 const parts: Components = {
+  // The element `remarkPaths` makes. Not an HTML tag, so it is spelled
+  // with a hyphen (the one shape a custom element may have) and the
+  // table's type has to be widened for it — react-markdown's
+  // `Components` is keyed by tag names it knows.
+  ["khor-path" as keyof Components]: PathLink as Components[keyof Components],
   // **No leading of its own.** It used to carry `leading-relaxed`, which
   // is a ratio and therefore a second opinion about the line height for
   // whatever size the pane happened to hand down — the thing the type
@@ -226,12 +233,24 @@ function langOf(className: string, node: Positioned["node"], openAt: number | nu
   return languageOf(/language-(\S+)/.exec(className)?.[1] ?? "");
 }
 
-/** A link in an agent's text: pressed, it goes to this machine's own
-    browser. A refusal (a scheme that is not a page) puts the address on
-    screen instead of doing nothing — the person is then the one who
-    decides what it is. */
+/** A link in an agent's text.
+ *
+ * **Inside a workspace it opens on the machine the session is running
+ * on** (工作区第五轮 第 35 条: 都在宿主机器上打开). That is the machine
+ * the conversation happened on, and the one the agent was talking about
+ * — this face can be a browser on a phone, and a phone is not where
+ * anything in that sentence lives.
+ *
+ * Everywhere else it goes to this machine's own browser, which is what
+ * it has always done and is still the right answer: a link written in a
+ * conversation nobody has a project open for is a page to read, here.
+ *
+ * A refusal (a scheme that is not a page) puts the address on screen
+ * instead of doing nothing — the person is then the one who decides
+ * what it is. */
 function Link({ href, children }: { href?: string; children?: ReactNode }) {
   const [refused, setRefused] = useState(false);
+  const home = useLinkHome();
   if (!href || refused) {
     return (
       <span className="underline decoration-dotted underline-offset-2">
@@ -246,7 +265,11 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
       data-md-link={href}
       title={href}
       className="cursor-pointer underline underline-offset-2"
-      onClick={() => openLink(href).catch(() => setRefused(true))}
+      onClick={() =>
+        (home === null ? openLink(href) : launchOn(home.machine, href)).catch(() =>
+          setRefused(true),
+        )
+      }
     >
       {children}
     </button>
@@ -284,10 +307,18 @@ export const Markdown = memo(function Markdown({
   // below runs anyway, so it rides along with work already being done
   // rather than adding a pass. The scan itself is one walk of the
   // lines, against a parse that is proportional to the same string.
-  const components = useMemo(() => ({ ...parts, code: codePart(openFenceAt(text)) }), [text]);
+  const components = useMemo(
+    () => ({ ...parts, code: codePart(openFenceAt(text)) }),
+    [text],
+  );
   return (
     <div data-md className={cn("min-w-0 break-words", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
+      <ReactMarkdown
+        // **After gfm**, so the addresses it autolinks are already
+        // `link` nodes and the path pass leaves them alone.
+        remarkPlugins={[remarkGfm, remarkBreaks, remarkPaths]}
+        components={components}
+      >
         {text}
       </ReactMarkdown>
     </div>
