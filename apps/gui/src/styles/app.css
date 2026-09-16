@@ -439,18 +439,29 @@ input[type="search"]::-webkit-search-decoration {
 [data-md] span[style*="--shiki"],
 [data-sheet] span[style*="--shiki"] {
   color: var(--shiki-light);
+  text-decoration: var(--shiki-light-text-decoration, inherit);
+}
+/* **Weight and slope reach the rendered turn only, never the sheet**
+   (2026-09-16:「编辑时的光标没有和任何文字对齐」). The sheet is a painted
+   `<pre>` under a transparent `<textarea>` that must agree letter for
+   letter, and a theme that bolds a markdown heading or slants a comment
+   widens the painted copy where the editor's plain text does not — the
+   caret then sits a few glyphs past its letter on every such line.
+   Colour costs no width; these two do. */
+[data-md] span[style*="--shiki"] {
   font-style: var(--shiki-light-font-style, inherit);
   font-weight: var(--shiki-light-font-weight, inherit);
-  text-decoration: var(--shiki-light-text-decoration, inherit);
 }
 
 @media (prefers-color-scheme: dark) {
   [data-md] span[style*="--shiki"],
   [data-sheet] span[style*="--shiki"] {
     color: var(--shiki-dark);
+    text-decoration: var(--shiki-dark-text-decoration, inherit);
+  }
+  [data-md] span[style*="--shiki"] {
     font-style: var(--shiki-dark-font-style, inherit);
     font-weight: var(--shiki-dark-font-weight, inherit);
-    text-decoration: var(--shiki-dark-text-decoration, inherit);
   }
 }
 

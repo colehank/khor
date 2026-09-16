@@ -281,7 +281,11 @@ export function TabStrip({
                 // around the label looked pressable and was not.
                 className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
               >
-                <TabAvatar f={f} bare="size-kind-mark flex-none" />
+                {/* A two-line file tab seats its glyph on the name line
+                    below, not beside the pair (2026-09-16:「标签页上的
+                    icon 也没有对齐,不和谐」— centred on two lines it
+                    hung between them). */}
+                {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-kind-mark flex-none" />}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
                     arrangement the list rows keep, and for the same
@@ -309,15 +313,20 @@ export function TabStrip({
                   // fits inside the band because the band is the
                   // finger's floor (44) and two lines of 12/10 are 32.
                   <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
-                    <span
-                      data-tab-name
-                      className={cn("truncate text-sm leading-tight", f.preview && "italic")}
-                    >
-                      {f.label}
+                    <span className="flex min-w-0 items-center gap-1">
+                      {f.glyph && <span className="flex-none">{f.glyph}</span>}
+                      <span
+                        data-tab-name
+                        className={cn("min-w-0 truncate text-sm leading-tight", f.preview && "italic")}
+                      >
+                        {f.label}
+                      </span>
                     </span>
+                    {/* The path starts under the name's text, past the
+                        glyph, so the two lines read as one entry. */}
                     <span
                       data-tab-sub
-                      className="truncate text-xs leading-tight text-muted-foreground"
+                      className={cn("truncate text-xs leading-tight text-muted-foreground", f.glyph && "pl-5")}
                     >
                       {f.sub}
                     </span>

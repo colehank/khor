@@ -3363,6 +3363,23 @@ try {
         els.map((e) => e.getAttribute("aria-label")),
       );
       console.log(`tab strip tail: ${JSON.stringify(tail)}`);
+      // **One size, one weight** (2026-09-16:「右上角的预览、session、vscode
+      // 等 icon 的大小风格要一致。现在粗细、大小不一」): every glyph at the
+      // strip's end is 14–16 tall and every button the same box.
+      const tailLook = await page.evaluate(() => {
+        const btns = [...document.querySelectorAll("[data-file-face-switch], [data-ws-switches] > button")];
+        return btns.map((b) => ({
+          box: [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)].join("x"),
+          glyph: Math.round(b.querySelector("svg")?.getBoundingClientRect().height ?? 0),
+        }));
+      });
+      console.log(`tail look: ${JSON.stringify(tailLook)}`);
+      if (new Set(tailLook.map((t) => t.box)).size > 1 || new Set(tailLook.map((t) => t.glyph)).size > 1 || tailLook.some((t) => t.glyph < 14 || t.glyph > 16)) {
+        fail(
+          `the strip's end is uneven: ${tailLook.map((t) => `${t.box}/${t.glyph}`).join(", ")} — one box, one glyph size ` +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
       // **The tab wears the file's kind too** (2026-09-16:「标签页打开了,
       // 最上方也要有 icon」): the same icon the tree drew, not the
       // generic file mark.
@@ -4504,6 +4521,50 @@ try {
       };
     });
     console.log(`md opens: ${JSON.stringify(asOpened)}`);
+    // **The sheet carries colour only** (2026-09-16:「编辑时的光标没有和
+    // 任何文字对齐」): a bold heading or a slanted comment in the
+    // painted copy is wider than the editor's plain text over it, and
+    // the caret drifts. Markdown source is where the theme bolds.
+    const heavy = await page.evaluate(() => {
+      const pre = document.querySelector("[data-sheet]");
+      if (!pre) return null;
+      const base = getComputedStyle(pre);
+      const odd = [];
+      for (const el of pre.querySelectorAll('span[style*="--shiki"]')) {
+        const c = getComputedStyle(el);
+        if (c.fontWeight !== base.fontWeight || c.fontStyle !== base.fontStyle) {
+          odd.push(`${JSON.stringify(el.textContent?.slice(0, 12))} ${c.fontWeight}/${c.fontStyle}`);
+        }
+      }
+      return { spans: pre.querySelectorAll('span[style*="--shiki"]').length, odd };
+    });
+    console.log(`sheet weights: ${JSON.stringify(heavy)}`);
+    if (heavy === null || heavy.spans === 0) {
+      fail("probe void: the markdown source painted no tokens, so nothing here can carry a weight");
+    } else if (heavy.odd.length) {
+      fail(
+        `${heavy.odd.length} painted span(s) on the sheet wear a weight or slope of their own (${heavy.odd.slice(0, 3).join("; ")}) ` +
+          "— the sheet keeps colour only, or the caret leaves its letter (src/styles/app.css)",
+      );
+    }
+    // …seated on the name line, not between the two lines
+    // (2026-09-16:「标签页上的 icon 也没有对齐,不和谐」).
+    const seat = await page.evaluate(() => {
+      const tab = document.querySelector("[data-tab-open]");
+      const g = tab?.querySelector("[data-file-kind]");
+      const nm = tab?.querySelector("[data-tab-name]");
+      if (!g || !nm) return null;
+      const a = g.getBoundingClientRect();
+      const b = nm.getBoundingClientRect();
+      return { glyphMid: Math.round((a.top + a.bottom) / 2), nameTop: Math.round(b.top), nameBottom: Math.round(b.bottom) };
+    });
+    console.log(`tab glyph seat: ${JSON.stringify(seat)}`);
+    if (seat !== null && (seat.glyphMid < seat.nameTop || seat.glyphMid > seat.nameBottom)) {
+      fail(
+        `the tab's kind icon sits at ${seat.glyphMid} while the name runs ${seat.nameTop}–${seat.nameBottom} — ` +
+          "the glyph is on the name line (src/browse/TabStrip.tsx)",
+      );
+    }
     if (!opened || !asOpened.editor || asOpened.md) {
       fail(
         "a markdown file opened rendered rather than as source — it is a text file, and 「打开先是" +
@@ -4556,6 +4617,21 @@ try {
       editor: document.querySelectorAll("[data-edit]").length,
     }));
     console.log(`md preview: ${JSON.stringify(heads)}`);
+    // **As wide as the column** (2026-09-16:「预览时,md 不要窄显示。和代码
+    // 一样,有多宽显示多宽」).
+    const wide = await page.evaluate(() => {
+      const host = document.querySelector("[data-file-preview]");
+      const md = host?.querySelector("[data-md]");
+      if (!host || !md) return null;
+      return { host: Math.round(host.getBoundingClientRect().width), md: Math.round(md.getBoundingClientRect().width) };
+    });
+    console.log(`md width: ${JSON.stringify(wide)}`);
+    if (wide !== null && wide.md < wide.host - 64) {
+      fail(
+        `the rendered markdown is ${wide.md}px in a ${wide.host}px column — 「有多宽显示多宽」, no prose cap ` +
+          "(src/views/FileView.tsx)",
+      );
+    }
     if (!rendered || heads.h1 !== "notes") {
       fail(
         `按预览 drew ${JSON.stringify(heads)} — 「# notes」 is an <h1> and that is what a preview ` +

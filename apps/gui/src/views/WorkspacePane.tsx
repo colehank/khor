@@ -909,7 +909,10 @@ export function WorkspacePane({
                   onClick={() => setSessions(!sessions)}
                   className={cn("min-h-touch min-w-touch", !sessions && "text-muted-foreground")}
                 >
-                  <IconSessions />
+                  {/* The rail's glyph is 32 by birth (`RailGlyph`); at the
+                      strip's end it stands beside two 16s and wears
+                      their size (2026-09-16:「大小风格要一致」). */}
+                  <IconSessions className="size-4!" />
                 </Button>
                 {/* **Only where there is an editor to open.** A machine
                     without one, and a machine that could not be asked,
@@ -944,6 +947,10 @@ export function WorkspacePane({
                       codeAt === null && "text-muted-foreground",
                     )}
                   >
+                    {/* 16, like its two neighbours (2026-09-16:「右上角的
+                        预览、session、vscode 等 icon 的大小风格要一致」);
+                        the sessions glyph was the odd one, at the
+                        rail's 32. */}
                     <IconCode />
                   </Button>
                 )}

@@ -842,7 +842,7 @@ export function FileView({
                   guard is a second thing to be wrong. */}
               <article
                 data-look="doc"
-                className="prose-khor mx-auto max-w-prose px-6 py-4"
+                className="prose-khor px-6 py-4"
                 dangerouslySetInnerHTML={{ __html: look.html }}
               />
             </div>
@@ -1135,7 +1135,7 @@ export function FileView({
       {face === "preview" && renders !== null ? (
         <div data-file-preview={renders} className="min-h-0 flex-1 overflow-auto">
           {renders === "md" ? (
-            <Markdown text={body} className="prose-khor mx-auto max-w-prose px-6 py-4" />
+            <Markdown text={body} className="prose-khor px-6 py-4" />
           ) : (
             <Table text={body} sep={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />
           )}
