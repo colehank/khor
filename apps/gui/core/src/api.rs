@@ -416,6 +416,46 @@ pub fn answer(
             ))?;
             Ok("null".to_owned())
         }
+        // Making a name where there was none, and moving one. Each
+        // refuses a name already taken rather than writing over it;
+        // `machine` empty is this one, the way every path verb here
+        // spells it.
+        "mkdir" => {
+            rt.block_on(crate::files::mkdir(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                &arg("path")?,
+            ))?;
+            Ok("null".to_owned())
+        }
+        "touch" => {
+            rt.block_on(crate::files::touch(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                &arg("path")?,
+            ))?;
+            Ok("null".to_owned())
+        }
+        "rename_path" => {
+            rt.block_on(crate::files::rename_path(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                &arg("from")?,
+                &arg("to")?,
+            ))?;
+            Ok("null".to_owned())
+        }
+        // Opening a path or a page **on the machine that holds it**,
+        // which is what tells this apart from `open_link` below: that
+        // one opens on the machine the face is running on.
+        "launch" => {
+            rt.block_on(crate::files::launch(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                &arg("target")?,
+            ))?;
+            Ok("null".to_owned())
+        }
         // Whether this machine has a bin at all — asked rather than
         // guessed from the browser (`files::trash_here`).
         "trash_here" => to_json(&crate::files::trash_here()),

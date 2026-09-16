@@ -689,6 +689,37 @@ export const pullFile = (machine: string, path: string) =>
     confirms is never a guess about the platform. */
 export const removePath = (machine: string, path: string) =>
   call<null>("remove", { machine, path });
+/** One new directory on whichever machine holds the parent
+    (`khor_node::Link::mkdir`). **One level, and a name already taken is
+    refused** — the caller is a person typing into a row of a tree whose
+    parent is on the screen, so a chain of directories nobody asked for
+    is the mistake, not the convenience. */
+export const makeDir = (machine: string, path: string) =>
+  call<null>("mkdir", { machine, path });
+/** One new empty file (`khor_node::Link::touch`). A name already taken
+    is refused **and the file wearing it is not emptied**, which is the
+    half unix `touch` would have got wrong. */
+export const makeFile = (machine: string, path: string) =>
+  call<null>("touch", { machine, path });
+/** Moves a name (`khor_node::Link::rename_path`). Crossing directories
+    is the same verb. **The target is never overwritten**: a taken name
+    is refused, there is no force. */
+export const renamePath = (machine: string, from: string, to: string) =>
+  call<null>("rename_path", { machine, from, to });
+/** Opens a path or a page **on the machine that holds it**
+    (`khor_node::Link::launch`).
+
+    **Not `openLink`**, and the pair is the whole point. `openLink` hands
+    a page to the machine this window is running on, which is right for
+    something a person wants to read. This hands it to the machine the
+    session ran on — the only machine the file named in that session
+    exists on, and this face can be a browser on a phone. 都在宿主机器上
+    打开 (the user, 2026-09-17).
+
+    Only an absolute path over there or an `http(s)` address; the node
+    refuses everything else by name. */
+export const launchOn = (machine: string, target: string) =>
+  call<null>("launch", { machine, target });
 /** Whether the machine khor's backend runs on has a recycle bin. Asked
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
@@ -918,6 +949,65 @@ export function hear<T>(event: string, said: (payload: T) => void): () => void {
     drop?.();
   };
 }
+/**
+ * The app's window is being closed, and something wants a say
+ * (工作区第五轮 第 39 条).
+ *
+ * **`ask` answers whether to stop it.** True means the window stays and
+ * whoever answered is expected to put something on screen; false means
+ * it closes now.
+ *
+ * **Tauri prevents the close for us the moment this listener exists** —
+ * the Rust side sees a JS listener on `tauri://close-requested` and
+ * calls `api.prevent_close()`, and the window then only goes when
+ * something calls `destroy` ([`quitNow`]). So the shape here is: always
+ * prevent, and close by hand when nobody objected. That is also why
+ * this must never be installed conditionally — a listener that comes
+ * and goes is a window that sometimes cannot be closed at all.
+ *
+ * A no-op outside the app, where there is no window of its own to
+ * close: the browser's own road is `beforeunload`, which is a different
+ * contract (a browser will not let a page put a dialog of its own up)
+ * and is wired where it is spent.
+ *
+ * Loud on refusal, for `hear`'s reason.
+ */
+export function onQuitRequested(ask: () => boolean): () => void {
+  if (!inApp) return () => {};
+  let drop: (() => void) | null = null;
+  let gone = false;
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) =>
+      getCurrentWindow()
+        .onCloseRequested((e) => {
+          if (ask()) e.preventDefault();
+        })
+        .then((un) => {
+          if (gone) un();
+          else drop = un;
+        }),
+    )
+    .catch((e: unknown) => {
+      console.error("khor: cannot hear the window closing", e);
+    });
+  return () => {
+    gone = true;
+    drop?.();
+  };
+}
+
+/** Closes the app's window for good, past every guard — what 「不存,
+    退出」 presses. `destroy` rather than `close`, because `close` asks
+    again and the answer would be the same guard that is on screen. */
+export function quitNow(): void {
+  if (!inApp) return;
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) => getCurrentWindow().destroy())
+    .catch((e: unknown) => {
+      console.error("khor: cannot close the window", e);
+    });
+}
+
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match. */
 export const termOpen = (id: string, cols: number, rows: number) =>

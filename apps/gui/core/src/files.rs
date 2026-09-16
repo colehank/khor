@@ -103,6 +103,39 @@ pub async fn remove(root: &Path, machine: &str, path: &str) -> Result<(), String
     Node::open(root.to_path_buf())?.remove_path(machine, path).await
 }
 
+/// One new directory on whichever machine holds the parent — the call
+/// `khor mkdir` makes (`khor_node::Link::mkdir`). One level, and a name
+/// already taken is refused.
+pub async fn mkdir(root: &Path, machine: &str, path: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.mkdir(machine, path).await
+}
+
+/// One new empty file, the call `khor touch` makes
+/// (`khor_node::Link::touch`). A name already taken is refused and the
+/// file wearing it is not emptied.
+pub async fn touch(root: &Path, machine: &str, path: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.touch(machine, path).await
+}
+
+/// Moves a name on whichever machine holds it — the call `khor mv`
+/// makes (`khor_node::Link::rename_path`). Crossing directories is the
+/// same verb; the target is never overwritten.
+pub async fn rename_path(root: &Path, machine: &str, from: &str, to: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.rename_path(machine, from, to).await
+}
+
+/// Opens a path or a page **on the machine that holds it** — the call
+/// `khor launch` makes (`khor_node::Link::launch`).
+///
+/// **Not [`crate::web::open_link`]**, and the pair is worth reading
+/// together: that one hands a page to the machine the face is running
+/// on, which is right for a link somebody wants to read. This one hands
+/// it to the machine the session ran on, which is the only machine the
+/// file in that session exists on.
+pub async fn launch(root: &Path, machine: &str, target: &str) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.launch(machine, target).await
+}
+
 /// Whether the browser this face runs in will draw a PDF itself
 /// (`khor_node::preview::PDF_HERE`). False on Linux (WebKitGTK ships no
 /// viewer) and Android, where khor shows the PDF's words instead and

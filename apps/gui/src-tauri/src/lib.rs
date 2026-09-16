@@ -446,6 +446,44 @@ async fn remove(machine: Option<String>, path: String) -> Result<(), String> {
         .await
 }
 
+/// One new directory on a machine (`files::mkdir`). One level, and a
+/// name already taken is refused.
+#[tauri::command]
+async fn mkdir(machine: Option<String>, path: String) -> Result<(), String> {
+    khor_gui_core::files::mkdir(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &path)
+        .await
+}
+
+/// One new empty file on a machine (`files::touch`). A name already
+/// taken is refused and the file wearing it is not emptied.
+#[tauri::command]
+async fn touch(machine: Option<String>, path: String) -> Result<(), String> {
+    khor_gui_core::files::touch(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &path)
+        .await
+}
+
+/// Moves a name on a machine (`files::rename_path`). Crossing
+/// directories is the same verb; the target is never overwritten.
+#[tauri::command]
+async fn rename_path(machine: Option<String>, from: String, to: String) -> Result<(), String> {
+    khor_gui_core::files::rename_path(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &from,
+        &to,
+    )
+    .await
+}
+
+/// Opens a path or a page **on the machine that holds it**
+/// (`files::launch`) — the other end of `open_link`, which opens on the
+/// machine this window is running on.
+#[tauri::command]
+async fn launch(machine: Option<String>, target: String) -> Result<(), String> {
+    khor_gui_core::files::launch(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &target)
+        .await
+}
+
 /// Whether this machine has a recycle bin at all.
 #[tauri::command]
 fn trash_here() -> bool {
@@ -1814,6 +1852,10 @@ pub fn run() {
             ws_pin,
             touched,
             remove,
+            mkdir,
+            touch,
+            rename_path,
+            launch,
             trash_here,
             pdf_here,
             read_text,
