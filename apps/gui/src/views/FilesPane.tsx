@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 
 import { fetchDirPins, fetchLs, pinDir, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
+import { FileKindIcon } from "@/components/FileKindIcon";
 import { RowMenu } from "@/components/RowMenu";
 import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -380,12 +381,16 @@ export function FilesPane({
                     // `text-foreground` — a file's git state does not
                     // stop being true because somebody is reading it.
                     className={cn(
-                      "min-w-0 flex-1 truncate self-stretch text-left",
+                      "flex min-w-0 flex-1 items-center gap-2 self-stretch text-left",
                       open === full && "font-title text-foreground",
                       markInk(marks?.get(full)),
                     )}
                   >
-                    {e.name}
+                    {/* The same kind icon the workspace tree draws
+                        (2026-09-16): a file is the same file whichever
+                        tree it was found in. */}
+                    <FileKindIcon name={e.name} className="size-3" />
+                    <span className="min-w-0 truncate">{e.name}</span>
                   </button>
                   </RowMenu>
                   <Mark mark={marks?.get(full)} />

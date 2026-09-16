@@ -187,7 +187,10 @@ input[type="search"]::-webkit-search-decoration {
    The track was already transparent above. Only this scroller — the
    rest of the app keeps the thumb it measured. */
 [data-file-scroll] {
-  scrollbar-color: color-mix(in srgb, var(--scroll-thumb) 55%, transparent) transparent;
+  /* 80%, not 55%: at 55% the thumb vanished over a coloured mark
+     (2026-09-16:「滑动轮在有色的 git 状态条看不见了,不透明度可以高一点」).
+     The mark still reads through it at 80. */
+  scrollbar-color: color-mix(in srgb, var(--scroll-thumb) 80%, transparent) transparent;
 }
 
 /* Two selectors because the two properties inherit differently:
@@ -420,6 +423,19 @@ input[type="search"]::-webkit-search-decoration {
    Shiki ships them, which is what github.com paints (user, 2026-09-15:
    「做到 gh web 预览代码的那种高亮」). Scoped to the two surfaces that
    paint: a rendered turn and the file sheet. */
+/* File-kind icons (`components/FileKindIcon`): Seti's colour for the
+   theme the page is in, the two values carried on the icon itself the
+   way a painted token carries its two. Same switch, same media query,
+   no colour chosen here. */
+[data-file-kind] {
+  color: var(--kind-light);
+}
+@media (prefers-color-scheme: dark) {
+  [data-file-kind] {
+    color: var(--kind-dark);
+  }
+}
+
 [data-md] span[style*="--shiki"],
 [data-sheet] span[style*="--shiki"] {
   color: var(--shiki-light);

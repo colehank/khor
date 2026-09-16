@@ -11,7 +11,7 @@ import {
   type MachineLog,
 } from "@/api";
 import { IconAttach } from "@/components/icons";
-import { IconFile } from "@/components/icons";
+import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -371,7 +371,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
           aux, the qualifying fact's place. */}
       {(m.files ?? []).map((f) => (
         <div key={f.name} className="flex items-center gap-2">
-          <IconFile className="size-4 flex-none text-muted-foreground" />
+          <FileKindIcon name={f.name} className="size-4" />
           <div className="min-w-0">
             <div data-file-name className="truncate font-title">
               {f.name}

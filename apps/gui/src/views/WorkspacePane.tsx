@@ -25,7 +25,8 @@ import {
   type SessionRow,
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
-import { IconCode, IconEye, IconFile, IconSessions } from "@/components/icons";
+import { FileKindIcon } from "@/components/FileKindIcon";
+import { IconCode, IconEye, IconSessions } from "@/components/icons";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
@@ -684,7 +685,9 @@ export function WorkspacePane({
         sub: under(root, path),
         dirty: drafts.has(path),
         preview: preview === path,
-        glyph: <IconFile />,
+        // The file's own kind on the tab too (2026-09-16:「标签页打开了,
+        // 最上方也要有 icon」) — the same icon the tree drew for it.
+        glyph: <FileKindIcon name={basename(path)} />,
         menu: tabMenu(path),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -261,6 +261,23 @@ export function FileView({
       才展开 diff」(the user, 2026-09-11). A file that opened already
       unfolded would be a diff view wearing a file view's name. */
   const [shown, setShown] = useState<number | null>(null);
+  // **The old text is brought onto the screen when it opens**
+  // (2026-09-16:「点击后,窗口应该移动到这个状态条显示内容的地方。现在
+  // 如果在一个很长的状态条点击,看不见东西,需要拖动状态条最上方才能看
+  // 见」). The peek lies *above* its hunk, so a press low on a tall bar
+  // opens something off the top of the scroller. Arithmetic on rects,
+  // for `box`'s reason below — never `scrollIntoView`. Only when it is
+  // actually out of view: a peek already on screen must not jump.
+  useLayoutEffect(() => {
+    if (shown === null) return;
+    const el = box.current;
+    const peek = el?.querySelector<HTMLElement>("[data-peek]");
+    if (!el || !peek) return;
+    const b = el.getBoundingClientRect();
+    const p = peek.getBoundingClientRect();
+    if (p.top >= b.top && p.bottom <= b.bottom) return;
+    el.scrollTop += p.top - b.top - el.clientHeight / 3;
+  }, [shown]);
   /** The one scroller in this view. Held so a step can bring its hunk
       into view **without `scrollIntoView`**, which walks every
       scrollable ancestor including the window — the same call that
@@ -1135,7 +1152,14 @@ export function FileView({
           <pre
             data-numbers
             aria-hidden="true"
-            className="shrink-0 select-none pl-2 text-right font-mono text-code leading-code text-muted-foreground tabular-nums"
+            // **The divider is this column's right edge, and the change
+            // bar stands outside it, on the text's side** (2026-09-16:
+            // 「状态条收进了行号与文字分割线的内侧了,分割线到文字部分空了
+            // 一截…要么让文字往左不要空,要么状态条放在分割线外侧」). The
+            // bar used to carry the divider on its own right, which left
+            // the sheet's padding as a blank gap past the line; now the
+            // bar sits in that gap, VS Code's arrangement.
+            className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-code leading-code text-muted-foreground tabular-nums"
           >
             {rows.map((_, i) => (
               <Fragment key={i}>
@@ -1459,7 +1483,10 @@ function Gutter({
     // nothing else — the column exists for the bar and takes the bar's
     // width. The touch floor is waived for it in `check-face` for the
     // reason written there.
-    <div data-gutter={hunks.length} className="relative w-1 shrink-0 self-stretch border-r">
+    // **6 wide** (2026-09-16:「左侧的 git 状态条稍微再宽一点,点击性受限
+    // 了」, after 4 turned out too thin to land on) — still a bar, not a
+    // column; and no divider of its own any more, the numbers carry it.
+    <div data-gutter={hunks.length} className="relative w-1.5 shrink-0 self-stretch">
       {hunks.map((h, i) => {
         const gone = h.lines === 0;
         // The line the hunk starts on, and the one after everything it
@@ -1543,23 +1570,23 @@ function Gutter({
  * like the live one two rows below it — the tint and the ink are what
  * say which is which.
  */
+/** The peek's three inks, **the bar's own** (2026-09-16:「黄色的状态条
+    点击后,弹出的状态底色是红色,跟黄色不一致」): the old lines of a
+    modification sit on the modification's yellow, a deletion's on red,
+    and an insertion's one-line note on green — a tenth for the wash,
+    full for the letters, the same hue as a hairline so the block has an
+    edge on both themes. Same three tests as `hunkInk`, in the same
+    order, so the two can never disagree. */
+function peekInk(h: GitHunk): string {
+  if (h.lines === 0) return "border-git-deleted/40 bg-git-deleted/10 text-git-deleted";
+  if (h.was.length === 0) return "border-git-added/40 bg-git-added/10 text-git-added";
+  return "border-git-modified/40 bg-git-modified/10 text-git-modified";
+}
+
 function Peek({ hunk }: { hunk: GitHunk }) {
   const gone = hunk.was.length > 0;
   return (
-    <div
-      data-peek={hunk.at}
-      // **A tint of the ink, not a ground of its own.** These lines are
-      // in the file's flow now, so what tells them apart from it has to
-      // be the same fact the bar beside them is drawing — 删除's ink at
-      // a tenth for the wash and at full for the letters, with the same
-      // hue as a hairline so the block has an edge on both themes.
-      className={cn(
-        "border-y px-3",
-        gone
-          ? "border-git-deleted/40 bg-git-deleted/10 text-git-deleted"
-          : "border-git-added/40 bg-git-added/10 text-git-added",
-      )}
-    >
+    <div data-peek={hunk.at} className={cn("border-y px-3", peekInk(hunk))}>
       {gone ? (
         hunk.was.map((line, i) => (
           <div key={i} className="min-h-[var(--text-code--line-height)]">

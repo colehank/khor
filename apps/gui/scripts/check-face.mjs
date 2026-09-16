@@ -2983,6 +2983,34 @@ try {
     const opened = await until(5_000, async () =>
       (await page.locator('[data-file-tree] [data-depth="1"]').count()) > 0,
     );
+    // **Indent guides** (2026-09-16 ruling 16): every row one level down
+    // carries one hairline, on the centre line of its parent's chevron;
+    // rows at the root carry none.
+    const guides = await page.evaluate(() => {
+      const px = (n) => Math.round(n * 10) / 10;
+      const at = (d) =>
+        [...document.querySelectorAll(`[data-file-tree] [data-depth="${d}"]`)].map((row) => {
+          const r = row.getBoundingClientRect();
+          return [...row.querySelectorAll("[data-guide]")].map((g) => px(g.getBoundingClientRect().left - r.left));
+        });
+      const chev = document.querySelector('[data-file-tree] [data-depth="0"] [data-dir] svg');
+      const row0 = chev?.closest("[data-depth]");
+      const centre = chev && row0 ? px(chev.getBoundingClientRect().left + chev.getBoundingClientRect().width / 2 - row0.getBoundingClientRect().left) : null;
+      return { root: at(0), deep: at(1), centre };
+    });
+    console.log(`indent guides: ${JSON.stringify(guides)}`);
+    if (guides.root.some((g) => g.length !== 0) || guides.deep.some((g) => g.length !== 1)) {
+      fail(
+        `indent guides: root rows carry ${JSON.stringify(guides.root.map((g) => g.length))} and level-1 rows ` +
+          `${JSON.stringify(guides.deep.map((g) => g.length))} — one hairline per level above the row, none at the root ` +
+          "(src/views/FileTree.tsx Guides)",
+      );
+    } else if (guides.centre !== null && guides.deep.some((g) => Math.abs(g[0] - guides.centre) > 1)) {
+      fail(
+        `the guide under an open directory sits at ${guides.deep[0][0]}px where its chevron's centre is ${guides.centre}px ` +
+          "— the line hangs from the chevron (src/views/FileTree.tsx Guides)",
+      );
+    }
     const asked = askedLs.filter((a) => a.path === into).length;
     console.log(`tree: opening src asked for ${into} ${asked - before} time(s)`);
     if (!opened) {
@@ -3118,6 +3146,92 @@ try {
     }
   }
 
+  // ── 4k′) every file row wears its kind (2026-09-16) ─────────────────
+  //
+  //   The chevron's slot is the type slot: a directory's chevron, a
+  //   file's Seti icon, 12 across either way, so every name at one
+  //   level starts on one line; two extensions wear two shapes and two
+  //   of VS Code's inks, neither the body's.
+  {
+    await atTree();
+    const kinds = await page.evaluate(() => {
+      const px = (n) => Math.round(n * 10) / 10;
+      const out = [];
+      for (const row of document.querySelectorAll('[data-file-tree] [data-depth="0"]')) {
+        const r = row.getBoundingClientRect();
+        const dir = !row.hasAttribute("data-file");
+        const name = dir ? row.querySelector("[data-dir] > span") : row.querySelector("[data-file-name]");
+        const slot = dir ? row.querySelector("[data-dir] svg") : row.querySelector("[data-file-kind]");
+        out.push({
+          what: row.getAttribute("data-file") ?? row.querySelector("[data-dir]")?.getAttribute("data-dir") ?? "?",
+          dir,
+          nameLeft: name ? px(name.getBoundingClientRect().left - r.left) : null,
+          slotLeft: slot ? px(slot.getBoundingClientRect().left - r.left) : null,
+          slotW: slot ? px(slot.getBoundingClientRect().width) : 0,
+          ink: slot ? getComputedStyle(slot).color : null,
+          shape: dir ? "chevron" : (slot?.innerHTML.length ?? 0),
+        });
+      }
+      return { rows: out, body: getComputedStyle(document.body).color };
+    });
+    console.log(`file kinds: ${JSON.stringify(kinds.rows)}`);
+    // **A marked directory's name wears its dot's ink** (2026-09-16:
+    // 「目录如果有状态,应该也上色,现在只有个状态灯,但目录仍然是原色」).
+    const dirInks = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-file-tree] [data-dir]")]
+        .filter((b) => b.querySelector("[data-git-mark]"))
+        .map((b) => ({
+          what: b.getAttribute("data-dir"),
+          dot: getComputedStyle(b.querySelector("[data-git-mark]")).backgroundColor,
+          name: getComputedStyle(b.querySelector("span")).color,
+          body: getComputedStyle(document.body).color,
+        })),
+    );
+    console.log(`marked dirs: ${JSON.stringify(dirInks)}`);
+    if (dirInks.length === 0) {
+      fail("probe void: no directory in the tree carries a mark, so the name's ink cannot be checked (widen the **/git_status fixture)");
+    } else {
+      for (const d of dirInks) {
+        if (d.name === d.body || d.name !== d.dot) {
+          fail(
+            `directory ${JSON.stringify(d.what)} carries a dot of ${d.dot} and a name of ${d.name} — the name wears ` +
+              "the dot's ink (src/views/FileTree.tsx)",
+          );
+        }
+      }
+    }
+    const files = kinds.rows.filter((r) => !r.dir);
+    if (files.length < 2 || !kinds.rows.some((r) => r.dir)) {
+      fail("probe void: the tree at level 0 needs a directory and two files to compare kinds (deepen the **/ls fixture)");
+    } else {
+      const bare = files.filter((r) => r.slotW === 0);
+      if (bare.length) {
+        fail(
+          `${bare.map((r) => JSON.stringify(r.what)).join(", ")} carry no kind icon — every file wears the icon ` +
+            "VS Code would draw for it, in the chevron's slot (src/views/FileTree.tsx, src/components/FileKindIcon.tsx)",
+        );
+      }
+      const lefts = new Set(kinds.rows.map((r) => r.nameLeft));
+      if (lefts.size !== 1) {
+        fail(
+          `names at level 0 start at ${[...lefts].join(" / ")} — a file's icon takes the chevron's slot, so every ` +
+            "name at one level starts on one line (src/views/FileTree.tsx)",
+        );
+      }
+      const shapes = new Set(files.map((r) => r.shape));
+      if (shapes.size < 2) {
+        fail("every file wears the same shape — .rs and .md are different kinds (src/components/FileKindIcon.tsx)");
+      }
+      const inks = new Set(files.map((r) => r.ink));
+      if (inks.has(kinds.body) || inks.size < 2) {
+        fail(
+          `the kind icons wear ${JSON.stringify([...inks])} against a body of ${kinds.body} — Seti's colours, ` +
+            "two of them at least, and none of them the text's (src/components/FileKindIcon.tsx, app.css)",
+        );
+      }
+    }
+  }
+
   // ── 4l) 中栏的标签页: one file, one tab ───────────────────────────
   //
   // 「做成和 vscode 一样的标签页。一个文件一个标签,与 session 页标签类似。
@@ -3229,6 +3343,15 @@ try {
         els.map((e) => e.getAttribute("aria-label")),
       );
       console.log(`tab strip tail: ${JSON.stringify(tail)}`);
+      // **The tab wears the file's kind too** (2026-09-16:「标签页打开了,
+      // 最上方也要有 icon」): the same icon the tree drew, not the
+      // generic file mark.
+      if ((await page.locator("[data-tab-open]").count()) > 0) {
+        const tabKinds = await page.locator("[data-tab-open] [data-file-kind] svg").count();
+        if (tabKinds === 0) {
+          fail("an open file's tab carries no kind icon — the tree's icon goes on the tab too (src/views/WorkspacePane.tsx tabFaces)");
+        }
+      }
       // **Two since 2026-09-16**: the tree's switch moved onto the
       // workspace's own row in the list (a chevron), so the strip's
       // end keeps the sessions column and the editor.
@@ -5443,6 +5566,57 @@ try {
       // iii/iv) press the bar at 150 and read where the old text landed.
       await press('[data-gutter] [data-hunk="150"]');
       const shown = await until(5_000, async () => (await page.locator("[data-peek]").count()) === 1);
+      // **On screen, and in the bar's own ink** (2026-09-16: a press low
+      // on a tall bar opened old text off the top of the scroller, and a
+      // modification's peek sat on the deletion's red).
+      const peekSeen = await page.evaluate(() => {
+        const box = document.querySelector("[data-file-scroll]");
+        const peek = document.querySelector("[data-peek]");
+        const bar = document.querySelector('[data-gutter] [data-hunk="150"]');
+        if (!box || !peek || !bar) return null;
+        const b = box.getBoundingClientRect();
+        const p = peek.getBoundingClientRect();
+        // Colours come back as `rgb(r, g, b)`, `rgb(r g b / a)` or
+        // `color(srgb r g b / a)` depending on how Tailwind spelled the
+        // alpha; read the first three numbers and scale the unit form.
+        // **Painted, not parsed.** A `bg-…/10` computes to an `oklab(…)`
+        // string in Blink and the bar's full ink to `rgb(…)`; rather than
+        // read two syntaxes, both are painted over black on a 1×1 canvas
+        // and compared as channel ratios — a tenth of the same hue keeps
+        // the same ratios, a different hue does not.
+        const tone = (c) => {
+          const cv = document.createElement("canvas");
+          cv.width = cv.height = 1;
+          const g = cv.getContext("2d");
+          g.fillStyle = "#000";
+          g.fillRect(0, 0, 1, 1);
+          g.fillStyle = c;
+          g.fillRect(0, 0, 1, 1);
+          const [r, gg, b] = g.getImageData(0, 0, 1, 1).data;
+          const m = Math.max(r, gg, b, 1);
+          return [r / m, gg / m, b / m].map((v) => Math.round(v * 10) / 10).join(",");
+        };
+        return {
+          inView: p.top >= b.top - 1 && p.bottom <= b.bottom + 1,
+          peekTone: tone(getComputedStyle(peek).backgroundColor),
+          barTone: tone(getComputedStyle(bar).backgroundColor),
+        };
+      });
+      console.log(`peek at 150: ${JSON.stringify(peekSeen)}`);
+      if (peekSeen === null) {
+        fail("probe void: no scroller, peek or bar to measure the peek's place against");
+      } else {
+        if (!peekSeen.inView) {
+          fail("the old text opened off the screen — 「点击后,窗口应该移动到这个状态条显示内容的地方」 (src/views/FileView.tsx)");
+        }
+        const apart = (a, b) => a.split(",").some((v, k) => Math.abs(+v - +b.split(",")[k]) > 0.15);
+        if (apart(peekSeen.peekTone, peekSeen.barTone)) {
+          fail(
+            `the peek's ground is ${peekSeen.peekTone} under a bar of ${peekSeen.barTone} — the old text sits on ` +
+              "the bar's own ink (src/views/FileView.tsx peekInk)",
+          );
+        }
+      }
       const laid = await page.evaluate(() => {
         const round = (n) => Math.round(n * 10) / 10;
         const peek = document.querySelector("[data-peek]");
@@ -5565,6 +5739,10 @@ try {
           pastBox: round(c.left - b.right),
           pastRight: round(c.right - b.right),
           gutter: round(document.querySelector("[data-gutter]")?.getBoundingClientRect().width ?? 0),
+          gutterPastNumbers: round(
+            (document.querySelector("[data-gutter]")?.getBoundingClientRect().left ?? 0) -
+              (document.querySelector("[data-numbers]")?.getBoundingClientRect().right ?? 0),
+          ),
           // …and what the file itself says about where those lines are,
           // so the fractions above can be checked rather than eyeballed.
           total: box.scrollHeight,
@@ -5599,7 +5777,15 @@ try {
               "(src/views/FileView.tsx Ruler)",
           );
         }
-        if (ruler.gutter > 6) {
+        // Outside the divider (2026-09-16 ruling): the bar's left edge is
+        // at or past the numbers' right edge, in the sheet's gap.
+        if (ruler.gutterPastNumbers < -0.5) {
+          fail(
+            `the change bar starts ${-ruler.gutterPastNumbers}px inside the line numbers' edge — it stands ` +
+              "outside the divider, on the text's side (src/views/FileView.tsx)",
+          );
+        }
+        if (ruler.gutter > 8 || ruler.gutter < 5) {
           fail(
             `the change gutter is ${ruler.gutter}px wide — 「左侧的 git 状态条细一点…刚好适合点击就行」, ` +
               "VS Code's is 3 (src/views/FileView.tsx Gutter)",

@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchLs, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { RowMenu } from "@/components/RowMenu";
+import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -35,6 +36,31 @@ import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
     that a row is a row whatever level it is on — the same reason the
     sessions list flattens its groups. */
 type Row = { name: string; full: string; dir: boolean; depth: number };
+
+/** The indent guides (2026-09-16:「目录展开后,有一条竖线,表示这些目录下
+    文件属于该目录。如 vscode 一致」): one hairline per level above this
+    row, each on the centre line of that level's chevron, so the rows
+    under an open directory hang off a single line that runs down from
+    it. **Drawn per row, not per directory**: the rows are a flat list
+    (`walk`), so the only thing that knows a row's ancestry is its
+    depth, and a line that every row at that depth draws for itself is
+    continuous because the rows touch. The offset is the chevron's half
+    width (12/2) past the level's own padding. */
+function Guides({ depth }: { depth: number }) {
+  return (
+    <>
+      {Array.from({ length: depth }, (_, k) => (
+        <span
+          key={k}
+          data-guide={k}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 w-px bg-border"
+          style={{ left: `calc(var(--gap-row) + var(--tree-step) * ${k} + 6px)` }}
+        />
+      ))}
+    </>
+  );
+}
 
 /** Where the open branches are kept, per workspace. **Keyed by the pair
     that is the workspace's identity** (docs/WORKSPACE.md 身份与名字):
@@ -243,7 +269,7 @@ export function FileTree({
                   // arrangement both panes arrived at from opposite
                   // sides (`FilesPane`'s two rows).
                   className={cn(
-                    "group flex min-h-touch items-center gap-2 pr-3 text-sm hover:bg-muted/50",
+                    "group relative flex min-h-touch items-center gap-2 pr-3 text-sm hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -258,6 +284,7 @@ export function FileTree({
                       around it — `RowMenu`'s trigger carries an
                       `onPointerDown`, and a press handler on a bare
                       `<div>` is a target only a pointer can find. */}
+                  <Guides depth={r.depth} />
                   <RowMenu items={actions(r.full, true)}>
                     <button
                       type="button"
@@ -273,7 +300,12 @@ export function FileTree({
                       <IconChevronRight
                         className={cn("size-3 flex-none transition-transform", on && "rotate-90")}
                       />
-                      <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                      {/* **The name wears the dot's ink** (2026-09-16:「目录
+                          如果有状态,应该也上色,现在只有个状态灯,但目录仍
+                          然是原色」) — VS Code paints the folder's name
+                          in the heaviest change below it, and so does
+                          this. */}
+                      <span className={cn("min-w-0 flex-1 truncate", markInk(mark))}>{r.name}</span>
                       <Mark mark={mark} dir />
                     </button>
                   </RowMenu>
@@ -285,10 +317,11 @@ export function FileTree({
                   data-depth={r.depth}
                   style={indent(r.depth)}
                   className={cn(
-                    "group flex min-h-touch items-center gap-2 pr-3 text-sm hover:bg-muted/50",
+                    "group relative flex min-h-touch items-center gap-2 pr-3 text-sm hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
+                  <Guides depth={r.depth} />
                   <RowMenu items={actions(r.full, false)}>
                     <button
                       type="button"
@@ -312,13 +345,17 @@ export function FileTree({
                           chevron: without it a file's name would start
                           16 to the left of its sibling directory's and
                           the level would stop reading as a level. */}
-                      {/* **No spacer where the chevron would be**
-                          (2026-09-16:「非目录的文件要完全左对齐,也就是在
-                          > 的最左侧对齐,现在在 > 的最右侧对齐了,这会显得
-                          文件是目录的成员」). A file's name starts where
-                          its sibling directory's chevron starts; the
-                          level is still the level, because the indent
-                          per depth is the row's padding, not this. */}
+                      {/* **The chevron's slot is the row's type slot**
+                          (2026-09-16). A directory puts its chevron
+                          there; a file puts the icon VS Code would
+                          draw for it, the same 12 across, so every
+                          name at one level starts on one line — the
+                          arrangement the user first asked for as
+                          「文件名对齐到 > 的左沿」 was the answer to an
+                          *empty* slot reading as membership; a slot
+                          with the file's own mark in it is VS Code's
+                          picture, and the ruling that followed. */}
+                      <FileKindIcon name={r.name} className="size-3" />
                       <span data-file-name className="min-w-0 flex-1 truncate">
                         {r.name}
                       </span>

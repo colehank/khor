@@ -8,6 +8,17 @@
 // and adds the dependency without being asked. That lands as a silent
 // second family; here it lands as a build error, next to the porting work
 // it implies.
+// **One deliberate exception, and it is not a second family of the
+// same kind**: the file-kind icons (`components/FileKindIcon`, Seti via
+// `seti-icons`). The user set the one-family rule aside for those on
+// 2026-09-16 —「对于开发者来说,one family 反而是认知负荷。他们需要更直观
+// 的看到文件类型」— and they answer a different question from every
+// mark in icons.tsx: not「what does this control do」but「what kind of
+// file is this」, the way a language's colour in the sheet does. They
+// are drawn in one component, sized by its callers, and coloured by
+// VS Code's own palette. This gate does not match them because it
+// matches lucide; it is written here so the next reader does not port
+// them.
 // Matched against module specifiers, not against the word: a gate that
 // fires on prose fires on the comment explaining the gate, and the fix
 // people reach for then is to stop writing the comment.
