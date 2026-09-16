@@ -36,6 +36,7 @@ import { TabStrip, type TabFace } from "@/browse/TabStrip";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { useListWidth } from "@/hooks/use-list-width";
+import { reportDrafts } from "@/lib/drafts";
 import {
   rememberWords,
   sessionAxes,
@@ -51,6 +52,9 @@ import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FileView, rendererOf, type Draft } from "@/views/FileView";
+import { DiffView, diffLabel } from "@/views/DiffView";
+import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
+import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceEmpty";
 import type { Editor } from "@/gen/bindings/Editor";
 
 export function WorkspacePane({
@@ -168,6 +172,20 @@ export function WorkspacePane({
       the path alone, because the machine is this pane's and a stored id
       that disagreed with it would be a tab pointing at another disk. */
   const [tabs, setTabs] = useState<string[]>(() => storedTabs(machine, root));
+  /** The files this workspace was last opened on, newest first — what
+      the middle column offers when nothing is open (ruling 37). Kept in
+      state as well as in storage so the list under an empty column
+      changes as tabs are opened and closed, rather than being whatever
+      it was when this pane mounted. */
+  const [recent, setRecent] = useState<string[]>(() => storedOpened(machine, root));
+  /** A line a press in a conversation asked for (ruling 35: 行号后缀
+      `:12` 认得, 跳到那一行). **Stamped with the moment it was asked**,
+      because pressing the same path twice is two requests and the second
+      one has to move the view again — the file view compares the stamp,
+      not the number. */
+  const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(
+    null,
+  );
   const [file, setFile] = useState<string | null>(() => tabs[0] ?? null);
   /** Which screen the **narrow** face is standing on (2026-09-16 ruling
       33:「窄屏条件下,工作区几乎不可用」— the user).
@@ -683,6 +701,17 @@ export function WorkspacePane({
     said.current = now;
     if (stopped) setGitAt((n) => n + 1);
   }, [mine]);
+  // 退出时还有草稿要拦 (ruling 39). **Reported rather than asked for**:
+  // the guard runs outside React, at the moment a window is closing, and
+  // a count it had to go looking for would be a count it could fail to
+  // find. Keyed by this workspace so two panes open at once add up, and
+  // the unmount reports none — a pane that went away owes nothing.
+  useEffect(() => {
+    const who = `${machine}:${root}`;
+    reportDrafts(who, drafts.size);
+    return () => reportDrafts(who, 0);
+  }, [machine, root, drafts]);
+
   /** The choices this column's filter offers: **the state words and
       nothing else** (工作区批⑩). The other three axes the sessions
       landing offers — machine, category, workspace — are two thirds of
@@ -726,6 +755,10 @@ export function WorkspacePane({
   const open = useCallback(
     (path: string, pinned: boolean) => {
       setFile(path);
+      // 最近打开过的文件 (ruling 37). **The file, never the diff key**:
+      // what a person wants back is the file, and a diff is a look at
+      // one rather than a thing to reopen.
+      if (diffOf(path) === null) setRecent(rememberOpened(machine, root, path));
       // …and on the narrow face, pressing a file in the tree is how you
       // get to the file: one screen at a time, and this is the step
       // (ruling 33). Said here rather than in the tree, because which
@@ -754,7 +787,71 @@ export function WorkspacePane({
         return path;
       });
     },
-    [tabs, preview, remember],
+    [tabs, preview, remember, machine, root],
+  );
+
+  /** git's letter was pressed: open that file **against HEAD** in a
+      tab of its own (工作区第五轮 第 38 条).
+   *
+   * **A preview tab, like a single click on a file**, and for the same
+   * reason: a diff is something you glance at on the way to deciding
+   * something, and a strip that grew a permanent tab every time
+   * somebody pressed a letter would fill up with reading nobody kept.
+   * Pinning it is the same gesture as pinning any other — open it
+   * twice, or type in the file it is about.
+   *
+   * It takes the preview seat off whatever is in it, which is what
+   * makes「press M, press M on the next file」 not leave a trail. */
+  const openDiff = useCallback(
+    (path: string) => {
+      open(diffKey(path), false);
+    },
+    [open],
+  );
+
+  /** A name moved on the disk (工作区第五轮 第 36 条).
+   *
+   * **Every tab about that file follows it, and what was typed in it
+   * follows too.** A rename is not a close: dropping the tab would
+   * throw away a draft for a file that still exists, under a name the
+   * person themselves chose, which is the worst moment to lose work.
+   *
+   * **A directory takes its whole subtree.** Renaming `src` moves every
+   * open file under it, and a tab left pointing at `src/old/a.rs` is a
+   * tab over a path that is not there — the state the tree is not
+   * allowed to leave behind (`onGone`, from the other end).
+   *
+   * And the marks are stale the moment a path changes, so git is asked
+   * again — the same counter a save bumps.
+   */
+  const moved = useCallback(
+    (from: string, to: string) => {
+      const after = (p: string) =>
+        p === from ? to : p.startsWith(`${from}/`) ? `${to}${p.slice(from.length)}` : p;
+      // A tab is a key: an ordinary one is its path, a diff tab's wraps
+      // it. Both move, and neither changes kind.
+      const key = (k: string) => {
+        const d = diffOf(k);
+        return d === null ? after(k) : diffKey(after(d));
+      };
+      setTabs((was) => {
+        const now = was.map(key);
+        if (now.every((p, i) => p === was[i])) return was;
+        remember(now);
+        return now;
+      });
+      setFile((was) => (was === null ? was : key(was)));
+      setPreview((was) => (was === null ? was : key(was)));
+      setDrafts((was) => {
+        const now = new Map<string, Draft>();
+        for (const [p, d] of was) now.set(after(p), d);
+        return now;
+      });
+      setClosing((was) => (was === null ? was : after(was)));
+      setRecent((was) => was.map(after));
+      setGitAt((n) => n + 1);
+    },
+    [remember],
   );
 
   /** Take a tab off the strip. **Never asks here** — whether there is
@@ -861,15 +958,45 @@ export function WorkspacePane({
     return () => window.removeEventListener("keydown", onKey);
   }, [treePane, narrow]);
 
+  // 会话里的路径与网址可点 (ruling 35). What the conversations in the
+  // right-hand column are allowed to turn into links, and what happens
+  // when one is pressed.
+  //
+  // **Pressing a path opens a preview tab**, which is a single click in
+  // the tree spelled from somewhere else — the same gesture, the same
+  // seat, so a person reading a conversation and a person walking the
+  // tree end up with the same strip.
+  const { known: fileKnown, see: seeFile } = useKnownFiles(machine, root);
+  const linkHome = useMemo<LinkHome>(
+    () => ({
+      machine,
+      root,
+      known: fileKnown,
+      see: seeFile,
+      open: (abs, line) => {
+        open(abs, false);
+        setGoLine(line === null ? null : { path: abs, line, at: Date.now() });
+      },
+    }),
+    [machine, root, fileKnown, seeFile, open],
+  );
+
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one
       has something typed in it — and `TabStrip` paints and decides
       nothing (its own head says so). */
   const tabFaces: TabFace[] = useMemo(
     () =>
-      tabs.map((path) => ({
-        id: `${machine}:${path}`,
-        label: basename(path),
+      tabs.map((key) => {
+        // A diff tab is a tab about a file, so everything below that
+        // reads a path reads the **file's** — the icon, the second
+        // line, the hover title. Only the name says which face of it is
+        // open (`diffLabel`).
+        const path = fileOf(key);
+        const isDiff = diffOf(key) !== null;
+        return {
+        id: `${machine}:${key}`,
+        label: isDiff ? diffLabel(basename(path)) : basename(path),
         face: null,
         path,
         machine,
@@ -877,8 +1004,9 @@ export function WorkspacePane({
         // two tabs called `mod.rs` apart. The absolute path is the
         // hover title's, and both are on the menu.
         sub: under(root, path),
-        dirty: drafts.has(path),
-        preview: preview === path,
+        // A diff has nothing to type in, so it never carries a dot.
+        dirty: !isDiff && drafts.has(key),
+        preview: preview === key,
         // The file's own kind on the tab too (2026-09-16:「标签页打开了,
         // 最上方也要有 icon」) — the same icon the tree drew for it.
         //
@@ -891,8 +1019,9 @@ export function WorkspacePane({
         // made; `TabStrip` places what it is handed and sizes nothing
         // (its own head says so).
         glyph: <FileKindIcon name={basename(path)} className="size-8" />,
-        menu: tabMenu(path),
-      })),
+        menu: tabMenu(key),
+        };
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tabs, machine, root, drafts, preview, shut],
   );
@@ -903,15 +1032,18 @@ export function WorkspacePane({
       what this project's own documents take, and neither stands in for
       the other. A clipboard refusal rejects, which is how `RowMenu`
       keeps the menu open over the press that failed. */
-  function tabMenu(path: string): RowAction[] {
+  function tabMenu(key: string): RowAction[] {
+    // What gets copied is the **file's** path, on a diff tab too: a
+    // diff has no address of its own that anything else could use.
+    const path = fileOf(key);
     return [
-      { key: "close", label: gui.close, run: () => shut(path) },
+      { key: "close", label: gui.close, run: () => shut(key) },
       {
         key: "close-others",
         label: gui.tab_close_others,
         run: () => {
-          for (const p of tabs) if (p !== path) shut(p);
-          setFile(path);
+          for (const p of tabs) if (p !== key) shut(p);
+          setFile(key);
         },
       },
       {
@@ -935,6 +1067,10 @@ export function WorkspacePane({
     // page and the head and tree scrolling away with it. Measured on a
     // real file, 2026-09-12. Every other detail pane already wears
     // `h-full` for this reason (`DetailPane`, `BrowseLanding`).
+    // Everything painted inside this pane knows which project it is in
+    // — which is what lets a conversation in the right-hand column turn
+    // a path into a press on the middle one (ruling 35, `linkHome`).
+    <LinkHomeProvider value={linkHome}>
     <div className="flex h-full min-h-0 flex-col">
       {/* **The head row is gone** (工作区批⑧). It held the workspace's
           name, its branch, how far the branch was from its remote, a
@@ -1013,6 +1149,7 @@ export function WorkspacePane({
                 open={file}
                 here={here}
                 marks={marks}
+                onDiff={openDiff}
               />
             ) : (
               <FileTree
@@ -1026,7 +1163,10 @@ export function WorkspacePane({
                 marks={marks}
                 open={file}
                 onOpen={open}
+                onDiff={openDiff}
                 onGone={drop}
+                onMoved={moved}
+                onMade={() => setGitAt((n) => n + 1)}
               />
             )}
           </div>
@@ -1204,7 +1344,24 @@ export function WorkspacePane({
               is the file being pushed off its own screen by a control
               that says 「open the editor as well」. */}
           {file === null ? (
-            <div className="flex-1" />
+            // 中栏没有标签时 (ruling 37). Not a blank: where this is,
+            // what branch it is on, and what was open last time.
+            <WorkspaceEmpty
+              root={root}
+              machine={machine}
+              branch={git?.branch ?? ""}
+              recent={recent}
+              onOpen={(p) => open(p, false)}
+            />
+          ) : diffOf(file) !== null ? (
+            // 点状态字母开出来的那一张 (ruling 38). Read-only, and it
+            // is remounted per file the way `FileView` is.
+            <DiffView
+              key={`${machine} ${file}`}
+              machine={machine}
+              path={diffOf(file) ?? ""}
+              narrow={narrow}
+            />
           ) : (
             <FileView
               key={`${machine} ${file}`}
@@ -1225,6 +1382,9 @@ export function WorkspacePane({
               // **Asked to read itself again on the way back into the
               // window** (工作区批⑩), the same trigger the marks ride.
               readAt={readAt}
+              // A line a press in a conversation asked for (ruling
+              // 35), only ever for the file it named.
+              goLine={goLine !== null && goLine.path === file ? goLine : null}
               draft={drafts.get(file)}
               onDraft={(d) => {
                 setDrafts((was) => {
@@ -1541,6 +1701,7 @@ export function WorkspacePane({
         }}
       />
     </div>
+    </LinkHomeProvider>
   );
 }
 
@@ -1548,6 +1709,30 @@ export function WorkspacePane({
     name its ticked filter words are filed under (工作区批⑩). One name
     for every workspace, not one per workspace: see `words`. */
 const WS_PANE = "workspace-sessions";
+
+/** What a diff tab is called on the strip (工作区第五轮 第 38 条).
+ *
+ * **A tab is a string here, so a diff needs a spelling no path can
+ * have.** A NUL cannot be in a unix path — the kernel ends the name at
+ * one — so a key that starts with one is a key nothing on any disk can
+ * collide with. The alternative was a second list beside `tabs`, and
+ * two lists that have to stay in step is the shape that goes wrong the
+ * first time somebody closes the third tab.
+ */
+const DIFF = "\u0000diff:";
+
+/** The strip key for「this file against HEAD」. */
+export const diffKey = (path: string) => `${DIFF}${path}`;
+
+/** The file a diff tab is about, or `null` for an ordinary tab. */
+export function diffOf(key: string): string | null {
+  return key.startsWith(DIFF) ? key.slice(DIFF.length) : null;
+}
+
+/** The file a tab is about, whichever kind it is — for everything that
+    cares about the file and not about which face of it is open: the
+    stored-tab ceiling, the kind icon, the second line. */
+export const fileOf = (key: string) => diffOf(key) ?? key;
 
 /** Where the open tabs are kept, per workspace (工作区批⑧).
     **Keyed by the pair that is the workspace's identity**
@@ -1566,10 +1751,13 @@ function storedTabs(machine: string, root: string): string[] {
     const raw = window.localStorage.getItem(tabsKey(machine, root));
     const list: unknown = raw === null ? [] : JSON.parse(raw);
     if (!Array.isArray(list)) return [];
-    return list.filter(
-      (p): p is string =>
-        typeof p === "string" && (root === "" ? p.startsWith("/") : p.startsWith(`${root}/`)),
-    );
+    // Judged on the **file** a tab is about, so a diff tab survives a
+    // reload the way the file's own tab does (`fileOf`).
+    return list.filter((p): p is string => {
+      if (typeof p !== "string") return false;
+      const f = fileOf(p);
+      return root === "" ? f.startsWith("/") : f.startsWith(`${root}/`);
+    });
   } catch {
     return [];
   }
