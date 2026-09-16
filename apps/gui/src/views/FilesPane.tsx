@@ -389,7 +389,7 @@ export function FilesPane({
                     {/* The same kind icon the workspace tree draws
                         (2026-09-16): a file is the same file whichever
                         tree it was found in. */}
-                    <FileKindIcon name={e.name} className="size-3" />
+                    <FileKindIcon name={e.name} className="size-4" />
                     <span className="min-w-0 truncate">{e.name}</span>
                   </button>
                   </RowMenu>

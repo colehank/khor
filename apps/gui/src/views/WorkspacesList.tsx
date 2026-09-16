@@ -344,10 +344,23 @@ export function WorkspacesList({
               data-on={treeOpen}
               aria-label={gui.workspace_tree}
               onClick={onTree}
-              className="min-h-touch min-w-touch flex-none self-center text-muted-foreground"
+              // **As tall as the row, and its wash is the whole strip**
+              // (2026-09-16:「这个按钮悬浮与打开的高亮只有按钮附近一小圈,
+              // 应该是和这整个 list 等高的」): `self-stretch` with the
+              // icon variant's fixed height taken off, square corners so
+              // the strip meets the row's edges.
+              // `h-auto!` with the mark: the icon variant's `h-ctl-md` is a
+              // height tailwind-merge does not read as one (`button.tsx`
+              // measures it itself), so both classes survive and only the
+              // important one lets `self-stretch` win.
+              className="h-auto! min-w-touch flex-none self-stretch rounded-none text-muted-foreground"
             >
+              {/* **Left and right, not up and down** (2026-09-16:「收起是
+                  <,打开是 >」): the tree is the column to this list's
+                  right, so the glyph points at it when it is out and
+                  back at this list when it is folded. */}
               <IconChevronRight
-                className={cn("transition-transform", treeOpen && "rotate-90")}
+                className={cn("transition-transform", !treeOpen && "rotate-180")}
               />
             </Button>
           )}

@@ -537,6 +537,10 @@ export function FileView({
   // which is the whole point of wrapping and which no render here is
   // told about (the seam is dragged one component up, and the window is
   // not a prop at all).
+  /** The last measurement, for the anchor below. A ref, not the state:
+      the observer's callback closes over the render it was made in and
+      would read stale tops. */
+  const lastTops = useRef<{ tops: number[]; pad: number } | null>(null);
   useLayoutEffect(() => {
     const el = sheet.current;
     if (el === null) return;
@@ -565,6 +569,28 @@ export function FileView({
         const total = b.scrollHeight;
         const pad = el.getBoundingClientRect().top - b.getBoundingClientRect().top + b.scrollTop;
         setSpan((was) => (was.total === total && was.pad === pad ? was : { total, pad }));
+        // **The line at the top stays at the top when the lines re-wrap**
+        // (2026-09-16:「调整窗口宽度自动换行的时候,应该保持最上方一行,
+        // 稳定视觉一致性」). A narrower column folds every long line
+        // above the viewport into more rows, and the same scrollTop
+        // then lands somewhere further down the file; the person was
+        // reading line 40 and is now looking at 31. So the source line
+        // whose top was at the scroller's edge is found in the old
+        // measurement and put back at the edge in the new one, offset
+        // within the line kept as far as the line still reaches.
+        // **Only when the line count held** — a keystroke that adds a
+        // line is an edit, and the caret's own scroll owns that.
+        const prev = lastTops.current;
+        if (prev !== null && prev.tops.length === next.length && next.length > 1) {
+          const st = b.scrollTop;
+          let i = 0;
+          while (i + 2 < prev.tops.length && prev.pad + prev.tops[i + 1] <= st + 0.5) i += 1;
+          const within = Math.max(0, st - (prev.pad + prev.tops[i]));
+          const room = Math.max(0, next[i + 1] - next[i] - 1);
+          const want = pad + next[i] + Math.min(within, room);
+          if (Math.abs(want - st) > 0.5) b.scrollTop = want;
+        }
+        lastTops.current = { tops: next, pad };
       }
       // How tall the open peek came out, so the numbers column can wait
       // out exactly as much of itself as the sheet just spent on it.
@@ -1138,7 +1164,12 @@ export function FileView({
         // page that does not scroll while its inner scroller does is the
         // same file off the right edge with one more thing in the way.
         data-file-scroll
-        className="min-h-0 flex-1 overflow-auto"
+        // **The engine's own scroll anchoring is off here** — this view
+        // anchors the top line itself when the sheet re-wraps (`read()`
+        // above), and Blink's anchoring on top of that is two hands on
+        // one wheel; WebKit, which the desktop app runs in, has none,
+        // which is why the ruling was made at all.
+        className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
       >
         <div className="flex min-w-full items-start py-2">
           {/* **One block per number, as tall as the line it names**
@@ -1675,7 +1706,13 @@ function Ruler({
               // fact rather than a control a finger hunts for, and a
               // 44-tall mark would cover a fifth of the file.
               className={cn(
-                "pointer-events-auto absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs",
+                // **Six-tenths, so the scrollbar's thumb reads through a mark**
+                // (2026-09-16:「文件右侧悬浮的滚动条,现在在 git 状态条上完全
+                // 看不见了」). The marks stand above the scroller for
+                // their press; an opaque mark hid the overlay thumb
+                // completely where the two crossed. VS Code's
+                // decorations are translucent for the same reason.
+                "pointer-events-auto absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs opacity-60",
                 hunkInk(h),
               )}
               style={{

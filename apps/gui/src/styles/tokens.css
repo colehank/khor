@@ -663,6 +663,10 @@
      name still reads as sitting under its parent's rather than beside
      it, on the 224-wide column the tree opens at. */
   --tree-step: 12px;
+  /* The tree row's type slot: a file's kind icon at text height, a
+     directory's chevron centred in it; the indent guide hangs from the
+     slot's middle (2026-09-16:「应该和字等高」). */
+  --tree-slot: 16px;
   --gap-group: 18px; /* between groups that must not read as one list */
   --gap-pane: 24px;  /* a region's own breathing room, against its edge */
 

@@ -55,7 +55,7 @@ function Guides({ depth }: { depth: number }) {
           data-guide={k}
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 w-px bg-border"
-          style={{ left: `calc(var(--gap-row) + var(--tree-step) * ${k} + 6px)` }}
+          style={{ left: `calc(var(--gap-row) + var(--tree-step) * ${k} + var(--tree-slot) / 2)` }}
         />
       ))}
     </>
@@ -297,15 +297,22 @@ export function FileTree({
                           有点大了,占地方」), and the name with no
                           trailing slash — 「目录后面不用带 /,> 已经表明
                           了是目录」. */}
-                      <IconChevronRight
-                        className={cn("size-3 flex-none transition-transform", on && "rotate-90")}
-                      />
+                      {/* The slot is 16 — the icon's size, text height —
+                          and the 12px chevron sits centred in it, so a
+                          directory's name and a file's start on one
+                          line (2026-09-16:「文件类型 icon 太小了,应该
+                          和字等高」, after 12 proved unreadable). */}
+                      <span data-tree-slot className="flex size-[var(--tree-slot)] flex-none items-center justify-center" aria-hidden="true">
+                        <IconChevronRight
+                          className={cn("size-3 flex-none transition-transform", on && "rotate-90")}
+                        />
+                      </span>
                       {/* **The name wears the dot's ink** (2026-09-16:「目录
                           如果有状态,应该也上色,现在只有个状态灯,但目录仍
                           然是原色」) — VS Code paints the folder's name
                           in the heaviest change below it, and so does
                           this. */}
-                      <span className={cn("min-w-0 flex-1 truncate", markInk(mark))}>{r.name}</span>
+                      <span data-dir-name className={cn("min-w-0 flex-1 truncate", markInk(mark))}>{r.name}</span>
                       <Mark mark={mark} dir />
                     </button>
                   </RowMenu>
@@ -355,7 +362,7 @@ export function FileTree({
                           *empty* slot reading as membership; a slot
                           with the file's own mark in it is VS Code's
                           picture, and the ruling that followed. */}
-                      <FileKindIcon name={r.name} className="size-3" />
+                      <FileKindIcon name={r.name} className="size-[var(--tree-slot)]" />
                       <span data-file-name className="min-w-0 flex-1 truncate">
                         {r.name}
                       </span>

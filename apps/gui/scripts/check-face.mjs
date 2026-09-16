@@ -2522,7 +2522,10 @@ try {
       // line up. Measuring the name alone read the chevron's width as a
       // disagreement between the two kinds.
       let left;
-      const glyph = row.querySelector("svg");
+      // The type slot — a directory's chevron box or a file's kind icon —
+      // rather than the first `<svg>`: the chevron is 12 centred in a
+      // 16 slot, and the slot is what the two kinds share.
+      const glyph = row.querySelector("[data-tree-slot], [data-file-kind]") ?? row.querySelector("svg");
       if (leaf) {
         left = px(leaf.getBoundingClientRect().left - r.left);
         if (glyph) left = Math.min(left, px(glyph.getBoundingClientRect().left - r.left));
@@ -3160,14 +3163,16 @@ try {
       for (const row of document.querySelectorAll('[data-file-tree] [data-depth="0"]')) {
         const r = row.getBoundingClientRect();
         const dir = !row.hasAttribute("data-file");
-        const name = dir ? row.querySelector("[data-dir] > span") : row.querySelector("[data-file-name]");
-        const slot = dir ? row.querySelector("[data-dir] svg") : row.querySelector("[data-file-kind]");
+        const name = dir ? row.querySelector("[data-dir-name]") : row.querySelector("[data-file-name]");
+        const slot = dir ? row.querySelector("[data-tree-slot]") : row.querySelector("[data-file-kind]");
         out.push({
           what: row.getAttribute("data-file") ?? row.querySelector("[data-dir]")?.getAttribute("data-dir") ?? "?",
           dir,
           nameLeft: name ? px(name.getBoundingClientRect().left - r.left) : null,
           slotLeft: slot ? px(slot.getBoundingClientRect().left - r.left) : null,
           slotW: slot ? px(slot.getBoundingClientRect().width) : 0,
+          slotH: slot ? px(slot.getBoundingClientRect().height) : 0,
+          textH: name ? px(parseFloat(getComputedStyle(name).fontSize)) : 0,
           ink: slot ? getComputedStyle(slot).color : null,
           shape: dir ? "chevron" : (slot?.innerHTML.length ?? 0),
         });
@@ -3183,7 +3188,10 @@ try {
         .map((b) => ({
           what: b.getAttribute("data-dir"),
           dot: getComputedStyle(b.querySelector("[data-git-mark]")).backgroundColor,
-          name: getComputedStyle(b.querySelector("span")).color,
+          // Guarded: a tree without the name span is a red, not a crash
+          // (the stash run of 2026-09-16 threw here and hid every probe
+          // after it).
+          name: b.querySelector("[data-dir-name]") ? getComputedStyle(b.querySelector("[data-dir-name]")).color : null,
           body: getComputedStyle(document.body).color,
         })),
     );
@@ -3192,7 +3200,7 @@ try {
       fail("probe void: no directory in the tree carries a mark, so the name's ink cannot be checked (widen the **/git_status fixture)");
     } else {
       for (const d of dirInks) {
-        if (d.name === d.body || d.name !== d.dot) {
+        if (d.name === null || d.name === d.body || d.name !== d.dot) {
           fail(
             `directory ${JSON.stringify(d.what)} carries a dot of ${d.dot} and a name of ${d.name} — the name wears ` +
               "the dot's ink (src/views/FileTree.tsx)",
@@ -3216,6 +3224,18 @@ try {
         fail(
           `names at level 0 start at ${[...lefts].join(" / ")} — a file's icon takes the chevron's slot, so every ` +
             "name at one level starts on one line (src/views/FileTree.tsx)",
+        );
+      }
+      // **Text height** (2026-09-16:「文件树的文件类型 icon 太小了,应该和
+      // 字等高」): the icon is at least as tall as the name's font.
+      // The tree's text is 12.5px, so 「等高」 by the font's number alone
+      // would have passed the 12 that was ruled unreadable; the floor is
+      // the size VS Code draws its file icons at, less two.
+      const small = files.filter((r) => r.slotH < 14);
+      if (small.length) {
+        fail(
+          `${small.map((r) => `${JSON.stringify(r.what)} ${r.slotH}px`).join(", ")} — the kind icon is under 14px ` +
+            `beside ${files[0].textH}px text, 「应该和字等高」, VS Code draws 16 (src/views/FileTree.tsx)`,
         );
       }
       const shapes = new Set(files.map((r) => r.shape));
@@ -3379,6 +3399,41 @@ try {
         );
         if (!onOpenRow) {
           fail("the tree chevron is not on the selected workspace's row (src/views/WorkspacesList.tsx)");
+        }
+        // **As tall as its row, and pointing sideways** (2026-09-16).
+        const chevBox = await page.evaluate(() => {
+          const b = document.querySelector("[data-ws-tree-toggle]");
+          const line = b?.closest("[data-ws-line]");
+          if (!b || !line) return null;
+          // Tailwind's `rotate-*` writes the `rotate` property, not
+          // `transform` — reading the matrix saw every glyph as upright.
+          const turn = getComputedStyle(b.querySelector("svg")).rotate;
+          const deg = turn === "none" ? 0 : Math.round(parseFloat(turn)) % 360;
+          const on = b.getAttribute("data-on") === "true";
+          return {
+            button: Math.round(b.getBoundingClientRect().height),
+            row: Math.round(line.getBoundingClientRect().height),
+            on,
+            turn: deg,
+            // The glyph is a right-pointing chevron: open, drawn as is;
+            // folded, turned about; never a quarter turn, which is what
+            // up or down would be.
+            sideways: on ? deg === 0 : deg === 180,
+          };
+        });
+        console.log(`tree chevron: ${JSON.stringify(chevBox)}`);
+        if (chevBox === null) {
+          fail("probe void: no chevron or row to measure");
+        } else {
+          if (chevBox.button < chevBox.row - 1) {
+            fail(
+              `the row's chevron is ${chevBox.button}px tall in a ${chevBox.row}px row — its wash is the whole strip, ` +
+                "「应该是和这整个 list 等高的」 (src/views/WorkspacesList.tsx)",
+            );
+          }
+          if (!chevBox.sideways) {
+            fail("the row's chevron points up or down — 「收起是 <,打开是 >」 (src/views/WorkspacesList.tsx)");
+          }
         }
         const treeCount = () => page.locator("[data-ws-tree]").count();
         const t0 = await treeCount();
@@ -4950,6 +5005,74 @@ try {
     await page.unroute("**/git_diff", wrapDiff);
   }
 
+  // ── 4m′) the top line holds when the sheet re-wraps (2026-09-16) ──
+  //
+  // 「调整窗口宽度自动换行的时候,应该保持最上方一行,稳定视觉一致性」.
+  // Twenty long lines above a short one; put the short one at the top,
+  // narrow the window so the long ones fold into more rows, and the
+  // same line is still at the top.
+  {
+    const tallText =
+      Array.from({ length: 60 }, (_, i) =>
+        i < 20 ? `let long${i + 1} = "${"y".repeat(300)}";` : `let n${i + 1} = ${i + 1};`,
+      ).join("\n") + "\n";
+    const tallRead = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: tallText.length,
+          at_ms: Date.now(),
+          text: tallText,
+          cut: false,
+          binary: false,
+          digest: "5".repeat(64),
+        }),
+      });
+    await page.route("**/read_text", tallRead);
+    await page.setViewportSize({ width: 1400, height: 700 });
+    await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
+    const drew = await until(8_000, async () =>
+      (await page.locator('[data-sheet] [data-line="60"]').count()) === 1,
+    );
+    if (!drew) {
+      fail("probe dead: the tall fixture did not draw, so nothing here can be scrolled and re-wrapped");
+    } else {
+      const topLine = () =>
+        page.evaluate(() => {
+          const box = document.querySelector("[data-file-scroll]");
+          const b = box.getBoundingClientRect().top;
+          let best = null;
+          for (const el of document.querySelectorAll("[data-sheet] [data-line]")) {
+            const r = el.getBoundingClientRect();
+            if (r.top <= b + 1 && r.bottom > b + 1) best = el.getAttribute("data-line");
+          }
+          return best;
+        });
+      await page.evaluate(() => {
+        const box = document.querySelector("[data-file-scroll]");
+        const l = document.querySelector('[data-sheet] [data-line="30"]');
+        box.scrollTop += l.getBoundingClientRect().top - box.getBoundingClientRect().top;
+      });
+      await wait(150);
+      const before = await topLine();
+      await page.setViewportSize({ width: 900, height: 700 });
+      await wait(400);
+      const after = await topLine();
+      console.log(`re-wrap anchor: line ${before} at the top before narrowing, ${after} after`);
+      if (before !== "30") {
+        fail(`probe void: could not put line 30 at the top before narrowing (got ${before})`);
+      } else if (after !== "30") {
+        fail(
+          `narrowing the window moved the top line from 30 to ${after} — 「保持最上方一行,稳定视觉一致性」 ` +
+            "(src/views/FileView.tsx, the anchor in read())",
+        );
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(200);
+    }
+    await page.unroute("**/read_text", tallRead);
+  }
+
   // ── 4n) 会话列全功能, and the two things that ask again ───────────
   //
   // 「工作区的 session list 是全功能的,和 session 页的 list 一致,可以
@@ -5730,6 +5853,7 @@ try {
               part: Math.round(((r.top - c.top) / c.height) * 1000) / 1000,
               h: round(r.height),
               ink: getComputedStyle(el).backgroundColor,
+              opacity: parseFloat(getComputedStyle(el).opacity),
             };
           }),
           width: round(c.width),
@@ -5757,6 +5881,14 @@ try {
             "(src/views/FileView.tsx Ruler)",
         );
       } else {
+        // **Translucent** (2026-09-16:「悬浮的滚动条在 git 状态条上完全看不
+        // 见了」): the thumb has to read through a mark.
+        if (ruler.marks.some((m) => m.opacity > 0.75 || m.opacity < 0.3)) {
+          fail(
+            `a ruler mark is painted at opacity ${ruler.marks.map((m) => m.opacity).join("/")} — the scrollbar's ` +
+              "thumb has to read through it (src/views/FileView.tsx Ruler)",
+          );
+        }
         if (ruler.marks.length !== HUNKS.length) {
           fail(
             `the ruler carries ${ruler.marks.length} mark(s) for ${HUNKS.length} hunks — it is the whole ` +
