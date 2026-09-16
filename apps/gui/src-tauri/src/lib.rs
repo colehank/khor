@@ -1421,6 +1421,78 @@ fn hide_menu() -> Result<(), String> {
     Ok(())
 }
 
+/// Makes the window wider by `delta` logical pixels (negative narrows
+/// it), instead of taking the room out of what is already on screen.
+///
+/// 「右上角的icon,都是点击后,在最右侧,拓宽窗口, 而不是挤占现有窗口」
+/// — the user, 2026-09-16. One column of the workspace pane really adds
+/// a column (the sessions), and adding a column inside a fixed window
+/// is taking one away from the file.
+///
+/// **Not a node call, and that is the rule rather than an omission**:
+/// `khor-gui-core` holds what the CLI can also do, and a window is not
+/// something `khor` has. It never leaves this file.
+///
+/// **It grows to the right and stops at the screen.** The far edge is
+/// the current monitor's work area — the part not spent on a dock or a
+/// menu bar — so a window already against it simply keeps its size and
+/// the column takes its room from the page, which is what every face
+/// did before this. Growing past the edge would put the thing the
+/// person just opened where they cannot see it.
+///
+/// The origin is left alone: this window grows rightwards, and moving
+/// it as well would be khor rearranging a window somebody placed.
+#[cfg(desktop)]
+#[tauri::command]
+fn widen(window: tauri::Window, delta: i32) -> Result<(), String> {
+    use tauri::PhysicalSize;
+    if delta == 0 {
+        return Ok(());
+    }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if scale <= 0.0 {
+        return Err("the window has no scale factor yet".into());
+    }
+    // **Physical throughout.** `outer_size`, `outer_position` and the
+    // monitor's work area are all physical pixels; `delta` is the
+    // face's own CSS pixels, which are logical, so it is the one number
+    // that gets scaled. Mixing the two reads as a window that grows by
+    // the right amount on a 1× screen and twice that on a retina one.
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let want = (size.width as f64 + delta as f64 * scale).max(1.0);
+    // The right edge this window would end at, against the edge the
+    // screen has. `current_monitor` answers `None` on a window the
+    // platform has not placed yet, and then there is no ceiling to
+    // apply — asking for the room is still the right move, the window
+    // manager is the one that says no.
+    let ceiling = match window.current_monitor().map_err(|e| e.to_string())? {
+        Some(mon) => {
+            let area = mon.work_area();
+            let left = window.outer_position().map_err(|e| e.to_string())?.x as f64;
+            (area.position.x as f64 + area.size.width as f64 - left).max(1.0)
+        }
+        None => want,
+    };
+    let wide = want.min(ceiling);
+    // Nothing to do rather than a set_size that changes nothing: a
+    // resize is a layout in the webview, and a window already at the
+    // screen's edge would take one on every press.
+    if (wide - size.width as f64).abs() < 1.0 {
+        return Ok(());
+    }
+    window
+        .set_size(PhysicalSize::new(wide.round() as u32, size.height))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn widen(delta: i32) -> Result<(), String> {
+    let _ = delta;
+    Ok(())
+}
+
 // **The mobile halves are refusals, and unlike the last one that stood
 // here they are true.** `add_child` is gated `all(desktop, feature =
 // "unstable")` and there is no mobile equivalent: a page on a phone needs a
@@ -1733,6 +1805,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             sessions,
+            widen,
             day_strips,
             places,
             workspaces,

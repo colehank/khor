@@ -852,6 +852,27 @@ export const showMenu = (at: Spot, rows: MenuRows): Promise<boolean> =>
 /** Takes it off the screen. Hidden, not closed — the window is reused. */
 export const hideMenu = () => (inApp ? call<null>("hide_menu", {}) : Promise.resolve(null));
 
+/**
+ * Grows the app's window to the right by `delta` CSS pixels, or shrinks
+ * it by a negative one.
+ *
+ * 「右上角的icon,都是点击后,在最右侧,拓宽窗口, 而不是挤占现有窗口」—
+ * the user, 2026-09-16. A column that really is a column asks the window
+ * for its room instead of taking it off the file beside it.
+ *
+ * **A no-op everywhere but the app, and that is the honest answer
+ * rather than a missing feature.** A browser window is not the page's
+ * to resize — the web face and the verification bridge both run inside
+ * one somebody else placed — so this asks nothing at all there rather
+ * than asking and being refused. `check-face` asserts the silence.
+ *
+ * **CSS pixels, which are tauri's logical pixels.** The app side scales
+ * them by the window's own factor; a number measured on the glass must
+ * not be sent as a physical one (`src-tauri/src/lib.rs` widen).
+ */
+export const widenWindow = (delta: number) =>
+  inApp ? call<null>("widen", { delta: Math.round(delta) }) : Promise.resolve(null);
+
 /** How tall the list came out, said by the window that drew it — the only
     side that can measure a laid-out list. Showing it is the app's answer
     to this call. */

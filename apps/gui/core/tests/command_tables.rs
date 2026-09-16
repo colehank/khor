@@ -127,6 +127,18 @@ const ONE_SIDED: &[(&str, &str)] = &[
     ("size_menu", "resizes that window to its content; nothing on the web face has a window to resize"),
     ("menu_rows", "hands the menu window the rows it should draw — there is no such window here"),
     ("menu_pick", "carries a choice from that window back to the face that opened it"),
+    // ── the window's own width, written down 2026-09-16 ───────────
+    //
+    // **The same fact about windows as the five above, from the other
+    // end.** 「右上角的icon,都是点击后,在最右侧,拓宽窗口, 而不是挤占现有
+    // 窗口」 (the user): opening the sessions column asks the app's
+    // window to grow to the right instead of taking the room off the
+    // file. A browser face is a page inside a window somebody else
+    // placed — it has no window of its own to resize, and an HTTP arm
+    // here would be a command that reports success at doing nothing.
+    // `api.ts`'s `widenWindow` is a no-op outside the app for that
+    // reason, and `check-face` asserts the silence.
+    ("widen", "grows the app's own window when a column opens; a page in a browser has no window of its own"),
 ];
 
 /// **Both tables name the same commands.**
