@@ -5,7 +5,27 @@
 use ts_rs::TS;
 
 fn main() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/gen/bindings");
+    // **Read at run time, never baked in at compile time.** This used
+    // to be `env!("CARGO_MANIFEST_DIR")`, which is the path of whichever
+    // checkout *compiled* the binary — and `scripts/build-on.sh` runs
+    // `cargo run` from a throwaway export of HEAD against the shared
+    // target dir, where cargo happily reuses a binary compiled from an
+    // earlier export. So on 2026-09-16 `npm run gen` in a fresh export
+    // wrote its 75 files into `$TMPDIR/khor-build-on.52819/…`, a tree
+    // left by an interrupted run days before, and the export it was
+    // run in got nothing; tsc then failed on the missing modules and
+    // two of the three machines refused the install. `cargo run` sets
+    // `CARGO_MANIFEST_DIR` for the process it starts, so the run-time
+    // value names the crate the person is actually standing in. An
+    // explicit first argument wins over both, for anybody driving this
+    // without cargo.
+    let dir = match std::env::args().nth(1) {
+        Some(given) => std::path::PathBuf::from(given),
+        None => std::path::PathBuf::from(
+            std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string()),
+        )
+        .join("../src/gen/bindings"),
+    };
     khor_gui_core::SessionRow::export_all_to(&dir).expect("export SessionRow");
     khor_gui_core::DeviceRow::export_all_to(&dir).expect("export DeviceRow");
     // Asked for on its own beat and keyed by session id, so no row
