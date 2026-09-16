@@ -436,6 +436,25 @@ export function IconFile({ className }: IconProps) {
 }
 
 /**
+ * An eye — 预览 on the tab strip's far end (「如果可预览,就是一个预览的
+ * icon,再次点击回到源码」— the user, 2026-09-16). The same mark VS Code
+ * puts on 打开预览, and the reason it can be a picture at all is that it
+ * switches a *face* rather than a column: the two words it replaced said
+ * which of them you were looking at, and `data-on` says that now.
+ *
+ * Two strokes in the 16 family: the almond, and the pupil that keeps it
+ * from reading as a leaf.
+ */
+export function IconEye({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M1.6 8S3.9 3.7 8 3.7 14.4 8 14.4 8 12.1 12.3 8 12.3 1.6 8 1.6 8Z" />
+      <circle cx="8" cy="8" r="1.9" />
+    </Mark>
+  );
+}
+
+/**
  * A link — the borrow rows' mark: a borrowed pipe to another machine's
  * network (mandala path, verbatim; there it meant a symlink, here the
  * same shape reads as "connected through").

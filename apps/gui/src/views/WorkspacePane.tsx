@@ -25,7 +25,7 @@ import {
   type SessionRow,
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
-import { IconCode, IconFile, IconFiles, IconSessions } from "@/components/icons";
+import { IconCode, IconEye, IconFile, IconFiles, IconSessions } from "@/components/icons";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
@@ -48,7 +48,7 @@ import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier } from "@/views/fileRow";
-import { FileView, type Draft } from "@/views/FileView";
+import { FileView, rendererOf, type Draft } from "@/views/FileView";
 import type { Editor } from "@/gen/bindings/Editor";
 
 export function WorkspacePane({
@@ -148,6 +148,20 @@ export function WorkspacePane({
       the user asked for VS Code's). `null` when every open tab is
       pinned. A double click, or typing in it, pins it. */
   const [preview, setPreview] = useState<string | null>(null);
+  /** 源码 or 预览 for the file in front (2026-09-16).
+   *
+   * **Held here because the switch is on the tab strip**, whose tail is
+   * drawn by this pane — 「取消源码/预览的按钮,放在页面的右上角那,如果
+   * 可预览,就是一个预览的 icon,再次点击回到源码」(the user). `FileView`
+   * is handed the answer.
+   *
+   * **The face rides with the tab, and every tab starts on 源码.** The
+   * rule is 批⑤'s and it has not moved: 「打开先是源码」, never
+   * remembered. It was a fact about the view before, and the view is
+   * remounted on every file, so it reset itself; up here the reset has
+   * to be written, which is the effect below. */
+  const [face, setFace] = useState<"source" | "preview">("source");
+  useEffect(() => setFace("source"), [file]);
   /** Which tab is waiting on 存了再关 / 不存,关掉 / 别关, by path. */
   const [closing, setClosing] = useState<string | null>(null);
   /** A tab whose 存了再关 was pressed and whose file is not the one in
@@ -823,6 +837,36 @@ export function WorkspacePane({
             onFocus={(id) => setFile(id.slice(machine.length + 1))}
             onClose={(id) => shut(id.slice(machine.length + 1))}
             tail={
+              <div className="flex flex-none items-center gap-0.5">
+              {/* **预览, and only where there is something to render**
+                  (2026-09-16: 「取消源码/预览的按钮,放在页面的右上角那,
+                  如果可预览,就是一个预览的 icon,再次点击回到源码」— the
+                  user). A file with no second face grows no button, as
+                  the two words it replaced were also only drawn there.
+
+                  **Outside `data-ws-switches` on purpose.** That group
+                  is 「现有的文件、session 和 vscode 切换」, three
+                  controls that each open or shut a *column*; this one
+                  changes what the middle column is showing. They stand
+                  beside each other because that is where the user put
+                  them, but a gate that counts the column switches must
+                  go on counting three. */}
+              {file !== null && rendererOf(file) !== null && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-file-face-switch
+                  data-on={face === "preview"}
+                  aria-label={gui.file_face_preview}
+                  onClick={() => setFace((f) => (f === "preview" ? "source" : "preview"))}
+                  className={cn(
+                    "min-h-touch min-w-touch",
+                    face === "source" && "text-muted-foreground",
+                  )}
+                >
+                  <IconEye />
+                </Button>
+              )}
               <div data-ws-switches className="flex flex-none items-center gap-0.5">
                 <Button
                   variant="ghost"
@@ -886,6 +930,7 @@ export function WorkspacePane({
                   </Button>
                 )}
               </div>
+              </div>
             }
           />
           </div>
@@ -939,6 +984,7 @@ export function WorkspacePane({
               key={`${machine} ${file}`}
               machine={machine}
               path={file}
+              face={face}
               // A save changes which files differ from HEAD, and the
               // tree's marks are held here rather than in the view that
               // did the saving (工作区批4). Asked again rather than

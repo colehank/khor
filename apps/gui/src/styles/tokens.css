@@ -337,6 +337,22 @@
   --git-deleted: #ad0707;
   --git-conflict: #c0143c;
 
+  /* ── the overview ruler (2026-09-16) ───────────────────────────
+   *
+   * 「取消 git 文件上方的状态栏……然后,右侧滑动条后方,就是全文件带颜色
+   * 的 git 差异的那个竖线。跟 vscode 一样」— the user. A column past
+   * the scrollbar carrying the whole file at once, so a hunk eight
+   * hundred lines down is a thing you can see and press rather than
+   * something you have to scroll to find.
+   *
+   * 14 is VS Code's own width for it. **A mark inside it is a
+   * proportion, not a line height**: the whole file is squeezed into
+   * one screen, so a one-line hunk in a long file rounds to nothing —
+   * the floor is what keeps it visible, and it is the smallest bar
+   * this palette still reads as a bar rather than as dirt. */
+  --overview-ruler: 14px;
+  --overview-mark: 3px;
+
   /* ── which model spent it ─────────────────────────────────
    *
    * **Hue is the family, lightness is the generation.** The names go on

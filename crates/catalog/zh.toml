@@ -2117,9 +2117,11 @@ ws-add = "加一个工作区"
 # directory name is the one word that must not be a guess.
 ws-remove = "移出工作区"
 # The workspace row's git corner, beside the branch: how many files
-# differ from HEAD on that machine. **Files and not hunks**, which is
-# why it is not `git-hunks` — that one counts the places inside one
-# file, and this counts the files.
+# differ from HEAD on that machine. **Files and not hunks** — 处 is the
+# word for a place inside one file, and this counts the files. There
+# used to be a `git-hunks` here to point at; it went with the strip over
+# the file (2026-09-16), and the places inside a file are drawn now
+# rather than counted.
 ws-marked = "{0} 个文件改过"
 # 跨机器目录选择器 (工作区批②), shared by the workspace 「+」 and the new
 # session wizard. **One dialog and one set of words**, because it
@@ -2161,16 +2163,21 @@ file-take = "取下来"
 # one word, one meaning (docs/UX.md 语料库), and a machine leaving the
 # mesh is not a file leaving a disk.
 file-remove = "删掉"
-# 源码 / 预览 (工作区批⑤). **The switch, and its default is 源码** —
-# 「所有代码、md 文件,打开先是源码,要有语法高亮。然后对于支持预览的
-# 文件,如 md,显示预览」(the user, 2026-09-14). Drawn only where there
-# is something to render; a file with no second face gets no switch
-# rather than a greyed one.
+# 预览 (工作区批⑤, moved 2026-09-16). **One switch, and its default is
+# 源码** — 「所有代码、md 文件,打开先是源码,要有语法高亮。然后对于支持
+# 预览的文件,如 md,显示预览」(the user, 2026-09-14). Drawn only where
+# there is something to render; a file with no second face gets no
+# switch rather than a greyed one.
 #
 # **Not remembered.** A person who read one file rendered has not said
 # anything about the next one, and a toggle that carries over means the
 # source they asked for is not what opens.
-file-face-source = "源码"
+#
+# **`file-face-source` 撤掉了**(2026-09-16): 「取消源码/预览的按钮,放在
+# 页面的右上角那,如果可预览,就是一个预览的 icon,再次点击回到源码」——
+# 两个按钮各写一个字的那一行没了,剩下标签条尾上一个眼睛。它按下去就是
+# 预览、再按回源码,所以屏幕上要说的只剩这一个名字;是哪一面由 `data-on`
+# 说,和旁边三个切换列的开关同一种写法。
 file-face-preview = "预览"
 # Under a PDF whose words are being shown because this platform's
 # browser has no viewer (Linux, Android — `khor_node::preview::
@@ -2270,17 +2277,11 @@ code-consent-no = "先不"
 # sentence — so the empty case gets its own line instead of a dead
 # target.
 git-hunk = "这一处改动"
-# The count, and the two steps through it. **A count of hunks, not of
-# lines** — the gutter draws one bar per place, and a number that said
-# 「47 行」beside eleven bars would be counting a different thing from
-# the one on screen. 处 is the word for that: a place, not an amount.
-git-hunks = "{0} 处改动"
-# Where you are in that count, once one is open. Its own sentence
-# rather than 「{0}/{1}」 built in the view: a bare fraction beside a
-# count reads as two unrelated numbers.
-git-hunk-at = "第 {0} 处"
-git-prev = "上一处改动"
-git-next = "下一处改动"
+# **`git-hunks`、`git-hunk-at`、`git-prev`、`git-next` 四个键撤掉了**
+# (2026-09-16):「取消 git 文件上方的状态栏,比如现在的『1 处改动 第 1
+# 处』」—— 那条栏和它的 ▲▼ 一起没了。它原来做的事是「够到看不见的那一
+# 处」,现在由滑动条后方那根概览尺做:整个文件一列高,每一处都在上面,
+# 点哪儿滚哪儿。一个数和一个序号,是没画出那张图之前替它说话的词。
 # Editing a file (工作区批4). **不是 git 的词**, so it is 中文 — the
 # English rule the user drew is for git's own operations (commit,
 # diff, status), and saving a file is not one of them.
@@ -2327,7 +2328,12 @@ file-read-only = "只能看"
 # keystroke is a round trip per keystroke, which is not a thing khor
 # will do to somebody else's machine.
 git-stale = "存了才知道改在哪儿"
-git-was = "HEAD 里原来是"
+# **`git-was` 撤掉了**(2026-09-16):原来那块「HEAD 里原来是」的标题,在
+# 文件底下的面板上。面板没了——「点击后,不要在下面一行显示情况。就地显示。
+# 跟 vscode 一样」——旧的几行现在就躺在替掉它们的那几行正上方,一片红底
+# 红字。它在哪儿、是什么,位置和颜色已经说完了,再写一行标题是同一件事
+# 说两遍。**`git-added` 留着**:一处纯新增没有旧文可躺,那一块得自己说话,
+# 否则按下去开出来的是个空格子。
 git-added = "HEAD 里没有这几行"
 settings = "设置"
 back = "返回"

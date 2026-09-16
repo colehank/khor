@@ -2080,6 +2080,33 @@ try {
         "list, or a press anywhere on the changed lines), which is a " +
         "bigger idea than a wider gutter.",
     ],
+    "data-overview-mark": [
+      "src/views/FileView.tsx",
+      "one hunk's mark on the overview ruler, past the file's scrollbar " +
+        "(2026-09-16). **The same family as `data-hunk` above and the " +
+        "argument has to be made again rather than borrowed, because the " +
+        "two are under the floor for different reasons.** A gutter bar is " +
+        "small because a line of code is 21.6 tall; a ruler mark is small " +
+        "because **the ruler is the whole file squeezed onto one screen** " +
+        "— a four-line hunk in a four-hundred-line file is one percent of " +
+        "it, and a mark grown to 44 in a 700-tall column would be claiming " +
+        "a change six percent of the file long. Where it sits *is* how far " +
+        "down the file it is; how tall it is *is* how much of the file it " +
+        "covers. That is WCAG 2.5.5's Essential carve-out in its literal " +
+        "form. The width is spent the same way and by the user's own " +
+        "measure: 「右侧滑动条后方」 is a strip beside a scrollbar, and 14 " +
+        "is what VS Code gives it — a 44-wide ruler on a 390px phone would " +
+        "take an eighth of the screen away from the code. **What it does " +
+        "not buy:** a finger. On a touch screen these are read rather than " +
+        "pressed. Unlike the gutter bar, this one *is* additive: what a " +
+        "mark does is scroll the file to that place, and scrolling the " +
+        "file is a thing the file already does — nothing is reachable only " +
+        "through a mark. **It is still not「no problem」** — a touch reader " +
+        "sees where the changes are and cannot jump to one, and the answer " +
+        "to that is a press anywhere on the ruler mapped to a place in the " +
+        "file (which is what VS Code's ruler actually does), not a fatter " +
+        "mark.",
+    ],
     "data-ws-seam": [
       "src/views/WorkspacePane.tsx",
       "a workspace's own seam — the one between the file tree and the file, and the one between " +
@@ -2548,138 +2575,111 @@ try {
     }
   }
 
-  // ── 4b) the change gutter can be walked, and the count is the
-  //        gutter's own ─────────────────────────────────────────────
+  // ── 4b) the change gutter: a bar per place, and pressing one opens
+  //        what HEAD had, in the file ──────────────────────────────
   //
-  // **What「点开是那一处」needs that pressing a bar cannot give.** A
-  // hunk eight hundred lines down is not reachable by pressing
-  // something nobody can see, so the two steps are the half of the
-  // affordance that works off screen — and the count beside them has to
-  // be a count of *the bars*, not of anything else, or the number and
-  // the drawing are two different claims about one file.
+  // **Rewritten 2026-09-16, because both halves of the old claim were
+  // removed by a ruling.** It used to walk ▲▼ through the hunks and
+  // compare a printed count against the bars on screen — 「取消 git 文件
+  // 上方的状态栏,比如现在的『1 处改动 第 1 处』」took the strip and both
+  // controls away, and reaching a hunk off screen is the overview
+  // ruler's job now (4p). And the panel it measured 「covers no code」
+  // against is gone too: 「点击后,不要在下面一行显示情况。就地显示」put
+  // the old lines into the file's own flow.
   //
-  // Measured rather than asserted from the fixture's own array: the
-  // number on screen is compared to the bars on screen, so a fixture
-  // edited later moves both together and this still judges something.
+  // What is left here is the pair that is still this section's: **one
+  // bar per place**, and **pressing a bar opens that place's old text**
+  // — 「点开是那一处」, read off the block rather than off any state.
+  // Measured against the bars on screen rather than against the
+  // fixture's array, so a fixture edited later moves both together and
+  // this still judges something.
   await atTree();
   await press('[data-file="one.rs"] button');
   const walk = await page.evaluate(async () => {
-    const wait = () => new Promise((r) => setTimeout(r, 120));
-    const bars = () => document.querySelectorAll("[data-hunk]").length;
-    const said = () => {
-      const el = document.querySelector("[data-hunk-count]");
-      return el ? Number(el.dataset.hunkCount) : null;
-    };
-    const at = () => {
-      const el = document.querySelector("[data-hunk-at]");
-      return el ? Number(el.dataset.hunkAt) : null;
-    };
-    const next = document.querySelector('[data-hunk-step="1"]');
-    const prev = document.querySelector('[data-hunk-step="-1"]');
-    if (!next || !prev) return { bars: bars(), said: said(), steps: null };
-    const seen = [at()];
-    for (let i = 0; i < bars() + 1; i++) {
-      next.click();
-      await wait();
-      seen.push(at());
-    }
-    prev.click();
-    await wait();
-    const back = at();
-    // Which hunk the open panel belongs to, read off the panel rather
-    // than off the state: they are two different claims and only one of
-    // them is on screen.
-    const panel = document.querySelector("[data-was]");
-    const bar = document.querySelectorAll("[data-hunk]")[back - 1];
+    const bars = [...document.querySelectorAll("[data-gutter] [data-hunk]")];
+    if (bars.length === 0) return { bars: 0 };
+    // **The first one, and that is the whole of whether this is worth
+    // anything.** The old spelling measured wherever a walk happened to
+    // stop, which in this fixture was the file's last line — an overlay
+    // there covers nothing, because there is nothing under it, and the
+    // check passed on the behaviour it existed to forbid (2026-09-13).
+    // The first hunk has lines below it.
+    bars[0].click();
+    await new Promise((r) => setTimeout(r, 120));
+    const peek = document.querySelector("[data-peek]");
+    const sheet = document.querySelector("[data-sheet]");
+    const at = Number(bars[0].dataset.hunk);
+    const line = document.querySelector(`[data-sheet] [data-line="${at}"]`);
+    const round = (n) => Math.round(n * 10) / 10;
     return {
-      bars: bars(),
-      said: said(),
-      steps: seen,
-      back,
-      panelAt: panel ? Number(panel.dataset.was) : null,
-      barAt: bar ? Number(bar.dataset.hunk) : null,
+      bars: bars.length,
+      at,
+      // Which place the open block belongs to, read off the block.
+      peekAt: peek === null ? null : Number(peek.dataset.peek),
+      // **In the file, not under it.** `data-sheet` and no fallback:
+      // the first spelling of a probe here fell back to
+      // `querySelector("pre")`, which is the line-number column, and a
+      // probe that cannot find its subject must go void, never green.
+      inSheet: peek !== null && sheet !== null && sheet.contains(peek),
+      // …and the lines it is about are still on the sheet, below it —
+      // the old panel's sin was hiding however many it was tall.
+      lineTop: line === null ? null : round(line.getBoundingClientRect().top),
+      peekBottom: peek === null ? null : round(peek.getBoundingClientRect().bottom),
+      // How much of the file the block is standing on. In the flow the
+      // honest answer is none: it pushed the lines down rather than
+      // covering them.
+      covered:
+        peek === null || line === null
+          ? null
+          : Math.round(
+              Math.max(
+                0,
+                Math.min(peek.getBoundingClientRect().bottom, line.getBoundingClientRect().bottom) -
+                  Math.max(peek.getBoundingClientRect().top, line.getBoundingClientRect().top),
+              ),
+            ),
     };
   });
-  console.log(
-    `hunk walk: ${walk.bars} bars, the bar says ${walk.said}, steps ${JSON.stringify(walk.steps)}, ` +
-      `back to ${walk.back} whose panel is at line ${walk.panelAt} and whose bar is at ${walk.barAt}`,
-  );
+  console.log(`hunk press: ${JSON.stringify(walk)}`);
   if (walk.bars === 0) {
     fail(
-      "probe void: no change bars on the open file — this section walks them and cannot do it " +
+      "probe void: no change bars on the open file — this section presses them and cannot do it " +
         "with none (deepen the **/git_diff fixture)",
     );
-  } else if (walk.steps === null) {
-    fail("probe dead: the file view drew change bars but no way to step through them (src/views/FileView.tsx)");
   } else {
-    if (walk.said !== walk.bars) {
-      fail(`the file says ${walk.said} changes and draws ${walk.bars} bars — one file, one count (src/views/FileView.tsx)`);
-    }
-    // Nothing open, then 1, 2, … and round to 1 again: the wrap is the
-    // half that keeps the control alive on the last hunk.
-    const want = [null, ...Array.from({ length: walk.bars }, (_, i) => i + 1), 1];
-    if (JSON.stringify(walk.steps) !== JSON.stringify(want)) {
+    if (walk.peekAt === null || !walk.inSheet) {
       fail(
-        `stepping through ${walk.bars} changes counted ${JSON.stringify(walk.steps)}, wanted ` +
-          `${JSON.stringify(want)} (src/views/FileView.tsx)`,
+        `pressing the bar at line ${walk.at} opened ${walk.peekAt === null ? "nothing" : "a block outside the sheet"} ` +
+          "— 「点开是那一处」, and 「就地显示」 means inside the file (src/views/FileView.tsx)",
       );
+    } else {
+      if (walk.peekAt !== walk.at) {
+        fail(
+          `the open block is at line ${walk.peekAt} and the bar pressed is at ${walk.at} — 「点开是那` +
+            "一处」 is the whole claim (src/views/FileView.tsx)",
+        );
+      }
+      if (walk.lineTop === null || walk.peekBottom === null) {
+        fail(`probe void: line ${walk.at} is not on the sheet to place the block against`);
+      } else if (walk.peekBottom > walk.lineTop + 1) {
+        fail(
+          `the old text runs to ${walk.peekBottom} where the line it replaced starts at ${walk.lineTop} ` +
+            "— it sits above those lines, never over them (src/views/FileView.tsx Peek)",
+        );
+      }
+      if (walk.covered !== null && walk.covered > 1) {
+        fail(
+          `the block lies over ${walk.covered}px of the line it is about — it names the lines HEAD had ` +
+            "and hiding the ones that replaced them is the comparison losing its other half " +
+            "(src/views/FileView.tsx Peek)",
+        );
+      }
     }
-    if (walk.panelAt === null || walk.panelAt !== walk.barAt) {
-      fail(
-        `after stepping, the open panel is at line ${walk.panelAt} and the hunk it names is at ` +
-          `${walk.barAt} — 「点开是那一处」 is the whole claim (src/views/FileView.tsx)`,
-      );
-    }
-  }
-
-  // …and the panel covers no code, which is the whole of what changed
-  // on 2026-09-13. It used to be an overlay laid at the hunk's own
-  // line, which put the removed lines where they had been and hid
-  // however many current lines it was tall — a cost carried as a known
-  // one for a day. **Measured as two boxes that do not intersect**,
-  // because「it looks fine」is exactly what an overlay looks like until
-  // the file is long enough.
-  // **Taken on the first hunk, and that is the whole of whether this
-  // check is worth anything.** The walk above ends on the last one,
-  // which in this fixture sits on the file's last line — an overlay
-  // there covers nothing, because there is nothing under it. Measured
-  // where the walk happened to stop, the check reported no overlap
-  // against the old overlay too and passed on the behaviour it exists
-  // to forbid (2026-09-13). The first hunk has three lines below it.
-  const lap = await page.evaluate(async () => {
-    const bar = document.querySelector("[data-hunk]");
-    if (!bar) return null;
-    bar.click();
-    await new Promise((r) => setTimeout(r, 60));
-    const panel = document.querySelector("[data-was]");
-    // **`[data-sheet]` and no fallback.** The first spelling fell back
-    // to `document.querySelector("pre")`, which is the line-number
-    // column. A probe that cannot find its subject must go void, never
-    // green.
-    const code = document.querySelector("[data-sheet]");
-    if (!panel || !code) return null;
-    const p = panel.getBoundingClientRect();
-    const c = code.getBoundingClientRect();
-    const over = Math.min(p.bottom, c.bottom) - Math.max(p.top, c.top);
-    return {
-      over: Math.round(Math.max(0, over)),
-      panel: Math.round(p.height),
-      code: Math.round(c.height),
-    };
-  });
-  if (lap === null) {
-    fail("probe dead: no expanded panel to measure against the code (src/views/FileView.tsx)");
-  } else {
-    console.log(
-      `hunk panel: ${lap.panel}px tall over a ${lap.code}px file, overlapping it by ${lap.over}px`,
-    );
-    if (lap.over > 1) {
-      fail(
-        `the expanded panel lies over ${lap.over}px of the file — it names the lines HEAD had and ` +
-          "hiding the ones that replaced them is the comparison losing its other half " +
-          "(src/views/FileView.tsx)",
-      );
-    }
+    // Shut again, so the sections below start with an editable file:
+    // the editor steps off the glass while a peek is in the flow
+    // (`Sheet`'s `edit`, and 4p asserts it comes back).
+    await press('[data-gutter] [data-hunk]');
+    await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
   }
 
   // ── 4b-bis) saving, going back, and the two ways out ──────────────
@@ -4226,12 +4226,29 @@ try {
     fail("probe dead: the tree never drew (src/views/FilesPane.tsx)");
   } else {
     const opened = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
-    const asOpened = await page.evaluate(() => ({
-      editor: !!document.querySelector("[data-edit]"),
-      md: !!document.querySelector("[data-file-preview] [data-md]"),
-      on: document.querySelector('[data-file-face="source"]')?.dataset.on ?? null,
-      faces: document.querySelectorAll("[data-file-face]").length,
-    }));
+    const asOpened = await page.evaluate(() => {
+      const one = document.querySelector("[data-file-face-switch]");
+      return {
+        editor: !!document.querySelector("[data-edit]"),
+        md: !!document.querySelector("[data-file-preview] [data-md]"),
+        on: one?.getAttribute("data-on") ?? null,
+        switches: document.querySelectorAll("[data-file-face-switch]").length,
+        // Where it stands, which is the whole of what moved
+        // (2026-09-16): on the tab strip's far end rather than in a row
+        // of its own over the file.
+        onStrip: one !== null && document.querySelector("[data-ws-tab-strip]")?.contains(one) === true,
+        // A glyph and no word — the button that used to say 源码/预览
+        // spelled the face out because there were two of them.
+        glyph: one === null ? 0 : one.querySelectorAll("svg").length,
+        word: one?.textContent?.trim() ?? "",
+        // The row of two buttons, gone whole.
+        oldRow: document.querySelectorAll("[data-file-face]").length,
+        // …and the three column switches are still three (they are a
+        // separate group, and this button standing in it would make a
+        // gate about them say four).
+        columns: document.querySelectorAll("[data-ws-switches] > button").length,
+      };
+    });
     console.log(`md opens: ${JSON.stringify(asOpened)}`);
     if (!opened || !asOpened.editor || asOpened.md) {
       fail(
@@ -4239,17 +4256,43 @@ try {
           "源码」 is the whole of what this batch is about (src/views/FileView.tsx)",
       );
     }
-    if (asOpened.faces !== 2 || asOpened.on !== "true") {
+    if (asOpened.oldRow !== 0) {
       fail(
-        `the head carries ${asOpened.faces} face switch(es), 源码 on=${asOpened.on} — a file with a ` +
-          "renderer gets both and opens on the source (src/views/FileView.tsx)",
+        `the 源码/预览 row is still over the file (${asOpened.oldRow} button(s)) — 「取消源码/预览` +
+          "的按钮,放在页面的右上角那」 (src/views/FileView.tsx)",
+      );
+    }
+    if (asOpened.switches !== 1 || !asOpened.onStrip) {
+      fail(
+        `the file's face switch: ${asOpened.switches} of them, on the tab strip=${asOpened.onStrip} — ` +
+          "one icon at the strip's far end is where the ruling put it (src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (asOpened.glyph !== 1 || asOpened.word !== "") {
+      fail(
+        `the face switch draws ${asOpened.glyph} glyph(s) and the word 「${asOpened.word}」 — 「就是一` +
+          "个预览的 icon」, and the face it is on is what `data-on` says " +
+          "(src/components/icons.tsx IconEye)",
+      );
+    }
+    if (asOpened.columns !== 3) {
+      fail(
+        `the strip's column switches now count ${asOpened.columns} — the face switch stands beside them, ` +
+          "not among them: those three open and shut a column and this one changes what the middle " +
+          "column shows (src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (asOpened.on !== "false") {
+      fail(
+        "the face switch opened pressed in — 「打开先是源码」, on every file and never " +
+          "remembered (src/views/WorkspacePane.tsx)",
       );
     }
     // ii/iii) the switch, and what it renders.
     await page.locator("[data-edit]").click();
     await page.keyboard.type("\n## typed\n");
     const typed = await page.locator("[data-edit]").inputValue();
-    await press('[data-file-face="preview"]');
+    await press("[data-file-face-switch]");
     const rendered = await until(5_000, async () =>
       (await page.locator("[data-file-preview] h1").count()) === 1,
     );
@@ -4271,7 +4314,9 @@ try {
           "disk, and a view one save behind is a view of a document nobody has (src/views/FileView.tsx)",
       );
     }
-    await press('[data-file-face="source"]');
+    // 「再次点击回到源码」 — the same button, which is the half a pair of
+    // buttons cannot be wrong about and a single one can.
+    await press("[data-file-face-switch]");
     const back = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
     const kept = back ? await page.locator("[data-edit]").inputValue() : "";
     if (!back || kept !== typed) {
@@ -4313,7 +4358,7 @@ try {
 
   // v) the csv table, parsed rather than split.
   if (await openFile("data.csv")) {
-    await press('[data-file-face="preview"]');
+    await press("[data-file-face-switch]");
     const cells = await until(5_000, async () =>
       (await page.locator("[data-file-preview] [data-cell]").count()) > 0,
     );
@@ -4411,6 +4456,29 @@ try {
       if (!inks.inks.some((c) => c !== inks.body)) {
         fail(`every painted token is the sheet's own ink (${inks.body}) — the spans landed and no colour did (src/styles/app.css)`);
       }
+    }
+    // …and **a file with nothing to render grows no switch** (「如果可预
+    // 览,就是一个预览的 icon」— the user, 2026-09-16). A `.rs` has no
+    // second face, so the strip's far end carries only the three column
+    // switches. The negative half of the claim 4j opened with, and it is
+    // asserted here because this is where a file with no renderer is
+    // already in front.
+    const none = await page.evaluate(() => ({
+      switches: document.querySelectorAll("[data-file-face-switch]").length,
+      columns: document.querySelectorAll("[data-ws-switches] > button").length,
+    }));
+    console.log(`.rs face switch: ${JSON.stringify(none)}`);
+    if (none.switches !== 0) {
+      fail(
+        "a .rs file drew a 预览 switch — there is nothing to render, and a button that switches to " +
+          "nothing is worse than no button (src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (none.columns !== 3) {
+      fail(
+        `probe void: the strip's far end carries ${none.columns} column switch(es), so 「no face ` +
+          "switch」 above may only mean the whole tail is missing",
+      );
     }
   }
 
@@ -5140,6 +5208,381 @@ try {
     }
     await page.unroute("**/git_status", wideGit);
     await page.unroute("**/workspaces", wideList);
+  }
+
+  // ── 4p) 竖线有颜色, 原文就地打开, 滑动条后方一把概览尺 ──────────────
+  //
+  // 「文件里,有改动或 git 差异的那个竖线,是要有颜色的,和现在的 git 状态
+  // 颜色一致。点击后,不要在下面一行显示情况。就地显示。跟 vscode 一样。」
+  // 「取消 git 文件上方的状态栏,比如现在的『1 处改动 第 1 处』。然后,右
+  // 侧滑动条后方,就是全文件带颜色的 git 差异的那个竖线。跟 vscode 一
+  // 样。」— the user, 2026-09-16.
+  //
+  // Claims:
+  //   i. the strip that counted the hunks is **gone whole** — no count,
+  //      no 第 N 处, no ▲▼;
+  //  ii. a change bar wears git's own ink, and it is **the same ink the
+  //      tree's letter for that shape wears**: a modification 修改's,
+  //      an insertion 新增's, a deletion 删除's. Read off the glass on
+  //      both sides, because a shared class name proves neither;
+  // iii. pressing a bar lays what HEAD had **into the file**, directly
+  //      above the lines that replaced it — inside the sheet, not in a
+  //      panel under the column;
+  //  iv. …and the file's own numbering does not move under it: line 120
+  //      is still beside the number 120, and the peeked lines carry no
+  //      number at all;
+  //   v. pressing it again closes it, and so does Esc;
+  //  vi. the overview ruler sits past the scrollbar, carries one mark
+  //      per hunk at the height that hunk is at in the file, and
+  //      pressing one scrolls that hunk onto the screen.
+  {
+    // **This section's own file, long enough to scroll.** Every other
+    // fixture in this file is three or four lines, in which「the ruler
+    // maps the file onto the viewport」 is unfalsifiable: the whole file
+    // is already on screen.
+    const LINES = 160;
+    const longText = Array.from({ length: LINES }, (_, i) => `let n${i + 1} = ${i + 1};`).join("\n") + "\n";
+    const longRead = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: longText.length,
+          at_ms: Date.now(),
+          text: longText,
+          cut: false,
+          binary: false,
+          digest: "7".repeat(64),
+        }),
+      });
+    // One of each shape, and **three of them crowded at the top with one
+    // far down**. The first spelling put them at 3, 40, 80 and 120 in a
+    // 160-line file — which is very nearly evenly spaced, so a ruler
+    // that ignored the file and stacked its marks in a list landed
+    // within a percent of the right answer and the claim below could
+    // not tell the two apart (measured: it went green on that break).
+    // Crowded, a list puts its fourth mark three quarters down where the
+    // file puts it at ninety-three percent.
+    const HUNKS = [
+      { at: 3, lines: 2, was: ["what HEAD had at three"] },
+      { at: 6, lines: 1, was: [] },
+      { at: 9, lines: 0, was: ["a line that went away"] },
+      { at: 150, lines: 2, was: ["old one fifty", "and its neighbour"] },
+    ];
+    const longDiff = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ hunks: HUNKS, more: false }),
+      });
+    await page.route("**/read_text", longRead);
+    await page.route("**/git_diff", longDiff);
+    await atTree();
+    // The strip has to be empty first, for 4m's reason: a tab already
+    // open on this path holds a `FileView` that is never remounted, and
+    // one that is not remounted never re-reads.
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(120);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(120);
+      }
+    }
+    // `src` open, so the tree has all four letters on screen — claim ii
+    // compares the bars against them.
+    const srcRow = '[data-file-tree] [data-depth="0"] [data-dir="src"]';
+    if ((await page.locator(`${srcRow}[data-on="false"]`).count()) === 1) {
+      await press(srcRow);
+      await wait(250);
+    }
+    await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+    const drew = await until(8_000, async () =>
+      (await page.locator(`[data-sheet] [data-line="${LINES}"]`).count()) === 1,
+    );
+    if (!drew) {
+      fail(`probe dead: the ${LINES}-line fixture never reached the sheet (src/views/FileView.tsx)`);
+    } else {
+      // i) the strip, gone.
+      const strip = await page.evaluate(() => ({
+        count: document.querySelectorAll("[data-hunk-count]").length,
+        at: document.querySelectorAll("[data-hunk-at]").length,
+        steps: document.querySelectorAll("[data-hunk-step]").length,
+      }));
+      console.log(`hunk strip: ${JSON.stringify(strip)}`);
+      if (strip.count + strip.at + strip.steps !== 0) {
+        fail(
+          `the 「1 处改动 第 1 处」 strip is still over the file (${JSON.stringify(strip)}) — 「取消 git ` +
+            "文件上方的状态栏」, and reaching a hunk is the ruler's job now (src/views/FileView.tsx)",
+        );
+      }
+      // ii) the inks, read off both the bars and the tree's letters.
+      const inks = await page.evaluate(() => {
+        const rgb = (el) => getComputedStyle(el);
+        const letters = {};
+        for (const el of document.querySelectorAll("[data-file-tree] [data-git-mark]")) {
+          const w = el.getAttribute("data-git-weight");
+          if (w !== null) letters[w] = rgb(el).color;
+        }
+        const bars = [...document.querySelectorAll("[data-gutter] [data-hunk]")].map((el) => ({
+          at: el.getAttribute("data-hunk"),
+          ink: rgb(el).backgroundColor,
+        }));
+        return { letters, bars, mark: rgb(document.documentElement).getPropertyValue("--git-mark").trim() };
+      });
+      console.log(`gutter inks: ${JSON.stringify(inks)}`);
+      const barAt = (n) => inks.bars.find((b) => b.at === String(n))?.ink ?? null;
+      if (inks.bars.length !== HUNKS.length) {
+        fail(
+          `probe void: the gutter drew ${inks.bars.length} bar(s) for ${HUNKS.length} hunks, so the ` +
+            "inks below are not about one of each shape (src/views/FileView.tsx)",
+        );
+      } else {
+        const hues = new Set(inks.bars.map((b) => b.ink));
+        if (hues.size < 3) {
+          fail(
+            `the change bars are painted in ${hues.size} colour(s) ${JSON.stringify([...hues])} — 改、` +
+              "新增 and 删除 are three different facts and 「要有颜色的」 is what tells them apart " +
+              "(src/views/FileView.tsx hunkInk)",
+          );
+        }
+        const same = [
+          ["M", 3, "修改"],
+          ["U", 6, "新增"],
+          ["D", 9, "删除"],
+        ];
+        for (const [letter, at, word] of same) {
+          const want = inks.letters[letter] ?? null;
+          const got = barAt(at);
+          if (want === null) {
+            fail(`probe void: no ${letter} on the tree to compare the ${word} bar against (widen the **/git_status fixture)`);
+          } else if (got !== want) {
+            fail(
+              `the ${word} bar at line ${at} is ${got} where the tree draws ${letter} in ${want} — ` +
+                "「和现在的 git 状态颜色一致」 (src/views/FileView.tsx hunkInk, src/views/fileRow.tsx markInk)",
+            );
+          }
+        }
+      }
+      // iii/iv) press the bar at 150 and read where the old text landed.
+      await press('[data-gutter] [data-hunk="150"]');
+      const shown = await until(5_000, async () => (await page.locator("[data-peek]").count()) === 1);
+      const laid = await page.evaluate(() => {
+        const round = (n) => Math.round(n * 10) / 10;
+        const peek = document.querySelector("[data-peek]");
+        const sheet = document.querySelector("[data-sheet]");
+        const top = (sel) => {
+          const el = document.querySelector(sel);
+          return el === null ? null : round(el.getBoundingClientRect().top);
+        };
+        return {
+          inSheet: peek !== null && sheet !== null && sheet.contains(peek),
+          said: peek?.textContent?.trim() ?? null,
+          peekTop: peek === null ? null : round(peek.getBoundingClientRect().top),
+          peekBottom: peek === null ? null : round(peek.getBoundingClientRect().bottom),
+          before: top('[data-sheet] [data-line="149"]'),
+          after: top('[data-sheet] [data-line="150"]'),
+          // Two numbers on either side of the block, to catch the
+          // column silently sliding by the peek's own height.
+          num149: top('[data-num="149"]'),
+          num150: top('[data-num="150"]'),
+          // The peeked lines must carry no number of their own.
+          blanks: [...document.querySelectorAll("[data-num-peek]")].map((e) => e.textContent.trim()),
+          // …and there is no panel under the file any more.
+          panel: document.querySelectorAll("[data-was]").length,
+        };
+      });
+      console.log(`peek at 150: ${JSON.stringify(laid)}`);
+      if (!shown || !laid.inSheet) {
+        fail(
+          `pressing a change bar drew ${shown ? "a block outside the sheet" : "nothing"} — 「点击后,不要` +
+            "在下面一行显示情况。就地显示」 (src/views/FileView.tsx Peek)",
+        );
+      } else {
+        if (laid.panel !== 0) {
+          fail(`the old panel under the file is still there (${laid.panel}) — it is in the flow now (src/views/FileView.tsx)`);
+        }
+        if (!String(laid.said).includes("old one fifty")) {
+          fail(
+            `the peek says ${JSON.stringify(laid.said)} — what it is for is the lines HEAD had ` +
+              "(src/views/FileView.tsx Peek)",
+          );
+        }
+        if (laid.before === null || laid.after === null) {
+          fail("probe void: lines 149 and 150 are not both on the sheet to bracket the peek with");
+        } else if (!(laid.peekTop > laid.before && laid.peekBottom <= laid.after + 1)) {
+          fail(
+            `the removed lines sit at ${laid.peekTop}–${laid.peekBottom} while line 149 is at ` +
+              `${laid.before} and line 150 at ${laid.after} — they belong directly above the lines ` +
+              "that replaced them (src/views/FileView.tsx Peek)",
+          );
+        }
+        for (const [n, line, num] of [[149, laid.before, laid.num149], [150, laid.after, laid.num150]]) {
+          if (num === null) {
+            fail(`probe void: line ${n} has no number to measure against`);
+          } else if (Math.abs(num - line) > 0.5) {
+            fail(
+              `with the old text open, line ${n}'s number sits ${Math.round((num - line) * 10) / 10}px off ` +
+                "its own line — the peek's height has to be waited out by the numbers column, not " +
+                "added to the number above it (src/views/FileView.tsx peekH)",
+            );
+          }
+        }
+        if (laid.blanks.length !== 1 || laid.blanks[0] !== "") {
+          fail(
+            `the peek's own rows carry ${JSON.stringify(laid.blanks)} in the number column — the old ` +
+              "lines are not lines of this file, and numbering them would say they were " +
+              "(src/views/FileView.tsx)",
+          );
+        }
+      }
+      // v) the same bar closes it, and so does Esc.
+      await press('[data-gutter] [data-hunk="150"]');
+      const shut = await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
+      if (!shut) {
+        fail("pressing the bar again left the old text open — one bar, two directions (src/views/FileView.tsx)");
+      }
+      await press('[data-gutter] [data-hunk="150"]');
+      await until(3_000, async () => (await page.locator("[data-peek]").count()) === 1);
+      await page.keyboard.press("Escape");
+      const escaped = await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
+      if (!escaped) {
+        fail("Esc did not close the open hunk (src/views/FileView.tsx)");
+      }
+      // …and the file is editable again once it is shut. **This is the
+      // price of 就地显示 said out loud**: a textarea is one box holding
+      // one string, so nothing can be laid into it, and the editor steps
+      // off the glass while the old text is in the flow. What must not
+      // happen is it failing to come back.
+      const editable = await until(3_000, async () => (await page.locator("[data-edit]").count()) === 1);
+      if (!editable) {
+        fail(
+          "the editor did not come back when the old text was closed — it steps off while a peek is " +
+            "open, and a file that stays read-only afterwards is a file nobody can save " +
+            "(src/views/FileView.tsx Sheet edit)",
+        );
+      }
+      // vi) the ruler.
+      const ruler = await page.evaluate(() => {
+        const round = (n) => Math.round(n * 10) / 10;
+        const col = document.querySelector("[data-overview]");
+        const box = document.querySelector("[data-file-scroll]");
+        if (col === null || box === null) return null;
+        const c = col.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        return {
+          marks: [...col.querySelectorAll("[data-overview-mark]")].map((el) => {
+            const r = el.getBoundingClientRect();
+            return {
+              at: el.getAttribute("data-overview-mark"),
+              // Where down the ruler it sits, as a fraction — the one
+              // reading that does not depend on how tall the window is.
+              part: Math.round(((r.top - c.top) / c.height) * 1000) / 1000,
+              h: round(r.height),
+              ink: getComputedStyle(el).backgroundColor,
+            };
+          }),
+          width: round(c.width),
+          // Past the scrollbar: the ruler's left edge is at or beyond
+          // the scroller's right edge, so it is outside the box rather
+          // than floating over the text.
+          pastBox: round(c.left - b.right),
+          // …and what the file itself says about where those lines are,
+          // so the fractions above can be checked rather than eyeballed.
+          total: box.scrollHeight,
+          at3: document.querySelector('[data-sheet] [data-line="3"]')?.offsetTop ?? null,
+          at150: document.querySelector('[data-sheet] [data-line="150"]')?.offsetTop ?? null,
+        };
+      });
+      console.log(`overview ruler: ${JSON.stringify(ruler)}`);
+      if (ruler === null) {
+        fail(
+          "there is no overview ruler — 「右侧滑动条后方,就是全文件带颜色的 git 差异的那个竖线」 " +
+            "(src/views/FileView.tsx Ruler)",
+        );
+      } else {
+        if (ruler.marks.length !== HUNKS.length) {
+          fail(
+            `the ruler carries ${ruler.marks.length} mark(s) for ${HUNKS.length} hunks — it is the whole ` +
+              "file at once, which is what makes a change 800 lines down reachable (src/views/FileView.tsx Ruler)",
+          );
+        }
+        if (ruler.pastBox < -1) {
+          fail(
+            `the ruler starts ${-ruler.pastBox}px inside the file's own scroller — 「滑动条后方」 means ` +
+              "beside it, not over the text (src/views/FileView.tsx)",
+          );
+        }
+        // The two far-apart hunks, at the height they are at in the
+        // file. A ruler that stacked its marks in a list, or spread
+        // them evenly, passes a count and fails this.
+        for (const [at, off] of [[3, ruler.at3], [150, ruler.at150]]) {
+          const mark = ruler.marks.find((m) => m.at === String(at));
+          if (mark === undefined || off === null || ruler.total === 0) {
+            fail(`probe void: no ruler mark or no line to compare for the hunk at ${at}`);
+          } else {
+            const want = off / ruler.total;
+            if (Math.abs(mark.part - want) > 0.03) {
+              fail(
+                `the ruler puts the hunk at line ${at} ${Math.round(mark.part * 100)}% down where the ` +
+                  `line itself is ${Math.round(want * 100)}% into the file — the ruler is the file ` +
+                  "squeezed onto one screen, not a list (src/views/FileView.tsx Ruler)",
+              );
+            }
+          }
+        }
+        // …and pressing one goes there.
+        //
+        // **The file is put back to the top first, and that it was
+        // really off screen is its own arm.** Pressing a gutter bar
+        // above scrolled line 150 into view (Playwright's click brings
+        // its target into the viewport), so the first spelling of this
+        // measured a line that was already where it wanted it — and a
+        // ruler mark wired to nothing at all went green on it.
+        const where = await page.evaluate(() => {
+          const box = document.querySelector("[data-file-scroll]");
+          box.scrollTop = 0;
+          const b = box.getBoundingClientRect();
+          const l = document.querySelector('[data-sheet] [data-line="150"]').getBoundingClientRect();
+          return { top: Math.round(box.scrollTop), onScreen: l.top >= b.top - 1 && l.bottom <= b.bottom + 1 };
+        });
+        await wait(200);
+        if (where.onScreen) {
+          fail(
+            "probe void: line 150 is on screen with the file scrolled to the top, so going to it cannot " +
+              "be told from staying put (lengthen the fixture or shorten the window)",
+          );
+        }
+        await press('[data-overview-mark="150"]');
+        await wait(300);
+        const went = await page.evaluate(() => {
+          const box = document.querySelector("[data-file-scroll]");
+          const line = document.querySelector('[data-sheet] [data-line="150"]');
+          const b = box.getBoundingClientRect();
+          const l = line.getBoundingClientRect();
+          return {
+            scrollTop: Math.round(box.scrollTop),
+            onScreen: l.top >= b.top - 1 && l.bottom <= b.bottom + 1,
+            peeks: document.querySelectorAll("[data-peek]").length,
+          };
+        });
+        console.log(`ruler press: from ${where.top} (line 150 off screen), ${JSON.stringify(went)}`);
+        if (!went.onScreen) {
+          fail(
+            `pressing the ruler's mark for line 150 left the box at ${went.scrollTop} with that line off ` +
+              "screen — a mark on the map is a place you can go (src/views/FileView.tsx goTo)",
+          );
+        }
+        if (went.peeks !== 0) {
+          fail(
+            "pressing a ruler mark also opened the old text — the ruler scrolls, and opening a block " +
+              "there would move the lines under the place it just scrolled to (src/views/FileView.tsx goTo)",
+          );
+        }
+      }
+    }
+    await page.unroute("**/read_text", longRead);
+    await page.unroute("**/git_diff", longDiff);
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────
