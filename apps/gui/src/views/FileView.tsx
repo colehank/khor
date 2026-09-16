@@ -21,7 +21,7 @@
 // elsewhere, scroll what is here and take the rest if you need it, or
 // nothing. Folded into one「打不开」they would all read as khor being
 // broken, which is the failure `check-acp` 第二批 names.
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchPreview,
@@ -135,6 +135,7 @@ export function FileView({
   onDraft,
   saveAt = 0,
   readAt = 0,
+  goLine = null,
 }: {
   machine: string;
   /** Absolute, on that machine. */
@@ -193,6 +194,15 @@ export function FileView({
    *
    * A counter, because two returns are two questions. */
   readAt?: number;
+  /** A line somebody asked for from outside — a path with a `:12` on it
+      pressed in a conversation (工作区第五轮 第 35 条).
+   *
+   * **Stamped rather than just numbered.** Pressing the same
+   * `main.rs:12` twice is two requests, and the second one has to move
+   * the view again even though the number did not change; an effect on
+   * the number alone would do nothing the second time and read as the
+   * link being broken. */
+  goLine?: { line: number; at: number } | null;
 }) {
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
@@ -255,41 +265,6 @@ export function FileView({
       才展开 diff」(the user, 2026-09-11). A file that opened already
       unfolded would be a diff view wearing a file view's name. */
   const [shown, setShown] = useState<number | null>(null);
-  // **The old text is brought onto the screen when it opens**
-  // (2026-09-16:「点击后,窗口应该移动到这个状态条显示内容的地方。现在
-  // 如果在一个很长的状态条点击,看不见东西,需要拖动状态条最上方才能看
-  // 见」). The peek lies *above* its hunk, so a press low on a tall bar
-  // opens something off the top of the scroller. Arithmetic on rects,
-  // for `box`'s reason below — never `scrollIntoView`. Only when it is
-  // actually out of view: a peek already on screen must not jump.
-  useLayoutEffect(() => {
-    if (shown === null) return;
-    const el = box.current;
-    const peek = el?.querySelector<HTMLElement>("[data-peek]");
-    if (!el || !peek) return;
-    const b = el.getBoundingClientRect();
-    const p = peek.getBoundingClientRect();
-    // **Its top edge to the scroller's top edge, every time**
-    // (2026-09-16:「点击git状态bar的时候, 如果从文件第一行开始就有此bar,
-    // 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标拖动. 应该直接跳转
-    // 到提示框的最上方」— the user).
-    //
-    // It used to scroll **only when the block was out of view**, and to
-    // a third of the way down. Both halves are what the user hit: a
-    // hunk at line 1 lays its old text *above* line 1, so scrolling to
-    // the line leaves the block off the top; and a block taller than
-    // the viewport is partly in view by any test that asks about its
-    // top edge, so 「it is already visible」 was true of a panel whose
-    // first line was above the screen. Asking nothing and always
-    // landing the same way is also the shorter rule to hold: press a
-    // bar, the old text is at the top.
-    //
-    // `--gap-row` of air above it, so the block does not start flush
-    // against the column's edge — the same gap the rows either side of
-    // it are spaced by.
-    const air = Number.parseFloat(getComputedStyle(el).getPropertyValue("--gap-row")) || 0;
-    el.scrollTop += p.top - b.top - air;
-  }, [shown]);
   /** The one scroller in this view. Held so a step can bring its hunk
       into view **without `scrollIntoView`**, which walks every
       scrollable ancestor including the window — the same call that
@@ -533,17 +508,82 @@ export function FileView({
    * top plus how far the box is scrolled」, so scrolling does not have
    * to re-measure anything. */
   const [span, setSpan] = useState<{ total: number; pad: number }>({ total: 0, pad: 0 });
-  /** How tall the open peek block is, or 0 when none is open. **The
-      numbers column needs it and cannot see it** (2026-09-16): the peek
-      lives inside the sheet's flow, so every line below it moved down,
-      and a numbers column that only stacked the measured gaps would put
-      the peek's whole height on the number of the line above it. So
-      that one gap gets the peek taken back out of it and a blank block
-      of exactly that height is stacked in its place — a line with no
-      number, which is the other half of「行号不许跟着挪」. */
+  /** How tall the open peek block is, or 0 when none is open.
+   *
+   * **What it is for changed in 工作区第五轮.** It used to be the hole
+   * the numbers column had to leave, because the peek sat in the sheet's
+   * flow and pushed every line below it down. Out of the flow nothing
+   * moves and the numbers need nothing — what needs this is the block
+   * itself, which hangs *upward* off the top edge of its line and
+   * therefore has to know its own height to know where to start.
+   *
+   * **Measured on the block and not on the sheet.** An absolutely
+   * positioned child does not change its parent's height, so the
+   * observer watching the sheet never fires when this opens: it has to
+   * be watched itself. Zero for one frame while it is, which puts it
+   * level with the line and then moves it up. */
   const [peekH, setPeekH] = useState(0);
   /** The painted sheet, so its lines can be measured. */
   const sheet = useRef<HTMLPreElement>(null);
+  useLayoutEffect(() => {
+    const el = sheet.current;
+    const pk = el?.querySelector<HTMLElement>("[data-peek]") ?? null;
+    if (pk === null) {
+      setPeekH((was) => (was === 0 ? was : 0));
+      return;
+    }
+    const read = () => {
+      const h = pk.getBoundingClientRect().height;
+      setPeekH((was) => (was === h ? was : h));
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(pk);
+    return () => ro.disconnect();
+    // `shown` opens and closes it; the rest are what re-lay the block
+    // it is measuring. `peekAt` rides `shown`, so it is not repeated.
+  }, [shown, body, painted, face]);
+
+  // **The old text is brought onto the screen when it opens**
+  // (2026-09-16:「点击后,窗口应该移动到这个状态条显示内容的地方。现在
+  // 如果在一个很长的状态条点击,看不见东西,需要拖动状态条最上方才能看
+  // 见」). The peek lies *above* its hunk, so a press low on a tall bar
+  // opens something off the top of the scroller. Arithmetic on rects,
+  // for `box`'s reason below — never `scrollIntoView`. Only when it is
+  // actually out of view: a peek already on screen must not jump.
+  useLayoutEffect(() => {
+    if (shown === null) return;
+    const el = box.current;
+    const peek = el?.querySelector<HTMLElement>("[data-peek]");
+    if (!el || !peek) return;
+    const b = el.getBoundingClientRect();
+    const p = peek.getBoundingClientRect();
+    // **Its top edge to the scroller's top edge, every time**
+    // (2026-09-16:「点击git状态bar的时候, 如果从文件第一行开始就有此bar,
+    // 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标拖动. 应该直接跳转
+    // 到提示框的最上方」— the user).
+    //
+    // It used to scroll **only when the block was out of view**, and to
+    // a third of the way down. Both halves are what the user hit: a
+    // hunk at line 1 lays its old text *above* line 1, so scrolling to
+    // the line leaves the block off the top; and a block taller than
+    // the viewport is partly in view by any test that asks about its
+    // top edge, so 「it is already visible」 was true of a panel whose
+    // first line was above the screen. Asking nothing and always
+    // landing the same way is also the shorter rule to hold: press a
+    // bar, the old text is at the top.
+    //
+    // `--gap-row` of air above it, so the block does not start flush
+    // against the column's edge — the same gap the rows either side of
+    // it are spaced by.
+    const air = Number.parseFloat(getComputedStyle(el).getPropertyValue("--gap-row")) || 0;
+    el.scrollTop += p.top - b.top - air;
+    // **`peekH` is in here on purpose** (工作区第五轮): the block hangs
+    // upward off its line, so on the frame it opens it has not been
+    // measured yet and is sitting level with the line. Landing once on
+    // that would put it a block's height too low; this runs again the
+    // moment the height is known, and then settles.
+  }, [shown, peekH]);
   // **A layout effect and a `ResizeObserver`, both.** The effect catches
   // the text changing; the observer catches the column changing width,
   // which is the whole point of wrapping and which no render here is
@@ -606,9 +646,6 @@ export function FileView({
       }
       // How tall the open peek came out, so the numbers column can wait
       // out exactly as much of itself as the sheet just spent on it.
-      const pk = el.querySelector<HTMLElement>("[data-peek]");
-      const ph = pk === null ? 0 : pk.getBoundingClientRect().height;
-      setPeekH((was) => (was === ph ? was : ph));
     };
     read();
     const ro = new ResizeObserver(read);
@@ -634,6 +671,20 @@ export function FileView({
   // value arrives with the mount, and a mount is not an ask. The ref
   // moves with each real one, so bringing a tab to the front and asking
   // it to save is two beats rather than a save on every remount.
+  // A line asked for from outside (ruling 35). Waits for the layout —
+  // `tops` is empty until the first measurement, and with wrapping there
+  // is no arithmetic to fall back on (`Ruler`'s rule) — and puts that
+  // line a third of the way down, which is where `goTo` puts a hunk.
+  const wentTo = useRef<number>(0);
+  useEffect(() => {
+    if (goLine === null || goLine.at === wentTo.current) return;
+    const el = box.current;
+    const top = tops[goLine.line - 1];
+    if (el === null || top === undefined) return;
+    wentTo.current = goLine.at;
+    el.scrollTop = Math.max(0, span.pad + top - el.clientHeight / 3);
+  }, [goLine, tops, span]);
+
   const askedAt = useRef(saveAt);
   useEffect(() => {
     if (saveAt === askedAt.current) return;
@@ -922,6 +973,18 @@ export function FileView({
    * it names**, not by position in the list: a hunk whose lines this
    * buffer no longer has draws no bar at all, and counting would then
    * scroll to somebody else's. */
+  /** Where a press on the bare overview strip lands: that fraction of
+      the file, **centred in the viewport** rather than put at the top.
+      The strip is the file end to end, so the place pressed is the place
+      meant, and the half-screen either side of it is the context that
+      makes it readable (`Ruler`'s `onGoAt`). */
+  const goRatio = (ratio: number) => {
+    const el = box.current;
+    if (el === null) return;
+    const want = ratio * el.scrollHeight - el.clientHeight / 2;
+    el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, want));
+  };
+
   const goTo = (h: GitHunk) => {
     const el = box.current;
     const bar = el?.querySelector<HTMLElement>(`[data-hunk="${h.at}"]`);
@@ -1107,26 +1170,18 @@ export function FileView({
             // bar sits in that gap, VS Code's arrangement.
             className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-code leading-code text-muted-foreground tabular-nums"
           >
+            {/* No spacer for the peek any more: it floats over the
+                text rather than taking a row, so the numbering beside
+                it never moves (工作区第五轮, `Peek`). */}
             {rows.map((_, i) => (
-              <Fragment key={i}>
-                {/* The peek's own rows carry **no number**, so the
-                    file's numbering does not shift under it — the old
-                    lines are not lines of this file and numbering them
-                    would say they were. */}
-                {peekAt === i + 1 && <div data-num-peek style={{ height: peekH }} />}
-                <div
-                  data-num={i + 1}
-                  style={
-                    tops.length > i + 1
-                      ? { height: tops[i + 1] - tops[i] - (peekAt === i + 2 ? peekH : 0) }
-                      : undefined
-                  }
-                >
-                  {i + 1}
-                </div>
-              </Fragment>
+              <div
+                key={i}
+                data-num={i + 1}
+                style={tops.length > i + 1 ? { height: tops[i + 1] - tops[i] } : undefined}
+              >
+                {i + 1}
+              </div>
             ))}
-            {peekAt === rows.length + 1 && <div data-num-peek style={{ height: peekH }} />}
           </pre>
           <Gutter
             hunks={hunks}
@@ -1147,6 +1202,9 @@ export function FileView({
               paint={paint}
               peek={peek}
               peekAt={peekAt}
+              peekTop={peekAt === null ? 0 : (tops[peekAt - 1] ?? 0)}
+              peekNext={peekAt === null ? 0 : (tops[peekAt] ?? tops[peekAt - 1] ?? 0)}
+              peekH={peekH}
               // **No editor while a hunk is open, and that is the price
               // of 「就地显示」** (2026-09-16). The old text goes into
               // the sheet's own flow, and the editor over it is a
@@ -1162,7 +1220,7 @@ export function FileView({
               // has no bar to press in the first place. What is given up
               // is starting to type *while* looking at what HEAD had —
               // one Esc away, and the buffer is untouched throughout.
-              edit={canEdit && peekAt === null}
+              edit={canEdit}
               onText={(t) => {
                 setClashes(null);
                 setEdit((e) => (e === null ? e : { ...e, text: t }));
@@ -1172,7 +1230,14 @@ export function FileView({
           </div>
         </div>
       </div>
-      <Ruler hunks={hunks} tops={tops} span={span} shown={shown} onGo={goTo} />
+      <Ruler
+        hunks={hunks}
+        tops={tops}
+        span={span}
+        shown={shown}
+        onGo={goTo}
+        onGoAt={goRatio}
+      />
       </div>
       )}
       {/* **The one notice left, and it floats** (2026-09-16:「类似要在
@@ -1355,6 +1420,9 @@ function Sheet({
   paint,
   peek,
   peekAt,
+  peekTop,
+  peekNext,
+  peekH,
   edit,
   onText,
   onSave,
@@ -1372,6 +1440,16 @@ function Sheet({
   /** Which line it is laid above, 1-based, or null for「nothing open」
       (`FileView`'s `peekAt` says how the number is chosen). */
   peekAt: number | null;
+  /** That line's own offset from the top of this `<pre>`, measured —
+      the peek hangs off it rather than taking a row (`Peek`). */
+  peekTop: number;
+  /** The offset of the line after it, for the case where the block will
+      not fit above (`Peek`). */
+  peekNext: number;
+  /** How tall the peek measured last paint, so it can be hung *above*
+      the line. Zero on the first paint, which puts it level with the
+      line for one frame and then it moves up. */
+  peekH: number;
   /** Whether to lay an editor over it at all. **A file that cannot be
       written back grows no textarea**, rather than a disabled one: a
       caret that appears and then refuses every keystroke is worse than
@@ -1395,25 +1473,30 @@ function Sheet({
         // Hidden from a screen reader when the textarea is there: the
         // two hold the same words, and read twice they are gibberish.
         aria-hidden={edit || undefined}
-        className={cn("px-3", WRAP)}
+        // `relative` so the peek can hang off a line's top edge without
+        // taking a row of its own (`Peek`).
+        className={cn("relative px-3", WRAP)}
       >
         {rows.map((line, i) => (
-          <Fragment key={i}>
-            {peekAt === i + 1 && peek !== null && <Peek hunk={peek} />}
-            <div data-line={i + 1} className="min-h-[var(--text-code--line-height)]">
-              {paint === null ? (
-                line
-              ) : (
-                // Safe for `paint`'s reason: Shiki escapes every
-                // character of the input before it wraps any of it, so
-                // this is the file's own text plus spans this build
-                // generated (`lib/highlight`'s `line`).
-                <span dangerouslySetInnerHTML={{ __html: paint[i] }} />
-              )}
-            </div>
-          </Fragment>
+          <div
+            key={i}
+            data-line={i + 1}
+            className="min-h-[var(--text-code--line-height)]"
+          >
+            {paint === null ? (
+              line
+            ) : (
+              // Safe for `paint`'s reason: Shiki escapes every
+              // character of the input before it wraps any of it, so
+              // this is the file's own text plus spans this build
+              // generated (`lib/highlight`'s `line`).
+              <span dangerouslySetInnerHTML={{ __html: paint[i] }} />
+            )}
+          </div>
         ))}
-        {peekAt === rows.length + 1 && peek !== null && <Peek hunk={peek} />}
+        {peek !== null && peekAt !== null && (
+          <Peek hunk={peek} at={peekTop} next={peekNext} tall={peekH} />
+        )}
       </pre>
       {edit && (
         <textarea
@@ -1594,10 +1677,15 @@ function Gutter({
  * wrapping needed something to measure — and what was left was a panel
  * describing line 412 sitting at the bottom of the screen.
  *
- * What it still cannot do is push the editor down with it; a textarea
- * is one box holding one string. So the editor steps off the glass
- * while this is open, which is written where it is spent (`Sheet`'s
- * `edit`).
+ * **It floats rather than sitting in the flow** (工作区第五轮,「原文
+ * 开着时不能打字」). In the flow it pushed every line below it down, and
+ * a textarea is one box holding one string — it cannot be pushed in the
+ * middle — so the two fell out of register and the editor had to step
+ * off the glass while this was open. Out of the flow nothing moves, and
+ * the caret stays where the person left it. The cost is that it covers
+ * the few lines above the change, which is what VS Code's peek does
+ * too: a peek is something you are looking through, not a row of the
+ * file.
  *
  * **Plain, unpainted text.** What is read here is which lines were
  * there, and highlighting them would make the removed copy look exactly
@@ -1617,23 +1705,62 @@ function peekInk(h: GitHunk): string {
   return "border-git-modified/40 bg-git-modified/10 text-git-modified";
 }
 
-function Peek({ hunk }: { hunk: GitHunk }) {
+function Peek({
+  hunk,
+  at,
+  next,
+  tall,
+}: {
+  hunk: GitHunk;
+  /** The top of the line this is about, inside the sheet. */
+  at: number;
+  /** The top of the line after it — where this goes when it will not
+      fit above. */
+  next: number;
+  tall: number;
+}) {
   const gone = hunk.was.length > 0;
+  // **Above where there is room, below where there is not, and never
+  // over the line itself.** Above is the arrangement (2026-09-16:
+  // 「就地显示」 — the old lines directly over the ones that replaced
+  // them), and out of the flow it cannot push anything down to make
+  // room, so a hunk at line 1 has nowhere above to be: a block clamped
+  // to the top of the column would sit *on* the very line it is being
+  // compared against, which is the comparison losing its other half.
+  // Below, it covers the lines after instead — which are not what is
+  // being read at that moment.
+  //
+  // `tall` is 0 for the frame before it is measured, so the first paint
+  // is「above」 and flush with the line; it settles on the next.
+  const top = tall <= at ? at - tall : next;
   return (
-    <div data-peek={hunk.at} className={cn("border-y px-3", peekInk(hunk))}>
-      {gone ? (
-        hunk.was.map((line, i) => (
-          <div key={i} className="min-h-[var(--text-code--line-height)]">
-            {line}
-          </div>
-        ))
-      ) : (
-        // **A pure insertion has no old text, and says so rather than
-        // opening empty** — the bar is pressable everywhere it is drawn
-        // (`Gutter`), and a press that produced a blank block would be
-        // the dead target that rule exists to avoid.
-        <div className="min-h-[var(--text-code--line-height)]">{gui.git_added}</div>
-      )}
+    <div
+      // Two elements, because it needs two grounds: the outer is opaque
+      // (it is covering live code, and a tenth-strength wash over text
+      // is not a block, it is a smudge) and the inner carries the tint.
+      // **`data-peek` is on the inner one** — the tint is what says
+      // which of the three kinds this is, and a gate reading the ground
+      // off the named element has to find the colour, not the paper.
+      // The two boxes are the same rectangle, so every measurement of
+      // place and height is the same either way.
+      className="absolute inset-x-0 z-10 bg-background shadow-sm"
+      style={{ top }}
+    >
+      <div data-peek={hunk.at} className={cn("border-y px-3", peekInk(hunk))}>
+        {gone ? (
+          hunk.was.map((line, i) => (
+            <div key={i} className="min-h-[var(--text-code--line-height)]">
+              {line}
+            </div>
+          ))
+        ) : (
+          // **A pure insertion has no old text, and says so rather than
+          // opening empty** — the bar is pressable everywhere it is drawn
+          // (`Gutter`), and a press that produced a blank block would be
+          // the dead target that rule exists to avoid.
+          <div className="min-h-[var(--text-code--line-height)]">{gui.git_added}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1665,6 +1792,7 @@ function Ruler({
   span,
   shown,
   onGo,
+  onGoAt,
 }: {
   hunks: GitHunk[];
   tops: number[];
@@ -1673,6 +1801,9 @@ function Ruler({
   span: { total: number; pad: number };
   shown: number | null;
   onGo: (hunk: GitHunk) => void;
+  /** A press on the bare strip: the fraction down it that was pressed
+      (`FileView`'s `goRatio`). */
+  onGoAt: (ratio: number) => void;
 }) {
   return (
     // **Always here, even on a clean file.** A column that appeared with
@@ -1680,13 +1811,29 @@ function Ruler({
     // caret the moment they saved.
     <div
       data-overview={hunks.length}
-      // Over the scroller's right edge, the width of its scrollbar, and
-      // **letting every press through except on a mark**: the column is
-      // the scrollbar's, a mark is the one thing here that is ours to
-      // press. Nothing of the strip is drawn — no border, no ground — so
-      // on a trackpad Mac, where the scrollbar is an overlay that fades,
+      // Over the scroller's right edge, the width of its scrollbar.
+      // Nothing of the strip is drawn — no border, no ground — so on a
+      // trackpad Mac, where the scrollbar is an overlay that fades,
       // what stays is the marks alone, which is the VS Code picture.
-      className="pointer-events-none absolute inset-y-0 right-0 z-10 w-[var(--overview-ruler)]"
+      //
+      // **The whole column takes a press** (工作区第五轮 第 40 条): it is
+      // the file end to end, so pressing two thirds of the way down it
+      // means「take me two thirds of the way down the file」— and until
+      // now that press fell through to the scrollbar beneath and did
+      // nothing at all. A mark still means「open that change」, which is
+      // why it stops the press from reaching here as well.
+      //
+      // **Below the touch floor on purpose, and on record**: this strip
+      // is as wide as the scrollbar it stands on, and a 44px one would
+      // cover a tenth of the text. What is reachable here is reachable
+      // another way — the gutter's bars are a full row tall, and
+      // scrolling is scrolling.
+      className="absolute inset-y-0 right-0 z-10 w-[var(--overview-ruler)]"
+      onClick={(e) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        if (box.height <= 0) return;
+        onGoAt((e.clientY - box.top) / box.height);
+      }}
     >
       {span.total > 0 &&
         hunks.map((h, i) => {
@@ -1703,7 +1850,13 @@ function Ruler({
               data-overview-mark={h.at}
               data-on={shown === i}
               aria-label={gui.git_hunk}
-              onClick={() => onGo(h)}
+              onClick={(e) => {
+                // The strip under it means「go to this place」; a mark
+                // means「open this change」, and a press is one or the
+                // other.
+                e.stopPropagation();
+                onGo(h);
+              }}
               // The touch floor does not apply, for the gutter bar's
               // reason said one column over: this is the shape of a
               // fact rather than a control a finger hunts for, and a
@@ -1720,7 +1873,7 @@ function Ruler({
                 // mark came down from .6 and the thumb went up to half
                 // ink (`--scroll-thumb-strong`) — the thing that has to
                 // be readable is the one you drag.
-                "pointer-events-auto absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs opacity-50",
+                "absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs opacity-50",
                 hunkInk(h),
               )}
               style={{
