@@ -48,6 +48,20 @@ pub const UNTRACKED: &str = "U";
 /// where the path on screen is not the path in HEAD.
 pub const CONFLICT: &str = "C";
 pub const RENAMED: &str = "R";
+/// A path `.gitignore` covers. **git's own porcelain spelling** (`!!`,
+/// written once here because khor's column is one character wide) —
+/// 「文件树中,被.gitignore的文件/目录名要变灰」, the user, 2026-09-16.
+///
+/// **It is not a change and it never folds into one.** Every other
+/// letter says「this differs from HEAD」; this one says「git is not
+/// looking at this」, which is why [`fold`] gives way to any real letter
+/// rather than ranking it — a directory holding an edited file and a
+/// build output is 黄, not grey.
+///
+/// Emitted collapsed (`CollapseDirectory`), so a `target/` with fifty
+/// thousand files in it arrives as one row and [`ROWS`] is not spent on
+/// something nobody asked to see.
+pub const IGNORED: &str = "!";
 
 /// How many marked paths one answer carries. A repository whose
 /// `.gitignore` misses a build directory can have tens of thousands of
@@ -153,6 +167,15 @@ pub fn status(root: &Path) -> Result<Status, String> {
     let items = repo
         .status(gix::progress::Discard)
         .map_err(|e| e.to_string())?
+        // **Ignored paths come back too, folded to their directory**
+        // (2026-09-16). The walk would otherwise pass over them in
+        // silence, and a name the tree paints like every other name is
+        // khor saying git is watching a file it is not.
+        // `CollapseDirectory` is what keeps that cheap: one row for a
+        // whole build directory rather than one per file in it.
+        .dirwalk_options(|o| {
+            o.emit_ignored(Some(gix::dir::walk::EmissionMode::CollapseDirectory))
+        })
         .into_iter(Vec::<BString>::new())
         .map_err(|e| e.to_string())?;
     for item in items {
@@ -225,6 +248,22 @@ fn last_fetch(repo: &gix::Repository) -> i64 {
 /// chooses」 — a file that is both conflicted and edited is still a file
 /// nobody can commit, so the letter that survives has to be that one.
 pub(crate) fn fold(a: &'static str, b: &'static str) -> &'static str {
+    // **[`IGNORED`] is not in the ranking, it is under it.** The list
+    // below sorts changes by「which copy is the one on screen」, and an
+    // ignored path is not a change at all — so it survives only when
+    // there is nothing else to say. Written before the loop rather than
+    // as a sixth entry because the loop's fall-through is `MODIFIED`:
+    // two ignored halves folded through it would come out as an edit
+    // nobody made, which is what the first spelling did.
+    if a == IGNORED || b == IGNORED {
+        return if a == b {
+            IGNORED
+        } else if a == IGNORED {
+            b
+        } else {
+            a
+        };
+    }
     for want in [CONFLICT, DELETED, UNTRACKED, ADDED, RENAMED] {
         if a == want || b == want {
             return want;
@@ -234,8 +273,10 @@ pub(crate) fn fold(a: &'static str, b: &'static str) -> &'static str {
 }
 
 /// One status item's letter, or `None` for the items that are not a
-/// change at all — an entry whose stat needs refreshing, an ignored
-/// path the walk still emitted.
+/// change at all — an entry whose stat needs refreshing, a path the
+/// walk pruned for its own reasons. An ignored path *is* said, in
+/// [`IGNORED`]: the tree greys those names, which it can only do if it
+/// is told which ones they are.
 fn mark_of(item: &gix::status::Item) -> Option<&'static str> {
     use gix::status::Item;
     use gix::status::index_worktree::Item as Work;
@@ -260,6 +301,7 @@ fn mark_of(item: &gix::status::Item) -> Option<&'static str> {
             use gix::dir::entry::Status as Dir;
             match entry.status {
                 Dir::Untracked => Some(UNTRACKED),
+                Dir::Ignored(_) => Some(IGNORED),
                 _ => None,
             }
         }
@@ -425,12 +467,40 @@ mod status_tests {
     }
 
     #[test]
-    fn every_marked_row_carries_one_of_the_six_letters() {
+    fn every_marked_row_carries_one_of_the_seven_letters() {
         let s = status(&here()).expect("status");
         for (path, mark) in &s.rows {
             assert!(
-                [MODIFIED, ADDED, DELETED, UNTRACKED, CONFLICT, RENAMED].contains(&mark.as_str()),
+                [MODIFIED, ADDED, DELETED, UNTRACKED, CONFLICT, RENAMED, IGNORED]
+                    .contains(&mark.as_str()),
                 "{path} got {mark}"
+            );
+        }
+    }
+
+    /// **`target/` is one row, not forty thousand** (2026-09-16). The
+    /// walk emits ignored paths now, and the only reason that is
+    /// affordable is `CollapseDirectory`: an ignored directory arrives
+    /// whole. Asserted against this checkout, which has a `target/` in
+    /// it that a debug build fills — so the shape being tested is the
+    /// expensive one.
+    #[test]
+    fn an_ignored_directory_arrives_as_one_row() {
+        let s = status(&here()).expect("status");
+        let ignored: Vec<&str> =
+            s.rows.iter().filter(|(_, m)| m == IGNORED).map(|(p, _)| p.as_str()).collect();
+        for path in &ignored {
+            assert!(
+                !path.contains("target/"),
+                "{path} came back as a file under an ignored directory — the walk is not collapsing"
+            );
+        }
+        // …and nothing under an ignored directory is marked as a
+        // change either, which is what the fold protects.
+        for (path, mark) in &s.rows {
+            assert!(
+                !path.starts_with("target/"),
+                "{path} ({mark}) is inside an ignored directory"
             );
         }
     }

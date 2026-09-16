@@ -280,6 +280,14 @@ fn parse_touched(text: &str) -> i64 {
 /// `--porcelain=v1 -z` because it is the shape git promises not to
 /// change and the one that survives a newline in a path.
 ///
+/// **`--ignored`, added 2026-09-16**, because the in-process reader now
+/// emits ignored paths too (`crate::git::IGNORED`) and the two readers
+/// have to answer the same rows about the same repository — a tree read
+/// through a satellite that greyed nothing would be the same screen
+/// disagreeing with itself depending on which disk it came from. The
+/// bare flag is `--ignored=traditional`, which collapses an ignored
+/// directory to one row exactly as gix's `CollapseDirectory` does.
+///
 /// **No `-uall`**, and the first spelling had it. An untracked
 /// directory is one row in the in-process reader — gix's walk collapses
 /// it — and `-uall` made the same repository answer five rows over ssh
@@ -306,7 +314,7 @@ g=$(git rev-parse --git-dir 2>/dev/null)
 if [ -n "$g" ] && [ -f "$g/FETCH_HEAD" ]; then
   printf 'fetched=%s\n' "$(stat -c %Y "$g/FETCH_HEAD" 2>/dev/null || stat -f %m "$g/FETCH_HEAD" 2>/dev/null || echo 0)"
 fi
-git status --porcelain=v1 -z 2>&1 | tr '\0' '\n' | sed 's/^/row=/'
+git status --porcelain=v1 --ignored -z 2>&1 | tr '\0' '\n' | sed 's/^/row=/'
 exit 0
 "#;
 
@@ -392,8 +400,14 @@ fn parse_status(text: &str) -> Result<crate::git::Status, String> {
     Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
 }
 
-/// One porcelain row's two columns as one of khor's six letters.
+/// One porcelain row's two columns as one of khor's seven letters.
 fn row_mark(x: char, y: char) -> Option<&'static str> {
+    // `!!` is git's own spelling for an ignored path, and it is read
+    // first for the same reason `?` is: neither column is a comparison,
+    // so the pair means one thing whole (`crate::git::IGNORED`).
+    if x == '!' || y == '!' {
+        return Some(crate::git::IGNORED);
+    }
     if x == '?' || y == '?' {
         return Some(crate::git::UNTRACKED);
     }
@@ -1087,7 +1101,10 @@ mod tests {
     /// Recorded from a real `git status --porcelain=v1 -z` on a
     /// checkout built to hold every shape at once, 2026-09-13, with the
     /// NULs already turned into newlines the way [`STATUS_SH`] leaves
-    /// them.
+    /// them. **The two `!!` rows joined it on 2026-09-16**, off the same
+    /// checkout read again with `--ignored`: a file the repository's
+    /// `.gitignore` covers and a whole directory it covers, which is the
+    /// pair the tree greys (`crate::git::IGNORED`).
     const PORCELAIN: &str = "\
 branch=master
 row=A  added.txt
@@ -1100,6 +1117,8 @@ row=UU clash.txt
 row=DD gone-both-ways.txt
 row=?? subdir/
 row=?? untracked.txt
+row=!! debug.log
+row=!! build/
 ";
 
     #[test]
@@ -1114,11 +1133,16 @@ row=?? untracked.txt
         assert_eq!(got, [
             ("added.txt", "A"),
             ("both.txt", "M"),
+            // An ignored directory, collapsed and without its slash —
+            // the same row gix's walk gives it, and grey rather than a
+            // change (2026-09-16).
+            ("build", "!"),
             // Unmerged in its two porcelain spellings (工作区批⑦). `DD`
             // folded column by column is an ordinary deletion, which is
             // the reading that tells somebody a file is gone when what
             // is true is that git will not take it either way.
             ("clash.txt", "C"),
+            ("debug.log", "!"),
             ("del.txt", "D"),
             ("gone-both-ways.txt", "C"),
             ("mod.txt", "M"),
@@ -1126,6 +1150,19 @@ row=?? untracked.txt
             ("subdir", "U"),
             ("untracked.txt", "U"),
         ]);
+    }
+
+    #[test]
+    fn an_ignored_path_is_never_folded_into_a_change() {
+        // `fold` runs on every row, first insert included, so an
+        // ignored path folded against itself has to come back ignored —
+        // the loop's fall-through is `MODIFIED`, and that reading
+        // painted every build directory as an edit nobody made.
+        assert_eq!(crate::git::fold(crate::git::IGNORED, crate::git::IGNORED), crate::git::IGNORED);
+        // …and it gives way to anything git is actually looking at: a
+        // directory holding an edited file and a build output is 黄.
+        assert_eq!(crate::git::fold(crate::git::IGNORED, crate::git::MODIFIED), crate::git::MODIFIED);
+        assert_eq!(crate::git::fold(crate::git::CONFLICT, crate::git::IGNORED), crate::git::CONFLICT);
     }
 
     #[test]
