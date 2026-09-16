@@ -1731,8 +1731,9 @@ try {
   // consecutive stops — so a raw re-press would put the list away and
   // the row a stop then reaches for would be unclickable. Hopping
   // through another landing makes the return a fresh switch, which
-  // always leaves the list expanded. Only sessions/devices carry a
-  // list that toggles; the others no-op through this unchanged.
+  // always leaves the list expanded. Sessions, devices and (since
+  // 2026-09-16) workspaces carry a list that toggles; the others no-op
+  // through this unchanged.
   const open = async (tab) => {
     const on = await page.locator(rail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
@@ -1839,7 +1840,7 @@ try {
     // list and the house is one workspace open. The controls being
     // measured — the breadcrumb, the directory rows — are the same
     // ones, under a different owner.
-    { name: "workspaces", anchor: "[data-ws-row]", go: () => press(rail("workspaces")) },
+    { name: "workspaces", anchor: "[data-ws-row]", go: () => open("workspaces") },
     {
       // …and a workspace actually open, which is where those controls
       // are. Stopping at the list would be a walk that visits the door
@@ -1852,7 +1853,7 @@ try {
       // than passing an empty column.
       name: "workspaces · one open",
       anchor: "[data-file-tree]",
-      go: async () => (await press(rail("workspaces"))) && press("[data-ws-row]"),
+      go: async () => (await open("workspaces")) && press("[data-ws-row]"),
     },
     {
       // …and a file open inside it, which is where the change gutter is
@@ -1864,7 +1865,7 @@ try {
       name: "workspaces · one file",
       anchor: "[data-gutter]",
       go: async () =>
-        (await press(rail("workspaces"))) &&
+        (await open("workspaces")) &&
         (await press("[data-ws-row]")) &&
         press('[data-file="one.rs"] button'),
     },
@@ -2385,7 +2386,7 @@ try {
   const atCrumbs = async () => {
     await page.keyboard.press("Escape");
     await wait(150);
-    await press(rail("workspaces"));
+    await open("workspaces");
     await press("[data-ws-add]");
     return until(3_000, async () => (await page.locator("[data-crumb]").count()) > 0);
   };
@@ -2394,7 +2395,7 @@ try {
   const atTree = async () => {
     await page.keyboard.press("Escape");
     await wait(150);
-    await press(rail("workspaces"));
+    await open("workspaces");
     // The walk may have left a workspace open, so the list row need not
     // be there — pressing it is an attempt, not a requirement.
     await press("[data-ws-row]");
@@ -2514,9 +2515,18 @@ try {
       const leaf = [...row.querySelectorAll("*")].find(
         (e) => e.children.length === 0 && e.textContent.trim(),
       );
+      // **The row's first ink, not its first word** (2026-09-16:「非目录
+      // 的文件要完全左对齐,也就是在 > 的最左侧对齐」). A directory's
+      // first ink is its chevron and a file's is its name — or, once
+      // the type icons land, its icon — and the ruling is that those
+      // line up. Measuring the name alone read the chevron's width as a
+      // disagreement between the two kinds.
       let left;
-      if (leaf) left = px(leaf.getBoundingClientRect().left - r.left);
-      else {
+      const glyph = row.querySelector("svg");
+      if (leaf) {
+        left = px(leaf.getBoundingClientRect().left - r.left);
+        if (glyph) left = Math.min(left, px(glyph.getBoundingClientRect().left - r.left));
+      } else {
         const range = document.createRange();
         range.selectNodeContents(row);
         left = px(range.getBoundingClientRect().left - r.left);
@@ -3219,10 +3229,76 @@ try {
         els.map((e) => e.getAttribute("aria-label")),
       );
       console.log(`tab strip tail: ${JSON.stringify(tail)}`);
-      if (tail.length !== 3) {
+      // **Two since 2026-09-16**: the tree's switch moved onto the
+      // workspace's own row in the list (a chevron), so the strip's
+      // end keeps the sessions column and the editor.
+      if (tail.length !== 2) {
         fail(
-          `the strip's far end carries ${tail.length} switch(es) — 「标签页的最右侧,显示现有的文件、` +
-            "session 和 vscode 切换」 is three (src/views/WorkspacePane.tsx)",
+          `the strip's far end carries ${tail.length} switch(es) — the tree folds from its row's chevron ` +
+            "and ⌘B now, so the end is the sessions column and VS Code, two (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // **The tree folds from its own row, and from ⌘B** (2026-09-16,
+      // after the two-meanings trap was talked through: a row's press
+      // means open, everywhere, so the fold is a chevron beside the
+      // name, on the open row only; and ⌘B is the way back that no
+      // fold can hide).
+      const chevrons = await page.locator("[data-ws-tree-toggle]").count();
+      if (chevrons !== 1) {
+        fail(
+          `${chevrons} tree chevron(s) on the workspace list — one, on the open row and on it alone ` +
+            "(src/views/WorkspacesList.tsx)",
+        );
+      } else {
+        const onOpenRow = await page.$eval(
+          "[data-ws-tree-toggle]",
+          (el) => el.closest("[data-ws-line]")?.querySelector('[data-ws-row][data-selected="true"]') !== null,
+        );
+        if (!onOpenRow) {
+          fail("the tree chevron is not on the selected workspace's row (src/views/WorkspacesList.tsx)");
+        }
+        const treeCount = () => page.locator("[data-ws-tree]").count();
+        const t0 = await treeCount();
+        await press("[data-ws-tree-toggle]");
+        const t1 = await treeCount();
+        await press("[data-ws-tree-toggle]");
+        const t2 = await treeCount();
+        console.log(`tree fold by chevron: ${t0} → ${t1} → ${t2}`);
+        if (!(t0 === 1 && t1 === 0 && t2 === 1)) {
+          fail(
+            `pressing the row's chevron left the tree at ${t0}/${t1}/${t2} — it folds and unfolds the ` +
+              "file tree (src/views/WorkspacesList.tsx, App.tsx treePane)",
+          );
+        }
+        await page.keyboard.press("Control+b");
+        const k1 = await treeCount();
+        await page.keyboard.press("Control+b");
+        const k2 = await treeCount();
+        console.log(`tree fold by ⌘B: ${k1} → ${k2}`);
+        if (!(k1 === 0 && k2 === 1)) {
+          fail(
+            `⌘B left the tree at ${k1}/${k2} — it is the one way back when both the list and the tree ` +
+              "are folded (src/views/WorkspacePane.tsx)",
+          );
+        }
+      }
+      // **The rail's own icon folds the list** (2026-09-16:「再次点击侧边
+      // 栏工作区 icon,是收起工作区。这点一直没有实现」), the way the
+      // sessions and devices icons already did.
+      const listWidth = () => page.$eval("[data-list]", (el) => Math.round(el.getBoundingClientRect().width));
+      const w0 = await listWidth();
+      // Raw presses on purpose — the re-press *is* what this probes;
+      // everywhere else the walk goes through `open`, which hops so a
+      // return is a fresh switch and never this fold.
+      await press(rail("workspaces"));
+      const w1 = await listWidth();
+      await press(rail("workspaces"));
+      const w2 = await listWidth();
+      console.log(`rail folds the workspace list: ${w0} → ${w1} → ${w2}`);
+      if (!(w0 > 0 && w1 < 4 && w2 > 0)) {
+        fail(
+          `pressing the rail's workspace icon again left the list at ${w0}/${w1}/${w2}px — a second press ` +
+            "folds it, like sessions and devices (src/App.tsx)",
         );
       }
       if ((await page.locator("[data-code] svg").count()) !== 1) {
@@ -3547,7 +3623,7 @@ try {
   //      cannot tell「never asked」from「asked and refused」, and only
   //      the first is safe, so the question that was never sent is what
   //      this asserts.
-  await press(rail("workspaces"));
+  await open("workspaces");
   // **The gate is「any row at all」and not「all three」**, because a
   // row missing is exactly what claim i is about: asserting the count
   // here would report it as a dead probe — a sentence about this file —
@@ -3699,7 +3775,7 @@ try {
   //      the answer, the picker is a second road to it;
   //  vi. and it is usable on a phone.
   const dirPicker = async () => {
-    await press(rail("workspaces"));
+    await open("workspaces");
     await press("[data-ws-add]");
     return until(5_000, async () => (await page.locator("[data-dir-picker]").count()) === 1);
   };
@@ -3910,7 +3986,7 @@ try {
   //      the header above them already said;
   //  iv. a shell session is a row like any other, not a branch;
   //   v. pressing one opens it here, and there is a way back.
-  await press(rail("workspaces"));
+  await open("workspaces");
   await press("[data-ws-row]");
   // Wide with the list pane open, the column starts collapsed — the
   // fifth column's existence is what decides that (`WorkspacePane`).
@@ -4004,7 +4080,7 @@ try {
   //      must not leave behind;
   //  vi. a refusal keeps the sheet open, in the node's own sentence.
   const rowAt = async (name) => {
-    await press(rail("workspaces"));
+    await open("workspaces");
     const n = await page.$$eval(
       "[data-ws-row]",
       (els, want) =>
@@ -4213,7 +4289,7 @@ try {
     });
   });
   const openFile = async (name) => {
-    await press(rail("workspaces"));
+    await open("workspaces");
     await press("[data-ws-row]");
     if (!(await until(5_000, async () => (await page.locator("[data-file]").count()) > 0))) {
       return false;
@@ -4275,7 +4351,7 @@ try {
           "(src/components/icons.tsx IconEye)",
       );
     }
-    if (asOpened.columns !== 3) {
+    if (asOpened.columns !== 2) {
       fail(
         `the strip's column switches now count ${asOpened.columns} — the face switch stands beside them, ` +
           "not among them: those three open and shut a column and this one changes what the middle " +
@@ -4474,7 +4550,7 @@ try {
           "nothing is worse than no button (src/views/WorkspacePane.tsx)",
       );
     }
-    if (none.columns !== 3) {
+    if (none.columns !== 2) {
       fail(
         `probe void: the strip's far end carries ${none.columns} column switch(es), so 「no face ` +
           "switch」 above may only mean the whole tail is missing",
@@ -4805,7 +4881,7 @@ try {
     };
     await page.route("**/read_text", colRead);
     await page.route("**/git_diff", colDiff);
-    await press(rail("workspaces"));
+    await open("workspaces");
     await press("[data-ws-row]");
     if ((await page.locator("[data-ws-sessions]").count()) === 0) {
       await press("[data-ws-sessions-switch]");
@@ -5085,7 +5161,7 @@ try {
     };
     await page.route("**/workspaces", wideList);
     await page.route("**/git_status", wideGit);
-    await press(rail("workspaces"));
+    await open("workspaces");
     // The list re-reads when the window comes back, which is the one
     // trigger it has that this script can pull (`WorkspacesList`).
     await hide(true);
@@ -5487,6 +5563,8 @@ try {
           // the scroller's right edge, so it is outside the box rather
           // than floating over the text.
           pastBox: round(c.left - b.right),
+          pastRight: round(c.right - b.right),
+          gutter: round(document.querySelector("[data-gutter]")?.getBoundingClientRect().width ?? 0),
           // …and what the file itself says about where those lines are,
           // so the fractions above can be checked rather than eyeballed.
           total: box.scrollHeight,
@@ -5507,10 +5585,24 @@ try {
               "file at once, which is what makes a change 800 lines down reachable (src/views/FileView.tsx Ruler)",
           );
         }
-        if (ruler.pastBox < -1) {
+        // **Over the scrollbar's strip, not a column beside it**
+        // (2026-09-16:「文件右侧的 git 状态导航条是在滑动条的下方的,可以
+        // 透过滑动条颜色浮上来」). The first cut passed a 「beside it」
+        // check with a 14-wide column of its own; the ruling is the
+        // opposite — one strip. So the ruler's right edge is the
+        // scroller's right edge and nothing of the file column lies
+        // past the scroller.
+        if (ruler.pastRight > 1 || ruler.pastBox > 0) {
           fail(
-            `the ruler starts ${-ruler.pastBox}px inside the file's own scroller — 「滑动条后方」 means ` +
-              "beside it, not over the text (src/views/FileView.tsx)",
+            `the ruler is a column of its own, ${ruler.pastBox}px past the scroller and ${ruler.pastRight}px ` +
+              "past its right edge — it lies over the scrollbar's strip, 「在滑动条的下方…透过滑动条颜色浮上来」 " +
+              "(src/views/FileView.tsx Ruler)",
+          );
+        }
+        if (ruler.gutter > 6) {
+          fail(
+            `the change gutter is ${ruler.gutter}px wide — 「左侧的 git 状态条细一点…刚好适合点击就行」, ` +
+              "VS Code's is 3 (src/views/FileView.tsx Gutter)",
           );
         }
         // The two far-apart hunks, at the height they are at in the

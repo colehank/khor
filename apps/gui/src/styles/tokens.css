@@ -350,7 +350,9 @@
    * one screen, so a one-line hunk in a long file rounds to nothing —
    * the floor is what keeps it visible, and it is the smallest bar
    * this palette still reads as a bar rather than as dirt. */
-  --overview-ruler: 14px;
+  /* The thin scrollbar's own width (app.css measured 11 on Blink, 13 on
+     WKWebView); the ruler lies over that strip, so it is that wide. */
+  --overview-ruler: 12px;
   --overview-mark: 3px;
 
   /* ── which model spent it ─────────────────────────────────

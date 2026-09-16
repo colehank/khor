@@ -32,6 +32,8 @@ import {
   type WorkspaceRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { IconChevronRight } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
@@ -52,6 +54,8 @@ export function WorkspacesList({
   reloadAt = 0,
   selected,
   onOpen,
+  treeOpen,
+  onTree,
 }: {
   /** Only for the faces: a row's avatar is its machine's, and the
       device table is where faces live. The list itself comes from the
@@ -66,6 +70,17 @@ export function WorkspacesList({
       key, for `keyOf`'s reason. */
   selected: { device: string; path: string } | null;
   onOpen: (row: WorkspaceRow) => void;
+  /** Whether the open workspace's file tree is showing, for the chevron
+      on its row (2026-09-16:「再次点击工作区 list 的某个,也是收起和展开
+      该工作区的文件 list」). **A chevron beside the name, not a second
+      meaning on the row**: pressing a row opens it, everywhere in this
+      app, and a row whose second press quietly folded a column would be
+      a mode nothing on the glass announces. The chevron says the tree
+      can be folded from here, and says which way it is. */
+  treeOpen: boolean;
+  /** Fold or unfold it. Absent on the narrow face, where the list is a
+      screen and the tree is the next one — nothing to fold. */
+  onTree?: () => void;
 }) {
   const [list, setList] = useState<WorkspaceRow[]>([]);
   /** What the two per-row questions came back with. Absent means「not
@@ -227,7 +242,15 @@ export function WorkspacesList({
         const at = times[k] ?? 0;
         const changed = git ? git.rows.length : 0;
         return (
-          <RowMenu key={k} items={actions(r)}>
+          <div
+            key={k}
+            data-ws-line
+            className={cn(
+              "flex items-stretch border-b border-border/50",
+              isOpen && "bg-accent",
+            )}
+          >
+          <RowMenu items={actions(r)}>
             {/* **The open one is marked the way an open session is**
                 (「一个工作区被选中了没有任何状态」— the user,
                 2026-09-16). It wore `bg-card` until then, which is the
@@ -244,8 +267,8 @@ export function WorkspacesList({
               type="button"
               onClick={() => onOpen(r)}
               className={cn(
-                "flex min-h-touch w-full flex-col items-start gap-0.5 border-b border-border/50 px-3 py-2.5 text-left",
-                isOpen && "bg-accent hover:bg-accent",
+                "flex min-h-touch min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left",
+                isOpen && "hover:bg-accent",
               )}
             >
               <span className="flex w-full items-center gap-1.5">
@@ -309,6 +332,26 @@ export function WorkspacesList({
               </span>
             </button>
           </RowMenu>
+          {/* The tree's fold, on the open row only — a closed row has
+              no tree to fold, and a chevron on every row would read as
+              「expand this row」. Turned when the tree is out, the same
+              glyph the tree's own directories turn. */}
+          {isOpen && onTree !== undefined && (
+            <Button
+              variant="ghost"
+              size="icon"
+              data-ws-tree-toggle
+              data-on={treeOpen}
+              aria-label={gui.workspace_tree}
+              onClick={onTree}
+              className="min-h-touch min-w-touch flex-none self-center text-muted-foreground"
+            >
+              <IconChevronRight
+                className={cn("transition-transform", treeOpen && "rotate-90")}
+              />
+            </Button>
+          )}
+          </div>
         );
       })}
     </div>

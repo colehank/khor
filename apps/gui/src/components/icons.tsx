@@ -351,12 +351,38 @@ export function IconChevronRight({ className }: IconProps) {
     is their drawing, at their stroke ratio, and this family has one
     (icons.tsx's head); what the button opens is said out loud by its
     name, which a screen reader gets and a hover gives. */
+/** A filled mark from outside the 16-canvas family: the shape comes
+    whole, in its own box, and takes the current colour. **Two icons
+    wear this and both were handed over as files** (2026-09-16:「VSCODE
+    的 icon 用这个…预览的 ICON 用这个」) — the VS Code logo, which is
+    somebody else's mark and not ours to redraw as strokes, and the
+    preview glyph the user picked. Everything else stays in `Mark`. */
+function Fill({
+  className,
+  box,
+  children,
+}: IconProps & { box: string; children: ReactNode }) {
+  return (
+    <svg
+      className={cn("size-4", className)}
+      viewBox={box}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** The VS Code logo, as the switch that opens a workspace in it.
+    Traced from the file the user handed over (svgrepo's copy of the
+    official mark); the two strokes it replaced said 「code」 in general
+    and the switch is about one editor in particular. */
 export function IconCode({ className }: IconProps) {
   return (
-    <Mark className={className}>
-      <path d="M5.5 4.5L2 8l3.5 3.5" />
-      <path d="M10.5 4.5L14 8l-3.5 3.5" />
-    </Mark>
+    <Fill className={className} box="0 0 32 32">
+      <path d="M30.865 3.448l-6.583-3.167c-0.766-0.37-1.677-0.214-2.276 0.385l-12.609 11.505-5.495-4.167c-0.51-0.391-1.229-0.359-1.703 0.073l-1.76 1.604c-0.583 0.526-0.583 1.443-0.005 1.969l4.766 4.349-4.766 4.349c-0.578 0.526-0.578 1.443 0.005 1.969l1.76 1.604c0.479 0.432 1.193 0.464 1.703 0.073l5.495-4.172 12.615 11.51c0.594 0.599 1.505 0.755 2.271 0.385l6.589-3.172c0.693-0.333 1.13-1.031 1.13-1.802v-21.495c0-0.766-0.443-1.469-1.135-1.802zM24.005 23.266l-9.573-7.266 9.573-7.266z" />
+    </Fill>
   );
 }
 
@@ -445,12 +471,15 @@ export function IconFile({ className }: IconProps) {
  * Two strokes in the 16 family: the almond, and the pupil that keeps it
  * from reading as a leaf.
  */
+/** 预览 — an eye inside a viewfinder's four corners, the file the user
+    handed over for the source/preview switch (its export metadata
+    stripped, its ink made the current colour). */
 export function IconEye({ className }: IconProps) {
   return (
-    <Mark className={className}>
-      <path d="M1.6 8S3.9 3.7 8 3.7 14.4 8 14.4 8 12.1 12.3 8 12.3 1.6 8 1.6 8Z" />
-      <circle cx="8" cy="8" r="1.9" />
-    </Mark>
+    <Fill className={className} box="0 0 1024 1024">
+      <path d="M703.956003 63.996a31.998 31.998 0 1 1 0-63.996h186.932316C964.419724 0 1023.936004 59.51628 1023.936004 133.047685V319.980001a31.998 31.998 0 1 1-63.996 0V133.047685C959.940004 94.906068 929.029936 63.996 890.888319 63.996H703.956003z m255.984001 624.792951a31.998 31.998 0 1 1 63.996 0v202.099368C1023.936004 964.419724 964.419724 1023.936004 890.888319 1023.936004h-126.328104a31.998 31.998 0 1 1 0-63.996h126.328104c38.141616 0 69.051684-30.910068 69.051685-69.051685v-202.099368zM335.147053 959.940004a31.998 31.998 0 1 1 0 63.996H133.047685A133.047685 133.047685 0 0 1 0 890.888319V703.956003a31.998 31.998 0 1 1 63.996 0v186.932316C63.996 929.029936 94.906068 959.940004 133.047685 959.940004h202.099368zM63.996 319.980001a31.998 31.998 0 0 1-63.996 0V133.047685C0 59.51628 59.51628 0 133.047685 0H319.980001a31.998 31.998 0 0 1 0 63.996H133.047685C94.906068 63.996 63.996 94.906068 63.996 133.047685V319.980001zM511.968002 671.958003c109.625148 0 211.634773-56.892444 308.332729-175.989001C723.602775 376.872445 621.59315 319.980001 511.968002 319.980001c-109.625148 0-211.634773 56.892444-308.332729 175.989001C300.333229 615.065558 402.342854 671.958003 511.968002 671.958003z m0 63.996c-130.615837 0-249.968377-66.55584-357.993625-199.667521a63.996 63.996 0 0 1 0-80.63496C261.999625 322.539841 381.352165 255.984001 511.968002 255.984001c130.615837 0 249.968377 66.55584 357.993625 199.667521a63.996 63.996 0 0 1 0 80.63496C761.936379 669.398163 642.583839 735.954003 511.968002 735.954003z" />
+      <path d="M511.968002 575.964002a79.995 79.995 0 1 0 0-159.99A79.995 79.995 0 0 0 511.968002 575.964002z m0 63.996a143.991001 143.991001 0 1 1 0-287.982001A143.991001 143.991001 0 0 1 511.968002 639.960002z" />
+    </Fill>
   );
 }
 

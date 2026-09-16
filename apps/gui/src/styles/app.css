@@ -180,6 +180,16 @@ input[type="search"]::-webkit-search-decoration {
   scrollbar-color: var(--scroll-thumb) transparent;
 }
 
+/* **The file's scroller wears the git overview ruler over its scrollbar**
+   (`FileView`'s `Ruler`, 2026-09-16:「可以透过滑动条颜色浮上来」), so its
+   thumb is a wash rather than a solid: a mark under the thumb still
+   reads through it, the way VS Code's slider sits over its decorations.
+   The track was already transparent above. Only this scroller — the
+   rest of the app keeps the thumb it measured. */
+[data-file-scroll] {
+  scrollbar-color: color-mix(in srgb, var(--scroll-thumb) 55%, transparent) transparent;
+}
+
 /* Two selectors because the two properties inherit differently:
    `scrollbar-color` inherits, so the root reaches every pane;
    `scrollbar-width` does not, so it has to be said everywhere. */

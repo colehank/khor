@@ -266,10 +266,14 @@ export function FileTree({
                       onClick={() => toggle(r.full)}
                       className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
                     >
+                      {/* **12 across, not 16** (2026-09-16:「树里的 > 按钮
+                          有点大了,占地方」), and the name with no
+                          trailing slash — 「目录后面不用带 /,> 已经表明
+                          了是目录」. */}
                       <IconChevronRight
-                        className={cn("flex-none transition-transform", on && "rotate-90")}
+                        className={cn("size-3 flex-none transition-transform", on && "rotate-90")}
                       />
-                      <span className="min-w-0 flex-1 truncate">{r.name}/</span>
+                      <span className="min-w-0 flex-1 truncate">{r.name}</span>
                       <Mark mark={mark} dir />
                     </button>
                   </RowMenu>
@@ -308,7 +312,13 @@ export function FileTree({
                           chevron: without it a file's name would start
                           16 to the left of its sibling directory's and
                           the level would stop reading as a level. */}
-                      <span className="size-4 flex-none" aria-hidden="true" />
+                      {/* **No spacer where the chevron would be**
+                          (2026-09-16:「非目录的文件要完全左对齐,也就是在
+                          > 的最左侧对齐,现在在 > 的最右侧对齐了,这会显得
+                          文件是目录的成员」). A file's name starts where
+                          its sibling directory's chevron starts; the
+                          level is still the level, because the indent
+                          per depth is the row's padding, not this. */}
                       <span data-file-name className="min-w-0 flex-1 truncate">
                         {r.name}
                       </span>

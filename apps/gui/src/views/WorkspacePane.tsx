@@ -25,7 +25,7 @@ import {
   type SessionRow,
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
-import { IconCode, IconEye, IconFile, IconFiles, IconSessions } from "@/components/icons";
+import { IconCode, IconEye, IconFile, IconSessions } from "@/components/icons";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
@@ -65,6 +65,7 @@ export function WorkspacePane({
   arrange,
   onNewSession,
   narrow,
+  treePane,
   listOpen,
 }: {
   machine: string;
@@ -124,6 +125,9 @@ export function WorkspacePane({
       so it owns this. */
   onNewSession: (machine: string, dir: string) => void;
   narrow: boolean;
+  /** The file tree's seam, owned by the shell so the list's chevron and
+      this pane fold the same column (`App`). */
+  treePane: ReturnType<typeof useListWidth>;
   /** Whether the workspace list is holding a column of its own. The
       fifth column's existence is what decides the sessions' default,
       and only the shell knows about it. */
@@ -202,14 +206,16 @@ export function WorkspacePane({
   // that brings it back, and a seam at width zero is a two-pixel strip.
   // **Both ways of putting a column away write the same `collapsed`**,
   // so they are one state with two gestures rather than two states.
-  const treePane = useListWidth(narrow, "ws-tree", "left", "[data-ws-tree]");
+  // The tree's seam arrives from the shell (`treePane`): its switch is
+  // on the workspace's own row in the list now, and that row is not
+  // this pane's to draw (2026-09-16). The sessions seam is still made
+  // here — nothing outside this pane folds it.
   const sidePane = useListWidth(narrow, "ws-sessions", "right", "[data-ws-sessions]");
   const tree = !treePane.collapsed;
   const sessions = !sidePane.collapsed;
   // **Said as a state, never as a flip** (工作区批⑨): the default below
   // is declared from an effect, and an effect that flips is an effect
   // that undoes itself the second time React runs it.
-  const setTree = treePane.show;
   const setSessions = sidePane.show;
   /** Which session this column is standing in, by id, or `null` for
       the list. **Dropped when the workspace changes** along with the
@@ -643,6 +649,23 @@ export function WorkspacePane({
     return () => window.removeEventListener("keydown", onKey);
   }, [file, codeAt, shut]);
 
+  // **`⌘B` folds and unfolds the tree** (VS Code's key for its side
+  // bar), and it is the one way back that no other fold can hide: the
+  // chevron that folds the tree sits on the list's row, and the list
+  // folds too (the rail's own icon), so with both away nothing on the
+  // glass restores the tree — the trap named when this was designed
+  // (2026-09-16). Live for as long as the workspace is, file or no file.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        treePane.toggle();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [treePane]);
+
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one
       has something typed in it — and `TabStrip` paints and decides
@@ -867,21 +890,13 @@ export function WorkspacePane({
                   <IconEye />
                 </Button>
               )}
-              <div data-ws-switches className="flex flex-none items-center gap-0.5">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={gui.workspace_tree}
-                  data-on={tree}
-                  onClick={() => setTree(!tree)}
-                  // The floor is worn here rather than by the variant:
-                  // an icon button is 30 square by default and a finger
-                  // needs `--touch` (tokens.css). Extended hit area,
-                  // same drawing.
-                  className={cn("min-h-touch min-w-touch", !tree && "text-muted-foreground")}
-                >
-                  <IconFiles />
-                </Button>
+                            {/* **Two switches now, not three** (2026-09-16). The tree's
+                  moved to the workspace's own row in the list — a
+                  chevron beside the name — and `⌘B` below folds it
+                  from anywhere, so the strip's end keeps only the two
+                  columns nothing else can reach: the sessions and the
+                  editor. */}
+<div data-ws-switches className="flex flex-none items-center gap-0.5">
                 <Button
                   variant="ghost"
                   size="icon"

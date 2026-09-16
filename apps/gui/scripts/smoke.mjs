@@ -7411,10 +7411,12 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
         );
       }
     }
-    if (painted.rulerPastBox !== null && painted.rulerPastBox < -1) {
+    // Over the scrollbar's strip, not beside it (2026-09-16 ruling; the
+    // `check-face` probe of the same name says why).
+    if (painted.rulerPastBox !== null && painted.rulerPastBox > 0) {
       throw new Error(
-        `the ruler starts ${-painted.rulerPastBox}px inside the file's own scroller — 「滑动条后方」 ` +
-          "means beside it, not over the text",
+        `the ruler is a column of its own, ${painted.rulerPastBox}px past the file's scroller — ` +
+          "it lies over the scrollbar's strip,「在滑动条的下方…透过滑动条颜色浮上来」",
       );
     }
 

@@ -1102,7 +1102,18 @@ export function FileView({
       //「右侧滑动条后方」). Inside, it would scroll along with the file
       // and stop being a map of the whole of it; outside and to the
       // right, it is past the scrollbar exactly as VS Code's is.
-      <div className="flex min-h-0 flex-1">
+      /* **The ruler lies over the scrollbar's own strip, not beside it**
+         (2026-09-16:「文件右侧的 git 状态导航条是在滑动条的下方的,可以
+         透过滑动条颜色浮上来」). The first cut put it past the scrollbar
+         as a column of its own, 14 wide with a border — a second bar
+         next to the bar. VS Code paints its marks *inside* the
+         scrollbar track under a translucent slider, so the strip is
+         one strip. Here the ruler is laid absolutely over the
+         scroller's right edge, the track is already transparent
+         (`app.css`), and the thumb over this scroller is thinned to
+         a wash so a mark under it still reads (`[data-file-scroll]`
+         in app.css). The wrapper is `relative` for that alone. */
+      <div className="relative flex min-h-0 flex-1">
       <div
         ref={box}
         // Named so a gate can ask **this** box whether anything scrolls
@@ -1442,7 +1453,13 @@ function Gutter({
     // knows how tall it is. It also makes the rule between the numbers
     // and the code run the whole way down instead of stopping where the
     // last hunk does.
-    <div data-gutter={hunks.length} className="relative w-3 shrink-0 self-stretch border-r">
+    // **4 wide, not 12** (2026-09-16:「左侧的 git 状态条细一点,占用太多
+    // 空间了。刚好适合点击就行」). VS Code's dirty-diff decoration is 3px;
+    // this is one more so a pointer lands on it without aiming, and
+    // nothing else — the column exists for the bar and takes the bar's
+    // width. The touch floor is waived for it in `check-face` for the
+    // reason written there.
+    <div data-gutter={hunks.length} className="relative w-1 shrink-0 self-stretch border-r">
       {hunks.map((h, i) => {
         const gone = h.lines === 0;
         // The line the hunk starts on, and the one after everything it
@@ -1602,7 +1619,13 @@ function Ruler({
     // caret the moment they saved.
     <div
       data-overview={hunks.length}
-      className="relative w-[var(--overview-ruler)] shrink-0 self-stretch border-l"
+      // Over the scroller's right edge, the width of its scrollbar, and
+      // **letting every press through except on a mark**: the column is
+      // the scrollbar's, a mark is the one thing here that is ours to
+      // press. Nothing of the strip is drawn — no border, no ground — so
+      // on a trackpad Mac, where the scrollbar is an overlay that fades,
+      // what stays is the marks alone, which is the VS Code picture.
+      className="pointer-events-none absolute inset-y-0 right-0 z-10 w-[var(--overview-ruler)]"
     >
       {span.total > 0 &&
         hunks.map((h, i) => {
@@ -1625,7 +1648,7 @@ function Ruler({
               // fact rather than a control a finger hunts for, and a
               // 44-tall mark would cover a fifth of the file.
               className={cn(
-                "absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs",
+                "pointer-events-auto absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs",
                 hunkInk(h),
               )}
               style={{

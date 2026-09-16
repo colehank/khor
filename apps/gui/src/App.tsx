@@ -350,6 +350,14 @@ export default function App() {
     else root.removeAttribute("data-narrow");
   }, [narrow]);
   const listPane = useListWidth(narrow);
+  /** The workspace's file tree, as a seam of its own — **held here
+      rather than in the pane**, because the control that folds it now
+      sits on the workspace's row in the list (2026-09-16:「再次点击工作
+      区 list 的某个,也是收起和展开该工作区的文件 list」, landed as a
+      chevron on the open row after the two-meanings trap was talked
+      through), and the list and the pane are siblings: the one thing
+      both can reach is this. */
+  const treePane = useListWidth(narrow, "ws-tree", "left", "[data-ws-tree]");
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
@@ -976,7 +984,14 @@ export default function App() {
             setLanding(l.key);
             setScreen("list");
             setSwitchingTabs(false);
-            if (again && !narrow && (l.key === "sessions" || l.key === "devices")) {
+            // …and workspaces since 2026-09-16 (「再次点击侧边栏工作区
+            // icon,是收起工作区。这点一直没有实现」): it was left out
+            // of this pair for no reason anybody wrote down.
+            if (
+              again &&
+              !narrow &&
+              (l.key === "sessions" || l.key === "devices" || l.key === "workspaces")
+            ) {
               listPane.toggle();
             } else {
               // Choosing a landing reopens a collapsed list: the rail is
@@ -1243,6 +1258,11 @@ export default function App() {
             devices={devices}
             reloadAt={wsAdded}
             selected={openWs}
+            // The chevron on the open row. **Not on the narrow face**:
+            // there the list is a screen and the tree the next one, so
+            // there is no column to fold.
+            treeOpen={!treePane.collapsed}
+            onTree={narrow ? undefined : () => treePane.toggle()}
             onOpen={(r) => {
               // **The id stands in where there is no name.** A row whose
               // machine has left the device table carries an empty
@@ -1340,6 +1360,7 @@ export default function App() {
         // into the next one would show somebody a path that is not
         // under the project they just opened.
         key={`${openWs.device} ${openWs.path}`}
+        treePane={treePane}
         machine={openWs.machine}
         device={openWs.device}
         // **Compared by channel, never by the name on the glass**: the
