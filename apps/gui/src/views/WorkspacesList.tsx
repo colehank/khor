@@ -228,14 +228,24 @@ export function WorkspacesList({
         const changed = git ? git.rows.length : 0;
         return (
           <RowMenu key={k} items={actions(r)}>
+            {/* **The open one is marked the way an open session is**
+                (「一个工作区被选中了没有任何状态」— the user,
+                2026-09-16). It wore `bg-card` until then, which is the
+                ground this whole pane already stands on (`App`'s
+                `data-list`) — a selected state painted in the colour of
+                the thing behind it is no selected state at all, and
+                nothing on the glass said which row the middle column
+                belongs to. `bg-accent` is what `SessionsList` marks its
+                own front row with; one gesture, one look. */}
             <button
               data-ws-row
               data-ws-pinned={r.pinned}
+              data-selected={isOpen}
               type="button"
               onClick={() => onOpen(r)}
               className={cn(
                 "flex min-h-touch w-full flex-col items-start gap-0.5 border-b border-border/50 px-3 py-2.5 text-left",
-                isOpen && "bg-card",
+                isOpen && "bg-accent hover:bg-accent",
               )}
             >
               <span className="flex w-full items-center gap-1.5">
@@ -243,7 +253,18 @@ export function WorkspacesList({
                   face={devices.find((d) => d.id === r.device)?.face ?? null}
                   className="size-kind-mark flex-none"
                 />
-                <span data-ws-name className="truncate text-fact font-title text-foreground">
+                {/* **The name gives way last** (「list 宽度折叠的时候,
+                    优先折叠 branch 名,保留工作区名」— the user,
+                    2026-09-16). Ordinary flex shrinking here, arranged
+                    so the deficit has only one place to go: the branch
+                    beside it starts at a base of zero (`flex-1`), so
+                    the width it draws is whatever is left over and it
+                    absorbs nothing when the row gets narrower. This one
+                    keeps its natural base and `min-w-0`, so it is the
+                    only item that can shrink — and it only starts to
+                    once the branch has already given up everything it
+                    had. */}
+                <span data-ws-name className="min-w-0 truncate text-fact font-title text-foreground">
                   {r.name}
                 </span>
                 {/* **The branch, or nothing at all.** A directory that
@@ -253,9 +274,18 @@ export function WorkspacesList({
                     is the rule for all three. The corner keeps its
                     anchor so the absence is a readable fact rather than
                     a missing element. */}
+                {/* **`flex-1` where this was `ml-auto shrink-0`.** A
+                    base of zero that grows into the leftover is the
+                    same right-hand corner on a wide row, and on a
+                    narrow one it is the half that folds: it takes what
+                    the name did not want and truncates inside it, down
+                    to nothing. `text-right` is what `ml-auto` was doing
+                    before — the box now reaches all the way across, so
+                    the corner is where the text sits rather than where
+                    the box starts. */}
                 <span
                   data-ws-git
-                  className="ml-auto shrink-0 truncate text-aux text-muted-foreground"
+                  className="min-w-0 flex-1 truncate text-right text-aux text-muted-foreground"
                 >
                   {git && git.branch !== ""
                     ? changed > 0

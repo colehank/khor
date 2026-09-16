@@ -4921,6 +4921,175 @@ try {
     await page.unroute("**/git_diff", colDiff);
   }
 
+  // ── 4o) 工作区的一行: 选中看得见, 窄了先折分支 ─────────────────────
+  //
+  // 「一个工作区被选中了没有任何状态。」「list 宽度折叠的时候,优先折叠
+  // branch 名,保留工作区名。」— the user, 2026-09-16.
+  //
+  // Claims:
+  //   i. the row the middle column belongs to is **marked**, exactly
+  //      one of them is, and the mark is a colour that differs from
+  //      what every other row stands on — it was `bg-card` until this
+  //      batch, which is the ground this whole pane already has, so
+  //      「selected」 was drawn in the colour of the thing behind it;
+  //  ii. when the name and the branch cannot both fit, the **branch**
+  //      is what gets cut. The name is the row's identity; the branch
+  //      is a corner, and a row that says 「frontier/evolving-gra…」
+  //      beside a whole branch name has thrown away the half a person
+  //      is scanning for.
+  {
+    // A row of this section's own: a name long enough that it and a
+    // branch cannot share one list column, and short enough to fit
+    // there alone. **Both halves matter** — a name that overflowed by
+    // itself would make claim ii unfalsifiable in the other direction,
+    // because then something has to be cut whatever the rule is.
+    const wide = {
+      device: "a".repeat(64),
+      machine: "peer",
+      path: "/home/peer/evolving-graph-frontier",
+      name: "evolving-graph-frontier",
+      pinned: false,
+    };
+    const wideList = (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify([...wsRows, wide]) });
+    // …and a branch long enough to want the room. Only for that path;
+    // every other row falls through to the fixture the rest of this
+    // file set up.
+    const wideGit = (r) => {
+      const body = r.request().postDataJSON() ?? {};
+      if ((body.dir ?? "") !== wide.path) return r.fallback();
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ branch: "feature/evolving-graph-frontier", rows: [], more: false }),
+      });
+    };
+    await page.route("**/workspaces", wideList);
+    await page.route("**/git_status", wideGit);
+    await press(rail("workspaces"));
+    // The list re-reads when the window comes back, which is the one
+    // trigger it has that this script can pull (`WorkspacesList`).
+    await hide(true);
+    await wait(80);
+    await hide(false);
+    const listed = await until(8_000, async () =>
+      (await page.locator(`[data-ws-row] [data-ws-name]`).allInnerTexts()).includes(wide.name),
+    );
+    if (!listed) {
+      fail("probe dead: the long-named workspace never reached the list (scripts/check-face.mjs fixture)");
+    } else {
+      // i) open one, and look at what the list says about which.
+      await press("[data-ws-row]");
+      const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip]").count()) === 1);
+      const marked = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll("[data-ws-row]")];
+        const on = rows.filter((r) => r.getAttribute("data-selected") === "true");
+        const off = rows.filter((r) => r.getAttribute("data-selected") !== "true");
+        const ground = (el) => (el === undefined ? null : getComputedStyle(el).backgroundColor);
+        return {
+          rows: rows.length,
+          on: on.length,
+          onGround: ground(on[0]),
+          offGround: ground(off[0]),
+          pane: ground(document.querySelector("[data-list]") ?? undefined),
+        };
+      });
+      console.log(`ws selected: ${JSON.stringify(marked)}`);
+      if (!opened || marked.rows === 0) {
+        fail("probe dead: no workspace rows to read a selected state off (src/views/WorkspacesList.tsx)");
+      } else {
+        if (marked.on !== 1) {
+          fail(
+            `${marked.on} of ${marked.rows} workspace row(s) are marked as the open one — 「一个工作区` +
+              "被选中了没有任何状态」, and exactly one column is open at a time " +
+              "(src/views/WorkspacesList.tsx)",
+          );
+        }
+        if (marked.onGround === marked.offGround) {
+          fail(
+            `the open row stands on ${marked.onGround} and so does every other row — that is no mark ` +
+              "at all (src/views/WorkspacesList.tsx)",
+          );
+        }
+        if (marked.onGround === marked.pane) {
+          fail(
+            `the open row is painted ${marked.onGround}, which is the ground the whole pane already ` +
+              "stands on — a selected state in the colour of the thing behind it (src/views/WorkspacesList.tsx)",
+          );
+        }
+      }
+      // ii) the two corners, on the long row.
+      const corners = await page.evaluate((name) => {
+        const row = [...document.querySelectorAll("[data-ws-row]")].find(
+          (r) => r.querySelector("[data-ws-name]")?.textContent?.trim() === name,
+        );
+        if (row === undefined) return null;
+        const cut = (sel) => {
+          const el = row.querySelector(sel);
+          if (el === null) return null;
+          return {
+            said: el.textContent.trim(),
+            // What it would need against what it was given: the one
+            // reading that says 「this text is not all there」 whether
+            // the ellipsis is drawn by `text-overflow` or by nothing at
+            // all.
+            wants: Math.round(el.scrollWidth * 10) / 10,
+            has: Math.round(el.getBoundingClientRect().width * 10) / 10,
+          };
+        };
+        return {
+          row: Math.round(row.getBoundingClientRect().width * 10) / 10,
+          name: cut("[data-ws-name]"),
+          git: cut("[data-ws-git]"),
+          where: cut("[data-ws-where]"),
+          touched: cut("[data-ws-touched]"),
+        };
+      }, wide.name);
+      console.log(`ws corners: ${JSON.stringify(corners)}`);
+      if (corners === null || corners.name === null || corners.git === null) {
+        fail("probe dead: the long row has no name or no git corner to measure (src/views/WorkspacesList.tsx)");
+      } else {
+        // **The arm is 「neither corner had to give way」, never 「the
+        // branch was not cut」.** The first spelling gated the claim on
+        // the branch having been cut — and 「the branch kept its room
+        // and the name lost instead」 is exactly the failure being
+        // looked for, so the wrong rule reported it as a dead probe (a
+        // sentence about this file) rather than as the row being wrong.
+        // 批⑨ wrote the same lesson down about `onDrop`: when the gate
+        // and the claim are about one thing, the gate has to be widened
+        // until it is about the other.
+        const nameCut = corners.name.wants > corners.name.has + 1;
+        const gitCut = corners.git.wants > corners.git.has + 1;
+        if (!nameCut && !gitCut) {
+          fail(
+            `probe void: the name 「${corners.name.said}」 and the branch 「${corners.git.said}」 both ` +
+              `fit in the ${corners.row} this row was given, so neither corner had to give way ` +
+              "(widen the fixture or narrow the list)",
+          );
+        }
+        if (nameCut) {
+          fail(
+            `the name wanted ${corners.name.wants} and got ${corners.name.has} while the branch ` +
+              `「${corners.git.said}」 was given ${corners.git.has} of the ${corners.git.wants} it ` +
+              "wanted — 「优先折叠 branch 名,保留工作区名」: the branch gives way to nothing before " +
+              "the name loses a character (src/views/WorkspacesList.tsx)",
+          );
+        }
+        // The second line holds the same shape the other way round: the
+        // path may be cut, the time may not — an 「ago」 with its tail
+        // missing is a different amount of time.
+        if (corners.touched !== null && corners.touched.wants > corners.touched.has + 1) {
+          fail(
+            `「${corners.touched.said}」 was cut from ${corners.touched.wants} to ${corners.touched.has} ` +
+              "— a shortened 上次改动 reads as a different length of time, so it is the path beside " +
+              "it that folds (src/views/WorkspacesList.tsx)",
+          );
+        }
+      }
+    }
+    await page.unroute("**/git_status", wideGit);
+    await page.unroute("**/workspaces", wideList);
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**
