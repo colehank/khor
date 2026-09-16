@@ -9,7 +9,9 @@ import {
   closeSession,
   forgetDevice,
   markSeen,
+  onQuitRequested,
   pinDevice,
+  quitNow,
   pinSession,
   uninstallHooks,
   wsAdd,
@@ -27,6 +29,7 @@ import {
   IconQuota,
   IconSessions,
 } from "@/components/icons";
+import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
@@ -63,6 +66,7 @@ import {
   storedArrange,
   storedWords,
 } from "@/lib/session-filter";
+import { draftCount, watchDrafts } from "@/lib/drafts";
 import { cn } from "@/lib/utils";
 import { groupLabel, placeLabels } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -349,6 +353,50 @@ export default function App() {
     if (narrow) root.setAttribute("data-narrow", "");
     else root.removeAttribute("data-narrow");
   }, [narrow]);
+  // 退出时还有草稿要拦 (工作区第五轮 第 39 条). Two roads, one
+  // condition, and the condition is `lib/drafts`'s register.
+  //
+  // **The app's road prevents the close and puts a sheet up.** Tauri
+  // stops the window as soon as this page is listening at all
+  // (`onQuitRequested`), so the listener is installed for the life of
+  // the app and always answers — a listener that came and went is a
+  // window that sometimes cannot be closed.
+  //
+  // **The browser's road is `beforeunload` and it is not the same
+  // thing.** A page cannot put its own dialog in front of a tab
+  // closing; all it can do is ask the browser to ask, in the browser's
+  // own words, which is the whole of what the web gives. So there is no
+  // sheet there and the wording is not khor's — what the two share is
+  // the condition and nothing else.
+  const [quitting, setQuitting] = useState<number | null>(null);
+  useEffect(() => {
+    const stop = onQuitRequested(() => {
+      const n = draftCount();
+      if (n === 0) return false;
+      setQuitting(n);
+      return true;
+    });
+    const leaving = (e: BeforeUnloadEvent) => {
+      if (draftCount() === 0) return;
+      e.preventDefault();
+      // Deprecated and still required: some engines only ask when this
+      // is set, and the string is never shown by any of them.
+      e.returnValue = gui.file_unsaved;
+    };
+    window.addEventListener("beforeunload", leaving);
+    return () => {
+      stop();
+      window.removeEventListener("beforeunload", leaving);
+    };
+  }, []);
+  // The sheet on screen counts again while it is up, so saving the last
+  // draft from behind it takes it down rather than leaving a stale
+  // number in front of somebody.
+  useEffect(() => {
+    if (quitting === null) return;
+    return watchDrafts((n) => setQuitting(n === 0 ? null : n));
+  }, [quitting]);
+
   const listPane = useListWidth(narrow);
   /** The workspace's file tree, as a seam of its own — **held here
       rather than in the pane**, because the control that folds it now
@@ -1469,6 +1517,19 @@ export default function App() {
 
   const sheets = (
     <>
+      {/* 退出时还有草稿 (ruling 39). The app's half — a browser is
+          asked by `beforeunload` in its own words and never sees this.
+          No 存 button: `CloseDraftDialog`'s head says why. */}
+      <CloseDraftDialog
+        name={null}
+        quitting={quitting ?? undefined}
+        onSave={() => undefined}
+        onDrop={() => {
+          setQuitting(null);
+          quitNow();
+        }}
+        onKeep={() => setQuitting(null)}
+      />
       <NewSessionDialog
         open={sheet === "new"}
         onOpenChange={(o) => setSheet(o ? "new" : null)}
