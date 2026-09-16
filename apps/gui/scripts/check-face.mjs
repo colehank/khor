@@ -92,7 +92,16 @@ try {
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const thrown = [];
-  page.on("pageerror", (e) => thrown.push(String(e)));
+  // **Printed where it happened, not only counted at the end.** A throw
+  // inside a view unmounts everything under it, so what a person reading
+  // this log sees is every stop after it saying 「probe dead」 — six
+  // sentences about a walk that is fine and none about the one line that
+  // broke. The tally at the foot is still the gate; this is the address
+  // (2026-09-17, after a batch spent twenty minutes on exactly that).
+  page.on("pageerror", (e) => {
+    thrown.push(String(e));
+    console.log(`page threw: ${String(e).split("\n")[0]}`);
+  });
 
   // Session rows and devices, so a title and a reading exist to measure.
   // Hand-shaped from the bindings (see the file head for why drift here
@@ -161,7 +170,14 @@ try {
   const rows = [
     row(0, "idle"),
     row(1, "blocked"),
-    wsRow(2, "idle", "/home/peer/work", "tui", "最近说的一句", "peer"),
+    // **A `gui` session, so this project has a conversation in it.**
+    // It was `tui` until 2026-09-17; 第 35 条 is about the words an agent
+    // writes, and a terminal session draws a terminal (`DetailPane`'s
+    // per-kind faces), so the column had no prose in it at all to find a
+    // path in. The rows around it keep their kinds — 4h's claim is about
+    // **which** sessions belong to a workspace, and that is the place
+    // and the machine, never the kind.
+    wsRow(2, "idle", "/home/peer/work", "gui", "最近说的一句", "peer"),
     // A shell session is one of the five-question rows like any other,
     // drawn by the same component and not by a branch of its own.
     wsRow(3, "busy", "/home/peer/work/src", "shell", "在跑", "peer"),
@@ -1174,6 +1190,12 @@ try {
           // so `target` arrives whole rather than as its contents.
           { path: "debug.log", mark: "!" },
           { path: "target", mark: "!" },
+          // **Whatever this run made is untracked**, which is the whole
+          // of what 第 36 条 asks the tree to paint on a new file: git
+          // has never seen it, so it wears `U`.
+          ...made
+            .filter((m) => m.kind === "touch" && m.path.startsWith(`${body.dir ?? ""}/`))
+            .map((m) => ({ path: m.path.slice((body.dir ?? "").length + 1), mark: "U" })),
         ],
         more: false,
       }),
@@ -1303,6 +1325,55 @@ try {
     removed.push({ machine: body.machine ?? "", path: body.path ?? "" });
     return r.fulfill({ contentType: "application/json", body: "null" });
   });
+  // 新建 / 改名 / 打开 (工作区第五轮 第 35、36 条). Each remembers what
+  // it was asked, because what these probes are about is 「the face
+  // asked the right machine about the right path」 — a tree that redrew
+  // says nothing about which call went out, and the refusal branch has
+  // to be reachable without a second fixture file.
+  const made = [];
+  let makeRefuses = null;
+  const makeRoute = (kind) => (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    if (makeRefuses !== null) {
+      const why = makeRefuses;
+      makeRefuses = null;
+      return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(why) });
+    }
+    made.push({ kind, machine: body.machine ?? "", path: body.path ?? "" });
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  };
+  await page.route("**/mkdir", makeRoute("mkdir"));
+  await page.route("**/touch", makeRoute("touch"));
+  const renamed = [];
+  let renameRefuses = null;
+  await page.route("**/rename_path", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    if (renameRefuses !== null) {
+      const why = renameRefuses;
+      renameRefuses = null;
+      return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(why) });
+    }
+    renamed.push({ machine: body.machine ?? "", from: body.from ?? "", to: body.to ?? "" });
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
+  // **The opener, counted and never run.** What 第 35 条 promises is
+  // that khor asks *that machine* to open it; a fixture that opened
+  // anything would be this gate putting a window on somebody's screen.
+  const launched = [];
+  await page.route("**/launch", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    launched.push({ machine: body.machine ?? "", target: body.target ?? "" });
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
+  // The other opener — this machine's, the one `open_link` is. Counted
+  // beside the one above so 第 35 条's claim can be made as a pair:
+  // inside a workspace it is the **host** that opens a link, and the
+  // proof that says so has to be able to see both roads.
+  const opened = [];
+  await page.route("**/open_link", (r) => {
+    opened.push((r.request().postDataJSON() ?? {}).url ?? "");
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
   // This machine has a recycle bin, so the local sentence is the
   // reversible one and the tick is offered beside it. A face that read
   // the platform off the browser instead would never consult this.
@@ -1331,11 +1402,38 @@ try {
   await page.route("**/ls", (r) => {
     const body = r.request().postDataJSON() ?? {};
     askedLs.push({ machine: body.machine ?? "", path: body.path ?? "" });
+    const at = body.path === "" || body.path === undefined ? pin.path : body.path;
+    // **What was made shows up in the listing** (工作区第五轮 第 36 条).
+    // The tree does not guess a row into place — it asks again — so a
+    // fixture that answered the same eight names forever would make
+    // 「the row appears」 unfalsifiable. Renames move a name here for the
+    // same reason.
+    const extra = made
+      .filter((m) => m.path.slice(0, m.path.lastIndexOf("/")) === at)
+      .map((m) => ({
+        name: m.path.slice(m.path.lastIndexOf("/") + 1),
+        dir: m.kind === "mkdir",
+        size: 0,
+        at_ms: Date.now(),
+      }));
+    const gone = new Set(
+      renamed.filter((m) => m.from.slice(0, m.from.lastIndexOf("/")) === at).map((m) => m.from.slice(m.from.lastIndexOf("/") + 1)),
+    );
+    const moved = renamed
+      .filter((m) => m.to.slice(0, m.to.lastIndexOf("/")) === at)
+      .map((m) => ({
+        name: m.to.slice(m.to.lastIndexOf("/") + 1),
+        dir: false,
+        size: 0,
+        at_ms: Date.now(),
+      }));
     return r.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        path: body.path === "" || body.path === undefined ? pin.path : body.path,
+        path: at,
         entries: [
+          ...extra,
+          ...moved,
           { name: "src", dir: true, size: 0, at_ms: Date.now() },
           { name: "notes.md", dir: false, size: 1234, at_ms: Date.now() },
           // One of each road (工作区批6): a document and a picture.
@@ -1357,8 +1455,54 @@ try {
           // the name's ink, which is what 4k′ measures.
           { name: "debug.log", dir: false, size: 120, at_ms: Date.now() },
           { name: "target", dir: true, size: 0, at_ms: Date.now() },
-        ],
+        ].filter((e) => !gone.has(e.name)),
         truncated: false,
+      }),
+    });
+  });
+  // 会话里的一条消息 (工作区第五轮 第 35 条). One agent turn holding
+  // exactly what the ruling names: a path into this project with a line
+  // number on it, an address, and — the control — a path that looks
+  // like one and is **not in the listing**, which must stay prose.
+  const CHAT_SAID =
+    // **A space after the address on purpose.** `remark-gfm`'s autolink
+    // runs to the next whitespace, so a Chinese comma glued to the end
+    // of a URL becomes part of the URL — true of every link in every
+    // conversation and not this ruling's business, but a fixture that
+    // did it would put a percent-encoded 另外 in this gate's own log.
+    "看 src/one.rs:3 那一段,还有 https://example.test/x 。另外 src/ghost.rs 不在树里";
+  await page.route("**/chat_open", (r) =>
+    r.fulfill({ contentType: "application/json", body: "true" }),
+  );
+  await page.route("**/chat_leave", (r) =>
+    r.fulfill({ contentType: "application/json", body: "null" }),
+  );
+  await page.route("**/chat_replay", (r) =>
+    r.fulfill({ contentType: "application/json", body: "null" }),
+  );
+  await page.route("**/chat_poll", (r) => {
+    const since = (r.request().postDataJSON() ?? {}).since ?? 0;
+    return r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        frames:
+          since > 0
+            ? []
+            : [
+                {
+                  kind: "history",
+                  update: {
+                    update: {
+                      sessionUpdate: "agent_message_chunk",
+                      content: { type: "text", text: CHAT_SAID },
+                    },
+                  },
+                },
+                { kind: "history_end" },
+              ],
+        next: 1,
+        gone: false,
+        lost: false,
       }),
     });
   });
@@ -2047,6 +2191,23 @@ try {
   // probe below asserts the reading works at all rather than trusting a
   // zero.
   const BARE_PRESSES = {
+    "data-overview": [
+      "src/views/FileView.tsx",
+      "the overview ruler's own strip, pressable since 2026-09-17 (工作区第五轮 " +
+        "第 40 条: 「概览尺整条可点」). **Not a control, a surface**: it is the " +
+        "file end to end, and pressing a place on it means going to that place " +
+        "— the same thing dragging the scrollbar beneath it means, which is why " +
+        "it wears no cursor change and no focus ring. Made a `<button>` it " +
+        "would be a 12×900 target that fails the finger floor anyway, and made " +
+        "a `role=\"slider\"` it would promise arrow keys over a strip whose " +
+        "whole content is the file the arrow keys already move. **What it does " +
+        "not buy:** a keyboard, and a finger. Both already have the thing this " +
+        "does — scrolling — so nothing is reachable only through it; the marks " +
+        "inside it are real `<button>`s and section 3 measures those. **It is " +
+        "not「no problem」**: a touch reader cannot jump across a long file in " +
+        "one gesture, and the answer to that is a way of naming a place " +
+        "(an outline, a go-to-line), not a fatter strip.",
+    ],
     "data-omnibox": [
       "src/components/Omnibox.tsx",
       "a forwarder, not a target: the handler fires only for " +
@@ -2164,10 +2325,35 @@ try {
         "mark does is scroll the file to that place, and scrolling the " +
         "file is a thing the file already does — nothing is reachable only " +
         "through a mark. **It is still not「no problem」** — a touch reader " +
-        "sees where the changes are and cannot jump to one, and the answer " +
-        "to that is a press anywhere on the ruler mapped to a place in the " +
-        "file (which is what VS Code's ruler actually does), not a fatter " +
-        "mark.",
+        "sees where the changes are and cannot jump to one. **Half of that " +
+        "was answered on 2026-09-17** (工作区第五轮 第 40 条): a press " +
+        "anywhere on the strip now maps to a place in the file, which is a " +
+        "44-tall target at every point of it and is what VS Code's ruler " +
+        "does. What is still only reachable through a mark is 「open the " +
+        "change that is *there*」, and the answer to that remains a wider " +
+        "way in rather than a fatter mark.",
+    ],
+    "data-git-mark": [
+      "src/views/fileRow.tsx",
+      "git's own letter beside a name in the tree, pressable since " +
+        "2026-09-17 (工作区第五轮 第 38 条: 「点 M 看整文件对 HEAD 的 " +
+        "diff」). **Under the floor because it is one character in a " +
+        "28-tall row**, and both halves of that are the information's own " +
+        "size: the row is a line of a file tree (`--tree-row`, and " +
+        "`data-file` beside it is excused for the same reason), and the " +
+        "letter is what git itself calls the file — M, A, D, U — which is " +
+        "one glyph or it is not git's letter any more. Growing it to 44 " +
+        "grows the row, and a tree whose rows are 44 tall shows a third as " +
+        "much of the project. WCAG 2.5.5's Essential carve-out in its " +
+        "literal form. **What it does not buy:** a finger. On a touch " +
+        "screen this letter is read, not pressed. It is additive rather " +
+        "than a hole — the diff it opens is one press away as text, since " +
+        "the file's own tab carries the gutter and the ruler, both of " +
+        "which say where the changes are — so nothing is reachable only " +
+        "through it. **It is still not「no problem」**: a touch reader " +
+        "cannot ask for the whole-file comparison at all, and the answer " +
+        "to that is the letter's row growing a menu item, not a fatter " +
+        "letter.",
     ],
     "data-ws-seam": [
       "src/views/WorkspacePane.tsx",
@@ -2699,6 +2885,8 @@ try {
       // …and the lines it is about are still on the sheet, below it —
       // the old panel's sin was hiding however many it was tall.
       lineTop: line === null ? null : round(line.getBoundingClientRect().top),
+      lineBottom: line === null ? null : round(line.getBoundingClientRect().bottom),
+      peekTop: peek === null ? null : round(peek.getBoundingClientRect().top),
       peekBottom: peek === null ? null : round(peek.getBoundingClientRect().bottom),
       // How much of the file the block is standing on. In the flow the
       // honest answer is none: it pushed the lines down rather than
@@ -2736,10 +2924,22 @@ try {
       }
       if (walk.lineTop === null || walk.peekBottom === null) {
         fail(`probe void: line ${walk.at} is not on the sheet to place the block against`);
-      } else if (walk.peekBottom > walk.lineTop + 1) {
+      } else if (
+        walk.peekBottom > walk.lineTop + 1 &&
+        walk.peekTop < (walk.lineBottom ?? Infinity) - 1
+      ) {
+        // **Above where there is room, below where there is not.**
+        // Above is the arrangement; but 工作区第五轮 第 41 条 took the
+        // block out of the flow, so it can no longer push anything down
+        // to make room — and this stop's hunk is at line 1, which has
+        // nothing above it at all. What must never happen either way is
+        // the block standing on the line it is being compared against
+        // (the assertion below), and that is what tells 「below」 apart
+        // from 「over」.
         fail(
-          `the old text runs to ${walk.peekBottom} where the line it replaced starts at ${walk.lineTop} ` +
-            "— it sits above those lines, never over them (src/views/FileView.tsx Peek)",
+          `the old text runs ${walk.peekTop}–${walk.peekBottom} across the line it replaced ` +
+            `(${walk.lineTop}–${walk.lineBottom}) — above it where there is room, below it where ` +
+            "there is not, never over it (src/views/FileView.tsx Peek)",
         );
       }
       if (walk.covered !== null && walk.covered > 1) {
@@ -6201,7 +6401,12 @@ try {
   //   v. pressing it again closes it, and so does Esc;
   //  vi. the overview ruler sits past the scrollbar, carries one mark
   //      per hunk at the height that hunk is at in the file, and
-  //      pressing one scrolls that hunk onto the screen.
+  //      pressing one scrolls that hunk onto the screen;
+  // vii. (工作区第五轮 第 41 条) the block **floats**: opening it moves
+  //      no line of the file, and the editor stays on the glass, so a
+  //      person can read what HEAD had and keep typing;
+  // viii. (第 40 条) a press on the bare ruler is a place in the file,
+  //      not a press that falls through to the scrollbar.
   {
     // **This section's own file, long enough to scroll.** Every other
     // fixture in this file is three or four lines, in which「the ruler
@@ -6440,8 +6645,11 @@ try {
           // column silently sliding by the peek's own height.
           num149: top('[data-num="149"]'),
           num150: top('[data-num="150"]'),
-          // The peeked lines must carry no number of their own.
-          blanks: [...document.querySelectorAll("[data-num-peek]")].map((e) => e.textContent.trim()),
+          // **No spacer at all any more** (工作区第五轮 第 41 条): the
+          // block floats over the text, so the numbers column has
+          // nothing to wait out and the hole it used to leave would be
+          // a gap beside nothing.
+          blanks: document.querySelectorAll("[data-num-peek]").length,
           // …and there is no panel under the file any more.
           panel: document.querySelectorAll("[data-was]").length,
         };
@@ -6464,11 +6672,10 @@ try {
         }
         if (laid.before === null || laid.after === null) {
           fail("probe void: lines 149 and 150 are not both on the sheet to bracket the peek with");
-        } else if (!(laid.peekTop > laid.before && laid.peekBottom <= laid.after + 1)) {
+        } else if (Math.abs(laid.peekBottom - laid.after) > 1.5) {
           fail(
-            `the removed lines sit at ${laid.peekTop}–${laid.peekBottom} while line 149 is at ` +
-              `${laid.before} and line 150 at ${laid.after} — they belong directly above the lines ` +
-              "that replaced them (src/views/FileView.tsx Peek)",
+            `the removed lines end at ${laid.peekBottom} while line 150 starts at ${laid.after} — they ` +
+              "hang off the top edge of the line that replaced them (src/views/FileView.tsx Peek)",
           );
         }
         for (const [n, line, num] of [[149, laid.before, laid.num149], [150, laid.after, laid.num150]]) {
@@ -6482,11 +6689,10 @@ try {
             );
           }
         }
-        if (laid.blanks.length !== 1 || laid.blanks[0] !== "") {
+        if (laid.blanks !== 0) {
           fail(
-            `the peek's own rows carry ${JSON.stringify(laid.blanks)} in the number column — the old ` +
-              "lines are not lines of this file, and numbering them would say they were " +
-              "(src/views/FileView.tsx)",
+            `the numbers column still leaves ${laid.blanks} hole(s) for the peek — the block floats ` +
+              "over the text now and pushes nothing down (src/views/FileView.tsx)",
           );
         }
       }
@@ -6553,18 +6759,89 @@ try {
       if (!escaped) {
         fail("Esc did not close the open hunk (src/views/FileView.tsx)");
       }
-      // …and the file is editable again once it is shut. **This is the
-      // price of 就地显示 said out loud**: a textarea is one box holding
-      // one string, so nothing can be laid into it, and the editor steps
-      // off the glass while the old text is in the flow. What must not
-      // happen is it failing to come back.
       const editable = await until(3_000, async () => (await page.locator("[data-edit]").count()) === 1);
       if (!editable) {
         fail(
-          "the editor did not come back when the old text was closed — it steps off while a peek is " +
-            "open, and a file that stays read-only afterwards is a file nobody can save " +
+          "the editor is not on the file — nothing below can be measured about typing " +
             "(src/views/FileView.tsx Sheet edit)",
         );
+      }
+      // vii) **开着 peek 也能打字** (工作区第五轮 第 41 条).
+      //
+      // The old arrangement put the block in the sheet's flow, which
+      // pushed every line below it down — and a textarea is one box
+      // holding one string, so it could not be pushed in the middle.
+      // The two fell out of register, and the answer was to take the
+      // editor off the glass while a peek was open. Out of the flow
+      // nothing moves, so both claims are one measurement: the lines
+      // stay where they were, and the caret is still there.
+      {
+        const where = async () =>
+          page.evaluate(() => {
+            const round = (n) => Math.round(n * 10) / 10;
+            const at = (sel) => {
+              const el = document.querySelector(sel);
+              return el === null ? null : round(el.getBoundingClientRect().top);
+            };
+            return {
+              l149: at('[data-sheet] [data-line="149"]'),
+              l150: at('[data-sheet] [data-line="150"]'),
+              l151: at('[data-sheet] [data-line="151"]'),
+              edit: document.querySelectorAll("[data-edit]").length,
+            };
+          });
+        const shut0 = await where();
+        await press('[data-gutter] [data-hunk="150"]');
+        await until(3_000, async () => (await page.locator("[data-peek]").count()) === 1);
+        await wait(250);
+        const open0 = await where();
+        console.log(`peek open · lines: ${JSON.stringify(shut0)} → ${JSON.stringify(open0)}`);
+        for (const n of ["l149", "l150", "l151"]) {
+          if (shut0[n] === null || open0[n] === null) {
+            fail(`probe void: line ${n.slice(1)} is not on the sheet on both sides of the press`);
+          } else if (Math.abs(shut0[n] - open0[n]) > 1) {
+            fail(
+              `opening the old text moved line ${n.slice(1)} from ${shut0[n]} to ${open0[n]} — the ` +
+                "block floats over the file rather than taking a row of it " +
+                "(src/views/FileView.tsx Peek)",
+            );
+          }
+        }
+        if (open0.edit !== 1) {
+          fail(
+            "the editor left the file while the old text was open — 「peek 开着时能打字」 " +
+              "(src/views/FileView.tsx Sheet edit)",
+          );
+        } else {
+          const typed = await page.evaluate(() => {
+            const box = document.querySelector("[data-edit]");
+            if (box === null) return null;
+            const was = box.value.length;
+            box.focus();
+            return { was, focused: document.activeElement === box };
+          });
+          await page.keyboard.type("Q");
+          await wait(400);
+          const after = await page.evaluate(() => {
+            const box = document.querySelector("[data-edit]");
+            return box === null ? null : { len: box.value.length, has: box.value.includes("Q") };
+          });
+          console.log(`typing with the peek open: ${JSON.stringify(typed)} → ${JSON.stringify(after)}`);
+          if (typed === null || after === null || !typed.focused) {
+            fail("probe void: the editor could not be focused with the peek open");
+          } else if (!after.has || after.len !== typed.was + 1) {
+            fail(
+              `a key pressed with the old text open left the buffer at ${after.len} from ${typed.was} — ` +
+                "「peek 开着时能打字」 (src/views/FileView.tsx)",
+            );
+          }
+          // Put the character back, or the tab is dirty for every stop
+          // after this one.
+          await page.keyboard.press("Backspace");
+          await wait(300);
+        }
+        await press('[data-gutter] [data-hunk="150"]');
+        await wait(200);
       }
       // vi) the ruler.
       const ruler = await page.evaluate(() => {
@@ -6719,6 +6996,105 @@ try {
             "pressing a ruler mark also opened the old text — the ruler scrolls, and opening a block " +
               "there would move the lines under the place it just scrolled to (src/views/FileView.tsx goTo)",
           );
+        }
+        // viii) **整条可点** (工作区第五轮 第 40 条).
+        //
+        // The strip is the file end to end, so a press halfway down it
+        // means halfway down the file — and until this ruling that press
+        // fell through to the scrollbar underneath and did nothing at
+        // all. Pressed on the **blank**, deliberately away from every
+        // mark: a press on a mark is the claim above and a different
+        // one (「open that change」).
+        const blankAt = await page.evaluate(() => {
+          const col = document.querySelector("[data-overview]");
+          const box = document.querySelector("[data-file-scroll]");
+          if (col === null || box === null) return null;
+          box.scrollTop = 0;
+          const c = col.getBoundingClientRect();
+          // **The widest gap between marks, not the middle.** A
+          // fixture with a hunk halfway down the file puts a mark
+          // exactly where 「the middle」 is, and a press there is a
+          // press on a mark — the other claim. So the free band is
+          // found rather than assumed, and the fraction actually
+          // pressed is what the expected place is computed from.
+          // **Started at the far end of the file, not at the top.** The
+          // tolerance this claim is allowed is one screen (「± 一屏」),
+          // and a target less than a screen from where the scroller
+          // already is cannot tell 「it went there」 from 「nothing
+          // happened」 — measured, 2026-09-17: with the strip inert the
+          // reading was `scrollTop 0, wanted ~515` and the assertion
+          // stayed green. So the file is put as far from the answer as
+          // it goes before the press.
+          const taken = [...col.querySelectorAll("[data-overview-mark]")].map((el) => {
+            const r = el.getBoundingClientRect();
+            return [r.top - 4, r.bottom + 4];
+          }).sort((a, b) => a[0] - b[0]);
+          let best = null;
+          let edge = c.top;
+          for (const [a, b] of [...taken, [c.bottom, c.bottom]]) {
+            if (a - edge > (best === null ? 0 : best[1] - best[0])) best = [edge, a];
+            edge = Math.max(edge, b);
+          }
+          if (best === null || best[1] - best[0] < 12) {
+            return { clash: true, x: 0, y: 0, total: 0, screen: 0, part: 0 };
+          }
+          const want = (best[0] + best[1]) / 2;
+          const part = (want - c.top) / c.height;
+          box.scrollTop = part < 0.5 ? box.scrollHeight : 0;
+          return {
+            x: Math.round(c.left + c.width / 2),
+            y: Math.round(want),
+            clash: false,
+            part,
+            from: Math.round(box.scrollTop),
+            total: Math.round(box.scrollHeight),
+            screen: Math.round(box.clientHeight),
+          };
+        });
+        await wait(150);
+        if (blankAt === null) {
+          fail("probe void: no ruler to press on the blank of");
+        } else if (blankAt.clash) {
+          fail(
+            "probe void: the middle of the ruler is a mark, so pressing 「the blank」 there would be " +
+              "pressing a mark (move a hunk in the fixture)",
+          );
+        } else {
+          await page.mouse.click(blankAt.x, blankAt.y);
+          await wait(400);
+          const went50 = await page.evaluate(() => {
+            const box = document.querySelector("[data-file-scroll]");
+            return { top: Math.round(box.scrollTop), peeks: document.querySelectorAll("[data-peek]").length };
+          });
+          // Half the file, minus half a screen — that is what 「the line
+          // pressed lands in the middle of the viewport」 works out to.
+          // Within one screen, which is the tolerance the ruling itself
+          // names (「± 一屏」).
+          const want = blankAt.part * blankAt.total - blankAt.screen / 2;
+          const pct = Math.round(blankAt.part * 100);
+          console.log(
+            `ruler blank at ${pct}%: from ${blankAt.from} to ${went50.top}, wanted ` +
+              `~${Math.round(want)} (total ${blankAt.total}, screen ${blankAt.screen})`,
+          );
+          if (Math.abs(blankAt.from - want) <= blankAt.screen) {
+            fail(
+              "probe void: the file already sits within a screen of the place being pressed, so " +
+                "going there cannot be told from staying put (move a hunk in the fixture)",
+            );
+          }
+          if (Math.abs(went50.top - want) > blankAt.screen) {
+            fail(
+              `pressing ${pct}% down the ruler left the file at ${went50.top} where ${pct}% down it is ` +
+                `${Math.round(want)} — 「按在尺的空白处 = 滚到文件的对应位置」 ` +
+                "(src/views/FileView.tsx goRatio)",
+            );
+          }
+          if (went50.peeks !== 0) {
+            fail(
+              "pressing the ruler's blank opened a change — the blank is a place in the file, a mark " +
+                "is a change (src/views/FileView.tsx Ruler)",
+            );
+          }
         }
       }
     }
@@ -6897,6 +7273,493 @@ try {
     }
     await page.setViewportSize(wide);
     await wait(400);
+  }
+
+  // ── 4r) 中栏没有标签时 (工作区第五轮 第 37 条) ────────────────────
+  //
+  // 「中栏没有标签时别是一片白」 — the user. What goes there is this
+  // project's name and path, its branch, and what was open last time.
+  //
+  // Claims:
+  //   i. with no tab open the middle column carries `[data-ws-empty]`,
+  //      and the workspace's own name is in it;
+  //  ii. two files opened and then closed are both in 最近打开;
+  // iii. pressing one of those names opens it again.
+  {
+    await atTree();
+    // Every tab off, so 「no tab」 is a state this can stand in.
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(120);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(120);
+      }
+    }
+    const empty = await page.evaluate(() => {
+      const el = document.querySelector("[data-ws-empty]");
+      if (el === null) return null;
+      return {
+        said: el.textContent?.trim().slice(0, 120) ?? "",
+        name: el.querySelector("[data-ws-empty-name]")?.textContent?.trim() ?? null,
+        branch: el.querySelector("[data-ws-empty-branch]")?.textContent?.trim() ?? null,
+        // Nothing drawn for the sake of being drawn: a picture where an
+        // answer belongs is what 「不画插画」 refuses.
+        pictures: el.querySelectorAll("svg, img").length,
+      };
+    });
+    console.log(`empty middle column: ${JSON.stringify(empty)}`);
+    if (empty === null) {
+      fail(
+        "the middle column with no tab open is blank — 「中栏没有标签时别是一片白」 " +
+          "(src/views/WorkspaceEmpty.tsx)",
+      );
+    } else {
+      if (empty.name !== "work") {
+        fail(
+          `the empty column names ${JSON.stringify(empty.name)} — this workspace is ` +
+            "peer:/home/peer/work and its name is the one thing a person arriving needs " +
+            "(src/views/WorkspaceEmpty.tsx)",
+        );
+      }
+      if (empty.branch !== "main") {
+        fail(
+          `the empty column says the branch is ${JSON.stringify(empty.branch)} — the status this ` +
+            "pane already holds says main (src/views/WorkspaceEmpty.tsx)",
+        );
+      }
+    }
+    // ii) two files, opened and closed.
+    for (const name of ["notes.md", "one.rs"]) {
+      await press(`[data-file-tree] [data-depth="0"][data-file="${name}"] > button`);
+      await wait(250);
+    }
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(150);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(150);
+      }
+    }
+    const recent = await page.$$eval("[data-ws-recent]", (els) =>
+      els.map((e) => e.getAttribute("data-ws-recent")),
+    );
+    console.log(`recent: ${JSON.stringify(recent)}`);
+    const wanted = ["/home/peer/work/notes.md", "/home/peer/work/one.rs"];
+    if (!wanted.every((w) => recent.includes(w))) {
+      fail(
+        `最近打开 holds ${JSON.stringify(recent)} after two files were opened and closed — both of ` +
+          "them belong there, newest first (src/views/WorkspaceEmpty.tsx)",
+      );
+    } else {
+      // iii) and pressing one opens it again.
+      await press('[data-ws-recent="/home/peer/work/one.rs"]');
+      const reopened = await until(
+        5_000,
+        async () => (await page.locator("[data-ws-tab-strip] [data-tab]").count()) === 1,
+      );
+      if (!reopened) {
+        fail(
+          "pressing a name in 最近打开 opened no tab — 「点一下开成标签」 " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+    }
+  }
+
+  // ── 4s) 点状态字母看整文件对 HEAD 的 diff (第 38 条) ───────────────
+  //
+  // Claims:
+  //   i. the letter beside a name is pressable;
+  //  ii. pressing it opens a tab of its own, named `basename ⇄ HEAD`;
+  // iii. two columns, each with its own line numbers;
+  //  iv. the changed lines are tinted on **both** sides — the question
+  //      is 「where is this file different」 and one tinted side would
+  //      be half an answer.
+  {
+    await atTree();
+    const mark = '[data-file-tree] [data-depth="0"][data-file="notes.md"] [data-git-mark]';
+    const pressable = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (el === null) return null;
+      return { tag: el.tagName.toLowerCase(), letter: el.textContent?.trim() ?? "" };
+    }, mark);
+    console.log(`the tree's letter: ${JSON.stringify(pressable)}`);
+    if (pressable === null) {
+      fail("probe dead: no git letter on notes.md to press (widen the **/git_status fixture)");
+    } else if (pressable.tag !== "button") {
+      fail(
+        `the tree draws its M as a <${pressable.tag}> — 「点 M 看整文件对 HEAD 的 diff」 needs it to ` +
+          "be a control (src/views/fileRow.tsx Mark)",
+      );
+    } else {
+      await press(mark);
+      const drew = await until(6_000, async () => (await page.locator("[data-diff-tab]").count()) === 1);
+      const seen = await page.evaluate(() => {
+        const tab = document.querySelector("[data-diff-tab]");
+        const names = [...document.querySelectorAll("[data-ws-tab-strip] [data-tab-name]")].map(
+          (e) => e.textContent?.trim() ?? "",
+        );
+        if (tab === null) return { names, tab: null };
+        const side = (which) => {
+          const nums = tab.querySelector(`[data-diff-numbers="${which}"]`);
+          const rows = [...tab.querySelectorAll(`[data-diff-side="${which}"] ~ * [data-diff-line]`)];
+          return {
+            numbers: nums === null ? 0 : nums.children.length,
+            rows: rows.length,
+            changed: rows.filter((e) => e.hasAttribute("data-diff-changed")).length,
+          };
+        };
+        return { names, tab: { head: side("head"), work: side("work") } };
+      });
+      console.log(`diff tab: ${JSON.stringify(seen)}`);
+      if (!drew || seen.tab === null) {
+        fail(
+          "pressing the status letter opened no diff — 「中栏开一个 diff 标签」 " +
+            "(src/views/DiffView.tsx)",
+        );
+      } else {
+        if (!seen.names.some((n) => n.includes("⇄ HEAD"))) {
+          fail(
+            `the strip's tabs are named ${JSON.stringify(seen.names)} — a diff tab is ` +
+              "`basename ⇄ HEAD` (src/views/DiffView.tsx diffLabel)",
+          );
+        }
+        for (const which of ["head", "work"]) {
+          const half = seen.tab[which];
+          if (half.numbers < 3 || half.rows < 3) {
+            fail(
+              `the ${which} side of the diff drew ${half.rows} line(s) beside ${half.numbers} ` +
+                "number(s) — both halves are the whole file with its own numbering " +
+                "(src/views/DiffView.tsx)",
+            );
+          }
+          if (half.changed === 0) {
+            fail(
+              `the ${which} side tinted none of its lines — the changed lines carry a ground on ` +
+                "both sides, which is the whole of what this view answers (src/views/DiffView.tsx)",
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // ── 4t) 会话里的路径与网址可点 (第 35 条) ─────────────────────────
+  //
+  // 「都在宿主机器上打开」 — the user, 2026-09-17.
+  //
+  // Claims:
+  //   i. a path this project really has, and an address, are both drawn
+  //      as `[data-link]`;
+  //  ii. a path the machine does **not** have is not — 一个指着不存在的
+  //      东西的下划线是骗人的;
+  // iii. pressing the path opens it in the middle column, scrolled to
+  //      the line the sentence named;
+  //  iv. pressing the address asks **that machine** to open it, and does
+  //      not open it here.
+  {
+    await atTree();
+    if ((await page.locator("[data-ws-sessions]").count()) === 0) {
+      await press("[data-ws-sessions-switch]");
+      await wait(300);
+    }
+    const stood = await until(6_000, async () =>
+      (await page.locator("[data-ws-sessions] [data-row]").count()) > 0,
+    );
+    if (!stood) {
+      fail("probe dead: no session in the workspace's column to stand in (src/views/WorkspacePane.tsx)");
+    } else {
+      await press("[data-ws-sessions] [data-row]");
+      const said = await until(8_000, async () => (await page.locator("[data-md]").count()) > 0);
+      const links = await page.$$eval("[data-ws-sessions] [data-link]", (els) =>
+        els.map((e) => ({
+          at: e.getAttribute("data-link"),
+          line: e.getAttribute("data-link-line"),
+          said: e.textContent?.trim() ?? "",
+        })),
+      );
+      const ghost = await page.evaluate(
+        () => (document.querySelector("[data-ws-sessions]")?.textContent ?? "").includes("src/ghost.rs"),
+      );
+      console.log(`links in the conversation: ${JSON.stringify(links)} · ghost in prose: ${ghost}`);
+      if (!said) {
+        fail("probe dead: the conversation drew no prose to find links in (scripts/check-face.mjs **/chat_poll)");
+      } else if (links.length !== 1 || links[0].at !== "/home/peer/work/src/one.rs") {
+        fail(
+          `the conversation painted ${JSON.stringify(links)} as paths — src/one.rs:3 is a file this ` +
+            "project has and `src/ghost.rs` is not, so exactly one of the two is a link " +
+            "(src/components/PathLinks.tsx)",
+        );
+      } else {
+        if (links[0].line !== "3") {
+          fail(
+            `the link carries line ${JSON.stringify(links[0].line)} — 「行号后缀 :12 认得,跳到那一行」 ` +
+              "(src/views/linkHome.tsx underRoot)",
+          );
+        }
+        if (!ghost) {
+          fail(
+            "probe void: `src/ghost.rs` is not on screen at all, so 「it stayed prose」 is not what " +
+              "was measured (scripts/check-face.mjs **/chat_poll)",
+          );
+        }
+        // iii) it opens, and it lands on the line.
+        const before = launched.length;
+        await press("[data-ws-sessions] [data-link]");
+        const opened = await until(
+          6_000,
+          async () => (await page.locator('[data-ws-tab-strip] [data-tab-name]').count()) > 0,
+        );
+        const landed = await page.evaluate(() => {
+          const box = document.querySelector("[data-file-scroll]");
+          const row = document.querySelector('[data-sheet] [data-line="3"]');
+          if (box === null || row === null) return null;
+          const b = box.getBoundingClientRect();
+          const r = row.getBoundingClientRect();
+          return {
+            inView: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
+            top: Math.round(box.scrollTop),
+          };
+        });
+        console.log(`pressing the path: opened=${opened} ${JSON.stringify(landed)}`);
+        if (!opened || landed === null) {
+          fail(
+            "pressing a path in the conversation opened no file in the middle column — 「路径→在旁边的" +
+              "中栏开成标签」 (src/views/WorkspacePane.tsx linkHome)",
+          );
+        } else if (!landed.inView) {
+          fail(
+            "the file opened but line 3 is off the screen — the sentence named a line " +
+              "(src/views/FileView.tsx goLine)",
+          );
+        }
+        if (launched.length !== before) {
+          fail(
+            `pressing a path asked a machine to open it (${JSON.stringify(launched.slice(before))}) — a ` +
+              "path opens as a tab; only an address goes to the opener (src/views/linkHome.tsx)",
+          );
+        }
+      }
+      // iv) the address goes to the host, not to this machine.
+      const wasOpened = opened.length;
+      const wasLaunched = launched.length;
+      await press('[data-ws-sessions] [data-md-link]');
+      await wait(500);
+      console.log(
+        `pressing the address: launch=${JSON.stringify(launched.slice(wasLaunched))} ` +
+          `open_link=${JSON.stringify(opened.slice(wasOpened))}`,
+      );
+      if (launched.length !== wasLaunched + 1) {
+        fail(
+          `pressing an address in a conversation asked the host to open it ` +
+            `${launched.length - wasLaunched} time(s) — 「都在宿主机器上打开」 ` +
+            "(src/components/Markdown.tsx Link)",
+        );
+      } else if (launched[launched.length - 1].machine !== "peer") {
+        fail(
+          `the address was sent to ${JSON.stringify(launched[launched.length - 1].machine)} — it opens ` +
+            "on the machine the session is running on (src/views/linkHome.tsx)",
+        );
+      }
+      if (opened.length !== wasOpened) {
+        fail(
+          "pressing an address inside a workspace also opened it on **this** machine — that is the " +
+            "road `open_link` is, and it is the one this ruling replaced (src/components/Markdown.tsx)",
+        );
+      }
+      // Back out of the session so the stops after this one find a
+      // column rather than one conversation.
+      await press("[data-ws-sessions] [data-back]");
+      await wait(300);
+    }
+  }
+
+  // ── 4u) 树上新建 / 重命名 (第 36 条) ───────────────────────────────
+  //
+  // Claims:
+  //   i. a directory's menu offers 新建文件, 新建目录 and 重命名;
+  //  ii. 新建文件 grows a box on the tree, and a name typed into it
+  //      reaches that machine as `touch` with the path spelled out;
+  // iii. the row that comes back wears `U` — git has never seen it;
+  //  iv. a rename onto a name that is taken is refused, **and the
+  //      refusal is under the box** rather than in a sheet.
+  {
+    await atTree();
+    const dirRow = '[data-file-tree] [data-depth="0"] [data-dir="src"]';
+    if ((await page.locator(`${dirRow}[data-on="false"]`).count()) === 1) {
+      await press(dirRow);
+      await wait(250);
+    }
+    // **Esc first, every time.** A `RowMenu` left open from an earlier
+    // stop covers the page with radix's own dismiss layer, and the next
+    // right-click then retries for thirty seconds and throws — which
+    // ends the run rather than failing one claim (2026-09-17: that is
+    // how the red pass stopped before it reached the last two).
+    await page.keyboard.press("Escape");
+    await wait(150);
+    await page.locator(dirRow).click({ button: "right" });
+    await wait(300);
+    const items = await page.$$eval("[data-row-menu] [data-menu-item]", (els) =>
+      els.map((e) => e.getAttribute("data-menu-item")),
+    );
+    console.log(`the directory's menu: ${JSON.stringify(items)}`);
+    for (const want of ["new-file", "new-dir", "rename"]) {
+      if (!items.includes(want)) {
+        fail(
+          `a directory's menu is ${JSON.stringify(items)} — 新建文件、新建目录、重命名 all belong on ` +
+            `it and \`${want}\` is missing (src/views/FileTree.tsx)`,
+        );
+      }
+    }
+    if (items.includes("new-file")) {
+      await press('[data-row-menu] [data-menu-item="new-file"]');
+      const box = await until(4_000, async () => (await page.locator("[data-new-name]").count()) === 1);
+      if (!box) {
+        fail(
+          "新建文件 grew no box on the tree — 「名字就地输」, VS Code's way (src/views/FileTree.tsx)",
+        );
+      } else {
+        const wasMade = made.length;
+        await page.locator("[data-new-name] [data-title-input]").fill("x.md").catch(() => {});
+        await page.keyboard.press("Enter");
+        await wait(800);
+        console.log(`made: ${JSON.stringify(made.slice(wasMade))}`);
+        if (
+          made.length !== wasMade + 1 ||
+          made[made.length - 1].kind !== "touch" ||
+          made[made.length - 1].path !== "/home/peer/work/src/x.md"
+        ) {
+          fail(
+            `typing a name asked for ${JSON.stringify(made.slice(wasMade))} — 新建文件 is one ` +
+              "`touch` at the path it was typed into (src/views/FileTree.tsx)",
+          );
+        } else {
+          const row = await until(
+            6_000,
+            async () => (await page.locator('[data-file-tree] [data-file="x.md"]').count()) === 1,
+          );
+          const letter = await page.evaluate(() => {
+            const el = document.querySelector('[data-file-tree] [data-file="x.md"] [data-git-mark]');
+            return el === null ? null : el.textContent?.trim();
+          });
+          console.log(`the new row: drew=${row} letter=${JSON.stringify(letter)}`);
+          if (!row) {
+            fail(
+              "the new file never appeared in the tree — the tree asks that directory again rather " +
+                "than guessing a row into place (src/views/FileTree.tsx reread)",
+            );
+          } else if (letter !== "U") {
+            fail(
+              `the new file wears ${JSON.stringify(letter)} — git has never seen it, so it is ` +
+                "untracked (src/views/WorkspacePane.tsx marks)",
+            );
+          }
+        }
+      }
+    }
+    // iv) a rename onto a taken name, refused under the box.
+    await page.keyboard.press("Escape");
+    await wait(150);
+    await page
+      .locator('[data-file-tree] [data-depth="0"][data-file="notes.md"]')
+      .click({ button: "right" })
+      .catch(() => {});
+    await wait(300);
+    if ((await page.locator('[data-row-menu] [data-menu-item="rename"]').count()) === 1) {
+      await press('[data-row-menu] [data-menu-item="rename"]');
+      await wait(300);
+      renameRefuses = "那个名字已经有了: /home/peer/work/one.rs";
+      await page.locator("[data-title-input]").fill("one.rs").catch(() => {});
+      await page.keyboard.press("Enter");
+      await wait(700);
+      const refusal = await page.evaluate(() => {
+        const el = document.querySelector("[data-rename-failed]");
+        return {
+          said: el?.textContent?.trim() ?? null,
+          sheets: document.querySelectorAll('[role="dialog"]').length,
+          boxStillThere: document.querySelectorAll("[data-title-input]").length,
+        };
+      });
+      console.log(`a taken name: ${JSON.stringify(refusal)}`);
+      if (refusal.said === null || !refusal.said.includes("已经有了")) {
+        fail(
+          `renaming onto a taken name said ${JSON.stringify(refusal.said)} under the box — the ` +
+            "machine's own sentence belongs there (src/components/EditableName.tsx)",
+        );
+      }
+      if (refusal.sheets !== 0) {
+        fail(
+          `a refused rename raised ${refusal.sheets} sheet(s) — 「理由在输入框下一行(不是弹窗)」 ` +
+            "(src/components/EditableName.tsx)",
+        );
+      }
+      if (refusal.boxStillThere === 0) {
+        fail(
+          "the box closed over a refused rename — closing it paints the picture a rename that took " +
+            "paints (src/components/EditableName.tsx)",
+        );
+      }
+      await page.keyboard.press("Escape");
+      await wait(200);
+    }
+  }
+
+  // ── 4v) 退出时还有草稿要拦 (第 39 条) ─────────────────────────────
+  //
+  // **The web half only, and that is said out loud in the handoff.**
+  // The app's half is a tauri window event and a sheet in front of it;
+  // playwright's page has no such window, and asking it to close is
+  // asking the browser, which is what this measures.
+  //
+  // Claim: with something typed and unsaved, `beforeunload` is answered
+  // — the page asks the browser to ask.
+  {
+    await atTree();
+    await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+    await until(6_000, async () => (await page.locator("[data-edit]").count()) === 1);
+    const clean = await page.evaluate(() => {
+      const e = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+    await page.locator("[data-edit]").click();
+    await page.keyboard.type("x");
+    await wait(600);
+    const dirty = await page.evaluate(() => {
+      const e = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+    console.log(`beforeunload: clean=${clean} dirty=${dirty}`);
+    if (clean) {
+      fail(
+        "the page asked the browser to hold a close with nothing unsaved — a guard that always " +
+          "fires is a guard nobody reads (src/App.tsx)",
+      );
+    }
+    if (!dirty) {
+      fail(
+        "a file with something typed in it did not hold the page closing — 「退出时还有草稿要拦」 " +
+          "(src/App.tsx, src/lib/drafts.ts)",
+      );
+    }
+    // Leave the draft behind, or every stop after this one meets a sheet.
+    for (let i = 0; i < 12; i += 1) {
+      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      if ((await one.count()) === 0) break;
+      await one.click();
+      await wait(150);
+      if ((await page.locator("[data-close-draft]").count()) === 1) {
+        await press("[data-close-drop]");
+        await wait(150);
+      }
+    }
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────

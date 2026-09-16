@@ -346,7 +346,19 @@ const launchdEnv = (e) => {
 // alpha gets the fake claude too: 25c-3 starts a conversation *on alpha*
 // from beta's face, and what alpha's shim spawns must be the fake, not
 // whatever `claude` is on this machine's disk.
-const envA = { ...homeEnv(A, "alpha"), KHOR_CLAUDE: join(SCRATCH, "claude-fake.py") };
+// **alpha's opener is `/usr/bin/true`** (工作区第五轮 第 35 条). The
+// verb runs somebody else's opener on their own machine, and on this
+// mac that is `open` — a smoke run that put a window on the screen
+// would be this file spending the operator's attention. Set here rather
+// than per call because `khor launch` goes through the **resident
+// serve** when there is one (`Node::launch` via_serve), and a serve's
+// environment is the one it was started with: `launchdEnv` copies every
+// `KHOR_*`, so this reaches it.
+const envA = {
+  ...homeEnv(A, "alpha"),
+  KHOR_CLAUDE: join(SCRATCH, "claude-fake.py"),
+  KHOR_LAUNCHER: "/usr/bin/true",
+};
 // beta watches a private tmux server (KHOR_TMUX_SOCKET is the test
 // door): the bridge item stands sessions up on it, and the user's real
 // server is never looked at, let alone attached to.
@@ -7448,6 +7460,122 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
         `the ruler is a column of its own, ${painted.rulerPastBox}px past the file's scroller — ` +
           "it lies over the scrollbar's strip,「在滑动条的下方…透过滑动条颜色浮上来」",
       );
+    }
+
+    // 31k) 新建 / 改名 / 打开, on alpha's real disk (工作区第五轮 第 35、
+    //      36 条). **CLI only, and deliberately** — what the face gate
+    //      cannot be wrong about is the button; what only this run can
+    //      answer is whether the verb reaches a real filesystem on
+    //      another machine and refuses in the one place it promises to.
+    //
+    //      Asked from beta's home over the mesh (`-m alpha`) and checked
+    //      against the disk from here: `existsSync` is the independent
+    //      witness, the way it is for 删掉 above. **Every refusal is
+    //      asserted twice** — a non-zero exit *and* the bytes still
+    //      being what they were — because 「没有 -f」 means the refusal
+    //      is the feature, and a verb that refused out loud while
+    //      writing anyway would pass the first half alone.
+    {
+      const born = join(wsDir, "born.txt");
+      const moved = join(wsDir, "moved.txt");
+      const nested = join(wsDir, "made-dir");
+      cli(envB, "touch", "-m", "alpha", born);
+      if (!existsSync(born)) {
+        throw new Error(`khor touch -m alpha ${born} answered but nothing is on the disk`);
+      }
+      if (readFileSync(born, "utf8") !== "") {
+        throw new Error("khor touch made a file with something in it — a new name is empty");
+      }
+      cli(envB, "mkdir", "-m", "alpha", nested);
+      if (!statSync(nested).isDirectory()) {
+        throw new Error(`khor mkdir -m alpha ${nested} did not make a directory`);
+      }
+      writeFileSync(born, "mine\n");
+      const clash = spawnSync(KHOR, ["touch", "-m", "alpha", born], {
+        env: envB,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      if (clash.status === 0) {
+        throw new Error("khor touch over an existing name succeeded — 已有就拒, there is no -f");
+      }
+      if (readFileSync(born, "utf8") !== "mine\n") {
+        throw new Error("a refused touch emptied the file anyway — the refusal wrote");
+      }
+      const twice = spawnSync(KHOR, ["mkdir", "-m", "alpha", nested], {
+        env: envB,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      if (twice.status === 0) {
+        throw new Error("khor mkdir over an existing directory succeeded — 已有就拒");
+      }
+      // …and a move really moves, across the wire.
+      cli(envB, "mv", "-m", "alpha", born, moved);
+      if (existsSync(born) || readFileSync(moved, "utf8") !== "mine\n") {
+        throw new Error("khor mv -m alpha moved nothing, or moved the wrong bytes");
+      }
+      // A target that is taken is refused and the other file survives —
+      // `std::fs::rename` would have eaten it without a word.
+      cli(envB, "touch", "-m", "alpha", born);
+      writeFileSync(born, "second\n");
+      const over = spawnSync(KHOR, ["mv", "-m", "alpha", moved, born], {
+        env: envB,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      if (over.status === 0) {
+        throw new Error("khor mv over an existing name succeeded — 目标已有就拒, 不覆盖");
+      }
+      if (readFileSync(born, "utf8") !== "second\n" || !existsSync(moved)) {
+        throw new Error("a refused mv moved something anyway");
+      }
+      // 第 35 条, the opener. alpha's is `/usr/bin/true` for the life of
+      // this run (`envA`), so 「it was handed over」 is measured without
+      // a window appearing anywhere.
+      cli(envB, "launch", "-m", "alpha", wsFile);
+      cli(envB, "launch", "-m", "alpha", "https://example.test/x");
+      // **The two refusals, on gamma.** gamma runs no serve, so the
+      // verb takes the direct road and reads the environment of the
+      // process being started here — which is the only way to ask
+      // 「what does a machine with no opener say」 without restarting
+      // one of the two that do.
+      const noOpener = spawnSync(KHOR, ["launch", wsFile], {
+        env: { ...envG, KHOR_LAUNCHER: "" },
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      if (noOpener.status === 0) {
+        throw new Error("khor launch on a machine with no opener answered 开了");
+      }
+      if (!`${noOpener.stderr}`.includes("KHOR_LAUNCHER")) {
+        throw new Error(
+          `a machine with no opener said ${JSON.stringify(noOpener.stderr)} — the refusal names the ` +
+            "variable, which is the one thing a person can do about it",
+        );
+      }
+      const gone = spawnSync(KHOR, ["launch", wsFile], {
+        env: { ...envG, KHOR_LAUNCHER: join(SCRATCH, "no-such-opener") },
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      if (gone.status === 0) {
+        throw new Error("khor launch with an opener that is not on the disk answered 开了");
+      }
+      // What is **not** openable is refused before the opener is even
+      // looked up — the whitelist is the point (第 35 条).
+      for (const bad of ["notes.md", "mailto:someone@example.test", "-a"]) {
+        const refused = spawnSync(KHOR, ["launch", "-m", "alpha", bad], {
+          env: envB,
+          encoding: "utf8",
+          timeout: 30_000,
+        });
+        if (refused.status === 0) {
+          throw new Error(
+            `khor launch ${bad} was taken — only an absolute path or an http(s) address is`,
+          );
+        }
+      }
     }
 
     //      Back to the landing, so 31f starts from the list rather than
