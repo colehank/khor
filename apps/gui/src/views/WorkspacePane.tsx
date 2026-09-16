@@ -890,7 +890,7 @@ export function WorkspacePane({
                     face === "source" && "text-muted-foreground",
                   )}
                 >
-                  <IconEye />
+                  <IconEye className="size-3.5" />
                 </Button>
               )}
                             {/* **Two switches now, not three** (2026-09-16). The tree's
@@ -912,7 +912,14 @@ export function WorkspacePane({
                   {/* The rail's glyph is 32 by birth (`RailGlyph`); at the
                       strip's end it stands beside two 16s and wears
                       their size (2026-09-16:「大小风格要一致」). */}
-                  <IconSessions className="size-4!" />
+                  {/* **Equal ink, not equal boxes** (2026-09-16:「右上角的
+                      icon,明显大小不一」). Measured at a 16 box: the
+                      bubble paints 11×11, the logo 16×16, the eye 16×16
+                      — the rail glyph keeps air inside its canvas and
+                      the two filled marks fill theirs. So each is boxed
+                      to paint ~14: the bubble at 20, the other two at
+                      14. `check-face` measures the painted extents. */}
+                  <IconSessions className="size-5!" />
                 </Button>
                 {/* **Only where there is an editor to open.** A machine
                     without one, and a machine that could not be asked,
@@ -947,11 +954,9 @@ export function WorkspacePane({
                       codeAt === null && "text-muted-foreground",
                     )}
                   >
-                    {/* 16, like its two neighbours (2026-09-16:「右上角的
-                        预览、session、vscode 等 icon 的大小风格要一致」);
-                        the sessions glyph was the odd one, at the
-                        rail's 32. */}
-                    <IconCode />
+                    {/* 14: the logo fills its canvas (see the sessions
+                        glyph above for the arithmetic). */}
+                    <IconCode className="size-3.5" />
                   </Button>
                 )}
               </div>

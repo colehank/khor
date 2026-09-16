@@ -667,6 +667,13 @@
      directory's chevron centred in it; the indent guide hangs from the
      slot's middle (2026-09-16:「应该和字等高」). */
   --tree-slot: 16px;
+  /* One row of the file tree. **28, not the 44 finger floor, on a
+     screen with a pointer** (2026-09-16:「文件树的不同行间距太大了,屏幕
+     空间宝贵」): the floor is for fingers, and a mouse has none
+     (`check-face` section 3 walks the face with a finger emulated and
+     sees 44 below; the rest of the gate walks it with a mouse, 28). VS Code's row is 22; 28 seats a 16 icon beside 12.5px text
+     with air. A coarse pointer puts the floor back below. */
+  --tree-row: 28px;
   --gap-group: 18px; /* between groups that must not read as one list */
   --gap-pane: 24px;  /* a region's own breathing room, against its edge */
 
@@ -1618,5 +1625,16 @@
   body,
   #root {
     height: 100%;
+  }
+}
+
+/* **A finger puts the floor back.** Not the narrow face — the width of
+   the window says nothing about what is pressing it (an iPad is wide
+   and has no mouse; a narrow desktop window has one) — but the pointer
+   itself, which is what `check-face` section 3 emulates when it walks
+   the face with a finger. */
+@media (pointer: coarse) {
+  :root {
+    --tree-row: var(--touch);
   }
 }

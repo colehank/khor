@@ -269,7 +269,7 @@ export function FileTree({
                   // arrangement both panes arrived at from opposite
                   // sides (`FilesPane`'s two rows).
                   className={cn(
-                    "group relative flex min-h-touch items-center gap-2 pr-3 text-sm hover:bg-muted/50",
+                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -324,7 +324,7 @@ export function FileTree({
                   data-depth={r.depth}
                   style={indent(r.depth)}
                   className={cn(
-                    "group relative flex min-h-touch items-center gap-2 pr-3 text-sm hover:bg-muted/50",
+                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -385,7 +385,7 @@ export function FileTree({
                         size="sm"
                         variant="ghost"
                         data-take={r.name}
-                        className="min-h-touch min-w-touch flex-none"
+                        className="min-h-[var(--tree-row)] min-w-touch flex-none"
                         onClick={() => take(r.full)}
                       >
                         {gui.take_file}

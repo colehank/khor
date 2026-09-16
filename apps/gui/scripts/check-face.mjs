@@ -3208,6 +3208,22 @@ try {
         }
       }
     }
+    // **Rows of 28 under a mouse** (2026-09-16:「文件树的不同行间距太大了,
+    // 屏幕空间宝贵」). The finger floor is `(pointer: coarse)`'s, and
+    // section 3 walks this same stop with the finger emulated and holds
+    // the rows to 44 there; here the flag is off, the pointer is fine,
+    // and a row is a line of text with air — VS Code's 22 plus room for
+    // a 16 icon.
+    const rowHeights = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-file-tree] [data-depth="0"]')].map((r) => Math.round(r.getBoundingClientRect().height)),
+    );
+    console.log(`tree rows: ${JSON.stringify(rowHeights)}`);
+    if (rowHeights.some((h) => h > 30)) {
+      fail(
+        `tree rows stand ${[...new Set(rowHeights)].join("/")}px tall on the wide face — 28, the finger floor is the ` +
+          "narrow face's (src/views/FileTree.tsx, tokens.css --tree-row)",
+      );
+    }
     const files = kinds.rows.filter((r) => !r.dir);
     if (files.length < 2 || !kinds.rows.some((r) => r.dir)) {
       fail("probe void: the tree at level 0 needs a directory and two files to compare kinds (deepen the **/ls fixture)");
@@ -3366,18 +3382,33 @@ try {
       // **One size, one weight** (2026-09-16:「右上角的预览、session、vscode
       // 等 icon 的大小风格要一致。现在粗细、大小不一」): every glyph at the
       // strip's end is 14–16 tall and every button the same box.
+      // **Measured as ink, not as boxes.** Equal 16px boxes held an 11px
+      // bubble beside a 16px logo (the rail glyph keeps air in its
+      // canvas, the filled marks fill theirs) and read as three sizes;
+      // what has to match is what is painted.
       const tailLook = await page.evaluate(() => {
         const btns = [...document.querySelectorAll("[data-file-face-switch], [data-ws-switches] > button")];
-        return btns.map((b) => ({
-          box: [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)].join("x"),
-          glyph: Math.round(b.querySelector("svg")?.getBoundingClientRect().height ?? 0),
-        }));
+        return btns.map((b) => {
+          const svg = b.querySelector("svg");
+          let ink = 0;
+          if (svg) {
+            const bb = svg.getBBox();
+            const vb = svg.viewBox.baseVal;
+            const k = svg.getBoundingClientRect().height / (vb.height || 1);
+            ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
+          }
+          return {
+            box: [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)].join("x"),
+            ink,
+          };
+        });
       });
       console.log(`tail look: ${JSON.stringify(tailLook)}`);
-      if (new Set(tailLook.map((t) => t.box)).size > 1 || new Set(tailLook.map((t) => t.glyph)).size > 1 || tailLook.some((t) => t.glyph < 14 || t.glyph > 16)) {
+      const inks = tailLook.map((t) => t.ink);
+      if (new Set(tailLook.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
         fail(
-          `the strip's end is uneven: ${tailLook.map((t) => `${t.box}/${t.glyph}`).join(", ")} — one box, one glyph size ` +
-            "(src/views/WorkspacePane.tsx)",
+          `the strip's end is uneven: ${tailLook.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, and ` +
+            "the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
         );
       }
       // **The tab wears the file's kind too** (2026-09-16:「标签页打开了,
@@ -4556,13 +4587,21 @@ try {
       if (!g || !nm) return null;
       const a = g.getBoundingClientRect();
       const b = nm.getBoundingClientRect();
-      return { glyphMid: Math.round((a.top + a.bottom) / 2), nameTop: Math.round(b.top), nameBottom: Math.round(b.bottom) };
+      return {
+        glyphMid: Math.round((a.top + a.bottom) / 2),
+        nameMid: Math.round((b.top + b.bottom) / 2),
+        nameTop: Math.round(b.top),
+        nameBottom: Math.round(b.bottom),
+      };
     });
     console.log(`tab glyph seat: ${JSON.stringify(seat)}`);
-    if (seat !== null && (seat.glyphMid < seat.nameTop || seat.glyphMid > seat.nameBottom)) {
+    // **Centred on the name, within two pixels.** 「Inside the name's
+    // box」 let the old glyph through: centred on the two-line pair it
+    // sat at 24 in a name running 11–27 — inside, and visibly low.
+    if (seat !== null && Math.abs(seat.glyphMid - seat.nameMid) > 2) {
       fail(
-        `the tab's kind icon sits at ${seat.glyphMid} while the name runs ${seat.nameTop}–${seat.nameBottom} — ` +
-          "the glyph is on the name line (src/browse/TabStrip.tsx)",
+        `the tab's kind icon is centred at ${seat.glyphMid} while the name is centred at ${seat.nameMid} ` +
+          `(${seat.nameTop}–${seat.nameBottom}) — the glyph sits on the name line (src/browse/TabStrip.tsx)`,
       );
     }
     if (!opened || !asOpened.editor || asOpened.md) {
