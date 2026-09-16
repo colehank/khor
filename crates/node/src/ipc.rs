@@ -128,6 +128,20 @@ pub enum Op {
     /// resident — taking a path off whichever machine holds it
     /// (工作区批④).
     RemoveOn { machine: String, path: String },
+    /// Tail-appended: [`crate::proto::Request::Mkdir`] through the
+    /// resident — one new directory on whichever machine holds the
+    /// parent (工作区第五轮).
+    MkdirOn { machine: String, path: String },
+    /// Tail-appended: a new empty file on whichever machine holds the
+    /// directory — a [`crate::proto::Request::WritePath`] of no bytes
+    /// everywhere but a satellite ([`crate::proto::Request::SatTouch`]).
+    TouchOn { machine: String, path: String },
+    /// Tail-appended: [`crate::proto::Request::RenamePath`] through the
+    /// resident — moving a name on whichever machine holds it.
+    RenameOn { machine: String, from: String, to: String },
+    /// Tail-appended: [`crate::proto::Request::Launch`] through the
+    /// resident — that machine's own opener, on that machine.
+    LaunchOn { machine: String, target: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -226,6 +240,14 @@ pub enum Reply {
     Touched { at_ms: i64 },
     /// Tail-appended with [`Op::RemoveOn`]: it is off that disk.
     Removed,
+    /// Tail-appended with [`Op::MkdirOn`]: the directory is there now.
+    Made,
+    /// Tail-appended with [`Op::RenameOn`]: the name moved.
+    Renamed,
+    /// Tail-appended with [`Op::LaunchOn`]: that machine's opener took
+    /// it. Not a promise that a window appeared ([`crate::proto::
+    /// Response::Launched`]).
+    Launched,
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

@@ -133,6 +133,15 @@ const VERBS: &[Verb] = &[
     // Takes one off it. The only verb here that is irreversible on
     // every machine but this one, which is what its usage line says.
     Verb { word: "rm", run: rm, reach: Reach::Act },
+    // The three that make a name where there was none, or move one.
+    // Acts for `rm`'s reason from the other end: each of them changes
+    // what is on somebody's disk.
+    Verb { word: "mkdir", run: mkdir, reach: Reach::Act },
+    Verb { word: "touch", run: touch, reach: Reach::Act },
+    Verb { word: "mv", run: mv, reach: Reach::Act },
+    // Starts a process on somebody's machine — their opener — so it is
+    // an act for `code`'s reason, not a read because nothing is written.
+    Verb { word: "launch", run: launch, reach: Reach::Act },
     // Starts a process on somebody's machine and a pipe in front of
     // it. Reading is what the editor then does; opening it is an act.
     Verb { word: "code", run: code, reach: Reach::Act },
@@ -497,6 +506,78 @@ fn rm(rest: &[String]) -> Result<(), String> {
         _ => return Err(USAGE.into()),
     };
     rt()?.block_on(node()?.remove_path(&machine, &path))
+}
+
+/// Makes one directory on a machine (工作区第五轮).
+///
+/// **No `-p`.** The person typing this is looking at a tree with the
+/// parent already on it, and a chain of directories nobody asked for is
+/// what a silent `-p` would leave behind after one mistyped name.
+fn mkdir(rest: &[String]) -> Result<(), String> {
+    let (machine, path) = one_path(rest)?;
+    rt()?.block_on(node()?.mkdir(&machine, &path))
+}
+
+/// Makes one empty file on a machine (工作区第五轮).
+///
+/// **Not unix `touch`.** That one updates the mtime of a file already
+/// there; this one refuses it, because the caller is 新建文件 and a verb
+/// that quietly did nothing would look exactly like one that worked.
+/// Nothing khor does needs to stamp a date onto a file, so there is no
+/// second meaning to lose.
+fn touch(rest: &[String]) -> Result<(), String> {
+    let (machine, path) = one_path(rest)?;
+    rt()?.block_on(node()?.touch(&machine, &path))
+}
+
+/// Moves a name on a machine — rename, move, both (工作区第五轮).
+///
+/// **No `-f`**, `rm`'s rule: the second spelling of a verb is where a
+/// refusal goes to die. A target already there is refused, and the file
+/// wearing that name is not touched.
+fn mv(rest: &[String]) -> Result<(), String> {
+    let (machine, from, to) = match rest {
+        [flag, machine, from, to] if flag == "-m" || flag == "--machine" => {
+            (machine.clone(), here(from)?, here(to)?)
+        }
+        [from, to] => (String::new(), here(from)?, here(to)?),
+        _ => return Err(USAGE.into()),
+    };
+    rt()?.block_on(node()?.rename_path(&machine, &from, &to))
+}
+
+/// Hands a path or a page to a machine's own opener (工作区第五轮).
+///
+/// **It opens over there, not here.** That is the whole verb: a file
+/// named in a conversation lives on the machine the conversation ran on,
+/// and the face looking at it can be a browser on a phone.
+///
+/// The target is **not** resolved against this terminal's cwd the way
+/// every other path verb's is ([`here`]): `./notes.md` here would become
+/// this machine's path and then name nothing over there — and unlike a
+/// directory that simply is not found, an opener handed a wrong absolute
+/// path can succeed at opening the wrong thing.
+fn launch(rest: &[String]) -> Result<(), String> {
+    let (machine, target) = match rest {
+        [flag, machine, target] if flag == "-m" || flag == "--machine" => {
+            (machine.clone(), target.clone())
+        }
+        [target] => (String::new(), target.clone()),
+        _ => return Err(USAGE.into()),
+    };
+    rt()?.block_on(node()?.launch(&machine, &target))
+}
+
+/// `-m <机器> <路径>` or a bare `<路径>`, which is this machine — the
+/// shape `rm` spells inline and the three verbs above share.
+fn one_path(rest: &[String]) -> Result<(String, String), String> {
+    match rest {
+        [flag, machine, path] if flag == "-m" || flag == "--machine" => {
+            Ok((machine.clone(), here(path)?))
+        }
+        [path] => Ok((String::new(), here(path)?)),
+        _ => Err(USAGE.into()),
+    }
 }
 
 /// A directory as typed, made absolute **against this terminal's own

@@ -192,6 +192,35 @@ pub enum Request {
     ///
     /// A new variant for [`Request::SatLs`]'s reason.
     SatRemove { sat: String, path: String },
+    /// [`Request::Mkdir`], on a satellite: the sponsor makes the
+    /// directory over ssh (`crate::satellite::mkdir`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason.
+    SatMkdir { sat: String, path: String },
+    /// A new empty file on a satellite (`crate::satellite::touch`).
+    ///
+    /// **Its own variant rather than [`Request::SatWrite`] with no
+    /// bytes**, which is how the plain-peer road spells the same thing.
+    /// `SatWrite` pins the write to a sha256 of what is already there
+    /// and answers 「it moved」 when there is no file at all — right for
+    /// a save and exactly wrong for a new name. It also needs
+    /// `sha256sum` on the far machine, which a new name has nothing to
+    /// feed.
+    SatTouch { sat: String, path: String },
+    /// [`Request::RenamePath`], on a satellite: the sponsor moves the
+    /// name over ssh (`crate::satellite::rename_path`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason.
+    SatRename { sat: String, from: String, to: String },
+    /// [`Request::Launch`], on a satellite: the sponsor runs that
+    /// machine's opener over ssh (`crate::satellite::launch`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason. **A satellite is
+    /// very often a box nobody is sitting at**, and an opener there
+    /// fails for want of a display — that refusal is the satellite's
+    /// own sentence and travels back as it came, because 「it has no
+    /// screen」 is a fact about that machine and not about khor.
+    SatLaunch { sat: String, target: String },
     /// [`Request::Touched`], off a satellite: the sponsor walks that
     /// machine's directory over ssh and answers the ordinary
     /// [`Response::Touched`] (`crate::satellite::touched`).
@@ -307,6 +336,51 @@ pub enum Request {
     /// answers [`Response::Refused`], which the asker shows as it came
     /// — the same road every refusal on this screen takes.
     Remove { path: String },
+    /// Makes one directory on that machine (`crate::files::mkdir`).
+    /// `path` is absolute over there.
+    ///
+    /// **One directory, and the name must be free.** Not `mkdir -p`:
+    /// the caller is a person typing a name into a row of a tree they
+    /// are looking at, so every parent already exists, and a spelling
+    /// mistake that silently grows a chain of directories is the thing
+    /// a refusal is for. A name already taken is refused rather than
+    /// accepted quietly — 「it is there either way」 is true and is not
+    /// what somebody pressing 新建目录 asked (`crate::files::remove`'s
+    /// lesson, from the other end).
+    ///
+    /// Answered as [`Response::Made`]; a khor that predates it answers
+    /// [`Response::Refused`], shown as it came.
+    Mkdir { path: String },
+    /// Moves a name on that machine (`crate::files::rename_path`).
+    /// Both paths are absolute over there; crossing directories is the
+    /// same verb, which is why this is spelled `mv` and not `rename`.
+    ///
+    /// **The target is never overwritten.** `std::fs::rename` replaces
+    /// an existing file silently on unix, which would make one
+    /// mistyped name eat another file — so the name being free is
+    /// checked first and a taken one is refused. There is no `-f`:
+    /// the second spelling of a verb is where a refusal goes to die
+    /// (`crate::files::remove`).
+    ///
+    /// Answered as [`Response::Renamed`].
+    RenamePath { from: String, to: String },
+    /// Opens a path or a page **on that machine**, with that machine's
+    /// own opener (`crate::files::launch`).
+    ///
+    /// **The machine running the session is the one that opens it**
+    /// (the user, 2026-09-17: 都在宿主机器上打开). A face can be a
+    /// browser on a phone; the file named in a conversation lives on
+    /// the machine the conversation ran on, and opening it anywhere
+    /// else opens nothing or, worse, something else with the same name.
+    ///
+    /// `target` is an absolute path over there or an `http(s)` address.
+    /// Nothing else: what reaches here came out of a model's own words,
+    /// so the schemes are a whitelist rather than a check for the
+    /// obviously bad (`khor_gui_core::web::open_link`, same judgment).
+    ///
+    /// Answered as [`Response::Launched`]; a machine with no opener
+    /// refuses by name rather than reporting a window nobody saw.
+    Launch { target: String },
     /// When a directory on that machine was last changed: the newest
     /// file mtime under `path` (`crate::workspace::touched`). `path` is
     /// absolute over there.
@@ -492,6 +566,24 @@ pub enum Response {
     /// nothing — 「gone」 has no fields, and a path echoed back would be
     /// the asker's own argument returning as if it were news.
     Removed,
+    /// [`Request::Mkdir`]'s and [`Request::SatTouch`]'s answer: the
+    /// name is there now. Carries nothing, for [`Response::Removed`]'s
+    /// reason.
+    ///
+    /// **One answer for both** because both say the same thing and the
+    /// asker's next move is the same: ask the tree again. The plain
+    /// `touch` road has no variant of its own at all — it is a
+    /// [`Request::WritePath`] with no bytes, and answers
+    /// [`Response::Wrote`].
+    Made,
+    /// [`Request::RenamePath`]'s answer: the name moved. Carries
+    /// nothing — both paths were the asker's own arguments.
+    Renamed,
+    /// [`Request::Launch`]'s answer: that machine handed it to its
+    /// opener. **Never a promise that a window appeared** — the opener
+    /// is a separate process and khor does not wait for it — only that
+    /// the machine had one and it started.
+    Launched,
     /// [`Request::Touched`]'s answer, ms since the epoch. `0` means
     /// there was nothing under that path to date — an empty directory,
     /// or one that machine could not read — which the asker paints as
@@ -691,6 +783,12 @@ mod tests {
             (Request::Watched, &b"Watched"[..]),
             (Request::Touched { path: String::new() }, &b"Touched"[..]),
             (Request::Remove { path: String::new() }, &b"Remove"[..]),
+            (Request::Mkdir { path: String::new() }, &b"Mkdir"[..]),
+            (
+                Request::RenamePath { from: String::new(), to: String::new() },
+                &b"RenamePath"[..],
+            ),
+            (Request::Launch { target: String::new() }, &b"Launch"[..]),
             (Request::GitStatus { root: String::new() }, &b"GitStatus"[..]),
             (Request::GitDiff { path: String::new() }, &b"GitDiff"[..]),
             (
@@ -711,6 +809,26 @@ mod tests {
             (
                 Request::SatRemove { sat: String::new(), path: String::new() },
                 &b"SatRemove"[..],
+            ),
+            (
+                Request::SatMkdir { sat: String::new(), path: String::new() },
+                &b"SatMkdir"[..],
+            ),
+            (
+                Request::SatTouch { sat: String::new(), path: String::new() },
+                &b"SatTouch"[..],
+            ),
+            (
+                Request::SatRename {
+                    sat: String::new(),
+                    from: String::new(),
+                    to: String::new(),
+                },
+                &b"SatRename"[..],
+            ),
+            (
+                Request::SatLaunch { sat: String::new(), target: String::new() },
+                &b"SatLaunch"[..],
             ),
             (
                 Request::SatGitStatus { sat: String::new(), root: String::new() },

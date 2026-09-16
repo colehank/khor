@@ -249,6 +249,160 @@ pub fn remove(host: &str, path: &str) -> Result<(), String> {
     }
 }
 
+/// Makes one directory on a satellite (工作区第五轮).
+///
+/// **The same three answers khor's own `files::mkdir` gives**, in the
+/// same order: a name already taken, one directory rather than a chain,
+/// and the shell's own words for anything else. `mkdir` without `-p` is
+/// already both of the first two — it refuses an existing name and it
+/// refuses a missing parent — so the only thing this script adds is
+/// telling those two apart, because 「那个名字已经有了」 is the one a
+/// person can act on by typing a different name.
+const MKDIR_SH: &str = r#"
+if [ -e "$KHOR_ROOT" ] || [ -L "$KHOR_ROOT" ]; then
+  printf 'taken
+'
+  exit 0
+fi
+mkdir "$KHOR_ROOT" 2>/dev/null || { printf 'no
+'; exit 0; }
+printf 'done
+'
+exit 0
+"#;
+
+/// [`MKDIR_SH`] over the user's ssh road.
+pub fn mkdir(host: &str, path: &str) -> Result<(), String> {
+    let out = sh_over_ssh_in(host, path, MKDIR_SH)?;
+    let said = out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    match said {
+        "done" => Ok(()),
+        // Translated here, in khor's own words (`remove`'s rule).
+        "taken" => Err(msg::name_taken(path)),
+        _ => Err(msg::cant_mkdir(path, "mkdir")),
+    }
+}
+
+/// Makes an empty file on a satellite.
+///
+/// **Not a zero-byte [`write_file`].** That road hashes what is there
+/// and refuses if it moved, which needs `sha256sum` or `shasum` on the
+/// far machine — tools `sat_no_tools` exists to say may be missing. A
+/// new name has nothing to hash, so this asks the one question that is
+/// actually being asked: is the name free.
+const TOUCH_SH: &str = r#"
+if [ -e "$KHOR_ROOT" ] || [ -L "$KHOR_ROOT" ]; then
+  printf 'taken
+'
+  exit 0
+fi
+: > "$KHOR_ROOT" 2>/dev/null || { printf 'no
+'; exit 0; }
+printf 'done
+'
+exit 0
+"#;
+
+/// [`TOUCH_SH`] over the user's ssh road.
+pub fn touch(host: &str, path: &str) -> Result<(), String> {
+    let out = sh_over_ssh_in(host, path, TOUCH_SH)?;
+    let said = out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    match said {
+        "done" => Ok(()),
+        "taken" => Err(msg::name_taken(path)),
+        _ => Err(msg::cant_save_file(path, "touch")),
+    }
+}
+
+/// Moves a name on a satellite.
+///
+/// **Two paths, so the assignments are written by this side** rather
+/// than pasted into the script ([`sh_over_ssh_in`] knows one directory;
+/// [`write_file`] is the two-argument template this copies).
+///
+/// `mv` on unix replaces an existing target without a word, which is the
+/// whole reason the target is tested first — the same check khor's own
+/// `files::rename_path` makes, so one machine does not answer
+/// differently from another.
+const RENAME_SH: &str = r#"
+set -u
+if [ ! -e "$KHOR_FROM" ] && [ ! -L "$KHOR_FROM" ]; then
+  printf 'gone
+'
+  exit 0
+fi
+if [ -e "$KHOR_TO" ] || [ -L "$KHOR_TO" ]; then
+  printf 'taken
+'
+  exit 0
+fi
+mv "$KHOR_FROM" "$KHOR_TO" 2>/dev/null || { printf 'no
+'; exit 0; }
+printf 'done
+'
+exit 0
+"#;
+
+/// [`RENAME_SH`] over the user's ssh road.
+pub fn rename_path(host: &str, from: &str, to: &str) -> Result<(), String> {
+    let script = format!(
+        "KHOR_FROM={}\nKHOR_TO={}\n{RENAME_SH}",
+        sh_quote(from),
+        sh_quote(to),
+    );
+    let out = sh_over_ssh(host, &script)?;
+    let said = out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    match said {
+        "done" => Ok(()),
+        "gone" => Err(msg::cant_move_name(from, "No such file or directory")),
+        "taken" => Err(msg::name_taken(to)),
+        _ => Err(msg::cant_move_name(from, "mv")),
+    }
+}
+
+/// Hands a path or a page to a satellite's own opener.
+///
+/// **The whitelist is kept on this side** — `files::launch` has already
+/// refused everything but an absolute path and an `http(s)` address by
+/// the time this runs — and the quoting is `sh_quote`'s, so the target
+/// is one word to the far shell whatever is in it.
+///
+/// **A satellite very often has no screen**, and `xdg-open` on a box
+/// with no display session fails saying so. That sentence is the far
+/// machine's and travels back as it came; khor adds nothing to it,
+/// because 「这台机器没人坐在前面」 is not something khor knows.
+///
+/// **`KHOR_LAUNCHER` is not consulted here and that is deliberate**: it
+/// names the opener on the machine khor is *installed* on, and khor is
+/// installed on nothing a satellite runs (docs/NET.md 它身上不留东西).
+/// A satellite's opener is whichever of the two its desktop ships.
+const LAUNCH_SH: &str = r#"
+set -u
+for c in open xdg-open; do
+  if command -v "$c" >/dev/null 2>&1; then
+    "$c" "$KHOR_TARGET" >/dev/null 2>&1 &
+    printf 'done
+'
+    exit 0
+  fi
+done
+printf 'none
+'
+exit 0
+"#;
+
+/// [`LAUNCH_SH`] over the user's ssh road.
+pub fn launch(host: &str, target: &str) -> Result<(), String> {
+    let script = format!("KHOR_TARGET={}\n{LAUNCH_SH}", sh_quote(target));
+    let out = sh_over_ssh(host, &script)?;
+    let said = out.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    match said {
+        "done" => Ok(()),
+        "none" => Err(msg::no_launcher(crate::files::LAUNCHER_ENV)),
+        _ => Err(msg::cant_launch(target, said)),
+    }
+}
+
 /// [`TOUCHED_SH`] over the user's ssh road, in ms since the epoch —
 /// `0` where there was nothing to date.
 pub fn touched(host: &str, path: &str) -> Result<i64, String> {

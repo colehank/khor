@@ -128,6 +128,19 @@ usage = """
   rm [-m 机器] <路径>     把那个文件或目录删掉。**本机的进废纸篓,别的机器
                         和卫星是直接删、找不回来**(那边没有废纸篓)。
                         目录连里面的一起走;路径不存在就拒绝
+  mkdir [-m 机器] <路径>  在那台机器上建一个目录。只建一级,上一级不在就
+                        拒绝;名字已经有了也拒绝,没有 -p 也没有 -f
+  touch [-m 机器] <路径>  在那台机器上建一个空文件。名字已经有了就拒绝,
+                        **不会把原来那个清空**
+  mv [-m 机器] <原路径> <新路径>
+                        在那台机器上给一个名字改名,跨目录也是这一条。
+                        新名字已经有了就拒绝,不覆盖,没有 -f
+  launch [-m 机器] <路径|网址>
+                        让那台机器用它自己的开启器打开这个东西(Mac 是
+                        open,Linux 是 xdg-open;`KHOR_LAUNCHER` 可以指
+                        另一个)。**开在那台机器上,不是你面前这台**;
+                        只收绝对路径和 http/https 网址。`open` 是「在那台
+                        机器上开一个 session」,不是这一条
   read <机器> <文件>      把文档读成文字打出来:md/csv/tsv 原样(它们本来
                         就是文本),docx/xlsx/pptx 和它们的旧格式
                         (doc/xls/ppt)、pdf 转成 markdown。读的是文字和
@@ -1088,6 +1101,39 @@ not-a-file-path = "这不是一个文件路径: {0}"
 # nothing to add to any of them.
 cant-remove = "删不了 {0}: {1}"
 cant-canonicalize = "定不下这个路径: {0}"
+# 新建 / 改名撞上一个已经有的名字 (工作区第五轮). **One key for both
+# verbs**, unlike `cant-remove`'s neighbours: 建不了 and 改不了 differ in
+# what the person was doing, and this one does not — the name is taken,
+# and the next move is the same either way (换一个名字). Said before
+# anything is written, because `std::fs::rename` would have overwritten
+# it silently and answered 好了.
+name-taken = "那个名字已经有了: {0}"
+# 建不了目录 (工作区第五轮). `cant-remove`'s rule, from the other end:
+# the operating system's own words are the whole of what anybody can act
+# on. **Only ever one directory** — the parent missing is one of those
+# words, not a reason to go and make it.
+cant-mkdir = "建不了目录 {0}: {1}"
+# 改不了名 (工作区第五轮). Names the path as it was, not as it was going
+# to be: the thing still on the disk is the one a person can go and look
+# at, and the new name never existed. **Not `cant-rename`**, which is the
+# document store's own key for a file it could not move into place — one
+# word, one meaning (docs/UX.md 语料库), and a sync landing failing is
+# not somebody's file getting a new name.
+cant-move-name = "改不了名 {0}: {1}"
+# 这台机器上没有开启器 (工作区第五轮，路径与网址可点). **Names the
+# variable rather than the platform**: the answer to this sentence is to
+# set it, and a sentence that said 「这不是 Mac 也不是 Linux」 would leave
+# a person with nothing to do about it.
+no-launcher = "这台机器上没有可以打开东西的程序;用 {0} 指一个"
+# Refused before the opener is even looked up: what reached here came out
+# of a model's own words. **One key for all three refusals** — a relative
+# path, a scheme that is an action rather than a page, a name that starts
+# with `-` and would arrive as a flag — because khor is saying the same
+# thing about all three, which is that it will not hand this over.
+not-openable = "这个打不开(只开绝对路径和 http/https 网址): {0}"
+# The opener was there and would not start. Its own words, `cant-remove`'s
+# rule again.
+cant-launch = "打不开 {0}: {1}"
 
 # ── borrowing a machine's network (docs/NET.md 借网) ──
 # The tunnel carries raw bytes to a target the exit machine can reach.
@@ -2209,6 +2255,57 @@ file-remove-gone = "「{0}」直接删掉,找不回来;目录连里面的一起�
 # ticked once about something else (`views/FilesPane`), so the far
 # machines ask every time and this word is simply not drawn there.
 file-remove-never-ask = "以后不再问"
+# 树上右键新建 (工作区第五轮 第 36 条). **Two words, not one with a
+# 「文件/目录」 switch**: which of the two is being made decides what can
+# go inside it, and a menu that asked afterwards would be asking about a
+# thing that already exists. 新建 rather than 添加 — 添加 is putting
+# something that exists somewhere else into this place, which is what
+# `ws add` does, and nothing here exists yet.
+file-new = "新建文件"
+dir-new = "新建目录"
+# 就地改名, VS Code's way: the row grows an input, Enter takes it, Esc
+# puts it back. **Borrows `rename`'s word** (语料库一句一键) — giving a
+# file a new name and giving a machine one are the same verb, and a
+# second key would be a second sentence for one idea.
+#
+# The refusal under the box is **the node's own**, never a word from
+# here: 「那个名字已经有了」 and 「改不了名 …」 are different facts and
+# only the machine holding the disk knows which one it is.
+file-rename-taken = "换一个名字"
+# 中栏没有标签时 (工作区第五轮 第 37 条). **Not an illustration and not
+# a shortcut card** — what a person needs here is where they are and
+# what they were last doing, and both are facts khor already holds.
+ws-empty-recent = "最近打开"
+# 点状态字母看整文件 (工作区第五轮 第 38 条). The two headings over a
+# diff tab's halves. **HEAD keeps its own name** — it is git's word and
+# every other tool the person uses spells it that way (`GitRow`'s
+# letters, same rule) — and the other half is named for what it is: the
+# copy on the disk, which may have been saved or may still be a draft.
+diff-head = "HEAD"
+diff-work = "工作副本"
+# What pressing the letter does, for a screen reader. The letter itself
+# is one character and reads as itself; this says what happens next.
+diff-open = "看这个文件跟 HEAD 差在哪儿"
+# 退出时还有草稿 (工作区第五轮 第 39 条). **Counts files, not changes**:
+# a person about to quit is deciding whether to lose work, and 「3 个
+# 文件没存」 is a thing they can picture. The singular is not spelled
+# separately — 1 个文件 is how Chinese says it.
+quit-drafts = "还有 {0} 个文件没存"
+# **Two exits here, not the three a tab gets.** 存了再关 is missing on
+# purpose: saving N files across N tabs is N saves, each with its own
+# digest contract and its own way to be refused (`files::write_whole`),
+# and a button that saved four of five and then quit would be the worst
+# answer khor could give. So the offer is 「go back and deal with it」
+# or 「lose it knowingly」, and going back is one press from every tab.
+quit-drop = "不存,退出"
+# 「别退」而不是「取消」, `tab-close-keep` 的同一条理由:这两个按钮回答
+# 的是「要不要退」。
+quit-keep = "别退"
+# 会话里的路径与网址 (工作区第五轮 第 35 条). The hover word on a path
+# or an address khor drew as pressable. **Says which machine**, because
+# that is the whole of what is surprising about it: the thing opens on
+# the machine the session ran on, not on the one in front of you.
+link-open-on = "在 {0} 上打开"
 # 中栏的标签页 (工作区批⑧). 「做成和 vscode 一样的标签页。一个文件一个
 # 标签…标签上显示文件名,下方显示其路径」— the user, 2026-09-15.
 #

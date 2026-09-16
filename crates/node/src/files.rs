@@ -311,6 +311,137 @@ fn trash_it(p: &std::path::Path) -> Result<(), String> {
     Err(msg::cant_remove(&p.display(), "no trash on this platform"))
 }
 
+/// Makes one directory by absolute path.
+///
+/// **One, not a chain.** `create_dir_all` would turn a mistyped
+/// `src/copmonents/x` into two new directories nobody asked for and
+/// answer「done」, and the caller here is a person typing a name into a
+/// row of a tree whose parent is on the screen in front of them. So the
+/// parent must already be there, and if it is not, the operating
+/// system's own sentence about that is the one shown.
+///
+/// **A name already taken is refused**, and refused before anything is
+/// written: `create_dir` fails on an existing directory anyway, but it
+/// fails with the same words for「it is a file」and for「the parent is
+/// read-only」, and 「那个名字已经有了」is the one of the three the
+/// person can act on by typing a different name.
+pub fn mkdir(path: &str) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+    if !p.is_absolute() {
+        return Err(msg::path_not_absolute(path));
+    }
+    // `symlink_metadata`: a dangling link is still a name in use, and
+    // `exists()` follows links and would call it free.
+    if std::fs::symlink_metadata(p).is_ok() {
+        return Err(msg::name_taken(path));
+    }
+    std::fs::create_dir(p).map_err(|e| msg::cant_mkdir(path, e))
+}
+
+/// Makes an empty file by absolute path, refusing a name already taken.
+///
+/// This is [`write_whole`] with no bytes and an empty expectation —
+/// 「there should be nothing here」 — and it is spelled out here rather
+/// than left to the caller so that `khor touch` and the tree's 新建文件
+/// cannot drift into two different answers about an existing name.
+pub fn touch(path: &str) -> Result<(), String> {
+    write_whole(path, b"", "").map(|_| ())
+}
+
+/// Moves a name on this disk: rename inside a directory, across two of
+/// them, both.
+///
+/// **The target is checked first and never overwritten.**
+/// `std::fs::rename` replaces an existing file silently on unix, so a
+/// mistyped destination would take another file with it and answer
+/// 「done」. The check is a window — somebody could create that name in
+/// between — and it is the right size of answer for what this is: a
+/// person renaming a row in a tree, not a build step.
+pub fn rename_path(from: &str, to: &str) -> Result<(), String> {
+    let (a, b) = (std::path::Path::new(from), std::path::Path::new(to));
+    if !a.is_absolute() {
+        return Err(msg::path_not_absolute(from));
+    }
+    if !b.is_absolute() {
+        return Err(msg::path_not_absolute(to));
+    }
+    // The same name twice is not a move and not an error worth its own
+    // sentence — it is the name already being taken, by itself.
+    if std::fs::symlink_metadata(b).is_ok() {
+        return Err(msg::name_taken(to));
+    }
+    std::fs::rename(a, b).map_err(|e| msg::cant_move_name(from, e))
+}
+
+/// What this machine opens paths and pages with, if anything.
+///
+/// **An environment variable wins**, and that is not a test hatch bolted
+/// on: a desktop is free to have no `xdg-open`, and the person who knows
+/// what their machine opens things with is the person sitting at it.
+/// That it also lets the smoke run point the opener at `/usr/bin/true`
+/// instead of a window appearing on somebody's screen is the same fact
+/// used from the other end.
+///
+/// Empty means「this machine opens nothing」and is honoured: setting it
+/// to nothing is how a person says so, and reading it as「fall back to
+/// the platform's」would be khor overruling them.
+pub fn launcher() -> Option<String> {
+    if let Ok(given) = std::env::var(LAUNCHER_ENV) {
+        let given = given.trim().to_owned();
+        return if given.is_empty() { None } else { Some(given) };
+    }
+    // Windows is deliberately not in this list. `explorer` answers a
+    // non-zero exit code on success, so「did it open」could only be
+    // guessed at — and a guess is the one thing [`launch`] must not
+    // answer. A Windows user names their opener in the variable above.
+    if cfg!(target_os = "macos") {
+        Some("open".to_owned())
+    } else if cfg!(target_os = "linux") {
+        Some("xdg-open".to_owned())
+    } else {
+        None
+    }
+}
+
+/// The variable that names this machine's opener.
+pub const LAUNCHER_ENV: &str = "KHOR_LAUNCHER";
+
+/// Hands one path or page to this machine's opener.
+///
+/// **What may be handed over is a whitelist**, because what reaches here
+/// came out of a model's own words in a conversation: an absolute path
+/// on this disk, or an `http(s)` address. `file:`, `mailto:`, a scheme
+/// some app registered — each of those is an action rather than a page
+/// (`khor_gui_core::web::open_link`, the same judgment one machine
+/// closer to the screen).
+///
+/// **A leading `-` is refused whatever else it spells.** The opener gets
+/// exactly one argument and no shell, so nothing here can become a
+/// second command — but `open -a Calculator` is one argument that is
+/// still a flag, and a name khor cannot vouch for must not be able to
+/// become one.
+///
+/// Answers as soon as the opener starts. Waiting for it would be waiting
+/// for a person to close a window.
+pub fn launch(target: &str) -> Result<(), String> {
+    if target.starts_with('-') {
+        return Err(msg::not_openable(target));
+    }
+    let page = target.starts_with("http://") || target.starts_with("https://");
+    if !page && !std::path::Path::new(target).is_absolute() {
+        return Err(msg::not_openable(target));
+    }
+    let opener = launcher().ok_or_else(|| msg::no_launcher(LAUNCHER_ENV))?;
+    std::process::Command::new(&opener)
+        .arg(target)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| msg::cant_launch(target, e))
+}
+
 #[cfg(test)]
 mod remove_tests {
     use super::*;
@@ -598,5 +729,206 @@ mod write_tests {
         let err = write_whole(path.to_str().unwrap(), &big, "").expect_err("over the ceiling");
         assert!(err.contains(&crate::proto::SLICE.to_string()), "{err}");
         assert!(!path.exists(), "and no file was started");
+    }
+}
+
+/// 新建 / 改名 / 打开 (工作区第五轮). `remove_tests`' `Scratch` for the
+/// same reason it exists there: an assertion panics past a cleanup
+/// written at the end, a `Drop` does not.
+#[cfg(test)]
+mod make_tests {
+    use super::*;
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn tmp(tag: &str) -> Scratch {
+        let p = std::env::temp_dir().join(format!("khor-make-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        Scratch(p)
+    }
+
+    /// **One directory, and only one.** The control is the second
+    /// assertion: a `create_dir_all` would pass the first line and then
+    /// quietly build a chain nobody typed, which is the mistake this
+    /// verb refuses rather than the one it makes.
+    #[test]
+    fn one_directory_is_made_and_never_a_chain() {
+        let dir = tmp("mkdir");
+        let one = dir.join("src");
+        mkdir(one.to_str().unwrap()).unwrap();
+        assert!(one.is_dir(), "the directory a person typed");
+
+        let deep = dir.join("a/b/c");
+        let err = mkdir(deep.to_str().unwrap()).expect_err("the parent is not there");
+        assert!(err.contains("a/b/c"), "the refusal names the path: {err}");
+        assert!(!dir.join("a").exists(), "and nothing on the way to it was made either");
+    }
+
+    /// A name already taken is refused **by the sentence a person can
+    /// act on** — 「换一个名字」 — rather than by the operating system's
+    /// three different words for it. Both kinds of name count: a file
+    /// occupies the name just as a directory does.
+    #[test]
+    fn a_name_already_taken_is_refused_whatever_wears_it() {
+        let dir = tmp("taken");
+        let d = dir.join("src");
+        std::fs::create_dir(&d).unwrap();
+        let f = dir.join("a.rs");
+        std::fs::write(&f, "x").unwrap();
+
+        for taken in [&d, &f] {
+            let err = mkdir(taken.to_str().unwrap()).expect_err("the name is taken");
+            assert!(
+                err.contains(&msg::name_taken(taken.display().to_string())),
+                "one sentence for both kinds: {err}",
+            );
+        }
+        assert_eq!(std::fs::read(&f).unwrap(), b"x", "and the file that wore the name is untouched");
+    }
+
+    /// `touch` is a write of no bytes, so the promise it inherits is
+    /// `write_whole`'s: it makes the name and it refuses one already
+    /// there **without emptying it**. That last clause is the whole
+    /// reason this is a test — `: > f` in a shell would have passed
+    /// every other line here.
+    #[test]
+    fn touch_makes_an_empty_file_and_never_empties_one() {
+        let dir = tmp("touch");
+        let f = dir.join("x.md");
+        touch(f.to_str().unwrap()).unwrap();
+        assert_eq!(std::fs::read(&f).unwrap(), b"", "zero bytes, and the name exists");
+
+        std::fs::write(&f, "words\n").unwrap();
+        let err = touch(f.to_str().unwrap()).expect_err("the name is taken");
+        assert!(err.contains("x.md"), "the refusal names the path: {err}");
+        assert_eq!(
+            std::fs::read(&f).unwrap(),
+            b"words\n",
+            "a refusal that emptied the file anyway is the bug",
+        );
+    }
+
+    /// **Across directories is the same verb**, which is why it is
+    /// spelled `mv`: a rename inside one directory and a move into
+    /// another are one thing to the person doing it.
+    #[test]
+    fn a_name_moves_inside_a_directory_and_across_two() {
+        let dir = tmp("mv");
+        let a = dir.join("one.rs");
+        std::fs::write(&a, "x").unwrap();
+        let b = dir.join("two.rs");
+        rename_path(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
+        assert!(!a.exists() && b.exists(), "the name moved, not copied");
+
+        let sub = dir.join("src");
+        std::fs::create_dir(&sub).unwrap();
+        let c = sub.join("two.rs");
+        rename_path(b.to_str().unwrap(), c.to_str().unwrap()).unwrap();
+        assert!(!b.exists() && c.exists(), "crossing a directory is the same verb");
+    }
+
+    /// **The target is never overwritten**, and this is the assertion
+    /// the whole check exists for: `std::fs::rename` replaces a file on
+    /// unix without a word, so without the test in front of it one
+    /// mistyped name eats another file and answers 好了.
+    #[test]
+    fn a_taken_target_is_refused_and_what_wore_the_name_survives() {
+        let dir = tmp("clobber");
+        let a = dir.join("mine.rs");
+        std::fs::write(&a, "mine\n").unwrap();
+        let b = dir.join("theirs.rs");
+        std::fs::write(&b, "theirs\n").unwrap();
+
+        let err = rename_path(a.to_str().unwrap(), b.to_str().unwrap())
+            .expect_err("that name is taken");
+        assert!(err.contains("theirs.rs"), "the refusal names the taken name: {err}");
+        assert_eq!(
+            std::fs::read(&b).unwrap(),
+            b"theirs\n",
+            "the other file is still there — a refusal that moved anyway is the bug",
+        );
+        assert_eq!(std::fs::read(&a).unwrap(), b"mine\n", "and so is the one being moved");
+    }
+
+    /// Relative paths name nowhere, for the reason `Ls` demands an
+    /// absolute one. Both arguments are asked, because a relative
+    /// *target* is the half that would otherwise resolve against
+    /// whatever directory the serve process happened to start in.
+    #[test]
+    fn a_relative_path_names_nowhere_on_either_side() {
+        let dir = tmp("rel");
+        let a = dir.join("one.rs");
+        std::fs::write(&a, "x").unwrap();
+        assert!(mkdir("src").is_err(), "a relative path names nowhere");
+        assert!(rename_path("one.rs", a.to_str().unwrap()).is_err(), "nor as a source");
+        assert!(rename_path(a.to_str().unwrap(), "two.rs").is_err(), "nor as a target");
+        assert!(a.exists(), "and nothing moved while it was being refused");
+    }
+
+    /// **The whitelist is the point**, and it is the same judgment
+    /// `khor_gui_core::web::open_link` makes one machine closer to the
+    /// screen: what reaches `launch` came out of a model's own words.
+    /// Only the refusals are asserted — the allowed side would open
+    /// something on whoever ran the tests.
+    #[test]
+    fn only_an_absolute_path_or_a_page_is_openable() {
+        for target in [
+            "src/main.rs",
+            "./notes.md",
+            "",
+            "file:///etc/passwd",
+            "mailto:someone@example.test",
+            "javascript:alert(1)",
+            "vscode://file/etc/passwd",
+            "-a",
+            "-a Calculator",
+        ] {
+            let err = launch(target).expect_err("must refuse");
+            assert!(
+                err.contains(&msg::not_openable(target)),
+                "refused for being unopenable, not for something else: {target} -> {err}",
+            );
+        }
+    }
+
+    /// **A machine that opens nothing says so by name**, and the name
+    /// it says is the variable — the one thing a person can do about it.
+    /// Set to nothing is honoured as 「this machine opens nothing」
+    /// rather than read as 「fall back to the platform's」, which would
+    /// be khor overruling somebody who told it the answer.
+    #[test]
+    fn a_machine_with_no_opener_refuses_by_naming_the_variable() {
+        // Serialised against the test below by running in one test:
+        // `set_var` is process-wide, and two tests reading it at once
+        // would each see the other's value.
+        let before = std::env::var(LAUNCHER_ENV).ok();
+        unsafe { std::env::set_var(LAUNCHER_ENV, "") };
+        assert_eq!(launcher(), None, "empty means this machine opens nothing");
+        let err = launch("/etc/hosts").expect_err("no opener");
+        assert!(err.contains(LAUNCHER_ENV), "the refusal names the variable: {err}");
+
+        unsafe { std::env::set_var(LAUNCHER_ENV, "/usr/bin/true") };
+        assert_eq!(launcher().as_deref(), Some("/usr/bin/true"), "and a named one wins");
+        launch("/etc/hosts").expect("the opener khor was told to use");
+
+        match before {
+            Some(v) => unsafe { std::env::set_var(LAUNCHER_ENV, v) },
+            None => unsafe { std::env::remove_var(LAUNCHER_ENV) },
+        }
     }
 }

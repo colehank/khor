@@ -581,6 +581,30 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::MkdirOn { machine, path } => {
+                match self.mkdir_with(ep, &machine, &path).await {
+                    Ok(()) => ipc::Reply::Made,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::TouchOn { machine, path } => {
+                match self.touch_with(ep, &machine, &path).await {
+                    Ok(()) => ipc::Reply::Made,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::RenameOn { machine, from, to } => {
+                match self.rename_with(ep, &machine, &from, &to).await {
+                    Ok(()) => ipc::Reply::Renamed,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::LaunchOn { machine, target } => {
+                match self.launch_with(ep, &machine, &target).await {
+                    Ok(()) => ipc::Reply::Launched,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
     }
 
@@ -1065,6 +1089,37 @@ impl Node {
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Removed)
             }
+            Request::Mkdir { path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Off the reactor with `Remove`, for `Remove`'s reason.
+                tokio::task::spawn_blocking(move || crate::files::mkdir(&path))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Made)
+            }
+            Request::RenamePath { from, to } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                tokio::task::spawn_blocking(move || crate::files::rename_path(&from, &to))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Renamed)
+            }
+            Request::Launch { target } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Off the reactor: starting a process is a fork, and a
+                // fork on the reactor is the one thing that stops every
+                // other answer this machine owes.
+                tokio::task::spawn_blocking(move || crate::files::launch(&target))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Launched)
+            }
             Request::Touched { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -1413,6 +1468,49 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Removed)
+            }
+            Request::SatTouch { sat, path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                tokio::task::spawn_blocking(move || crate::satellite::touch(&host, &path))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Made)
+            }
+            Request::SatMkdir { sat, path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                // Off the reactor with SatLs, for SatLs's reason.
+                tokio::task::spawn_blocking(move || crate::satellite::mkdir(&host, &path))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Made)
+            }
+            Request::SatRename { sat, from, to } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                tokio::task::spawn_blocking(move || {
+                    crate::satellite::rename_path(&host, &from, &to)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Renamed)
+            }
+            Request::SatLaunch { sat, target } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                tokio::task::spawn_blocking(move || crate::satellite::launch(&host, &target))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Launched)
             }
             Request::SatTouched { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -2336,6 +2434,281 @@ impl Node {
         }
         match self.ask(ep, &channel, &Request::Remove { path: path.to_owned() }).await? {
             Response::Removed => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// The ssh road to a satellite this machine sponsors, by the name
+    /// the tables call it. **Asked again rather than carried down from
+    /// [`Self::sat_and_sponsor`]**: that one answers whose satellite it
+    /// is, this one answers how to reach it, and a row can lose its
+    /// address without leaving the table.
+    fn sponsored_host(&self, channel: &str) -> Result<String, String> {
+        self.devices_loaded()?
+            .doc
+            .by_name(channel)
+            .and_then(|d| d.ssh_host.clone())
+            .ok_or_else(|| msg::sat_no_ssh_host(channel))
+    }
+
+    /// Makes one directory on whichever machine holds the parent
+    /// (工作区第五轮). One directory, never a chain; a name already
+    /// taken is refused (`crate::files::mkdir`).
+    pub async fn mkdir(&self, machine: &str, path: &str) -> Result<(), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::MkdirOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Made => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.mkdir_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn mkdir_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(), String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let p = path.to_owned();
+            return tokio::task::spawn_blocking(move || crate::files::mkdir(&p))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        // A satellite routes to its sponsor, `remove_with`'s road.
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self.sponsored_host(&channel)?;
+                let p = path.to_owned();
+                return tokio::task::spawn_blocking(move || crate::satellite::mkdir(&host, &p))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            };
+            let req = Request::SatMkdir { sat, path: path.to_owned() };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::Made => Ok(()),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        match self.ask(ep, &channel, &Request::Mkdir { path: path.to_owned() }).await? {
+            Response::Made => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Makes an empty file on whichever machine holds the directory.
+    ///
+    /// **A write of no bytes claiming there is nothing there** — that is
+    /// the whole of it on every road but one, and it is why a khor built
+    /// before this verb existed already answers it correctly: an empty
+    /// `was` is [`crate::files::write_whole`]'s 「there should be
+    /// nothing here」, and a name already taken fails that claim. So
+    /// there is no `Request::Touch` on the wire at all.
+    ///
+    /// The one road that is not a write is a satellite's
+    /// ([`crate::proto::Request::SatTouch`] says why).
+    pub async fn touch(&self, machine: &str, path: &str) -> Result<(), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::TouchOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Made => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.touch_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn touch_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(), String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let p = path.to_owned();
+            return tokio::task::spawn_blocking(move || crate::files::touch(&p))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self.sponsored_host(&channel)?;
+                let p = path.to_owned();
+                return tokio::task::spawn_blocking(move || crate::satellite::touch(&host, &p))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            };
+            let req = Request::SatTouch { sat, path: path.to_owned() };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::Made => Ok(()),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        // Every ordinary machine: the write it has always answered.
+        self.write_path_with(ep, &channel, path, "", b"").await.map(|_| ())
+    }
+
+    /// Moves a name on whichever machine holds it — inside a directory
+    /// or across two of them, which is one verb and is why it is spelled
+    /// `mv`. The target is never overwritten
+    /// (`crate::files::rename_path`).
+    pub async fn rename_path(&self, machine: &str, from: &str, to: &str) -> Result<(), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::RenameOn {
+                machine: machine.to_owned(),
+                from: from.to_owned(),
+                to: to.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Renamed => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.rename_with(&ep, machine, from, to).await;
+        ep.close().await;
+        out
+    }
+
+    async fn rename_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<(), String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let (a, b) = (from.to_owned(), to.to_owned());
+            return tokio::task::spawn_blocking(move || crate::files::rename_path(&a, &b))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self.sponsored_host(&channel)?;
+                let (a, b) = (from.to_owned(), to.to_owned());
+                return tokio::task::spawn_blocking(move || {
+                    crate::satellite::rename_path(&host, &a, &b)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            };
+            let req = Request::SatRename { sat, from: from.to_owned(), to: to.to_owned() };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::Renamed => Ok(()),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let req = Request::RenamePath { from: from.to_owned(), to: to.to_owned() };
+        match self.ask(ep, &channel, &req).await? {
+            Response::Renamed => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Opens a path or a page **on the machine that holds it**
+    /// (工作区第五轮；the user: 都在宿主机器上打开).
+    ///
+    /// **Not `khor_gui_core::web::open_link`**, which opens on the
+    /// machine the face is running on. That one is right for a link a
+    /// person wants to read; this one is right for the file a session
+    /// just wrote, which exists on the machine the session ran on and
+    /// very often nowhere else. The face can be a browser on a phone,
+    /// and a phone opening `/Users/…/main.rs` opens nothing.
+    ///
+    /// **`khor open` was not reused**: that verb starts a session on a
+    /// machine, and two meanings on one word is how a person ends up
+    /// starting an agent when they meant to look at a picture.
+    pub async fn launch(&self, machine: &str, target: &str) -> Result<(), String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::LaunchOn {
+                machine: machine.to_owned(),
+                target: target.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Launched => Ok(()),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.launch_with(&ep, machine, target).await;
+        ep.close().await;
+        out
+    }
+
+    async fn launch_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        target: &str,
+    ) -> Result<(), String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let t = target.to_owned();
+            return tokio::task::spawn_blocking(move || crate::files::launch(&t))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self.sponsored_host(&channel)?;
+                let t = target.to_owned();
+                return tokio::task::spawn_blocking(move || crate::satellite::launch(&host, &t))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            };
+            let req = Request::SatLaunch { sat, target: target.to_owned() };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::Launched => Ok(()),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        match self.ask(ep, &channel, &Request::Launch { target: target.to_owned() }).await? {
+            Response::Launched => Ok(()),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
